@@ -1,0 +1,30 @@
+{
+  "doc-3b06a8fb5afeae54c38bfab063ad0bad": {
+    "relation_pairs": [
+      [
+        "Knowledge Base Insertion",
+        "RAG-Anything"
+      ],
+      [
+        "Document Upload",
+        "RAG-Anything"
+      ],
+      [
+        "RAG-Anything",
+        "RAG-Anything Test Document"
+      ],
+      [
+        "RAG-Anything",
+        "Text Extraction"
+      ],
+      [
+        "Query Capabilities",
+        "RAG-Anything"
+      ]
+    ],
+    "count": 5,
+    "create_time": 1756115145,
+    "update_time": 1756115145,
+    "_id": "doc-3b06a8fb5afeae54c38bfab063ad0bad"
+  }
+}

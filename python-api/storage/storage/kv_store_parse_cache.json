@@ -1,0 +1,254 @@
+{
+  "fe3e900a2400629b74027e9ec92f53b4": {
+    "content_list": [],
+    "doc_id": "doc-d41d8cd98f00b204e9800998ecf8427e",
+    "mtime": 1756114502.2848136,
+    "parse_config": {
+      "parser": "mineru",
+      "parse_method": "auto"
+    },
+    "cached_at": 1756114512.5309768,
+    "cache_version": "1.0",
+    "create_time": 1756114512,
+    "update_time": 1756114512,
+    "_id": "fe3e900a2400629b74027e9ec92f53b4"
+  },
+  "3944cf3efd78f30f5ca2de42157d993f": {
+    "content_list": [],
+    "doc_id": "doc-d41d8cd98f00b204e9800998ecf8427e",
+    "mtime": 1756114664.2467356,
+    "parse_config": {
+      "parser": "mineru",
+      "parse_method": "auto"
+    },
+    "cached_at": 1756114673.5179486,
+    "cache_version": "1.0",
+    "create_time": 1756114673,
+    "update_time": 1756114673,
+    "_id": "3944cf3efd78f30f5ca2de42157d993f"
+  },
+  "d9379685dbb289ac6b556e91778a69f8": {
+    "content_list": [],
+    "doc_id": "doc-d41d8cd98f00b204e9800998ecf8427e",
+    "mtime": 1756114747.5012364,
+    "parse_config": {
+      "parser": "mineru",
+      "parse_method": "auto"
+    },
+    "cached_at": 1756114760.3011725,
+    "cache_version": "1.0",
+    "create_time": 1756114760,
+    "update_time": 1756114760,
+    "_id": "d9379685dbb289ac6b556e91778a69f8"
+  },
+  "0b1e7781917e2ef3cbcd296e6bfa6b81": {
+    "content_list": [
+      {
+        "type": "text",
+        "text": "RAG-Anything Test Document ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "This document tests the complete functionality of RAG-Anything. ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "Features tested:   \n1. Document upload and processing   \n2. Text extraction   \n3. Knowledge base insertion   \n4. Query capabilities ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "The system should be able to process this document and answer questions about it. ",
+        "page_idx": 0
+      }
+    ],
+    "doc_id": "doc-3b06a8fb5afeae54c38bfab063ad0bad",
+    "mtime": 1756115111.196312,
+    "parse_config": {
+      "parser": "mineru",
+      "parse_method": "auto"
+    },
+    "cached_at": 1756115133.0975718,
+    "cache_version": "1.0",
+    "create_time": 1756115133,
+    "update_time": 1756115133,
+    "_id": "0b1e7781917e2ef3cbcd296e6bfa6b81"
+  },
+  "6628c998e4dad84c1ce3a6f2e8733e7b": {
+    "content_list": [
+      {
+        "type": "text",
+        "text": "RAG-Anything Test Document ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "This document tests the complete functionality of RAG-Anything. ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "Features tested:   \n1. Document upload and processing   \n2. Text extraction   \n3. Knowledge base insertion   \n4. Query capabilities ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "The system should be able to process this document and answer questions about it. ",
+        "page_idx": 0
+      }
+    ],
+    "doc_id": "doc-3b06a8fb5afeae54c38bfab063ad0bad",
+    "mtime": 1756115228.0167723,
+    "parse_config": {
+      "parser": "mineru",
+      "parse_method": "auto"
+    },
+    "cached_at": 1756115253.9985163,
+    "cache_version": "1.0",
+    "create_time": 1756115253,
+    "update_time": 1756115253,
+    "_id": "6628c998e4dad84c1ce3a6f2e8733e7b"
+  },
+  "7f0c16b43cabb0deb036fbb901e88fcc": {
+    "content_list": [
+      {
+        "type": "text",
+        "text": "RAG-Anything Test Document ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "This document tests the complete functionality of RAG-Anything. ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "Features tested:   \n1. Document upload and processing   \n2. Text extraction   \n3. Knowledge base insertion   \n4. Query capabilities ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "The system should be able to process this document and answer questions about it. ",
+        "page_idx": 0
+      }
+    ],
+    "doc_id": "doc-3b06a8fb5afeae54c38bfab063ad0bad",
+    "mtime": 1756115365.2575843,
+    "parse_config": {
+      "parser": "mineru",
+      "parse_method": "auto"
+    },
+    "cached_at": 1756115389.337181,
+    "cache_version": "1.0",
+    "create_time": 1756115389,
+    "update_time": 1756115389,
+    "_id": "7f0c16b43cabb0deb036fbb901e88fcc"
+  },
+  "9912c6d28b37abd793d1cad31fd9fae7": {
+    "content_list": [
+      {
+        "type": "text",
+        "text": "RAG-Anything Test Document ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "This document tests the complete functionality of RAG-Anything. ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "Features tested:   \n1. Document upload and processing   \n2. Text extraction   \n3. Knowledge base insertion   \n4. Query capabilities ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "The system should be able to process this document and answer questions about it. ",
+        "page_idx": 0
+      }
+    ],
+    "doc_id": "doc-3b06a8fb5afeae54c38bfab063ad0bad",
+    "mtime": 1756115491.9631217,
+    "parse_config": {
+      "parser": "mineru",
+      "parse_method": "auto"
+    },
+    "cached_at": 1756115513.9320292,
+    "cache_version": "1.0",
+    "create_time": 1756115513,
+    "update_time": 1756115513,
+    "_id": "9912c6d28b37abd793d1cad31fd9fae7"
+  },
+  "53c0b56835f9e2b5f505bef96cab52aa": {
+    "content_list": [
+      {
+        "type": "text",
+        "text": "RAG-Anything Test Document ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "This document tests the complete functionality of RAG-Anything. ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "Features tested:   \n1. Document upload and processing   \n2. Text extraction   \n3. Knowledge base insertion   \n4. Query capabilities ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "The system should be able to process this document and answer questions about it. ",
+        "page_idx": 0
+      }
+    ],
+    "doc_id": "doc-3b06a8fb5afeae54c38bfab063ad0bad",
+    "mtime": 1756115634.5669255,
+    "parse_config": {
+      "parser": "mineru",
+      "parse_method": "auto"
+    },
+    "cached_at": 1756115657.582683,
+    "cache_version": "1.0",
+    "create_time": 1756115657,
+    "update_time": 1756115657,
+    "_id": "53c0b56835f9e2b5f505bef96cab52aa"
+  },
+  "4a57dee4c988525a19e666bd9ef5d869": {
+    "content_list": [
+      {
+        "type": "text",
+        "text": "RAG-Anything Test Document ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "This document tests the complete functionality of RAG-Anything. ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "Features tested:   \n1. Document upload and processing   \n2. Text extraction   \n3. Knowledge base insertion   \n4. Query capabilities ",
+        "page_idx": 0
+      },
+      {
+        "type": "text",
+        "text": "The system should be able to process this document and answer questions about it. ",
+        "page_idx": 0
+      }
+    ],
+    "doc_id": "doc-3b06a8fb5afeae54c38bfab063ad0bad",
+    "mtime": 1756143381.6155136,
+    "parse_config": {
+      "parser": "mineru",
+      "parse_method": "auto"
+    },
+    "cached_at": 1756143401.0789282,
+    "cache_version": "1.0",
+    "create_time": 1756143401,
+    "update_time": 1756143401,
+    "_id": "4a57dee4c988525a19e666bd9ef5d869"
+  }
+}

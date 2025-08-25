@@ -1,0 +1,16 @@
+{
+  "chunk-8f943919b1066ba678eeb2481cfeafd5": {
+    "tokens": 63,
+    "content": "RAG-Anything Test Document \n\nThis document tests the complete functionality of RAG-Anything. \n\nFeatures tested:   \n1. Document upload and processing   \n2. Text extraction   \n3. Knowledge base insertion   \n4. Query capabilities \n\nThe system should be able to process this document and answer questions about it.",
+    "chunk_order_index": 0,
+    "full_doc_id": "doc-3b06a8fb5afeae54c38bfab063ad0bad",
+    "file_path": "dac5c558-4a44-4710-bb30-6f2ec17f8772.txt",
+    "llm_cache_list": [
+      "default:extract:b2a4086a2718c4f3416bd96783aa3321",
+      "default:extract:5b40c09576df5a10e7029cfea26ffbf7"
+    ],
+    "create_time": 1756115133,
+    "update_time": 1756115141,
+    "_id": "chunk-8f943919b1066ba678eeb2481cfeafd5"
+  }
+}

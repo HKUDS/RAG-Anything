@@ -1,0 +1,144 @@
+# Pre-commit configuration for RAG-Anything API
+# Install with: pre-commit install
+
+repos:
+  # Code formatting
+  - repo: https://github.com/psf/black
+    rev: 23.11.0
+    hooks:
+      - id: black
+        language_version: python3
+        args: [--line-length=88]
+        files: ^(app/|tests/).*\.py$
+
+  # Import sorting
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args: [--profile=black, --line-length=88]
+        files: ^(app/|tests/).*\.py$
+
+  # Linting
+  - repo: https://github.com/charliermarsh/ruff-pre-commit
+    rev: v0.1.6
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        files: ^(app/|tests/).*\.py$
+
+  # Type checking
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.7.1
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-redis, types-requests]
+        args: [--ignore-missing-imports, --show-error-codes]
+        files: ^app/.*\.py$
+
+  # Security checks
+  - repo: https://github.com/PyCQA/bandit
+    rev: 1.7.5
+    hooks:
+      - id: bandit
+        args: [-r, app/, -ll]
+        files: ^app/.*\.py$
+
+  # General code quality
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-json
+      - id: check-toml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1000]
+      - id: debug-statements
+      - id: check-docstring-first
+
+  # Python-specific checks
+  - repo: https://github.com/pre-commit/pygrep-hooks
+    rev: v1.10.0
+    hooks:
+      - id: python-check-blanket-noqa
+      - id: python-check-blanket-type-ignore
+      - id: python-no-log-warn
+      - id: python-use-type-annotations
+
+  # Documentation
+  - repo: https://github.com/pycqa/pydocstyle
+    rev: 6.3.0
+    hooks:
+      - id: pydocstyle
+        args: [--convention=google, --add-ignore=D100,D101,D102,D103,D104,D105,D107]
+        files: ^app/.*\.py$
+
+  # Dockerfile linting
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint-docker
+        files: Dockerfile
+
+  # YAML formatting
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: v3.1.0
+    hooks:
+      - id: prettier
+        types: [yaml]
+        files: \.(yml|yaml)$
+        exclude: ^(\.github/workflows/|docker-compose\.yml)$
+
+  # Check for secrets
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.4.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+
+  # Dependency safety check
+  - repo: https://github.com/Lucas-C/pre-commit-hooks-safety
+    rev: v1.3.2
+    hooks:
+      - id: python-safety-dependencies-check
+        files: requirements.*\.txt$
+
+  # Test-specific hooks
+  - repo: local
+    hooks:
+      # Ensure test functions start with 'test_'
+      - id: test-naming
+        name: Check test naming convention
+        entry: python -c "import sys, re; sys.exit(0 if all(re.search(r'def test_', open(f).read()) or 'def test_' not in open(f).read() for f in sys.argv[1:]) else 1)"
+        language: system
+        files: ^tests/.*test.*\.py$
+
+      # Check for print statements in source code (except debug files)
+      - id: no-print-statements
+        name: Check for print statements
+        entry: python -c "import sys, re; files = [f for f in sys.argv[1:] if 'debug' not in f]; sys.exit(0 if not any(re.search(r'^\s*print\s*\(', open(f).read(), re.M) for f in files) else 1)"
+        language: system
+        files: ^app/.*\.py$
+
+      # Ensure imports are used
+      - id: check-unused-imports
+        name: Check for unused imports
+        entry: python -c "import ast, sys; [sys.exit(1) for f in sys.argv[1:] for node in ast.walk(ast.parse(open(f).read())) if isinstance(node, ast.Import) and any(alias.name.startswith('_') for alias in node.names)]"
+        language: system
+        files: ^(app/|tests/).*\.py$
+
+# Configuration for specific hooks
+ci:
+  autofix_commit_msg: |
+    [pre-commit.ci] auto fixes from pre-commit hooks
+    
+    for more information, see https://pre-commit.ci
+  autofix_prs: true
+  autoupdate_branch: ''
+  autoupdate_commit_msg: '[pre-commit.ci] pre-commit autoupdate'
+  autoupdate_schedule: weekly
+  skip: [mypy, bandit]  # Skip heavy checks in CI
+  submodules: false

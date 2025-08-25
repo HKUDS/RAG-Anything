@@ -251,7 +251,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 )
                 self.parse_cache = self.lightrag.key_string_value_json_storage_cls(
                     namespace="parse_cache",
-                    workspace=self.lightrag.workspace,
+                    workspace=getattr(self.lightrag, 'workspace', None) or self.lightrag.working_dir,
                     global_config=self.lightrag.__dict__,
                     embedding_func=self.embedding_func,
                 )
@@ -303,7 +303,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         # Initialize parse cache storage using LightRAG's KV storage
         self.parse_cache = self.lightrag.key_string_value_json_storage_cls(
             namespace="parse_cache",
-            workspace=self.lightrag.workspace,
+            workspace=getattr(self.lightrag, 'workspace', None) or self.lightrag.working_dir,
             global_config=self.lightrag.__dict__,
             embedding_func=self.embedding_func,
         )
