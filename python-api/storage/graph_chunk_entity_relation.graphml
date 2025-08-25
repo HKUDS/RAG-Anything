@@ -1,0 +1,105 @@
+<?xml version='1.0' encoding='utf-8'?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
+  <key id="d11" for="edge" attr.name="created_at" attr.type="long" />
+  <key id="d10" for="edge" attr.name="file_path" attr.type="string" />
+  <key id="d9" for="edge" attr.name="source_id" attr.type="string" />
+  <key id="d8" for="edge" attr.name="keywords" attr.type="string" />
+  <key id="d7" for="edge" attr.name="description" attr.type="string" />
+  <key id="d6" for="edge" attr.name="weight" attr.type="double" />
+  <key id="d5" for="node" attr.name="created_at" attr.type="long" />
+  <key id="d4" for="node" attr.name="file_path" attr.type="string" />
+  <key id="d3" for="node" attr.name="source_id" attr.type="string" />
+  <key id="d2" for="node" attr.name="description" attr.type="string" />
+  <key id="d1" for="node" attr.name="entity_type" attr.type="string" />
+  <key id="d0" for="node" attr.name="entity_id" attr.type="string" />
+  <graph edgedefault="undirected">
+    <node id="RAG-Anything Test Document">
+      <data key="d0">RAG-Anything Test Document</data>
+      <data key="d1">event</data>
+      <data key="d2">The RAG-Anything Test Document serves as a testing document to evaluate the functionality of the RAG-Anything system.</data>
+      <data key="d3">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d4">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d5">1756115141</data>
+    </node>
+    <node id="RAG-Anything">
+      <data key="d0">RAG-Anything</data>
+      <data key="d1">organization</data>
+      <data key="d2">RAG-Anything is an organization responsible for the development and functionality testing of a system designed for document processing.</data>
+      <data key="d3">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d4">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d5">1756115141</data>
+    </node>
+    <node id="Document Upload">
+      <data key="d0">Document Upload</data>
+      <data key="d1">event</data>
+      <data key="d2">Document Upload refers to the functionality being tested within the RAG-Anything system to process documents.</data>
+      <data key="d3">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d4">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d5">1756115141</data>
+    </node>
+    <node id="Text Extraction">
+      <data key="d0">Text Extraction</data>
+      <data key="d1">event</data>
+      <data key="d2">Text Extraction is a feature of the RAG-Anything system that involves extracting text from uploaded documents.</data>
+      <data key="d3">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d4">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d5">1756115141</data>
+    </node>
+    <node id="Knowledge Base Insertion">
+      <data key="d0">Knowledge Base Insertion</data>
+      <data key="d1">event</data>
+      <data key="d2">Knowledge Base Insertion is a function that integrates processed information into the RAG-Anything system’s knowledge database.</data>
+      <data key="d3">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d4">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d5">1756115141</data>
+    </node>
+    <node id="Query Capabilities">
+      <data key="d0">Query Capabilities</data>
+      <data key="d1">event</data>
+      <data key="d2">Query Capabilities refer to the ability of the RAG-Anything system to respond to user inquiries based on processed documents.</data>
+      <data key="d3">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d4">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d5">1756115141</data>
+    </node>
+    <edge source="RAG-Anything Test Document" target="RAG-Anything">
+      <data key="d6">8.0</data>
+      <data key="d7">The RAG-Anything Test Document is created to assess the capabilities of the RAG-Anything organization and its system.</data>
+      <data key="d8">functionality testing,system evaluation</data>
+      <data key="d9">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d10">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d11">1756115142</data>
+    </edge>
+    <edge source="RAG-Anything" target="Document Upload">
+      <data key="d6">7.0</data>
+      <data key="d7">RAG-Anything provides the Document Upload feature as part of its system functionalities.</data>
+      <data key="d8">functionality,system features</data>
+      <data key="d9">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d10">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d11">1756115143</data>
+    </edge>
+    <edge source="RAG-Anything" target="Text Extraction">
+      <data key="d6">8.0</data>
+      <data key="d7">RAG-Anything includes Text Extraction as a key feature in its document processing capabilities.</data>
+      <data key="d8">document processing,system features</data>
+      <data key="d9">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d10">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d11">1756115143</data>
+    </edge>
+    <edge source="RAG-Anything" target="Knowledge Base Insertion">
+      <data key="d6">7.0</data>
+      <data key="d7">Knowledge Base Insertion is a part of the operations conducted by RAG-Anything to enrich its database.</data>
+      <data key="d8">data integration,system features</data>
+      <data key="d9">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d10">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d11">1756115144</data>
+    </edge>
+    <edge source="RAG-Anything" target="Query Capabilities">
+      <data key="d6">8.0</data>
+      <data key="d7">Query Capabilities are a function of the RAG-Anything system that allows it to handle user inquiries effectively.</data>
+      <data key="d8">system features,user interaction</data>
+      <data key="d9">chunk-8f943919b1066ba678eeb2481cfeafd5</data>
+      <data key="d10">dac5c558-4a44-4710-bb30-6f2ec17f8772.txt</data>
+      <data key="d11">1756115145</data>
+    </edge>
+  </graph>
+</graphml>

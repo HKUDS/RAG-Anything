@@ -1,0 +1,8 @@
+{
+  "doc-3b06a8fb5afeae54c38bfab063ad0bad": {
+    "content": "RAG-Anything Test Document \n\nThis document tests the complete functionality of RAG-Anything. \n\nFeatures tested:   \n1. Document upload and processing   \n2. Text extraction   \n3. Knowledge base insertion   \n4. Query capabilities \n\nThe system should be able to process this document and answer questions about it. ",
+    "create_time": 1756115133,
+    "update_time": 1756115133,
+    "_id": "doc-3b06a8fb5afeae54c38bfab063ad0bad"
+  }
+}

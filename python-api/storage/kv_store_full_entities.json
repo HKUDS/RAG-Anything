@@ -1,0 +1,16 @@
+{
+  "doc-3b06a8fb5afeae54c38bfab063ad0bad": {
+    "entity_names": [
+      "Text Extraction",
+      "RAG-Anything Test Document",
+      "Query Capabilities",
+      "RAG-Anything",
+      "Knowledge Base Insertion",
+      "Document Upload"
+    ],
+    "count": 6,
+    "create_time": 1756115145,
+    "update_time": 1756115145,
+    "_id": "doc-3b06a8fb5afeae54c38bfab063ad0bad"
+  }
+}

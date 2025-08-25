@@ -1,0 +1,102 @@
+# FastAPI and ASGI Server
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+python-multipart==0.0.6
+
+# Data Validation and Serialization
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Authentication and Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.6
+python-magic==0.4.27
+
+# Database and Caching
+redis==5.0.1
+aioredis==2.0.1
+sqlalchemy==2.0.23
+alembic==1.12.1
+asyncpg==0.29.0
+aiosqlite==0.19.0
+
+# HTTP Client
+httpx==0.25.2
+aiohttp==3.9.1
+aiofiles==23.2.0
+
+# Background Tasks
+celery==5.3.4
+kombu==5.3.4
+
+# Monitoring and Logging
+prometheus-client==0.19.0
+loguru==0.7.2
+structlog==23.2.0
+
+# Development and Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-mock==3.12.0
+pytest-cov==4.1.0
+pytest-xdist==3.3.1
+pytest-benchmark==4.0.0
+pytest-timeout==2.2.0
+pytest-html==4.1.1
+httpx==0.25.2
+faker==20.1.0
+hypothesis==6.92.1
+responses==0.23.3
+pytest-env==1.1.3
+pytest-randomly==3.15.0
+pytest-sugar==0.9.7
+
+# Performance Testing
+locust==2.17.0
+memory-profiler==0.61.0
+psutil==5.9.6
+
+# Security Testing
+bandit==1.7.5
+safety==3.2.0
+
+# Load Testing and Monitoring
+pytest-monitor==1.6.6
+
+# Code Quality
+black==23.11.0
+ruff==0.1.6
+mypy==1.7.1
+pre-commit==3.6.0
+
+# Documentation
+sphinx==7.2.6
+sphinx-rtd-theme==1.3.0
+
+# Utilities
+python-dotenv==1.0.0
+click==8.1.7
+rich==13.7.0
+typer==0.9.0
+
+# Image Processing (for document parsing support)
+Pillow==10.1.0
+opencv-python==4.8.1.78
+
+# Scientific Computing (for embeddings and processing)
+numpy==1.25.2
+pandas==2.1.3
+
+# OpenAI API
+openai==1.5.0
+
+# RAG-Anything dependencies
+huggingface_hub
+lightrag-hku
+# mineru[core]  # Temporarily disabled due to dependency conflict
+tqdm
+orjson==3.10.0
+
+# Local RAG-Anything integration (path dependency)
+# Note: This will be handled via relative import in the actual implementation

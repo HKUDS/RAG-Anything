@@ -1,0 +1,1 @@
+"""Performance tests for RAG-Anything API."""

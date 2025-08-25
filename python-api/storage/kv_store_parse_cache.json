@@ -1,0 +1,16 @@
+{
+  "1d1cf0a39583ad92783acdc89598843e": {
+    "content_list": [],
+    "doc_id": "doc-d41d8cd98f00b204e9800998ecf8427e",
+    "mtime": 1756114213.7175963,
+    "parse_config": {
+      "parser": "mineru",
+      "parse_method": "auto"
+    },
+    "cached_at": 1756114222.8144834,
+    "cache_version": "1.0",
+    "create_time": 1756114222,
+    "update_time": 1756114222,
+    "_id": "1d1cf0a39583ad92783acdc89598843e"
+  }
+}

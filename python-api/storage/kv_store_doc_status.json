@@ -1,0 +1,20 @@
+{
+  "doc-3b06a8fb5afeae54c38bfab063ad0bad": {
+    "status": "processed",
+    "chunks_count": 1,
+    "chunks_list": [
+      "chunk-8f943919b1066ba678eeb2481cfeafd5"
+    ],
+    "content_summary": "RAG-Anything Test Document \n\nThis document tests the complete functionality of RAG-Anything. \n\nFeatures tested:   \n1. Document upload and processing   \n2. Text extraction   \n3. Knowledge base insertion   \n4. Query capabilities \n\nThe system should be ...",
+    "content_length": 311,
+    "created_at": "2025-08-25T09:45:33.113363+00:00",
+    "updated_at": "2025-08-25T17:36:41+00:00",
+    "file_path": "dac5c558-4a44-4710-bb30-6f2ec17f8772.txt",
+    "track_id": "insert_20250825_094533_0e154c4b",
+    "metadata": {
+      "processing_start_time": 1756115133,
+      "processing_end_time": 1756115145
+    },
+    "multimodal_processed": true
+  }
+}
