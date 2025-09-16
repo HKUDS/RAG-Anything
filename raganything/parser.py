@@ -261,6 +261,21 @@ class Parser:
                 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
                 from reportlab.lib.units import inch
                 from reportlab.pdfbase import pdfmetrics
+                from reportlab.pdfbase.ttfonts import TTFont
+                support_chinese = True
+                try:
+                    if 'WenQuanYi' not in pdfmetrics.getRegisteredFontNames():
+                        if not Path('/usr/share/fonts/wqy-microhei/wqy-microhei.ttc').exists():
+                            support_chinese = False
+                            logging.warning(
+                                "WenQuanYi font not found at /usr/share/fonts/wqy-microhei/wqy-microhei.ttc. Chinese characters may not render correctly.")
+                        else:
+                            pdfmetrics.registerFont(
+                                TTFont('WenQuanYi', '/usr/share/fonts/wqy-microhei/wqy-microhei.ttc'))
+                except Exception as e:
+                    support_chinese = False
+                    logging.warning(
+                        f"Failed to register WenQuanYi font: {e}. Chinese characters may not render correctly.")
 
                 # Create PDF document
                 doc = SimpleDocTemplate(
@@ -276,6 +291,9 @@ class Parser:
                 styles = getSampleStyleSheet()
                 normal_style = styles["Normal"]
                 heading_style = styles["Heading1"]
+                if support_chinese:
+                    normal_style.fontName = 'WenQuanYi'
+                    heading_style.fontName = 'WenQuanYi'
 
                 # Try to register a font that supports Chinese characters
                 try:
