@@ -1,0 +1,63 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "raganything"
+version = "1.2.7"
+description = "RAGAnything: All-in-One RAG System"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [
+    { name = "Zirui Guo" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "huggingface_hub",
+    "lightrag-hku",
+    "mineru[core]",
+    "tqdm",
+]
+
+[project.optional-dependencies]
+image = ["Pillow>=10.0.0"]
+text = ["reportlab>=4.0.0"]
+office = []  # Requires LibreOffice (external program)
+all = ["Pillow>=10.0.0", "reportlab>=4.0.0"]
+markdown = [
+    "markdown>=3.4.0",
+    "weasyprint>=60.0",
+    "pygments>=2.10.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/HKUDS/RAG-Anything"
+Documentation = "https://github.com/HKUDS/RAG-Anything"
+Repository = "https://github.com/HKUDS/RAG-Anything"
+Issues = "https://github.com/HKUDS/RAG-Anything/issues"
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=6.0",
+    "pytest-asyncio",
+    "black",
+    "isort",
+    "flake8",
+    "mypy",
+    "openai",
+    "python-dotenv",
+]
+
+[tool.setuptools.packages.find]
+exclude = ["tests*", "docs*"]
+
+[tool.setuptools]
+include-package-data = true

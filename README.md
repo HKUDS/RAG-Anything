@@ -21,6 +21,7 @@
       <a href="https://github.com/HKUDS/RAG-Anything/stargazers"><img src='https://img.shields.io/github/stars/HKUDS/RAG-Anything?color=00d9ff&style=for-the-badge&logo=star&logoColor=white&labelColor=1a1a2e' /></a>
       <img src="https://img.shields.io/badge/🐍Python-3.10-4ecdc4?style=for-the-badge&logo=python&logoColor=white&labelColor=1a1a2e">
       <a href="https://pypi.org/project/raganything/"><img src="https://img.shields.io/pypi/v/raganything.svg?style=for-the-badge&logo=pypi&logoColor=white&labelColor=1a1a2e&color=ff6b6b"></a>
+      <a href="https://github.com/astral-sh/uv"><img src="https://img.shields.io/badge/⚡uv-Ready-ff6b6b?style=for-the-badge&logo=python&logoColor=white&labelColor=1a1a2e"></a>
     </p>
     <p>
       <a href="https://discord.gg/yF2MmDJyGJ"><img src="https://img.shields.io/badge/💬Discord-Community-7289da?style=for-the-badge&logo=discord&logoColor=white&labelColor=1a1a2e"></a>
@@ -245,14 +246,26 @@ pip install 'raganything[image,text]'       # Multiple features
 ```
 
 #### Option 2: Install from Source
-
 ```bash
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Clone and setup the project with uv
 git clone https://github.com/HKUDS/RAG-Anything.git
 cd RAG-Anything
-pip install -e .
 
-# With optional dependencies
-pip install -e '.[all]'
+# Install the package and dependencies in a virtual environment
+uv sync
+
+# If you encounter network timeouts (especially for opencv packages):
+# UV_HTTP_TIMEOUT=120 uv sync
+
+# Run commands directly with uv (recommended approach)
+uv run python examples/raganything_example.py --help
+
+# Install with optional dependencies
+uv sync --extra image --extra text  # Specific extras
+uv sync --all-extras                 # All optional features
 ```
 
 #### Optional Dependencies
