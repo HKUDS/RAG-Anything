@@ -324,7 +324,7 @@ async def main():
     # Define LLM model function
     def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
         return openai_complete_if_cache(
-            "gpt-4o-mini",
+            "gpt-5-mini",
             prompt,
             system_prompt=system_prompt,
             history_messages=history_messages,
@@ -340,7 +340,7 @@ async def main():
         # If messages format is provided (for multimodal VLM enhanced query), use it directly
         if messages:
             return openai_complete_if_cache(
-                "gpt-4o",
+                "gpt-5",
                 "",
                 system_prompt=None,
                 history_messages=[],
@@ -352,7 +352,7 @@ async def main():
         # Traditional single image format
         elif image_data:
             return openai_complete_if_cache(
-                "gpt-4o",
+                "gpt-5",
                 "",
                 system_prompt=None,
                 history_messages=[],
@@ -452,7 +452,7 @@ async def process_multimodal_content():
     rag = LightRAG(
         working_dir="./rag_storage",
         llm_model_func=lambda prompt, system_prompt=None, history_messages=[], **kwargs: openai_complete_if_cache(
-            "gpt-4o-mini",
+            "gpt-5-mini",
             prompt,
             system_prompt=system_prompt,
             history_messages=history_messages,
@@ -477,7 +477,7 @@ async def process_multimodal_content():
     image_processor = ImageModalProcessor(
         lightrag=rag,
         modal_caption_func=lambda prompt, system_prompt=None, history_messages=[], image_data=None, **kwargs: openai_complete_if_cache(
-            "gpt-4o",
+            "gpt-5",
             "",
             system_prompt=None,
             history_messages=[],
@@ -492,7 +492,7 @@ async def process_multimodal_content():
             base_url=base_url,
             **kwargs,
         ) if image_data else openai_complete_if_cache(
-            "gpt-4o-mini",
+            "gpt-5-mini",
             prompt,
             system_prompt=system_prompt,
             history_messages=history_messages,
@@ -519,7 +519,7 @@ async def process_multimodal_content():
     table_processor = TableModalProcessor(
         lightrag=rag,
         modal_caption_func=lambda prompt, system_prompt=None, history_messages=[], **kwargs: openai_complete_if_cache(
-            "gpt-4o-mini",
+            "gpt-5-mini",
             prompt,
             system_prompt=system_prompt,
             history_messages=history_messages,
@@ -678,7 +678,7 @@ async def load_existing_lightrag():
     lightrag_instance = LightRAG(
         working_dir=lightrag_working_dir,
         llm_model_func=lambda prompt, system_prompt=None, history_messages=[], **kwargs: openai_complete_if_cache(
-            "gpt-4o-mini",
+            "gpt-5-mini",
             prompt,
             system_prompt=system_prompt,
             history_messages=history_messages,
@@ -709,7 +709,7 @@ async def load_existing_lightrag():
         # If messages format is provided (for multimodal VLM enhanced query), use it directly
         if messages:
             return openai_complete_if_cache(
-                "gpt-4o",
+                "gpt-5",
                 "",
                 system_prompt=None,
                 history_messages=[],
@@ -721,7 +721,7 @@ async def load_existing_lightrag():
         # Traditional single image format
         elif image_data:
             return openai_complete_if_cache(
-                "gpt-4o",
+                "gpt-5",
                 "",
                 system_prompt=None,
                 history_messages=[],
@@ -802,7 +802,7 @@ async def insert_content_list_example():
     # Define model functions
     def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
         return openai_complete_if_cache(
-            "gpt-4o-mini",
+            "gpt-5-mini",
             prompt,
             system_prompt=system_prompt,
             history_messages=history_messages,
@@ -815,7 +815,7 @@ async def insert_content_list_example():
         # If messages format is provided (for multimodal VLM enhanced query), use it directly
         if messages:
             return openai_complete_if_cache(
-                "gpt-4o",
+                "gpt-5",
                 "",
                 system_prompt=None,
                 history_messages=[],
@@ -827,7 +827,7 @@ async def insert_content_list_example():
         # Traditional single image format
         elif image_data:
             return openai_complete_if_cache(
-                "gpt-4o",
+                "gpt-5",
                 "",
                 system_prompt=None,
                 history_messages=[],
