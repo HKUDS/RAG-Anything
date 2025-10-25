@@ -6,7 +6,7 @@ huggingface_hub
 lightrag-hku==1.4.9.4
 # MinerU 2.0 packages (replaces magic-pdf)
 rapid_table==1.0.5
-mineru[core]==2.1.5
+mineru==2.1.5
 # Progress bars for batch processing
 tqdm
 # Note: Optional dependencies are now defined in setup.py extras_require:
