@@ -236,7 +236,7 @@ async def process_with_rag(
             "\n[Multimodal Query]: Analyzing performance data in context of document"
         )
         multimodal_result = await rag.aquery_with_multimodal(
-            "Compare this performance data with any similar results mentioned in the document",
+            "将此性能数据与文档中提到的任何类似结果进行比较。",
             multimodal_content=[
                 {
                     "type": "table",
@@ -254,7 +254,7 @@ async def process_with_rag(
         # 3. Another multimodal query with equation content
         logger.info("\n[Multimodal Query]: Mathematical formula analysis")
         equation_result = await rag.aquery_with_multimodal(
-            "Explain this formula and relate it to any mathematical concepts in the document",
+            "解释这个公式，并将其与文档中的任何数学概念联系起来。",
             multimodal_content=[
                 {
                     "type": "equation",
