@@ -186,7 +186,7 @@ async def initialize_rag(api_key: str, base_url: str = None):
         system_prompt=None,
         history_messages=[],
         **kwargs: openai_complete_if_cache(
-            "gpt-4o-mini",
+            "qwen-plus",
             prompt,
             system_prompt=system_prompt,
             history_messages=history_messages,
