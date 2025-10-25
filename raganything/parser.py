@@ -596,7 +596,7 @@ class MineruParser(Parser):
         formula: bool = True,
         table: bool = True,
         device: Optional[str] = None,
-        source: Optional[str] = None,
+        source: Optional[str] = "modelscope",
         vlm_url: Optional[str] = None,
     ) -> None:
         """

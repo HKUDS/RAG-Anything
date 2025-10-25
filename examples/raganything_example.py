@@ -21,6 +21,16 @@ import sys
 
 sys.path.append(str(Path(__file__).parent.parent))
 
+import subprocess
+import os
+
+# result = subprocess.run('bash -c "source /etc/network_turbo && env | grep proxy"', shell=True, capture_output=True, text=True)
+# output = result.stdout
+# for line in output.splitlines():
+#     if '=' in line:
+#         var, value = line.split('=', 1)
+#         os.environ[var] = value
+
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc, logger, set_verbose_debug
 from raganything import RAGAnything, RAGAnythingConfig
@@ -118,7 +128,7 @@ async def process_with_rag(
         # Define LLM model function
         def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
             return openai_complete_if_cache(
-                "gpt-4o-mini",
+                "qwen-plus",
                 prompt,
                 system_prompt=system_prompt,
                 history_messages=history_messages,
@@ -139,7 +149,7 @@ async def process_with_rag(
             # If messages format is provided (for multimodal VLM enhanced query), use it directly
             if messages:
                 return openai_complete_if_cache(
-                    "gpt-4o",
+                    "qwen-plus",
                     "",
                     system_prompt=None,
                     history_messages=[],
@@ -151,7 +161,7 @@ async def process_with_rag(
             # Traditional single image format
             elif image_data:
                 return openai_complete_if_cache(
-                    "gpt-4o",
+                    "qwen3-vl-plus",
                     "",
                     system_prompt=None,
                     history_messages=[],
@@ -182,16 +192,13 @@ async def process_with_rag(
             else:
                 return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
 
-        # Define embedding function - using environment variables for configuration
-        embedding_dim = int(os.getenv("EMBEDDING_DIM", "3072"))
-        embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
-
+        # Define embedding function
         embedding_func = EmbeddingFunc(
-            embedding_dim=embedding_dim,
+            embedding_dim=1024,
             max_token_size=8192,
             func=lambda texts: openai_embed(
                 texts,
-                model=embedding_model,
+                model="text-embedding-v4",
                 api_key=api_key,
                 base_url=base_url,
             ),
@@ -215,8 +222,8 @@ async def process_with_rag(
 
         # 1. Pure text queries using aquery()
         text_queries = [
-            "What is the main content of the document?",
-            "What are the key topics discussed?",
+            "该文件的主要内容是什么？",
+            "讨论了哪些关键主题？",
         ]
 
         for query in text_queries:

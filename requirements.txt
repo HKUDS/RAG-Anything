@@ -1,8 +1,12 @@
+torch==2.6.0
+torchvision==0.21.0
+torchaudio==2.6.0
 huggingface_hub
 # LightRAG packages
-lightrag-hku
+lightrag-hku==1.4.9.4
 # MinerU 2.0 packages (replaces magic-pdf)
-mineru[core]
+rapid_table==1.0.5
+mineru[core]==2.1.5
 # Progress bars for batch processing
 tqdm
 # Note: Optional dependencies are now defined in setup.py extras_require:
