@@ -123,17 +123,17 @@ def _build_ollama_embedding_func() -> EmbeddingFunc:
 
 
 DEFAULT_LLM_MODEL = (
-    os.getenv("AZURE_OPENAI_DEPLOYMENT")
-    or os.getenv("LLM_MODEL", "gpt-4o-mini")
+        os.getenv("AZURE_OPENAI_DEPLOYMENT")
+        or os.getenv("LLM_MODEL", "gpt-4o-mini")
 )
 DEFAULT_VISION_MODEL = (
-    os.getenv("AZURE_OPENAI_VISION_DEPLOYMENT")
-    or os.getenv("VISION_MODEL")
-    or "gpt-4o"
+        os.getenv("AZURE_OPENAI_VISION_DEPLOYMENT")
+        or os.getenv("VISION_MODEL")
+        or "gpt-4o"
 )
 DEFAULT_EMBEDDING_MODEL = (
-    os.getenv("AZURE_EMBEDDING_DEPLOYMENT")
-    or os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
+        os.getenv("AZURE_EMBEDDING_DEPLOYMENT")
+        or os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
 )
 DEFAULT_EMBEDDING_DIM = _env_int("EMBEDDING_DIM", 3072)
 DEFAULT_COMPLETION_MAX_TOKENS = _env_int("LLM_COMPLETION_MAX_TOKENS", 512)
@@ -196,12 +196,12 @@ def configure_logging():
 
 
 async def process_with_rag(
-    input_path: str,
-    output_dir: str,
-    api_key: str,
-    base_url: str = None,
-    working_dir: str = None,
-    parser: str = None,
+        input_path: str,
+        output_dir: str,
+        api_key: str,
+        base_url: str = None,
+        working_dir: str = None,
+        parser: str = None,
 ):
     """
     Process document with RAGAnything
@@ -244,12 +244,12 @@ async def process_with_rag(
 
         # Define vision model function for image processing
         async def vision_model_func(
-            prompt,
-            system_prompt=None,
-            history_messages=[],
-            image_data=None,
-            messages=None,
-            **kwargs,
+                prompt,
+                system_prompt=None,
+                history_messages=[],
+                image_data=None,
+                messages=None,
+                **kwargs,
         ):
             # If messages format is provided (for multimodal VLM enhanced query), use it directly
             if messages:
@@ -322,10 +322,9 @@ async def process_with_rag(
                 ),
             )
 
-
         # Define rerank model function using embedding similarity
         async def rerank_model_func(
-            query: str, documents: list[str], top_n: int | None = None, **kwargs
+                query: str, documents: list[str], top_n: int | None = None, **kwargs
         ) -> list[dict[str, float]]:
             texts = [query] + documents
             embeddings = await embedding_func(texts)
@@ -343,7 +342,7 @@ async def process_with_rag(
         rag = RAGAnything(
             llm_model_func=llm_model_func,
             vision_model_func=vision_model_func,
-            embedding_func=embedding_func, 
+            embedding_func=embedding_func,
             config=config,
             lightrag_kwargs={"rerank_model_func": rerank_model_func},
         )
@@ -405,41 +404,6 @@ async def process_with_rag(
             result = await rag.aquery(query, mode="hybrid")
             logger.info(f"Answer: {result}")
             await asyncio.sleep(2)
-
-        # # 2. Multimodal query with specific multimodal content using aquery_with_multimodal()
-        # logger.info(
-        #     "\n[Multimodal Query]: Analyzing performance data in context of document"
-        # )
-        # multimodal_result = await rag.aquery_with_multimodal(
-        #     "Compare this performance data with any similar results mentioned in the document",
-        #     multimodal_content=[
-        #         {
-        #             "type": "table",
-        #             "table_data": """Method,Accuracy,Processing_Time
-        #                         RAGAnything,95.2%,120ms
-        #                         Traditional_RAG,87.3%,180ms
-        #                         Baseline,82.1%,200ms""",
-        #             "table_caption": "Performance comparison results",
-        #         }
-        #     ],
-        #     mode="hybrid",
-        # )
-        # logger.info(f"Answer: {multimodal_result}")
-
-        # # 3. Another multimodal query with equation content
-        # logger.info("\n[Multimodal Query]: Mathematical formula analysis")
-        # equation_result = await rag.aquery_with_multimodal(
-        #     "Explain this formula and relate it to any mathematical concepts in the document",
-        #     multimodal_content=[
-        #         {
-        #             "type": "equation",
-        #             "latex": "F1 = 2 \\cdot \\frac{precision \\cdot recall}{precision + recall}",
-        #             "equation_caption": "F1-score calculation formula",
-        #         }
-        #     ],
-        #     mode="hybrid",
-        # )
-        # logger.info(f"Answer: {equation_result}")
 
     except Exception as e:
         logger.error(f"Error processing with RAG: {str(e)}")
