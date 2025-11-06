@@ -106,6 +106,3 @@ The Test-A analysis identifies specific areas for enhancement:
 - **Retrieval Precision:** The high density of low-similarity cases suggests retrieval may sometimes fail to surface the most relevant evidence. Enhanced reranking or query expansion could improve this.
 
 These insights inform our continued refinement of the query layer, retrieval strategies, and answer generation mechanisms across all SPIQA test sets.
-
-
-
