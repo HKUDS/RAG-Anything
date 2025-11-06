@@ -1,0 +1,14 @@
+id,stage,ms,variant
+example_q0,retrieval,120,precise
+example_q0,generation,380,precise
+example_q0,total,520,precise
+example_q1,retrieval,90,relaxed
+example_q1,generation,310,relaxed
+example_q1,total,420,relaxed
+
+
+
+
+
+
+
