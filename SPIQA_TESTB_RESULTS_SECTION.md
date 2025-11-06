@@ -159,6 +159,3 @@ The Test-B analysis identifies specific enhancement opportunities:
 - **Rubric-Aware Generation:** Future iterations could incorporate rubric dimensions directly into prompt design or generation constraints, ensuring answers optimize for the specific evaluation criteria.
 
 The 0.847 composite score demonstrates strong generative QA capabilities, with clear pathways for improvement in evidence utilization, answer specificity, and complexity-adaptive response generation.
-
-
-

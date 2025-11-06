@@ -17,16 +17,47 @@ from raganything.utils import (
     encode_image_to_base64,
     validate_image_file,
 )
-# from raganything.reflection_fixed import ReflectionLayer as ReflectionEngine, ReflectionConfig
-from raganything.reflection_fixed import ReflectionReport, ReflectionLayer, ReflectionConfig
-from raganything.micro_planner import MicroPlanner, IntentResult, QueryPlan
-import asyncio
-import inspect
+
+from raganything.reflection_fixed import (
+    ReflectionLayer as ReflectionEngine,
+    ReflectionConfig,
+)
 from raganything.faithful import FaithfulDecodingEngine, FaithfulDecodingConfig
 
 
 class QueryMixin:
-    """QueryMixin class containing query functionality for RAGAnything"""
+    """
+    QueryMixin class containing query functionality for RAGAnything.
+
+    This class implements the Query Layer architecture with the following components:
+
+    Architecture Flow:
+    1. Query Normalization & Type Classification
+       - Normalize query text (unicode, whitespace, synonyms)
+       - Classify query intent (definition, comparison, calculation, process, other)
+       - Estimate confidence and calibrate intent if needed
+
+    2. Intent-Aware Routing & Presets
+       - Select retrieval presets based on detected intent
+       - Route to appropriate retrieval channels (text/image/table)
+       - Apply micro planner for query strategy selection
+
+    3. Multimodal Evidence Fusion
+       - Support text-only queries via aquery()
+       - Support multimodal queries via aquery_with_multimodal()
+       - VLM-enhanced queries for image analysis via aquery_vlm_enhanced()
+
+    4. Reflection & Self-Correction (optional)
+       - Review draft answers for support/consistency/coverage
+       - Trigger targeted re-retrieval if issues detected
+       - Generate grounded, attributable final answers
+
+    Key Features:
+    - Intent-driven retrieval presets (top_k, chunk_top_k per intent)
+    - Query caching with configurable cache keys
+    - Relaxed matching tolerance (handled in evaluation layer)
+    - Micro planner integration for adaptive strategy selection
+    """
 
     # -----------------------------
     # Internal helpers for query-only enhancements
@@ -69,7 +100,10 @@ class QueryMixin:
         q = query.lower().strip()
 
         # calculation indicators
-        if re.search(r"\b(derive|derivative|integral|integrate|differentiate|solve|calculate|compute)\b", q):
+        if re.search(
+            r"\b(derive|derivative|integral|integrate|differentiate|solve|calculate|compute)\b",
+            q,
+        ):
             return "calculation"
 
         # comparison indicators
@@ -122,7 +156,10 @@ class QueryMixin:
         q = query.lower()
         score = 0.5
         if intent == "calculation":
-            if re.search(r"\b(derive|derivative|integral|integrate|differentiate|solve|calculate|compute)\b", q):
+            if re.search(
+                r"\b(derive|derivative|integral|integrate|differentiate|solve|calculate|compute)\b",
+                q,
+            ):
                 score = 0.9
             elif re.search(r"\b(result|value|equation)\b", q):
                 score = 0.7
@@ -280,7 +317,9 @@ class QueryMixin:
         # M2: intent calibration controls
         enable_intent_calibration = kwargs.pop("enable_intent_calibration", True)
         intent_conf_threshold = kwargs.pop("intent_conf_threshold", 0.6)
-        fallback_intents = kwargs.pop("fallback_intents", ["definition", "process"])  # ordered
+        fallback_intents = kwargs.pop(
+            "fallback_intents", ["definition", "process"]
+        )  # ordered
 
         detected_intent = kwargs.get("intent")
         if not detected_intent and enable_intent_presets:
@@ -295,7 +334,9 @@ class QueryMixin:
         final_intent = detected_intent
         if enable_intent_calibration and detected_intent:
             try:
-                intent_confidence = self._estimate_intent_confidence(query, detected_intent)
+                intent_confidence = self._estimate_intent_confidence(
+                    query, detected_intent
+                )
                 if intent_confidence < intent_conf_threshold:
                     for fb in fallback_intents:
                         if fb != detected_intent:
@@ -324,14 +365,20 @@ class QueryMixin:
             and hasattr(self.lightrag, "llm_response_cache")
             and self.lightrag.llm_response_cache
         ):
-            if self.lightrag.llm_response_cache.global_config.get("enable_llm_cache", True):
+            if self.lightrag.llm_response_cache.global_config.get(
+                "enable_llm_cache", True
+            ):
                 try:
-                    cache_key = self._generate_text_cache_key(query, mode, **effective_kwargs)
+                    cache_key = self._generate_text_cache_key(
+                        query, mode, **effective_kwargs
+                    )
                     cached = await self.lightrag.llm_response_cache.get_by_id(cache_key)
                     if cached and isinstance(cached, dict):
                         result_content = cached.get("return")
                         if result_content:
-                            self.logger.info(f"Text query cache hit: {cache_key[:16]}...")
+                            self.logger.info(
+                                f"Text query cache hit: {cache_key[:16]}..."
+                            )
                             return result_content
                 except Exception as e:
                     self.logger.debug(f"Error accessing text query cache: {e}")
@@ -346,11 +393,15 @@ class QueryMixin:
         result = await self.lightrag.aquery(query, param=query_param)
 
         # Store in cache if enabled and available
-        if enable_query_cache and cache_key and (
-            hasattr(self, "lightrag")
-            and self.lightrag
-            and hasattr(self.lightrag, "llm_response_cache")
-            and self.lightrag.llm_response_cache
+        if (
+            enable_query_cache
+            and cache_key
+            and (
+                hasattr(self, "lightrag")
+                and self.lightrag
+                and hasattr(self.lightrag, "llm_response_cache")
+                and self.lightrag.llm_response_cache
+            )
         ):
             try:
                 cache_entry = {
@@ -374,7 +425,9 @@ class QueryMixin:
                             },
                             "top_k": effective_kwargs.get("top_k"),
                             "chunk_top_k": effective_kwargs.get("chunk_top_k"),
-                            "answer_length": len(str(result)) if result is not None else 0,
+                            "answer_length": len(str(result))
+                            if result is not None
+                            else 0,
                             "ensemble_votes": None,
                             "agreement_ratio": None,
                             "correction_applied": False,
@@ -382,7 +435,9 @@ class QueryMixin:
                         }
                     )
                 await self.lightrag.llm_response_cache.upsert({cache_key: cache_entry})
-                self.logger.info(f"Saved text query result to cache: {cache_key[:16]}...")
+                self.logger.info(
+                    f"Saved text query result to cache: {cache_key[:16]}..."
+                )
                 # Ensure persistence
                 try:
                     await self.lightrag.llm_response_cache.index_done_callback()
@@ -632,7 +687,9 @@ class QueryMixin:
                                 "strategy_used": {"mode": mode, "vlm_enhanced": False},
                                 "top_k": kwargs.get("top_k"),
                                 "chunk_top_k": kwargs.get("chunk_top_k"),
-                                "answer_length": len(str(result)) if result is not None else 0,
+                                "answer_length": len(str(result))
+                                if result is not None
+                                else 0,
                                 "ensemble_votes": None,
                                 "agreement_ratio": None,
                                 "correction_applied": False,
@@ -1089,7 +1146,7 @@ class QueryMixin:
                 reflection_config=reflection_config,
                 verify_after_rewrite=verify_after_rewrite,
                 **kwargs,
-        )
+            )
         )
 
     def query_faithful(
@@ -1149,9 +1206,4 @@ class QueryMixin:
         loop = always_get_an_event_loop()
         return loop.run_until_complete(
             self.aquery_with_multimodal(query, multimodal_content, mode=mode, **kwargs)
-        )
-
-        loop = always_get_an_event_loop()
-        return loop.run_until_complete(
-            self.answer_with_reflection(question, mode=mode, **kwargs)
         )
