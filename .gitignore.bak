@@ -1,0 +1,113 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+raganything_env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+
+# Large model files and data
+*.bin
+*.safetensors
+*.h5
+*.pkl
+*.pickle
+
+# SPIQA dataset images (too large for git, use Git LFS or external storage)
+dataset/**/*.zip
+dataset/**/*_extracted/
+
+# Output directories
+output/
+my_output/
+my_rag_storage/
+rag_storage/
+example_output/
+test_proxy_storage/
+complete_efr_output/
+complete_efr_storage/
+comprehensive_efr_output/
+comprehensive_efr_storage/
+comprehensive_eval_standard_rag/
+enhanced_efr_output/
+enhanced_efr_storage/
+enhanced_eval_standard_rag/
+improved_efr_output/
+improved_efr_storage/
+optimized_efr_output_standard_rag/
+simple_efr_storage/
+efr_test_results/
+
+# Test files
+test_*.py
+*_test.py
+# test/
+test_*/
+*_test_results/
+
+# Cache directories
+.cache/
+__pycache__/
+*.pyc
+*.pyo
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json

@@ -1,0 +1,5944 @@
+{
+  "_version": 390,
+  "_FontManager__default_weight": "normal",
+  "default_size": null,
+  "defaultFamily": {
+    "ttf": "DejaVu Sans",
+    "afm": "Helvetica"
+  },
+  "afmlist": [
+    {
+      "fname": "fonts/pdfcorefonts/Times-BoldItalic.afm",
+      "name": "Times",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/putr8a.afm",
+      "name": "Utopia",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "regular",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pncbi8a.afm",
+      "name": "New Century Schoolbook",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/putri8a.afm",
+      "name": "Utopia",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "regular",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pbkl8a.afm",
+      "name": "ITC Bookman",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "light",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/putb8a.afm",
+      "name": "Utopia",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/phvb8a.afm",
+      "name": "Helvetica",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Courier.afm",
+      "name": "Courier",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pagd8a.afm",
+      "name": "ITC Avant Garde Gothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "demi",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Courier-Bold.afm",
+      "name": "Courier",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Helvetica.afm",
+      "name": "Helvetica",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/phvro8an.afm",
+      "name": "Helvetica",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Times-Bold.afm",
+      "name": "Times",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/cmr10.afm",
+      "name": "Computer Modern",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/phvl8a.afm",
+      "name": "Helvetica",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "light",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pbkdi8a.afm",
+      "name": "ITC Bookman",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "demi",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pbkli8a.afm",
+      "name": "ITC Bookman",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "light",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Helvetica-Oblique.afm",
+      "name": "Helvetica",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/cmtt10.afm",
+      "name": "Computer Modern",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/phvr8a.afm",
+      "name": "Helvetica",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Courier-Oblique.afm",
+      "name": "Courier",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Courier-BoldOblique.afm",
+      "name": "Courier",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/ptmr8a.afm",
+      "name": "Times",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "roman",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pcrbo8a.afm",
+      "name": "Courier",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pcrb8a.afm",
+      "name": "Courier",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/ptmb8a.afm",
+      "name": "Times",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Helvetica-BoldOblique.afm",
+      "name": "Helvetica",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/ptmri8a.afm",
+      "name": "Times",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/cmex10.afm",
+      "name": "Computer Modern",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/phvr8an.afm",
+      "name": "Helvetica",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pncb8a.afm",
+      "name": "New Century Schoolbook",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pplb8a.afm",
+      "name": "Palatino",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/cmmi10.afm",
+      "name": "Computer Modern",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pzdr.afm",
+      "name": "ITC Zapf Dingbats",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/phvro8a.afm",
+      "name": "Helvetica",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pncr8a.afm",
+      "name": "New Century Schoolbook",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "roman",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pcrr8a.afm",
+      "name": "Courier",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Symbol.afm",
+      "name": "Symbol",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pagdo8a.afm",
+      "name": "ITC Avant Garde Gothic",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "demi",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/phvbo8an.afm",
+      "name": "Helvetica",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pagko8a.afm",
+      "name": "ITC Avant Garde Gothic",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "book",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Helvetica-Bold.afm",
+      "name": "Helvetica",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/cmsy10.afm",
+      "name": "Computer Modern",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/putbi8a.afm",
+      "name": "Utopia",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Times-Roman.afm",
+      "name": "Times",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "roman",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pzcmi8a.afm",
+      "name": "ITC Zapf Chancery",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/Times-Italic.afm",
+      "name": "Times",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/phvb8an.afm",
+      "name": "Helvetica",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/pdfcorefonts/ZapfDingbats.afm",
+      "name": "ZapfDingbats",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pcrro8a.afm",
+      "name": "Courier",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pplr8a.afm",
+      "name": "Palatino",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "roman",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pncri8a.afm",
+      "name": "New Century Schoolbook",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/phvlo8a.afm",
+      "name": "Helvetica",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "light",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pbkd8a.afm",
+      "name": "ITC Bookman",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "demi",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pplri8a.afm",
+      "name": "Palatino",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pagk8a.afm",
+      "name": "ITC Avant Garde Gothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "book",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/ptmbi8a.afm",
+      "name": "Times",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/phvbo8a.afm",
+      "name": "Helvetica",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/pplbi8a.afm",
+      "name": "Palatino",
+      "style": "italic",
+      "variant": "normal",
+      "weight": "bold",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/afm/psyr.afm",
+      "name": "Symbol",
+      "style": "normal",
+      "variant": "normal",
+      "weight": "medium",
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    }
+  ],
+  "ttflist": [
+    {
+      "fname": "fonts/ttf/DejaVuSerif-BoldItalic.ttf",
+      "name": "DejaVu Serif",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSans-Oblique.ttf",
+      "name": "DejaVu Sans",
+      "style": "oblique",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/cmr10.ttf",
+      "name": "cmr10",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXNonUni.ttf",
+      "name": "STIXNonUnicode",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXSizTwoSymBol.ttf",
+      "name": "STIXSizeTwoSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/cmex10.ttf",
+      "name": "cmex10",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXGeneral.ttf",
+      "name": "STIXGeneral",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXSizFourSymBol.ttf",
+      "name": "STIXSizeFourSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSerif-Bold.ttf",
+      "name": "DejaVu Serif",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXNonUniIta.ttf",
+      "name": "STIXNonUnicode",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXSizFiveSymReg.ttf",
+      "name": "STIXSizeFiveSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSansDisplay.ttf",
+      "name": "DejaVu Sans Display",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSerifDisplay.ttf",
+      "name": "DejaVu Serif Display",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/cmss10.ttf",
+      "name": "cmss10",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXNonUniBolIta.ttf",
+      "name": "STIXNonUnicode",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSans-BoldOblique.ttf",
+      "name": "DejaVu Sans",
+      "style": "oblique",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSans-Bold.ttf",
+      "name": "DejaVu Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSansMono-Bold.ttf",
+      "name": "DejaVu Sans Mono",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXSizThreeSymReg.ttf",
+      "name": "STIXSizeThreeSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSerif.ttf",
+      "name": "DejaVu Serif",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXSizTwoSymReg.ttf",
+      "name": "STIXSizeTwoSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXGeneralBolIta.ttf",
+      "name": "STIXGeneral",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/cmsy10.ttf",
+      "name": "cmsy10",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXSizOneSymReg.ttf",
+      "name": "STIXSizeOneSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/cmtt10.ttf",
+      "name": "cmtt10",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSerif-Italic.ttf",
+      "name": "DejaVu Serif",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXGeneralItalic.ttf",
+      "name": "STIXGeneral",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSansMono-BoldOblique.ttf",
+      "name": "DejaVu Sans Mono",
+      "style": "oblique",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/cmmi10.ttf",
+      "name": "cmmi10",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXSizFourSymReg.ttf",
+      "name": "STIXSizeFourSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/cmb10.ttf",
+      "name": "cmb10",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXSizOneSymBol.ttf",
+      "name": "STIXSizeOneSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXSizThreeSymBol.ttf",
+      "name": "STIXSizeThreeSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXGeneralBol.ttf",
+      "name": "STIXGeneral",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSans.ttf",
+      "name": "DejaVu Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSansMono-Oblique.ttf",
+      "name": "DejaVu Sans Mono",
+      "style": "oblique",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/DejaVuSansMono.ttf",
+      "name": "DejaVu Sans Mono",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "fonts/ttf/STIXNonUniBol.ttf",
+      "name": "STIXNonUnicode",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W8.ttc",
+      "name": "Hiragino Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 800,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/AlBayan.ttc",
+      "name": "Al Bayan",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/0499ae595c88f1d29b5ef4bbd230e24be76e06d3.asset/AssetData/KoHo.ttc",
+      "name": "KoHo",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMarchen-Regular.ttf",
+      "name": "Noto Sans Marchen",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Noteworthy.ttc",
+      "name": "Noteworthy",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 300,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Comic Sans MS.ttf",
+      "name": "Comic Sans MS",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Courier.ttc",
+      "name": "Courier",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Seravek.ttc",
+      "name": "Seravek",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansLycian-Regular.ttf",
+      "name": "Noto Sans Lycian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Tamil MN.ttc",
+      "name": "Tamil MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/b86e58f38fd21e9782e70a104676f1655e72ebab.asset/AssetData/Yuanti.ttc",
+      "name": "Yuanti SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/NotoNastaliq.ttc",
+      "name": "Noto Nastaliq Urdu",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Copperplate.ttc",
+      "name": "Copperplate",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/1904a9ad9c351e8ae2c6fe50480760c0f90333d5.asset/AssetData/Katari.ttc",
+      "name": "Katari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/Library/Fonts/Arial Unicode.ttf",
+      "name": "Arial Unicode MS",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansPahawhHmong-Regular.ttf",
+      "name": "Noto Sans Pahawh Hmong",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W7.ttc",
+      "name": "Hiragino Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansPsalterPahlavi-Regular.ttf",
+      "name": "Noto Sans Psalter Pahlavi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Bangla Sangam MN.ttc",
+      "name": "Bangla Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/e327d387cc15b19ad4054d8a483408047a607091.asset/AssetData/BalooPaajiGurmukhi.ttc",
+      "name": "Baloo Paaji 2",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXGeneralBol.otf",
+      "name": "STIXGeneral",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/5f2614e7b55639e709d8578e16b324b3eb6eb065.asset/AssetData/BMHannaPro-Regular.otf",
+      "name": "BM Hanna Pro",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Trattatello.ttf",
+      "name": "Trattatello",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Gujarati Sangam MN.ttc",
+      "name": "Gujarati Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Wingdings 2.ttf",
+      "name": "Wingdings 2",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/ADTNumeric.ttc",
+      "name": ".SF Soft Numeric",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansUgaritic-Regular.ttf",
+      "name": "Noto Sans Ugaritic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansKaithi-Regular.ttf",
+      "name": "Noto Sans Kaithi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansLinearA-Regular.ttf",
+      "name": "Noto Sans Linear A",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Didot.ttc",
+      "name": "Didot",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFNS.ttf",
+      "name": "System Font",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/d9994beb5bda5918100f3fc1623d687c7f7814ec.asset/AssetData/SamaTamil.ttc",
+      "name": "Sama Tamil",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansDuployan-Regular.ttf",
+      "name": "Noto Sans Duployan",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/4dd79186659117902461cd5dc475661aad20e38a.asset/AssetData/TiroTamil.ttc",
+      "name": "Tiro Tamil",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/PTSerif.ttc",
+      "name": "PT Serif",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Phosphate.ttc",
+      "name": "Phosphate",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/HelveticaNeue.ttc",
+      "name": "Helvetica Neue",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansHanunoo-Regular.ttf",
+      "name": "Noto Sans Hanunoo",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/5fe6371adc5e220330443953cbf14e0036863d7b.asset/AssetData/BalooDaBangla.ttc",
+      "name": "Baloo Da 2",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/7722fac06d2ccff23ed22b9ab921460b835e3e8c.asset/AssetData/K2D.ttc",
+      "name": "K2D",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/1ff4e547c28844b2b95c93618c4ecf5d9e46fe51.asset/AssetData/OctoberCompressedDevanagari.ttc",
+      "name": "October Compressed Devanagari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansOldSouthArabian-Regular.ttf",
+      "name": "Noto Sans Old South Arabian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansLepcha-Regular.ttf",
+      "name": "Noto Sans Lepcha",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/17c994707700838ad3c3202029b621fb85a81b0c.asset/AssetData/OctoberCompressedTamil.ttc",
+      "name": "October Compressed Tamil",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Helvetica.ttc",
+      "name": "Helvetica",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/STHeiti Medium.ttc",
+      "name": "Heiti TC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Apple Braille Outline 8 Dot.ttf",
+      "name": "Apple Braille",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/7278ac2566252649b05c5a2b07c7d45be59f47c5.asset/AssetData/Libian.ttc",
+      "name": "Libian SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Kailasa.ttc",
+      "name": "Kailasa",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansBrahmi-Regular.ttf",
+      "name": "Noto Sans Brahmi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Cochin.ttc",
+      "name": "Cochin",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Al Tarikh.ttc",
+      "name": "Al Tarikh",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial Narrow Bold Italic.ttf",
+      "name": "Arial Narrow",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXIntDBol.otf",
+      "name": "STIXIntegralsD",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Wingdings 3.ttf",
+      "name": "Wingdings 3",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/fe626522d20d087ba21e23b49d41f77136e07e29.asset/AssetData/AkayaTelivigala-regular.ttf",
+      "name": "AkayaTelivigala",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Apple Chancery.ttf",
+      "name": "Apple Chancery",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 0,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Menlo.ttc",
+      "name": "Menlo",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/6f4c91728bb824d6960725ec479c355eab7eeba8.asset/AssetData/NanumScript.ttc",
+      "name": "Nanum Brush Script",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/NotoSansOriya.ttc",
+      "name": "Noto Sans Oriya",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/SignPainter.ttc",
+      "name": "SignPainter",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/ITFDevanagari.ttc",
+      "name": "ITF Devanagari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansInscriptionalPahlavi-Regular.ttf",
+      "name": "Noto Sans Inscriptional Pahlavi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansTaiLe-Regular.ttf",
+      "name": "Noto Sans Tai Le",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMasaramGondi-Regular.otf",
+      "name": "Noto Sans Masaram Gondi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Sinhala MN.ttc",
+      "name": "Sinhala MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/929f76f5b8520c52c0f1ff7911b88d29860f8c49.asset/AssetData/Modak-Devanagari.ttf",
+      "name": "Modak",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXSizTwoSymReg.otf",
+      "name": "STIXSizeTwoSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXNonUniBol.otf",
+      "name": "STIXNonUnicode",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/84dc35c2215942fdbb9d6f3154ba0131f833809f.asset/AssetData/MuktaMalar-Tamil.ttc",
+      "name": "Mukta Malar",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansLinearB-Regular.ttf",
+      "name": "Noto Sans Linear B",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Apple Braille.ttf",
+      "name": "Apple Braille",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/SukhumvitSet.ttc",
+      "name": "Sukhumvit Set",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 250,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/ff251c85442877182be2bbab64747d3c2ce8446a.asset/AssetData/TiroSanskrit.ttc",
+      "name": "Tiro Devanagari Sanskrit",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/5b843781be7f58151ada774942a0eaa9ec79bd57.asset/AssetData/Kyokasho.ttc",
+      "name": "YuKyokasho Yoko",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansGunjalaGondi-Regular.otf",
+      "name": "Noto Sans Gunjala Gondi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Galvji.ttc",
+      "name": "Galvji",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial Narrow.ttf",
+      "name": "Arial Narrow",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansThaana-Regular.ttf",
+      "name": "Noto Sans Thaana",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/96af7ec9e88d5dae450d3162213f92a7b1129430.asset/AssetData/YuppySC-Regular.otf",
+      "name": "Yuppy SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Brush Script.ttf",
+      "name": "Brush Script MT",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Hoefler Text.ttc",
+      "name": "Hoefler Text",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/9fdda46cbe802833590494a09b2787378340c597.asset/AssetData/Hanzipen.ttc",
+      "name": "HanziPen SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Kannada Sangam MN.ttc",
+      "name": "Kannada Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/f79ae6354d4eadea4ad91c60d0bdfe6803b486b7.asset/AssetData/SamaKannada.ttc",
+      "name": "Sama Kannada",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Nadeem.ttc",
+      "name": "Nadeem",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Ayuthaya.ttf",
+      "name": "Ayuthaya",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Sana.ttc",
+      "name": "Sana",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXTwoText.ttf",
+      "name": "STIX Two Text",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u4e38\u30b3\u3099 ProN W4.ttc",
+      "name": "Hiragino Maru Gothic Pro",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Lao Sangam MN.ttf",
+      "name": "Lao Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansOldHungarian-Regular.ttf",
+      "name": "Noto Sans Old Hungarian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/157acc4d862730d6d5beaa943546f80a71948c7b.asset/AssetData/BMHanna11yrs-Regular.otf",
+      "name": "BM Hanna 11yrs Old",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFArabic.ttf",
+      "name": ".SF Arabic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/1d7ed4d4914d33579e5b9ced3963955803881147.asset/AssetData/Hubballi-regular.otf",
+      "name": "Hubballi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/cd59971ded42add9070aa2172265ba7fcf8d9327.asset/AssetData/BMKirangHaerang-Regular.otf",
+      "name": "BM Kirang Haerang",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Muna.ttc",
+      "name": "Muna",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Chalkboard.ttc",
+      "name": "Chalkboard",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansBatak-Regular.ttf",
+      "name": "Noto Sans Batak",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial Rounded Bold.ttf",
+      "name": "Arial Rounded MT Bold",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/c2cf5e684236b5395fd48d6ccf0e3b3191ce83a0.asset/AssetData/PCmyoungjo.ttf",
+      "name": "PCMyungjo",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansSamaritan-Regular.ttf",
+      "name": "Noto Sans Samaritan",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/e26b688bc8b9a38c551ae27a82c2e5692b582096.asset/AssetData/ArimaMadurai.ttc",
+      "name": "Arima Madurai",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXIntSmReg.otf",
+      "name": "STIXIntegralsSm",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/c24057a6b75265680a99845a448ae09c6c6a5cba.asset/AssetData/LahoreGurmukhi.ttc",
+      "name": "Lahore Gurmukhi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Tahoma Bold.ttf",
+      "name": "Tahoma",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Verdana.ttf",
+      "name": "Verdana",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/DIN Alternate Bold.ttf",
+      "name": "DIN Alternate",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/10b097deccb3c6126d986e24b1980031ff7399da.asset/AssetData/TsukushiBMaruGothic.ttc",
+      "name": "Tsukushi B Round Gothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Palatino.ttc",
+      "name": "Palatino",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Courier New Bold.ttf",
+      "name": "Courier New",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/AppleSDGothicNeo.ttc",
+      "name": "Apple SD Gothic Neo",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/c4ac3ef148f52416717030ac825c197150f3cdaf.asset/AssetData/Mukta-Devanagari.ttc",
+      "name": "Mukta",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansSyriac-Regular.ttf",
+      "name": "Noto Sans Syriac",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXIntUpReg.otf",
+      "name": "STIXIntegralsUp",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/0021f10c176530a735946770945ace69fc82bba7.asset/AssetData/OctoberTamil.ttc",
+      "name": "October Tamil",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/b8cf53b3591d6062cd536ba5129454cba899a078.asset/AssetData/LingWaiTC-Medium.otf",
+      "name": "LingWai TC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXIntUpSmBol.otf",
+      "name": "STIXIntegralsUpSm",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Farisi.ttf",
+      "name": "Farisi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansInscriptionalParthian-Regular.ttf",
+      "name": "Noto Sans Inscriptional Parthian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansTifinagh-Regular.otf",
+      "name": "Noto Sans Tifinagh",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Sinhala Sangam MN.ttc",
+      "name": "Sinhala Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/28f00a24ba19995bab7249993e6e35d11011074a.asset/AssetData/Kai.ttf",
+      "name": "Kai",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/NewYorkItalic.ttf",
+      "name": ".New York",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXSizThreeSymBol.otf",
+      "name": "STIXSizeThreeSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansWancho-Regular.ttf",
+      "name": "Noto Sans Wancho",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXTwoText-Italic.ttf",
+      "name": "STIX Two Text",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/ChalkboardSE.ttc",
+      "name": "Chalkboard SE",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Chalkduster.ttf",
+      "name": "Chalkduster",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXGeneralBolIta.otf",
+      "name": "STIXGeneral",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFArabicRounded.ttf",
+      "name": ".SF Arabic Rounded",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial Narrow Bold.ttf",
+      "name": "Arial Narrow",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansLisu-Regular.ttf",
+      "name": "Noto Sans Lisu",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W6.ttc",
+      "name": "Hiragino Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 600,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/54ef167d6c8e99a69a0d41ce252cc5995ba47580.asset/AssetData/YuGothic-Medium.otf",
+      "name": "YuGothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Times New Roman Italic.ttf",
+      "name": "Times New Roman",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansChakma-Regular.ttf",
+      "name": "Noto Sans Chakma",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFCompact.ttf",
+      "name": ".SF Compact",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 1000,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/8739f5cf483d3b2f04cbb451d310b68f0cf880d0.asset/AssetData/ToppanBunkyuMinchoPr6N-Regular.otf",
+      "name": "Toppan Bunkyu Mincho",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansEgyptianHieroglyphs-Regular.ttf",
+      "name": "Noto Sans Egyptian Hieroglyphs",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Telugu MN.ttc",
+      "name": "Telugu MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansPhoenician-Regular.ttf",
+      "name": "Noto Sans Phoenician",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMeeteiMayek-Regular.ttf",
+      "name": "Noto Sans Meetei Mayek",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3d7c99b85a518ffb479044c11185e47744b6448d.asset/AssetData/WawaTC-Regular.otf",
+      "name": "Wawati TC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/0818d874bf1d0e24a1fe62e79f407717792c5ee1.asset/AssetData/OsakaMono.ttf",
+      "name": "Osaka",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/f40f0181bac46ce79e53d040ad5075b8221f78e1.asset/AssetData/Charm.ttc",
+      "name": "Charm",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Rockwell.ttc",
+      "name": "Rockwell",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/f110a45f1759f86c645cfd2f47baba57aa50056e.asset/AssetData/Klee.ttc",
+      "name": "Klee",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 600,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Damascus.ttc",
+      "name": "Damascus",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansCarian-Regular.ttf",
+      "name": "Noto Sans Carian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/AmericanTypewriter.ttc",
+      "name": "American Typewriter",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXIntUpSmReg.otf",
+      "name": "STIXIntegralsUpSm",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansOlChiki-Regular.ttf",
+      "name": "Noto Sans Ol Chiki",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXVarBol.otf",
+      "name": "STIXVariants",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Wingdings.ttf",
+      "name": "Wingdings",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W2.ttc",
+      "name": "Hiragino Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 250,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFCamera.ttf",
+      "name": ".SF Camera",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/4301d243b614c4710741b1fcb274605ee1c5f801.asset/AssetData/JainiDevanagari-Regular.ttf",
+      "name": "Jaini",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+      "name": "Arial Unicode MS",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/7ca27bc02dd7660f9dacd69df96d24639b96e080.asset/AssetData/Pilgiche.ttf",
+      "name": "PilGi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansPalmyrene-Regular.ttf",
+      "name": "Noto Sans Palmyrene",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansBhaiksuki-Regular.ttf",
+      "name": "Noto Sans Bhaiksuki",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/NewYork.ttf",
+      "name": ".New York",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXSizFourSymBol.otf",
+      "name": "STIXSizeFourSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/54476f0fabbd6ca1ab2a0c4d19219232acfe366c.asset/AssetData/ChakraPetch.ttc",
+      "name": "Chakra Petch",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXIntDReg.otf",
+      "name": "STIXIntegralsD",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansOldItalic-Regular.ttf",
+      "name": "Noto Sans Old Italic",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/GillSans.ttc",
+      "name": "Gill Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansKayahLi-Regular.ttf",
+      "name": "Noto Sans Kayah Li",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/a8805b853edf89283dec908153a0015bdd1d00f8.asset/AssetData/WeibeiSC-Bold.otf",
+      "name": "Weibei SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/6fe206600409e98dcd3e18af1427806070d0150f.asset/AssetData/ArimaKoshi.ttc",
+      "name": "Arima Koshi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Beirut.ttc",
+      "name": "Beirut",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial Bold Italic.ttf",
+      "name": "Arial",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Apple Braille Pinpoint 8 Dot.ttf",
+      "name": "Apple Braille",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Comic Sans MS Bold.ttf",
+      "name": "Comic Sans MS",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/KohinoorBangla.ttc",
+      "name": "Kohinoor Bangla",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/5cd9eaf98e75b3a998edeef7a7c385a7a158ce51.asset/AssetData/AkayaKannada-regular.ttf",
+      "name": "AkayaKanadaka",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/MarkerFelt.ttc",
+      "name": "Marker Felt",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMeroitic-Regular.ttf",
+      "name": "Noto Sans Meroitic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Mshtakan.ttc",
+      "name": "Mshtakan",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/AquaKana.ttc",
+      "name": ".Aqua Kana",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 300,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Verdana Italic.ttf",
+      "name": "Verdana",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/GeezaPro.ttc",
+      "name": "Geeza Pro",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXGeneralItalic.otf",
+      "name": "STIXGeneral",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/f879347736afb6e4e0880bcede9df92492c0f040.asset/AssetData/Gungseouche.ttf",
+      "name": "GungSeo",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/e28431125242b9a298de3296370abdab4a7e8666.asset/AssetData/YuppyTC-Regular.otf",
+      "name": "Yuppy TC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/MuktaMahee.ttc",
+      "name": "Mukta Mahee",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Tamil Sangam MN.ttc",
+      "name": "Tamil Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXSizTwoSymBol.otf",
+      "name": "STIXSizeTwoSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/0dc365b1dd1c8d8e8110f6909ac0070b8f9e354f.asset/AssetData/MuktaVaani-Gujarati.ttc",
+      "name": "Mukta Vaani",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 300,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Savoye LET.ttc",
+      "name": "Savoye LET",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Impact.ttf",
+      "name": "Impact",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/InaiMathi-MN.ttc",
+      "name": "InaiMathi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W1.ttc",
+      "name": "Hiragino Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 200,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansTaiTham-Regular.ttf",
+      "name": "Noto Sans Tai Tham",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Hiragino Sans GB.ttc",
+      "name": "Hiragino Sans GB",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 300,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/71af7d8a6612b05ff4da8daa889313789969c8c9.asset/AssetData/TiroGurmukhi.ttc",
+      "name": "Tiro Gurmukhi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Avenir.ttc",
+      "name": "Avenir",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/5a3fc034b64879656271c040cab38b65d4ea6548.asset/AssetData/LiSongPro.ttf",
+      "name": "LiSong Pro",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/6638e0282d7dac3de23fd39162b3d78fffc9160b.asset/AssetData/BalooBhaijaanUrdu-Regular.ttf",
+      "name": "Baloo Bhaijaan",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Tahoma.ttf",
+      "name": "Tahoma",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Gurmukhi MN.ttc",
+      "name": "Gurmukhi MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/0ab217c39c45c7c6acaddfa199fd32c55a7b4a19.asset/AssetData/ToppanBunkyuGothicPr6N.ttc",
+      "name": "Toppan Bunkyu Gothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 600,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansOldPersian-Regular.ttf",
+      "name": "Noto Sans Old Persian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/a3f9a9e35bdf3babe03b2fd162051306fad439d6.asset/AssetData/Osaka.ttf",
+      "name": "Osaka",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/ad8c3bb76851adc11dc4772c1a7a00caf83e3037.asset/AssetData/Ornanong.ttc",
+      "name": "PSL Ornanong Pro",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/99628f777949e7ed19970f6cf5d71915ad84e902.asset/AssetData/LavaDevanagari.ttc",
+      "name": "Lava Devanagari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/75aa8a3555ac606e1e0fe930fef4a1803105ae51.asset/AssetData/FahKwang.ttc",
+      "name": "Fahkwang",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansNKo-Regular.ttf",
+      "name": "Noto Sans NKo",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansNewa-Regular.ttf",
+      "name": "Noto Sans Newa",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NewPeninimMT.ttc",
+      "name": "New Peninim MT",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Bradley Hand Bold.ttf",
+      "name": "Bradley Hand",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMandaic-Regular.ttf",
+      "name": "Noto Sans Mandaic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansRejang-Regular.ttf",
+      "name": "Noto Sans Rejang",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansOsmanya-Regular.ttf",
+      "name": "Noto Sans Osmanya",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansSaurashtra-Regular.ttf",
+      "name": "Noto Sans Saurashtra",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansOsage-Regular.ttf",
+      "name": "Noto Sans Osage",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Lao MN.ttc",
+      "name": "Lao MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansLimbu-Regular.ttf",
+      "name": "Noto Sans Limbu",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/01be3235e91dfd6261c811482ac3853dfad0bb14.asset/AssetData/BalooBhainaOdia.ttc",
+      "name": "Baloo Bhaina 2",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/c41fcba3ecd9a163d2fa789efb7f4639c395c553.asset/AssetData/GotuDevanagari-Regular.ttf",
+      "name": "Gotu",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXSizFiveSymReg.otf",
+      "name": "STIXSizeFiveSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Bodoni 72.ttc",
+      "name": "Bodoni 72",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Verdana Bold.ttf",
+      "name": "Verdana",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/AppleMyungjo.ttf",
+      "name": "AppleMyungjo",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Apple Symbols.ttf",
+      "name": "Apple Symbols",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Monaco.ttf",
+      "name": "Monaco",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Khmer MN.ttc",
+      "name": "Khmer MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansCuneiform-Regular.ttf",
+      "name": "Noto Sans Cuneiform",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Marion.ttc",
+      "name": "Marion",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Bodoni Ornaments.ttf",
+      "name": "Bodoni Ornaments",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansBuhid-Regular.ttf",
+      "name": "Noto Sans Buhid",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Andale Mono.ttf",
+      "name": "Andale Mono",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Telugu Sangam MN.ttc",
+      "name": "Telugu Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansAdlam-Regular.ttf",
+      "name": "Noto Sans Adlam",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXVar.otf",
+      "name": "STIXVariants",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/33d2d6330fcf6ef69138365cdbff55cda9338d25.asset/AssetData/Shobhika-Devanagari.ttc",
+      "name": "Shobhika",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/PartyLET-plain.ttf",
+      "name": "Party LET",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/DecoTypeNaskh.ttc",
+      "name": "DecoType Naskh",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Herculanum.ttf",
+      "name": "Herculanum",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/ddece00a6ce2caaeca2af3af0fecb11f8b9addc3.asset/AssetData/SamaMalayalam.ttc",
+      "name": "Sama Malayalam",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansGlagolitic-Regular.ttf",
+      "name": "Noto Sans Glagolitic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansYi-Regular.ttf",
+      "name": "Noto Sans Yi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/18189590ed3a5f46cef20ed4d1cec2611dca13ff.asset/AssetData/WawaSC-Regular.otf",
+      "name": "Wawati SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/DIN Condensed Bold.ttf",
+      "name": "DIN Condensed",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Avenir Next.ttc",
+      "name": "Avenir Next",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXSizOneSymReg.otf",
+      "name": "STIXSizeOneSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/9bcdfd464af84ab30592d781f4a82f44f548239c.asset/AssetData/BMYeongSung-Regular.otf",
+      "name": "BM Yeonsung",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Georgia.ttf",
+      "name": "Georgia",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Myanmar MN.ttc",
+      "name": "Myanmar MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/bcc10b55c3b7418fc5920165ff7ae57b098762f0.asset/AssetData/OctoberCondensedDevanagari.ttc",
+      "name": "October Condensed Devanagari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansBassaVah-Regular.ttf",
+      "name": "Noto Sans Bassa Vah",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/c3a843d226791256d897018e02e6c09b1ef283a9.asset/AssetData/Kavivanar-regular.ttf",
+      "name": "Kavivanar",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Papyrus.ttc",
+      "name": "Papyrus",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/4cec0fab93a88d2448fed090966ef489adb6cfcc.asset/AssetData/Baijam.ttc",
+      "name": "Bai Jamjuree",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/412e5de315cf6611597b15c5687e881623084628.asset/AssetData/Baloo-Devanagari.ttc",
+      "name": "Baloo 2",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Futura.ttc",
+      "name": "Futura",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/a7a9532a57d44b2c3548a8d88cad5d9f8ccc5d7b.asset/AssetData/JainiPurvaDevanagari-Regular.ttf",
+      "name": "Jaini Purva",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W5.ttc",
+      "name": "Hiragino Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Kohinoor.ttc",
+      "name": "Kohinoor Devanagari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/11640094b5edf37d3e1ba1ef7794a5605a0491aa.asset/AssetData/LavaTelugu.ttc",
+      "name": "Lava Telugu",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXSizOneSymBol.otf",
+      "name": "STIXSizeOneSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXSizThreeSymReg.otf",
+      "name": "STIXSizeThreeSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Songti.ttc",
+      "name": "Songti SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 900,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansPauCinHau-Regular.ttf",
+      "name": "Noto Sans Pau Cin Hau",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Luminari.ttf",
+      "name": "Luminari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/PlantagenetCherokee.ttf",
+      "name": "Plantagenet Cherokee",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansPhagsPa-Regular.ttf",
+      "name": "Noto Sans PhagsPa",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W4.ttc",
+      "name": "Hiragino Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Oriya MN.ttc",
+      "name": "Oriya MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/aa99d0b2bad7f797f38b49d46cde28fd4b58876e.asset/AssetData/Xingkai.ttc",
+      "name": "Xingkai SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Kannada MN.ttc",
+      "name": "Kannada MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Times New Roman Bold Italic.ttf",
+      "name": "Times New Roman",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Bodoni 72 OS.ttc",
+      "name": "Bodoni 72 Oldstyle",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Shree714.ttc",
+      "name": "Shree Devanagari 714",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Skia.ttf",
+      "name": "Skia",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 5,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansOldTurkic-Regular.ttf",
+      "name": "Noto Sans Old Turkic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial Narrow Italic.ttf",
+      "name": "Arial Narrow",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFArmenianRounded.ttf",
+      "name": ".SF Armenian Rounded",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Thonburi.ttc",
+      "name": "Thonburi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/e13e9d74dd730ca10b36e625bd3b964013949a20.asset/AssetData/OctoberDevanagari.ttc",
+      "name": "October Devanagari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial Black.ttf",
+      "name": "Arial Black",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 900,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Farah.ttc",
+      "name": "Farah",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Kefa.ttc",
+      "name": "Kefa",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansLydian-Regular.ttf",
+      "name": "Noto Sans Lydian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/32d11e548996658757774d88f9220993653017ea.asset/AssetData/Hiragino_Sans_CNS.ttc",
+      "name": "Hiragino Sans CNS",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 300,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/a238bc4fd92d2e0ca8d046339d29abdbce1342c0.asset/AssetData/BalooChettanMalayalam.ttc",
+      "name": "Baloo Chettan 2",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Courier New.ttf",
+      "name": "Courier New",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Malayalam Sangam MN.ttc",
+      "name": "Malayalam Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/DecoTypeNastaleeqUrdu.ttc",
+      "name": ".DecoType Nastaleeq Urdu UI",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Trebuchet MS Bold Italic.ttf",
+      "name": "Trebuchet MS",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansBamum-Regular.ttf",
+      "name": "Noto Sans Bamum",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansBuginese-Regular.ttf",
+      "name": "Noto Sans Buginese",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Malayalam MN.ttc",
+      "name": "Malayalam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansTirhuta-Regular.ttf",
+      "name": "Noto Sans Tirhuta",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/8dc7805506cc9f233dcc19aabf593196842a47ae.asset/AssetData/Hannotate.ttc",
+      "name": "Hannotate SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/f0706a236683628e16427c6569e441423faaaa93.asset/AssetData/STXIHEI.ttf",
+      "name": "STHeiti",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 300,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/KufiStandardGK.ttc",
+      "name": "KufiStandardGK",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/NotoSerifMyanmar.ttc",
+      "name": "Noto Serif Myanmar",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 900,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Devanagari Sangam MN.ttc",
+      "name": "Devanagari Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansHatran-Regular.ttf",
+      "name": "Noto Sans Hatran",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFArmenian.ttf",
+      "name": ".SF Armenian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMro-Regular.ttf",
+      "name": "Noto Sans Mro",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Myanmar Sangam MN.ttc",
+      "name": "Myanmar Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansCanadianAboriginal-Regular.otf",
+      "name": "Noto Sans Canadian Aboriginal",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXNonUniIta.otf",
+      "name": "STIXNonUnicode",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/988d97c87efe350cfa398b9ae4e822431f92d59b.asset/AssetData/Srisakdi.ttc",
+      "name": "Srisakdi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansOldNorthArabian-Regular.ttf",
+      "name": "Noto Sans Old North Arabian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/5d0add7d16e666bc8481ceaa16014eae1eeb2ef9.asset/AssetData/AnnaiMN.ttf",
+      "name": "Annai MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansKhojki-Regular.ttf",
+      "name": "Noto Sans Khojki",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Iowan Old Style.ttc",
+      "name": "Iowan Old Style",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u660e\u671d ProN.ttc",
+      "name": "Hiragino Mincho ProN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 300,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/PTSerifCaption.ttc",
+      "name": "PT Serif Caption",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/1a2df7b90a562a91041e811b280251582bee7666.asset/AssetData/BalooTammaKannada.ttc",
+      "name": "Baloo Tamma 2",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansHanifiRohingya-Regular.ttf",
+      "name": "Noto Sans Hanifi Rohingya",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMahajani-Regular.ttf",
+      "name": "Noto Sans Mahajani",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/AppleGothic.ttf",
+      "name": "AppleGothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/DevanagariMT.ttc",
+      "name": "Devanagari MT",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/1821952872c81043711aab6910052b65da8edf2c.asset/AssetData/STFANGSO.ttf",
+      "name": "STFangsong",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansWarangCiti-Regular.ttf",
+      "name": "Noto Sans Warang Citi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Georgia Bold Italic.ttf",
+      "name": "Georgia",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/KohinoorGujarati.ttc",
+      "name": "Kohinoor Gujarati",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansGothic-Regular.ttf",
+      "name": "Noto Sans Gothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/bedcbd3525748738e31b0b1e6ec9faa8c24dd127.asset/AssetData/BalooThambiTamil.ttc",
+      "name": "Baloo Thambi 2",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/0c723883d13f8442faf3adb131fc1eb91c7a1bf1.asset/AssetData/WeibeiTC-Bold.otf",
+      "name": "Weibei TC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/2ae839cbaa0ff60fe6a1d8921a77c81adcec0646.asset/AssetData/AppleLiSung-Light.ttf",
+      "name": "Apple LiSung",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+      "name": "Times New Roman",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/e617c1b15920c6ee2d047ed8724de08521ce5c9a.asset/AssetData/BIZ_UDMincho-regular.ttf",
+      "name": "BIZ UDMincho",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/088556b12f81edf3f4279c7e32dfb5a9895d2aa9.asset/AssetData/TamilSangam-MN-MA.ttc",
+      "name": "Tamil Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXNonUniBolIta.otf",
+      "name": "STIXNonUnicode",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Apple Braille Outline 6 Dot.ttf",
+      "name": "Apple Braille",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Trebuchet MS Italic.ttf",
+      "name": "Trebuchet MS",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansManichaean-Regular.ttf",
+      "name": "Noto Sans Manichaean",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansCham-Regular.ttf",
+      "name": "Noto Sans Cham",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/e7c3a658f55aa2afc1a5d1f7b715cc6bcf997d2b.asset/AssetData/BalooBhaiGujarati.ttc",
+      "name": "Baloo Bhai 2",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSerifNyiakengPuachueHmong-Regular.ttf",
+      "name": "Noto Serif Hmong Nyiakeng",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansTagalog-Regular.ttf",
+      "name": "Noto Sans Tagalog",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansCaucasianAlbanian-Regular.ttf",
+      "name": "Noto Sans Caucasian Albanian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXIntUpBol.otf",
+      "name": "STIXIntegralsUp",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/938fc4f0524ec9f143f1b39a4e63ff9585298376.asset/AssetData/ToppanBunkyuMidashiGothicStdN-ExtraBold.otf",
+      "name": "Toppan Bunkyu Midashi Gothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 900,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansKhudawadi-Regular.ttf",
+      "name": "Noto Sans Khudawadi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/34fead973f6b219177a77839ad8f341551fc495f.asset/AssetData/Niramit.ttc",
+      "name": "Niramit",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Baskerville.ttc",
+      "name": "Baskerville",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/PTMono.ttc",
+      "name": "PT Mono",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/5b2f5f0b003344b2c67ce463e76d2485bb43d054.asset/AssetData/BMJua-Regular.otf",
+      "name": "BM Jua",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Silom.ttf",
+      "name": "Silom",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3a9dbc8ddc8b85f43055a28fb5d551e905d43de2.asset/AssetData/LiHeiPro.ttf",
+      "name": "LiHei Pro",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Trebuchet MS Bold.ttf",
+      "name": "Trebuchet MS",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFHebrewRounded.ttf",
+      "name": ".SF Hebrew Rounded",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/BigCaslon.ttf",
+      "name": "Big Caslon",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Bodoni 72 Smallcaps Book.ttf",
+      "name": "Bodoni 72 Smallcaps",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/KohinoorTelugu.ttc",
+      "name": "Kohinoor Telugu",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFNSItalic.ttf",
+      "name": "System Font",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXIntUpDReg.otf",
+      "name": "STIXIntegralsUpD",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/0e35a111b2580442c7bff35fcd5c54fc99ca1d91.asset/AssetData/Kodchasan.ttc",
+      "name": "Kodchasan",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/229d50d9c2cfb69a5a71be23225ae80f26257cc2.asset/AssetData/Krub.ttc",
+      "name": "Krub",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXNonUni.otf",
+      "name": "STIXNonUnicode",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/NotoSansKannada.ttc",
+      "name": "Noto Sans Kannada",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 100,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansSoraSompeng-Regular.ttf",
+      "name": "Noto Sans Sora Sompeng",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Gurmukhi Sangam MN.ttc",
+      "name": "Gurmukhi Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSerifAhom-Regular.ttf",
+      "name": "Noto Serif Ahom",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Avenir Next Condensed.ttc",
+      "name": "Avenir Next Condensed",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/67b92e6fd405724daed25cbdce52b35d4c413cd6.asset/AssetData/SamaGujarati.ttc",
+      "name": "Sama Gujarati",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+      "name": "Arial",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/a560b5e8f63af91685b27c087e9bb7df6a4a3902.asset/AssetData/TiroBangla.ttc",
+      "name": "Tiro Bangla",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/d205d9bccc1eea9c4867b7349d079f2f0b8f7e51.asset/AssetData/BalooTammuduTelugu.ttc",
+      "name": "Baloo Tammudu 2",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Diwan Kufi.ttc",
+      "name": "Diwan Kufi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/107ec29d3748811d6b299a0537bce535b21a95b7.asset/AssetData/PadyakkeExpandedOne-regular.otf",
+      "name": "Padyakke Expanded One",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "expanded",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/d9a8a6ae726910080d90232eaf0edb06da712758.asset/AssetData/TsukushiAMaruGothic.ttc",
+      "name": "Tsukushi A Round Gothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMiao-Regular.ttf",
+      "name": "Noto Sans Miao",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf",
+      "name": "Times New Roman",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Raanana.ttc",
+      "name": "Raanana",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Zapfino.ttf",
+      "name": "Zapfino",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansOldPermic-Regular.ttf",
+      "name": "Noto Sans Old Permic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansSiddham-Regular.otf",
+      "name": "Noto Sans Siddham",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Sathu.ttf",
+      "name": "Sathu",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/bad9b4bf17cf1669dde54184ba4431c22dcad27b.asset/AssetData/NanumGothic.ttc",
+      "name": "Nanum Gothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Hoefler Text Ornaments.ttf",
+      "name": "Hoefler Text",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Geneva.ttf",
+      "name": "Geneva",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W0.ttc",
+      "name": "Hiragino Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 100,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/70816a43827731d40efe234b94feba96db91024f.asset/AssetData/NanumMyeongjo.ttc",
+      "name": "Nanum Myeongjo",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Optima.ttc",
+      "name": "Optima",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/857d6c90171c328a4892c1492291d34e401d7f25.asset/AssetData/SimSong.ttc",
+      "name": "SimSong",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Verdana Bold Italic.ttf",
+      "name": "Verdana",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFCompactRounded.ttf",
+      "name": ".SF Compact Rounded",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Apple Braille Pinpoint 6 Dot.ttf",
+      "name": "Apple Braille",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial Italic.ttf",
+      "name": "Arial",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansCypriot-Regular.ttf",
+      "name": "Noto Sans Cypriot",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMongolian-Regular.ttf",
+      "name": "Noto Sans Mongolian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/ArialHB.ttc",
+      "name": "Arial Hebrew",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/fbd4792c7c114cd4daf3bcb562324ca2cf4cb4f5.asset/AssetData/SamaDevanagari.ttc",
+      "name": "Sama Devanagari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/STHeiti Light.ttc",
+      "name": "Heiti TC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 300,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansVai-Regular.ttf",
+      "name": "Noto Sans Vai",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Symbol.ttf",
+      "name": "Symbol",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Webdings.ttf",
+      "name": "Webdings",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/54a2ad3dac6cac875ad675d7d273dc425010a877.asset/AssetData/Kaiti.ttc",
+      "name": "Kaiti SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Courier New Italic.ttf",
+      "name": "Courier New",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFNSRounded.ttf",
+      "name": ".SF NS Rounded",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Times.ttc",
+      "name": "Times",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Waseem.ttc",
+      "name": "Waseem",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Athelas.ttc",
+      "name": "Athelas",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansKharoshthi-Regular.ttf",
+      "name": "Noto Sans Kharoshthi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansSundanese-Regular.ttf",
+      "name": "Noto Sans Sundanese",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Courier New Bold Italic.ttf",
+      "name": "Courier New",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansNabataean-Regular.ttf",
+      "name": "Noto Sans Nabataean",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Corsiva.ttc",
+      "name": "Corsiva Hebrew",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/SnellRoundhand.ttc",
+      "name": "Snell Roundhand",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/de97612eef4e3cf8ee8e5c0ebd6fd879bbecd23a.asset/AssetData/AppleLiGothic-Medium.ttf",
+      "name": "Apple LiGothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSerifBalinese-Regular.ttf",
+      "name": "Noto Serif Balinese",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFHebrew.ttf",
+      "name": ".SF Hebrew",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Arial.ttf",
+      "name": "Arial",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFNSMono.ttf",
+      "name": ".SF NS Mono",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 295,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansImperialAramaic-Regular.ttf",
+      "name": "Noto Sans Imperial Aramaic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSerifYezidi-Regular.otf",
+      "name": "Noto Serif Yezidi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3419f2a427639ad8c8e139149a287865a90fa17e.asset/AssetData/PingFang.ttc",
+      "name": "PingFang HK",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Khmer Sangam MN.ttf",
+      "name": "Khmer Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Bangla MN.ttc",
+      "name": "Bangla MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansSharada-Regular.ttf",
+      "name": "Noto Sans Sharada",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansNewTaiLue-Regular.ttf",
+      "name": "Noto Sans New Tai Lue",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXGeneral.otf",
+      "name": "STIXGeneral",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/6d5a94913b06cb642500dea1e315d7105cff5dc6.asset/AssetData/TiroHindi.ttc",
+      "name": "Tiro Devanagari Hindi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/fec82d04f4ff6bff5c7a86df14150dfc4f3da60d.asset/AssetData/CambayDevanagari.ttc",
+      "name": "Cambay Devanagari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFNSMonoItalic.ttf",
+      "name": ".SF NS Mono",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 295,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMendeKikakui-Regular.ttf",
+      "name": "Noto Sans Mende Kikakui",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansTagbanwa-Regular.ttf",
+      "name": "Noto Sans Tagbanwa",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansSylotiNagri-Regular.ttf",
+      "name": "Noto Sans Syloti Nagri",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Georgia Bold.ttf",
+      "name": "Georgia",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansMultani-Regular.ttf",
+      "name": "Noto Sans Multani",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/5c6a8022433e3c6f43cdd03f724107e103c0edaf.asset/AssetData/TiroKannada.ttc",
+      "name": "Tiro Kannada",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/6399f76cec1305304074ba7f587e5763133bb541.asset/AssetData/Hiragino_Sans_TC.ttc",
+      "name": "Hiragino Sans TC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 300,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Diwan Thuluth.ttf",
+      "name": "Diwan Thuluth",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansTakri-Regular.ttf",
+      "name": "Noto Sans Takri",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Microsoft Sans Serif.ttf",
+      "name": "Microsoft Sans Serif",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFCompactItalic.ttf",
+      "name": ".SF Compact",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 1000,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/GujaratiMT.ttc",
+      "name": "Gujarati MT",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/dd7563f21769eb637432ba6b3d5309200eb6773e.asset/AssetData/Maku-Devanagari.ttc",
+      "name": "Maku",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Baghdad.ttc",
+      "name": "Baghdad",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansModi-Regular.ttf",
+      "name": "Noto Sans Modi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFGeorgianRounded.ttf",
+      "name": ".SF Georgian Rounded",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/9d5450ee93f17da1eacfa01b5e7b598f9e2dda2b.asset/AssetData/Baoli.ttc",
+      "name": "Baoli SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Trebuchet MS.ttf",
+      "name": "Trebuchet MS",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/d7d512f49387f96799ae9271c7fa8f8e9fef05d1.asset/AssetData/BIZ_UDGothic.ttc",
+      "name": "BIZ UDGothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/bff515501313f56409358f8994642696000d2dbc.asset/AssetData/Sarabun.ttc",
+      "name": "Sarabun",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Charter.ttc",
+      "name": "Charter",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Mishafi.ttf",
+      "name": "Mishafi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/e71ea5469e5f2039223f22203ee8b9186524afd3.asset/AssetData/BMDoHyeon-Regular.otf",
+      "name": "BM Dohyeon",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXSizFourSymReg.otf",
+      "name": "STIXSizeFourSym",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Krungthep.ttf",
+      "name": "Krungthep",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/e9a9a2d18358033875835a6228cb70ce84b7e47c.asset/AssetData/YuMincho.ttc",
+      "name": "YuMincho",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/7dbafe7918d68a94eef18bc79c7617198f768e86.asset/AssetData/AdelleSans.ttc",
+      "name": "Adelle Sans Devanagari",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/PTSans.ttc",
+      "name": "PT Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/SFGeorgian.ttf",
+      "name": ".SF Georgian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/ThonburiUI.ttc",
+      "name": ".ThonburiUI",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXIntUpDBol.otf",
+      "name": "STIXIntegralsUpD",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXIntSmBol.otf",
+      "name": "STIXIntegralsSm",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/SuperClarendon.ttc",
+      "name": "Superclarendon",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Mishafi Gold.ttf",
+      "name": "Mishafi Gold",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W9.ttc",
+      "name": "Hiragino Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 900,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3b8143460bd19d854cbc733699697b0e2182e28e.asset/AssetData/TiroMarathi.ttc",
+      "name": "Tiro Devanagari Marathi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/LucidaGrande.ttc",
+      "name": "Lucida Grande",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/ZapfDingbats.ttf",
+      "name": "Zapf Dingbats",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansAvestan-Regular.ttf",
+      "name": "Noto Sans Avestan",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/NotoSansArmenian.ttc",
+      "name": "Noto Sans Armenian",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 900,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Oriya Sangam MN.ttc",
+      "name": "Oriya Sangam MN",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Georgia Italic.ttf",
+      "name": "Georgia",
+      "style": "italic",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/62032b9b64a0e3a9121c50aeb2ed794e3e2c201f.asset/AssetData/Hei.ttf",
+      "name": "Hei",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Gurmukhi.ttf",
+      "name": "Gurmukhi MT",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/a315fce407dcd8102062f824a2b039d34361a140.asset/AssetData/SamaGurmukhi.ttc",
+      "name": "Sama Gurmukhi",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/40e56e4eafd8b4db78ffe316f64ac4bedba37b53.asset/AssetData/ToppanBunkyuMidashiMinchoStdN-ExtraBold.otf",
+      "name": "Toppan Bunkyu Midashi Mincho",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 900,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/NotoSansMyanmar.ttc",
+      "name": "Noto Sans Myanmar",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 900,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/EuphemiaCAS.ttc",
+      "name": "Euphemia UCAS",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansTaiViet-Regular.ttf",
+      "name": "Noto Sans Tai Viet",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/\u30d2\u30e9\u30ad\u3099\u30ce\u89d2\u30b3\u3099\u30b7\u30c3\u30af W3.ttc",
+      "name": "Hiragino Sans",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 300,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/f7f6b250e97c182e68ac53a2b359ec44548878b9.asset/AssetData/Lantinghei.ttc",
+      "name": "Lantinghei SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/e2c331b942cb338404a160a97a7cd6e8a31428e8.asset/AssetData/LingWaiSC-Medium.otf",
+      "name": "LingWai SC",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 500,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/42062e40d643fdb5bb3fba917212352fb0690de0.asset/AssetData/YuGothic-Bold.otf",
+      "name": "YuGothic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 700,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Academy Engraved LET Fonts.ttf",
+      "name": "Academy Engraved LET",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/584ea2a48d14147049c2f9eaee147fe5a1f279ac.asset/AssetData/BiauKai.ttc",
+      "name": "BiauKaiHK",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/CJKSymbolsFallback.ttc",
+      "name": ".CJK Symbols Fallback HK",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 250,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/86e04ad2883186f533bf63f31040f8239ca3e0aa.asset/AssetData/TiroTelugu.ttc",
+      "name": "Tiro Telugu",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Keyboard.ttf",
+      "name": ".Keyboard",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 100,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3626548a6dc590e58f7258cd141d0ad9b2e6e59c.asset/AssetData/NotoSerifKannada.ttc",
+      "name": "Noto Serif Kannada",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/26fae641eb2d1f672737dffcde972f770e1fe764.asset/AssetData/OctoberCondensedTamil.ttc",
+      "name": "October Condensed Tamil",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "condensed",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/STIXTwoMath.otf",
+      "name": "STIX Two Math",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Kokonor.ttf",
+      "name": "Kokonor",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/810ba821bae9ea3677944089ed67a726a382c132.asset/AssetData/LavaKannada.ttc",
+      "name": "Lava Kannada",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansElbasan-Regular.ttf",
+      "name": "Noto Sans Elbasan",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansJavanese-Regular.otf",
+      "name": "Noto Sans Javanese",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/NotoSansCoptic-Regular.ttf",
+      "name": "Noto Sans Coptic",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/de4b2bad515a67ab2d11e39fd896b1e189252a43.asset/AssetData/HeadlineA.ttf",
+      "name": "HeadLineA",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/12cc699be28fb04f3e3c4969a0378a87b920b174.asset/AssetData/BMHannaAir-Regular.otf",
+      "name": "BM Hanna Air",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/e5b038333b21d35a7cab9653e3551c464452f70b.asset/AssetData/Charmonman.ttc",
+      "name": "Charmonman",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/Fonts/Supplemental/Al Nile.ttc",
+      "name": "Al Nile",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/eb257c12d1a51c8c661b89f30eec56cacf9b8987.asset/AssetData/STHEITI.ttf",
+      "name": "STHeiti",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    },
+    {
+      "fname": "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/9d609221be9203a6d0e55f5117ff76246f4200a7.asset/AssetData/Mali.ttc",
+      "name": "Mali",
+      "style": "normal",
+      "variant": "normal",
+      "weight": 400,
+      "stretch": "normal",
+      "size": "scalable",
+      "__class__": "FontEntry"
+    }
+  ],
+  "__class__": "FontManager"
+}
