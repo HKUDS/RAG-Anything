@@ -1498,7 +1498,7 @@ class DoclingParser(Parser):
                     "type": "equation",
                     "img_path": "",
                     "text": block["orig"],
-                    "text_format": "unkown",
+                    "text_format": "unknown",
                     "page_idx": cnt // 10,
                 }
             else:
