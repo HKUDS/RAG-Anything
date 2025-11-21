@@ -1,56 +1,56 @@
-# Enhanced Markdown Conversion
+# 增强 Markdown 转换
 
-This document describes the enhanced markdown conversion feature for RAG-Anything, which provides high-quality PDF generation from markdown files with multiple backend options and advanced styling.
+本文档描述了 RAG-Anything 的增强 Markdown 转换功能，该功能提供从 Markdown 文件到高质量 PDF 的生成，支持多种后端选项和高级样式设置。
 
-## Overview
+## 概述
 
-The enhanced markdown conversion feature provides professional-quality PDF generation from markdown files. It supports multiple conversion backends, advanced styling options, syntax highlighting, and seamless integration with RAG-Anything's document processing pipeline.
+增强 Markdown 转换功能提供从 Markdown 文件生成专业品质的 PDF。它支持多种转换后端、高级样式选项、语法高亮，并与 RAG-Anything 的文档处理管道无缝集成。
 
-## Key Features
+## 主要特性
 
-- **Multiple Backends**: WeasyPrint, Pandoc, and automatic backend selection
-- **Advanced Styling**: Custom CSS, syntax highlighting, and professional layouts
-- **Image Support**: Embedded images with proper scaling and positioning
-- **Table Support**: Formatted tables with borders and professional styling
-- **Code Highlighting**: Syntax highlighting for code blocks using Pygments
-- **Custom Templates**: Support for custom CSS and document templates
-- **Table of Contents**: Automatic TOC generation with navigation links
-- **Professional Typography**: High-quality fonts and spacing
+- **多种后端**：WeasyPrint、Pandoc 和自动后端选择
+- **高级样式**：自定义 CSS、语法高亮和专业布局
+- **图像支持**：嵌入图像，具有适当的缩放和定位
+- **表格支持**：格式化的表格，带有边框和专业样式
+- **代码高亮**：使用 Pygments 为代码块提供语法高亮
+- **自定义模板**：支持自定义 CSS 和文档模板
+- **目录**：自动生成带有导航链接的目录
+- **专业排版**：高质量字体和间距
 
-## Installation
+## 安装
 
-### Required Dependencies
+### 必需依赖
 
 ```bash
-# Basic installation
+# 基础安装
 pip install raganything[all]
 
-# Required for enhanced markdown conversion
+# 增强 Markdown 转换所需
 pip install markdown weasyprint pygments
 ```
 
-### Optional Dependencies
+### 可选依赖
 
 ```bash
-# For Pandoc backend (system installation required)
+# Pandoc 后端（需要系统安装）
 # Ubuntu/Debian:
 sudo apt-get install pandoc wkhtmltopdf
 
 # macOS:
 brew install pandoc wkhtmltopdf
 
-# Or using conda:
+# 或使用 conda:
 conda install -c conda-forge pandoc wkhtmltopdf
 ```
 
-### Backend-Specific Installation
+### 后端特定安装
 
-#### WeasyPrint (Recommended)
+#### WeasyPrint（推荐）
 ```bash
-# Install WeasyPrint with system dependencies
+# 安装 WeasyPrint 及系统依赖
 pip install weasyprint
 
-# Ubuntu/Debian system dependencies:
+# Ubuntu/Debian 系统依赖:
 sudo apt-get install -y build-essential python3-dev python3-pip \
     python3-setuptools python3-wheel python3-cffi libcairo2 \
     libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
@@ -58,46 +58,46 @@ sudo apt-get install -y build-essential python3-dev python3-pip \
 ```
 
 #### Pandoc
-- Download from: https://pandoc.org/installing.html
-- Requires system-wide installation
-- Used for complex document structures and LaTeX-quality output
+- 从此处下载：https://pandoc.org/installing.html
+- 需要系统级安装
+- 用于复杂文档结构和 LaTeX 质量输出
 
-## Usage
+## 使用方法
 
-### Basic Conversion
+### 基本转换
 
 ```python
 from raganything.enhanced_markdown import EnhancedMarkdownConverter, MarkdownConfig
 
-# Create converter with default settings
+# 使用默认设置创建转换器
 converter = EnhancedMarkdownConverter()
 
-# Convert markdown file to PDF
+# 将 Markdown 文件转换为 PDF
 success = converter.convert_file_to_pdf(
     input_path="document.md",
     output_path="document.pdf",
-    method="auto"  # Automatically select best available backend
+    method="auto"  # 自动选择最佳可用后端
 )
 
 if success:
-    print("✅ Conversion successful!")
+    print("✅ 转换成功！")
 else:
-    print("❌ Conversion failed")
+    print("❌ 转换失败")
 ```
 
-### Advanced Configuration
+### 高级配置
 
 ```python
-# Create custom configuration
+# 创建自定义配置
 config = MarkdownConfig(
-    page_size="A4",           # A4, Letter, Legal, etc.
-    margin="1in",             # CSS-style margins
-    font_size="12pt",         # Base font size
-    line_height="1.5",        # Line spacing
-    include_toc=True,         # Generate table of contents
-    syntax_highlighting=True, # Enable code syntax highlighting
+    page_size="A4",           # A4、Letter、Legal 等
+    margin="1in",             # CSS 样式边距
+    font_size="12pt",         # 基础字体大小
+    line_height="1.5",        # 行间距
+    include_toc=True,         # 生成目录
+    syntax_highlighting=True, # 启用代码语法高亮
 
-    # Custom CSS styling
+    # 自定义 CSS 样式
     custom_css="""
     body {
         font-family: 'Georgia', serif;
@@ -139,51 +139,51 @@ config = MarkdownConfig(
 converter = EnhancedMarkdownConverter(config)
 ```
 
-### Backend Selection
+### 后端选择
 
 ```python
-# Check available backends
+# 检查可用后端
 converter = EnhancedMarkdownConverter()
 backend_info = converter.get_backend_info()
 
-print("Available backends:")
+print("可用后端:")
 for backend, available in backend_info["available_backends"].items():
     status = "✅" if available else "❌"
     print(f"  {status} {backend}")
 
-print(f"Recommended backend: {backend_info['recommended_backend']}")
+print(f"推荐后端: {backend_info['recommended_backend']}")
 
-# Use specific backend
+# 使用特定后端
 converter.convert_file_to_pdf(
     input_path="document.md",
     output_path="document.pdf",
-    method="weasyprint"  # or "pandoc", "pandoc_system", "auto"
+    method="weasyprint"  # 或 "pandoc"、"pandoc_system"、"auto"
 )
 ```
 
-### Content Conversion
+### 内容转换
 
 ```python
-# Convert markdown content directly (not from file)
+# 直接转换 Markdown 内容（不从文件读取）
 markdown_content = """
-# Sample Document
+# 示例文档
 
-## Introduction
-This is a **bold** statement with *italic* text.
+## 介绍
+这是一个**粗体**声明，带有*斜体*文本。
 
-## Code Example
+## 代码示例
 ```python
 def hello_world():
     print("Hello, World!")
     return "Success"
 ```
 
-## Table
-| Feature | Status | Notes |
+## 表格
+| 功能 | 状态 | 备注 |
 |---------|--------|-------|
-| PDF Generation | ✅ | Working |
-| Syntax Highlighting | ✅ | Pygments |
-| Custom CSS | ✅ | Full support |
+| PDF 生成 | ✅ | 正常工作 |
+| 语法高亮 | ✅ | Pygments |
+| 自定义 CSS | ✅ | 完全支持 |
 """
 
 success = converter.convert_markdown_to_pdf(
@@ -193,248 +193,248 @@ success = converter.convert_markdown_to_pdf(
 )
 ```
 
-### Command Line Interface
+### 命令行界面
 
 ```bash
-# Basic conversion
+# 基本转换
 python -m raganything.enhanced_markdown document.md --output document.pdf
 
-# With specific backend
+# 使用特定后端
 python -m raganything.enhanced_markdown document.md --method weasyprint
 
-# With custom CSS file
+# 使用自定义 CSS 文件
 python -m raganything.enhanced_markdown document.md --css custom_style.css
 
-# Show backend information
+# 显示后端信息
 python -m raganything.enhanced_markdown --info
 
-# Help
+# 帮助
 python -m raganything.enhanced_markdown --help
 ```
 
-## Backend Comparison
+## 后端比较
 
-| Backend | Pros | Cons | Best For | Quality |
+| 后端 | 优点 | 缺点 | 最适合 | 质量 |
 |---------|------|------|----------|---------|
-| **WeasyPrint** | • Excellent CSS support<br>• Fast rendering<br>• Great web-style layouts<br>• Python-based | • Limited LaTeX features<br>• Requires system deps | • Web-style documents<br>• Custom styling<br>• Fast conversion | ⭐⭐⭐⭐ |
-| **Pandoc** | • Extensive features<br>• LaTeX-quality output<br>• Academic formatting<br>• Many input/output formats | • Slower conversion<br>• System installation<br>• Complex setup | • Academic papers<br>• Complex documents<br>• Publication quality | ⭐⭐⭐⭐⭐ |
-| **Auto** | • Automatic selection<br>• Fallback support<br>• User-friendly | • May not use optimal backend | • General use<br>• Quick setup<br>• Development | ⭐⭐⭐⭐ |
+| **WeasyPrint** | • 出色的 CSS 支持<br>• 快速渲染<br>• 优秀的网页风格布局<br>• 基于 Python | • 有限的 LaTeX 功能<br>• 需要系统依赖 | • 网页风格文档<br>• 自定义样式<br>• 快速转换 | ⭐⭐⭐⭐ |
+| **Pandoc** | • 广泛的功能<br>• LaTeX 质量输出<br>• 学术格式<br>• 多种输入/输出格式 | • 较慢的转换<br>• 系统安装<br>• 复杂设置 | • 学术论文<br>• 复杂文档<br>• 出版质量 | ⭐⭐⭐⭐⭐ |
+| **Auto** | • 自动选择<br>• 回退支持<br>• 用户友好 | • 可能不使用最佳后端 | • 通用用途<br>• 快速设置<br>• 开发 | ⭐⭐⭐⭐ |
 
-## Configuration Options
+## 配置选项
 
-### MarkdownConfig Parameters
+### MarkdownConfig 参数
 
 ```python
 @dataclass
 class MarkdownConfig:
-    # Page layout
-    page_size: str = "A4"              # A4, Letter, Legal, A3, etc.
-    margin: str = "1in"                # CSS margin format
-    font_size: str = "12pt"            # Base font size
-    line_height: str = "1.5"           # Line spacing multiplier
+    # 页面布局
+    page_size: str = "A4"              # A4、Letter、Legal、A3 等
+    margin: str = "1in"                # CSS 边距格式
+    font_size: str = "12pt"            # 基础字体大小
+    line_height: str = "1.5"           # 行间距倍数
 
-    # Content options
-    include_toc: bool = True           # Generate table of contents
-    syntax_highlighting: bool = True   # Enable code highlighting
-    image_max_width: str = "100%"      # Maximum image width
-    table_style: str = "..."           # Default table CSS
+    # 内容选项
+    include_toc: bool = True           # 生成目录
+    syntax_highlighting: bool = True   # 启用代码高亮
+    image_max_width: str = "100%"      # 最大图像宽度
+    table_style: str = "..."           # 默认表格 CSS
 
-    # Styling
-    css_file: Optional[str] = None     # External CSS file path
-    custom_css: Optional[str] = None   # Inline CSS content
-    template_file: Optional[str] = None # Custom HTML template
+    # 样式
+    css_file: Optional[str] = None     # 外部 CSS 文件路径
+    custom_css: Optional[str] = None   # 内联 CSS 内容
+    template_file: Optional[str] = None # 自定义 HTML 模板
 
-    # Output options
-    output_format: str = "pdf"         # Currently only PDF supported
-    output_dir: Optional[str] = None   # Output directory
+    # 输出选项
+    output_format: str = "pdf"         # 目前仅支持 PDF
+    output_dir: Optional[str] = None   # 输出目录
 
-    # Metadata
-    metadata: Optional[Dict[str, str]] = None  # Document metadata
+    # 元数据
+    metadata: Optional[Dict[str, str]] = None  # 文档元数据
 ```
 
-### Supported Markdown Features
+### 支持的 Markdown 功能
 
-#### Basic Formatting
-- **Headers**: `# ## ### #### ##### ######`
-- **Emphasis**: `*italic*`, `**bold**`, `***bold italic***`
-- **Links**: `[text](url)`, `[text][ref]`
-- **Images**: `![alt](url)`, `![alt][ref]`
-- **Lists**: Ordered and unordered, nested
-- **Blockquotes**: `> quote`
-- **Line breaks**: Double space or `\n\n`
+#### 基本格式
+- **标题**：`# ## ### #### ##### ######`
+- **强调**：`*斜体*`、`**粗体**`、`***粗斜体***`
+- **链接**：`[文本](url)`、`[文本][ref]`
+- **图像**：`![alt](url)`、`![alt][ref]`
+- **列表**：有序和无序，嵌套
+- **引用**：`> 引用`
+- **换行**：双空格或 `\n\n`
 
-#### Advanced Features
-- **Tables**: GitHub-style tables with alignment
-- **Code blocks**: Fenced code blocks with language specification
-- **Inline code**: `backtick code`
-- **Horizontal rules**: `---` or `***`
-- **Footnotes**: `[^1]` references
-- **Definition lists**: Term and definition pairs
-- **Attributes**: `{#id .class key=value}`
+#### 高级功能
+- **表格**：GitHub 风格表格，支持对齐
+- **代码块**：围栏代码块，支持语言规范
+- **内联代码**：`反引号代码`
+- **水平线**：`---` 或 `***`
+- **脚注**：`[^1]` 引用
+- **定义列表**：术语和定义对
+- **属性**：`{#id .class key=value}`
 
-#### Code Highlighting
+#### 代码高亮
 
 ```markdown
 ```python
 def example_function():
-    """This will be syntax highlighted"""
+    """这将被语法高亮"""
     return "Hello, World!"
 ```
 
 ```javascript
 function exampleFunction() {
-    // This will also be highlighted
+    // 这也将被高亮
     return "Hello, World!";
 }
 ```
 ```
 
-## Integration with RAG-Anything
+## 与 RAG-Anything 集成
 
-The enhanced markdown conversion integrates seamlessly with RAG-Anything:
+增强 Markdown 转换与 RAG-Anything 无缝集成：
 
 ```python
 from raganything import RAGAnything
 
-# Initialize RAG-Anything
+# 初始化 RAG-Anything
 rag = RAGAnything()
 
-# Process markdown files - enhanced conversion is used automatically
+# 处理 Markdown 文件 - 自动使用增强转换
 await rag.process_document_complete("document.md")
 
-# Batch processing with enhanced markdown conversion
+# 使用增强 Markdown 转换的批量处理
 result = rag.process_documents_batch(
     file_paths=["doc1.md", "doc2.md", "doc3.md"],
     output_dir="./output"
 )
 
-# The .md files will be converted to PDF using enhanced conversion
-# before being processed by the RAG system
+# .md 文件将在被 RAG 系统处理之前
+# 使用增强转换转换为 PDF
 ```
 
-## Performance Considerations
+## 性能考虑
 
-### Conversion Speed
-- **WeasyPrint**: ~1-3 seconds for typical documents
-- **Pandoc**: ~3-10 seconds for typical documents
-- **Large documents**: Time scales roughly linearly with content
+### 转换速度
+- **WeasyPrint**：典型文档约 1-3 秒
+- **Pandoc**：典型文档约 3-10 秒
+- **大型文档**：时间与内容大致呈线性增长
 
-### Memory Usage
-- **WeasyPrint**: ~50-100MB per conversion
-- **Pandoc**: ~100-200MB per conversion
-- **Images**: Large images increase memory usage significantly
+### 内存使用
+- **WeasyPrint**：每次转换约 50-100MB
+- **Pandoc**：每次转换约 100-200MB
+- **图像**：大图像会显著增加内存使用
 
-### Optimization Tips
-1. **Resize large images** before embedding
-2. **Use compressed images** (JPEG for photos, PNG for graphics)
-3. **Limit concurrent conversions** to avoid memory issues
-4. **Cache converted content** when processing multiple times
+### 优化技巧
+1. **在嵌入前调整大图像大小**
+2. **使用压缩图像**（照片用 JPEG，图形用 PNG）
+3. **限制并发转换**以避免内存问题
+4. **缓存已转换内容**当多次处理时
 
-## Examples
+## 示例
 
-### Sample Markdown Document
+### 示例 Markdown 文档
 
 ```markdown
-# Technical Documentation
+# 技术文档
 
-## Table of Contents
+## 目录
 [TOC]
 
-## Overview
-This document provides comprehensive technical specifications.
+## 概述
+本文档提供全面的技术规范。
 
-## Architecture
+## 架构
 
-### System Components
-1. **Parser Engine**: Handles document processing
-2. **Storage Layer**: Manages data persistence
-3. **Query Interface**: Provides search capabilities
+### 系统组件
+1. **解析引擎**：处理文档处理
+2. **存储层**：管理数据持久化
+3. **查询接口**：提供搜索功能
 
-### Code Implementation
+### 代码实现
 ```python
 from raganything import RAGAnything
 
-# Initialize system
+# 初始化系统
 rag = RAGAnything(config={
     "working_dir": "./storage",
     "enable_image_processing": True
 })
 
-# Process document
+# 处理文档
 await rag.process_document_complete("document.pdf")
 ```
 
-### Performance Metrics
+### 性能指标
 
-| Component | Throughput | Latency | Memory |
+| 组件 | 吞吐量 | 延迟 | 内存 |
 |-----------|------------|---------|--------|
-| Parser | 100 docs/hour | 36s avg | 2.5 GB |
-| Storage | 1000 ops/sec | 1ms avg | 512 MB |
-| Query | 50 queries/sec | 20ms avg | 1 GB |
+| 解析器 | 100 文档/小时 | 平均 36 秒 | 2.5 GB |
+| 存储 | 1000 操作/秒 | 平均 1 毫秒 | 512 MB |
+| 查询 | 50 查询/秒 | 平均 20 毫秒 | 1 GB |
 
-## Integration Notes
+## 集成说明
 
-> **Important**: Always validate input before processing.
+> **重要**：在处理前始终验证输入。
 
-## Conclusion
-The enhanced system provides excellent performance for document processing workflows.
+## 结论
+增强系统为文档处理工作流提供了出色的性能。
 ```
 
-### Generated PDF Features
+### 生成的 PDF 功能
 
-The enhanced markdown converter produces PDFs with:
+增强 Markdown 转换器生成的 PDF 具有：
 
-- **Professional typography** with proper font selection and spacing
-- **Syntax-highlighted code blocks** using Pygments
-- **Formatted tables** with borders and alternating row colors
-- **Clickable table of contents** with navigation links
-- **Responsive images** that scale appropriately
-- **Custom styling** through CSS
-- **Proper page breaks** and margins
-- **Document metadata** and properties
+- **专业排版**，具有适当的字体选择和间距
+- **语法高亮的代码块**，使用 Pygments
+- **格式化的表格**，带有边框和交替行颜色
+- **可点击的目录**，带有导航链接
+- **响应式图像**，可适当缩放
+- **自定义样式**，通过 CSS
+- **适当的分页符**和边距
+- **文档元数据**和属性
 
-## Troubleshooting
+## 故障排除
 
-### Common Issues
+### 常见问题
 
-#### WeasyPrint Installation Problems
+#### WeasyPrint 安装问题
 ```bash
-# Ubuntu/Debian: Install system dependencies
+# Ubuntu/Debian: 安装系统依赖
 sudo apt-get update
 sudo apt-get install -y build-essential python3-dev libcairo2 \
     libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 \
     libffi-dev shared-mime-info
 
-# Then reinstall WeasyPrint
+# 然后重新安装 WeasyPrint
 pip install --force-reinstall weasyprint
 ```
 
-#### Pandoc Not Found
+#### 找不到 Pandoc
 ```bash
-# Check if Pandoc is installed
+# 检查是否安装了 Pandoc
 pandoc --version
 
-# Install Pandoc (Ubuntu/Debian)
+# 安装 Pandoc (Ubuntu/Debian)
 sudo apt-get install pandoc wkhtmltopdf
 
-# Or download from: https://pandoc.org/installing.html
+# 或从此处下载：https://pandoc.org/installing.html
 ```
 
-#### CSS Issues
-- Check CSS syntax in custom_css
-- Verify CSS file paths exist
-- Test CSS with simple HTML first
-- Use browser developer tools to debug styling
+#### CSS 问题
+- 检查 custom_css 中的 CSS 语法
+- 验证 CSS 文件路径是否存在
+- 首先使用简单的 HTML 测试 CSS
+- 使用浏览器开发者工具调试样式
 
-#### Image Problems
-- Ensure images are accessible (correct paths)
-- Check image file formats (PNG, JPEG, GIF supported)
-- Verify image file permissions
-- Consider image size and format optimization
+#### 图像问题
+- 确保图像可访问（正确的路径）
+- 检查图像文件格式（支持 PNG、JPEG、GIF）
+- 验证图像文件权限
+- 考虑图像大小和格式优化
 
-#### Font Issues
+#### 字体问题
 ```python
-# Use web-safe fonts
+# 使用网页安全字体
 config = MarkdownConfig(
     custom_css="""
     body {
@@ -444,32 +444,32 @@ config = MarkdownConfig(
 )
 ```
 
-### Debug Mode
+### 调试模式
 
-Enable detailed logging for troubleshooting:
+启用详细日志以进行故障排除：
 
 ```python
 import logging
 
-# Enable debug logging
+# 启用调试日志
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
-# Create converter with debug logging
+# 创建带有调试日志的转换器
 converter = EnhancedMarkdownConverter()
 result = converter.convert_file_to_pdf("test.md", "test.pdf")
 ```
 
-### Error Handling
+### 错误处理
 
 ```python
 def robust_conversion(input_path, output_path):
-    """Convert with fallback backends"""
+    """使用回退后端进行转换"""
     converter = EnhancedMarkdownConverter()
 
-    # Try backends in order of preference
+    # 按优先顺序尝试后端
     backends = ["weasyprint", "pandoc", "auto"]
 
     for backend in backends:
@@ -480,73 +480,73 @@ def robust_conversion(input_path, output_path):
                 method=backend
             )
             if success:
-                print(f"✅ Conversion successful with {backend}")
+                print(f"✅ 使用 {backend} 转换成功")
                 return True
         except Exception as e:
-            print(f"❌ {backend} failed: {str(e)}")
+            print(f"❌ {backend} 失败: {str(e)}")
             continue
 
-    print("❌ All backends failed")
+    print("❌ 所有后端都失败了")
     return False
 ```
 
-## API Reference
+## API 参考
 
 ### EnhancedMarkdownConverter
 
 ```python
 class EnhancedMarkdownConverter:
     def __init__(self, config: Optional[MarkdownConfig] = None):
-        """Initialize converter with optional configuration"""
+        """使用可选配置初始化转换器"""
 
     def convert_file_to_pdf(self, input_path: str, output_path: str, method: str = "auto") -> bool:
-        """Convert markdown file to PDF"""
+        """将 Markdown 文件转换为 PDF"""
 
     def convert_markdown_to_pdf(self, markdown_content: str, output_path: str, method: str = "auto") -> bool:
-        """Convert markdown content to PDF"""
+        """将 Markdown 内容转换为 PDF"""
 
     def get_backend_info(self) -> Dict[str, Any]:
-        """Get information about available backends"""
+        """获取有关可用后端的信息"""
 
     def convert_with_weasyprint(self, markdown_content: str, output_path: str) -> bool:
-        """Convert using WeasyPrint backend"""
+        """使用 WeasyPrint 后端转换"""
 
     def convert_with_pandoc(self, markdown_content: str, output_path: str) -> bool:
-        """Convert using Pandoc backend"""
+        """使用 Pandoc 后端转换"""
 ```
 
-## Best Practices
+## 最佳实践
 
-1. **Choose the right backend** for your use case:
-   - **WeasyPrint** for web-style documents and custom CSS
-   - **Pandoc** for academic papers and complex formatting
-   - **Auto** for general use and development
+1. **为您的用例选择正确的后端**：
+   - **WeasyPrint** 用于网页风格文档和自定义 CSS
+   - **Pandoc** 用于学术论文和复杂格式
+   - **Auto** 用于通用用途和开发
 
-2. **Optimize images** before embedding:
-   - Use appropriate formats (JPEG for photos, PNG for graphics)
-   - Compress images to reduce file size
-   - Set reasonable maximum widths
+2. **在嵌入前优化图像**：
+   - 使用适当的格式（照片用 JPEG，图形用 PNG）
+   - 压缩图像以减小文件大小
+   - 设置合理的最大宽度
 
-3. **Design responsive layouts**:
-   - Use relative units (%, em) instead of absolute (px)
-   - Test with different page sizes
-   - Consider print-specific CSS
+3. **设计响应式布局**：
+   - 使用相对单位（%、em）而不是绝对单位（px）
+   - 使用不同的页面大小进行测试
+   - 考虑打印特定的 CSS
 
-4. **Test your styling**:
-   - Start with default styling and incrementally customize
-   - Test with sample content before production use
-   - Validate CSS syntax
+4. **测试您的样式**：
+   - 从默认样式开始并逐步自定义
+   - 在生产使用前使用示例内容进行测试
+   - 验证 CSS 语法
 
-5. **Handle errors gracefully**:
-   - Implement fallback backends
-   - Provide meaningful error messages
-   - Log conversion attempts for debugging
+5. **优雅地处理错误**：
+   - 实现回退后端
+   - 提供有意义的错误消息
+   - 记录转换尝试以进行调试
 
-6. **Performance optimization**:
-   - Cache converted content when possible
-   - Process large batches with appropriate worker counts
-   - Monitor memory usage with large documents
+6. **性能优化**：
+   - 可能时缓存已转换内容
+   - 使用适当的工作线程数处理大批量
+   - 监控大型文档的内存使用
 
-## Conclusion
+## 结论
 
-The enhanced markdown conversion feature provides professional-quality PDF generation with flexible styling options and multiple backend support. It seamlessly integrates with RAG-Anything's document processing pipeline while offering standalone functionality for markdown-to-PDF conversion needs.
+增强 Markdown 转换功能提供专业品质的 PDF 生成，具有灵活的样式选项和多后端支持。它与 RAG-Anything 的文档处理管道无缝集成，同时为 Markdown 到 PDF 转换需求提供独立功能。

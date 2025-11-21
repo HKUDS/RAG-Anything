@@ -1,47 +1,47 @@
-# Batch Processing
+# 批量处理
 
-This document describes the batch processing feature for RAG-Anything, which allows you to process multiple documents in parallel for improved throughput.
+本文档描述了 RAG-Anything 的批量处理功能，该功能允许您并行处理多个文档以提高吞吐量。
 
-## Overview
+## 概述
 
-The batch processing feature allows you to process multiple documents concurrently, significantly improving throughput for large document collections. It provides parallel processing, progress tracking, error handling, and flexible configuration options.
+批量处理功能允许您并发处理多个文档，显著提高大型文档集合的吞吐量。它提供了并行处理、进度跟踪、错误处理和灵活的配置选项。
 
-## Key Features
+## 主要特性
 
-- **Parallel Processing**: Process multiple files concurrently using thread pools
-- **Progress Tracking**: Real-time progress bars with `tqdm`
-- **Error Handling**: Comprehensive error reporting and recovery
-- **Flexible Input**: Support for files, directories, and recursive search
-- **Configurable Workers**: Adjustable number of parallel workers
-- **Installation Check Bypass**: Optional skip for environments with package conflicts
+- **并行处理**：使用线程池并发处理多个文件
+- **进度跟踪**：使用 `tqdm` 实现实时进度条
+- **错误处理**：全面的错误报告和恢复机制
+- **灵活输入**：支持文件、目录和递归搜索
+- **可配置工作线程**：可调整并行工作线程数量
+- **安装检查绕过**：针对存在包冲突的环境提供可选跳过功能
 
-## Installation
+## 安装
 
 ```bash
-# Basic installation
+# 基础安装
 pip install raganything[all]
 
-# Required for batch processing
+# 批量处理所需
 pip install tqdm
 ```
 
-## Usage
+## 使用方法
 
-### Basic Batch Processing
+### 基本批量处理
 
 ```python
 from raganything.batch_parser import BatchParser
 
-# Create batch parser
+# 创建批量解析器
 batch_parser = BatchParser(
-    parser_type="mineru",  # or "docling"
+    parser_type="mineru",  # 或 "docling"
     max_workers=4,
     show_progress=True,
     timeout_per_file=300,
-    skip_installation_check=False  # Set to True if having parser installation issues
+    skip_installation_check=False  # 如果遇到解析器安装问题，设置为 True
 )
 
-# Process multiple files
+# 处理多个文件
 result = batch_parser.process_batch(
     file_paths=["doc1.pdf", "doc2.docx", "folder/"],
     output_dir="./batch_output",
@@ -49,13 +49,13 @@ result = batch_parser.process_batch(
     recursive=True
 )
 
-# Check results
+# 检查结果
 print(result.summary())
-print(f"Success rate: {result.success_rate:.1f}%")
-print(f"Processing time: {result.processing_time:.2f} seconds")
+print(f"成功率: {result.success_rate:.1f}%")
+print(f"处理时间: {result.processing_time:.2f} 秒")
 ```
 
-### Asynchronous Batch Processing
+### 异步批量处理
 
 ```python
 import asyncio
@@ -68,7 +68,7 @@ async def async_batch_processing():
         show_progress=True
     )
 
-    # Process files asynchronously
+    # 异步处理文件
     result = await batch_parser.process_batch_async(
         file_paths=["doc1.pdf", "doc2.docx"],
         output_dir="./output",
@@ -77,18 +77,18 @@ async def async_batch_processing():
 
     return result
 
-# Run async processing
+# 运行异步处理
 result = asyncio.run(async_batch_processing())
 ```
 
-### Integration with RAG-Anything
+### 与 RAG-Anything 集成
 
 ```python
 from raganything import RAGAnything
 
 rag = RAGAnything()
 
-# Process documents with batch functionality
+# 使用批量功能处理文档
 result = rag.process_documents_batch(
     file_paths=["doc1.pdf", "doc2.docx"],
     output_dir="./output",
@@ -96,13 +96,13 @@ result = rag.process_documents_batch(
     show_progress=True
 )
 
-print(f"Processed {len(result.successful_files)} files successfully")
+print(f"成功处理 {len(result.successful_files)} 个文件")
 ```
 
-### Process Documents with RAG Integration
+### 处理文档并集成 RAG
 
 ```python
-# Process documents in batch and then add them to RAG
+# 批量处理文档，然后将它们添加到 RAG
 result = await rag.process_documents_with_rag_batch(
     file_paths=["doc1.pdf", "doc2.docx"],
     output_dir="./output",
@@ -110,232 +110,232 @@ result = await rag.process_documents_with_rag_batch(
     show_progress=True
 )
 
-print(f"Processed {result['successful_rag_files']} files with RAG")
-print(f"Total processing time: {result['total_processing_time']:.2f} seconds")
+print(f"使用 RAG 处理了 {result['successful_rag_files']} 个文件")
+print(f"总处理时间: {result['total_processing_time']:.2f} 秒")
 ```
 
-### Command Line Interface
+### 命令行界面
 
 ```bash
-# Basic batch processing
+# 基本批量处理
 python -m raganything.batch_parser path/to/docs/ --output ./output --workers 4
 
-# With specific parser
+# 使用特定解析器
 python -m raganything.batch_parser path/to/docs/ --parser mineru --method auto
 
-# Without progress bar
+# 不显示进度条
 python -m raganything.batch_parser path/to/docs/ --output ./output --no-progress
 
-# Help
+# 帮助
 python -m raganything.batch_parser --help
 ```
 
-## Configuration
+## 配置
 
-### Environment Variables
+### 环境变量
 
 ```env
-# Batch processing configuration
+# 批量处理配置
 MAX_CONCURRENT_FILES=4
 SUPPORTED_FILE_EXTENSIONS=.pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.md
 RECURSIVE_FOLDER_PROCESSING=true
 PARSER_OUTPUT_DIR=./parsed_output
 ```
 
-### BatchParser Parameters
+### BatchParser 参数
 
-- **parser_type**: `"mineru"` or `"docling"` (default: `"mineru"`)
-- **max_workers**: Number of parallel workers (default: `4`)
-- **show_progress**: Show progress bar (default: `True`)
-- **timeout_per_file**: Timeout per file in seconds (default: `300`)
-- **skip_installation_check**: Skip parser installation check (default: `False`)
+- **parser_type**：`"mineru"` 或 `"docling"`（默认：`"mineru"`）
+- **max_workers**：并行工作线程数（默认：`4`）
+- **show_progress**：显示进度条（默认：`True`）
+- **timeout_per_file**：每个文件的超时时间（秒）（默认：`300`）
+- **skip_installation_check**：跳过解析器安装检查（默认：`False`）
 
-## Supported File Types
+## 支持的文件类型
 
-- **PDF files**: `.pdf`
-- **Office documents**: `.doc`, `.docx`, `.ppt`, `.pptx`, `.xls`, `.xlsx`
-- **Images**: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.tif`, `.gif`, `.webp`
-- **Text files**: `.txt`, `.md`
+- **PDF 文件**：`.pdf`
+- **Office 文档**：`.doc`、`.docx`、`.ppt`、`.pptx`、`.xls`、`.xlsx`
+- **图像**：`.png`、`.jpg`、`.jpeg`、`.bmp`、`.tiff`、`.tif`、`.gif`、`.webp`
+- **文本文件**：`.txt`、`.md`
 
-## API Reference
+## API 参考
 
 ### BatchProcessingResult
 
 ```python
 @dataclass
 class BatchProcessingResult:
-    successful_files: List[str]      # Successfully processed files
-    failed_files: List[str]          # Failed files
-    total_files: int                 # Total number of files
-    processing_time: float           # Total processing time in seconds
-    errors: Dict[str, str]           # Error messages for failed files
-    output_dir: str                  # Output directory used
+    successful_files: List[str]      # 成功处理的文件
+    failed_files: List[str]          # 失败的文件
+    total_files: int                 # 文件总数
+    processing_time: float           # 总处理时间（秒）
+    errors: Dict[str, str]           # 失败文件的错误消息
+    output_dir: str                  # 使用的输出目录
 
-    def summary(self) -> str:        # Human-readable summary
-    def success_rate(self) -> float: # Success rate as percentage
+    def summary(self) -> str:        # 人类可读的摘要
+    def success_rate(self) -> float: # 成功率百分比
 ```
 
-### BatchParser Methods
+### BatchParser 方法
 
 ```python
 class BatchParser:
     def __init__(self, parser_type: str = "mineru", max_workers: int = 4, ...):
-        """Initialize batch parser"""
+        """初始化批量解析器"""
 
     def get_supported_extensions(self) -> List[str]:
-        """Get list of supported file extensions"""
+        """获取支持的文件扩展名列表"""
 
     def filter_supported_files(self, file_paths: List[str], recursive: bool = True) -> List[str]:
-        """Filter files to only supported types"""
+        """过滤文件，仅保留支持的类型"""
 
     def process_batch(self, file_paths: List[str], output_dir: str, ...) -> BatchProcessingResult:
-        """Process files in batch"""
+        """批量处理文件"""
 
     async def process_batch_async(self, file_paths: List[str], output_dir: str, ...) -> BatchProcessingResult:
-        """Process files in batch asynchronously"""
+        """异步批量处理文件"""
 ```
 
-## Performance Considerations
+## 性能考虑
 
-### Memory Usage
-- Each worker uses additional memory
-- Recommended: 2-4 workers for most systems
-- Monitor memory usage with large files
+### 内存使用
+- 每个工作线程使用额外内存
+- 建议：大多数系统使用 2-4 个工作线程
+- 处理大文件时监控内存使用情况
 
-### CPU Usage
-- Parallel processing utilizes multiple cores
-- Optimal worker count depends on CPU cores and file sizes
-- I/O may become bottleneck with many small files
+### CPU 使用
+- 并行处理利用多核心
+- 最佳工作线程数取决于 CPU 核心数和文件大小
+- 处理大量小文件时 I/O 可能成为瓶颈
 
-### Recommended Settings
-- **Small files** (< 1MB): Higher worker count (6-8)
-- **Large files** (> 100MB): Lower worker count (2-3)
-- **Mixed sizes**: Start with 4 workers and adjust
+### 推荐设置
+- **小文件**（< 1MB）：较高的工作线程数（6-8）
+- **大文件**（> 100MB）：较低的工作线程数（2-3）
+- **混合大小**：从 4 个工作线程开始并调整
 
-## Troubleshooting
+## 故障排除
 
-### Common Issues
+### 常见问题
 
-#### Memory Errors
+#### 内存错误
 ```python
-# Solution: Reduce max_workers
+# 解决方案：减少 max_workers
 batch_parser = BatchParser(max_workers=2)
 ```
 
-#### Timeout Errors
+#### 超时错误
 ```python
-# Solution: Increase timeout_per_file
-batch_parser = BatchParser(timeout_per_file=600)  # 10 minutes
+# 解决方案：增加 timeout_per_file
+batch_parser = BatchParser(timeout_per_file=600)  # 10 分钟
 ```
 
-#### Parser Installation Issues
+#### 解析器安装问题
 ```python
-# Solution: Skip installation check
+# 解决方案：跳过安装检查
 batch_parser = BatchParser(skip_installation_check=True)
 ```
 
-#### File Not Found Errors
-- Check file paths and permissions
-- Ensure input files exist
-- Verify directory access rights
+#### 文件未找到错误
+- 检查文件路径和权限
+- 确保输入文件存在
+- 验证目录访问权限
 
-### Debug Mode
+### 调试模式
 
-Enable debug logging for detailed information:
+启用调试日志以获取详细信息：
 
 ```python
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
-# Create batch parser with debug logging
+# 创建带有调试日志的批量解析器
 batch_parser = BatchParser(parser_type="mineru", max_workers=2)
 ```
 
-### Error Handling
+### 错误处理
 
-The batch processor provides comprehensive error handling:
+批量处理器提供全面的错误处理：
 
 ```python
 result = batch_parser.process_batch(file_paths=["doc1.pdf", "doc2.docx"])
 
-# Check for errors
+# 检查错误
 if result.failed_files:
-    print("Failed files:")
+    print("失败的文件:")
     for file_path in result.failed_files:
-        error_message = result.errors.get(file_path, "Unknown error")
+        error_message = result.errors.get(file_path, "未知错误")
         print(f"  - {file_path}: {error_message}")
 
-# Process only successful files
+# 仅处理成功的文件
 for file_path in result.successful_files:
-    print(f"Successfully processed: {file_path}")
+    print(f"成功处理: {file_path}")
 ```
 
-## Examples
+## 示例
 
-### Process Entire Directory
+### 处理整个目录
 
 ```python
 from pathlib import Path
 
-# Process all supported files in a directory
+# 处理目录中所有支持的文件
 batch_parser = BatchParser(max_workers=4)
 directory_path = Path("./documents")
 
 result = batch_parser.process_batch(
     file_paths=[str(directory_path)],
     output_dir="./processed",
-    recursive=True  # Include subdirectories
+    recursive=True  # 包含子目录
 )
 
-print(f"Processed {len(result.successful_files)} out of {result.total_files} files")
+print(f"处理了 {len(result.successful_files)} 个文件，共 {result.total_files} 个")
 ```
 
-### Filter Files Before Processing
+### 处理前过滤文件
 
 ```python
-# Get all files in directory
+# 获取目录中的所有文件
 all_files = ["doc1.pdf", "image.png", "spreadsheet.xlsx", "unsupported.xyz"]
 
-# Filter to supported files only
+# 仅过滤支持的文件
 supported_files = batch_parser.filter_supported_files(all_files)
-print(f"Will process {len(supported_files)} out of {len(all_files)} files")
+print(f"将处理 {len(supported_files)} 个文件，共 {len(all_files)} 个")
 
-# Process only supported files
+# 仅处理支持的文件
 result = batch_parser.process_batch(
     file_paths=supported_files,
     output_dir="./output"
 )
 ```
 
-### Custom Error Handling
+### 自定义错误处理
 
 ```python
 def process_with_retry(file_paths, max_retries=3):
-    """Process files with retry logic"""
+    """使用重试逻辑处理文件"""
 
     for attempt in range(max_retries):
         result = batch_parser.process_batch(file_paths, "./output")
 
         if not result.failed_files:
-            break  # All files processed successfully
+            break  # 所有文件处理成功
 
-        print(f"Attempt {attempt + 1}: {len(result.failed_files)} files failed")
-        file_paths = result.failed_files  # Retry failed files
+        print(f"尝试 {attempt + 1}: {len(result.failed_files)} 个文件失败")
+        file_paths = result.failed_files  # 重试失败的文件
 
     return result
 ```
 
-## Best Practices
+## 最佳实践
 
-1. **Start with default settings** and adjust based on performance
-2. **Monitor system resources** during batch processing
-3. **Use appropriate worker counts** for your hardware
-4. **Handle errors gracefully** with retry logic
-5. **Test with small batches** before processing large collections
-6. **Use skip_installation_check** if facing parser installation issues
-7. **Enable progress tracking** for long-running operations
-8. **Set appropriate timeouts** based on expected file processing times
+1. **从默认设置开始**，根据性能进行调整
+2. **监控系统资源**在批量处理期间
+3. **使用适合您硬件的工作线程数**
+4. **优雅地处理错误**，使用重试逻辑
+5. **先用小批量测试**，然后再处理大型集合
+6. **使用 skip_installation_check** 如果遇到解析器安装问题
+7. **启用进度跟踪**用于长时间运行的操作
+8. **设置适当的超时**基于预期的文件处理时间
 
-## Conclusion
+## 结论
 
-The batch processing feature significantly improves RAG-Anything's throughput for large document collections. It provides flexible configuration options, comprehensive error handling, and seamless integration with the existing RAG-Anything pipeline.
+批量处理功能显著提高了 RAG-Anything 处理大型文档集合的吞吐量。它提供了灵活的配置选项、全面的错误处理，并与现有的 RAG-Anything 管道无缝集成。

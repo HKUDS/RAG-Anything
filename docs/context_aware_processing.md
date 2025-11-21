@@ -1,62 +1,62 @@
-# Context-Aware Multimodal Processing in RAGAnything
+# RAGAnything 中的上下文感知多模态处理
 
-This document describes the context-aware multimodal processing feature in RAGAnything, which provides surrounding content information to LLMs when analyzing images, tables, equations, and other multimodal content for enhanced accuracy and relevance.
+本文档描述了 RAGAnything 中的上下文感知多模态处理功能，该功能在分析图像、表格、公式和其他多模态内容时为 LLM 提供周围内容信息，以增强准确性和相关性。
 
-## Overview
+## 概述
 
-The context-aware feature enables RAGAnything to automatically extract and provide surrounding text content as context when processing multimodal content. This leads to more accurate and contextually relevant analysis by giving AI models additional information about where the content appears in the document structure.
+上下文感知功能使 RAGAnything 能够在处理多模态内容时自动提取并提供周围文本内容作为上下文。通过向 AI 模型提供有关内容在文档结构中位置的额外信息，这可以实现更准确和上下文相关的分析。
 
-### Key Benefits
+### 主要优势
 
-- **Enhanced Accuracy**: Context helps AI understand the purpose and meaning of multimodal content
-- **Semantic Coherence**: Generated descriptions align with document context and terminology
-- **Automated Integration**: Context extraction is automatically enabled during document processing
-- **Flexible Configuration**: Multiple extraction modes and filtering options
+- **增强准确性**：上下文帮助 AI 理解多模态内容的目的和含义
+- **语义连贯性**：生成的描述与文档上下文和术语保持一致
+- **自动化集成**：在文档处理期间自动启用上下文提取
+- **灵活配置**：多种提取模式和过滤选项
 
-## Key Features
+## 主要特性
 
-### 1. Configuration Support
-- **Integrated Configuration**: Complete context options in `RAGAnythingConfig`
-- **Environment Variables**: Configure all context parameters via environment variables
-- **Dynamic Updates**: Runtime configuration updates supported
-- **Content Format Control**: Configurable content source format detection
+### 1. 配置支持
+- **集成配置**：在 `RAGAnythingConfig` 中完整的上下文选项
+- **环境变量**：通过环境变量配置所有上下文参数
+- **动态更新**：支持运行时配置更新
+- **内容格式控制**：可配置的内容源格式检测
 
-### 2. Automated Integration
-- **Auto-Initialization**: Modal processors automatically receive tokenizer and context configuration
-- **Content Source Setup**: Document processing automatically sets content sources for context extraction
-- **Position Information**: Automatic position info (page_idx, index) passed to processors
-- **Batch Processing**: Context-aware batch processing for efficient document handling
+### 2. 自动化集成
+- **自动初始化**：模态处理器自动接收分词器和上下文配置
+- **内容源设置**：文档处理自动设置用于上下文提取的内容源
+- **位置信息**：自动将位置信息（page_idx、index）传递给处理器
+- **批量处理**：用于高效文档处理的上下文感知批量处理
 
-### 3. Advanced Token Management
-- **Accurate Token Counting**: Uses LightRAG's tokenizer for precise token calculation
-- **Smart Boundary Preservation**: Truncates at sentence/paragraph boundaries
-- **Backward Compatibility**: Fallback to character truncation when tokenizer unavailable
+### 3. 高级令牌管理
+- **精确令牌计数**：使用 LightRAG 的分词器进行精确令牌计算
+- **智能边界保留**：在句子/段落边界处截断
+- **向后兼容性**：当分词器不可用时回退到字符截断
 
-### 4. Universal Context Extraction
-- **Multiple Formats**: Support for MinerU, plain text, custom formats
-- **Flexible Modes**: Page-based and chunk-based context extraction
-- **Content Filtering**: Configurable content type filtering
-- **Header Support**: Optional inclusion of document headers and structure
+### 4. 通用上下文提取
+- **多种格式**：支持 MinerU、纯文本、自定义格式
+- **灵活模式**：基于页面和基于块的上下文提取
+- **内容过滤**：可配置的内容类型过滤
+- **标题支持**：可选包含文档标题和结构
 
-## Configuration
+## 配置
 
-### RAGAnythingConfig Parameters
+### RAGAnythingConfig 参数
 
 ```python
-# Context Extraction Configuration
-context_window: int = 1                    # Context window size (pages/chunks)
-context_mode: str = "page"                 # Context mode ("page" or "chunk")
-max_context_tokens: int = 2000             # Maximum context tokens
-include_headers: bool = True               # Include document headers
-include_captions: bool = True              # Include image/table captions
-context_filter_content_types: List[str] = ["text"]  # Content types to include
-content_format: str = "minerU"             # Default content format for context extraction
+# 上下文提取配置
+context_window: int = 1                    # 上下文窗口大小（页面/块）
+context_mode: str = "page"                 # 上下文模式（"page" 或 "chunk"）
+max_context_tokens: int = 2000             # 最大上下文令牌数
+include_headers: bool = True               # 包含文档标题
+include_captions: bool = True              # 包含图像/表格标题
+context_filter_content_types: List[str] = ["text"]  # 要包含的内容类型
+content_format: str = "minerU"             # 用于上下文提取的默认内容格式
 ```
 
-### Environment Variables
+### 环境变量
 
 ```bash
-# Context extraction settings
+# 上下文提取设置
 CONTEXT_WINDOW=2
 CONTEXT_MODE=page
 MAX_CONTEXT_TOKENS=3000
@@ -66,14 +66,14 @@ CONTEXT_FILTER_CONTENT_TYPES=text,image
 CONTENT_FORMAT=minerU
 ```
 
-## Usage Guide
+## 使用指南
 
-### 1. Basic Configuration
+### 1. 基本配置
 
 ```python
 from raganything import RAGAnything, RAGAnythingConfig
 
-# Create configuration with context settings
+# 创建带有上下文设置的配置
 config = RAGAnythingConfig(
     context_window=2,
     context_mode="page",
@@ -84,7 +84,7 @@ config = RAGAnythingConfig(
     content_format="minerU"
 )
 
-# Create RAGAnything instance
+# 创建 RAGAnything 实例
 rag_anything = RAGAnything(
     config=config,
     llm_model_func=your_llm_function,
@@ -92,20 +92,20 @@ rag_anything = RAGAnything(
 )
 ```
 
-### 2. Automatic Document Processing
+### 2. 自动文档处理
 
 ```python
-# Context is automatically enabled during document processing
+# 在文档处理期间自动启用上下文
 await rag_anything.process_document_complete("document.pdf")
 ```
 
-### 3. Manual Content Source Configuration
+### 3. 手动内容源配置
 
 ```python
-# Set content source for specific content lists
+# 为特定内容列表设置内容源
 rag_anything.set_content_source_for_context(content_list, "minerU")
 
-# Update context configuration at runtime
+# 在运行时更新上下文配置
 rag_anything.update_context_config(
     context_window=1,
     max_context_tokens=1500,
@@ -113,7 +113,7 @@ rag_anything.update_context_config(
 )
 ```
 
-### 4. Direct Modal Processor Usage
+### 4. 直接使用模态处理器
 
 ```python
 from raganything.modalprocessors import (
@@ -122,7 +122,7 @@ from raganything.modalprocessors import (
     ImageModalProcessor
 )
 
-# Configure context extraction
+# 配置上下文提取
 config = ContextConfig(
     context_window=1,
     context_mode="page",
@@ -132,16 +132,16 @@ config = ContextConfig(
     filter_content_types=["text"]
 )
 
-# Initialize context extractor
+# 初始化上下文提取器
 context_extractor = ContextExtractor(config)
 
-# Initialize modal processor with context support
+# 初始化带有上下文支持的模态处理器
 processor = ImageModalProcessor(lightrag, caption_func, context_extractor)
 
-# Set content source
+# 设置内容源
 processor.set_content_source(content_list, "minerU")
 
-# Process with context
+# 带上下文处理
 item_info = {
     "page_idx": 2,
     "index": 5,
@@ -157,76 +157,76 @@ result = await processor.process_multimodal_content(
 )
 ```
 
-## Context Modes
+## 上下文模式
 
-### Page-Based Context (`context_mode="page"`)
-- Extracts context based on page boundaries
-- Uses `page_idx` field from content items
-- Suitable for document-structured content
-- Example: Include text from 2 pages before and after current image
+### 基于页面的上下文（`context_mode="page"`）
+- 基于页面边界提取上下文
+- 使用内容项中的 `page_idx` 字段
+- 适用于文档结构化内容
+- 示例：包含当前图像前后 2 页的文本
 
-### Chunk-Based Context (`context_mode="chunk"`)
-- Extracts context based on content item positions
-- Uses sequential position in content list
-- Suitable for fine-grained control
-- Example: Include 5 content items before and after current table
+### 基于块的上下文（`context_mode="chunk"`）
+- 基于内容项位置提取上下文
+- 使用内容列表中的顺序位置
+- 适用于细粒度控制
+- 示例：包含当前表格前后 5 个内容项
 
-## Processing Workflow
+## 处理工作流
 
-### 1. Document Parsing
+### 1. 文档解析
 ```
-Document Input → MinerU Parsing → content_list Generation
-```
-
-### 2. Context Setup
-```
-content_list → Set as Context Source → All Modal Processors Gain Context Capability
+文档输入 → MinerU 解析 → content_list 生成
 ```
 
-### 3. Multimodal Processing
+### 2. 上下文设置
 ```
-Multimodal Content → Extract Surrounding Context → Enhanced LLM Analysis → More Accurate Results
+content_list → 设置为上下文源 → 所有模态处理器获得上下文能力
 ```
 
-## Content Source Formats
+### 3. 多模态处理
+```
+多模态内容 → 提取周围上下文 → 增强 LLM 分析 → 更准确的结果
+```
 
-### MinerU Format
+## 内容源格式
+
+### MinerU 格式
 ```json
 [
     {
         "type": "text",
-        "text": "Document content here...",
+        "text": "这里是文档内容...",
         "text_level": 1,
         "page_idx": 0
     },
     {
         "type": "image",
         "img_path": "images/figure1.jpg",
-        "image_caption": ["Figure 1: Architecture"],
+        "image_caption": ["图 1: 架构"],
         "image_footnote": [],
         "page_idx": 1
     }
 ]
 ```
 
-### Custom Text Chunks
+### 自定义文本块
 ```python
 text_chunks = [
-    "First chunk of text content...",
-    "Second chunk of text content...",
-    "Third chunk of text content..."
+    "第一块文本内容...",
+    "第二块文本内容...",
+    "第三块文本内容..."
 ]
 ```
 
-### Plain Text
+### 纯文本
 ```python
-full_document = "Complete document text with all content..."
+full_document = "包含所有内容的完整文档文本..."
 ```
 
-## Configuration Examples
+## 配置示例
 
-### High-Precision Context
-For focused analysis with minimal context:
+### 高精度上下文
+用于具有最小上下文的集中分析：
 ```python
 config = RAGAnythingConfig(
     context_window=1,
@@ -238,8 +238,8 @@ config = RAGAnythingConfig(
 )
 ```
 
-### Comprehensive Context
-For broad analysis with rich context:
+### 全面上下文
+用于具有丰富上下文的广泛分析：
 ```python
 config = RAGAnythingConfig(
     context_window=2,
@@ -251,8 +251,8 @@ config = RAGAnythingConfig(
 )
 ```
 
-### Chunk-Based Analysis
-For fine-grained sequential context:
+### 基于块的分析
+用于细粒度顺序上下文：
 ```python
 config = RAGAnythingConfig(
     context_window=5,
@@ -264,112 +264,112 @@ config = RAGAnythingConfig(
 )
 ```
 
-## Performance Optimization
+## 性能优化
 
-### 1. Accurate Token Control
-- Uses real tokenizer for precise token counting
-- Avoids exceeding LLM token limits
-- Provides consistent performance
+### 1. 精确令牌控制
+- 使用真实分词器进行精确令牌计数
+- 避免超出 LLM 令牌限制
+- 提供一致的性能
 
-### 2. Smart Truncation
-- Truncates at sentence boundaries
-- Maintains semantic integrity
-- Adds truncation indicators
+### 2. 智能截断
+- 在句子边界处截断
+- 保持语义完整性
+- 添加截断指示符
 
-### 3. Caching Optimization
-- Context extraction results can be reused
-- Reduces redundant computation overhead
+### 3. 缓存优化
+- 上下文提取结果可以重用
+- 减少冗余计算开销
 
-## Advanced Features
+## 高级特性
 
-### Context Truncation
-The system automatically truncates context to fit within token limits:
-- Uses actual tokenizer for accurate token counting
-- Attempts to end at sentence boundaries (periods)
-- Falls back to line boundaries if needed
-- Adds "..." indicator for truncated content
+### 上下文截断
+系统自动截断上下文以适应令牌限制：
+- 使用实际分词器进行精确令牌计数
+- 尝试在句子边界（句号）处结束
+- 如果需要，回退到行边界
+- 为截断的内容添加 "..." 指示符
 
-### Header Formatting
-When `include_headers=True`, headers are formatted with markdown-style prefixes:
+### 标题格式化
+当 `include_headers=True` 时，标题使用 markdown 样式前缀格式化：
 ```
-# Level 1 Header
-## Level 2 Header
-### Level 3 Header
-```
-
-### Caption Integration
-When `include_captions=True`, image and table captions are included as:
-```
-[Image: Figure 1 caption text]
-[Table: Table 1 caption text]
+# 一级标题
+## 二级标题
+### 三级标题
 ```
 
-## Integration with RAGAnything
+### 标题集成
+当 `include_captions=True` 时，图像和表格标题包含为：
+```
+[图像: 图 1 标题文本]
+[表格: 表 1 标题文本]
+```
 
-The context-aware feature is seamlessly integrated into RAGAnything's workflow:
+## 与 RAGAnything 集成
 
-1. **Automatic Setup**: Context extractors are automatically created and configured
-2. **Content Source Management**: Document processing automatically sets content sources
-3. **Processor Integration**: All modal processors receive context capabilities
-4. **Configuration Consistency**: Single configuration system for all context settings
+上下文感知功能无缝集成到 RAGAnything 的工作流中：
 
-## Error Handling
+1. **自动设置**：自动创建和配置上下文提取器
+2. **内容源管理**：文档处理自动设置内容源
+3. **处理器集成**：所有模态处理器接收上下文能力
+4. **配置一致性**：所有上下文设置的单一配置系统
 
-The system includes robust error handling:
-- Gracefully handles missing or invalid content sources
-- Returns empty context for unsupported formats
-- Logs warnings for configuration issues
-- Continues processing even if context extraction fails
+## 错误处理
 
-## Compatibility
+系统包含强大的错误处理：
+- 优雅地处理缺失或无效的内容源
+- 为不支持的格式返回空上下文
+- 记录配置问题的警告
+- 即使上下文提取失败也继续处理
 
-- **Backward Compatible**: Existing code works without modification
-- **Optional Feature**: Context can be selectively enabled/disabled
-- **Flexible Configuration**: Supports multiple configuration combinations
+## 兼容性
 
-## Best Practices
+- **向后兼容**：现有代码无需修改即可工作
+- **可选功能**：可以选择性地启用/禁用上下文
+- **灵活配置**：支持多种配置组合
 
-1. **Token Limits**: Ensure `max_context_tokens` doesn't exceed LLM context limits
-2. **Performance Impact**: Larger context windows increase processing time
-3. **Content Quality**: Context quality directly affects analysis accuracy
-4. **Window Size**: Match window size to content structure (documents vs articles)
-5. **Content Filtering**: Use `context_filter_content_types` to reduce noise
+## 最佳实践
 
-## Troubleshooting
+1. **令牌限制**：确保 `max_context_tokens` 不超过 LLM 上下文限制
+2. **性能影响**：较大的上下文窗口会增加处理时间
+3. **内容质量**：上下文质量直接影响分析准确性
+4. **窗口大小**：将窗口大小与内容结构（文档 vs 文章）匹配
+5. **内容过滤**：使用 `context_filter_content_types` 减少噪音
 
-### Common Issues
+## 故障排除
 
-**Context Not Extracted**
-- Check if `set_content_source_for_context()` was called
-- Verify `item_info` contains required fields (`page_idx`, `index`)
-- Confirm content source format is correct
+### 常见问题
 
-**Context Too Long/Short**
-- Adjust `max_context_tokens` setting
-- Modify `context_window` size
-- Check `context_filter_content_types` configuration
+**未提取上下文**
+- 检查是否调用了 `set_content_source_for_context()`
+- 验证 `item_info` 包含所需字段（`page_idx`、`index`）
+- 确认内容源格式正确
 
-**Irrelevant Context**
-- Refine `context_filter_content_types` to exclude noise
-- Reduce `context_window` size
-- Set `include_captions=False` if captions are not helpful
+**上下文过长/过短**
+- 调整 `max_context_tokens` 设置
+- 修改 `context_window` 大小
+- 检查 `context_filter_content_types` 配置
 
-**Configuration Issues**
-- Verify environment variables are set correctly
-- Check RAGAnythingConfig parameter names
-- Ensure content_format matches your data source
+**无关上下文**
+- 优化 `context_filter_content_types` 以排除噪音
+- 减少 `context_window` 大小
+- 如果标题没有帮助，设置 `include_captions=False`
 
-## Examples
+**配置问题**
+- 验证环境变量设置正确
+- 检查 RAGAnythingConfig 参数名称
+- 确保 content_format 与您的数据源匹配
 
-Check out these example files for complete usage demonstrations:
+## 示例
 
-- **Configuration Examples**: See how to set up different context configurations
-- **Integration Examples**: Learn how to integrate context-aware processing into your workflow
-- **Custom Processors**: Examples of creating custom modal processors with context support
+查看这些示例文件以获取完整的使用演示：
 
-## API Reference
+- **配置示例**：了解如何设置不同的上下文配置
+- **集成示例**：学习如何将上下文感知处理集成到您的工作流中
+- **自定义处理器**：创建带有上下文支持的自定义模态处理器的示例
 
-For detailed API documentation, see the docstrings in:
-- `raganything/modalprocessors.py` - Context extraction and modal processors
-- `raganything/config.py` - Configuration options
-- `raganything/raganything.py` - Main RAGAnything class integration
+## API 参考
+
+有关详细的 API 文档，请参阅以下文件中的文档字符串：
+- `raganything/modalprocessors.py` - 上下文提取和模态处理器
+- `raganything/config.py` - 配置选项
+- `raganything/raganything.py` - 主 RAGAnything 类集成

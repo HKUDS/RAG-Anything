@@ -1,45 +1,45 @@
-# Running RAG-Anything in an Offline Environment
+# 在离线环境中运行 RAG-Anything
 
-This document explains a critical consideration for running the RAG-Anything project in an environment with no internet access.
+本文档解释了在没有互联网访问的环境中运行 RAG-Anything 项目的关键注意事项。
 
-## The Network Dependency: `LightRAG` and `tiktoken`
+## 网络依赖：`LightRAG` 和 `tiktoken`
 
-The `RAGAnything` core engine relies on the `LightRAG` library for its primary functionality. `LightRAG`, in turn, uses OpenAI's `tiktoken` library for text tokenization.
+`RAGAnything` 核心引擎依赖于 `LightRAG` 库来实现其主要功能。而 `LightRAG` 反过来使用 OpenAI 的 `tiktoken` 库进行文本分词。
 
-By default, the `tiktoken` library has a network dependency. On its first use, it attempts to download tokenizer models from OpenAI's public servers (`openaipublic.blob.core.windows.net`). If the application is running in an offline or network-restricted environment, this download will fail, causing the `LightRAG` instance to fail to initialize.
+默认情况下，`tiktoken` 库具有网络依赖性。在首次使用时，它会尝试从 OpenAI 的公共服务器（`openaipublic.blob.core.windows.net`）下载分词器模型。如果应用程序在离线或网络受限的环境中运行，此下载将失败，导致 `LightRAG` 实例初始化失败。
 
-This results in an error similar to the following:
+这会导致类似以下的错误：
 
 ```
 Failed to initialize LightRAG instance: HTTPSConnectionPool(host='openaipublic.blob.core.windows.net', port=443): Max retries exceeded with url: /encodings/o200k_ba
 ```
 
-This dependency is indirect. The `RAG-Anything` codebase itself does not directly import or call `tiktoken`. The call is made from within the `lightrag` library.
+此依赖性是间接的。`RAG-Anything` 代码库本身不直接导入或调用 `tiktoken`。该调用是从 `lightrag` 库内部进行的。
 
-## The Solution: Using a Local `tiktoken` Cache
+## 解决方案：使用本地 `tiktoken` 缓存
 
-To resolve this issue and enable fully offline operation, you must provide a local cache for the `tiktoken` models. This is achieved by setting the `TIKTOKEN_CACHE_DIR` environment variable **before** the application starts.
+要解决此问题并实现完全离线操作，您必须为 `tiktoken` 模型提供本地缓存。这是通过在应用程序启动**之前**设置 `TIKTOKEN_CACHE_DIR` 环境变量来实现的。
 
-When this environment variable is set, `tiktoken` will look for its model files in the specified local directory instead of attempting to download them from the internet.
+当设置此环境变量时，`tiktoken` 将在指定的本地目录中查找其模型文件，而不是尝试从互联网下载它们。
 
-### Steps to Implement the Solution:
+### 实施解决方案的步骤：
 
-1.  **Create a Model Cache:** In an environment *with* internet access, run the provided script to download and cache the necessary `tiktoken` models.
+1.  **创建模型缓存：** 在*有*互联网访问的环境中，运行提供的脚本以下载并缓存必要的 `tiktoken` 模型。
 
     ```bash
-    # Run the cache creation script
+    # 运行缓存创建脚本
     uv run scripts/create_tiktoken_cache.py
     ```
 
-    This will create a `tiktoken_cache` directory in your project root containing the required model files.
+    这将在项目根目录中创建一个 `tiktoken_cache` 目录，其中包含所需的模型文件。
 
-2.  **Configure the Environment Variable:** Add the following line to your `.env` file:
+2.  **配置环境变量：** 将以下行添加到您的 `.env` 文件中：
 
     ```bash
     TIKTOKEN_CACHE_DIR=./tiktoken_cache
     ```
 
-    **Important:** You should ensure that the `.env` file is loaded **before** `LightRAG` imports `tiktoken`, making this configuration effective.
+    **重要：** 您应该确保 `.env` 文件在 `LightRAG` 导入 `tiktoken` **之前**加载，使此配置生效。
 
     ```python
     import os
@@ -51,28 +51,28 @@ When this environment variable is set, `tiktoken` will look for its model files 
     from pathlib import Path
     from dotenv import load_dotenv
 
-    # Add project root directory to Python path
+    # 将项目根目录添加到 Python 路径
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-    # Load environment variables FIRST - before any imports that use tiktoken
+    # 首先加载环境变量 - 在任何使用 tiktoken 的导入之前
     load_dotenv(dotenv_path=".env", override=False)
 
-    # Now import LightRAG (which will import tiktoken with the correct env var set)
+    # 现在导入 LightRAG（它将使用正确的环境变量集导入 tiktoken）
     from lightrag import LightRAG
     from lightrag.utils import logger
 
-    # Rest of the code...
+    # 其余代码...
     ```
 
-### Testing the Offline Setup
+### 测试离线设置
 
-1.  **Create a `tiktoken_cache` directory:** If you don't have one already, create a directory named `tiktoken_cache` in the project root.
-2.  **Populate the cache:** Run the `scripts/create_tiktoken_cache.py` script to download the necessary tiktoken models into the `tiktoken_cache` directory.
-3.  **Set the `TIKTOKEN_CACHE_DIR` environment variable:** Add the line `TIKTOKEN_CACHE_DIR=./tiktoken_cache` to your `.env` file.
-4.  **Disconnect from the internet:** Disable your internet connection or put your machine in airplane mode.
-5.  **Run the application:** Start the `RAG-Anything` application. For example:
+1.  **创建 `tiktoken_cache` 目录：** 如果您还没有，请在项目根目录中创建一个名为 `tiktoken_cache` 的目录。
+2.  **填充缓存：** 运行 `scripts/create_tiktoken_cache.py` 脚本，将必要的 tiktoken 模型下载到 `tiktoken_cache` 目录中。
+3.  **设置 `TIKTOKEN_CACHE_DIR` 环境变量：** 将 `TIKTOKEN_CACHE_DIR=./tiktoken_cache` 这行添加到您的 `.env` 文件中。
+4.  **断开互联网连接：** 禁用您的互联网连接或将您的机器置于飞行模式。
+5.  **运行应用程序：** 启动 `RAG-Anything` 应用程序。例如：
     ```
     uv run examples/raganything_example.py requirements.txt
     ```
 
-By following these steps, you can eliminate the network dependency and run the `RAG-Anything` project successfully in a fully offline environment.
+通过遵循这些步骤，您可以消除网络依赖性，并在完全离线的环境中成功运行 `RAG-Anything` 项目。
