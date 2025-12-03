@@ -103,6 +103,11 @@ class RAGAnythingConfig:
     content_format: str = field(default=get_env_value("CONTENT_FORMAT", "minerU", str))
     """Default content format for context extraction when processing documents."""
 
+    # Path Handling Configuration
+    # ---
+    use_full_path: bool = field(default=get_env_value("USE_FULL_PATH", False, bool))
+    """Whether to use full file path (True) or just basename (False) for file references in LightRAG."""
+
     def __post_init__(self):
         """Post-initialization setup for backward compatibility"""
         # Support legacy environment variable names for backward compatibility
