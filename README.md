@@ -421,14 +421,14 @@ async def main():
 
     # Multimodal query with specific multimodal content
     multimodal_result = await rag.aquery_with_multimodal(
-    "Explain this formula and its relevance to the document content",
-    multimodal_content=[{
-        "type": "equation",
-        "latex": "P(d|q) = \\frac{P(q|d) \\cdot P(d)}{P(q)}",
-        "equation_caption": "Document relevance probability"
-    }],
-    mode="hybrid"
-)
+        "Explain this formula and its relevance to the document content",
+        multimodal_content=[{
+            "type": "equation",
+            "latex": "P(d|q) = \\frac{P(q|d) \\cdot P(d)}{P(q)}",
+            "equation_caption": "Document relevance probability"
+        }],
+        mode="hybrid"
+    )
     print("Multimodal query result:", multimodal_result)
 
 if __name__ == "__main__":
