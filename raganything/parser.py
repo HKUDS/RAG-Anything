@@ -812,9 +812,26 @@ class MineruParser(Parser):
 
         file_stem_subdir = output_dir / file_stem
         if file_stem_subdir.exists():
-            md_file = file_stem_subdir / method / f"{file_stem}.md"
-            json_file = file_stem_subdir / method / f"{file_stem}_content_list.json"
-            images_base_dir = file_stem_subdir / method
+            # Discover actual output folder - MinerU creates different folder names
+            # based on backend (e.g., "hybrid_auto" for hybrid-auto-engine with method=auto,
+            # "vlm" for vlm backends, or just the method name for pipeline backend)
+            found_output_dir = None
+            for subdir in file_stem_subdir.iterdir():
+                if subdir.is_dir():
+                    candidate = subdir / f"{file_stem}_content_list.json"
+                    if candidate.exists():
+                        found_output_dir = subdir
+                        break
+
+            if found_output_dir:
+                md_file = found_output_dir / f"{file_stem}.md"
+                json_file = found_output_dir / f"{file_stem}_content_list.json"
+                images_base_dir = found_output_dir
+            else:
+                # Fallback to method-based path for backwards compatibility
+                md_file = file_stem_subdir / method / f"{file_stem}.md"
+                json_file = file_stem_subdir / method / f"{file_stem}_content_list.json"
+                images_base_dir = file_stem_subdir / method
 
         # Read markdown content
         md_content = ""
