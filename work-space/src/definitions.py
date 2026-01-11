@@ -22,9 +22,9 @@ EXPERIMENTS = {
         }
     ),
 
-    # Thí nghiệm 3: Text only
+    # Thí nghiệm 4: Text only
     "exp3_text_only": ExperimentDef(
-        id="exp4_text_only",
+        id="exp3_text_only",
         description="Disable Multimodal Processing (Benchmark Baseline Cost)",
         raganything_kwargs={
             "enable_image_processing": False,
