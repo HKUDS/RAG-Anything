@@ -4,6 +4,7 @@ import csv
 import logging
 from pathlib import Path
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.prompt import PROMPTS as LIB_PROMPTS
 
 from .config import ENV, ExperimentDef
 from .models import get_llm_func, get_vision_func, get_embed_func
@@ -15,6 +16,7 @@ class ExperimentEngine:
     def __init__(self):
         self.report_file = Path(ENV.report_file)
         self._ensure_report_header()
+        self.original_prompts = LIB_PROMPTS.copy()
 
     def _ensure_report_header(self):
         """Tạo file CSV và header nếu chưa tồn tại"""
@@ -26,6 +28,25 @@ class ExperimentEngine:
                     "Parse_Time(s)", "Graph_Time(s)", "Total_Time(s)", 
                     "Nodes", "Edges", "Chunks", "Entities", "Status"
                 ])
+    
+    def _apply_custom_prompts(self, custom_prompts: dict):
+        """Ghi đè prompt của thư viện bằng prompt của thí nghiệm"""
+        if not custom_prompts:
+            return
+        
+        logger.info("🔧 Applying custom prompts for this experiment.")
+        for key, value in custom_prompts.items():
+            if key in LIB_PROMPTS:
+                LIB_PROMPTS[key] = value
+                logger.info(f"  - Overridden prompt: {key}")
+            else:
+                logger.warning(f"  - Prompt key '{key}' not found in library prompts.")
+    
+    def _restore_prompts(self):
+        """Khôi phục prompt gốc của thư viện"""
+        LIB_PROMPTS.clear()
+        LIB_PROMPTS.update(self.original_prompts)
+        logger.info("🔄 Restored original library prompts.")
 
     def append_result(self, data: dict):
         """Ghi nối tiếp kết quả vào file CSV"""
@@ -50,6 +71,8 @@ class ExperimentEngine:
         logger.info(f"🚀 STARTING EXPERIMENT: {exp_def.id}")
         logger.info(f"📝 Description: {exp_def.description}")
         
+        self._apply_custom_prompts(exp_def.custom_prompts)
+
         # Định nghĩa thư mục riêng cho Exp này
         exp_dir = Path(ENV.output_base_dir) / exp_def.id
         rag_storage = exp_dir / "rag_storage"
@@ -62,7 +85,8 @@ class ExperimentEngine:
             parser="mineru",
             parse_method="auto",
             enable_image_processing=True,
-            max_concurrent_files=ENV.max_workers
+            max_concurrent_files=ENV.max_workers,
+            **exp_def.raganything_kwargs
         )
 
         # Init Engine
@@ -135,3 +159,4 @@ class ExperimentEngine:
         # Cleanup
         if hasattr(rag, 'close'):
             rag.close()
+        self._restore_prompts()

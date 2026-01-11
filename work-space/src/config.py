@@ -1,6 +1,6 @@
 import os
 from dataclasses import dataclass, field
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
@@ -27,5 +27,6 @@ class ExperimentDef:
     lightrag_kwargs: Dict[str, Any] = field(default_factory=dict)
     # Các tham số truyền xuống RAGAnything config (nếu cần)
     raganything_kwargs: Dict[str, Any] = field(default_factory=dict)
+    custom_prompts: Dict[str, str] = field(default_factory=dict)
 
 ENV = EnvConfig()
