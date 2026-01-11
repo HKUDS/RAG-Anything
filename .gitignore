@@ -6,6 +6,8 @@ __pycache__/
 *.tgz
 *.tar.gz
 *.ini
+bin/
+lib/
 
 # Virtual Environment
 .venv/
@@ -51,6 +53,9 @@ rag_storage*/
 examples/input/
 examples/output/
 output*/
+data/
+data_test/
+benchmark_outputs/
 
 # Miscellaneous
 .DS_Store
@@ -78,3 +83,4 @@ memory-bank/
 .claude/
 .cursor/
 CLAUDE.md
+ollama_models/
