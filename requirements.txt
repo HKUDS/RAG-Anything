@@ -13,3 +13,4 @@ tqdm
 #
 # Install with: pip install raganything[image,text] or pip install raganything[all]
 raganything[all]
+gliner

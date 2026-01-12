@@ -157,5 +157,26 @@ EXPERIMENTS = {
             Image Info: {captions}
             """
         }
+    ),
+
+    "exp6_hybrid_gliner": ExperimentDef(
+        id="exp6_hybrid_gliner",
+        description="Hybrid: GLiNER (Entities) + Qwen (Relations Only)",
+        
+        # Bật chế độ Hybrid
+        use_gliner=True,
+        gliner_labels=MEDICAL_ENTITY_TYPES, # Dùng lại list y tế
+        
+        lightrag_kwargs={
+            "chunk_token_size": 2400,
+            "entity_extract_max_gleaning": 1, 
+            # Không cần addon_params entity_types nữa vì GLiNER lo rồi
+            # Nhưng vẫn để cho chắc nếu fallback
+        },
+        
+        custom_prompts={
+            # Vision prompt vẫn giữ ngắn gọn
+            "vision_prompt_with_context": "Act as Medical Researcher. Return JSON: {detailed_description: 'Summary (max 20 words)', entity_info: {entity_name: 'Image', summary: 'N/A'}}"
+        }
     )
 }

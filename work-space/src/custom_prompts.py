@@ -34,3 +34,38 @@ Return a single JSON object:
 -Data-
 {input_text}
 """
+
+
+HYBRID_RELATION_PROMPT = """
+-Goal-
+You are a Medical Knowledge Graph Expert.
+I have already identified the entities in the text using a specialized tool. 
+Your job is ONLY to identify the relationships between these provided entities.
+
+-Provided Entities-
+{pre_extracted_entities}
+
+-Steps-
+1. Review the provided entities.
+2. Read the text below.
+3. Identify relationships between the provided entities.
+4. Output specific description for each entity (briefly, max 5 words) based on the text.
+
+-Output Format-
+Return a JSON object:
+{{
+  "entities": [
+    {{ "name": "EXISTING_ENTITY_NAME", "type": "EXISTING_TYPE", "description": "Brief description from text" }}
+  ],
+  "relationships": [
+    {{ "source": "ENTITY_1", "target": "ENTITY_2", "description": "Relation description", "weight": 10, "keywords": "k1, k2" }}
+  ]
+}}
+
+-Constraints-
+1. DO NOT create new entities that are not in the provided list.
+2. Only output JSON.
+
+-Data-
+{input_text}
+"""

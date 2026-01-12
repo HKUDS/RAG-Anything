@@ -95,7 +95,11 @@ class ExperimentEngine:
         # 1. Apply Prompt Injection
         self._apply_custom_prompts(exp_def.custom_prompts)
 
-        llm_f, vision_f, embed_f = get_model_funcs(exp_def.provider)
+        llm_f, vision_f, embed_f = get_model_funcs(
+            provider=exp_def.provider,
+            use_gliner=exp_def.use_gliner,
+            gliner_labels=exp_def.gliner_labels
+        )
 
         # Định nghĩa thư mục riêng cho Exp này
         exp_dir = Path(ENV.output_base_dir) / exp_def.id

@@ -33,6 +33,10 @@ class ExperimentDef:
     id: str
     description: str
     provider: str = "ollama" 
+    
+    use_gliner: bool = False
+    gliner_labels: list = field(default_factory=list)
+
     lightrag_kwargs: Dict[str, Any] = field(default_factory=dict)
     raganything_kwargs: Dict[str, Any] = field(default_factory=dict)
     custom_prompts: Dict[str, str] = field(default_factory=dict)
