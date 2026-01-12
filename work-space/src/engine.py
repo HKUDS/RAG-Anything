@@ -4,7 +4,11 @@ import csv
 import logging
 from pathlib import Path
 from raganything import RAGAnything, RAGAnythingConfig
-from raganything.prompt import PROMPTS as LIB_PROMPTS
+
+# Import PROMPTS của RAGAnything
+from raganything.prompt import PROMPTS as RAG_PROMPTS 
+# Import PROMPTS của LightRAG (MỚI THÊM)
+from lightrag.prompt import PROMPTS as LIGHTRAG_PROMPTS
 
 from .config import ENV, ExperimentDef
 from .metrics import extract_storage_stats
@@ -16,7 +20,10 @@ class ExperimentEngine:
     def __init__(self):
         self.report_file = Path(ENV.report_file)
         self._ensure_report_header()
-        self.original_prompts = LIB_PROMPTS.copy()
+        
+        # Lưu bản sao lưu của cả 2 thư viện để restore sau này
+        self.orig_rag_prompts = RAG_PROMPTS.copy()
+        self.orig_lightrag_prompts = LIGHTRAG_PROMPTS.copy()
 
     def _ensure_report_header(self):
         """Tạo file CSV và header nếu chưa tồn tại"""
@@ -36,16 +43,30 @@ class ExperimentEngine:
         
         logger.info("🔧 Applying custom prompts for this experiment.")
         for key, value in custom_prompts.items():
-            if key in LIB_PROMPTS:
-                LIB_PROMPTS[key] = value
-                logger.info(f"  - Overridden prompt: {key}")
+            
+            # CASE 1: Inject vào LightRAG (Dùng key đặc biệt 'lightrag_entity_extract')
+            if key == "lightrag_entity_extract":
+                LIGHTRAG_PROMPTS["entity_extraction"] = value
+                logger.info(f"  - Overridden LightRAG prompt: entity_extraction")
+            
+            # CASE 2: Inject vào RAGAnything (Vision, Table...)
+            elif key in RAG_PROMPTS:
+                RAG_PROMPTS[key] = value
+                logger.info(f"  - Overridden RAGAnything prompt: {key}")
+            
             else:
-                logger.warning(f"  - Prompt key '{key}' not found in library prompts.")
+                logger.warning(f"  - Prompt key '{key}' not found/supported")
     
     def _restore_prompts(self):
-        """Khôi phục prompt gốc của thư viện"""
-        LIB_PROMPTS.clear()
-        LIB_PROMPTS.update(self.original_prompts)
+        """Khôi phục prompt gốc của cả 2 thư viện"""
+        # Restore RAGAnything
+        RAG_PROMPTS.clear()
+        RAG_PROMPTS.update(self.orig_rag_prompts)
+        
+        # Restore LightRAG (MỚI THÊM)
+        LIGHTRAG_PROMPTS.clear()
+        LIGHTRAG_PROMPTS.update(self.orig_lightrag_prompts)
+        
         logger.info("🔄 Restored original library prompts.")
 
     def append_result(self, data: dict):
@@ -71,6 +92,7 @@ class ExperimentEngine:
         logger.info(f"🚀 STARTING EXPERIMENT: {exp_def.id} (Provider: {exp_def.provider.upper()})")
         logger.info(f"📝 Description: {exp_def.description}")
         
+        # 1. Apply Prompt Injection
         self._apply_custom_prompts(exp_def.custom_prompts)
 
         llm_f, vision_f, embed_f = get_model_funcs(exp_def.provider)
@@ -105,6 +127,7 @@ class ExperimentEngine:
         
         if not files:
             logger.warning("No input files found!")
+            self._restore_prompts() # Restore trước khi return
             return
 
         for file_path in files:

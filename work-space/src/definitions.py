@@ -1,4 +1,5 @@
 from .config import ExperimentDef
+from .custom_prompts import SLIM_ENTITY_EXTRACTION_PROMPT
 
 MEDICAL_VISION_PROMPT = """
 Act as a Medical Researcher and Senior Clinician. Analyze this image in a strict medical context.
@@ -109,18 +110,52 @@ EXPERIMENTS = {
         }
     ),
 
-    # Exp5: OpenAI Provider
-    "exp5_openai_benchmark": ExperimentDef(
-        id="exp5_openai_benchmark",
-        description="OpenAI Provider (GPT-4o-mini + GPT-4o)",
-        provider="openai", 
+    # # Exp5: OpenAI Provider
+    # "exp5_openai_benchmark": ExperimentDef(
+    #     id="exp5_openai_benchmark",
+    #     description="OpenAI Provider (GPT-4o-mini + GPT-4o)",
+    #     provider="openai", 
+        
+    #     lightrag_kwargs={
+    #         "chunk_token_size": 1200,
+    #         "entity_extract_max_gleaning": 1,
+    #     },
+    #     raganything_kwargs={
+    #         "enable_image_processing": True
+    #     }
+    # )
+
+    "exp5_slim_graph": ExperimentDef(
+        id="exp5_slim_graph",
+        description="Medical Scope + NO Descriptions (Speed Focus)",
         
         lightrag_kwargs={
-            "chunk_token_size": 1200,
+            "chunk_token_size": 2400,
             "entity_extract_max_gleaning": 1,
+            "addon_params": {
+                "entity_types": MEDICAL_ENTITY_TYPES
+            }
         },
-        raganything_kwargs={
-            "enable_image_processing": True
+        
+        custom_prompts={
+            # 1. Ép LightRAG dùng prompt ngắn (cho Text)
+            "lightrag_entity_extract": SLIM_ENTITY_EXTRACTION_PROMPT,
+            
+            # 2. Ép RAGAnything dùng prompt ngắn (cho Ảnh)
+            "vision_prompt_with_context": """
+            Act as a Medical Researcher. 
+            Return JSON with brief findings.
+            {
+                "detailed_description": "Summary of findings (max 15 words).",
+                "entity_info": {
+                    "entity_name": "Image Content",
+                    "entity_type": "MedicalImage",
+                    "summary": "N/A"
+                }
+            }
+            Context: {context}
+            Image Info: {captions}
+            """
         }
     )
 }
