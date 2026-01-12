@@ -7,8 +7,8 @@ from raganything import RAGAnything, RAGAnythingConfig
 from raganything.prompt import PROMPTS as LIB_PROMPTS
 
 from .config import ENV, ExperimentDef
-from .models import get_llm_func, get_vision_func, get_embed_func
 from .metrics import extract_storage_stats
+from .models import get_model_funcs
 
 logger = logging.getLogger("Engine")
 
@@ -68,10 +68,12 @@ class ExperimentEngine:
         logger.info(f"✅ Saved result for {data['file_name']} to report.")
 
     async def run_experiment(self, exp_def: ExperimentDef):
-        logger.info(f"🚀 STARTING EXPERIMENT: {exp_def.id}")
+        logger.info(f"🚀 STARTING EXPERIMENT: {exp_def.id} (Provider: {exp_def.provider.upper()})")
         logger.info(f"📝 Description: {exp_def.description}")
         
         self._apply_custom_prompts(exp_def.custom_prompts)
+
+        llm_f, vision_f, embed_f = get_model_funcs(exp_def.provider)
 
         # Định nghĩa thư mục riêng cho Exp này
         exp_dir = Path(ENV.output_base_dir) / exp_def.id
@@ -84,7 +86,6 @@ class ExperimentEngine:
             parser_output_dir=str(parser_output),
             parser="mineru",
             parse_method="auto",
-            enable_image_processing=True,
             max_concurrent_files=ENV.max_workers,
             **exp_def.raganything_kwargs
         )
@@ -92,9 +93,9 @@ class ExperimentEngine:
         # Init Engine
         rag = RAGAnything(
             config=rag_config,
-            llm_model_func=get_llm_func(),
-            vision_model_func=get_vision_func(),
-            embedding_func=get_embed_func(),
+            llm_model_func=llm_f,
+            vision_model_func=vision_f,
+            embedding_func=embed_f,
             lightrag_kwargs=exp_def.lightrag_kwargs # Inject params thí nghiệm
         )
 

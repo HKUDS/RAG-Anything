@@ -54,7 +54,7 @@ MEDICAL_ENTITY_TYPES = [
 ]
 
 EXPERIMENTS = {
-    # THÍ NGHIỆM 1: BASELINE
+    # Exp 1: BASELINE
     # Chạy mặc định của thư viện để lấy số liệu gốc
     "exp1_baseline": ExperimentDef(
         id="exp1_baseline",
@@ -62,7 +62,7 @@ EXPERIMENTS = {
         lightrag_kwargs={}
     ),
 
-    # THÍ NGHIỆM 2: FAST OPTIMIZATION
+    # Exp 2: FAST OPTIMIZATION
     # Gộp ý tưởng: Tăng Chunk Size (2400) + Tắt Gleaning (chỉ quét 1 lần)
     # Mục tiêu: Giảm 50% thời gian, giảm số Node rác
     "exp2_fast_opt": ExperimentDef(
@@ -75,7 +75,7 @@ EXPERIMENTS = {
         }
     ),
 
-    # Thí nghiệm 3: Text only
+    # Exp 3: Text only
     "exp3_text_only": ExperimentDef(
         id="exp3_text_only",
         description="Disable Multimodal Processing (Benchmark Baseline Cost)",
@@ -86,6 +86,7 @@ EXPERIMENTS = {
         }
     ),
     
+    # Exp4: Prompts & Entity Scope cho Full Medical Domain
     "exp4_medical_scope": ExperimentDef(
         id="exp4_medical_scope",
         description="Full Medical Domain (Vision, Table, Text Extraction)",
@@ -102,14 +103,24 @@ EXPERIMENTS = {
         
         # 2. Cấu hình cho Multimodal (RAG-Anything)
         custom_prompts={
-            # Ghi đè prompt xử lý ảnh (chấp hết X-ray, Chart, Slide...)
             "vision_prompt_with_context": MEDICAL_VISION_PROMPT,
-            
-            # Ghi đè prompt xử lý bảng (chấp hết số liệu thống kê)
             "table_prompt_with_context": MEDICAL_TABLE_PROMPT,
-            
-            # Ghi đè prompt chung (nếu có nội dung lạ)
             "generic_prompt_with_context": "Act as a Medical Expert. Analyze this content for clinical relevance..."
         }
     ),
+
+    # Exp5: OpenAI Provider
+    "exp5_openai_benchmark": ExperimentDef(
+        id="exp5_openai_benchmark",
+        description="OpenAI Provider (GPT-4o-mini + GPT-4o)",
+        provider="openai", 
+        
+        lightrag_kwargs={
+            "chunk_token_size": 1200,
+            "entity_extract_max_gleaning": 1,
+        },
+        raganything_kwargs={
+            "enable_image_processing": True
+        }
+    )
 }
