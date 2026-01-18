@@ -28,6 +28,9 @@ class EnvConfig:
     report_file: str = os.getenv("REPORT_FILE", "./benchmark_report.csv")
     max_workers: int = int(os.getenv("MAX_WORKERS", 1))
 
+    # Google Gemini settings
+    google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
+
 @dataclass
 class ExperimentDef:
     id: str

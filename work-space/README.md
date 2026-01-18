@@ -16,3 +16,8 @@ python run_bench.py
 python run_bench.py --exp ${exp_name}
 ```
 Output will be in benchmark_report.csv
+
+### Streamlit web based
+``` bash
+python -m streamlit run app.py --server.fileWatcherType none
+```

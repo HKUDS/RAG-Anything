@@ -1,0 +1,27 @@
+[
+  {
+    "question": "What is the primary objective of the BrainMVP framework as outlined in the abstract?",
+    "answer": "The primary objective of the BrainMVP framework is to propose a multi-modal vision pre-training framework for brain image analysis using multi-parametric MRI scans. It aims to address the issue of missing modalities and achieve multi-modal information fusion.",
+    "type": "General"
+  },
+  {
+    "question": "How many brain MRI scans and individual images were collected for the BrainMVP dataset, and how many different MRI modalities do they encompass?",
+    "answer": "The BrainMVP dataset includes 16,022 brain MRI scans, which amount to over 2.4 million individual images, encompassing eight different MRI modalities.",
+    "type": "Specific"
+  },
+  {
+    "question": "Why does BrainMVP introduce single-modal MRI image inputs during the pre-training stage, and how does this approach, combined with cross-modal reconstruction, help the model learn more effectively?",
+    "answer": "BrainMVP introduces single-modal MRI image inputs to address the issue of insufficient scalability due to mismatched or missing modalities, allowing for the inclusion of an arbitrary number of modalities and significantly expanding the magnitude of available pre-training data. This approach, combined with cross-modal reconstruction via mask modeling, encourages the model to learn the disentanglement across modalities while mining modality-invariant representations, leveraging the significant anatomical similarity among different MRI modalities for the same subject.",
+    "type": "Reasoning"
+  },
+  {
+    "question": "What were the reported performance improvements for BrainMVP on downstream tasks, specifically in Dice Score for segmentation benchmarks and accuracy for individual classification tasks?",
+    "answer": "BrainMVP demonstrated a Dice Score improvement of 0.28% - 14.47% across six segmentation benchmarks and a consistent accuracy improvement of 0.65% - 18.07% in four individual classification tasks.",
+    "type": "Specific"
+  },
+  {
+    "question": "Beyond the technical implementation, what are the broader challenges in multi-parametric MRI analysis that BrainMVP aims to overcome, particularly regarding data availability and model generalizability?",
+    "answer": "BrainMVP aims to overcome broader challenges in multi-parametric MRI analysis, including current models' reliance on uni-modal image data, neglecting cross-modal correlations, and struggling with missing modality data. It also addresses the high cost of medical image annotation, limited accessibility of large amounts of multi-modal data, and the lack of a dedicated multi-modal pre-training paradigm with medical image domain expertise, all of which hinder the generalizability of existing models.",
+    "type": "General"
+  }
+]
