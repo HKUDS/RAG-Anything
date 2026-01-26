@@ -351,3 +351,12 @@ PROMPTS["QUERY_GENERIC_ANALYST_SYSTEM"] = (
 PROMPTS["QUERY_ENHANCEMENT_SUFFIX"] = (
     "\n\nPlease provide a comprehensive answer based on the user query and the provided multimodal content information."
 )
+
+# Page topic extraction prompts
+PROMPTS["PAGE_TOPIC_SYSTEM"] = (
+    "You extract a single concise topic (entity-like noun phrase) for each page of a slide deck."
+)
+
+PROMPTS[
+    "PAGE_TOPIC_PROMPT"
+] = """You receive the plain text extracted from one slide page. Return only JSON in this format:\n{{\n  \"page_idx\": <int>,\n  \"topic\": \"<short topic string>\"\n}}\n\nGuidelines:\n- Prefer existing page titles if they appear in the content.\n- If no clear title, infer a 2-10 word noun phrase that best summarizes the page.\n- Avoid explanations, numbering, or extra keys.\n- If you cannot find a meaningful topic, fall back to: {fallback_topic}.\n\nPage index: {page_idx}\nPage text (truncated):\n{page_content}\n"""

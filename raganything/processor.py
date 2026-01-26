@@ -8,11 +8,13 @@ import os
 import time
 import hashlib
 import json
+import inspect
 from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 
 from raganything.base import DocStatus
 from raganything.parser import MineruParser, DoclingParser, MineruExecutionError
+from raganything.prompt import PROMPTS
 from raganything.utils import (
     separate_content,
     insert_text_content,
@@ -129,6 +131,187 @@ class ProcessorMixin:
         doc_id = compute_mdhash_id(content_signature, prefix="doc-")
 
         return doc_id
+
+    async def _call_llm_model(
+        self, prompt: str, system_prompt: str | None = None
+    ) -> str:
+        """Safely call llm_model_func regardless of sync/async signature."""
+        if not hasattr(self, "llm_model_func") or self.llm_model_func is None:
+            raise RuntimeError("llm_model_func is required for LLM-based extraction")
+
+        fn = self.llm_model_func
+
+        print("Calling LLM model function...")
+
+        # Some callables do not accept history_messages, so try graceful fallbacks
+        async def _invoke(with_history: bool):
+            if inspect.iscoroutinefunction(fn):
+                if with_history:
+                    return await fn(
+                        prompt,
+                        system_prompt=system_prompt,
+                        history_messages=[],
+                    )
+                return await fn(prompt, system_prompt=system_prompt)
+
+            result = (
+                fn(
+                    prompt,
+                    system_prompt=system_prompt,
+                    history_messages=[],
+                )
+                if with_history
+                else fn(prompt, system_prompt=system_prompt)
+            )
+
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
+
+        try:
+            return await _invoke(with_history=True)
+        except TypeError:
+            return await _invoke(with_history=False)
+
+    def _parse_page_topic_response(self, response: str, fallback_topic: str) -> str:
+        """Parse LLM response and extract topic text."""
+        if not response:
+            return fallback_topic
+
+        cleaned = str(response).strip()
+        json_candidate = cleaned
+
+        # Try direct JSON parse
+        parsed = None
+        try:
+            parsed = json.loads(json_candidate)
+        except json.JSONDecodeError:
+            start = cleaned.find("{")
+            end = cleaned.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                try:
+                    parsed = json.loads(cleaned[start : end + 1])
+                except Exception:
+                    parsed = None
+
+        if isinstance(parsed, dict):
+            topic_value = parsed.get("topic") or parsed.get("title") or parsed.get(
+                "entity"
+            )
+            if isinstance(topic_value, str) and topic_value.strip():
+                return topic_value.strip()
+
+        first_line = cleaned.splitlines()[0].strip()
+        return first_line if first_line else fallback_topic
+
+    async def extract_page_topics(
+        self,
+        content_list: List[Dict[str, Any]],
+        use_llm: bool = True,
+        max_chars: int = 2000,
+    ) -> Dict[int, str]:
+        """
+        Extract one topic per page from parsed content_list.
+
+        Headers are used directly. If no header exists, the function optionally
+        calls llm_model_func with a concise prompt to infer a topic from page text
+        and image captions. When LLM is unavailable or disabled, it falls back to
+        a simple heuristic using the first text line on the page.
+        """
+
+        if not content_list:
+            return {}
+
+        page_buckets: Dict[int, List[Dict[str, Any]]] = {}
+        for item in content_list:
+            if not isinstance(item, dict):
+                continue
+            page_idx = item.get("page_idx")
+            if page_idx is None:
+                continue
+            try:
+                page_key = int(page_idx)
+            except (ValueError, TypeError):
+                continue
+            page_buckets.setdefault(page_key, []).append(item)
+
+        page_topics: Dict[int, str] = {}
+
+        for page_idx in sorted(page_buckets.keys()):
+            items = page_buckets[page_idx]
+
+            header_candidates = [
+                i.get("text", "").strip()
+                for i in items
+                if i.get("type") == "header"
+                and isinstance(i.get("text"), str)
+                and i.get("text").strip()
+            ]
+            if header_candidates:
+                page_topics[page_idx] = header_candidates[0]
+                continue
+
+            text_parts: List[str] = []
+            image_parts: List[str] = []
+            for i in items:
+                if i.get("type") == "text" and isinstance(i.get("text"), str):
+                    text_parts.append(i["text"].strip())
+                elif i.get("type") == "image":
+                    captions = i.get("image_caption") or i.get("img_caption") or []
+                    footnotes = i.get("image_footnote") or []
+
+                    if isinstance(captions, list):
+                        captions = " ".join(
+                            [c.strip() for c in captions if isinstance(c, str)]
+                        )
+                    if isinstance(footnotes, list):
+                        footnotes = " ".join(
+                            [f.strip() for f in footnotes if isinstance(f, str)]
+                        )
+
+                    if isinstance(captions, str) and captions.strip():
+                        image_parts.append(f"Caption: {captions.strip()}")
+                    if isinstance(footnotes, str) and footnotes.strip():
+                        image_parts.append(f"Footnotes: {footnotes.strip()}")
+
+            page_text = "\n".join([p for p in text_parts + image_parts if p])
+
+            fallback_topic = "Page_{0}".format(page_idx)
+            if text_parts:
+                first_line = text_parts[0].splitlines()[0].strip()
+                if first_line:
+                    fallback_topic = (
+                        first_line if len(first_line) <= 80 else first_line[:77] + "..."
+                    )
+
+            if not page_text.strip():
+                page_topics[page_idx] = fallback_topic
+                continue
+
+            if not use_llm or not hasattr(self, "llm_model_func") or self.llm_model_func is None:
+                page_topics[page_idx] = fallback_topic
+                continue
+
+            truncated_text = page_text[:max_chars]
+            prompt = PROMPTS["PAGE_TOPIC_PROMPT"].format(
+                page_idx=page_idx,
+                page_content=truncated_text,
+                fallback_topic=fallback_topic,
+            )
+
+            try:
+                response = await self._call_llm_model(
+                    prompt, system_prompt=PROMPTS["PAGE_TOPIC_SYSTEM"]
+                )
+                topic = self._parse_page_topic_response(response, fallback_topic)
+                page_topics[page_idx] = topic
+            except Exception as e:
+                self.logger.warning(
+                    f"Failed to extract page topic for page {page_idx}: {e}"
+                )
+                page_topics[page_idx] = fallback_topic
+
+        return page_topics
 
     async def _get_cached_result(
         self, cache_key: str, file_path: Path, parse_method: str = None, **kwargs
@@ -1481,6 +1664,7 @@ class ProcessorMixin:
             file_path, output_dir, parse_method, display_stats, **kwargs
         )
 
+        print(f"Parsed content list: {content_list}")
         # Use provided doc_id or fall back to content-based doc_id
         if doc_id is None:
             doc_id = content_based_doc_id
