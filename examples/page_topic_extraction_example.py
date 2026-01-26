@@ -21,11 +21,14 @@ def build_sample_content_list():
             "page_idx": 1,
         },
         {
-            "type": "image",
-            "img_path": "/home/lh/project2026/ppt-RAG/output/example1/hybrid_auto/images/123.jpg",
-            "image_caption": ["示例图片"],
-            "image_footnote": [],
-            "bbox": [318, 566, 458, 809],
+            "type": "list",
+            "sub_type": "text",
+            "list_items": [
+                "放大位图时，增大每个像素，从而使线条和形状参差不齐。",
+                "缩小位图时，也使原图变形。",
+                "位图方式下，影响图像质量的关键因素是颜色数量和分辨率。",
+            ],
+            "bbox": [50, 220, 785, 416],
             "page_idx": 1,
         },
     ]

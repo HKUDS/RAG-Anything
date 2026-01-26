@@ -20,6 +20,7 @@ from raganything.utils import (
     insert_text_content,
     insert_text_content_with_multimodal_content,
     get_processor_for_type,
+    encode_image_to_base64,
 )
 import asyncio
 from lightrag.utils import compute_mdhash_id
@@ -204,6 +205,66 @@ class ProcessorMixin:
         first_line = cleaned.splitlines()[0].strip()
         return first_line if first_line else fallback_topic
 
+    async def _call_vision_model(
+        self, prompt: str, system_prompt: str | None, image_data: str
+    ) -> str:
+        """Safely call vision_model_func if available."""
+        fn = getattr(self, "vision_model_func", None)
+        if fn is None:
+            raise RuntimeError("vision_model_func is required for image understanding")
+
+        if inspect.iscoroutinefunction(fn):
+            return await fn(
+                prompt,
+                system_prompt=system_prompt,
+                image_data=image_data,
+            )
+
+        result = fn(
+            prompt,
+            system_prompt=system_prompt,
+            image_data=image_data,
+        )
+        if asyncio.iscoroutine(result):
+            return await result
+        return result
+
+    async def _describe_image_for_topic(
+        self, image_item: Dict[str, Any], page_context: str
+    ) -> str:
+        """Generate a short description for an image using the vision model with page context."""
+        if not isinstance(image_item, dict):
+            return ""
+
+        img_path = image_item.get("img_path")
+        if not img_path:
+            return ""
+
+        image_b64 = encode_image_to_base64(img_path)
+        if not image_b64:
+            return ""
+
+        ctx = (page_context or "").strip()
+        ctx_snippet = ctx[:500]  # keep prompt compact
+
+        prompt = (
+            "请结合下方页面文字上下文，用一句中文短句概括这张幻灯片图片的主要内容，输出纯文本。\n"
+            f"上下文：{ctx_snippet}"
+        )
+
+        try:
+            response = await self._call_vision_model(
+                prompt,
+                system_prompt=PROMPTS.get("IMAGE_ANALYSIS_SYSTEM"),
+                image_data=image_b64,
+            )
+            return str(response).strip()
+        except Exception as e:
+            self.logger.debug(
+                f"Vision model description failed for image {img_path}: {e}"
+            )
+            return ""
+
     async def extract_page_topics(
         self,
         content_list: List[Dict[str, Any]],
@@ -251,12 +312,30 @@ class ProcessorMixin:
                 page_topics[page_idx] = header_candidates[0]
                 continue
 
+            # First pass: collect page text context (text + list[text])
             text_parts: List[str] = []
-            image_parts: List[str] = []
             for i in items:
                 if i.get("type") == "text" and isinstance(i.get("text"), str):
                     text_parts.append(i["text"].strip())
-                elif i.get("type") == "image":
+                elif i.get("type") == "list" and i.get("sub_type") == "text":
+                    li = i.get("list_items", [])
+                    if isinstance(li, list) and li:
+                        # 连接列表项为上下文文本
+                        joined = "\n".join([s.strip() for s in li if isinstance(s, str)])
+                        if joined:
+                            text_parts.append(joined)
+
+            page_context = "\n".join([p for p in text_parts if p])
+            print(f"Page {page_idx} context text: {page_context}")
+
+            # Second pass: handle images with context-aware description
+            image_parts: List[str] = []
+            for i in items:
+                if i.get("type") == "image":
+                    image_desc = await self._describe_image_for_topic(i, page_context)
+                    if image_desc:
+                        image_parts.append(f"Image: {image_desc}")
+
                     captions = i.get("image_caption") or i.get("img_caption") or []
                     footnotes = i.get("image_footnote") or []
 
