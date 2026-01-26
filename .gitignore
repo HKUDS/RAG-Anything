@@ -57,6 +57,7 @@ data/
 data_test/
 data_debug/
 benchmark_outputs/
+benchmark_outputs_*/
 tests/
 
 # Miscellaneous
