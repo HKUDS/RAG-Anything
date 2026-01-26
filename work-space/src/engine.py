@@ -68,6 +68,11 @@ class ExperimentEngine:
         logger.info(f"🚀 STARTING: {exp_def.id} (Provider: {exp_def.provider})")
         
         self._apply_custom_prompts(exp_def.custom_prompts)
+
+
+        current_prompt = LIGHTRAG_PROMPTS.get("entity_extraction", "DEFAULT PROMPT")
+        logger.warning(f"🔍 [DEBUG CHECK PROMPT]:\n{current_prompt[:500]}\n...")
+
         llm_f, vision_f, embed_f = get_model_funcs(exp_def.provider, exp_def.use_gliner, exp_def.gliner_labels)
 
         exp_dir = Path(ENV.output_base_dir) / exp_def.id
@@ -87,7 +92,7 @@ class ExperimentEngine:
         )
 
         input_path = Path(ENV.input_dir)
-        files = [f for f in input_path.glob("*.*") if f.suffix.lower() in ['.pdf', '.docx']]
+        files = [f for f in input_path.glob("*.*") if f.suffix.lower() in ['.pdf', '.docx', '.txt']]
         if not files: return
 
         for file_path in files:

@@ -55,6 +55,7 @@ examples/output/
 output*/
 data/
 data_test/
+data_debug/
 benchmark_outputs/
 tests/
 

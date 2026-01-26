@@ -1,58 +1,5 @@
 from .config import ExperimentDef
-from .custom_prompts import SLIM_ENTITY_EXTRACTION_PROMPT
-
-MEDICAL_VISION_PROMPT = """
-Act as a Medical Researcher and Senior Clinician. Analyze this image in a strict medical context.
-Identify the image type (e.g., Radiological Scan, Histopathology Slide, Kaplan-Meier Plot, Flowchart, Clinical Photograph).
-
-Provide a JSON response with:
-{
-    "detailed_description": "Describe findings using standard medical terminology. For scans: mention modality, orientation, anatomical structures, and pathology (lesions, masses). For charts: interpret axes, significant trends, and p-values. For pathology: describe cellular architecture and staining.",
-    "entity_info": {
-        "entity_name": "Specific condition, anatomical region, or study result shown",
-        "entity_type": "MedicalVisualEvidence",
-        "summary": "Clinical significance and diagnostic implication of this visual data."
-    }
-}
-Context: {context}
-Image Info: {captions}
-"""
-
-# B. TABLE PROMPT: Chuyên trị bảng số liệu lâm sàng
-# Dùng cho: Patient Demographics, Lab Results, Drug Dosage
-MEDICAL_TABLE_PROMPT = """
-Act as a Medical Data Analyst. Analyze this clinical data table.
-Focus on:
-- Patient demographics (n, age, gender distribution)
-- Treatment groups and control arms
-- Statistical significance (confidence intervals, p-values)
-- Clinical outcomes (Adverse events, Efficacy rates)
-
-Provide a JSON response with:
-{
-    "detailed_description": "Summarize the key clinical findings, statistical comparisons, and significant differences between groups.",
-    "entity_info": {
-        "entity_name": "Table Content Summary (e.g. Baseline Characteristics)",
-        "entity_type": "ClinicalTable",
-        "summary": "Key statistical evidence presented in this table."
-    }
-}
-Context: {context}
-Table Info: {table_caption}
-"""
-
-# C. ENTITY SCOPE (Cho Text Extraction - LightRAG)
-# Phủ rộng các khía cạnh y khoa từ cơ sở đến lâm sàng
-MEDICAL_ENTITY_TYPES = [
-    # Lâm sàng
-    "Disease", "Symptom", "Syndrome", "ClinicalSign",
-    # Điều trị
-    "Medication", "MedicalProcedure", "Therapy", "Dosage",
-    # Cận lâm sàng & Cơ sở
-    "Anatomy", "Gene", "Protein", "Biomarker", "Pathogen",
-    # Nghiên cứu
-    "StudyOutcome", "Metric", "PopulationGroup"
-]
+from .custom_prompts import SLIM_ENTITY_EXTRACTION_PROMPT, SIMPLE_LIMIT_PROMPT, MEDICAL_VISION_PROMPT, MEDICAL_TABLE_PROMPT, MEDICAL_ENTITY_TYPES
 
 EXPERIMENTS = {
     # Exp 1: BASELINE
@@ -142,20 +89,20 @@ EXPERIMENTS = {
             "lightrag_entity_extract": SLIM_ENTITY_EXTRACTION_PROMPT,
             
             # 2. Ép RAGAnything dùng prompt ngắn (cho Ảnh)
-            "vision_prompt_with_context": """
-            Act as a Medical Researcher. 
-            Return JSON with brief findings.
-            {
-                "detailed_description": "Summary of findings (max 15 words).",
-                "entity_info": {
-                    "entity_name": "Image Content",
-                    "entity_type": "MedicalImage",
-                    "summary": "N/A"
-                }
-            }
-            Context: {context}
-            Image Info: {captions}
-            """
+            # "vision_prompt_with_context": """
+            # Act as a Medical Researcher. 
+            # Return JSON with brief findings.
+            # {
+            #     "detailed_description": "Summary of findings (max 15 words).",
+            #     "entity_info": {
+            #         "entity_name": "Image Content",
+            #         "entity_type": "MedicalImage",
+            #         "summary": "N/A"
+            #     }
+            # }
+            # Context: {context}
+            # Image Info: {captions}
+            # """
         }
     ),
 
@@ -178,5 +125,21 @@ EXPERIMENTS = {
             # Vision prompt vẫn giữ ngắn gọn
             "vision_prompt_with_context": "Act as Medical Researcher. Return JSON: {detailed_description: 'Summary (max 20 words)', entity_info: {entity_name: 'Image', summary: 'N/A'}}"
         }
+    ),
+
+    # Exp7: Giới hạn đơn giản chỉ trích xuất Top 3 Entities mỗi Chunk
+    "exp7_simple_limit": ExperimentDef(
+        id="exp7_simple_limit",
+        description="Limit to Top 3 Entities per Chunk (Clean Graph Focus)",
+        
+        lightrag_kwargs={
+            "chunk_token_size": 2400, # Giữ chunk to để có ngữ cảnh rộng
+            "entity_extract_max_gleaning": 0,
+        },
+        
+        custom_prompts={
+            "lightrag_entity_extract": SIMPLE_LIMIT_PROMPT,
+        }
     )
+
 }
