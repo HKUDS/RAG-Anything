@@ -112,17 +112,18 @@ if selected_exp:
         
         with col2:
             st.subheader("🕸️ Knowledge Graph Topology")
+            max_nodes = st.slider("Max nodes to display", min_value=20, max_value=300, value=50, step=10)
             if st.button("Generate Interactive Graph", type="primary"):
                 storage_dir = output_path / selected_exp / "rag_storage"
                 with st.spinner("Visualizing..."):
                     viz = GraphVisualizer(str(storage_dir))
-                    html_path = viz.generate_html(max_nodes=150)
+                    html_path = viz.generate_html(max_nodes=max_nodes)
                     
                     if html_path:
                         with open(html_path, 'r', encoding='utf-8') as f:
                             html_content = f.read()
                         st.components.v1.html(html_content, height=600, scrolling=True)
-                        st.caption("Top-150 nodes.")
+                        st.caption(f"Top-{max_nodes} nodes with chunk coverage.")
                     else:
                         st.error("Graph file not found.")
 
@@ -234,7 +235,7 @@ if selected_exp:
                             my_bar.progress((idx) / total_q, text=f"Processing Q{idx+1}/{total_q}...")
                             
                             # A. RAG Query (Không dùng asyncio.run ở đây nữa, dùng await)
-                            rag_ans = await qa_engine_local.query(q_text)
+                            rag_ans = await qa_engine_local.query(q_text, mode="mix")
                             
                             # B. Judge (Sync func)
                             score = local_evaluator.evaluate_answer(q_text, gold_ans, rag_ans)
@@ -322,7 +323,7 @@ if selected_exp:
                 with st.spinner(f"Querying {selected_exp}..."):
                     try:
                         qa_engine = RAGQueryEngine(selected_exp)
-                        response = asyncio.run(qa_engine.query(prompt))
+                        response = asyncio.run(qa_engine.query(prompt, mode="mix"))
                         st.markdown(response)
                         st.session_state.messages.append({"role": "assistant", "content": response})
                     except Exception as e:
