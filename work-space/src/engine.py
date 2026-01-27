@@ -41,8 +41,11 @@ class ExperimentEngine:
         for key, value in custom_prompts.items():
             if key == "lightrag_entity_extract":
                 LIGHTRAG_PROMPTS["entity_extraction"] = value
-            elif key in RAG_PROMPTS:
+                logger.info(f"  → Applied: lightrag_entity_extract")
+            else:
+                # Add or update RAG_PROMPTS (for vision, table, etc.)
                 RAG_PROMPTS[key] = value
+                logger.info(f"  → Applied: {key}")
 
     def _restore_prompts(self):
         RAG_PROMPTS.clear()

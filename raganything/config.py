@@ -103,6 +103,18 @@ class RAGAnythingConfig:
     content_format: str = field(default=get_env_value("CONTENT_FORMAT", "minerU", str))
     """Default content format for context extraction when processing documents."""
 
+    # Entity Extraction Limits (for graph size control)
+    # ---
+    max_entities_per_chunk: int = field(
+        default=get_env_value("MAX_ENTITIES_PER_CHUNK", 0, int)
+    )
+    """Maximum entities to keep per chunk (0 = unlimited). Set to 1 for minimal graphs."""
+
+    max_relations_per_chunk: int = field(
+        default=get_env_value("MAX_RELATIONS_PER_CHUNK", 0, int)
+    )
+    """Maximum relations to keep per chunk (0 = unlimited). Set to 0 for no relations."""
+
     def __post_init__(self):
         """Post-initialization setup for backward compatibility"""
         # Support legacy environment variable names for backward compatibility

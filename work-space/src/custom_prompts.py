@@ -126,43 +126,254 @@ MEDICAL_ENTITY_TYPES = [
 
 
 # IV. Prompt này giới hạn LLM chỉ trích xuất Top 3 entities quan trọng nhất trong mỗi đoạn văn
+# IMPORTANT: Uses LightRAG's delimiter format, NOT JSON!
 
 SIMPLE_LIMIT_PROMPT = """
 -Goal-
-Given a text document, identify the MOST IMPORTANT entities and relationships.
+Given a text document, identify the TOP 3 MOST IMPORTANT entities and their relationships.
+
+-Critical Constraints-
+1. Extract MAXIMUM 3 entities - only the most significant concepts
+2. Extract relationships ONLY between the 3 entities you identified
+3. Follow the EXACT output format below
 
 -Steps-
-1. Identify entities. 
-   CRITICAL CONSTRAINT: Extract ONLY the Top 3 most significant entities in this text segment. 
-   Ignore generic terms or minor details. Focus on the core concepts.
-   
-   For each entity, extract:
-   - entity_name: Name of the entity, capitalized
-   - entity_type: General type (e.g. Concept, Person, Event, etc)
-   - entity_description: A brief description.
+1. Identify up to 3 main entities:
+   - entity_name: The concept in Title Case
+   - entity_type: Category (Disease, Treatment, Method, Concept, Person, etc.)
+   - entity_description: Brief description (max 15 words)
 
-2. Identify relationships.
-   Identify pairs of (source_entity, target_entity) from the Top 3 entities identified above.
-   
-   For each pair:
-   - source_entity: name of the source
-   - target_entity: name of the target
-   - relationship_description: explanation of the relationship
-   - relationship_strength: numeric score
-   - relationship_keywords: key words
+2. Identify relationships between your extracted entities:
+   - source_entity: Must be one of your 3 entities
+   - target_entity: Must be one of your 3 entities
+   - relationship_keywords: 1-2 keywords
+   - relationship_description: Brief description
 
--Output-
-Return a single JSON object with the following format:
+-Output Format-
+Use this EXACT delimiter format (NOT JSON):
+entity<|#|>ENTITY_NAME<|#|>ENTITY_TYPE<|#|>ENTITY_DESCRIPTION
+relation<|#|>SOURCE_ENTITY<|#|>TARGET_ENTITY<|#|>KEYWORDS<|#|>DESCRIPTION
+<|COMPLETE|>
+
+CRITICAL:
+- Output MAXIMUM 3 entity lines
+- Relationships ONLY between your extracted entities (to prevent implicit nodes)
+- End with <|COMPLETE|>
+
+-Example-
+Text: "Temozolomide treats glioblastoma. Radiation therapy is also used. Both target cancer cells."
+Output:
+entity<|#|>Temozolomide<|#|>Treatment<|#|>Chemotherapy drug for brain cancer
+entity<|#|>Glioblastoma<|#|>Disease<|#|>Malignant brain tumor
+entity<|#|>Radiation Therapy<|#|>Treatment<|#|>Cancer treatment using radiation
+relation<|#|>Temozolomide<|#|>Glioblastoma<|#|>treats, therapy<|#|>Primary treatment for glioblastoma
+relation<|#|>Radiation Therapy<|#|>Glioblastoma<|#|>treats, therapy<|#|>Adjuvant treatment for glioblastoma
+<|COMPLETE|>
+
+######################
+-Data-
+######################
+{input_text}
+######################
+Output:
+"""
+
+# =============================================================================
+# V. ONE ENTITY PER CHUNK PROMPT (LightRAG Delimiter Format)
+# Strategy: 1 main entity per chunk + relationships to connect the graph
+# Target: ~N chunks = ~N nodes (where N = number of chunks)
+# IMPORTANT: Uses LightRAG's delimiter format, NOT JSON!
+# =============================================================================
+
+ONE_ENTITY_PER_CHUNK_PROMPT = """
+-Goal-
+Extract the SINGLE most important entity from this text chunk, along with 1-2 key relationships.
+
+-Critical Constraints-
+1. Extract EXACTLY 1 entity - the central concept of this chunk
+2. Extract 1-2 relationships to connect this entity to related concepts
+3. Follow the EXACT output format below
+
+-Steps-
+1. Identify the ONE main entity:
+   - entity_name: The primary concept in Title Case (e.g., "Glioblastoma", "Temozolomide")
+   - entity_type: Category (Disease, Treatment, Method, Concept, Person, etc.)
+   - entity_description: Brief description (max 15 words)
+
+2. Identify 1-2 key relationships:
+   - source_entity: The main entity name (MUST match exactly)
+   - target_entity: Related concept mentioned in the text
+   - relationship_keywords: 1-2 keywords describing the relation
+   - relationship_description: Brief description of the relationship
+
+-Output Format-
+Use this EXACT delimiter format (NOT JSON):
+entity<|#|>ENTITY_NAME<|#|>ENTITY_TYPE<|#|>ENTITY_DESCRIPTION
+relation<|#|>SOURCE_ENTITY<|#|>TARGET_ENTITY<|#|>KEYWORDS<|#|>RELATIONSHIP_DESCRIPTION
+<|COMPLETE|>
+
+CRITICAL:
+- Output EXACTLY 1 entity line
+- Output 1-2 relationship lines (to create graph connections)
+- End with <|COMPLETE|>
+
+-Example 1-
+Text: "Temozolomide (TMZ) is an alkylating chemotherapy drug used to treat glioblastoma."
+Output:
+entity<|#|>Temozolomide<|#|>Treatment<|#|>Alkylating chemotherapy drug for brain tumors
+relation<|#|>Temozolomide<|#|>Glioblastoma<|#|>treats, therapy<|#|>Used as primary treatment for glioblastoma
+<|COMPLETE|>
+
+-Example 2-
+Text: "The patient received radiation therapy at 60 Gy targeting the tumor bed."
+Output:
+entity<|#|>Radiation Therapy<|#|>Treatment<|#|>60 Gy dose targeting tumor bed
+relation<|#|>Radiation Therapy<|#|>Tumor Bed<|#|>targets, treatment<|#|>Radiation directed at tumor location
+<|COMPLETE|>
+
+######################
+-Data-
+######################
+{input_text}
+######################
+Output:
+"""
+
+# Vision prompt for 1 entity per image
+ONE_ENTITY_VISION_PROMPT = """
+Act as a Medical Image Analyst.
+Analyze this image and extract the SINGLE most important entity it represents.
+
+Return JSON:
 {{
-  "entities": [
-    {{ "name": "ENTITY_NAME", "type": "ENTITY_TYPE", "description": "DESCRIPTION" }}
-  ],
-  "relationships": [
-    {{ "source": "E1", "target": "E2", "description": "DESC", "weight": 10, "keywords": "K1, K2" }}
-  ]
+    "detailed_description": "Brief description of the image content (max 20 words)",
+    "entity_info": {{
+        "entity_name": "Primary subject shown (e.g., 'MRI_BRAIN_SCAN', 'TUMOR_HISTOLOGY')",
+        "entity_type": "MedicalImage",
+        "summary": "Clinical significance (max 10 words)"
+    }}
 }}
 
+Context: {context}
+Image Info: {captions}
+"""
+
+# Table prompt for 1 entity per table
+ONE_ENTITY_TABLE_PROMPT = """
+Act as a Medical Data Analyst.
+Analyze this table and extract the SINGLE most important entity it represents.
+
+Return JSON:
+{{
+    "detailed_description": "Brief summary of table content (max 20 words)",
+    "entity_info": {{
+        "entity_name": "Primary metric or finding (e.g., 'SURVIVAL_ANALYSIS', 'PATIENT_DEMOGRAPHICS')",
+        "entity_type": "ClinicalData",
+        "summary": "Key statistical finding (max 10 words)"
+    }}
+}}
+
+Context: {context}
+Table Info: {table_caption}
+"""
+
+# =============================================================================
+# VI. STRICT ONE ENTITY - NO RELATIONSHIPS (LightRAG Delimiter Format)
+# Strategy: 1 entity per chunk, NO relationships = NO implicit nodes
+# Target: EXACTLY N chunks = N nodes (guaranteed)
+# IMPORTANT: Uses LightRAG's delimiter format, NOT JSON!
+# =============================================================================
+
+STRICT_ONE_ENTITY_PROMPT = """
+-Goal-
+Extract the SINGLE most important entity from this text chunk.
+DO NOT extract any relationships.
+
+-Critical Constraints-
+1. Extract EXACTLY 1 entity - the central concept of this chunk
+2. DO NOT output any relationships - this ensures minimal graph nodes
+3. Follow the EXACT output format below
+
+-Steps-
+1. Read the text carefully
+2. Identify the ONE main entity:
+   - entity_name: The primary concept in Title Case (e.g., "Glioblastoma", "Temozolomide")
+   - entity_type: Category (Disease, Treatment, Method, Concept, Person, Organization, etc.)
+   - entity_description: Brief description (max 15 words)
+
+-Output Format-
+Use this EXACT delimiter format (NOT JSON):
+entity<|#|>ENTITY_NAME<|#|>ENTITY_TYPE<|#|>ENTITY_DESCRIPTION
+<|COMPLETE|>
+
+CRITICAL:
+- Output EXACTLY 1 entity line
+- Output NO relationship lines
+- End with <|COMPLETE|>
+
+-Example 1-
+Text: "Temozolomide (TMZ) is an alkylating chemotherapy drug used to treat glioblastoma."
+Output:
+entity<|#|>Temozolomide<|#|>Treatment<|#|>Alkylating chemotherapy drug for brain tumors
+<|COMPLETE|>
+
+-Example 2-
+Text: "Dr. Sarah Johnson performed a craniotomy with 85% tumor resection on January 20, 2024."
+Output:
+entity<|#|>Craniotomy<|#|>Medical Procedure<|#|>Surgical brain procedure with 85% tumor resection
+<|COMPLETE|>
+
+-Example 3-
+Text: "The MGMT promoter methylation status is a favorable prognostic biomarker."
+Output:
+entity<|#|>Mgmt Promoter Methylation<|#|>Biomarker<|#|>Favorable prognostic indicator for treatment response
+<|COMPLETE|>
+
+######################
 -Data-
+######################
 {input_text}
+######################
+Output:
+"""
+
+# Vision prompt for strict 1 entity (no relationships)
+STRICT_ONE_ENTITY_VISION_PROMPT = """
+Act as a Medical Image Analyst.
+Extract the SINGLE most important entity from this image.
+DO NOT create any relationships.
+
+Return JSON with EXACTLY this structure:
+{{
+    "detailed_description": "Brief description of image content (max 20 words)",
+    "entity_info": {{
+        "entity_name": "PRIMARY_SUBJECT (e.g., 'MRI_BRAIN_SCAN', 'TUMOR_HISTOLOGY')",
+        "entity_type": "MedicalImage",
+        "summary": "Clinical significance (max 10 words)"
+    }}
+}}
+
+Context: {context}
+Image Info: {captions}
+"""
+
+# Table prompt for strict 1 entity (no relationships)
+STRICT_ONE_ENTITY_TABLE_PROMPT = """
+Act as a Medical Data Analyst.
+Extract the SINGLE most important entity from this table.
+DO NOT create any relationships.
+
+Return JSON with EXACTLY this structure:
+{{
+    "detailed_description": "Brief summary of table content (max 20 words)",
+    "entity_info": {{
+        "entity_name": "PRIMARY_FINDING (e.g., 'SURVIVAL_ANALYSIS', 'PATIENT_DEMOGRAPHICS')",
+        "entity_type": "ClinicalData",
+        "summary": "Key statistical finding (max 10 words)"
+    }}
+}}
+
+Context: {context}
+Table Info: {table_caption}
 """
 

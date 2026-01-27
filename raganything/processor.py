@@ -848,6 +848,17 @@ class ProcessorMixin:
             lightrag_chunks
         )
 
+        # Stage 4.5: Apply post-extraction filter if configured
+        # This ensures graph size control even if LLM doesn't follow prompt constraints
+        max_ent = getattr(self.config, 'max_entities_per_chunk', 0)
+        max_rel = getattr(self.config, 'max_relations_per_chunk', 0)
+        if max_ent > 0 or max_rel != 0:
+            chunk_results = self._filter_chunk_results(
+                chunk_results,
+                max_entities=max_ent,
+                max_relations=max_rel
+            )
+
         # Stage 5: Add belongs_to relations (multimodal-specific)
         enhanced_chunk_results = await self._batch_add_belongs_to_relations_type_aware(
             chunk_results, multimodal_data_list
@@ -1176,6 +1187,62 @@ class ProcessorMixin:
             f"Extracted entities from {len(lightrag_chunks)} multimodal chunks"
         )
         return chunk_results
+
+    def _filter_chunk_results(
+        self, chunk_results: List[Tuple], max_entities: int = 0, max_relations: int = 0
+    ) -> List[Tuple]:
+        """
+        Filter chunk_results to limit entities and relations per chunk.
+
+        This is useful for controlling graph size when LLM doesn't follow
+        strict extraction constraints in prompts.
+
+        Args:
+            chunk_results: List of (maybe_nodes, maybe_edges) tuples from extract_entities
+            max_entities: Maximum entities to keep per chunk (0 = unlimited)
+            max_relations: Maximum relations to keep per chunk (0 = unlimited, -1 = remove all)
+
+        Returns:
+            Filtered chunk_results with limited entities/relations
+        """
+        if max_entities == 0 and max_relations == 0:
+            return chunk_results  # No filtering needed
+
+        filtered_results = []
+        total_entities_removed = 0
+        total_relations_removed = 0
+
+        for maybe_nodes, maybe_edges in chunk_results:
+            filtered_nodes = maybe_nodes
+            filtered_edges = maybe_edges
+
+            # Filter entities if limit is set
+            if max_entities > 0 and len(maybe_nodes) > max_entities:
+                # Keep only first N entities (by insertion order)
+                entity_names = list(maybe_nodes.keys())[:max_entities]
+                filtered_nodes = {k: maybe_nodes[k] for k in entity_names}
+                total_entities_removed += len(maybe_nodes) - max_entities
+
+            # Filter relations
+            if max_relations == -1:
+                # Remove ALL relations
+                filtered_edges = {}
+                total_relations_removed += len(maybe_edges)
+            elif max_relations > 0 and len(maybe_edges) > max_relations:
+                # Keep only first N relations
+                edge_keys = list(maybe_edges.keys())[:max_relations]
+                filtered_edges = {k: maybe_edges[k] for k in edge_keys}
+                total_relations_removed += len(maybe_edges) - max_relations
+
+            filtered_results.append((filtered_nodes, filtered_edges))
+
+        if total_entities_removed > 0 or total_relations_removed > 0:
+            self.logger.info(
+                f"🔧 Post-filter: Removed {total_entities_removed} entities, "
+                f"{total_relations_removed} relations (limits: entities={max_entities}, relations={max_relations})"
+            )
+
+        return filtered_results
 
     async def _batch_add_belongs_to_relations_type_aware(
         self, chunk_results: List[Tuple], multimodal_data_list: List[Dict[str, Any]]
