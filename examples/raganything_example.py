@@ -115,19 +115,32 @@ async def process_with_rag(
             enable_equation_processing=True,
         )
 
-        # Define LLM model function
+        # Define LLM model function for LM Studio
         def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
+            # Get model name from environment or use default
+            model_name = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
+
+            # Filter out parameters that LM Studio doesn't support
+            call_kwargs = dict(kwargs)
+            lmstudio_incompatible_params = [
+                "stream",
+                "stream_options",
+                "parallel_tool_calls",
+            ]
+            for param in lmstudio_incompatible_params:
+                call_kwargs.pop(param, None)
+
             return openai_complete_if_cache(
-                "gpt-4o-mini",
+                model_name,
                 prompt,
                 system_prompt=system_prompt,
                 history_messages=history_messages,
                 api_key=api_key,
                 base_url=base_url,
-                **kwargs,
+                **call_kwargs,
             )
 
-        # Define vision model function for image processing
+        # Define vision model function for image processing (LM Studio compatible)
         def vision_model_func(
             prompt,
             system_prompt=None,
@@ -136,22 +149,35 @@ async def process_with_rag(
             messages=None,
             **kwargs,
         ):
+            # Get model name from environment or use default
+            model_name = os.getenv("LLM_MODEL", "openai/gpt-oss-20b")
+
+            # Filter out parameters that LM Studio doesn't support
+            call_kwargs = dict(kwargs)
+            lmstudio_incompatible_params = [
+                "stream",
+                "stream_options",
+                "parallel_tool_calls",
+            ]
+            for param in lmstudio_incompatible_params:
+                call_kwargs.pop(param, None)
+
             # If messages format is provided (for multimodal VLM enhanced query), use it directly
             if messages:
                 return openai_complete_if_cache(
-                    "gpt-4o",
+                    model_name,
                     "",
                     system_prompt=None,
                     history_messages=[],
                     messages=messages,
                     api_key=api_key,
                     base_url=base_url,
-                    **kwargs,
+                    **call_kwargs,
                 )
             # Traditional single image format
             elif image_data:
                 return openai_complete_if_cache(
-                    "gpt-4o",
+                    model_name,
                     "",
                     system_prompt=None,
                     history_messages=[],
@@ -176,24 +202,28 @@ async def process_with_rag(
                     ],
                     api_key=api_key,
                     base_url=base_url,
-                    **kwargs,
+                    **call_kwargs,
                 )
             # Pure text format
             else:
                 return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
 
-        # Define embedding function - using environment variables for configuration
-        embedding_dim = int(os.getenv("EMBEDDING_DIM", "3072"))
-        embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
-
+        # Define embedding function for LM Studio
+        embedding_model = os.getenv(
+            "EMBEDDING_MODEL", "text-embedding-embeddinggemma-300m"
+        )
+        embedding_dim = int(os.getenv("EMBEDDING_DIM", "768"))
+        embedding_base_url = os.getenv("EMBEDDING_BINDING_HOST", base_url)
+        embedding_api_key = os.getenv("EMBEDDING_BINDING_API_KEY", api_key)
+        max_token_size = int(os.getenv("MAX_EMBED_TOKENS", "8192"))
         embedding_func = EmbeddingFunc(
             embedding_dim=embedding_dim,
-            max_token_size=8192,
+            max_token_size=max_token_size,
             func=lambda texts: openai_embed(
                 texts,
                 model=embedding_model,
-                api_key=api_key,
-                base_url=base_url,
+                api_key=embedding_api_key,
+                base_url=embedding_base_url,
             ),
         )
 
@@ -278,13 +308,13 @@ def main():
     )
     parser.add_argument(
         "--api-key",
-        default=os.getenv("LLM_BINDING_API_KEY"),
-        help="OpenAI API key (defaults to LLM_BINDING_API_KEY env var)",
+        default=os.getenv("LLM_BINDING_API_KEY", "lm-studio"),
+        help="LM Studio API key (defaults to LLM_BINDING_API_KEY env var)",
     )
     parser.add_argument(
         "--base-url",
-        default=os.getenv("LLM_BINDING_HOST"),
-        help="Optional base URL for API",
+        default=os.getenv("LLM_BINDING_HOST", "http://localhost:1234/v1"),
+        help="LM Studio base URL for API",
     )
     parser.add_argument(
         "--parser",
@@ -296,8 +326,10 @@ def main():
 
     # Check if API key is provided
     if not args.api_key:
-        logger.error("Error: OpenAI API key is required")
-        logger.error("Set api key environment variable or use --api-key option")
+        logger.error("Error: LM Studio API key is required")
+        logger.error(
+            "Set LLM_BINDING_API_KEY environment variable or use --api-key option"
+        )
         return
 
     # Create output directory if specified
@@ -321,9 +353,9 @@ if __name__ == "__main__":
     # Configure logging first
     configure_logging()
 
-    print("RAGAnything Example")
-    print("=" * 30)
-    print("Processing document with multimodal RAG pipeline")
-    print("=" * 30)
+    print("RAGAnything Example with LM Studio")
+    print("=" * 35)
+    print("Processing document with multimodal RAG pipeline using LM Studio")
+    print("=" * 35)
 
     main()

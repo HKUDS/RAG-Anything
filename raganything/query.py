@@ -101,7 +101,7 @@ class QueryMixin:
         self, query: str, mode: str = "mix", system_prompt: str | None = None, **kwargs
     ) -> str:
         """
-        Pure text query - directly calls LightRAG's query functionality
+        Pure text query - directly calls LightRAG's query functionality with fallback mechanism
 
         Args:
             query: Query text
@@ -123,7 +123,7 @@ class QueryMixin:
         # Check if VLM enhanced query should be used
         vlm_enhanced = kwargs.pop("vlm_enhanced", None)
 
-        # Auto-determine VLM enhanced based on availability
+        # Auto-determine VLM enhanced based based on availability
         if vlm_enhanced is None:
             vlm_enhanced = (
                 hasattr(self, "vision_model_func")
@@ -156,6 +156,42 @@ class QueryMixin:
         result = await self.lightrag.aquery(
             query, param=query_param, system_prompt=system_prompt
         )
+
+        # Check if result indicates no context found and implement fallback
+        if result and "[no-context]" in result:
+            self.logger.warning(
+                "Primary query returned no context, attempting fallback approach"
+            )
+
+            # Try fallback approach by forcing ll_keywords to the original query
+            # This mimics the behavior that works for "hi" query in the logs
+            fallback_query_param = QueryParam(
+                mode=mode,
+                ll_keywords=[query]
+                if len(query) < 50
+                else None,  # Only for short queries
+                **kwargs,
+            )
+
+            try:
+                fallback_result = await self.lightrag.aquery(
+                    query, param=fallback_query_param
+                )
+
+                # If fallback succeeds and doesn't contain no-context, use it
+                if fallback_result and "[no-context]" not in fallback_result:
+                    self.logger.info(
+                        "Fallback query succeeded, returning fallback result"
+                    )
+                    result = fallback_result
+                else:
+                    self.logger.warning(
+                        "Fallback query also failed, returning original result"
+                    )
+
+            except Exception as e:
+                self.logger.error(f"Fallback query failed with exception: {e}")
+                # Keep original result if fallback fails with exception
 
         self.logger.info("Text query completed")
         return result
@@ -383,7 +419,7 @@ class QueryMixin:
         for i, content in enumerate(multimodal_content):
             content_type = content.get("type", "unknown")
             self.logger.info(
-                f"Processing {i+1}/{len(multimodal_content)} multimodal content: {content_type}"
+                f"Processing {i + 1}/{len(multimodal_content)} multimodal content: {content_type}"
             )
 
             try:
