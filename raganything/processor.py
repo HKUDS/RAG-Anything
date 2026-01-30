@@ -300,7 +300,7 @@ class ProcessorMixin:
 
         for page_idx in sorted(page_buckets.keys()):
             items = page_buckets[page_idx]
-
+            '''
             header_candidates = [
                 i.get("text", "").strip()
                 for i in items
@@ -311,6 +311,7 @@ class ProcessorMixin:
             if header_candidates:
                 page_topics[page_idx] = header_candidates[0]
                 continue
+            '''
 
             # First pass: collect page text context (text + list[text])
             text_parts: List[str] = []
@@ -326,7 +327,7 @@ class ProcessorMixin:
                             text_parts.append(joined)
 
             page_context = "\n".join([p for p in text_parts if p])
-            print(f"Page {page_idx} context text: {page_context}")
+            #print(f"Page {page_idx} context text: {page_context}")
 
             # Second pass: handle images with context-aware description
             image_parts: List[str] = []

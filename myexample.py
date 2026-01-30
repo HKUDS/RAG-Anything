@@ -10,7 +10,7 @@ async def main():
 
     # 创建 RAGAnything 配置
     config = RAGAnythingConfig(
-        working_dir="./rag_storage",
+        working_dir="./rag_storage1",
         parser="mineru",  # 选择解析器：mineru 或 docling
         parse_method="auto",  # 解析方法：auto, ocr 或 txt
         enable_image_processing=True,
@@ -102,7 +102,7 @@ async def main():
     
     # 处理文档
     await rag.process_document_complete(
-        file_path="example1.pdf",
+        file_path="test2.pdf",
         output_dir="./output",
         parse_method="auto"
     )
@@ -110,7 +110,7 @@ async def main():
     # 查询处理后的内容
     # 纯文本查询 - 基本知识库搜索
     text_result = await rag.aquery(
-        "图像储存包含几种文件格式？",
+        "数据交换的类型和其特点有哪些？",
         mode="hybrid"
     )
     print("文本查询结果:", text_result)

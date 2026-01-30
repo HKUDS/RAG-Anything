@@ -95,7 +95,7 @@ async def main():
     embedding_func = build_embedding_func(api_key, base_url)
 
     config = RAGAnythingConfig(
-        working_dir="./rag_storage",
+        working_dir="./rag_storage1",
         parser="mineru",
         parse_method="auto",
         enable_image_processing=True,
@@ -115,7 +115,7 @@ async def main():
         raise RuntimeError(f"LightRAG 初始化失败: {ensure_result.get('error')}")
 
     content_list, doc_id = await rag.parse_document(
-        file_path="example1.pdf",
+        file_path="test2.pdf",
         output_dir="./output",
         parse_method="auto",
         display_stats=True,
