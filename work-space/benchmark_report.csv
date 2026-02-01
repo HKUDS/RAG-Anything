@@ -7,3 +7,4 @@ Timestamp,Experiment_ID,File_Name,Parse_Time(s),Graph_Time(s),Total_Time(s),Outp
 2026-01-27 05:54:53,exp7_simple_limit,BrainMVP.pdf,38.72,2019.42,2058.14,213389,516,300,550,338,1356,3073,Success
 2026-01-27 00:46:37,exp8_one_entity_per_chunk,BrainMVP.pdf,38.42,2048.26,2086.68,27800,67,302,531,64,245,531,Success
 2026-01-27 12:56:45,exp9_strict_one_entity,BrainMVP.pdf,41.52,3721.07,3762.59,43167,93,368,575,64,270,562,Success
+2026-01-28 16:47:47,exp13_vlm_strict,BrainMVP.pdf,73.99,3749.04,3823.03,29435,59,320,515,54,240,515,Success

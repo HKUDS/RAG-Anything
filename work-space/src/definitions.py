@@ -8,10 +8,10 @@ from .custom_prompts import (
     ONE_ENTITY_PER_CHUNK_PROMPT,
     ONE_ENTITY_VISION_PROMPT,
     ONE_ENTITY_TABLE_PROMPT,
-    # VI. Strict prompts - NO relationships
     STRICT_ONE_ENTITY_PROMPT,
     STRICT_ONE_ENTITY_VISION_PROMPT,
     STRICT_ONE_ENTITY_TABLE_PROMPT,
+    STRICT_SKIP_VLM_PROMPT,
 )
 
 EXPERIMENTS = {
@@ -217,6 +217,21 @@ EXPERIMENTS = {
             # Table: 1 entity only
             "table_prompt_with_context": STRICT_ONE_ENTITY_TABLE_PROMPT,
         }
+    ),
+
+    "exp13_vlm_strict": ExperimentDef(
+        id="exp13_vlm_strict",
+        description="Exp8 + Stronger VLM skip (more N/A, max 6 words, ignore numbers/artifacts)",
+        lightrag_kwargs={
+            "chunk_token_size": 4800,
+            "chunk_overlap_token_size": 2000,
+            "entity_extract_max_gleaning": 0,
+        },
+        custom_prompts={
+            "lightrag_entity_extract": ONE_ENTITY_PER_CHUNK_PROMPT, 
+            "vision_prompt_with_context": STRICT_SKIP_VLM_PROMPT,
+            "table_prompt_with_context": STRICT_SKIP_VLM_PROMPT,
+        },
     ),
 
 }

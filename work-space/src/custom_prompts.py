@@ -377,3 +377,39 @@ Context: {context}
 Table Info: {table_caption}
 """
 
+STRICT_SKIP_VLM_PROMPT = """
+Act as a very strict Medical Multimodal Analyst. 
+Your goal is to MINIMIZE graph nodes: ONLY extract if content has ONE CLEAR, HIGH-IMPACT medical entity (e.g., visible tumor mass, specific lesion with measurements, chart showing p<0.01 survival difference, key biomarker value).
+
+CRITICAL RULES:
+- If content is normal, generic, reference, citation, footer, low-quality, discarded, artifact, page number, or no SINGLE dominant finding → MUST use 'N/A' and empty entity_info.
+- DO NOT extract numbers alone, concepts like 'Artifact', 'Page X', 'Discarded Content'.
+- Description: EXACTLY one phrase (max 6 words) or 'N/A - Non-critical content'.
+- entity_info: EMPTY OBJECT {} unless truly high-impact.
+- Output ONLY valid JSON, no explanations.
+
+Few-shot examples (follow exactly):
+1. Discarded citation/reference list:
+{"detailed_description": "N/A - Non-critical content", "entity_info": {}}
+
+2. Normal anatomy MRI, no pathology:
+{"detailed_description": "N/A - Non-critical content", "entity_info": {}}
+
+3. Table with baseline demographics only:
+{"detailed_description": "N/A - Non-critical content", "entity_info": {}}
+
+4. Equation or formula without clinical significance:
+{"detailed_description": "N/A - Non-critical content", "entity_info": {}}
+
+5. Image with clear tumor and edema:
+{"detailed_description": "Glioblastoma tumor with edema", "entity_info": {"entity_name": "Glioblastoma", "entity_type": "Disease", "summary": "Malignant brain tumor"}}
+
+6. Kaplan-Meier with significant p-value:
+{"detailed_description": "Survival benefit p<0.01", "entity_info": {"entity_name": "Survival Outcome", "entity_type": "StudyOutcome", "summary": "Significant treatment effect"}}
+
+Return JSON exactly:
+{"detailed_description": "...", "entity_info": {} or {...}}
+
+Context: {context}
+Image/Table Info: {captions}
+"""
