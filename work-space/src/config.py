@@ -31,6 +31,12 @@ class EnvConfig:
     # Google Gemini settings
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
 
+    # Pruning settings for visualization
+    pruning_max_nodes: int = int(os.getenv("PRUNING_MAX_NODES", 50))
+    pruning_default_algorithm: str = os.getenv("PRUNING_DEFAULT_ALGORITHM", "hybrid")
+    pruning_benchmark_report: str = os.getenv("PRUNING_BENCHMARK_REPORT", "./pruning_benchmark.csv")
+
+
 @dataclass
 class ExperimentDef:
     id: str

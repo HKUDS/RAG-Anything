@@ -2,13 +2,40 @@ import networkx as nx
 from pyvis.network import Network
 from pathlib import Path
 import logging
+from typing import Optional
+
+from .pruning_algorithms import get_algorithm
 
 logger = logging.getLogger("Visualizer")
+
 
 class GraphVisualizer:
     def __init__(self, storage_dir: str):
         self.graph_path = Path(storage_dir) / "graph_chunk_entity_relation.graphml"
         self.output_path = Path(storage_dir) / "interactive_graph.html"
+        self._G_full: Optional[nx.Graph] = None  # Cache full graph
+
+    def load_graph(self) -> Optional[nx.Graph]:
+        """Load và cache full graph từ file."""
+        if self._G_full is not None:
+            return self._G_full
+
+        if not self.graph_path.exists():
+            logger.warning(f"Graph file not found: {self.graph_path}")
+            return None
+
+        try:
+            self._G_full = nx.read_graphml(str(self.graph_path))
+            logger.info(f"Loaded graph: {self._G_full.number_of_nodes()} nodes, "
+                        f"{self._G_full.number_of_edges()} edges")
+            return self._G_full
+        except Exception as e:
+            logger.error(f"Error loading graph: {e}")
+            return None
+
+    def get_full_graph(self) -> Optional[nx.Graph]:
+        """Lấy full graph (load nếu chưa có)."""
+        return self.load_graph()
 
     @staticmethod
     def _score_nodes(G: nx.Graph) -> dict:
@@ -31,63 +58,73 @@ class GraphVisualizer:
         ensure_chunk_coverage: bool = True,
     ) -> nx.Graph:
         """
-        Prune graph to a smaller, meaningful subgraph.
+        [DEPRECATED] Sử dụng prune_with_algorithm() thay thế.
 
-        Strategy:
-        - Score nodes by degree + pagerank.
-        - (Optional) keep best neighbor per chunk to maintain document coverage.
-        - Fill remaining slots by global score until max_nodes reached.
+        Prune graph to a smaller, meaningful subgraph using baseline algorithm.
         """
-        if max_nodes <= 0 or G.number_of_nodes() <= max_nodes:
-            return G
+        # Delegate to baseline algorithm for backward compatibility
+        from .pruning_algorithms import prune_baseline
+        return prune_baseline(G, max_nodes, ensure_chunk_coverage)
 
-        scores = GraphVisualizer._score_nodes(G)
-        keep_nodes = set()
+    def prune_with_algorithm(
+        self,
+        algorithm_id: str = "hybrid",
+        max_nodes: int = 50,
+        ensure_coverage: bool = True
+    ) -> Optional[nx.Graph]:
+        """
+        Prune graph sử dụng thuật toán được chỉ định.
 
-        # Identify chunk nodes by id prefix
-        chunk_nodes = [n for n in G.nodes() if str(n).startswith("chunk-")]
+        Args:
+            algorithm_id: ID của thuật toán (baseline, betweenness, eigenvector, kcore, louvain, hybrid)
+            max_nodes: Số nodes tối đa
+            ensure_coverage: Đảm bảo chunk coverage
 
-        if ensure_chunk_coverage and chunk_nodes:
-            for chunk in chunk_nodes:
-                neighbors = list(G.neighbors(chunk))
-                if not neighbors:
-                    keep_nodes.add(chunk)
-                    continue
-                best_neighbor = max(neighbors, key=lambda n: scores.get(n, 0))
-                keep_nodes.update({chunk, best_neighbor})
+        Returns:
+            Pruned graph hoặc None nếu lỗi
+        """
+        G = self.load_graph()
+        if G is None:
+            return None
 
-            # If coverage itself exceeds max_nodes, trim coverage by score
-            if len(keep_nodes) > max_nodes:
-                keep_nodes = set(
-                    sorted(keep_nodes, key=lambda n: scores.get(n, 0), reverse=True)[
-                        :max_nodes
-                    ]
-                )
+        algorithm = get_algorithm(algorithm_id)
+        logger.info(f"Pruning with {algorithm.name} (max_nodes={max_nodes})")
 
-        # Fill remaining slots by score
-        for node in sorted(G.nodes(), key=lambda n: scores.get(n, 0), reverse=True):
-            if len(keep_nodes) >= max_nodes:
-                break
-            keep_nodes.add(node)
+        try:
+            G_pruned = algorithm.prune_func(G, max_nodes, ensure_coverage)
+            logger.info(f"Pruned: {G_pruned.number_of_nodes()} nodes, "
+                        f"{G_pruned.number_of_edges()} edges")
+            return G_pruned
+        except Exception as e:
+            logger.error(f"Pruning failed: {e}")
+            return None
 
-        pruned = G.subgraph(keep_nodes).copy()
-        return pruned
-
-    def generate_html(self, max_nodes: int = 50):
+    def generate_html(
+        self,
+        max_nodes: int = 50,
+        algorithm_id: str = "hybrid"
+    ):
         """
         Tạo file HTML tương tác.
         Chỉ vẽ Top 'max_nodes' quan trọng nhất để tránh bị rối (Hairball).
+
+        Args:
+            max_nodes: Số nodes tối đa hiển thị
+            algorithm_id: Thuật toán pruning (baseline, betweenness, eigenvector, kcore, louvain, hybrid)
         """
         if not self.graph_path.exists():
             return None
 
         try:
-            # 1. Load Graph
-            G = nx.read_graphml(str(self.graph_path))
-            total_nodes = G.number_of_nodes()
+            # 1. Load Graph (sử dụng cache)
+            G_full = self.load_graph()
+            if G_full is None:
+                return None
+            total_nodes = G_full.number_of_nodes()
 
-            # 2. Prune graph with chunk coverage
-            G = self._prune_graph(G, max_nodes=max_nodes, ensure_chunk_coverage=True)
+            # 2. Prune graph với thuật toán được chọn
+            algorithm = get_algorithm(algorithm_id)
+            G = algorithm.prune_func(G_full, max_nodes, ensure_coverage=True)
 
             # 3. Tạo PyVis Network
             net = Network(
@@ -132,7 +169,8 @@ class GraphVisualizer:
             net.save_graph(str(self.output_path))
             pruned_nodes = G.number_of_nodes()
             logger.info(
-                f"Graph visualized with {pruned_nodes}/{total_nodes} nodes (max_nodes={max_nodes})"
+                f"Graph visualized with {pruned_nodes}/{total_nodes} nodes "
+                f"(algorithm={algorithm.name}, max_nodes={max_nodes})"
             )
             return str(self.output_path)
 

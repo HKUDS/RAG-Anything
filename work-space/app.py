@@ -20,6 +20,9 @@ if str(project_root) not in sys.path:
 from src.config import ENV
 from src.visualizer import GraphVisualizer
 from src.qa_engine import RAGQueryEngine
+from src.pruning_algorithms import PRUNING_ALGORITHMS, list_algorithms
+from src.pruning_evaluator import PruningBenchmark, PruningEvaluator
+
 try:
     from src.evaluator import GeminiEvaluator
     HAS_GEMINI = True
@@ -73,9 +76,10 @@ st.sidebar.info(f"**Default LLM:** {ENV.ollama_llm}")
 # ==========================================
 # 5. MAIN TABS
 # ==========================================
-tab1, tab2, tab3 = st.tabs([
-    "📊 Graph & Metrics", 
-    "⚖️ AI Judge (Gemini)", 
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Graph & Metrics",
+    "🔬 Pruning Benchmark",
+    "⚖️ AI Judge (Gemini)",
     "💬 Chat Playground"
 ])
 
@@ -112,23 +116,156 @@ if selected_exp:
         
         with col2:
             st.subheader("🕸️ Knowledge Graph Topology")
-            max_nodes = st.slider("Max nodes to display", min_value=20, max_value=300, value=50, step=10)
+
+            # Pruning Algorithm Selector
+            algorithm_options = {alg["id"]: f"{alg['name']}" for alg in list_algorithms()}
+            selected_algorithm = st.selectbox(
+                "Pruning Algorithm",
+                options=list(algorithm_options.keys()),
+                format_func=lambda x: algorithm_options[x],
+                index=list(algorithm_options.keys()).index("hybrid"),  # Default to hybrid
+                help="Choose which algorithm to use for selecting the most important nodes to display"
+            )
+
+            max_nodes = st.slider("Max nodes to display", min_value=20, max_value=300, value=ENV.pruning_max_nodes, step=10)
+
             if st.button("Generate Interactive Graph", type="primary"):
                 storage_dir = output_path / selected_exp / "rag_storage"
-                with st.spinner("Visualizing..."):
+                with st.spinner(f"Visualizing with {algorithm_options[selected_algorithm]}..."):
                     viz = GraphVisualizer(str(storage_dir))
-                    html_path = viz.generate_html(max_nodes=max_nodes)
-                    
+                    html_path = viz.generate_html(max_nodes=max_nodes, algorithm_id=selected_algorithm)
+
                     if html_path:
                         with open(html_path, 'r', encoding='utf-8') as f:
                             html_content = f.read()
                         st.components.v1.html(html_content, height=600, scrolling=True)
-                        st.caption(f"Top-{max_nodes} nodes with chunk coverage.")
+                        st.caption(f"Top-{max_nodes} nodes using **{algorithm_options[selected_algorithm]}** algorithm.")
                     else:
                         st.error("Graph file not found.")
 
-# --- TAB 2: AI EVALUATION ---
+    # --- TAB 2: PRUNING BENCHMARK ---
     with tab2:
+        st.header("🔬 Pruning Algorithm Benchmark")
+        st.markdown("""
+        Compare different pruning algorithms to find which one selects the most **important** and **representative** nodes.
+
+        **Metrics:**
+        - **Hub Retention**: % of top-degree nodes (key concepts) retained
+        - **Bridge Retention**: % of bridge nodes (connecting clusters) retained
+        - **Cluster Coverage**: % of communities with at least 1 representative
+        - **Connectivity**: How connected is the pruned graph
+        - **LLM Score**: AI evaluation of node selection quality (optional)
+        """)
+
+        st.divider()
+
+        # Settings
+        col_settings1, col_settings2 = st.columns(2)
+        with col_settings1:
+            benchmark_max_nodes = st.number_input(
+                "Max Nodes for Benchmark",
+                min_value=10,
+                max_value=200,
+                value=ENV.pruning_max_nodes,
+                help="Number of nodes to prune to for evaluation"
+            )
+        with col_settings2:
+            enable_llm_eval = st.checkbox(
+                "Enable LLM Evaluation",
+                value=False,
+                help="Use LLM to evaluate pruning quality (slower, may have API limits)"
+            )
+
+        # Run Benchmark
+        if st.button("🚀 Run Benchmark", type="primary", key="run_pruning_benchmark"):
+            storage_dir = output_path / selected_exp / "rag_storage"
+            viz = GraphVisualizer(str(storage_dir))
+            G_full = viz.get_full_graph()
+
+            if G_full is None:
+                st.error("Could not load graph. Make sure the experiment has been run.")
+            else:
+                st.info(f"Full graph: **{G_full.number_of_nodes()}** nodes, **{G_full.number_of_edges()}** edges")
+
+                with st.spinner("Running benchmark on all algorithms..."):
+                    try:
+                        benchmark = PruningBenchmark(G_full, max_nodes=benchmark_max_nodes)
+
+                        if enable_llm_eval and HAS_GEMINI and ENV.google_api_key:
+                            # Run with LLM evaluation
+                            from src.models import get_model_funcs
+                            llm_func, _, _ = get_model_funcs("ollama")
+
+                            async def run_with_llm():
+                                return await benchmark.run_with_llm(PRUNING_ALGORITHMS, llm_func)
+
+                            results = asyncio.run(run_with_llm())
+                        else:
+                            # Run without LLM
+                            results = benchmark.run(PRUNING_ALGORITHMS)
+
+                        # Store results in session state
+                        st.session_state.pruning_results = results
+                        st.session_state.pruning_summary = benchmark.get_summary()
+
+                        # Export to CSV
+                        csv_path = Path(ENV.pruning_benchmark_report)
+                        benchmark.to_csv(str(csv_path))
+                        st.success(f"Benchmark complete! Results saved to `{csv_path}`")
+
+                    except Exception as e:
+                        st.error(f"Benchmark failed: {e}")
+                        import traceback
+                        traceback.print_exc()
+
+        # Display Results
+        if "pruning_results" in st.session_state and st.session_state.pruning_results:
+            st.divider()
+            st.subheader("📊 Benchmark Results")
+
+            results = st.session_state.pruning_results
+
+            # Best Algorithm Highlight
+            best = results[0]
+            st.success(f"**Recommended:** {best.algorithm_name} (Score: {best.weighted_score:.4f})")
+
+            # Results Table
+            results_data = []
+            for r in results:
+                row = {
+                    "Algorithm": r.algorithm_name,
+                    "Nodes": r.actual_nodes,
+                    "Edges": r.actual_edges,
+                    "Hub Ret.": f"{r.hub_retention:.2%}",
+                    "Bridge Ret.": f"{r.bridge_retention:.2%}",
+                    "Cluster Cov.": f"{r.cluster_coverage:.2%}",
+                    "Connectivity": f"{r.connectivity:.2%}",
+                    "LLM Score": f"{r.llm_score:.2f}" if r.llm_score is not None else "N/A",
+                    "Total Score": f"{r.weighted_score:.4f}",
+                }
+                results_data.append(row)
+
+            df_results = pd.DataFrame(results_data)
+            st.dataframe(df_results, hide_index=True, use_container_width=True)
+
+            # Bar Chart Comparison
+            st.subheader("📈 Score Comparison")
+            chart_data = pd.DataFrame({
+                "Algorithm": [r.algorithm_name for r in results],
+                "Hub Retention": [r.hub_retention for r in results],
+                "Bridge Retention": [r.bridge_retention for r in results],
+                "Cluster Coverage": [r.cluster_coverage for r in results],
+                "Connectivity": [r.connectivity for r in results],
+            })
+            chart_data = chart_data.set_index("Algorithm")
+            st.bar_chart(chart_data)
+
+            # Summary Text
+            with st.expander("📝 Full Summary"):
+                st.code(st.session_state.pruning_summary)
+
+# --- TAB 3: AI EVALUATION ---
+    with tab3:
         st.header("🤖 Automated Evaluation with Gemini")
         
         # Đường dẫn file lưu dataset
@@ -303,8 +440,8 @@ if selected_exp:
                         st.caption(f"Judge: {row['Reasoning']}")
                         st.divider()
 
-    # --- TAB 3: PLAYGROUND ---
-    with tab3:
+    # --- TAB 4: PLAYGROUND ---
+    with tab4:
         st.header("💬 Chat with Document")
         
         if "messages" not in st.session_state:
