@@ -95,7 +95,7 @@ async def main():
     embedding_func = build_embedding_func(api_key, base_url)
 
     config = RAGAnythingConfig(
-        working_dir="./rag_storage1",
+        working_dir="./rag_storage3",
         parser="mineru",
         parse_method="auto",
         enable_image_processing=True,
@@ -126,6 +126,19 @@ async def main():
     print("逐页主题：")
     for idx, topic in sorted(topics.items()):
         print(f"- page {idx}: {topic}")
+    
+    await rag.build_page_topic_relations(
+        topics,
+        cosine_threshold=0.2,
+        file_path="page_topic_test",
+    )
+
+    nodes = await rag.lightrag.chunk_entity_relation_graph.get_all_nodes()
+    edges = await rag.lightrag.chunk_entity_relation_graph.get_all_edges()
+
+    print(f"nodes={len(nodes)} edges={len(edges)}")
+    for edge in edges[:5]:
+        print(edge)
 
 
 if __name__ == "__main__":

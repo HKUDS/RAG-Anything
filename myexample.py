@@ -2,8 +2,11 @@ import asyncio
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
+from dotenv import load_dotenv
 
 async def main():
+
+    load_dotenv()  # 加载环境变量配置
     # 设置 API 配置
     api_key = "sk-45rj0IHWppQbdpwjOCuMYGUUg6rjU7u7NX8gJiXw83P0QGtE"
     base_url = "https://yunwu.ai/v1"  # 可选
@@ -110,7 +113,7 @@ async def main():
     # 查询处理后的内容
     # 纯文本查询 - 基本知识库搜索
     text_result = await rag.aquery(
-        "数据交换的类型和其特点有哪些？",
+        "请简要介绍储存转发这一交换模式",
         mode="hybrid"
     )
     print("文本查询结果:", text_result)

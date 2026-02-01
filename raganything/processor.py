@@ -9,6 +9,7 @@ import time
 import hashlib
 import json
 import inspect
+import numpy as np
 from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 
@@ -392,6 +393,116 @@ class ProcessorMixin:
                 page_topics[page_idx] = fallback_topic
 
         return page_topics
+
+    async def build_page_topic_relations(
+        self,
+        page_topics: Dict[int, str],
+        cosine_threshold: float = 0.82,
+        file_path: str = "page_topics",
+        merge_case_insensitive: bool = True,
+    ) -> None:
+        """
+        Build relations among page topic entities and store them in LightRAG KG.
+
+        Steps:
+        1) Merge identical topics (case-insensitive by default)
+        2) Compute pairwise cosine similarity on topic embeddings
+        3) If similarity >= threshold, create relation edge
+        """
+
+        if not page_topics:
+            return
+
+        await self._ensure_lightrag_initialized()
+
+        def _normalize_topic(text: str) -> str:
+            normalized = text.strip()
+            if merge_case_insensitive:
+                normalized = normalized.lower()
+            # remove common bullets and extra spaces
+            normalized = normalized.replace("•", " ").replace("◼", " ")
+            normalized = " ".join(normalized.split())
+            return normalized
+
+        # Merge identical topics
+        merged: Dict[str, Dict[str, Any]] = {}
+        for page_idx, topic in page_topics.items():
+            if not isinstance(topic, str) or not topic.strip():
+                continue
+            norm = _normalize_topic(topic)
+            if not norm:
+                continue
+            if norm not in merged:
+                merged[norm] = {
+                    "topic": topic.strip(),
+                    "pages": [int(page_idx)],
+                }
+            else:
+                merged[norm]["pages"].append(int(page_idx))
+
+        topics = [item["topic"] for item in merged.values()]
+        if len(topics) < 2:
+            # still ensure nodes are stored
+            for item in merged.values():
+                node_data = {
+                    "entity_id": item["topic"],
+                    "entity_type": "page_topic",
+                    "description": f"Page topic merged from pages: {sorted(item['pages'])}",
+                    "source_id": "page_topic_dict",
+                    "file_path": file_path,
+                    "pages": sorted(item["pages"]),
+                    "created_at": int(time.time()),
+                }
+                await self.lightrag.chunk_entity_relation_graph.upsert_node(
+                    item["topic"], node_data=node_data
+                )
+            return
+
+        # Compute embeddings
+        embeddings = await self.embedding_func(topics)
+        if embeddings.ndim == 1:
+            embeddings = embeddings.reshape(1, -1)
+
+        # Normalize embeddings
+        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
+        norms[norms == 0] = 1e-8
+        normed = embeddings / norms
+
+        # Store nodes
+        for item in merged.values():
+            node_data = {
+                "entity_id": item["topic"],
+                "entity_type": "page_topic",
+                "description": f"Page topic merged from pages: {sorted(item['pages'])}",
+                "source_id": "page_topic_dict",
+                "file_path": file_path,
+                "pages": sorted(item["pages"]),
+                "created_at": int(time.time()),
+            }
+            await self.lightrag.chunk_entity_relation_graph.upsert_node(
+                item["topic"], node_data=node_data
+            )
+
+        # Create edges based on cosine similarity
+        topic_list = [item["topic"] for item in merged.values()]
+        n = len(topic_list)
+        for i in range(n):
+            for j in range(i + 1, n):
+                sim = float(np.dot(normed[i], normed[j]))
+                if sim >= cosine_threshold:
+                    src = topic_list[i]
+                    tgt = topic_list[j]
+                    edge_data = {
+                        "weight": sim,
+                        "description": f"Topic similarity (cosine={sim:.4f}) between '{src}' and '{tgt}'",
+                        "keywords": "related_to,cosine_sim",
+                        "source_id": "page_topic_relation",
+                        "file_path": file_path,
+                        "created_at": int(time.time()),
+                    }
+                    await self.lightrag.chunk_entity_relation_graph.upsert_edge(
+                        src, tgt, edge_data=edge_data
+                    )
 
     async def _get_cached_result(
         self, cache_key: str, file_path: Path, parse_method: str = None, **kwargs
