@@ -12,7 +12,10 @@ from lightrag.utils import logger
 
 def separate_content(
     content_list: List[Dict[str, Any]],
-) -> Tuple[str, List[Dict[str, Any]]]:
+    return_page_texts: bool = False,
+) -> Tuple[str, List[Dict[str, Any]]] | Tuple[
+    str, List[Dict[str, Any]], Dict[int, str]
+]:
     """
     Separate text content and multimodal content
 
@@ -22,8 +25,9 @@ def separate_content(
     Returns:
         (text_content, multimodal_items): Pure text content and multimodal items list
     """
-    text_parts = []
-    multimodal_items = []
+    text_parts: List[str] = []
+    multimodal_items: List[Dict[str, Any]] = []
+    page_texts: Dict[int, List[str]] = {}
 
     for item in content_list:
         content_type = item.get("type", "text")
@@ -33,6 +37,13 @@ def separate_content(
             text = item.get("text", "")
             if text.strip():
                 text_parts.append(text)
+                page_idx = item.get("page_idx")
+                if page_idx is not None:
+                    try:
+                        page_key = int(page_idx)
+                        page_texts.setdefault(page_key, []).append(text)
+                    except (ValueError, TypeError):
+                        pass
         elif content_type == "list" and item.get("sub_type") == "text":
             # Treat list of text items as text content
             li = item.get("list_items", [])
@@ -40,6 +51,13 @@ def separate_content(
                 joined = "\n".join([s.strip() for s in li if isinstance(s, str)])
                 if joined.strip():
                     text_parts.append(joined)
+                    page_idx = item.get("page_idx")
+                    if page_idx is not None:
+                        try:
+                            page_key = int(page_idx)
+                            page_texts.setdefault(page_key, []).append(joined)
+                        except (ValueError, TypeError):
+                            pass
         else:
             # Multimodal content (image, table, equation, etc.)
             multimodal_items.append(item)
@@ -59,6 +77,12 @@ def separate_content(
 
     if modal_types:
         logger.info(f"  - Multimodal type distribution: {modal_types}")
+
+    if return_page_texts:
+        page_texts_final = {
+            k: "\n".join(v) for k, v in page_texts.items() if v
+        }
+        return text_content, multimodal_items, page_texts_final
 
     return text_content, multimodal_items
 

@@ -10,6 +10,7 @@ import hashlib
 import json
 import inspect
 import numpy as np
+import re
 from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 
@@ -25,6 +26,7 @@ from raganything.utils import (
 )
 import asyncio
 from lightrag.utils import compute_mdhash_id
+from lightrag.constants import GRAPH_FIELD_SEP
 
 
 class ProcessorMixin:
@@ -392,7 +394,9 @@ class ProcessorMixin:
                 )
                 page_topics[page_idx] = fallback_topic
 
+        self._page_topics_dict = page_topics
         return page_topics
+
 
     async def build_page_topic_relations(
         self,
@@ -413,7 +417,11 @@ class ProcessorMixin:
         if not page_topics:
             return
 
-        await self._ensure_lightrag_initialized()
+        init_result = await self._ensure_lightrag_initialized()
+        if isinstance(init_result, dict) and not init_result.get("success", True):
+            raise RuntimeError(
+                f"LightRAG 初始化失败: {init_result.get('error', 'unknown error')}"
+            )
 
         def _normalize_topic(text: str) -> str:
             normalized = text.strip()
@@ -450,7 +458,7 @@ class ProcessorMixin:
                     "description": f"Page topic merged from pages: {sorted(item['pages'])}",
                     "source_id": "page_topic_dict",
                     "file_path": file_path,
-                    "pages": sorted(item["pages"]),
+                    "pages": ",".join(str(p) for p in sorted(item["pages"])),
                     "created_at": int(time.time()),
                 }
                 await self.lightrag.chunk_entity_relation_graph.upsert_node(
@@ -476,7 +484,7 @@ class ProcessorMixin:
                 "description": f"Page topic merged from pages: {sorted(item['pages'])}",
                 "source_id": "page_topic_dict",
                 "file_path": file_path,
-                "pages": sorted(item["pages"]),
+                "pages": ",".join(str(p) for p in sorted(item["pages"])),
                 "created_at": int(time.time()),
             }
             await self.lightrag.chunk_entity_relation_graph.upsert_node(
@@ -504,6 +512,143 @@ class ProcessorMixin:
                         src, tgt, edge_data=edge_data
                     )
 
+    async def build_page_entity_topic_relations_text_only(self) -> None:
+        """
+        Build relations between page entities and page topic entities (text-only).
+
+        Requirements:
+        - No input arguments
+        - Uses cached page_topics dict and latest parsed content
+        - Inserts page-separated text into LightRAG for chunking
+        - Maps entity source_id(chunk_id) to page_idx, then links to page topic
+        """
+
+        if not hasattr(self, "_page_topics_dict") or not self._page_topics_dict:
+            raise RuntimeError("未找到页主题字典，请先调用 extract_page_topics")
+
+        if not hasattr(self, "_latest_content_list") or not self._latest_content_list:
+            raise RuntimeError("未找到解析内容，请先调用 parse_document")
+
+        init_result = await self._ensure_lightrag_initialized()
+        if isinstance(init_result, dict) and not init_result.get("success", True):
+            raise RuntimeError(
+                f"LightRAG 初始化失败: {init_result.get('error', 'unknown error')}"
+            )
+
+        _, _, page_texts = separate_content(
+            self._latest_content_list, return_page_texts=True
+        )
+        if not page_texts:
+            self.logger.warning("没有可用的纯文本页内容，跳过页实体关系构建")
+            return
+
+        page_marker_re = re.compile(r"<<PAGE:(\d+)>>")
+        separator = "\n<<<PAGE_BREAK>>>\n"
+
+        page_chunks: List[str] = []
+        for page_idx in sorted(page_texts.keys()):
+            page_text = page_texts[page_idx].strip()
+            if not page_text:
+                continue
+            page_chunks.append(f"<<PAGE:{page_idx}>>\n{page_text}")
+
+        if not page_chunks:
+            self.logger.warning("分页文本为空，跳过页实体关系构建")
+            return
+
+        full_text = separator.join(page_chunks)
+        base_doc_id = getattr(self, "_latest_doc_id", None)
+        doc_id = (
+            f"{base_doc_id}-page-text" if base_doc_id else compute_mdhash_id(full_text, prefix="doc-page-")
+        )
+
+        file_ref = getattr(self, "_latest_file_path", None)
+        if file_ref:
+            file_ref = self._get_file_reference(file_ref)
+        else:
+            file_ref = "page_text_only"
+
+        await insert_text_content(
+            self.lightrag,
+            input=full_text,
+            split_by_character=separator,
+            split_by_character_only=True,
+            ids=doc_id,
+            file_paths=file_ref,
+        )
+
+        doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
+        if not doc_status:
+            raise RuntimeError("无法获取 doc_status，请确认文本已成功插入")
+
+        chunk_ids = doc_status.get("chunks_list", [])
+        if not chunk_ids:
+            raise RuntimeError("doc_status 中没有 chunks_list，无法建立页映射")
+
+        chunk_to_page: Dict[str, int] = {}
+        for chunk_id in chunk_ids:
+            chunk = await self.lightrag.text_chunks.get_by_id(chunk_id)
+            if not chunk:
+                continue
+            content = chunk.get("content", "")
+            match = page_marker_re.search(content)
+            if match:
+                chunk_to_page[chunk_id] = int(match.group(1))
+
+        if not chunk_to_page:
+            raise RuntimeError("未从 chunk 内容中解析到页号标记")
+
+        # Build relations: entity -> page_topic
+        nodes = await self.lightrag.chunk_entity_relation_graph.get_all_nodes()
+        for node in nodes:
+            entity_type = node.get("entity_type")
+            if entity_type == "page_topic":
+                continue
+
+            node_id = node.get("id") or node.get("entity_id") or node.get("entity_name")
+            if not node_id:
+                continue
+
+            source_id = str(node.get("source_id", ""))
+            if not source_id:
+                continue
+
+            source_chunk_ids = [cid for cid in source_id.split(GRAPH_FIELD_SEP) if cid]
+            for cid in source_chunk_ids:
+                if cid not in chunk_to_page:
+                    continue
+
+                page_idx = chunk_to_page[cid]
+                page_topic = self._page_topics_dict.get(page_idx)
+                if not page_topic:
+                    continue
+
+                if not await self.lightrag.chunk_entity_relation_graph.has_node(page_topic):
+                    await self.lightrag.chunk_entity_relation_graph.upsert_node(
+                        page_topic,
+                        node_data={
+                            "entity_id": page_topic,
+                            "entity_type": "page_topic",
+                            "description": f"Page topic for page {page_idx}",
+                            "source_id": "page_topic_dict",
+                            "file_path": file_ref,
+                            "pages": str(page_idx),
+                            "created_at": int(time.time()),
+                        },
+                    )
+
+                edge_data = {
+                    "weight": 1.0,
+                    "description": f"Entity {node_id} belongs to page topic {page_topic}",
+                    "keywords": "belongs_to,page_topic",
+                    "source_id": cid,
+                    "file_path": file_ref,
+                    "created_at": int(time.time()),
+                }
+                await self.lightrag.chunk_entity_relation_graph.upsert_edge(
+                    node_id, page_topic, edge_data=edge_data
+                )
+    
     async def _get_cached_result(
         self, cache_key: str, file_path: Path, parse_method: str = None, **kwargs
     ) -> tuple[List[Dict[str, Any]], str] | None:
@@ -806,6 +951,11 @@ class ProcessorMixin:
         await self._store_cached_result(
             cache_key, content_list, doc_id, file_path, parse_method, **kwargs
         )
+
+        # Cache latest parse for downstream page-entity linking
+        self._latest_content_list = content_list
+        self._latest_doc_id = doc_id
+        self._latest_file_path = str(file_path)
 
         # Display content statistics if requested
         if display_stats:
