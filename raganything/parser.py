@@ -74,42 +74,77 @@ class Parser:
     def _download_file(self, url: str) -> Path:
         """
         Download a file from a URL to a temporary file.
-        Attempts to preserve the file extension from the URL.
+        Attempts to preserve the file extension from the URL or Content-Type header.
         """
+        tmp_path = None
+        response = None
         try:
             self.logger.info(f"Downloading file from URL: {url}")
-            
+
             # Parse URL to get path and extension
             parsed_url = urllib.parse.urlparse(url)
             path = Path(parsed_url.path)
             suffix = path.suffix if path.suffix else ""
-            
+
+            # Create request with User-Agent to avoid 403 Forbidden from some sites
+            req = urllib.request.Request(
+                url,
+                data=None,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+                },
+            )
+
+            # Open connection to get headers
+            response = urllib.request.urlopen(req)
+
+            # If no extension in URL, try Content-Type header
+            if not suffix:
+                content_type = (
+                    response.headers.get("Content-Type", "").split(";")[0].strip()
+                )
+                if content_type:
+                    import mimetypes
+
+                    guessed_ext = mimetypes.guess_extension(content_type)
+                    if guessed_ext:
+                        suffix = guessed_ext
+                        self.logger.info(
+                            f"Inferred file extension '{suffix}' from Content-Type: {content_type}"
+                        )
+
             # Create a temporary file with the correct extension
-            # delete=False is important so we can close it and let other processes open it
-            # We must manually delete it later
             fd, tmp_path = tempfile.mkstemp(suffix=suffix)
             os.close(fd)
             tmp_path = Path(tmp_path)
-            
-            # Download the file
-            # We use a user-agent to avoid 403 Forbidden from some sites
-            req = urllib.request.Request(
-                url, 
-                data=None, 
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36'
-                }
-            )
-            
-            with urllib.request.urlopen(req) as response, open(tmp_path, 'wb') as out_file:
+
+            # Download the file content
+            with open(tmp_path, "wb") as out_file:
                 shutil.copyfileobj(response, out_file)
-                
-            self.logger.info(f"Downloaded to temporary file: {tmp_path} ({tmp_path.stat().st_size} bytes)")
+
+            self.logger.info(
+                f"Downloaded to temporary file: {tmp_path} ({tmp_path.stat().st_size} bytes)"
+            )
             return tmp_path
-            
+
         except Exception as e:
+            # Clean up temp file if it was created
+            if tmp_path and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                    self.logger.debug(
+                        f"Cleaned up temporary file after failed download: {tmp_path}"
+                    )
+                except Exception as cleanup_error:
+                    self.logger.warning(
+                        f"Failed to clean up temp file {tmp_path}: {cleanup_error}"
+                    )
+
             self.logger.error(f"Failed to download file from {url}: {e}")
             raise RuntimeError(f"Failed to download file from {url}: {e}")
+        finally:
+            if response:
+                response.close()
 
     def __init__(self) -> None:
         """Initialize the base parser."""
@@ -1392,25 +1427,25 @@ class DoclingParser(Parser):
     ) -> List[Dict[str, Any]]:
         """
         Parse document using Docling based on file extension
-        
+
         Args:
             file_path: Path to the file to be parsed or URL
             method: Parsing method
             output_dir: Output directory path
             lang: Document language for optimization
             **kwargs: Additional parameters for docling command
-            
+
         Returns:
             List[Dict[str, Any]]: List of content blocks
         """
         downloaded_temp_file = None
-        
+
         try:
             # Check if input is a URL
             if self._is_url(file_path):
                 file_path = self._download_file(file_path)
                 downloaded_temp_file = file_path
-                
+
             # Convert to Path object
             file_path = Path(file_path)
             if not file_path.exists():
@@ -1439,7 +1474,9 @@ class DoclingParser(Parser):
                     downloaded_temp_file.unlink()
                     self.logger.debug(f"Removed temporary file: {downloaded_temp_file}")
                 except Exception as e:
-                    self.logger.warning(f"Failed to remove temporary file {downloaded_temp_file}: {e}")
+                    self.logger.warning(
+                        f"Failed to remove temporary file {downloaded_temp_file}: {e}"
+                    )
 
     def _run_docling_command(
         self,
