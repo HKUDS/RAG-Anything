@@ -12,6 +12,7 @@ For Office documents (.doc, .docx, .ppt, .pptx), please convert them to PDF form
 from __future__ import annotations
 
 
+import os
 import json
 import argparse
 import base64
@@ -604,6 +605,7 @@ class MineruParser(Parser):
         device: Optional[str] = None,
         source: Optional[str] = None,
         vlm_url: Optional[str] = None,
+        **kwargs,
     ) -> None:
         """
         Run mineru command line tool
@@ -621,6 +623,7 @@ class MineruParser(Parser):
             device: Inference device
             source: Model source
             vlm_url: When the backend is `vlm-http-client`, you need to specify the server_url
+            **kwargs: Additional parameters for subprocess (e.g., env)
         """
         cmd = [
             "mineru",
@@ -663,6 +666,13 @@ class MineruParser(Parser):
             # Log the command being executed
             cls.logger.info(f"Executing mineru command: {' '.join(cmd)}")
 
+            # Handle environment variables
+            custom_env = kwargs.get("env")
+            env = None
+            if custom_env:
+                env = os.environ.copy()
+                env.update(custom_env)
+
             subprocess_kwargs = {
                 "stdout": subprocess.PIPE,
                 "stderr": subprocess.PIPE,
@@ -670,6 +680,7 @@ class MineruParser(Parser):
                 "encoding": "utf-8",
                 "errors": "ignore",
                 "bufsize": 1,  # Line buffered
+                "env": env,
             }
 
             # Hide console window on Windows
@@ -1434,12 +1445,20 @@ class DoclingParser(Parser):
             # Prepare subprocess parameters to hide console window on Windows
             import platform
 
+            # Handle environment variables
+            custom_env = kwargs.get("env")
+            env = None
+            if custom_env:
+                env = os.environ.copy()
+                env.update(custom_env)
+
             docling_subprocess_kwargs = {
                 "capture_output": True,
                 "text": True,
                 "check": True,
                 "encoding": "utf-8",
                 "errors": "ignore",
+                "env": env,
             }
 
             # Hide console window on Windows
