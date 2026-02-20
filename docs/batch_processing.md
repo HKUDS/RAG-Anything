@@ -24,6 +24,9 @@ pip install raganything[all]
 
 # Required for batch processing
 pip install tqdm
+
+# Optional for parser='paddleocr'
+pip install raganything[paddleocr]
 ```
 
 ## Usage
@@ -35,7 +38,7 @@ from raganything.batch_parser import BatchParser
 
 # Create batch parser
 batch_parser = BatchParser(
-    parser_type="mineru",  # or "docling"
+    parser_type="mineru",  # or "docling" or "paddleocr"
     max_workers=4,
     show_progress=True,
     timeout_per_file=300,
@@ -123,6 +126,7 @@ python -m raganything.batch_parser examples/sample_docs/ --output ./output --wor
 
 # With specific parser
 python -m raganything.batch_parser examples/sample_docs/ --parser mineru --method auto
+python -m raganything.batch_parser examples/sample_docs/ --parser paddleocr --method ocr
 
 # Without progress bar
 python -m raganything.batch_parser examples/sample_docs/ --output ./output --no-progress
@@ -148,7 +152,7 @@ PARSER_OUTPUT_DIR=./parsed_output
 
 ### BatchParser Parameters
 
-- **parser_type**: `"mineru"` or `"docling"` (default: `"mineru"`)
+- **parser_type**: `"mineru"`, `"docling"`, or `"paddleocr"` (default: `"mineru"`)
 - **max_workers**: Number of parallel workers (default: `4`)
 - **show_progress**: Show progress bar (default: `True`)
 - **timeout_per_file**: Timeout per file in seconds (default: `300`)
