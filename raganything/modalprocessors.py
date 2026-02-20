@@ -546,6 +546,18 @@ class BaseModalProcessor:
 
     def _robust_json_parse(self, response: str) -> dict:
         """Robust JSON parsing with multiple fallback strategies"""
+        import re
+
+        # Pre-strip thinking/reasoning tags so all strategies (including the
+        # regex fallback) operate on the actual model output, not internal
+        # chain-of-thought text. Fixes issues with reasoning models like
+        # qwen2.5-think and deepseek-r1 (#159).
+        response = re.sub(
+            r"<think>.*?</think>", "", response, flags=re.DOTALL | re.IGNORECASE
+        )
+        response = re.sub(
+            r"<thinking>.*?</thinking>", "", response, flags=re.DOTALL | re.IGNORECASE
+        )
 
         # Strategy 1: Try direct parsing first
         for json_candidate in self._extract_all_json_candidates(response):
