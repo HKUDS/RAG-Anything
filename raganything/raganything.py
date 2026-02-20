@@ -141,12 +141,22 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             # Check if there's a running event loop using get_running_loop()
             # This is the proper way in Python 3.10+ to avoid DeprecationWarning
             try:
-                asyncio.get_running_loop()
+                loop = asyncio.get_running_loop()
                 # If we're in an async context, schedule cleanup
                 asyncio.create_task(self.finalize_storages())
             except RuntimeError:
-                # No running event loop, run cleanup synchronously
-                asyncio.run(self.finalize_storages())
+                # No running event loop — create a new one to run cleanup.
+                # asyncio.run() can fail during interpreter shutdown when the
+                # default event-loop policy has already been torn down, so we
+                # fall back to manually creating a loop.
+                try:
+                    asyncio.run(self.finalize_storages())
+                except RuntimeError:
+                    loop = asyncio.new_event_loop()
+                    try:
+                        loop.run_until_complete(self.finalize_storages())
+                    finally:
+                        loop.close()
         except Exception as e:
             # Use print instead of logger since logger might be cleaned up already
             print(f"Warning: Failed to finalize RAGAnything storages: {e}")
