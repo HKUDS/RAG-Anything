@@ -657,6 +657,26 @@ class MineruParser(Parser):
         output_lines = []
         error_lines = []
 
+        # Handle and validate environment variables
+        custom_env = kwargs.pop("env", None)
+
+        # Validate env if provided
+        if custom_env is not None:
+            if not isinstance(custom_env, dict):
+                raise TypeError(
+                    f"env must be a dictionary, got {type(custom_env).__name__}"
+                )
+            for k, v in custom_env.items():
+                if not isinstance(k, str) or not isinstance(v, str):
+                    raise TypeError("env keys and values must be strings")
+
+        # Check for unsupported arguments to fail fast
+        if kwargs:
+            unsupported = ", ".join(kwargs.keys())
+            raise TypeError(
+                f"MineruParser._run_mineru_command received unexpected keyword argument(s): {unsupported}"
+            )
+
         try:
             # Prepare subprocess parameters to hide console window on Windows
             import platform
@@ -666,8 +686,6 @@ class MineruParser(Parser):
             # Log the command being executed
             cls.logger.info(f"Executing mineru command: {' '.join(cmd)}")
 
-            # Handle environment variables
-            custom_env = kwargs.get("env")
             env = None
             if custom_env:
                 env = os.environ.copy()
@@ -1441,12 +1459,23 @@ class DoclingParser(Parser):
             str(input_path),
         ]
 
+        # Handle and validate environment variables
+        custom_env = kwargs.pop("env", None)
+
+        # Validate env if provided
+        if custom_env is not None:
+            if not isinstance(custom_env, dict):
+                raise TypeError(
+                    f"env must be a dictionary, got {type(custom_env).__name__}"
+                )
+            for k, v in custom_env.items():
+                if not isinstance(k, str) or not isinstance(v, str):
+                    raise TypeError("env keys and values must be strings")
+
         try:
             # Prepare subprocess parameters to hide console window on Windows
             import platform
 
-            # Handle environment variables
-            custom_env = kwargs.get("env")
             env = None
             if custom_env:
                 env = os.environ.copy()
