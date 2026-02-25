@@ -1,7 +1,7 @@
 algorithm_id,algorithm_name,max_nodes,actual_nodes,actual_edges,hub_retention,bridge_retention,cluster_coverage,connectivity,avg_degree,llm_score,weighted_score
-betweenness,Betweenness Centrality,50,50,97,1.0,1.0,0.3148,1.0,1.0,0.65,0.7937
-hybrid,Hybrid (Recommended),50,50,67,1.0,0.85,0.537,0.76,0.7453,0.55,0.7485
-baseline,Degree + PageRank,50,50,102,1.0,0.85,0.2963,0.94,1.0,0.6,0.7421
-eigenvector,Eigenvector Centrality,50,50,98,1.0,0.8,0.2963,0.92,1.0,0.5,0.7181
-kcore,K-Core Decomposition,50,50,148,0.9,0.65,0.2407,1.0,1.0,0.85,0.7052
-louvain,Louvain Community,50,50,63,1.0,0.7,0.537,0.62,0.7008,0.5,0.6833
+betweenness,Betweenness Centrality,50,50,114,0.95,1.0,0.1889,1.0,1.0,0.65,0.7522
+baseline,Degree + PageRank,50,50,117,1.0,0.8,0.1889,0.88,1.0,0.45,0.6782
+eigenvector,Eigenvector Centrality,50,50,117,1.0,0.8,0.1889,0.88,1.0,0.4,0.6732
+hybrid,Hybrid (Recommended),50,50,72,1.0,0.85,0.3667,0.64,0.7843,0.4,0.6689
+louvain,Louvain Community,50,50,71,1.0,0.75,0.3667,0.6,0.7734,0.4,0.6403
+kcore,K-Core Decomposition,50,50,187,0.8,0.55,0.1,1.0,1.0,0.65,0.61

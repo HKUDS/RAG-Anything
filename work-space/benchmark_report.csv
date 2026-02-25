@@ -1,10 +1,2 @@
 Timestamp,Experiment_ID,File_Name,Parse_Time(s),Graph_Time(s),Total_Time(s),Output_Tokens,API_Calls,Nodes,Edges,Chunks,Entities,Relations,Status
-2026-01-27 16:43:58,exp1_baseline,BrainMVP.pdf,41.42,4051.11,4092.53,64309,132,564,1014,64,413,908,Success
-2026-01-27 03:28:58,exp2_fast_opt,BrainMVP.pdf,42.64,2094.76,2137.40,115614,244,317,598,122,603,1437,Success
-2026-01-27 04:01:09,exp3_text_only,BrainMVP.pdf,39.92,1890.56,1930.48,140656,312,342,525,167,824,1905,Success
-2026-01-27 04:16:14,exp4_medical_scope,BrainMVP.pdf,39.32,865.68,905.00,147840,369,131,148,224,904,2053,Success
-2026-01-27 05:20:35,exp6_hybrid_gliner,BrainMVP.pdf,40.02,3820.50,3860.52,187287,462,291,470,281,1106,2523,Success
-2026-01-27 05:54:53,exp7_simple_limit,BrainMVP.pdf,38.72,2019.42,2058.14,213389,516,300,550,338,1356,3073,Success
-2026-01-27 00:46:37,exp8_one_entity_per_chunk,BrainMVP.pdf,38.42,2048.26,2086.68,27800,67,302,531,64,245,531,Success
-2026-01-27 12:56:45,exp9_strict_one_entity,BrainMVP.pdf,41.52,3721.07,3762.59,43167,93,368,575,64,270,562,Success
-2026-01-28 16:47:47,exp13_vlm_strict,BrainMVP.pdf,73.99,3749.04,3823.03,29435,59,320,515,54,240,515,Success
+2026-02-03 02:17:58,exp1_baseline,RAG-anything.pdf,34.30,8212.27,8246.57,108103,202,677,1243,71,504,1152,Success
