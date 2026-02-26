@@ -109,9 +109,18 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         self.logger = logger
 
         # Set up document parser
-        self.doc_parser = (
-            DoclingParser() if self.config.parser == "docling" else MineruParser()
-        )
+        if self.config.parser == "docling":
+            self.doc_parser = DoclingParser()
+        elif self.config.parser == "kreuzberg":
+            from raganything.parser import KreuzbergParser
+
+            self.doc_parser = KreuzbergParser()
+        elif self.config.parser == "marker":
+            from raganything.parser import MarkerParser
+
+            self.doc_parser = MarkerParser()
+        else:
+            self.doc_parser = MineruParser()
 
         # Register close method for cleanup
         atexit.register(self.close)

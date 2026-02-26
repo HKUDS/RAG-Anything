@@ -86,7 +86,8 @@ class ExperimentEngine:
             config=RAGAnythingConfig(
                 working_dir=str(rag_storage),
                 parser_output_dir=str(parser_output),
-                parser="mineru", parse_method="auto",
+                parser=ENV.parser,
+                parse_method=ENV.parse_method,
                 max_concurrent_files=ENV.max_workers,
                 **exp_def.raganything_kwargs
             ),

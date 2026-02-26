@@ -18,6 +18,7 @@ import base64
 import subprocess
 import tempfile
 import logging
+import os
 from pathlib import Path
 from typing import (
     Dict,
@@ -30,6 +31,14 @@ from typing import (
 )
 
 T = TypeVar("T")
+
+
+def _split_text_blocks(text: str) -> List[str]:
+    """Split text into paragraph-like blocks for content_list."""
+    if not text:
+        return []
+    parts = [p.strip() for p in str(text).split("\n\n") if p.strip()]
+    return parts if parts else [str(text)]
 
 
 class MineruExecutionError(Exception):
@@ -1699,6 +1708,357 @@ class DoclingParser(Parser):
             return False
 
 
+class KreuzbergParser(Parser):
+    """
+    Kreuzberg document parser (primary for multilingual OCR + structured extraction).
+
+    Uses Kreuzberg's extract_file_sync API to generate content, then converts to
+    RAGAnything's content_list format.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def _extract_with_kreuzberg(
+        self,
+        file_path: Union[str, Path],
+        method: str = "auto",
+        lang: Optional[str] = None,
+        **kwargs,
+    ):
+        try:
+            from kreuzberg import extract_file_sync, ExtractionConfig, PageConfig
+        except Exception as e:
+            raise RuntimeError(
+                "Kreuzberg is not installed. Install with: pip install -U kreuzberg"
+            ) from e
+
+        # Map parse method to Kreuzberg config
+        config_kwargs: Dict[str, Any] = {}
+        if method == "ocr":
+            config_kwargs["force_ocr"] = True
+        elif method == "txt":
+            config_kwargs["force_ocr"] = False
+
+        if lang:
+            # Kreuzberg expects OCR language config; keep generic key
+            config_kwargs["ocr_language"] = lang
+
+        # Allow enabling page extraction for images/tables if supported
+        extract_pages = kwargs.pop("extract_pages", False)
+        if extract_pages:
+            config_kwargs["pages"] = PageConfig(extract_pages=True)
+
+        config = ExtractionConfig(**config_kwargs) if config_kwargs else None
+        return extract_file_sync(file_path, config=config)
+
+    def _tables_to_blocks(self, tables: Any) -> List[Dict[str, Any]]:
+        blocks: List[Dict[str, Any]] = []
+        if not tables:
+            return blocks
+        for table in tables:
+            if isinstance(table, dict):
+                markdown = table.get("markdown") or table.get("md") or ""
+                cells = table.get("cells") or table.get("data")
+                page_num = table.get("page_number") or table.get("page") or 1
+            else:
+                markdown = getattr(table, "markdown", "") or ""
+                cells = getattr(table, "cells", None)
+                page_num = getattr(table, "page_number", 1)
+
+            table_body = markdown if markdown else (cells if cells is not None else "")
+            blocks.append(
+                {
+                    "type": "table",
+                    "table_body": table_body,
+                    "table_caption": [],
+                    "table_footnote": [],
+                    "page_idx": max(int(page_num) - 1, 0) if page_num else 0,
+                }
+            )
+        return blocks
+
+    def _images_to_blocks(
+        self, images: Any, output_dir: Optional[Path]
+    ) -> List[Dict[str, Any]]:
+        blocks: List[Dict[str, Any]] = []
+        if not images:
+            return blocks
+        if output_dir is None:
+            return blocks
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        for idx, img in enumerate(images):
+            img_path = None
+            if isinstance(img, dict):
+                img_path = img.get("path") or img.get("file_path")
+                data = img.get("data") or img.get("bytes")
+            else:
+                img_path = getattr(img, "path", None) or getattr(img, "file_path", None)
+                data = getattr(img, "data", None) or getattr(img, "bytes", None)
+
+            if img_path and os.path.exists(img_path):
+                blocks.append(
+                    {
+                        "type": "image",
+                        "img_path": str(Path(img_path).resolve()),
+                        "image_caption": [],
+                        "image_footnote": [],
+                        "page_idx": 0,
+                    }
+                )
+                continue
+
+            if data:
+                out_path = output_dir / f"image_{idx}.png"
+                try:
+                    with open(out_path, "wb") as f:
+                        f.write(data)
+                    blocks.append(
+                        {
+                            "type": "image",
+                            "img_path": str(out_path.resolve()),
+                            "image_caption": [],
+                            "image_footnote": [],
+                            "page_idx": 0,
+                        }
+                    )
+                except Exception:
+                    pass
+
+        return blocks
+
+    def _result_to_content_list(
+        self, result: Any, output_dir: Optional[Path]
+    ) -> List[Dict[str, Any]]:
+        content_list: List[Dict[str, Any]] = []
+
+        pages = getattr(result, "pages", None) or (
+            result.get("pages") if isinstance(result, dict) else None
+        )
+        if pages:
+            for page in pages:
+                page_num = getattr(page, "page_number", None)
+                if page_num is None and isinstance(page, dict):
+                    page_num = page.get("page_number") or page.get("page") or 1
+                page_idx = max(int(page_num) - 1, 0) if page_num else 0
+
+                page_text = (
+                    getattr(page, "content", None)
+                    or (page.get("content") if isinstance(page, dict) else None)
+                    or ""
+                )
+                for block in _split_text_blocks(page_text):
+                    content_list.append(
+                        {"type": "text", "text": block, "page_idx": page_idx}
+                    )
+
+                page_tables = (
+                    getattr(page, "tables", None)
+                    or (page.get("tables") if isinstance(page, dict) else None)
+                    or []
+                )
+                content_list.extend(self._tables_to_blocks(page_tables))
+
+                page_images = (
+                    getattr(page, "images", None)
+                    or (page.get("images") if isinstance(page, dict) else None)
+                    or []
+                )
+                content_list.extend(self._images_to_blocks(page_images, output_dir))
+            return content_list
+
+        # Fallback: use whole-document content + tables
+        doc_text = (
+            getattr(result, "content", None)
+            or (result.get("content") if isinstance(result, dict) else None)
+            or ""
+        )
+        for block in _split_text_blocks(doc_text):
+            content_list.append({"type": "text", "text": block, "page_idx": 0})
+
+        tables = getattr(result, "tables", None) or (
+            result.get("tables") if isinstance(result, dict) else None
+        )
+        content_list.extend(self._tables_to_blocks(tables))
+        return content_list
+
+    def parse_document(
+        self,
+        file_path: Union[str, Path],
+        method: str = "auto",
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File does not exist: {file_path}")
+
+        base_output_dir = Path(output_dir) if output_dir else file_path.parent / "kreuzberg_output"
+        base_output_dir.mkdir(parents=True, exist_ok=True)
+
+        result = self._extract_with_kreuzberg(
+            str(file_path), method=method, lang=lang, **kwargs
+        )
+        return self._result_to_content_list(result, base_output_dir)
+
+    def parse_pdf(self, pdf_path: Union[str, Path], output_dir: Optional[str] = None, method: str = "auto", lang: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
+        return self.parse_document(pdf_path, method=method, output_dir=output_dir, lang=lang, **kwargs)
+
+    def parse_image(self, image_path: Union[str, Path], output_dir: Optional[str] = None, lang: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
+        return self.parse_document(image_path, method="ocr", output_dir=output_dir, lang=lang, **kwargs)
+
+    def parse_office_doc(self, doc_path: Union[str, Path], output_dir: Optional[str] = None, lang: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
+        return self.parse_document(doc_path, method="auto", output_dir=output_dir, lang=lang, **kwargs)
+
+    def check_installation(self) -> bool:
+        try:
+            import importlib
+
+            importlib.import_module("kreuzberg")
+            return True
+        except Exception:
+            return False
+
+
+class MarkerParser(Parser):
+    """
+    Marker PDF/Image parser (VLM-based document conversion).
+
+    Converts rendered output to RAGAnything content_list.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    def _build_marker_converter(self, method: str = "auto", **kwargs):
+        try:
+            from marker.converters.pdf import PdfConverter
+            from marker.models import create_model_dict
+            from marker.config.parser import ConfigParser
+            from marker.output import text_from_rendered
+        except Exception as e:
+            raise RuntimeError(
+                "Marker is not installed. Install with: pip install -U marker-pdf"
+            ) from e
+
+        config = kwargs.pop("marker_config", None)
+        config_parser = ConfigParser(config) if config else None
+
+        converter_cls = PdfConverter
+        if method == "ocr":
+            try:
+                from marker.converters.ocr import OCRConverter
+
+                converter_cls = OCRConverter
+            except Exception:
+                converter_cls = PdfConverter
+
+        if config_parser:
+            converter = converter_cls(
+                config=config_parser.generate_config_dict(),
+                artifact_dict=create_model_dict(),
+                processor_list=config_parser.get_processors(),
+                renderer=config_parser.get_renderer(),
+                llm_service=config_parser.get_llm_service(),
+            )
+        else:
+            converter = converter_cls(artifact_dict=create_model_dict())
+
+        return converter, text_from_rendered
+
+    def _images_to_blocks(self, images: Any, output_dir: Optional[Path]) -> List[Dict[str, Any]]:
+        blocks: List[Dict[str, Any]] = []
+        if not images or output_dir is None:
+            return blocks
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        if isinstance(images, dict):
+            items = images.items()
+        else:
+            items = enumerate(images)
+
+        for idx, img in items:
+            img_obj = img[1] if isinstance(img, tuple) else img
+            img_path = None
+
+            if isinstance(img_obj, str) and os.path.exists(img_obj):
+                img_path = img_obj
+            elif hasattr(img_obj, "save"):
+                out_path = output_dir / f"image_{idx}.png"
+                try:
+                    img_obj.save(out_path)
+                    img_path = str(out_path.resolve())
+                except Exception:
+                    img_path = None
+            elif isinstance(img_obj, (bytes, bytearray)):
+                out_path = output_dir / f"image_{idx}.png"
+                try:
+                    with open(out_path, "wb") as f:
+                        f.write(img_obj)
+                    img_path = str(out_path.resolve())
+                except Exception:
+                    img_path = None
+
+            if img_path:
+                blocks.append(
+                    {
+                        "type": "image",
+                        "img_path": img_path,
+                        "image_caption": [],
+                        "image_footnote": [],
+                        "page_idx": 0,
+                    }
+                )
+
+        return blocks
+
+    def parse_document(
+        self,
+        file_path: Union[str, Path],
+        method: str = "auto",
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File does not exist: {file_path}")
+
+        base_output_dir = Path(output_dir) if output_dir else file_path.parent / "marker_output"
+        base_output_dir.mkdir(parents=True, exist_ok=True)
+
+        converter, text_from_rendered = self._build_marker_converter(method=method, **kwargs)
+        rendered = converter(str(file_path))
+        text, _, images = text_from_rendered(rendered)
+
+        content_list: List[Dict[str, Any]] = []
+        for block in _split_text_blocks(text):
+            content_list.append({"type": "text", "text": block, "page_idx": 0})
+
+        content_list.extend(self._images_to_blocks(images, base_output_dir / "images"))
+        return content_list
+
+    def parse_pdf(self, pdf_path: Union[str, Path], output_dir: Optional[str] = None, method: str = "auto", lang: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
+        return self.parse_document(pdf_path, method=method, output_dir=output_dir, lang=lang, **kwargs)
+
+    def parse_image(self, image_path: Union[str, Path], output_dir: Optional[str] = None, lang: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
+        return self.parse_document(image_path, method="ocr", output_dir=output_dir, lang=lang, **kwargs)
+
+    def parse_office_doc(self, doc_path: Union[str, Path], output_dir: Optional[str] = None, lang: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
+        raise ValueError("Marker does not support Office documents directly. Convert to PDF first.")
+
+    def check_installation(self) -> bool:
+        try:
+            import importlib
+
+            importlib.import_module("marker")
+            return True
+        except Exception:
+            return False
+
+
 def main():
     """
     Main function to run the document parser from command line
@@ -1763,7 +2123,7 @@ def main():
     )
     parser.add_argument(
         "--parser",
-        choices=["mineru", "docling"],
+        choices=["mineru", "docling", "kreuzberg", "marker"],
         default="mineru",
         help="Parser selection",
     )
@@ -1776,7 +2136,14 @@ def main():
 
     # Check installation if requested
     if args.check:
-        doc_parser = DoclingParser() if args.parser == "docling" else MineruParser()
+        if args.parser == "docling":
+            doc_parser = DoclingParser()
+        elif args.parser == "kreuzberg":
+            doc_parser = KreuzbergParser()
+        elif args.parser == "marker":
+            doc_parser = MarkerParser()
+        else:
+            doc_parser = MineruParser()
         if doc_parser.check_installation():
             print(f"✅ {args.parser.title()} is properly installed")
             return 0
@@ -1786,7 +2153,14 @@ def main():
 
     try:
         # Parse the document
-        doc_parser = DoclingParser() if args.parser == "docling" else MineruParser()
+        if args.parser == "docling":
+            doc_parser = DoclingParser()
+        elif args.parser == "kreuzberg":
+            doc_parser = KreuzbergParser()
+        elif args.parser == "marker":
+            doc_parser = MarkerParser()
+        else:
+            doc_parser = MineruParser()
         content_list = doc_parser.parse_document(
             file_path=args.file_path,
             method=args.method,

@@ -1,9 +1,11 @@
 import os
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
 from dotenv import load_dotenv
 
-load_dotenv(override=True)
+_ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
+load_dotenv(dotenv_path=_ENV_PATH, override=True)
 
 @dataclass
 class EnvConfig:
@@ -27,6 +29,9 @@ class EnvConfig:
     output_base_dir: str = os.getenv("OUTPUT_BASE_DIR", "./benchmark_outputs")
     report_file: str = os.getenv("REPORT_FILE", "./benchmark_report.csv")
     max_workers: int = int(os.getenv("MAX_WORKERS", 1))
+    
+    parser: str = os.getenv("PARSER", "mineru")
+    parse_method: str = os.getenv("PARSE_METHOD", "auto")
 
     # Google Gemini settings
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "")

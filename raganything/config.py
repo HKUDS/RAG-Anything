@@ -5,7 +5,8 @@ Contains configuration dataclasses with environment variable support
 """
 
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Dict, Any
+import json
 from lightrag.utils import get_env_value
 
 
@@ -27,7 +28,18 @@ class RAGAnythingConfig:
     """Default output directory for parsed content."""
 
     parser: str = field(default=get_env_value("PARSER", "mineru", str))
-    """Parser selection: 'mineru' or 'docling'."""
+    """Parser selection: 'mineru', 'docling', 'kreuzberg', or 'marker'."""
+
+    extract_profile: str = field(
+        default=get_env_value("EXTRACT_PROFILE", "balanced", str)
+    )
+    """Extraction profile: 'fast', 'balanced', 'quality' (maps to parser kwargs)."""
+
+    parser_kwargs_raw: str = field(default=get_env_value("PARSER_KWARGS", "", str))
+    """Raw JSON string of parser kwargs from environment (optional)."""
+
+    parser_kwargs: Dict[str, Any] = field(default_factory=dict)
+    """Parsed parser kwargs (merged with extract_profile defaults)."""
 
     display_content_stats: bool = field(
         default=get_env_value("DISPLAY_CONTENT_STATS", True, bool)
@@ -128,6 +140,36 @@ class RAGAnythingConfig:
                 DeprecationWarning,
                 stacklevel=2,
             )
+
+        # Merge parser kwargs from env JSON (if provided)
+        if self.parser_kwargs_raw:
+            try:
+                parsed = json.loads(self.parser_kwargs_raw)
+                if isinstance(parsed, dict):
+                    self.parser_kwargs.update(parsed)
+            except Exception:
+                # Ignore invalid JSON to avoid breaking runtime
+                pass
+
+    def resolve_parser_kwargs(self) -> Dict[str, Any]:
+        """
+        Resolve effective parser kwargs based on extract_profile + user-provided parser_kwargs.
+        """
+        profile = (self.extract_profile or "balanced").strip().lower()
+        profile_kwargs: Dict[str, Any] = {}
+
+        if profile == "fast":
+            # Speed-first: skip heavy parsing (tables/formulas) if supported by parser
+            profile_kwargs = {"table": False, "formula": False}
+        elif profile == "quality":
+            # Quality-first: explicitly enable tables/formulas if supported
+            profile_kwargs = {"table": True, "formula": True}
+        # balanced -> no changes
+
+        merged: Dict[str, Any] = {}
+        merged.update(profile_kwargs)
+        merged.update(self.parser_kwargs or {})
+        return merged
 
     @property
     def mineru_parse_method(self) -> str:

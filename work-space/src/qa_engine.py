@@ -22,8 +22,8 @@ class RAGQueryEngine:
         """Khởi tạo LightRAG ở chế độ Query (không parse lại)"""
         config = RAGAnythingConfig(
             working_dir=str(self.storage_dir),
-            parser="mineru", 
-            parse_method="auto"
+            parser=ENV.parser,
+            parse_method=ENV.parse_method,
         )
 
         # Đồng bộ embedding_dim với storage nếu khác ENV (tránh lỗi mismatch khi query kho cũ)

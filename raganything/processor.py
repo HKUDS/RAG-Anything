@@ -26,6 +26,22 @@ from lightrag.utils import compute_mdhash_id
 class ProcessorMixin:
     """ProcessorMixin class containing document processing functionality for RAGAnything"""
 
+    def _resolve_parser_kwargs(self, **kwargs) -> Dict[str, Any]:
+        """
+        Merge parser kwargs from config (extract_profile + parser_kwargs) with call-time kwargs.
+        Call-time kwargs take precedence.
+        """
+        merged: Dict[str, Any] = {}
+        try:
+            if hasattr(self.config, "resolve_parser_kwargs"):
+                merged.update(self.config.resolve_parser_kwargs())
+            elif getattr(self.config, "parser_kwargs", None):
+                merged.update(self.config.parser_kwargs)
+        except Exception:
+            pass
+        merged.update(kwargs)
+        return merged
+
     def _generate_cache_key(
         self, file_path: Path, parse_method: str = None, **kwargs
     ) -> str:
@@ -297,12 +313,15 @@ class ProcessorMixin:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
+        # Merge parser kwargs from config + call-time
+        effective_kwargs = self._resolve_parser_kwargs(**kwargs)
+
         # Generate cache key based on file and configuration
-        cache_key = self._generate_cache_key(file_path, parse_method, **kwargs)
+        cache_key = self._generate_cache_key(file_path, parse_method, **effective_kwargs)
 
         # Check cache first
         cached_result = await self._get_cached_result(
-            cache_key, file_path, parse_method, **kwargs
+            cache_key, file_path, parse_method, **effective_kwargs
         )
         if cached_result is not None:
             content_list, doc_id = cached_result
@@ -317,9 +336,18 @@ class ProcessorMixin:
         ext = file_path.suffix.lower()
 
         try:
-            doc_parser = (
-                DoclingParser() if self.config.parser == "docling" else MineruParser()
-            )
+            if self.config.parser == "docling":
+                doc_parser = DoclingParser()
+            elif self.config.parser == "kreuzberg":
+                from raganything.parser import KreuzbergParser
+
+                doc_parser = KreuzbergParser()
+            elif self.config.parser == "marker":
+                from raganything.parser import MarkerParser
+
+                doc_parser = MarkerParser()
+            else:
+                doc_parser = MineruParser()
 
             # Log parser and method information
             self.logger.info(
@@ -333,7 +361,7 @@ class ProcessorMixin:
                     pdf_path=file_path,
                     output_dir=output_dir,
                     method=parse_method,
-                    **kwargs,
+                    **effective_kwargs,
                 )
             elif ext in [
                 ".jpg",
@@ -352,7 +380,7 @@ class ProcessorMixin:
                         doc_parser.parse_image,
                         image_path=file_path,
                         output_dir=output_dir,
-                        **kwargs,
+                        **effective_kwargs,
                     )
                 else:
                     # Fallback to MinerU for image parsing if current parser doesn't support it
@@ -360,7 +388,7 @@ class ProcessorMixin:
                         f"{self.config.parser} parser doesn't support image parsing, falling back to MinerU"
                     )
                     content_list = MineruParser().parse_image(
-                        image_path=file_path, output_dir=output_dir, **kwargs
+                        image_path=file_path, output_dir=output_dir, **effective_kwargs
                     )
             elif ext in [
                 ".doc",
@@ -380,7 +408,7 @@ class ProcessorMixin:
                     doc_parser.parse_office_doc,
                     doc_path=file_path,
                     output_dir=output_dir,
-                    **kwargs,
+                    **effective_kwargs,
                 )
             else:
                 # For other or unknown formats, use generic parser
@@ -392,7 +420,7 @@ class ProcessorMixin:
                     file_path=file_path,
                     method=parse_method,
                     output_dir=output_dir,
-                    **kwargs,
+                    **effective_kwargs,
                 )
 
         except MineruExecutionError as e:
@@ -415,7 +443,7 @@ class ProcessorMixin:
 
         # Store result in cache
         await self._store_cached_result(
-            cache_key, content_list, doc_id, file_path, parse_method, **kwargs
+            cache_key, content_list, doc_id, file_path, parse_method, **effective_kwargs
         )
 
         # Display content statistics if requested
