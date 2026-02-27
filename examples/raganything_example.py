@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Example script demonstrating the integration of MinerU parser with RAGAnything
+Example script demonstrating parser integration with RAGAnything
 
 This example shows how to:
-1. Process documents with RAGAnything using MinerU parser
+1. Process documents with RAGAnything using configurable parsers
 2. Perform pure text queries using aquery() method
 3. Perform multimodal queries with specific multimodal content using aquery_with_multimodal() method
 4. Handle different types of multimodal content (tables, equations) in queries
@@ -108,7 +108,7 @@ async def process_with_rag(
         # Create RAGAnything configuration
         config = RAGAnythingConfig(
             working_dir=working_dir or "./rag_storage",
-            parser=parser,  # Parser selection: mineru or docling
+            parser=parser,  # Parser selection: mineru, docling, or paddleocr
             parse_method="auto",  # Parse method: auto, ocr, or txt
             enable_image_processing=True,
             enable_table_processing=True,
@@ -319,7 +319,8 @@ def main():
     parser.add_argument(
         "--parser",
         default=os.getenv("PARSER", "mineru"),
-        help="Optional base URL for API",
+        choices=["mineru", "docling", "paddleocr"],
+        help="Parser selection",
     )
 
     args = parser.parse_args()

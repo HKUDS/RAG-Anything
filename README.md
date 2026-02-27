@@ -343,7 +343,7 @@ async def main():
     # Create RAGAnything configuration
     config = RAGAnythingConfig(
         working_dir="./rag_storage",
-        parser="mineru",  # Parser selection: mineru or docling
+        parser="mineru",  # Parser selection: mineru, docling, or paddleocr
         parse_method="auto",  # Parse method: auto, ocr, or txt
         enable_image_processing=True,
         enable_table_processing=True,
@@ -1083,7 +1083,7 @@ Create a `.env` file (refer to `.env.example`):
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_BASE_URL=your_base_url  # Optional
 OUTPUT_DIR=./output             # Default output directory for parsed documents
-PARSER=mineru                   # Parser selection: mineru or docling
+PARSER=mineru                   # Parser selection: mineru, docling, or paddleocr
 PARSE_METHOD=auto              # Parse method: auto, ocr, or txt
 ```
 
@@ -1108,6 +1108,21 @@ RAGAnything now supports multiple parsers, each with specific advantages:
 - Better document structure preservation
 - Native support for multiple Office formats
 
+#### PaddleOCR Parser
+- OCR-focused parser for images and PDFs
+- Produces text blocks compatible with existing `content_list` processing
+- Supports optional Office/TXT/MD parsing by converting to PDF first
+
+Install PaddleOCR parser extras:
+
+```bash
+pip install -e ".[paddleocr]"
+# or
+uv sync --extra paddleocr
+```
+
+> **Note**: PaddleOCR also requires `paddlepaddle` (CPU/GPU package varies by platform). Install it with the official guide: https://www.paddlepaddle.org.cn/install/quick
+
 ### MinerU Configuration
 
 ```bash
@@ -1129,7 +1144,7 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # or "ocr", "txt"
-    parser="mineru"               # Optional: "mineru" or "docling"
+    parser="mineru"               # Optional: "mineru", "docling", or "paddleocr"
 )
 
 # Advanced parsing configuration with special parameters
@@ -1137,7 +1152,7 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # Parsing method: "auto", "ocr", "txt"
-    parser="mineru",              # Parser selection: "mineru" or "docling"
+    parser="mineru",              # Parser selection: "mineru", "docling", or "paddleocr"
 
     # MinerU special parameters - all supported kwargs:
     lang="ch",                   # Document language for OCR optimization (e.g., "ch", "en", "ja")
@@ -1157,7 +1172,7 @@ await rag.process_document_complete(
 )
 ```
 
-> **Note**: MinerU 2.0 no longer uses the `magic-pdf.json` configuration file. All settings are now passed as command-line parameters or function arguments. RAG-Anything now supports multiple document parsers - you can choose between MinerU and Docling based on your needs.
+> **Note**: MinerU 2.0 no longer uses the `magic-pdf.json` configuration file. All settings are now passed as command-line parameters or function arguments. RAG-Anything supports multiple document parsers, including MinerU, Docling, and PaddleOCR.
 
 ### Processing Requirements
 
@@ -1166,6 +1181,7 @@ Different content types require specific optional dependencies:
 - **Office Documents** (.doc, .docx, .ppt, .pptx, .xls, .xlsx): Install [LibreOffice](https://www.libreoffice.org/download/download/)
 - **Extended Image Formats** (.bmp, .tiff, .gif, .webp): Install with `pip install raganything[image]`
 - **Text Files** (.txt, .md): Install with `pip install raganything[text]`
+- **PaddleOCR Parser** (`parser="paddleocr"`): Install with `pip install raganything[paddleocr]`, then install `paddlepaddle` for your platform
 
 > **📋 Quick Install**: Use `pip install raganything[all]` to enable all format support (Python dependencies only - LibreOffice still needs separate installation)
 

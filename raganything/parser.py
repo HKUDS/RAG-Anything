@@ -12,6 +12,7 @@ For Office documents (.doc, .docx, .ppt, .pptx), please convert them to PDF form
 from __future__ import annotations
 
 
+import hashlib
 import json
 import argparse
 import base64
@@ -26,6 +27,7 @@ from typing import (
     Union,
     Tuple,
     Any,
+    Iterator,
     TypeVar,
 )
 
@@ -61,6 +63,28 @@ class Parser:
     def __init__(self) -> None:
         """Initialize the base parser."""
         pass
+
+    @staticmethod
+    def _unique_output_dir(
+        base_dir: Union[str, Path], file_path: Union[str, Path]
+    ) -> Path:
+        """Create a unique output subdirectory for a file to prevent same-name collisions.
+
+        When multiple files share the same name (e.g. dir1/paper.pdf and dir2/paper.pdf),
+        their parser output would collide in the same output directory. This creates a
+        unique subdirectory by appending a short hash of the file's absolute path. (Fixes #51)
+
+        Args:
+            base_dir: The base output directory
+            file_path: Path to the input file
+
+        Returns:
+            Path like base_dir/paper_a1b2c3d4/ unique per absolute file path.
+        """
+        file_path = Path(file_path).resolve()
+        stem = file_path.stem
+        path_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:8]
+        return Path(base_dir) / f"{stem}_{path_hash}"
 
     @classmethod
     def convert_office_to_pdf(
@@ -856,6 +880,25 @@ class MineruParser(Parser):
                 with open(json_file, "r", encoding="utf-8") as f:
                     content_list = json.load(f)
 
+                # Normalize MinerU 2.0 field names to expected names for backward compatibility.
+                # MinerU 2.0 renamed: img_caption -> image_caption, img_footnote -> image_footnote
+                # The codebase primarily uses image_caption/image_footnote with img_caption/img_footnote
+                # as fallback, but we ensure both fields exist so downstream code works regardless.
+                _FIELD_ALIASES = {
+                    # MinerU 1.x name -> MinerU 2.0 name (canonical)
+                    "img_caption": "image_caption",
+                    "img_footnote": "image_footnote",
+                }
+                for item in content_list:
+                    if isinstance(item, dict):
+                        for old_name, new_name in _FIELD_ALIASES.items():
+                            # If only the old field exists, copy it to the new field name
+                            if old_name in item and new_name not in item:
+                                item[new_name] = item[old_name]
+                            # If only the new field exists, copy it to the old field name (for any legacy code)
+                            elif new_name in item and old_name not in item:
+                                item[old_name] = item[new_name]
+
                 # Always fix relative paths in content_list to absolute paths
                 cls.logger.info(
                     f"Fixing image paths in {json_file} with base directory: {images_base_dir}"
@@ -872,10 +915,17 @@ class MineruParser(Parser):
                                 absolute_img_path = (
                                     images_base_dir / img_path
                                 ).resolve()
+
+                                # Security check: ensure the image path is within the base directory
+                                resolved_base = images_base_dir.resolve()
+                                if not absolute_img_path.is_relative_to(resolved_base):
+                                    cls.logger.warning(
+                                        f"Potential path traversal detected in {field_name}: {img_path}. Skipping."
+                                    )
+                                    item[field_name] = ""  # Clear unsafe path
+                                    continue
+
                                 item[field_name] = str(absolute_img_path)
-                                cls.logger.debug(
-                                    f"Updated {field_name}: {img_path} -> {item[field_name]}"
-                                )
 
             except Exception as e:
                 cls.logger.warning(f"Could not read JSON file {json_file}: {e}")
@@ -911,9 +961,10 @@ class MineruParser(Parser):
 
             name_without_suff = pdf_path.stem
 
-            # Prepare output directory
+            # Prepare output directory — use unique subdirectory to prevent
+            # same-name file collisions when output_dir is shared (#51)
             if output_dir:
-                base_output_dir = Path(output_dir)
+                base_output_dir = self._unique_output_dir(output_dir, pdf_path)
             else:
                 base_output_dir = pdf_path.parent / "mineru_output"
 
@@ -1064,9 +1115,10 @@ class MineruParser(Parser):
 
             name_without_suff = image_path.stem
 
-            # Prepare output directory
+            # Prepare output directory — use unique subdirectory to prevent
+            # same-name file collisions when output_dir is shared (#51)
             if output_dir:
-                base_output_dir = Path(output_dir)
+                base_output_dir = self._unique_output_dir(output_dir, image_path)
             else:
                 base_output_dir = image_path.parent / "mineru_output"
 
@@ -1303,9 +1355,10 @@ class DoclingParser(Parser):
 
             name_without_suff = pdf_path.stem
 
-            # Prepare output directory
+            # Prepare output directory — use unique subdirectory to prevent
+            # same-name file collisions when output_dir is shared (#51)
             if output_dir:
-                base_output_dir = Path(output_dir)
+                base_output_dir = self._unique_output_dir(output_dir, pdf_path)
             else:
                 base_output_dir = pdf_path.parent / "docling_output"
 
@@ -1392,18 +1445,12 @@ class DoclingParser(Parser):
         file_output_dir = Path(output_dir) / file_stem / "docling"
         file_output_dir.mkdir(parents=True, exist_ok=True)
 
-        cmd_json = [
+        cmd = [
             "docling",
             "--output",
             str(file_output_dir),
             "--to",
             "json",
-            str(input_path),
-        ]
-        cmd_md = [
-            "docling",
-            "--output",
-            str(file_output_dir),
             "--to",
             "md",
             str(input_path),
@@ -1425,13 +1472,10 @@ class DoclingParser(Parser):
             if platform.system() == "Windows":
                 docling_subprocess_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
-            result_json = subprocess.run(cmd_json, **docling_subprocess_kwargs)
-            result_md = subprocess.run(cmd_md, **docling_subprocess_kwargs)
+            result = subprocess.run(cmd, **docling_subprocess_kwargs)
             self.logger.info("Docling command executed successfully")
-            if result_json.stdout:
-                self.logger.debug(f"JSON cmd output: {result_json.stdout}")
-            if result_md.stdout:
-                self.logger.debug(f"Markdown cmd output: {result_md.stdout}")
+            if result.stdout:
+                self.logger.debug(f"JSON and Markdown cmd output: {result.stdout}")
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Error running docling command: {e}")
             if e.stderr:
@@ -1622,9 +1666,10 @@ class DoclingParser(Parser):
 
             name_without_suff = doc_path.stem
 
-            # Prepare output directory
+            # Prepare output directory — use unique subdirectory to prevent
+            # same-name file collisions when output_dir is shared (#51)
             if output_dir:
-                base_output_dir = Path(output_dir)
+                base_output_dir = self._unique_output_dir(output_dir, doc_path)
             else:
                 base_output_dir = doc_path.parent / "docling_output"
 
@@ -1680,9 +1725,10 @@ class DoclingParser(Parser):
 
             name_without_suff = html_path.stem
 
-            # Prepare output directory
+            # Prepare output directory — use unique subdirectory to prevent
+            # same-name file collisions when output_dir is shared (#51)
             if output_dir:
-                base_output_dir = Path(output_dir)
+                base_output_dir = self._unique_output_dir(output_dir, html_path)
             else:
                 base_output_dir = html_path.parent / "docling_output"
 
@@ -1740,12 +1786,354 @@ class DoclingParser(Parser):
             return False
 
 
+class PaddleOCRParser(Parser):
+    """PaddleOCR document parser with optional PDF page rendering support."""
+
+    def __init__(self, default_lang: str = "en") -> None:
+        super().__init__()
+        self.default_lang = default_lang
+        self._ocr_instances: Dict[str, Any] = {}
+
+    def _require_paddleocr(self):
+        try:
+            from paddleocr import PaddleOCR
+        except ImportError as exc:
+            raise ImportError(
+                "PaddleOCR parser requires optional dependency `paddleocr`. "
+                "Install with `pip install -e '.[paddleocr]'` or "
+                "`uv sync --extra paddleocr`. "
+                "PaddleOCR also needs `paddlepaddle`; install it from "
+                "https://www.paddlepaddle.org.cn/install/quick."
+            ) from exc
+        return PaddleOCR
+
+    def _get_ocr(self, lang: Optional[str] = None):
+        PaddleOCR = self._require_paddleocr()
+        language = (lang or self.default_lang).strip() or self.default_lang
+        cached = self._ocr_instances.get(language)
+        if cached is not None:
+            return cached
+
+        init_candidates = [
+            {"lang": language, "show_log": False},
+            {"lang": language},
+            {},
+        ]
+        last_exception = None
+        for candidate_kwargs in init_candidates:
+            try:
+                ocr = PaddleOCR(**candidate_kwargs)
+                self._ocr_instances[language] = ocr
+                return ocr
+            except Exception as exc:  # pragma: no cover - defensive fallback
+                last_exception = exc
+                continue
+
+        raise RuntimeError(
+            f"Unable to initialize PaddleOCR for language '{language}': {last_exception}"
+        )
+
+    def _extract_text_lines(self, result: Any) -> List[str]:
+        lines: List[str] = []
+
+        def append_text(text: str) -> None:
+            clean_text = text.strip()
+            if clean_text:
+                lines.append(clean_text)
+
+        if isinstance(result, str):
+            append_text(result)
+            return lines
+
+        def visit(node: Any) -> None:
+            if node is None:
+                return
+
+            if hasattr(node, "to_dict"):
+                try:
+                    visit(node.to_dict())
+                    return
+                except Exception:
+                    pass
+
+            if isinstance(node, dict):
+                rec_texts = node.get("rec_texts")
+                if isinstance(rec_texts, list):
+                    for item in rec_texts:
+                        if isinstance(item, str):
+                            append_text(item)
+                        else:
+                            visit(item)
+
+                text_value = node.get("text")
+                if isinstance(text_value, str):
+                    append_text(text_value)
+
+                texts_value = node.get("texts")
+                if isinstance(texts_value, list):
+                    for item in texts_value:
+                        if isinstance(item, str):
+                            append_text(item)
+                        else:
+                            visit(item)
+
+                # Avoid double-visiting keys we already handled above; this prevents
+                # accidental duplication without content-level deduplication.
+                for key, value in node.items():
+                    if key in {"rec_texts", "text", "texts"}:
+                        continue
+                    visit(value)
+                return
+
+            if isinstance(node, (list, tuple)):
+                if node and all(isinstance(item, str) for item in node):
+                    for item in node:
+                        append_text(item)
+                    return
+
+                if (
+                    len(node) >= 2
+                    and isinstance(node[1], (list, tuple))
+                    and len(node[1]) >= 1
+                    and isinstance(node[1][0], str)
+                ):
+                    append_text(node[1][0])
+                    return
+
+                if (
+                    len(node) >= 1
+                    and isinstance(node[0], str)
+                    and (len(node) == 1 or isinstance(node[1], (int, float)))
+                ):
+                    append_text(node[0])
+                    return
+
+                for item in node:
+                    visit(item)
+                return
+
+            if isinstance(node, str):
+                append_text(node)
+                return
+
+        visit(result)
+        return lines
+
+    def _ocr_input(
+        self, input_data: Any, lang: Optional[str] = None, cls_enabled: bool = True
+    ) -> List[str]:
+        ocr = self._get_ocr(lang=lang)
+
+        if hasattr(ocr, "ocr"):
+            try:
+                result = ocr.ocr(input_data, cls=cls_enabled)
+            except TypeError:
+                result = ocr.ocr(input_data)
+            return self._extract_text_lines(result)
+
+        if hasattr(ocr, "predict"):
+            result = ocr.predict(input_data)
+            return self._extract_text_lines(result)
+
+        raise RuntimeError(
+            "Unsupported PaddleOCR API: expected `ocr` or `predict` method."
+        )
+
+    def _extract_pdf_page_inputs(self, pdf_path: Path) -> Iterator[Tuple[int, Any]]:
+        try:
+            import pypdfium2 as pdfium
+        except ImportError as exc:
+            raise ImportError(
+                "PDF parsing with parser='paddleocr' requires `pypdfium2`. "
+                "Install with `pip install -e '.[paddleocr]'` or "
+                "`uv sync --extra paddleocr`."
+            ) from exc
+
+        pdf = pdfium.PdfDocument(str(pdf_path))
+        try:
+            total_pages = len(pdf)
+            for page_idx in range(total_pages):
+                page = pdf[page_idx]
+                try:
+                    rendered = page.render(scale=2.0)
+                    if hasattr(rendered, "to_pil"):
+                        yield (page_idx, rendered.to_pil())
+                    elif hasattr(rendered, "to_numpy"):
+                        yield (page_idx, rendered.to_numpy())
+                    else:
+                        raise RuntimeError(
+                            "Unsupported rendered page format from pypdfium2."
+                        )
+                finally:
+                    if hasattr(page, "close"):
+                        page.close()
+        finally:
+            if hasattr(pdf, "close"):
+                pdf.close()
+
+    def _ocr_rendered_page(
+        self, rendered_page: Any, lang: Optional[str] = None, cls_enabled: bool = True
+    ) -> List[str]:
+        if hasattr(rendered_page, "save"):
+            temp_image_path: Optional[Path] = None
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as temp:
+                    temp_image_path = Path(temp.name)
+                rendered_page.save(temp_image_path)
+                return self._ocr_input(
+                    str(temp_image_path), lang=lang, cls_enabled=cls_enabled
+                )
+            finally:
+                if temp_image_path is not None and temp_image_path.exists():
+                    try:
+                        temp_image_path.unlink()
+                    except Exception:
+                        pass
+
+        return self._ocr_input(rendered_page, lang=lang, cls_enabled=cls_enabled)
+
+    def parse_pdf(
+        self,
+        pdf_path: Union[str, Path],
+        output_dir: Optional[str] = None,
+        method: str = "auto",
+        lang: Optional[str] = None,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        del output_dir, method
+        pdf_path = Path(pdf_path)
+        if not pdf_path.exists():
+            raise FileNotFoundError(f"PDF file does not exist: {pdf_path}")
+
+        cls_enabled = kwargs.get("cls", True)
+        content_list: List[Dict[str, Any]] = []
+        page_inputs = self._extract_pdf_page_inputs(pdf_path)
+        try:
+            for page_idx, rendered_page in page_inputs:
+                page_lines = self._ocr_rendered_page(
+                    rendered_page, lang=lang, cls_enabled=cls_enabled
+                )
+                for text in page_lines:
+                    content_list.append(
+                        {"type": "text", "text": text, "page_idx": int(page_idx)}
+                    )
+        finally:
+            # Ensure we promptly release PDF handles even if OCR fails mid-stream.
+            close = getattr(page_inputs, "close", None)
+            if callable(close):
+                close()
+        return content_list
+
+    def parse_image(
+        self,
+        image_path: Union[str, Path],
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        del output_dir
+        image_path = Path(image_path)
+        if not image_path.exists():
+            raise FileNotFoundError(f"Image file does not exist: {image_path}")
+
+        ext = image_path.suffix.lower()
+        if ext not in self.IMAGE_FORMATS:
+            raise ValueError(
+                f"Unsupported image format: {ext}. Supported formats: {', '.join(sorted(self.IMAGE_FORMATS))}"
+            )
+
+        cls_enabled = kwargs.get("cls", True)
+        page_idx = int(kwargs.get("page_idx", 0))
+        text_lines = self._ocr_input(
+            str(image_path), lang=lang, cls_enabled=cls_enabled
+        )
+        return [
+            {"type": "text", "text": text, "page_idx": page_idx} for text in text_lines
+        ]
+
+    def parse_office_doc(
+        self,
+        doc_path: Union[str, Path],
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        pdf_path = self.convert_office_to_pdf(doc_path, output_dir)
+        return self.parse_pdf(
+            pdf_path=pdf_path, output_dir=output_dir, lang=lang, **kwargs
+        )
+
+    def parse_text_file(
+        self,
+        text_path: Union[str, Path],
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        pdf_path = self.convert_text_to_pdf(text_path, output_dir)
+        return self.parse_pdf(
+            pdf_path=pdf_path, output_dir=output_dir, lang=lang, **kwargs
+        )
+
+    def parse_document(
+        self,
+        file_path: Union[str, Path],
+        method: str = "auto",
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        del method
+        file_path = Path(file_path)
+        if not file_path.exists():
+            raise FileNotFoundError(f"File does not exist: {file_path}")
+
+        ext = file_path.suffix.lower()
+        if ext == ".pdf":
+            return self.parse_pdf(file_path, output_dir, lang=lang, **kwargs)
+        if ext in self.IMAGE_FORMATS:
+            return self.parse_image(file_path, output_dir, lang=lang, **kwargs)
+        if ext in self.OFFICE_FORMATS:
+            return self.parse_office_doc(file_path, output_dir, lang=lang, **kwargs)
+        if ext in self.TEXT_FORMATS:
+            return self.parse_text_file(file_path, output_dir, lang=lang, **kwargs)
+
+        raise ValueError(
+            f"Unsupported file format: {ext}. "
+            "PaddleOCR parser supports PDF, image, office, and text formats."
+        )
+
+    def check_installation(self) -> bool:
+        try:
+            self._require_paddleocr()
+            return True
+        except ImportError:
+            return False
+
+
+SUPPORTED_PARSERS = ("mineru", "docling", "paddleocr")
+
+
+def get_parser(parser_type: str) -> Parser:
+    parser_name = (parser_type or "mineru").strip().lower()
+    if parser_name == "mineru":
+        return MineruParser()
+    if parser_name == "docling":
+        return DoclingParser()
+    if parser_name == "paddleocr":
+        return PaddleOCRParser()
+    raise ValueError(
+        f"Unsupported parser type: {parser_type}. "
+        f"Supported parsers: {', '.join(SUPPORTED_PARSERS)}"
+    )
+
+
 def main():
     """
     Main function to run the document parser from command line
     """
     parser = argparse.ArgumentParser(
-        description="Parse documents using MinerU 2.0 or Docling"
+        description="Parse documents using MinerU 2.0, Docling, or PaddleOCR"
     )
     parser.add_argument("file_path", help="Path to the document to parse")
     parser.add_argument("--output", "-o", help="Output directory path")
@@ -1805,7 +2193,7 @@ def main():
     )
     parser.add_argument(
         "--parser",
-        choices=["mineru", "docling"],
+        choices=list(SUPPORTED_PARSERS),
         default="mineru",
         help="Parser selection",
     )
@@ -1818,7 +2206,7 @@ def main():
 
     # Check installation if requested
     if args.check:
-        doc_parser = DoclingParser() if args.parser == "docling" else MineruParser()
+        doc_parser = get_parser(args.parser)
         if doc_parser.check_installation():
             print(f"✅ {args.parser.title()} is properly installed")
             return 0
@@ -1828,7 +2216,7 @@ def main():
 
     try:
         # Parse the document
-        doc_parser = DoclingParser() if args.parser == "docling" else MineruParser()
+        doc_parser = get_parser(args.parser)
         content_list = doc_parser.parse_document(
             file_path=args.file_path,
             method=args.method,

@@ -12,7 +12,7 @@ from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 
 from raganything.base import DocStatus
-from raganything.parser import MineruParser, DoclingParser, MineruExecutionError
+from raganything.parser import MineruParser, MineruExecutionError, get_parser
 from raganything.utils import (
     separate_content,
     insert_text_content,
@@ -332,9 +332,10 @@ class ProcessorMixin:
         ext = file_path.suffix.lower()
 
         try:
-            doc_parser = (
-                DoclingParser() if self.config.parser == "docling" else MineruParser()
-            )
+            doc_parser = getattr(self, "doc_parser", None)
+            if doc_parser is None:
+                doc_parser = get_parser(self.config.parser)
+                self.doc_parser = doc_parser
 
             # Log parser and method information
             self.logger.info(
@@ -361,21 +362,23 @@ class ProcessorMixin:
                 ".webp",
             ]:
                 self.logger.info("Detected image file, using parser for images...")
-                # Use the selected parser's image parsing capability
-                if hasattr(doc_parser, "parse_image"):
+                try:
                     content_list = await asyncio.to_thread(
                         doc_parser.parse_image,
                         image_path=file_path,
                         output_dir=output_dir,
                         **kwargs,
                     )
-                else:
+                except NotImplementedError:
                     # Fallback to MinerU for image parsing if current parser doesn't support it
                     self.logger.warning(
                         f"{self.config.parser} parser doesn't support image parsing, falling back to MinerU"
                     )
-                    content_list = MineruParser().parse_image(
-                        image_path=file_path, output_dir=output_dir, **kwargs
+                    content_list = await asyncio.to_thread(
+                        MineruParser().parse_image,
+                        image_path=file_path,
+                        output_dir=output_dir,
+                        **kwargs,
                     )
             elif ext in [
                 ".doc",

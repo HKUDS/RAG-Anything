@@ -63,7 +63,16 @@ extras_require = {
     "image": ["Pillow>=10.0.0"],  # For image format conversion (BMP, TIFF, GIF, WebP)
     "text": ["reportlab>=4.0.0"],  # For text file to PDF conversion (TXT, MD)
     "office": [],  # Office document processing requires LibreOffice (external program)
-    "all": ["Pillow>=10.0.0", "reportlab>=4.0.0"],  # All optional features
+    "paddleocr": ["paddleocr>=2.7.0", "pypdfium2>=4.25.0"],  # PaddleOCR parser
+    "all": [
+        "Pillow>=10.0.0",
+        "reportlab>=4.0.0",
+        "paddleocr>=2.7.0",
+        "pypdfium2>=4.25.0",
+        "markdown>=3.4.0",
+        "weasyprint>=60.0",
+        "pygments>=2.10.0",
+    ],  # All optional features
     "markdown": [
         "markdown>=3.4.0",
         "weasyprint>=60.0",

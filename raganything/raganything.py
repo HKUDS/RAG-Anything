@@ -33,7 +33,7 @@ from raganything.query import QueryMixin
 from raganything.processor import ProcessorMixin
 from raganything.batch import BatchMixin
 from raganything.utils import get_processor_supports
-from raganything.parser import MineruParser, DoclingParser
+from raganything.parser import MineruParser, SUPPORTED_PARSERS, get_parser
 
 # Import specialized processors
 from raganything.modalprocessors import (
@@ -112,9 +112,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         self.logger = logger
 
         # Set up document parser
-        self.doc_parser = (
-            DoclingParser() if self.config.parser == "docling" else MineruParser()
-        )
+        self.doc_parser = get_parser(self.config.parser)
 
         # Register close method for cleanup
         atexit.register(self.close)
@@ -557,6 +555,10 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         """Get processor information"""
         base_info = {
             "mineru_installed": MineruParser.check_installation(MineruParser()),
+            "parser_installation": {
+                parser_name: get_parser(parser_name).check_installation()
+                for parser_name in SUPPORTED_PARSERS
+            },
             "config": self.get_config_info(),
             "models": {
                 "llm_model": "External function"

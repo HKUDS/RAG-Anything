@@ -8,6 +8,7 @@ tqdm
 # Note: Optional dependencies are now defined in setup.py extras_require:
 # - [image]: Pillow>=10.0.0 (for BMP, TIFF, GIF, WebP format conversion)
 # - [text]: reportlab>=4.0.0 (for TXT, MD to PDF conversion)
+# - [paddleocr]: paddleocr + pypdfium2 (for parser='paddleocr')
 # - [office]: requires LibreOffice (external program, not Python package)
 # - [all]: includes all optional dependencies
 #

@@ -93,9 +93,13 @@ def validate_image_file(image_path: str, max_size_mb: int = 50) -> bool:
         logger.debug(f"Resolved path object: {path}")
         logger.debug(f"Path exists check: {path.exists()}")
 
-        # Check if file exists
+        # Check if file exists and is not a symlink (for security)
         if not path.exists():
             logger.warning(f"Image file not found: {image_path}")
+            return False
+
+        if path.is_symlink():
+            logger.warning(f"Blocking symlink for security: {image_path}")
             return False
 
         # Check file extension
