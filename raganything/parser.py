@@ -13,6 +13,7 @@ from __future__ import annotations
 
 
 import os
+import hashlib
 import json
 import argparse
 import base64
@@ -63,6 +64,28 @@ class Parser:
     def __init__(self) -> None:
         """Initialize the base parser."""
         pass
+
+    @staticmethod
+    def _unique_output_dir(
+        base_dir: Union[str, Path], file_path: Union[str, Path]
+    ) -> Path:
+        """Create a unique output subdirectory for a file to prevent same-name collisions.
+
+        When multiple files share the same name (e.g. dir1/paper.pdf and dir2/paper.pdf),
+        their parser output would collide in the same output directory. This creates a
+        unique subdirectory by appending a short hash of the file's absolute path. (Fixes #51)
+
+        Args:
+            base_dir: The base output directory
+            file_path: Path to the input file
+
+        Returns:
+            Path like base_dir/paper_a1b2c3d4/ unique per absolute file path.
+        """
+        file_path = Path(file_path).resolve()
+        stem = file_path.stem
+        path_hash = hashlib.md5(str(file_path).encode()).hexdigest()[:8]
+        return Path(base_dir) / f"{stem}_{path_hash}"
 
     @classmethod
     def convert_office_to_pdf(
@@ -967,9 +990,10 @@ class MineruParser(Parser):
 
             name_without_suff = pdf_path.stem
 
-            # Prepare output directory
+            # Prepare output directory — use unique subdirectory to prevent
+            # same-name file collisions when output_dir is shared (#51)
             if output_dir:
-                base_output_dir = Path(output_dir)
+                base_output_dir = self._unique_output_dir(output_dir, pdf_path)
             else:
                 base_output_dir = pdf_path.parent / "mineru_output"
 
@@ -1120,9 +1144,10 @@ class MineruParser(Parser):
 
             name_without_suff = image_path.stem
 
-            # Prepare output directory
+            # Prepare output directory — use unique subdirectory to prevent
+            # same-name file collisions when output_dir is shared (#51)
             if output_dir:
-                base_output_dir = Path(output_dir)
+                base_output_dir = self._unique_output_dir(output_dir, image_path)
             else:
                 base_output_dir = image_path.parent / "mineru_output"
 
@@ -1359,9 +1384,10 @@ class DoclingParser(Parser):
 
             name_without_suff = pdf_path.stem
 
-            # Prepare output directory
+            # Prepare output directory — use unique subdirectory to prevent
+            # same-name file collisions when output_dir is shared (#51)
             if output_dir:
-                base_output_dir = Path(output_dir)
+                base_output_dir = self._unique_output_dir(output_dir, pdf_path)
             else:
                 base_output_dir = pdf_path.parent / "docling_output"
 
@@ -1688,9 +1714,10 @@ class DoclingParser(Parser):
 
             name_without_suff = doc_path.stem
 
-            # Prepare output directory
+            # Prepare output directory — use unique subdirectory to prevent
+            # same-name file collisions when output_dir is shared (#51)
             if output_dir:
-                base_output_dir = Path(output_dir)
+                base_output_dir = self._unique_output_dir(output_dir, doc_path)
             else:
                 base_output_dir = doc_path.parent / "docling_output"
 
@@ -1746,9 +1773,10 @@ class DoclingParser(Parser):
 
             name_without_suff = html_path.stem
 
-            # Prepare output directory
+            # Prepare output directory — use unique subdirectory to prevent
+            # same-name file collisions when output_dir is shared (#51)
             if output_dir:
-                base_output_dir = Path(output_dir)
+                base_output_dir = self._unique_output_dir(output_dir, html_path)
             else:
                 base_output_dir = html_path.parent / "docling_output"
 
