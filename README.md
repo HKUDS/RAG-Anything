@@ -48,6 +48,12 @@
   </a>
 </div>
 
+<div align="center">
+  <a href="#fastapi-service" style="text-decoration: none;">
+    <img src="https://img.shields.io/badge/FastAPI%20Service-Deploy%20Now-00d9ff?style=for-the-badge&logo=fastapi&logoColor=white&labelColor=1a1a2e">
+  </a>
+</div>
+
 ---
 
 <div align="center">
@@ -72,6 +78,7 @@
 ---
 
 ## 🎉 News
+- [X] [2026.01]🎯📢 🚀 Released [FastAPI Service](#fastapi-service) for RAG-Anything! Now includes a production-ready API server with Office document support, Excel processing, and seamless integration capabilities.
 - [X] [2025.10]🎯📢 🚀 We have released the technical report of [RAG-Anything](http://arxiv.org/abs/2510.12323). Access it now to explore our latest research findings.
 - [X] [2025.08]🎯📢 🔍 RAG-Anything now features **VLM-Enhanced Query** mode! When documents include images, the system seamlessly integrates them into VLM for advanced multimodal analysis, combining visual and textual context for deeper insights.
 - [X] [2025.07]🎯📢 RAG-Anything now features a [context configuration module](docs/context_aware_processing.md), enabling intelligent integration of relevant contextual information to enhance multimodal content processing.
@@ -1035,6 +1042,35 @@ python examples/text_format_test.py --check-reportlab --file dummy
 
 ---
 
+## FastAPI Service
+
+Spin up a minimal API server to query and process documents using RAG-Anything with any OpenAI-compatible backend (LM Studio, Ollama, vLLM, DeepSeek, etc.).
+
+Quick start (using uv):
+
+```bash
+# Install FastAPI and Uvicorn into the existing uv environment
+uv sync
+
+# Run the server (reload for dev)
+uv run uvicorn api.app:app --reload
+# or using make
+make server
+```
+
+**Command Reference:**
+
+| Action | Make Command | Full UV Command |
+|--------|--------------|-----------------|
+| **Start Server** | `make server` | `uv run uvicorn api.app:app --reload` |
+| **Run Integration Test** | `make integration-test` | `uv run python api/core_endpoint_test.py api/datasets/patient_records_small.xlsx` |
+| **Run Mock Test** | `make mock-test` | `uv run python api/core_endpoint_test.py api/datasets/medical_symptoms_small.xlsx` |
+| **Dev Mode** | `make dev` | `uv run uvicorn api.app:app &` |
+| **Stop Server** | `make stop` | `pkill -f "uvicorn api.app:app"` |
+
+
+---
+
 ## 🔧 Configuration
 
 *System Optimization Parameters*
@@ -1050,6 +1086,8 @@ OUTPUT_DIR=./output             # Default output directory for parsed documents
 PARSER=mineru                   # Parser selection: mineru, docling, or paddleocr
 PARSE_METHOD=auto              # Parse method: auto, ocr, or txt
 ```
+
+> **LLM Recommendation:** For optimal performance with extensive RAG queries, it is recommended to use a text generation LLM that can handle at least **262,144 tokens** (e.g., Qwen models). This large context window helps prevent context overflow errors when processing comprehensive multimodal knowledge graphs.
 
 **Note:** For backward compatibility, legacy environment variable names are still supported:
 - `MINERU_PARSE_METHOD` is deprecated, please use `PARSE_METHOD`

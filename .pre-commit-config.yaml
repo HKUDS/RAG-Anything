@@ -1,17 +1,18 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v5.0.0
+    rev: v6.0.0
     hooks:
       - id: trailing-whitespace
       - id: end-of-file-fixer
       - id: requirements-txt-fixer
 
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.6.4
+    rev: v0.14.0
     hooks:
-      - id: ruff-format
-      - id: ruff
+      - id: ruff-check
         args: [--fix, --ignore=E402]
+      - id: ruff-format
 
 
   - repo: https://github.com/mgedmin/check-manifest

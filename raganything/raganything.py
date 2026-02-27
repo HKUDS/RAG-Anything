@@ -45,6 +45,9 @@ from raganything.modalprocessors import (
     ContextConfig,
 )
 
+# Import Excel processor for structured data processing
+from raganything.excel_processor import ExcelRAGIntegration, ExcelProcessingConfig
+
 
 @dataclass
 class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
@@ -585,3 +588,68 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 }
 
         return base_info
+
+    # Excel Processing Methods
+    # ---
+
+    async def process_excel_file(
+        self,
+        file_path: str,
+        max_rows: Optional[int] = None,
+        convert_to_text: bool = True,
+        include_summary: bool = True,
+        chunk_size: int = 100,
+        doc_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Process Excel file using pandas and insert into RAGAnything
+
+        This method provides a convenient way to process Excel files directly
+        without going through the document parsing pipeline.
+
+        """
+        try:
+            excel_config = ExcelProcessingConfig(
+                max_rows=max_rows,
+                convert_to_text=convert_to_text,
+                include_summary=include_summary,
+                chunk_size=chunk_size,
+            )
+
+            integration = ExcelRAGIntegration(self, excel_config)
+            return await integration.process_excel_file(file_path, doc_id)
+
+        except Exception as e:
+            error_msg = f"Error in process_excel_file: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg}
+
+    async def process_dataframe(
+        self,
+        df: Any,
+        doc_id: str,
+        convert_to_text: bool = True,
+        include_summary: bool = True,
+        chunk_size: int = 100,
+    ) -> Dict[str, Any]:
+        """
+        Process a pandas DataFrame directly and insert into RAGAnything
+
+        This method allows you to process DataFrames that you've already loaded
+        and potentially modified with pandas operations.
+
+        """
+        try:
+            excel_config = ExcelProcessingConfig(
+                convert_to_text=convert_to_text,
+                include_summary=include_summary,
+                chunk_size=chunk_size,
+            )
+
+            integration = ExcelRAGIntegration(self, excel_config)
+            return await integration.process_dataframe_directly(df, doc_id)
+
+        except Exception as e:
+            error_msg = f"Error in process_dataframe: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            return {"success": False, "error": error_msg}
