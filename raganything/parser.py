@@ -19,6 +19,10 @@ import base64
 import subprocess
 import tempfile
 import logging
+import urllib.parse
+import urllib.request
+import shutil
+import os
 from pathlib import Path
 from typing import (
     Dict,
@@ -59,6 +63,90 @@ class Parser:
 
     # Class-level logger
     logger = logging.getLogger(__name__)
+
+    @staticmethod
+    def _is_url(path: str) -> bool:
+        """Check if the path is a URL."""
+        try:
+            result = urllib.parse.urlparse(str(path))
+            return all([result.scheme, result.netloc])
+        except ValueError:
+            return False
+
+    def _download_file(self, url: str) -> Path:
+        """
+        Download a file from a URL to a temporary file.
+        Attempts to preserve the file extension from the URL or Content-Type header.
+        """
+        tmp_path = None
+        response = None
+        try:
+            self.logger.info(f"Downloading file from URL: {url}")
+
+            # Parse URL to get path and extension
+            parsed_url = urllib.parse.urlparse(url)
+            path = Path(parsed_url.path)
+            suffix = path.suffix if path.suffix else ""
+
+            # Create request with User-Agent to avoid 403 Forbidden from some sites
+            req = urllib.request.Request(
+                url,
+                data=None,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+                },
+            )
+
+            # Open connection to get headers
+            response = urllib.request.urlopen(req)
+
+            # If no extension in URL, try Content-Type header
+            if not suffix:
+                content_type = (
+                    response.headers.get("Content-Type", "").split(";")[0].strip()
+                )
+                if content_type:
+                    import mimetypes
+
+                    guessed_ext = mimetypes.guess_extension(content_type)
+                    if guessed_ext:
+                        suffix = guessed_ext
+                        self.logger.info(
+                            f"Inferred file extension '{suffix}' from Content-Type: {content_type}"
+                        )
+
+            # Create a temporary file with the correct extension
+            fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+            os.close(fd)
+            tmp_path = Path(tmp_path)
+
+            # Download the file content
+            with open(tmp_path, "wb") as out_file:
+                shutil.copyfileobj(response, out_file)
+
+            self.logger.info(
+                f"Downloaded to temporary file: {tmp_path} ({tmp_path.stat().st_size} bytes)"
+            )
+            return tmp_path
+
+        except Exception as e:
+            # Clean up temp file if it was created
+            if tmp_path and tmp_path.exists():
+                try:
+                    tmp_path.unlink()
+                    self.logger.debug(
+                        f"Cleaned up temporary file after failed download: {tmp_path}"
+                    )
+                except Exception as cleanup_error:
+                    self.logger.warning(
+                        f"Failed to clean up temp file {tmp_path}: {cleanup_error}"
+                    )
+
+            self.logger.error(f"Failed to download file from {url}: {e}")
+            raise RuntimeError(f"Failed to download file from {url}: {e}")
+        finally:
+            if response:
+                response.close()
 
     def __init__(self) -> None:
         """Initialize the base parser."""
@@ -1394,7 +1482,7 @@ class DoclingParser(Parser):
         Parse document using Docling based on file extension
 
         Args:
-            file_path: Path to the file to be parsed
+            file_path: Path to the file to be parsed or URL
             method: Parsing method
             output_dir: Output directory path
             lang: Document language for optimization
@@ -1403,27 +1491,45 @@ class DoclingParser(Parser):
         Returns:
             List[Dict[str, Any]]: List of content blocks
         """
-        # Convert to Path object
-        file_path = Path(file_path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"File does not exist: {file_path}")
+        downloaded_temp_file = None
 
-        # Get file extension
-        ext = file_path.suffix.lower()
+        try:
+            # Check if input is a URL
+            if self._is_url(file_path):
+                file_path = self._download_file(file_path)
+                downloaded_temp_file = file_path
 
-        # Choose appropriate parser based on file type
-        if ext == ".pdf":
-            return self.parse_pdf(file_path, output_dir, method, lang, **kwargs)
-        elif ext in self.OFFICE_FORMATS:
-            return self.parse_office_doc(file_path, output_dir, lang, **kwargs)
-        elif ext in self.HTML_FORMATS:
-            return self.parse_html(file_path, output_dir, lang, **kwargs)
-        else:
-            raise ValueError(
-                f"Unsupported file format: {ext}. "
-                f"Docling only supports PDF files, Office formats ({', '.join(self.OFFICE_FORMATS)}) "
-                f"and HTML formats ({', '.join(self.HTML_FORMATS)})"
-            )
+            # Convert to Path object
+            file_path = Path(file_path)
+            if not file_path.exists():
+                raise FileNotFoundError(f"File does not exist: {file_path}")
+
+            # Get file extension
+            ext = file_path.suffix.lower()
+
+            # Choose appropriate parser based on file type
+            if ext == ".pdf":
+                return self.parse_pdf(file_path, output_dir, method, lang, **kwargs)
+            elif ext in self.OFFICE_FORMATS:
+                return self.parse_office_doc(file_path, output_dir, lang, **kwargs)
+            elif ext in self.HTML_FORMATS:
+                return self.parse_html(file_path, output_dir, lang, **kwargs)
+            else:
+                raise ValueError(
+                    f"Unsupported file format: {ext}. "
+                    f"Docling only supports PDF files, Office formats ({', '.join(self.OFFICE_FORMATS)}) "
+                    f"and HTML formats ({', '.join(self.HTML_FORMATS)})"
+                )
+        finally:
+            # Clean up temporary file if we downloaded one
+            if downloaded_temp_file and downloaded_temp_file.exists():
+                try:
+                    downloaded_temp_file.unlink()
+                    self.logger.debug(f"Removed temporary file: {downloaded_temp_file}")
+                except Exception as e:
+                    self.logger.warning(
+                        f"Failed to remove temporary file {downloaded_temp_file}: {e}"
+                    )
 
     def _run_docling_command(
         self,
@@ -1548,13 +1654,15 @@ class DoclingParser(Parser):
         content_list = []
         if not block.get("children"):
             cnt += 1
-            content_list.append(self.read_from_block(block, type, output_dir, cnt, num))
+            result = self.read_from_block(block, type, output_dir, cnt, num)
+            if result:
+                content_list.append(result)
         else:
             if type not in ["groups", "body"]:
                 cnt += 1
-                content_list.append(
-                    self.read_from_block(block, type, output_dir, cnt, num)
-                )
+                result = self.read_from_block(block, type, output_dir, cnt, num)
+                if result:
+                    content_list.append(result)
             members = block["children"]
             for member in members:
                 cnt += 1
