@@ -146,6 +146,16 @@ class QueryMixin:
                 "VLM enhanced query requested but vision_model_func is not available, falling back to normal query"
             )
 
+        callback_manager = getattr(self, "callback_manager", None)
+        query_start_time = time.time()
+
+        if callback_manager is not None:
+            callback_manager.dispatch(
+                "on_query_start",
+                query=query,
+                mode=mode,
+            )
+
         # Create query parameters
         query_param = QueryParam(mode=mode, **kwargs)
 
@@ -158,6 +168,16 @@ class QueryMixin:
         )
 
         self.logger.info("Text query completed")
+        if callback_manager is not None:
+            duration = time.time() - query_start_time
+            result_len = len(result) if isinstance(result, str) else 0
+            callback_manager.dispatch(
+                "on_query_complete",
+                query=query,
+                mode=mode,
+                duration_seconds=duration,
+                result_length=result_len,
+            )
         return result
 
     async def aquery_with_multimodal(

@@ -34,6 +34,7 @@ from raganything.processor import ProcessorMixin
 from raganything.batch import BatchMixin
 from raganything.utils import get_processor_supports
 from raganything.parser import MineruParser, SUPPORTED_PARSERS, get_parser
+from raganything.callbacks import CallbackManager
 
 # Import specialized processors
 from raganything.modalprocessors import (
@@ -92,6 +93,11 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
 
     parse_cache: Optional[Any] = field(default=None, init=False)
     """Parse result cache storage using LightRAG KV storage."""
+
+    callback_manager: CallbackManager = field(
+        default_factory=CallbackManager, init=False, repr=False
+    )
+    """Processing callbacks manager (optional hooks for observability and metrics)."""
 
     _parser_installation_checked: bool = field(default=False, init=False)
     """Flag to track if parser installation has been checked."""

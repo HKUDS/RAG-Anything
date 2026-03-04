@@ -329,6 +329,14 @@ class BatchMixin:
             Dict containing both parse results and RAG processing results
         """
         start_time = time.time()
+        callback_manager = getattr(self, "callback_manager", None)
+        total_files = len(file_paths)
+
+        if callback_manager is not None:
+            callback_manager.dispatch(
+                "on_batch_start",
+                file_count=total_files,
+            )
 
         # Use config defaults if not specified
         if output_dir is None:
@@ -392,14 +400,26 @@ class BatchMixin:
 
         processing_time = time.time() - start_time
 
+        successful_rag_files = len(
+            [r for r in rag_results.values() if r["processed"]]
+        )
+        failed_rag_files = len(
+            [r for r in rag_results.values() if not r["processed"]]
+        )
+
+        if callback_manager is not None:
+            callback_manager.dispatch(
+                "on_batch_complete",
+                total_files=total_files,
+                successful=successful_rag_files,
+                failed=failed_rag_files,
+                duration_seconds=processing_time,
+            )
+
         return {
             "parse_result": parse_result,
             "rag_results": rag_results,
             "total_processing_time": processing_time,
-            "successful_rag_files": len(
-                [r for r in rag_results.values() if r["processed"]]
-            ),
-            "failed_rag_files": len(
-                [r for r in rag_results.values() if not r["processed"]]
-            ),
+            "successful_rag_files": successful_rag_files,
+            "failed_rag_files": failed_rag_files,
         }

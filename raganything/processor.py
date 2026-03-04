@@ -312,6 +312,16 @@ class ProcessorMixin:
         if not file_path.exists():
             raise FileNotFoundError(f"File not found: {file_path}")
 
+        callback_file = str(file_path)
+        callback_manager = getattr(self, "callback_manager", None)
+        parse_start_time = time.time()
+        if callback_manager is not None:
+            callback_manager.dispatch(
+                "on_parse_start",
+                file_path=callback_file,
+                parser=self.config.parser,
+            )
+
         # Generate cache key based on file and configuration
         cache_key = self._generate_cache_key(file_path, parse_method, **kwargs)
 
@@ -325,6 +335,15 @@ class ProcessorMixin:
             if display_stats:
                 self.logger.info(
                     f"* Total blocks in cached content_list: {len(content_list)}"
+                )
+            if callback_manager is not None:
+                duration = time.time() - parse_start_time
+                callback_manager.dispatch(
+                    "on_parse_complete",
+                    file_path=callback_file,
+                    content_blocks=len(content_list),
+                    doc_id=doc_id,
+                    duration_seconds=duration,
                 )
             return content_list, doc_id
 
@@ -453,6 +472,16 @@ class ProcessorMixin:
             for block_type, count in block_types.items():
                 self.logger.info(f"  - {block_type}: {count}")
 
+        if callback_manager is not None:
+            duration = time.time() - parse_start_time
+            callback_manager.dispatch(
+                "on_parse_complete",
+                file_path=callback_file,
+                content_blocks=len(content_list),
+                doc_id=doc_id,
+                duration_seconds=duration,
+            )
+
         return content_list, doc_id
 
     async def _process_multimodal_content(
@@ -477,6 +506,16 @@ class ProcessorMixin:
         if not multimodal_items:
             self.logger.debug("No multimodal content to process")
             return
+
+        callback_manager = getattr(self, "callback_manager", None)
+        mm_start_time = time.time()
+        if callback_manager is not None:
+            callback_manager.dispatch(
+                "on_multimodal_start",
+                file_path=file_path,
+                item_count=len(multimodal_items),
+                doc_id=doc_id,
+            )
 
         # Check multimodal processing status - handle LightRAG's early DocStatus.PROCESSED marking
         try:
@@ -536,6 +575,16 @@ class ProcessorMixin:
                 async with pipeline_status_lock:
                     pipeline_status["latest_message"] = log_message
                     pipeline_status["history_messages"].append(log_message)
+
+            if callback_manager is not None:
+                duration = time.time() - mm_start_time
+                callback_manager.dispatch(
+                    "on_multimodal_complete",
+                    file_path=file_path,
+                    processed_count=len(multimodal_items),
+                    duration_seconds=duration,
+                    doc_id=doc_id,
+                )
 
         except Exception as e:
             self.logger.error(f"Error in multimodal processing: {e}")
@@ -1466,6 +1515,9 @@ class ProcessorMixin:
             doc_id: Optional document ID, if not provided will be generated from content
             **kwargs: Additional parameters for parser (e.g., lang, device, start_page, end_page, formula, table, backend, source)
         """
+        callback_manager = getattr(self, "callback_manager", None)
+        doc_start_time = time.time()
+
         # Ensure LightRAG is initialized
         await self._ensure_lightrag_initialized()
 
@@ -1505,6 +1557,14 @@ class ProcessorMixin:
             if file_name is None:
                 # Use full path or basename based on config
                 file_name = self._get_file_reference(file_path)
+            if callback_manager is not None:
+                callback_manager.dispatch(
+                    "on_text_insert_start",
+                    file_path=file_name,
+                    text_length=len(text_content),
+                    doc_id=doc_id,
+                )
+            insert_start = time.time()
             await insert_text_content(
                 self.lightrag,
                 input=text_content,
@@ -1513,6 +1573,14 @@ class ProcessorMixin:
                 split_by_character_only=split_by_character_only,
                 ids=doc_id,
             )
+            if callback_manager is not None:
+                insert_duration = time.time() - insert_start
+                callback_manager.dispatch(
+                    "on_text_insert_complete",
+                    file_path=file_name,
+                    duration_seconds=insert_duration,
+                    doc_id=doc_id,
+                )
         else:
             # Determine file reference even if no text content
             if file_name is None:
@@ -1530,6 +1598,14 @@ class ProcessorMixin:
             )
 
         self.logger.info(f"Document {file_path} processing complete!")
+        if callback_manager is not None:
+            duration = time.time() - doc_start_time
+            callback_manager.dispatch(
+                "on_document_complete",
+                file_path=str(file_path),
+                doc_id=doc_id,
+                duration_seconds=duration,
+            )
 
     async def process_document_complete_lightrag_api(
         self,
@@ -1790,6 +1866,9 @@ class ProcessorMixin:
             - page_idx represents the page number where the content appears (0-based indexing)
             - Items are processed in the order they appear in the list
         """
+        callback_manager = getattr(self, "callback_manager", None)
+        doc_start_time = time.time()
+
         # Ensure LightRAG is initialized
         await self._ensure_lightrag_initialized()
 
@@ -1838,6 +1917,14 @@ class ProcessorMixin:
         if text_content.strip():
             # Use full path or basename based on config
             file_ref = self._get_file_reference(file_path)
+            if callback_manager is not None:
+                callback_manager.dispatch(
+                    "on_text_insert_start",
+                    file_path=file_ref,
+                    text_length=len(text_content),
+                    doc_id=doc_id,
+                )
+            insert_start = time.time()
             await insert_text_content(
                 self.lightrag,
                 input=text_content,
@@ -1846,6 +1933,14 @@ class ProcessorMixin:
                 split_by_character_only=split_by_character_only,
                 ids=doc_id,
             )
+            if callback_manager is not None:
+                insert_duration = time.time() - insert_start
+                callback_manager.dispatch(
+                    "on_text_insert_complete",
+                    file_path=file_ref,
+                    duration_seconds=insert_duration,
+                    doc_id=doc_id,
+                )
         else:
             # Determine file reference even if no text content
             file_ref = self._get_file_reference(file_path)
@@ -1862,3 +1957,11 @@ class ProcessorMixin:
             )
 
         self.logger.info(f"Content list insertion complete for: {file_path}")
+        if callback_manager is not None:
+            duration = time.time() - doc_start_time
+            callback_manager.dispatch(
+                "on_document_complete",
+                file_path=file_path,
+                doc_id=doc_id,
+                duration_seconds=duration,
+            )
