@@ -289,8 +289,10 @@ def main():
     parser.add_argument(
         "--parser",
         default=os.getenv("PARSER", "mineru"),
-        choices=["mineru", "docling", "paddleocr"],
-        help="Parser selection",
+        help=(
+            "Parser selection (mineru, docling, paddleocr, or any "
+            "registered custom parser name)."
+        ),
     )
 
     args = parser.parse_args()

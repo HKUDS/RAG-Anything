@@ -382,9 +382,11 @@ def main():
     parser.add_argument("--output", "-o", required=True, help="Output directory")
     parser.add_argument(
         "--parser",
-        choices=list(SUPPORTED_PARSERS),
         default="mineru",
-        help="Parser to use",
+        help=(
+            "Parser to use. Built-ins: mineru, docling, paddleocr. "
+            "Also accepts custom parsers registered via register_parser()."
+        ),
     )
     parser.add_argument(
         "--method",
