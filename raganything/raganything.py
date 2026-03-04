@@ -34,6 +34,7 @@ from raganything.processor import ProcessorMixin
 from raganything.batch import BatchMixin
 from raganything.utils import get_processor_supports
 from raganything.parser import MineruParser, SUPPORTED_PARSERS, get_parser
+from raganything.prompt_manager import set_prompt_language, get_prompt_language
 
 # Import specialized processors
 from raganything.modalprocessors import (
@@ -130,6 +131,19 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             f"Equation: {self.config.enable_equation_processing}"
         )
         self.logger.info(f"  Max concurrent files: {self.config.max_concurrent_files}")
+
+        # Initialize prompt language from configuration (if supported)
+        prompt_lang = getattr(self.config, "prompt_language", "en")
+        try:
+            if prompt_lang and prompt_lang != get_prompt_language():
+                set_prompt_language(prompt_lang)
+                self.logger.info(
+                    "Prompt language initialized to '%s' from config", prompt_lang
+                )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            self.logger.warning(
+                "Failed to set prompt language '%s' from config: %s", prompt_lang, exc
+            )
 
     def close(self):
         """Cleanup resources when object is destroyed"""

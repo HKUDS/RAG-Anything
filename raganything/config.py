@@ -108,6 +108,13 @@ class RAGAnythingConfig:
     use_full_path: bool = field(default=get_env_value("USE_FULL_PATH", False, bool))
     """Whether to use full file path (True) or just basename (False) for file references in LightRAG."""
 
+    # Prompt Language Configuration
+    # ---
+    prompt_language: str = field(
+        default=get_env_value("PROMPT_LANGUAGE", "en", str)
+    )
+    """Default prompt language code for the RAG pipeline (e.g., 'en', 'zh')."""
+
     def __post_init__(self):
         """Post-initialization setup for backward compatibility"""
         # Support legacy environment variable names for backward compatibility
