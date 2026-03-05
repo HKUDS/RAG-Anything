@@ -12,6 +12,7 @@ from raganything.parser import MineruParser, DoclingParser
 from src.config import ENV
 from src.extract_definitions import EXTRACT_EXPERIMENTS, ExtractExperimentDef
 from src.extract_metrics import compute_extract_metrics
+from src.extract_normalizer import normalize_content_list_for_pipeline
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 logger = logging.getLogger("ExtractBench")
@@ -82,6 +83,13 @@ async def run_experiment(exp_def: ExtractExperimentDef, input_dir: Path, report_
         try:
             content_list, doc_id = await rag.parse_document(
                 str(file_path), output_dir=str(parser_output), display_stats=False
+            )
+            content_list, normalize_report = normalize_content_list_for_pipeline(content_list)
+            logger.info(
+                "Normalized content_list for pipeline compatibility: "
+                f"{normalize_report['input_blocks']} -> {normalize_report['output_blocks']} blocks, "
+                f"dropped={normalize_report['dropped_blocks']}, "
+                f"types={normalize_report['normalized_type_counts']}"
             )
         except Exception as e:
             status = "Failed"

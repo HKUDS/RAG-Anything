@@ -1,4 +1,5 @@
 import hashlib
+import re
 from typing import Dict, Any, List
 
 
@@ -38,6 +39,29 @@ def _parse_markdown_table(table_str: str) -> Dict[str, int]:
     return {"rows": rows, "cols": cols, "cells": cells}
 
 
+def _parse_html_table(table_str: str) -> Dict[str, int]:
+    rows = 0
+    cols = 0
+    cells = 0
+    if not table_str:
+        return {"rows": 0, "cols": 0, "cells": 0}
+
+    tr_blocks = re.findall(r"<tr[^>]*>(.*?)</tr>", str(table_str), flags=re.IGNORECASE | re.DOTALL)
+    for tr in tr_blocks:
+        cell_blocks = re.findall(r"<t[dh][^>]*>(.*?)</t[dh]>", tr, flags=re.IGNORECASE | re.DOTALL)
+        cleaned_cells = [
+            re.sub(r"<[^>]+>", "", c).strip() for c in cell_blocks
+            if re.sub(r"<[^>]+>", "", c).strip()
+        ]
+        if not cleaned_cells:
+            continue
+        rows += 1
+        cols = max(cols, len(cleaned_cells))
+        cells += len(cleaned_cells)
+
+    return {"rows": rows, "cols": cols, "cells": cells}
+
+
 def _parse_table_body(table_body: Any) -> Dict[str, int]:
     if table_body is None:
         return {"rows": 0, "cols": 0, "cells": 0}
@@ -58,11 +82,84 @@ def _parse_table_body(table_body: Any) -> Dict[str, int]:
                 cells += 1
         return {"rows": rows, "cols": cols, "cells": cells}
 
+    # dict structure (e.g., docling: {num_rows, num_cols, grid, table_cells})
+    if isinstance(table_body, dict):
+        num_rows = int(table_body.get("num_rows", 0) or 0)
+        num_cols = int(table_body.get("num_cols", 0) or 0)
+        grid = table_body.get("grid")
+
+        if isinstance(grid, list) and grid:
+            rows = 0
+            cols = 0
+            cells = 0
+            for row in grid:
+                if not isinstance(row, list):
+                    continue
+                non_empty = 0
+                for cell in row:
+                    if isinstance(cell, dict):
+                        text = str(cell.get("text", "")).strip()
+                    else:
+                        text = str(cell).strip()
+                    if text:
+                        non_empty += 1
+                if non_empty > 0:
+                    rows += 1
+                    cols = max(cols, len(row))
+                    cells += non_empty
+            if rows > 0:
+                return {"rows": rows, "cols": cols, "cells": cells}
+
+        table_cells = table_body.get("table_cells")
+        if isinstance(table_cells, list) and table_cells:
+            if num_rows > 0 and num_cols > 0:
+                return {"rows": num_rows, "cols": num_cols, "cells": len(table_cells)}
+            return {"rows": 0, "cols": 0, "cells": len(table_cells)}
+
+        if num_rows > 0 or num_cols > 0:
+            return {"rows": num_rows, "cols": num_cols, "cells": max(num_rows * num_cols, 0)}
+
+        return {"rows": 0, "cols": 0, "cells": 0}
+
     # string markdown table
     if isinstance(table_body, str):
+        if "<table" in table_body.lower():
+            return _parse_html_table(table_body)
         return _parse_markdown_table(table_body)
 
     return {"rows": 0, "cols": 0, "cells": 0}
+
+
+def _is_valid_image_file(path: str) -> bool:
+    try:
+        with open(path, "rb") as f:
+            head = f.read(16)
+    except Exception:
+        return False
+
+    known = [
+        b"\x89PNG\r\n\x1a\n",
+        b"\xff\xd8\xff",
+        b"GIF87a",
+        b"GIF89a",
+        b"BM",
+        b"II*\x00",
+        b"MM\x00*",
+    ]
+    if any(head.startswith(sig) for sig in known):
+        return True
+    if head.startswith(b"RIFF") and head[8:12] == b"WEBP":
+        return True
+
+    # Fallback to PIL verification when available.
+    try:
+        from PIL import Image
+
+        with Image.open(path) as img:
+            img.verify()
+        return True
+    except Exception:
+        return False
 
 
 def compute_extract_metrics(content_list: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -108,7 +205,7 @@ def compute_extract_metrics(content_list: List[Dict[str, Any]]) -> Dict[str, Any
                 try:
                     import os
 
-                    if os.path.exists(img_path):
+                    if os.path.exists(img_path) and _is_valid_image_file(img_path):
                         metrics["image_files_exist"] += 1
                     else:
                         metrics["image_files_missing"] += 1

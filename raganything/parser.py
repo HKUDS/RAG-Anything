@@ -15,10 +15,15 @@ from __future__ import annotations
 import json
 import argparse
 import base64
+import hashlib
 import subprocess
 import tempfile
 import logging
 import os
+import inspect
+import re
+import shutil
+import zlib
 from pathlib import Path
 from typing import (
     Dict,
@@ -1727,11 +1732,57 @@ class KreuzbergParser(Parser):
         **kwargs,
     ):
         try:
-            from kreuzberg import extract_file_sync, ExtractionConfig, PageConfig
+            import importlib
+
+            kreuzberg_mod = importlib.import_module("kreuzberg")
+            extract_file_sync = getattr(kreuzberg_mod, "extract_file_sync")
+            ExtractionConfig = getattr(kreuzberg_mod, "ExtractionConfig")
+            PageConfig = getattr(kreuzberg_mod, "PageConfig", None)
+            PdfConfig = getattr(kreuzberg_mod, "PdfConfig", None)
+            ImageExtractionConfig = getattr(kreuzberg_mod, "ImageExtractionConfig", None)
+            OcrConfig = getattr(kreuzberg_mod, "OcrConfig", None)
+            TesseractConfig = getattr(kreuzberg_mod, "TesseractConfig", None)
+            ResultFormat = getattr(kreuzberg_mod, "ResultFormat", None)
         except Exception as e:
             raise RuntimeError(
                 "Kreuzberg is not installed. Install with: pip install -U kreuzberg"
             ) from e
+
+        def _accepted_kwargs(cls: Optional[type], candidate: Dict[str, Any]) -> Dict[str, Any]:
+            """Keep only kwargs supported by class __init__ signature."""
+            if cls is None:
+                return {}
+            try:
+                sig = inspect.signature(cls)
+                params = [
+                    p
+                    for p in sig.parameters.values()
+                    if p.name != "self"
+                ]
+                accepts_any = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params)
+                if accepts_any:
+                    return candidate
+                accepted_names = {p.name for p in params}
+                return {k: v for k, v in candidate.items() if k in accepted_names}
+            except Exception:
+                # If signature introspection fails, keep candidate and let ctor validate.
+                return candidate
+
+        def _as_list(value: Any) -> List[str]:
+            if value is None:
+                return []
+            if isinstance(value, (list, tuple, set)):
+                return [str(v).strip() for v in value if str(v).strip()]
+            value_str = str(value).strip()
+            if not value_str:
+                return []
+            if "," in value_str:
+                return [s.strip() for s in value_str.split(",") if s.strip()]
+            return [value_str]
+
+        # Keep a mutable kwargs map and consume namespaced options while preserving
+        # generic keys (e.g. `extract_images`, `extract_tables`) for legacy APIs.
+        kwargs = dict(kwargs or {})
 
         # Map parse method to Kreuzberg config
         config_kwargs: Dict[str, Any] = {}
@@ -1740,16 +1791,183 @@ class KreuzbergParser(Parser):
         elif method == "txt":
             config_kwargs["force_ocr"] = False
 
-        if lang:
-            # Kreuzberg expects OCR language config; keep generic key
-            config_kwargs["ocr_language"] = lang
+        # Optional page-level extraction controls
+        page_config_kwargs: Dict[str, Any] = {}
+        if "extract_pages" in kwargs:
+            page_config_kwargs["extract_pages"] = kwargs["extract_pages"]
 
-        # Allow enabling page extraction for images/tables if supported
-        extract_pages = kwargs.pop("extract_pages", False)
-        if extract_pages:
-            config_kwargs["pages"] = PageConfig(extract_pages=True)
+        # Accept page_* aliases for future settings.
+        for key in list(kwargs.keys()):
+            if key.startswith("page_"):
+                page_config_kwargs[key[len("page_"):]] = kwargs.pop(key)
 
-        config = ExtractionConfig(**config_kwargs) if config_kwargs else None
+        page_config_kwargs = _accepted_kwargs(PageConfig, page_config_kwargs)
+        if page_config_kwargs:
+            try:
+                config_kwargs["pages"] = PageConfig(**page_config_kwargs)
+            except Exception as e:
+                logging.debug(f"KreuzbergParser: failed to build PageConfig: {e}")
+
+        extract_images = kwargs.get("extract_images", None)
+        extract_tables = kwargs.get("extract_tables", None)
+
+        # Map image extraction knobs to documented config objects.
+        # v4 docs: PdfConfig.extract_images and ExtractionConfig.images.
+        pdf_cfg_kwargs: Dict[str, Any] = {}
+        if "pdf_extract_images" in kwargs:
+            pdf_cfg_kwargs["extract_images"] = kwargs.pop("pdf_extract_images")
+        if "pdf_extract_metadata" in kwargs:
+            pdf_cfg_kwargs["extract_metadata"] = kwargs.pop("pdf_extract_metadata")
+        if "pdf_extract_links" in kwargs:
+            pdf_cfg_kwargs["extract_links"] = kwargs.pop("pdf_extract_links")
+        if "pdf_extract_bookmarks" in kwargs:
+            pdf_cfg_kwargs["extract_bookmarks"] = kwargs.pop("pdf_extract_bookmarks")
+        if "pdf_extract_annotations" in kwargs:
+            pdf_cfg_kwargs["extract_annotations"] = kwargs.pop("pdf_extract_annotations")
+        if "pdf_extract_forms" in kwargs:
+            pdf_cfg_kwargs["extract_forms"] = kwargs.pop("pdf_extract_forms")
+        if "pdf_extract_attachments" in kwargs:
+            pdf_cfg_kwargs["extract_attachments"] = kwargs.pop("pdf_extract_attachments")
+        if "pdf_passwords" in kwargs:
+            pdf_cfg_kwargs["passwords"] = kwargs.pop("pdf_passwords")
+        if extract_images is True and "extract_images" not in pdf_cfg_kwargs:
+            pdf_cfg_kwargs["extract_images"] = True
+        pdf_cfg_kwargs = _accepted_kwargs(PdfConfig, pdf_cfg_kwargs)
+        if pdf_cfg_kwargs:
+            try:
+                config_kwargs["pdf_options"] = PdfConfig(**pdf_cfg_kwargs)
+            except Exception as e:
+                logging.debug(f"KreuzbergParser: failed to build PdfConfig: {e}")
+
+        images_cfg_kwargs: Dict[str, Any] = {}
+        # Accept both explicit and prefixed image config keys.
+        if extract_images is True:
+            images_cfg_kwargs["extract_images"] = True
+        for key in list(kwargs.keys()):
+            if key.startswith("image_"):
+                images_cfg_kwargs[key[len("image_"):]] = kwargs.pop(key)
+        for key in list(kwargs.keys()):
+            if key.startswith("images_"):
+                images_cfg_kwargs[key[len("images_"):]] = kwargs.pop(key)
+        images_cfg_kwargs = _accepted_kwargs(ImageExtractionConfig, images_cfg_kwargs)
+        if images_cfg_kwargs:
+            try:
+                config_kwargs["images"] = ImageExtractionConfig(**images_cfg_kwargs)
+            except Exception as e:
+                logging.debug(
+                    f"KreuzbergParser: failed to build ImageExtractionConfig: {e}"
+                )
+
+        # OCR configuration:
+        # - modern API: ExtractionConfig.ocr = OcrConfig(...)
+        # - table extraction commonly requires tesseract.enable_table_detection=True
+        ocr_cfg_kwargs: Dict[str, Any] = {}
+        if "ocr_provider" in kwargs:
+            ocr_backend = kwargs.pop("ocr_provider")
+            ocr_cfg_kwargs["provider"] = ocr_backend
+            ocr_cfg_kwargs["backend"] = ocr_backend
+        if "ocr_backend" in kwargs:
+            ocr_backend = kwargs.pop("ocr_backend")
+            ocr_cfg_kwargs["provider"] = ocr_backend
+            ocr_cfg_kwargs["backend"] = ocr_backend
+        if "ocr_languages" in kwargs:
+            lang_values = _as_list(kwargs.pop("ocr_languages"))
+            ocr_cfg_kwargs["languages"] = lang_values
+            if lang_values:
+                ocr_cfg_kwargs["language"] = lang_values[0]
+        elif "ocr_langs" in kwargs:
+            lang_values = _as_list(kwargs.pop("ocr_langs"))
+            ocr_cfg_kwargs["languages"] = lang_values
+            if lang_values:
+                ocr_cfg_kwargs["language"] = lang_values[0]
+        elif lang:
+            lang_values = _as_list(lang)
+            ocr_cfg_kwargs["languages"] = lang_values
+            if lang_values:
+                ocr_cfg_kwargs["language"] = lang_values[0]
+
+        tesseract_cfg_kwargs: Dict[str, Any] = {}
+        if "ocr_tesseract_enable_table_detection" in kwargs:
+            tesseract_cfg_kwargs["enable_table_detection"] = kwargs.pop(
+                "ocr_tesseract_enable_table_detection"
+            )
+        for key in list(kwargs.keys()):
+            if key.startswith("ocr_tesseract_"):
+                tesseract_cfg_kwargs[key[len("ocr_tesseract_"):]] = kwargs.pop(key)
+        if extract_tables is True and "enable_table_detection" not in tesseract_cfg_kwargs:
+            tesseract_cfg_kwargs["enable_table_detection"] = True
+
+        tesseract_cfg_kwargs = _accepted_kwargs(TesseractConfig, tesseract_cfg_kwargs)
+        if tesseract_cfg_kwargs and TesseractConfig is not None:
+            try:
+                tesseract_cfg = TesseractConfig(**tesseract_cfg_kwargs)
+                ocr_cfg_kwargs["tesseract"] = tesseract_cfg
+                ocr_cfg_kwargs["tesseract_config"] = tesseract_cfg
+            except Exception as e:
+                logging.debug(f"KreuzbergParser: failed to build TesseractConfig: {e}")
+
+        # Generic ocr_* passthrough for newer fields while preserving known keys above.
+        for key in list(kwargs.keys()):
+            if key.startswith("ocr_"):
+                bare = key[len("ocr_"):]
+                if bare in {
+                    "provider",
+                    "backend",
+                    "language",
+                    "languages",
+                    "langs",
+                } or bare.startswith("tesseract_"):
+                    continue
+                ocr_cfg_kwargs[bare] = kwargs.pop(key)
+
+        ocr_cfg_kwargs = _accepted_kwargs(OcrConfig, ocr_cfg_kwargs)
+        if ocr_cfg_kwargs and OcrConfig is not None:
+            try:
+                config_kwargs["ocr"] = OcrConfig(**ocr_cfg_kwargs)
+            except Exception as e:
+                logging.debug(f"KreuzbergParser: failed to build OcrConfig: {e}")
+
+        # Map string result format for modern API enums if available.
+        if "result_format" in kwargs and ResultFormat is not None:
+            rf_value = kwargs["result_format"]
+            if isinstance(rf_value, str):
+                rf_norm = rf_value.strip().lower()
+                if rf_norm in {"element_based", "element-based", "elements", "element"}:
+                    kwargs["result_format"] = getattr(ResultFormat, "ELEMENT_BASED", rf_value)
+                elif rf_norm in {"unified", "default"}:
+                    kwargs["result_format"] = getattr(ResultFormat, "UNIFIED", rf_value)
+
+        # Forward any remaining kwargs that are valid for ExtractionConfig.
+        extraction_extra_kwargs = _accepted_kwargs(ExtractionConfig, kwargs)
+        config_kwargs.update(extraction_extra_kwargs)
+
+        ignored_kwargs = sorted(set(kwargs.keys()) - set(extraction_extra_kwargs.keys()))
+        if ignored_kwargs:
+            logging.debug(
+                f"KreuzbergParser ignored unsupported parser_kwargs: {ignored_kwargs}"
+            )
+
+        config = None
+        if config_kwargs:
+            try:
+                config = ExtractionConfig(**config_kwargs)
+            except TypeError as e:
+                # Compatibility fallback for API/version differences:
+                # retry without nested v4-only fields if constructor rejects them.
+                retry_kwargs = dict(config_kwargs)
+                dropped_keys: List[str] = []
+                for key in ["pages", "pdf_options", "images", "ocr", "result_format"]:
+                    if key in retry_kwargs:
+                        retry_kwargs.pop(key, None)
+                        dropped_keys.append(key)
+                if retry_kwargs != config_kwargs:
+                    logging.debug(
+                        "KreuzbergParser fallback config without keys "
+                        f"{dropped_keys} due to constructor mismatch: {e}"
+                    )
+                    config = ExtractionConfig(**retry_kwargs) if retry_kwargs else None
+                else:
+                    raise
         return extract_file_sync(file_path, config=config)
 
     def _tables_to_blocks(self, tables: Any) -> List[Dict[str, Any]]:
@@ -1760,11 +1978,20 @@ class KreuzbergParser(Parser):
             if isinstance(table, dict):
                 markdown = table.get("markdown") or table.get("md") or ""
                 cells = table.get("cells") or table.get("data")
-                page_num = table.get("page_number") or table.get("page") or 1
+                page_num = (
+                    table.get("page_number")
+                    or table.get("pageNumber")
+                    or table.get("page")
+                    or 1
+                )
             else:
                 markdown = getattr(table, "markdown", "") or ""
                 cells = getattr(table, "cells", None)
-                page_num = getattr(table, "page_number", 1)
+                page_num = (
+                    getattr(table, "page_number", None)
+                    or getattr(table, "pageNumber", None)
+                    or getattr(table, "page", 1)
+                )
 
             table_body = markdown if markdown else (cells if cells is not None else "")
             blocks.append(
@@ -1778,49 +2005,455 @@ class KreuzbergParser(Parser):
             )
         return blocks
 
+    @staticmethod
+    def _normalize_kreuzberg_type(raw_type: Any) -> str:
+        if raw_type is None:
+            return ""
+        normalized = str(raw_type).strip().lower()
+        if "." in normalized:
+            normalized = normalized.split(".")[-1]
+        return normalized.replace("-", "_")
+
+    @staticmethod
+    def _image_ext_from_format(image_format: Any) -> Optional[str]:
+        if image_format is None:
+            return None
+        fmt = str(image_format).strip().lower().replace(".", "")
+        mapping = {
+            "jpg": "jpg",
+            "jpeg": "jpg",
+            "png": "png",
+            "gif": "gif",
+            "webp": "webp",
+            "bmp": "bmp",
+            "tif": "tif",
+            "tiff": "tif",
+            "jp2": "jp2",
+            "jpx": "jpx",
+            "ppm": "ppm",
+            "pgm": "pgm",
+            "pbm": "pbm",
+            "pnm": "pnm",
+            "flate": "flate",
+            "flatedecode": "flate",
+        }
+        return mapping.get(fmt)
+
+    @staticmethod
+    def _detect_image_ext_from_bytes(data: bytes) -> Optional[str]:
+        if not data:
+            return None
+        signatures = [
+            (b"\x89PNG\r\n\x1a\n", "png"),
+            (b"\xff\xd8\xff", "jpg"),
+            (b"GIF87a", "gif"),
+            (b"GIF89a", "gif"),
+            (b"RIFF", "webp"),  # needs WEBP marker check
+            (b"BM", "bmp"),
+            (b"II*\x00", "tif"),
+            (b"MM\x00*", "tif"),
+        ]
+        for sig, ext in signatures:
+            if data.startswith(sig):
+                if ext == "webp" and len(data) >= 12 and data[8:12] != b"WEBP":
+                    continue
+                return ext
+        return None
+
+    @staticmethod
+    def _coerce_to_bytes(value: Any) -> Optional[bytes]:
+        if value is None:
+            return None
+        if isinstance(value, bytes):
+            return value
+        if isinstance(value, bytearray):
+            return bytes(value)
+        if isinstance(value, memoryview):
+            return value.tobytes()
+        if isinstance(value, str):
+            # Some APIs return base64 encoded payload strings.
+            try:
+                decoded = base64.b64decode(value, validate=True)
+                if decoded:
+                    return decoded
+            except Exception:
+                pass
+        return None
+
+    def _raw_raster_to_png(
+        self,
+        raw_pixels: bytes,
+        width: Optional[int],
+        height: Optional[int],
+        color_space: Optional[str] = None,
+        bits_per_component: Optional[int] = None,
+    ) -> Optional[bytes]:
+        if not raw_pixels or not width or not height:
+            return None
+        if width <= 0 or height <= 0:
+            return None
+
+        pixel_count = width * height
+        if pixel_count <= 0:
+            return None
+
+        bpc = bits_per_component or 8
+        mode = None
+        if color_space:
+            cs = str(color_space).lower()
+            if "gray" in cs:
+                mode = "L"
+            elif "rgb" in cs:
+                mode = "RGB"
+            elif "cmyk" in cs:
+                mode = "CMYK"
+
+        # Heuristic fallback if colorspace is unavailable.
+        if mode is None:
+            if len(raw_pixels) == pixel_count:
+                mode = "L"
+            elif len(raw_pixels) == pixel_count * 3:
+                mode = "RGB"
+            elif len(raw_pixels) == pixel_count * 4:
+                mode = "RGBA"
+
+        if mode is None:
+            return None
+
+        try:
+            from PIL import Image
+            from io import BytesIO
+        except Exception:
+            return None
+
+        try:
+            if mode == "L" and bpc == 1:
+                expected = ((width + 7) // 8) * height
+                if len(raw_pixels) != expected:
+                    return None
+                image = Image.frombytes("1", (width, height), raw_pixels)
+            else:
+                if bpc != 8:
+                    return None
+                expected = {
+                    "L": pixel_count,
+                    "RGB": pixel_count * 3,
+                    "RGBA": pixel_count * 4,
+                    "CMYK": pixel_count * 4,
+                }.get(mode)
+                if expected is None or len(raw_pixels) != expected:
+                    return None
+                image = Image.frombytes(mode, (width, height), raw_pixels)
+
+            if image.mode == "CMYK":
+                image = image.convert("RGB")
+
+            buffer = BytesIO()
+            image.save(buffer, format="PNG")
+            return buffer.getvalue()
+        except Exception:
+            return None
+
+    def _decode_image_payload(
+        self,
+        data: bytes,
+        image_format: Optional[str] = None,
+        width: Optional[int] = None,
+        height: Optional[int] = None,
+        color_space: Optional[str] = None,
+        bits_per_component: Optional[int] = None,
+    ) -> Tuple[Optional[bytes], Optional[str]]:
+        if not data:
+            return None, None
+
+        detected_ext = self._detect_image_ext_from_bytes(data)
+        if detected_ext:
+            return data, detected_ext
+
+        fmt_ext = self._image_ext_from_format(image_format)
+        if fmt_ext and fmt_ext != "flate":
+            # Not all formats have strong magic bytes, trust declared format.
+            return data, fmt_ext
+
+        # Handle raw PDF FlateDecode streams.
+        try:
+            inflated = zlib.decompress(data)
+        except Exception:
+            return None, None
+
+        inflated_ext = self._detect_image_ext_from_bytes(inflated)
+        if inflated_ext:
+            return inflated, inflated_ext
+
+        png_bytes = self._raw_raster_to_png(
+            inflated,
+            width=width,
+            height=height,
+            color_space=color_space,
+            bits_per_component=bits_per_component,
+        )
+        if png_bytes:
+            return png_bytes, "png"
+
+        return None, None
+
     def _images_to_blocks(
-        self, images: Any, output_dir: Optional[Path]
+        self,
+        images: Any,
+        output_dir: Optional[Path],
+        default_page_idx: int = 0,
     ) -> List[Dict[str, Any]]:
         blocks: List[Dict[str, Any]] = []
         if not images:
             return blocks
         if output_dir is None:
             return blocks
-        output_dir.mkdir(parents=True, exist_ok=True)
+        images_output_dir = output_dir / "images"
+        images_output_dir.mkdir(parents=True, exist_ok=True)
+
+        def _to_int(value: Any) -> Optional[int]:
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except Exception:
+                return None
+
+        def _parse_dims_from_text(value: Any) -> Tuple[Optional[int], Optional[int]]:
+            if value is None:
+                return None, None
+            match = re.search(r"(\d+)\s*[xX]\s*(\d+)", str(value))
+            if not match:
+                return None, None
+            return _to_int(match.group(1)), _to_int(match.group(2))
 
         for idx, img in enumerate(images):
             img_path = None
+            page_num = None
+            image_format = None
+            width = None
+            height = None
+            color_space = None
+            bits_per_component = None
             if isinstance(img, dict):
-                img_path = img.get("path") or img.get("file_path")
-                data = img.get("data") or img.get("bytes")
+                metadata = img.get("metadata", {}) if isinstance(img.get("metadata"), dict) else {}
+                img_path = (
+                    img.get("path")
+                    or img.get("file_path")
+                    or img.get("filePath")
+                    or metadata.get("path")
+                    or metadata.get("file_path")
+                    or metadata.get("filePath")
+                )
+                data = (
+                    img.get("data")
+                    or img.get("bytes")
+                    or img.get("image_data")
+                    or img.get("imageData")
+                    or metadata.get("data")
+                    or metadata.get("bytes")
+                    or metadata.get("image_data")
+                    or metadata.get("imageData")
+                )
+                page_num = (
+                    img.get("page_number")
+                    or img.get("pageNumber")
+                    or img.get("page")
+                    or metadata.get("page_number")
+                    or metadata.get("pageNumber")
+                    or metadata.get("page")
+                )
+                image_format = (
+                    img.get("format")
+                    or img.get("image_format")
+                    or img.get("imageFormat")
+                    or metadata.get("format")
+                    or metadata.get("image_format")
+                    or metadata.get("imageFormat")
+                )
+                width = (
+                    img.get("width")
+                    or img.get("image_width")
+                    or img.get("imageWidth")
+                    or metadata.get("width")
+                    or metadata.get("image_width")
+                    or metadata.get("imageWidth")
+                )
+                height = (
+                    img.get("height")
+                    or img.get("image_height")
+                    or img.get("imageHeight")
+                    or metadata.get("height")
+                    or metadata.get("image_height")
+                    or metadata.get("imageHeight")
+                )
+                color_space = (
+                    img.get("color_space")
+                    or img.get("colorspace")
+                    or img.get("colorSpace")
+                    or metadata.get("color_space")
+                    or metadata.get("colorspace")
+                    or metadata.get("colorSpace")
+                )
+                bits_per_component = (
+                    img.get("bits_per_component")
+                    or img.get("bitsPerComponent")
+                    or img.get("bpc")
+                    or metadata.get("bits_per_component")
+                    or metadata.get("bitsPerComponent")
+                    or metadata.get("bpc")
+                )
+                size = img.get("size") or metadata.get("size")
+                if isinstance(size, dict):
+                    width = width or size.get("width")
+                    height = height or size.get("height")
+                dimensions = img.get("dimensions") or metadata.get("dimensions")
+                if isinstance(dimensions, (list, tuple)) and len(dimensions) >= 2:
+                    width = width or dimensions[0]
+                    height = height or dimensions[1]
             else:
-                img_path = getattr(img, "path", None) or getattr(img, "file_path", None)
-                data = getattr(img, "data", None) or getattr(img, "bytes", None)
+                metadata = getattr(img, "metadata", None)
+                img_path = (
+                    getattr(img, "path", None)
+                    or getattr(img, "file_path", None)
+                    or getattr(img, "filePath", None)
+                    or getattr(metadata, "path", None)
+                    or getattr(metadata, "file_path", None)
+                    or getattr(metadata, "filePath", None)
+                )
+                data = (
+                    getattr(img, "data", None)
+                    or getattr(img, "bytes", None)
+                    or getattr(img, "image_data", None)
+                    or getattr(img, "imageData", None)
+                    or getattr(metadata, "data", None)
+                    or getattr(metadata, "bytes", None)
+                    or getattr(metadata, "image_data", None)
+                    or getattr(metadata, "imageData", None)
+                )
+                page_num = (
+                    getattr(img, "page_number", None)
+                    or getattr(img, "pageNumber", None)
+                    or getattr(img, "page", None)
+                    or getattr(metadata, "page_number", None)
+                    or getattr(metadata, "pageNumber", None)
+                    or getattr(metadata, "page", None)
+                )
+                image_format = (
+                    getattr(img, "format", None)
+                    or getattr(img, "image_format", None)
+                    or getattr(img, "imageFormat", None)
+                    or getattr(metadata, "format", None)
+                    or getattr(metadata, "image_format", None)
+                    or getattr(metadata, "imageFormat", None)
+                )
+                width = (
+                    getattr(img, "width", None)
+                    or getattr(img, "image_width", None)
+                    or getattr(img, "imageWidth", None)
+                    or getattr(metadata, "width", None)
+                    or getattr(metadata, "image_width", None)
+                    or getattr(metadata, "imageWidth", None)
+                )
+                height = (
+                    getattr(img, "height", None)
+                    or getattr(img, "image_height", None)
+                    or getattr(img, "imageHeight", None)
+                    or getattr(metadata, "height", None)
+                    or getattr(metadata, "image_height", None)
+                    or getattr(metadata, "imageHeight", None)
+                )
+                color_space = (
+                    getattr(img, "color_space", None)
+                    or getattr(img, "colorspace", None)
+                    or getattr(img, "colorSpace", None)
+                    or getattr(metadata, "color_space", None)
+                    or getattr(metadata, "colorspace", None)
+                    or getattr(metadata, "colorSpace", None)
+                )
+                bits_per_component = (
+                    getattr(img, "bits_per_component", None)
+                    or getattr(img, "bitsPerComponent", None)
+                    or getattr(img, "bpc", None)
+                    or getattr(metadata, "bits_per_component", None)
+                    or getattr(metadata, "bitsPerComponent", None)
+                    or getattr(metadata, "bpc", None)
+                )
+                size = getattr(img, "size", None) or getattr(metadata, "size", None)
+                if isinstance(size, dict):
+                    width = width or size.get("width")
+                    height = height or size.get("height")
+                dimensions = getattr(img, "dimensions", None) or getattr(metadata, "dimensions", None)
+                if isinstance(dimensions, (list, tuple)) and len(dimensions) >= 2:
+                    width = width or dimensions[0]
+                    height = height or dimensions[1]
+
+            width_int = _to_int(width)
+            height_int = _to_int(height)
+            if width_int is None or height_int is None:
+                parsed_w, parsed_h = _parse_dims_from_text(image_format)
+                width_int = width_int or parsed_w
+                height_int = height_int or parsed_h
+
+            page_idx = (
+                max(int(page_num) - 1, 0) if page_num is not None else default_page_idx
+            )
 
             if img_path and os.path.exists(img_path):
-                blocks.append(
-                    {
-                        "type": "image",
-                        "img_path": str(Path(img_path).resolve()),
-                        "image_caption": [],
-                        "image_footnote": [],
-                        "page_idx": 0,
-                    }
-                )
-                continue
-
-            if data:
-                out_path = output_dir / f"image_{idx}.png"
+                src = Path(img_path)
+                suffix = src.suffix.lower().lstrip(".")
+                digest = hashlib.md5(str(src.resolve()).encode("utf-8")).hexdigest()[:12]
+                ext = suffix if suffix else (self._image_ext_from_format(image_format) or "bin")
+                out_path = images_output_dir / f"p{page_idx + 1}_{idx}_{digest}.{ext}"
                 try:
-                    with open(out_path, "wb") as f:
-                        f.write(data)
+                    if src.resolve() != out_path.resolve():
+                        shutil.copy2(src, out_path)
+                    else:
+                        out_path = src
                     blocks.append(
                         {
                             "type": "image",
                             "img_path": str(out_path.resolve()),
                             "image_caption": [],
                             "image_footnote": [],
-                            "page_idx": 0,
+                            "page_idx": page_idx,
+                        }
+                    )
+                except Exception:
+                    pass
+                continue
+
+            if data:
+                try:
+                    raw_data = self._coerce_to_bytes(data)
+                    if raw_data is None:
+                        continue
+                    decoded_bytes, ext = self._decode_image_payload(
+                        raw_data,
+                        image_format=str(image_format) if image_format is not None else None,
+                        width=width_int,
+                        height=height_int,
+                        color_space=str(color_space) if color_space is not None else None,
+                        bits_per_component=_to_int(bits_per_component),
+                    )
+                    if decoded_bytes is None:
+                        logging.debug(
+                            "KreuzbergParser: unable to decode image payload "
+                            f"(format={image_format}, width={width}, height={height})"
+                        )
+                        continue
+                    ext = ext or "bin"
+                    digest = hashlib.md5(decoded_bytes).hexdigest()[:12]
+                    out_path = images_output_dir / f"p{page_idx + 1}_{idx}_{digest}.{ext}"
+                    with open(out_path, "wb") as f:
+                        f.write(decoded_bytes)
+                    blocks.append(
+                        {
+                            "type": "image",
+                            "img_path": str(out_path.resolve()),
+                            "image_caption": [],
+                            "image_footnote": [],
+                            "page_idx": page_idx,
                         }
                     )
                 except Exception:
@@ -1832,6 +2465,113 @@ class KreuzbergParser(Parser):
         self, result: Any, output_dir: Optional[Path]
     ) -> List[Dict[str, Any]]:
         content_list: List[Dict[str, Any]] = []
+        seen_image_keys = set()
+        seen_table_keys = set()
+        seen_text_keys = set()
+
+        def _get(obj: Any, *keys: str) -> Any:
+            for key in keys:
+                if isinstance(obj, dict) and key in obj:
+                    return obj.get(key)
+                value = getattr(obj, key, None)
+                if value is not None:
+                    return value
+            return None
+
+        def _append_text(text: Any, page_idx: int):
+            if text is None:
+                return
+            for block in _split_text_blocks(str(text)):
+                normalized = block.strip()
+                if not normalized:
+                    continue
+                key = (page_idx, normalized)
+                if key in seen_text_keys:
+                    continue
+                seen_text_keys.add(key)
+                content_list.append(
+                    {"type": "text", "text": normalized, "page_idx": page_idx}
+                )
+
+        def _append_tables(tables: Any):
+            if not tables:
+                return
+            for block in self._tables_to_blocks(tables):
+                key = (block.get("page_idx", 0), str(block.get("table_body", "")))
+                if key in seen_table_keys:
+                    continue
+                seen_table_keys.add(key)
+                content_list.append(block)
+
+        def _append_images(images: Any, page_idx: int = 0):
+            if not images:
+                return
+            for block in self._images_to_blocks(
+                images, output_dir=output_dir, default_page_idx=page_idx
+            ):
+                img_path = block.get("img_path", "")
+                key = img_path or f"page-{block.get('page_idx', 0)}-{len(seen_image_keys)}"
+                if key in seen_image_keys:
+                    continue
+                seen_image_keys.add(key)
+                content_list.append(block)
+
+        def _append_elements(elements: Any, include_text_fallback: bool):
+            if not elements:
+                return
+            for element in elements:
+                raw_type = _get(element, "type", "element_type", "elementType", "category")
+                element_type = self._normalize_kreuzberg_type(raw_type)
+                page_num = _get(element, "page_number", "pageNumber", "page")
+                if page_num is None:
+                    metadata = _get(element, "metadata")
+                    page_num = _get(metadata, "page_number", "pageNumber", "page")
+                page_idx = max(int(page_num) - 1, 0) if page_num else 0
+
+                # Table-like elements
+                if "table" in element_type:
+                    table_body = (
+                        _get(element, "markdown", "html", "content", "text")
+                        or _get(element, "cells", "data")
+                        or ""
+                    )
+                    _append_tables(
+                        [
+                            {
+                                "markdown": table_body if isinstance(table_body, str) else "",
+                                "cells": table_body if not isinstance(table_body, str) else None,
+                                "page_number": (page_idx + 1),
+                            }
+                        ]
+                    )
+                    continue
+
+                # Image-like elements
+                if any(token in element_type for token in ["image", "figure", "picture"]):
+                    before = len(content_list)
+                    _append_images([element], page_idx=page_idx)
+                    if len(content_list) > before:
+                        continue
+
+                # Skip structural markers (e.g. page breaks) from element streams.
+                if element_type in {
+                    "page_break",
+                    "pagebreak",
+                    "line_break",
+                    "linebreak",
+                    "separator",
+                }:
+                    continue
+
+                if not include_text_fallback:
+                    continue
+
+                # Generic textual element fallback
+                text = (
+                    _get(element, "content", "text", "markdown", "html", "value")
+                    or ""
+                )
+                _append_text(text, page_idx=page_idx)
 
         pages = getattr(result, "pages", None) or (
             result.get("pages") if isinstance(result, dict) else None
@@ -1848,39 +2588,43 @@ class KreuzbergParser(Parser):
                     or (page.get("content") if isinstance(page, dict) else None)
                     or ""
                 )
-                for block in _split_text_blocks(page_text):
-                    content_list.append(
-                        {"type": "text", "text": block, "page_idx": page_idx}
-                    )
+                _append_text(page_text, page_idx=page_idx)
 
                 page_tables = (
                     getattr(page, "tables", None)
                     or (page.get("tables") if isinstance(page, dict) else None)
                     or []
                 )
-                content_list.extend(self._tables_to_blocks(page_tables))
+                _append_tables(page_tables)
 
                 page_images = (
                     getattr(page, "images", None)
                     or (page.get("images") if isinstance(page, dict) else None)
                     or []
                 )
-                content_list.extend(self._images_to_blocks(page_images, output_dir))
+                _append_images(page_images, page_idx=page_idx)
+
+        elements = _get(result, "elements")
+        # If page-level text is available, avoid duplicating it from element stream.
+        _append_elements(elements, include_text_fallback=not bool(pages))
+
+        # Also merge top-level modalities because some Kreuzberg outputs expose
+        # images/tables at root even when pages are present.
+        tables = _get(result, "tables")
+        _append_tables(tables)
+
+        images = _get(result, "images")
+        _append_images(images, page_idx=0)
+
+        if content_list:
             return content_list
 
-        # Fallback: use whole-document content + tables
+        # Fallback: use whole-document text if page-level structure is unavailable.
         doc_text = (
-            getattr(result, "content", None)
-            or (result.get("content") if isinstance(result, dict) else None)
+            _get(result, "content", "markdown", "text")
             or ""
         )
-        for block in _split_text_blocks(doc_text):
-            content_list.append({"type": "text", "text": block, "page_idx": 0})
-
-        tables = getattr(result, "tables", None) or (
-            result.get("tables") if isinstance(result, dict) else None
-        )
-        content_list.extend(self._tables_to_blocks(tables))
+        _append_text(doc_text, page_idx=0)
         return content_list
 
     def parse_document(
