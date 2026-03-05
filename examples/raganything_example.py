@@ -215,8 +215,10 @@ async def process_with_rag(
 
         # 1. Pure text queries using aquery()
         text_queries = [
-            "What is the main content of the document?",
-            "What are the key topics discussed?",
+            "DocBench Accuracy相关的图第一次在哪里出现？",
+            "第100页讲了什么？",
+            "只根据第8页回答：DocBench Accuracy 的趋势是什么？",
+            "第8页主要讨论了什么，而不是整篇论文。",
         ]
 
         for query in text_queries:
@@ -271,7 +273,7 @@ def main():
     parser = argparse.ArgumentParser(description="MinerU RAG Example")
     parser.add_argument("file_path", help="Path to the document to process")
     parser.add_argument(
-        "--working_dir", "-w", default="./rag_storage", help="Working directory path"
+        "--working_dir", "-w", default=os.getenv("WORKING_DIR", "./rag_storage"), help="Working directory path"
     )
     parser.add_argument(
         "--output", "-o", default="./output", help="Output directory path"

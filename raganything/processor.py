@@ -8,25 +8,19 @@ import os
 import time
 import hashlib
 import json
-import inspect
-import numpy as np
-import re
 from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 
 from raganything.base import DocStatus
 from raganything.parser import MineruParser, DoclingParser, MineruExecutionError
-from raganything.prompt import PROMPTS
 from raganything.utils import (
     separate_content,
     insert_text_content,
     insert_text_content_with_multimodal_content,
     get_processor_for_type,
-    encode_image_to_base64,
 )
 import asyncio
 from lightrag.utils import compute_mdhash_id
-from lightrag.constants import GRAPH_FIELD_SEP
 
 
 class ProcessorMixin:
@@ -136,519 +130,6 @@ class ProcessorMixin:
 
         return doc_id
 
-    async def _call_llm_model(
-        self, prompt: str, system_prompt: str | None = None
-    ) -> str:
-        """Safely call llm_model_func regardless of sync/async signature."""
-        if not hasattr(self, "llm_model_func") or self.llm_model_func is None:
-            raise RuntimeError("llm_model_func is required for LLM-based extraction")
-
-        fn = self.llm_model_func
-
-        print("Calling LLM model function...")
-
-        # Some callables do not accept history_messages, so try graceful fallbacks
-        async def _invoke(with_history: bool):
-            if inspect.iscoroutinefunction(fn):
-                if with_history:
-                    return await fn(
-                        prompt,
-                        system_prompt=system_prompt,
-                        history_messages=[],
-                    )
-                return await fn(prompt, system_prompt=system_prompt)
-
-            result = (
-                fn(
-                    prompt,
-                    system_prompt=system_prompt,
-                    history_messages=[],
-                )
-                if with_history
-                else fn(prompt, system_prompt=system_prompt)
-            )
-
-            if asyncio.iscoroutine(result):
-                return await result
-            return result
-
-        try:
-            return await _invoke(with_history=True)
-        except TypeError:
-            return await _invoke(with_history=False)
-
-    def _parse_page_topic_response(self, response: str, fallback_topic: str) -> str:
-        """Parse LLM response and extract topic text."""
-        if not response:
-            return fallback_topic
-
-        cleaned = str(response).strip()
-        json_candidate = cleaned
-
-        # Try direct JSON parse
-        parsed = None
-        try:
-            parsed = json.loads(json_candidate)
-        except json.JSONDecodeError:
-            start = cleaned.find("{")
-            end = cleaned.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                try:
-                    parsed = json.loads(cleaned[start : end + 1])
-                except Exception:
-                    parsed = None
-
-        if isinstance(parsed, dict):
-            topic_value = parsed.get("topic") or parsed.get("title") or parsed.get(
-                "entity"
-            )
-            if isinstance(topic_value, str) and topic_value.strip():
-                return topic_value.strip()
-
-        first_line = cleaned.splitlines()[0].strip()
-        return first_line if first_line else fallback_topic
-
-    async def _call_vision_model(
-        self, prompt: str, system_prompt: str | None, image_data: str
-    ) -> str:
-        """Safely call vision_model_func if available."""
-        fn = getattr(self, "vision_model_func", None)
-        if fn is None:
-            raise RuntimeError("vision_model_func is required for image understanding")
-
-        if inspect.iscoroutinefunction(fn):
-            return await fn(
-                prompt,
-                system_prompt=system_prompt,
-                image_data=image_data,
-            )
-
-        result = fn(
-            prompt,
-            system_prompt=system_prompt,
-            image_data=image_data,
-        )
-        if asyncio.iscoroutine(result):
-            return await result
-        return result
-
-    async def _describe_image_for_topic(
-        self, image_item: Dict[str, Any], page_context: str
-    ) -> str:
-        """Generate a short description for an image using the vision model with page context."""
-        if not isinstance(image_item, dict):
-            return ""
-
-        img_path = image_item.get("img_path")
-        if not img_path:
-            return ""
-
-        image_b64 = encode_image_to_base64(img_path)
-        if not image_b64:
-            return ""
-
-        ctx = (page_context or "").strip()
-        ctx_snippet = ctx[:500]  # keep prompt compact
-
-        prompt = (
-            "请结合下方页面文字上下文，用一句中文短句概括这张幻灯片图片的主要内容，输出纯文本。\n"
-            f"上下文：{ctx_snippet}"
-        )
-
-        try:
-            response = await self._call_vision_model(
-                prompt,
-                system_prompt=PROMPTS.get("IMAGE_ANALYSIS_SYSTEM"),
-                image_data=image_b64,
-            )
-            return str(response).strip()
-        except Exception as e:
-            self.logger.debug(
-                f"Vision model description failed for image {img_path}: {e}"
-            )
-            return ""
-
-    async def extract_page_topics(
-        self,
-        content_list: List[Dict[str, Any]],
-        use_llm: bool = True,
-        max_chars: int = 2000,
-    ) -> Dict[int, str]:
-        """
-        Extract one topic per page from parsed content_list.
-
-        Headers are used directly. If no header exists, the function optionally
-        calls llm_model_func with a concise prompt to infer a topic from page text
-        and image captions. When LLM is unavailable or disabled, it falls back to
-        a simple heuristic using the first text line on the page.
-        """
-
-        if not content_list:
-            return {}
-
-        page_buckets: Dict[int, List[Dict[str, Any]]] = {}
-        for item in content_list:
-            if not isinstance(item, dict):
-                continue
-            page_idx = item.get("page_idx")
-            if page_idx is None:
-                continue
-            try:
-                page_key = int(page_idx)
-            except (ValueError, TypeError):
-                continue
-            page_buckets.setdefault(page_key, []).append(item)
-
-        page_topics: Dict[int, str] = {}
-
-        for page_idx in sorted(page_buckets.keys()):
-            items = page_buckets[page_idx]
-            '''
-            header_candidates = [
-                i.get("text", "").strip()
-                for i in items
-                if i.get("type") == "header"
-                and isinstance(i.get("text"), str)
-                and i.get("text").strip()
-            ]
-            if header_candidates:
-                page_topics[page_idx] = header_candidates[0]
-                continue
-            '''
-
-            # First pass: collect page text context (text + list[text])
-            text_parts: List[str] = []
-            for i in items:
-                if i.get("type") == "text" and isinstance(i.get("text"), str):
-                    text_parts.append(i["text"].strip())
-                elif i.get("type") == "list" and i.get("sub_type") == "text":
-                    li = i.get("list_items", [])
-                    if isinstance(li, list) and li:
-                        # 连接列表项为上下文文本
-                        joined = "\n".join([s.strip() for s in li if isinstance(s, str)])
-                        if joined:
-                            text_parts.append(joined)
-
-            page_context = "\n".join([p for p in text_parts if p])
-            #print(f"Page {page_idx} context text: {page_context}")
-
-            # Second pass: handle images with context-aware description
-            image_parts: List[str] = []
-            for i in items:
-                if i.get("type") == "image":
-                    image_desc = await self._describe_image_for_topic(i, page_context)
-                    if image_desc:
-                        image_parts.append(f"Image: {image_desc}")
-
-                    captions = i.get("image_caption") or i.get("img_caption") or []
-                    footnotes = i.get("image_footnote") or []
-
-                    if isinstance(captions, list):
-                        captions = " ".join(
-                            [c.strip() for c in captions if isinstance(c, str)]
-                        )
-                    if isinstance(footnotes, list):
-                        footnotes = " ".join(
-                            [f.strip() for f in footnotes if isinstance(f, str)]
-                        )
-
-                    if isinstance(captions, str) and captions.strip():
-                        image_parts.append(f"Caption: {captions.strip()}")
-                    if isinstance(footnotes, str) and footnotes.strip():
-                        image_parts.append(f"Footnotes: {footnotes.strip()}")
-
-            page_text = "\n".join([p for p in text_parts + image_parts if p])
-
-            fallback_topic = "Page_{0}".format(page_idx)
-            if text_parts:
-                first_line = text_parts[0].splitlines()[0].strip()
-                if first_line:
-                    fallback_topic = (
-                        first_line if len(first_line) <= 80 else first_line[:77] + "..."
-                    )
-
-            if not page_text.strip():
-                page_topics[page_idx] = fallback_topic
-                continue
-
-            if not use_llm or not hasattr(self, "llm_model_func") or self.llm_model_func is None:
-                page_topics[page_idx] = fallback_topic
-                continue
-
-            truncated_text = page_text[:max_chars]
-            prompt = PROMPTS["PAGE_TOPIC_PROMPT"].format(
-                page_idx=page_idx,
-                page_content=truncated_text,
-                fallback_topic=fallback_topic,
-            )
-
-            try:
-                response = await self._call_llm_model(
-                    prompt, system_prompt=PROMPTS["PAGE_TOPIC_SYSTEM"]
-                )
-                topic = self._parse_page_topic_response(response, fallback_topic)
-                page_topics[page_idx] = topic
-            except Exception as e:
-                self.logger.warning(
-                    f"Failed to extract page topic for page {page_idx}: {e}"
-                )
-                page_topics[page_idx] = fallback_topic
-
-        self._page_topics_dict = page_topics
-        return page_topics
-
-
-    async def build_page_topic_relations(
-        self,
-        page_topics: Dict[int, str],
-        cosine_threshold: float = 0.82,
-        file_path: str = "page_topics",
-        merge_case_insensitive: bool = True,
-    ) -> None:
-        """
-        Build relations among page topic entities and store them in LightRAG KG.
-
-        Steps:
-        1) Merge identical topics (case-insensitive by default)
-        2) Compute pairwise cosine similarity on topic embeddings
-        3) If similarity >= threshold, create relation edge
-        """
-
-        if not page_topics:
-            return
-
-        init_result = await self._ensure_lightrag_initialized()
-        if isinstance(init_result, dict) and not init_result.get("success", True):
-            raise RuntimeError(
-                f"LightRAG 初始化失败: {init_result.get('error', 'unknown error')}"
-            )
-
-        def _normalize_topic(text: str) -> str:
-            normalized = text.strip()
-            if merge_case_insensitive:
-                normalized = normalized.lower()
-            # remove common bullets and extra spaces
-            normalized = normalized.replace("•", " ").replace("◼", " ")
-            normalized = " ".join(normalized.split())
-            return normalized
-
-        # Merge identical topics
-        merged: Dict[str, Dict[str, Any]] = {}
-        for page_idx, topic in page_topics.items():
-            if not isinstance(topic, str) or not topic.strip():
-                continue
-            norm = _normalize_topic(topic)
-            if not norm:
-                continue
-            if norm not in merged:
-                merged[norm] = {
-                    "topic": topic.strip(),
-                    "pages": [int(page_idx)],
-                }
-            else:
-                merged[norm]["pages"].append(int(page_idx))
-
-        topics = [item["topic"] for item in merged.values()]
-        if len(topics) < 2:
-            # still ensure nodes are stored
-            for item in merged.values():
-                node_data = {
-                    "entity_id": item["topic"],
-                    "entity_type": "page_topic",
-                    "description": f"Page topic merged from pages: {sorted(item['pages'])}",
-                    "source_id": "page_topic_dict",
-                    "file_path": file_path,
-                    "pages": ",".join(str(p) for p in sorted(item["pages"])),
-                    "created_at": int(time.time()),
-                }
-                await self.lightrag.chunk_entity_relation_graph.upsert_node(
-                    item["topic"], node_data=node_data
-                )
-            return
-
-        # Compute embeddings
-        embeddings = await self.embedding_func(topics)
-        if embeddings.ndim == 1:
-            embeddings = embeddings.reshape(1, -1)
-
-        # Normalize embeddings
-        norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
-        norms[norms == 0] = 1e-8
-        normed = embeddings / norms
-
-        # Store nodes
-        for item in merged.values():
-            node_data = {
-                "entity_id": item["topic"],
-                "entity_type": "page_topic",
-                "description": f"Page topic merged from pages: {sorted(item['pages'])}",
-                "source_id": "page_topic_dict",
-                "file_path": file_path,
-                "pages": ",".join(str(p) for p in sorted(item["pages"])),
-                "created_at": int(time.time()),
-            }
-            await self.lightrag.chunk_entity_relation_graph.upsert_node(
-                item["topic"], node_data=node_data
-            )
-
-        # Create edges based on cosine similarity
-        topic_list = [item["topic"] for item in merged.values()]
-        n = len(topic_list)
-        for i in range(n):
-            for j in range(i + 1, n):
-                sim = float(np.dot(normed[i], normed[j]))
-                if sim >= cosine_threshold:
-                    src = topic_list[i]
-                    tgt = topic_list[j]
-                    edge_data = {
-                        "weight": sim,
-                        "description": f"Topic similarity (cosine={sim:.4f}) between '{src}' and '{tgt}'",
-                        "keywords": "related_to,cosine_sim",
-                        "source_id": "page_topic_relation",
-                        "file_path": file_path,
-                        "created_at": int(time.time()),
-                    }
-                    await self.lightrag.chunk_entity_relation_graph.upsert_edge(
-                        src, tgt, edge_data=edge_data
-                    )
-
-    async def build_page_entity_topic_relations_text_only(self) -> None:
-        """
-        Build relations between page entities and page topic entities (text-only).
-
-        Requirements:
-        - No input arguments
-        - Uses cached page_topics dict and latest parsed content
-        - Inserts page-separated text into LightRAG for chunking
-        - Maps entity source_id(chunk_id) to page_idx, then links to page topic
-        """
-
-        if not hasattr(self, "_page_topics_dict") or not self._page_topics_dict:
-            raise RuntimeError("未找到页主题字典，请先调用 extract_page_topics")
-
-        if not hasattr(self, "_latest_content_list") or not self._latest_content_list:
-            raise RuntimeError("未找到解析内容，请先调用 parse_document")
-
-        init_result = await self._ensure_lightrag_initialized()
-        if isinstance(init_result, dict) and not init_result.get("success", True):
-            raise RuntimeError(
-                f"LightRAG 初始化失败: {init_result.get('error', 'unknown error')}"
-            )
-
-        _, _, page_texts = separate_content(
-            self._latest_content_list, return_page_texts=True
-        )
-        if not page_texts:
-            self.logger.warning("没有可用的纯文本页内容，跳过页实体关系构建")
-            return
-
-        page_marker_re = re.compile(r"<<PAGE:(\d+)>>")
-        separator = "\n<<<PAGE_BREAK>>>\n"
-
-        page_chunks: List[str] = []
-        for page_idx in sorted(page_texts.keys()):
-            page_text = page_texts[page_idx].strip()
-            if not page_text:
-                continue
-            page_chunks.append(f"<<PAGE:{page_idx}>>\n{page_text}")
-
-        if not page_chunks:
-            self.logger.warning("分页文本为空，跳过页实体关系构建")
-            return
-
-        full_text = separator.join(page_chunks)
-        base_doc_id = getattr(self, "_latest_doc_id", None)
-        doc_id = (
-            f"{base_doc_id}-page-text" if base_doc_id else compute_mdhash_id(full_text, prefix="doc-page-")
-        )
-
-        file_ref = getattr(self, "_latest_file_path", None)
-        if file_ref:
-            file_ref = self._get_file_reference(file_ref)
-        else:
-            file_ref = "page_text_only"
-
-        await insert_text_content(
-            self.lightrag,
-            input=full_text,
-            split_by_character=separator,
-            split_by_character_only=True,
-            ids=doc_id,
-            file_paths=file_ref,
-        )
-
-        doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
-        if not doc_status:
-            raise RuntimeError("无法获取 doc_status，请确认文本已成功插入")
-
-        chunk_ids = doc_status.get("chunks_list", [])
-        if not chunk_ids:
-            raise RuntimeError("doc_status 中没有 chunks_list，无法建立页映射")
-
-        chunk_to_page: Dict[str, int] = {}
-        for chunk_id in chunk_ids:
-            chunk = await self.lightrag.text_chunks.get_by_id(chunk_id)
-            if not chunk:
-                continue
-            content = chunk.get("content", "")
-            match = page_marker_re.search(content)
-            if match:
-                chunk_to_page[chunk_id] = int(match.group(1))
-
-        if not chunk_to_page:
-            raise RuntimeError("未从 chunk 内容中解析到页号标记")
-
-        # Build relations: entity -> page_topic
-        nodes = await self.lightrag.chunk_entity_relation_graph.get_all_nodes()
-        for node in nodes:
-            entity_type = node.get("entity_type")
-            if entity_type == "page_topic":
-                continue
-
-            node_id = node.get("id") or node.get("entity_id") or node.get("entity_name")
-            if not node_id:
-                continue
-
-            source_id = str(node.get("source_id", ""))
-            if not source_id:
-                continue
-
-            source_chunk_ids = [cid for cid in source_id.split(GRAPH_FIELD_SEP) if cid]
-            for cid in source_chunk_ids:
-                if cid not in chunk_to_page:
-                    continue
-
-                page_idx = chunk_to_page[cid]
-                page_topic = self._page_topics_dict.get(page_idx)
-                if not page_topic:
-                    continue
-
-                if not await self.lightrag.chunk_entity_relation_graph.has_node(page_topic):
-                    await self.lightrag.chunk_entity_relation_graph.upsert_node(
-                        page_topic,
-                        node_data={
-                            "entity_id": page_topic,
-                            "entity_type": "page_topic",
-                            "description": f"Page topic for page {page_idx}",
-                            "source_id": "page_topic_dict",
-                            "file_path": file_ref,
-                            "pages": str(page_idx),
-                            "created_at": int(time.time()),
-                        },
-                    )
-
-                edge_data = {
-                    "weight": 1.0,
-                    "description": f"Entity {node_id} belongs to page topic {page_topic}",
-                    "keywords": "belongs_to,page_topic",
-                    "source_id": cid,
-                    "file_path": file_ref,
-                    "created_at": int(time.time()),
-                }
-                await self.lightrag.chunk_entity_relation_graph.upsert_edge(
-                    node_id, page_topic, edge_data=edge_data
-                )
-    
     async def _get_cached_result(
         self, cache_key: str, file_path: Path, parse_method: str = None, **kwargs
     ) -> tuple[List[Dict[str, Any]], str] | None:
@@ -951,11 +432,6 @@ class ProcessorMixin:
         await self._store_cached_result(
             cache_key, content_list, doc_id, file_path, parse_method, **kwargs
         )
-
-        # Cache latest parse for downstream page-entity linking
-        self._latest_content_list = content_list
-        self._latest_doc_id = doc_id
-        self._latest_file_path = str(file_path)
 
         # Display content statistics if requested
         if display_stats:
@@ -1466,6 +942,9 @@ class ProcessorMixin:
         from raganything.prompt import PROMPTS
 
         try:
+            # page_idx 存储是 0-based，转成 1-based 与用户认知的页码对齐
+            page_idx = int(original_item.get("page_idx", 0)) + 1
+
             if content_type == "image":
                 image_path = original_item.get("img_path", "")
                 captions = original_item.get(
@@ -1476,6 +955,7 @@ class ProcessorMixin:
                 )
 
                 return PROMPTS["image_chunk"].format(
+                    page_idx=page_idx,
                     image_path=image_path,
                     captions=", ".join(captions) if captions else "None",
                     footnotes=", ".join(footnotes) if footnotes else "None",
@@ -1489,6 +969,7 @@ class ProcessorMixin:
                 table_footnote = original_item.get("table_footnote", [])
 
                 return PROMPTS["table_chunk"].format(
+                    page_idx=page_idx,
                     table_img_path=table_img_path,
                     table_caption=", ".join(table_caption) if table_caption else "None",
                     table_body=table_body,
@@ -1503,6 +984,7 @@ class ProcessorMixin:
                 equation_format = original_item.get("text_format", "")
 
                 return PROMPTS["equation_chunk"].format(
+                    page_idx=page_idx,
                     equation_text=equation_text,
                     equation_format=equation_format,
                     enhanced_caption=description,
@@ -1512,6 +994,7 @@ class ProcessorMixin:
                 content = str(original_item.get("content", original_item))
 
                 return PROMPTS["generic_chunk"].format(
+                    page_idx=page_idx,
                     content_type=content_type.title(),
                     content=content,
                     enhanced_caption=description,
@@ -2005,7 +1488,6 @@ class ProcessorMixin:
             file_path, output_dir, parse_method, display_stats, **kwargs
         )
 
-        print(f"Parsed content list: {content_list}")
         # Use provided doc_id or fall back to content-based doc_id
         if doc_id is None:
             doc_id = content_based_doc_id
