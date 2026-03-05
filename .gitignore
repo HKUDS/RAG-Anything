@@ -67,6 +67,7 @@ download_models_hf.py
 lightrag-dev/
 gui/
 tiktoken_cache/
+uv.lock
 
 # unit-test files
 test_*

@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  raganything-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # LLM Configuration
+      - LLM_BINDING_HOST=${LLM_BINDING_HOST:-http://host.docker.internal:1234/v1}
+      - LLM_BINDING_API_KEY=${LLM_BINDING_API_KEY:-lm-studio}
+      - LLM_MODEL=${LLM_MODEL:-openai/gpt-oss-20b}
+      # Embedding Configuration
+      - EMBEDDING_BINDING_HOST=${EMBEDDING_BINDING_HOST:-http://host.docker.internal:1234/v1}
+      - EMBEDDING_BINDING_API_KEY=${EMBEDDING_BINDING_API_KEY:-lm-studio}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-embeddinggemma-300m}
+      - EMBEDDING_DIM=${EMBEDDING_DIM:-768}
+      - MAX_EMBED_TOKENS=${MAX_EMBED_TOKENS:-8192}
+      # RAG Configuration
+      - WORKING_DIR=${WORKING_DIR:-./rag_storage}
+      - PARSER=${PARSER:-mineru}
+      - PARSE_METHOD=${PARSE_METHOD:-auto}
+      # Concurrency
+      - LLM_MAX_CONCURRENCY=${LLM_MAX_CONCURRENCY:-4}
+      - LLM_REQUEST_TIMEOUT=${LLM_REQUEST_TIMEOUT:-120}
+    volumes:
+      - ./rag_storage:/app/rag_storage
+      - ./inputs:/app/inputs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
+
+volumes:
+  rag_storage:
+    driver: local
+  inputs:
+    driver: local

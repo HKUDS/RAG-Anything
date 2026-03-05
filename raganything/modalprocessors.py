@@ -696,6 +696,56 @@ class BaseModalProcessor:
         """Legacy method - now handled by progressive strategies"""
         return self._progressive_quote_fix(json_str)
 
+    def _convert_to_lightrag_format(
+        self, multimodal_content: str, modal_entity_name: str
+    ) -> str:
+        """
+        Convert multimodal content to LightRAG-compatible format for entity extraction.
+
+        Args:
+            multimodal_content: The original multimodal content description
+            modal_entity_name: The entity name for the modal content
+
+        Returns:
+            LightRAG-compatible content with proper delimiters and completion marker
+        """
+        try:
+            # Import LightRAG prompts to get the correct delimiters
+            from lightrag.prompt import PROMPTS as LIGHTRAG_PROMPTS
+
+            tuple_delimiter = LIGHTRAG_PROMPTS.get("DEFAULT_TUPLE_DELIMITER", "<|#|>")
+            completion_delimiter = LIGHTRAG_PROMPTS.get(
+                "DEFAULT_COMPLETION_DELIMITER", "<|COMPLETE|>"
+            )
+
+            # Extract entity type from modal_entity_name if it contains parentheses
+            entity_type = "multimodal"
+            entity_name = modal_entity_name
+
+            if "(" in modal_entity_name and modal_entity_name.endswith(")"):
+                # Format: "name (type)"
+                parts = modal_entity_name.rsplit(" (", 1)
+                if len(parts) == 2:
+                    entity_name = parts[0].strip()
+                    entity_type = parts[1].rstrip(")").strip()
+
+            # Create LightRAG-compatible entity extraction format
+            # Format: entity<|#|>entity_name<|#|>entity_type<|#|>entity_description
+            lightrag_entity = f"entity{tuple_delimiter}{entity_name}{tuple_delimiter}{entity_type}{tuple_delimiter}{multimodal_content}"
+
+            # Add completion delimiter as required by LightRAG
+            lightrag_content = f"{lightrag_entity}\n{completion_delimiter}"
+
+            logger.debug(
+                f"Converted multimodal content to LightRAG format for entity: {entity_name}"
+            )
+            return lightrag_content
+
+        except Exception as e:
+            logger.error(f"Error converting multimodal content to LightRAG format: {e}")
+            # Fallback: return original content with basic entity format
+            return f"entity<|#|>{modal_entity_name}<|#|>multimodal<|#|>{multimodal_content}\n<|COMPLETE|>"
+
     async def _process_chunk_for_extraction(
         self, chunk_id: str, modal_entity_name: str, batch_mode: bool = False
     ):
@@ -721,8 +771,18 @@ class BaseModalProcessor:
         pipeline_status = await get_namespace_data("pipeline_status")
         pipeline_status_lock = get_pipeline_status_lock()
 
+        # Convert multimodal content to LightRAG-compatible format
+        original_content = chunk_data["content"]
+        lightrag_compatible_content = self._convert_to_lightrag_format(
+            original_content, modal_entity_name
+        )
+
+        # Create modified chunk data for extraction
+        modified_chunk_data = chunk_data.copy()
+        modified_chunk_data["content"] = lightrag_compatible_content
+
         # Prepare chunk for extraction
-        chunks = {chunk_id: chunk_data}
+        chunks = {chunk_id: modified_chunk_data}
 
         # Extract entities and relationships
         chunk_results = await extract_entities(

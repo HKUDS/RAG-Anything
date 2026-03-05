@@ -21,10 +21,15 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "aiofiles>=24.1.0",
+    "fastapi>=0.116.1",
     "huggingface_hub",
     "lightrag-hku",
     "mineru[core]",
+    "openpyxl>=3.1.5",
+    "slowapi>=0.1.9",
     "tqdm",
+    "uvicorn[standard]>=0.35.0",
 ]
 
 [project.optional-dependencies]
@@ -66,6 +71,7 @@ dev-dependencies = [
     "mypy",
     "openai",
     "python-dotenv",
+    "pre-commit>=4.5.1",
 ]
 
 [tool.setuptools.packages.find]

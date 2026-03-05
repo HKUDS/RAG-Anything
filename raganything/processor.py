@@ -1176,7 +1176,7 @@ class ProcessorMixin:
     async def _batch_extract_entities_lightrag_style_type_aware(
         self, lightrag_chunks: Dict[str, Any]
     ) -> List[Tuple]:
-        """Use LightRAG's extract_entities for batch entity relation extraction"""
+        """Use LightRAG's extract_entities for batch entity relation extraction with format conversion fix"""
         from lightrag.kg.shared_storage import (
             get_namespace_data,
             get_pipeline_status_lock,
@@ -1187,8 +1187,73 @@ class ProcessorMixin:
         pipeline_status = await get_namespace_data("pipeline_status")
         pipeline_status_lock = get_pipeline_status_lock()
 
-        # Directly use LightRAG's extract_entities
-        chunk_results = await extract_entities(
+        # Create a custom extract_entities function that applies format conversion
+        async def extract_entities_with_format_fix(chunks, **kwargs):
+            """Custom extract_entities that converts multimodal content to LightRAG format"""
+            from lightrag.operate import _process_extraction_result
+            from lightrag.prompt import PROMPTS
+
+            # Process chunks in batches
+            chunk_results = []
+
+            for chunk_id, chunk_data in chunks.items():
+                try:
+                    # Check if this is multimodal content that needs conversion
+                    if chunk_data.get("is_multimodal", False):
+                        # Apply format conversion for multimodal content
+                        content = chunk_data.get("content", "")
+
+                        # Use the LLM to extract entities in the expected format
+                        examples = "\n".join(PROMPTS["entity_extraction_examples"])
+                        context_base = dict(
+                            tuple_delimiter=PROMPTS["DEFAULT_TUPLE_DELIMITER"],
+                            completion_delimiter=PROMPTS[
+                                "DEFAULT_COMPLETION_DELIMITER"
+                            ],
+                            entity_types="CONCEPT,PERSON,PLACE,ORGANIZATION,EVENT",
+                            input_text=content,
+                            language="English",
+                            examples=examples,
+                        )
+
+                        extraction_system_prompt = PROMPTS[
+                            "entity_extraction_system_prompt"
+                        ].format(**context_base)
+                        extraction_user_prompt = PROMPTS[
+                            "entity_extraction_user_prompt"
+                        ].format(**context_base)
+
+                        # Call LLM for extraction
+                        llm_response = await self.lightrag.llm_model_func(
+                            prompt=extraction_user_prompt,
+                            system_prompt=extraction_system_prompt,
+                        )
+
+                        # Convert the response to LightRAG expected format
+                        converted_response = self._convert_to_lightrag_format(
+                            llm_response
+                        )
+
+                        # Process the converted response
+                        entities, relations = await _process_extraction_result(
+                            converted_response, chunk_id, chunk_data
+                        )
+                        chunk_results.append((entities, relations))
+                    else:
+                        # For non-multimodal content, use standard processing
+                        single_chunk = {chunk_id: chunk_data}
+                        result = await extract_entities(chunks=single_chunk, **kwargs)
+                        chunk_results.extend(result)
+
+                except Exception as e:
+                    self.logger.error(f"Error processing chunk {chunk_id}: {e}")
+                    # Return empty results for failed chunks
+                    chunk_results.append(({}, {}))
+
+            return chunk_results
+
+        # Use our custom extraction function
+        chunk_results = await extract_entities_with_format_fix(
             chunks=lightrag_chunks,
             global_config=self.lightrag.__dict__,
             pipeline_status=pipeline_status,
@@ -1201,6 +1266,133 @@ class ProcessorMixin:
             f"Extracted entities from {len(lightrag_chunks)} multimodal chunks"
         )
         return chunk_results
+
+    def _convert_to_lightrag_format(self, llm_response: str) -> str:
+        """
+        Convert multimodal LLM response to LightRAG expected format
+
+        This method handles the format mismatch between RAGAnything's JSON responses
+        and LightRAG's expected delimited tuple format.
+        """
+        try:
+            import json
+            import re
+
+            # Try to parse as JSON first (common multimodal response format)
+            try:
+                response_data = json.loads(llm_response)
+                if isinstance(response_data, dict):
+                    # Extract entities and relations from JSON structure
+                    entities = []
+                    relations = []
+
+                    # Handle different JSON structures
+                    if "entities" in response_data and "relations" in response_data:
+                        # Standard format
+                        entities = response_data.get("entities", [])
+                        relations = response_data.get("relations", [])
+                    elif "entity_info" in response_data:
+                        # RAGAnything format
+                        entity_info = response_data["entity_info"]
+                        if isinstance(entity_info, dict):
+                            entity_name = entity_info.get("entity_name", "")
+                            entity_type = entity_info.get("entity_type", "CONCEPT")
+                            summary = entity_info.get(
+                                "summary", response_data.get("detailed_description", "")
+                            )
+                            if entity_name:
+                                entities.append(
+                                    f"{entity_name}<|#|>{entity_type}<|#|>{summary}"
+                                )
+
+                    # Convert to LightRAG format
+                    converted_lines = []
+
+                    # Add entities
+                    for entity in entities:
+                        if isinstance(entity, dict):
+                            name = entity.get("name", entity.get("entity_name", ""))
+                            entity_type = entity.get(
+                                "type", entity.get("entity_type", "CONCEPT")
+                            )
+                            description = entity.get(
+                                "description", entity.get("summary", "")
+                            )
+                            if name:
+                                converted_lines.append(
+                                    f"{name}<|#|>{entity_type}<|#|>{description}"
+                                )
+                        elif isinstance(entity, str) and "<|#|>" in entity:
+                            converted_lines.append(entity)
+                        elif isinstance(entity, str):
+                            # Simple entity name, add default type
+                            converted_lines.append(f"{entity}<|#|>CONCEPT<|#|>{entity}")
+
+                    # Add relations
+                    for relation in relations:
+                        if isinstance(relation, dict):
+                            src = relation.get("source", relation.get("src_id", ""))
+                            tgt = relation.get("target", relation.get("tgt_id", ""))
+                            desc = relation.get("description", "")
+                            keywords = relation.get(
+                                "keywords", relation.get("weight", "")
+                            )
+                            if src and tgt:
+                                converted_lines.append(
+                                    f"{src}<|#|>{tgt}<|#|>{desc}<|#|>{keywords}"
+                                )
+                        elif isinstance(relation, str) and "<|#|>" in relation:
+                            converted_lines.append(relation)
+
+                    # Add completion marker
+                    result = "\n".join(converted_lines) + "\n<|COMPLETE|>"
+                    return result
+
+            except json.JSONDecodeError:
+                # Not JSON, try to detect if it's already in LightRAG format
+                pass
+
+            # Check if response already has the completion delimiter
+            if "<|COMPLETE|>" in llm_response:
+                return llm_response
+
+            # Check if response has tuple format but missing completion delimiter
+            if "<|#|>" in llm_response:
+                return llm_response + "\n<|COMPLETE|>"
+
+            # Try to extract entity-like patterns from plain text
+            lines = llm_response.strip().split("\n")
+            converted_lines = []
+
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+
+                # Look for entity patterns like "EntityName (TYPE): description"
+                entity_pattern = r"^([^(]+)\s*\(([^)]+)\):\s*(.+)$"
+                match = re.match(entity_pattern, line)
+                if match:
+                    name, entity_type, description = match.groups()
+                    converted_lines.append(
+                        f"{name.strip()}<|#|>{entity_type.strip()}<|#|>{description.strip()}"
+                    )
+                else:
+                    # Treat as simple entity
+                    converted_lines.append(f"{line}<|#|>CONCEPT<|#|>{line}")
+
+            if converted_lines:
+                return "\n".join(converted_lines) + "\n<|COMPLETE|>"
+
+            # Fallback: create a simple entity from the entire response
+            return f"Content<|#|>CONCEPT<|#|>{llm_response.strip()}\n<|COMPLETE|>"
+
+        except Exception as e:
+            self.logger.warning(f"Error converting response to LightRAG format: {e}")
+            # Fallback: ensure completion delimiter is present
+            if "<|COMPLETE|>" not in llm_response:
+                return llm_response + "\n<|COMPLETE|>"
+            return llm_response
 
     async def _batch_add_belongs_to_relations_type_aware(
         self, chunk_results: List[Tuple], multimodal_data_list: List[Dict[str, Any]]
