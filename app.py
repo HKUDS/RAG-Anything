@@ -2,6 +2,10 @@ import streamlit as st
 import os
 import sys
 import asyncio
+import json
+import time
+import hashlib
+import threading
 from pathlib import Path
 
 # ==========================================
@@ -39,24 +43,21 @@ class RAGService:
     负责管理 RAGAnything 实例，确保模型常驻内存，
     避免每次操作都重新加载模型。
     """
-    def __init__(self, api_key, base_url, working_dir="./rag_storage7"):
+    def __init__(self, api_key, base_url):
         self.api_key = api_key
         self.base_url = base_url
-        self.working_dir = working_dir
-        self.rag_instance = None
-        
-        # 自动创建工作目录
-        if not os.path.exists(working_dir):
-            os.makedirs(working_dir)
+        self.engine_pool = {}
 
-    def get_engine(self):
-        """单例模式获取引擎实例 (Singleton Pattern)"""
-        if self.rag_instance is not None:
-            return self.rag_instance
+    def get_engine(self, working_dir):
+        """按 working_dir 复用引擎实例，避免跨文档缓存污染"""
+        if working_dir in self.engine_pool:
+            return self.engine_pool[working_dir]
+
+        os.makedirs(working_dir, exist_ok=True)
 
         # === 1. 配置参数 ===
         config = RAGAnythingConfig(
-            working_dir=self.working_dir,
+            working_dir=working_dir,
             parser="mineru",  # 指定使用 MinerU 解析器
             parse_method="auto",
             enable_image_processing=True,
@@ -132,21 +133,39 @@ class RAGService:
                 return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
 
         # === 5. 实例化引擎 ===
-        self.rag_instance = RAGAnything(
+        rag_instance = RAGAnything(
             config=config,
             llm_model_func=llm_model_func,
             vision_model_func=vision_model_func,
             embedding_func=embedding_func,
         )
-        return self.rag_instance
+        self.engine_pool[working_dir] = rag_instance
+        return rag_instance
 
-# 异步运行辅助函数 (解决 Streamlit 同步环境调用异步代码的问题)
+# 异步运行辅助函数 (固定单事件循环，避免跨 loop 报错)
+@st.cache_resource(show_spinner=False)
+def get_async_runtime():
+    loop = asyncio.new_event_loop()
+    ready = threading.Event()
+
+    def _run_loop():
+        asyncio.set_event_loop(loop)
+        ready.set()
+        loop.run_forever()
+
+    thread = threading.Thread(target=_run_loop, daemon=True, name="rag-streamlit-async-loop")
+    thread.start()
+    ready.wait()
+    return loop, thread
+
+
 def run_async(coro):
-    try:
-        return asyncio.run(coro)
-    except RuntimeError:
-        loop = asyncio.get_event_loop()
-        return loop.run_until_complete(coro)
+    loop, _ = get_async_runtime()
+    if loop.is_closed():
+        get_async_runtime.clear()
+        loop, _ = get_async_runtime()
+    future = asyncio.run_coroutine_threadsafe(coro, loop)
+    return future.result()
 
 # ==========================================
 # 🖥️ 4. 前端界面逻辑 (UI Logic)
@@ -161,10 +180,58 @@ if "doc_indexed" not in st.session_state:
     st.session_state.doc_indexed = False
 if "current_doc_name" not in st.session_state:
     st.session_state.current_doc_name = ""
+if "current_working_dir" not in st.session_state:
+    st.session_state.current_working_dir = ""
+if "current_file_path" not in st.session_state:
+    st.session_state.current_file_path = ""
 
 # 固定文档存储目录（用于复用缓存）
 DOC_STORE_DIR = "./uploaded_docs"
+WORKING_DIR_ROOT = "./rag_storage_by_file"
+REGISTRY_PATH = "./uploaded_docs_registry.json"
+ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx", ".pptx"}
 os.makedirs(DOC_STORE_DIR, exist_ok=True)
+os.makedirs(WORKING_DIR_ROOT, exist_ok=True)
+
+
+def load_registry():
+    if not os.path.exists(REGISTRY_PATH):
+        return {}
+    try:
+        with open(REGISTRY_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_registry(registry):
+    with open(REGISTRY_PATH, "w", encoding="utf-8") as f:
+        json.dump(registry, f, ensure_ascii=False, indent=2)
+
+
+def compute_file_sha256(file_path):
+    hasher = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def resolve_working_dir_for_file(file_path):
+    abs_path = str(Path(file_path).resolve())
+    file_hash = compute_file_sha256(abs_path)
+    working_dir = os.path.join(WORKING_DIR_ROOT, file_hash)
+
+    registry = load_registry()
+    registry[abs_path] = {
+        "file_name": os.path.basename(abs_path),
+        "file_hash": file_hash,
+        "working_dir": working_dir,
+        "updated_at": int(time.time()),
+    }
+    save_registry(registry)
+
+    return file_hash, working_dir
 
 # --- 侧边栏 ---
 with st.sidebar:
@@ -180,10 +247,10 @@ with st.sidebar:
         st.session_state.rag_service = RAGService(api_key, base_url)
         st.session_state.doc_indexed = False
         st.session_state.current_doc_name = ""
+        st.session_state.current_working_dir = ""
+        st.session_state.current_file_path = ""
         st.session_state.messages = []
-        with st.spinner("正在加载 MinerU 模型 (首次运行可能较慢)..."):
-            st.session_state.rag_service.get_engine()
-        st.success("引擎已就绪！(In-Memory)")
+        st.success("引擎服务已初始化，请选择文档后解析。")
     
     st.divider()
     
@@ -208,7 +275,7 @@ with st.sidebar:
             target_path = os.path.join(DOC_STORE_DIR, uploaded_file.name)
 
             # 若同名文件已存在且内容相同，则不重复写入，保留原mtime以便缓存命中
-            new_bytes = uploaded_file.getbuffer()
+            new_bytes = uploaded_file.getvalue()
             if os.path.exists(target_path):
                 with open(target_path, "rb") as f:
                     old_bytes = f.read()
@@ -236,7 +303,7 @@ with st.sidebar:
             [
                 f for f in os.listdir(DOC_STORE_DIR)
                 if os.path.isfile(os.path.join(DOC_STORE_DIR, f))
-                and Path(f).suffix.lower() in {".pdf", ".txt", ".docx", ".pptx"}
+                and Path(f).suffix.lower() in ALLOWED_EXTENSIONS
             ]
         )
 
@@ -252,9 +319,17 @@ with st.sidebar:
                 else:
                     try:
                         os.remove(selected_file_path)
+                        abs_deleted_path = str(Path(selected_file_path).resolve())
+                        registry = load_registry()
+                        if abs_deleted_path in registry:
+                            registry.pop(abs_deleted_path)
+                            save_registry(registry)
+
                         if st.session_state.current_doc_name == selected_file_name:
                             st.session_state.doc_indexed = False
                             st.session_state.current_doc_name = ""
+                            st.session_state.current_working_dir = ""
+                            st.session_state.current_file_path = ""
                             st.session_state.messages = []
                         st.success(f"已删除：{selected_file_name}")
                         st.rerun()
@@ -264,8 +339,12 @@ with st.sidebar:
             st.warning("固定目录中暂无可用文档，请先上传新文件。")
 
     if selected_file_path and st.session_state.rag_service:
+        _, planned_working_dir = resolve_working_dir_for_file(selected_file_path)
+        st.caption(f"缓存目录：{planned_working_dir}")
+
         if st.button("🚀 解析并注入知识库"):
-            engine = st.session_state.rag_service.get_engine()
+            file_hash, working_dir = resolve_working_dir_for_file(selected_file_path)
+            engine = st.session_state.rag_service.get_engine(working_dir)
 
             try:
                 with st.spinner("正在解析文档，请稍候..."):
@@ -277,6 +356,8 @@ with st.sidebar:
                     ))
                 st.session_state.doc_indexed = True
                 st.session_state.current_doc_name = selected_file_name
+                st.session_state.current_working_dir = working_dir
+                st.session_state.current_file_path = selected_file_path
                 st.success(f"✅ 解析完成：{selected_file_name}，现在可以问答了。")
             except Exception as e:
                 st.session_state.doc_indexed = False
@@ -297,7 +378,11 @@ if prompt := st.chat_input("基于文档内容提问..."):
     st.chat_message("user").write(prompt)
     
     if st.session_state.rag_service and st.session_state.doc_indexed:
-        engine = st.session_state.rag_service.get_engine()
+        if not st.session_state.current_working_dir:
+            st.error("当前文档未绑定缓存目录，请先重新解析文档。")
+            st.stop()
+
+        engine = st.session_state.rag_service.get_engine(st.session_state.current_working_dir)
         with st.chat_message("assistant"):
             with st.spinner("思考中..."):
                 # 调用问答接口
