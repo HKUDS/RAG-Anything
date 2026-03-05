@@ -13,3 +13,4 @@ tqdm
 # - [all]: includes all optional dependencies
 #
 # Install with: pip install raganything[image,text] or pip install raganything[all]
+docling==2.72.0
