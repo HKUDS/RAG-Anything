@@ -15,57 +15,97 @@ from .custom_prompts import (
 )
 
 EXPERIMENTS = {
-    # Exp 1: BASELINE
+    # Exp 1: BASELINE (legacy key kept for backward compatibility)
     "exp1_baseline": ExperimentDef(
         id="exp1_baseline",
-        description="Default Settings (Chunk 1200, Auto Gleaning)",
-        lightrag_kwargs={}
+        description="Baseline MinerU (default parser, auto parse)",
+        parser="mineru",
+        parse_method="auto",
+        lightrag_kwargs={},
+    ),
+
+    # Exp 1 variants: End-to-end baseline by parser
+    "exp1_baseline_docling": ExperimentDef(
+        id="exp1_baseline_docling",
+        description="Baseline with Docling parser (auto)",
+        parser="docling",
+        parse_method="auto",
+        lightrag_kwargs={},
+    ),
+    "exp1_baseline_kreuzberg": ExperimentDef(
+        id="exp1_baseline_kreuzberg",
+        description="Baseline with Kreuzberg parser (multimodal preset, auto)",
+        parser="kreuzberg",
+        parse_method="auto",
+        parser_kwargs={
+            "extract_pages": True,
+            "extract_images": True,
+            "extract_tables": True,
+            "result_format": "element_based",
+            "ocr_tesseract_enable_table_detection": True,
+            "use_cache": False,
+        },
+        lightrag_kwargs={},
+    ),
+    "exp1_baseline_marker": ExperimentDef(
+        id="exp1_baseline_marker",
+        description="Baseline with Marker parser (auto)",
+        parser="marker",
+        parse_method="auto",
+        lightrag_kwargs={},
+    ),
+    "exp1_baseline_marker_ocr": ExperimentDef(
+        id="exp1_baseline_marker_ocr",
+        description="Baseline with Marker parser (OCR mode)",
+        parser="marker",
+        parse_method="ocr",
+        lightrag_kwargs={},
     ),
 
     # Exp 2: FAST OPTIMIZATION
-    "exp2_fast_opt": ExperimentDef(
-        id="exp2_fast_opt",
-        description="Chunk 2400 + Gleaning 1 (Fast Mode)",
-        lightrag_kwargs={
-            "chunk_token_size": 2400,
-            "chunk_overlap_token_size": 200,
-            "entity_extract_max_gleaning": 0, 
-        }
-    ),
+    # "exp2_fast_opt": ExperimentDef(
+    #     id="exp2_fast_opt",
+    #     description="Chunk 2400 + Gleaning 1 (Fast Mode)",
+    #     lightrag_kwargs={
+    #         "chunk_token_size": 2400,
+    #         "chunk_overlap_token_size": 200,
+    #         "entity_extract_max_gleaning": 0, 
+    #     }
+    # ),
 
-    # Exp 3: Text only
-    "exp3_text_only": ExperimentDef(
-        id="exp3_text_only",
-        description="Disable Multimodal Processing (Benchmark Baseline Cost)",
-        raganything_kwargs={
-            "enable_image_processing": False,
-            "enable_table_processing": False,
-            "enable_equation_processing": False
-        }
-    ),
+    # # Exp 3: Text only
+    # "exp3_text_only": ExperimentDef(
+    #     id="exp3_text_only",
+    #     description="Disable Multimodal Processing (Benchmark Baseline Cost)",
+    #     raganything_kwargs={
+    #         "enable_image_processing": False,
+    #         "enable_table_processing": False,
+    #         "enable_equation_processing": False
+    #     }
+    # ),
     
-    # Exp4: Prompts & Entity Scope cho Full Medical Domain
-    "exp4_medical_scope": ExperimentDef(
-        id="exp4_medical_scope",
-        description="Full Medical Domain (Vision, Table, Text Extraction)",
+    # # Exp4: Prompts & Entity Scope cho Full Medical Domain
+    # "exp4_medical_scope": ExperimentDef(
+    #     id="exp4_medical_scope",
+    #     description="Full Medical Domain (Vision, Table, Text Extraction)",
         
-        # 1. Cấu hình cho Text (LightRAG)
-        lightrag_kwargs={
-            "chunk_token_size": 2400,
-            "entity_extract_max_gleaning": 0,
-            # Chỉ dẫn LightRAG trích xuất đúng món này
-            "addon_params": {
-                "entity_types": MEDICAL_ENTITY_TYPES
-            }
-        },
+    #     # 1. Cấu hình cho Text (LightRAG)
+    #     lightrag_kwargs={
+    #         "chunk_token_size": 2400,
+    #         "entity_extract_max_gleaning": 0,
+    #         # Chỉ dẫn LightRAG trích xuất đúng món này
+    #         "addon_params": {
+    #             "entity_types": MEDICAL_ENTITY_TYPES
+    #         }
+    #     },
         
-        # 2. Cấu hình cho Multimodal (RAG-Anything)
-        custom_prompts={
-            "vision_prompt_with_context": MEDICAL_VISION_PROMPT,
-            "table_prompt_with_context": MEDICAL_TABLE_PROMPT,
-            "generic_prompt_with_context": "Act as a Medical Expert. Analyze this content for clinical relevance..."
-        }
-    ),
+    #     # 2. Cấu hình cho Multimodal (RAG-Anything)
+    #     custom_prompts={
+    #         "vision_prompt_with_context": MEDICAL_VISION_PROMPT,
+    #         "table_prompt_with_context": MEDICAL_TABLE_PROMPT,
+    #         "generic_prompt_with_context": "Act as a Medical Expert. Analyze this content for clinical relevance..."
+    #     }
+    # ),
 
     # # Exp5: OpenAI Provider
     # "exp5_openai_benchmark": ExperimentDef(
@@ -116,122 +156,122 @@ EXPERIMENTS = {
     #     }
     # ),
 
-    "exp6_hybrid_gliner": ExperimentDef(
-        id="exp6_hybrid_gliner",
-        description="Hybrid: GLiNER (Entities) + Qwen (Relations Only)",
+    # "exp6_hybrid_gliner": ExperimentDef(
+    #     id="exp6_hybrid_gliner",
+    #     description="Hybrid: GLiNER (Entities) + Qwen (Relations Only)",
         
-        # Bật chế độ Hybrid
-        use_gliner=True,
-        gliner_labels=MEDICAL_ENTITY_TYPES, # Dùng lại list y tế
+    #     # Bật chế độ Hybrid
+    #     use_gliner=True,
+    #     gliner_labels=MEDICAL_ENTITY_TYPES, # Dùng lại list y tế
         
-        lightrag_kwargs={
-            "chunk_token_size": 2400,
-            "entity_extract_max_gleaning": 0, 
-            # Không cần addon_params entity_types nữa vì GLiNER lo rồi
-            # Nhưng vẫn để cho chắc nếu fallback
-        },
+    #     lightrag_kwargs={
+    #         "chunk_token_size": 2400,
+    #         "entity_extract_max_gleaning": 0, 
+    #         # Không cần addon_params entity_types nữa vì GLiNER lo rồi
+    #         # Nhưng vẫn để cho chắc nếu fallback
+    #     },
         
-        custom_prompts={
-            # Vision prompt vẫn giữ ngắn gọn
-            "vision_prompt_with_context": "Act as Medical Researcher. Return JSON: {detailed_description: 'Summary (max 20 words)', entity_info: {entity_name: 'Image', summary: 'N/A'}}"
-        }
-    ),
+    #     custom_prompts={
+    #         # Vision prompt vẫn giữ ngắn gọn
+    #         "vision_prompt_with_context": "Act as Medical Researcher. Return JSON: {detailed_description: 'Summary (max 20 words)', entity_info: {entity_name: 'Image', summary: 'N/A'}}"
+    #     }
+    # ),
 
-    # Exp7: Giới hạn đơn giản chỉ trích xuất Top 3 Entities mỗi Chunk
-    "exp7_simple_limit": ExperimentDef(
-        id="exp7_simple_limit",
-        description="Limit to Top 3 Entities per Chunk (Clean Graph Focus)",
+    # # Exp7: Giới hạn đơn giản chỉ trích xuất Top 3 Entities mỗi Chunk
+    # "exp7_simple_limit": ExperimentDef(
+    #     id="exp7_simple_limit",
+    #     description="Limit to Top 3 Entities per Chunk (Clean Graph Focus)",
 
-        lightrag_kwargs={
-            "chunk_token_size": 2400, # Giữ chunk to để có ngữ cảnh rộng
-            "entity_extract_max_gleaning": 0,
-        },
+    #     lightrag_kwargs={
+    #         "chunk_token_size": 2400, # Giữ chunk to để có ngữ cảnh rộng
+    #         "entity_extract_max_gleaning": 0,
+    #     },
 
-        custom_prompts={
-            "lightrag_entity_extract": SIMPLE_LIMIT_PROMPT,
-        }
-    ),
+    #     custom_prompts={
+    #         "lightrag_entity_extract": SIMPLE_LIMIT_PROMPT,
+    #     }
+    # ),
 
-    # ==========================================================================
-    # Exp8: ONE ENTITY PER CHUNK
-    # Target: N chunks → ~N nodes (e.g., 64 chunks → ~64 nodes)
-    # Strategy:
-    #   - Extract EXACTLY 1 main entity per chunk
-    #   - Extract relationships to connect entities across chunks
-    #   - Graph remains connected via relationship targets
-    # ==========================================================================
-    "exp8_one_entity_per_chunk": ExperimentDef(
-        id="exp8_one_entity_per_chunk",
-        description="1 Entity per Chunk (Target: chunks ≈ nodes)",
+    # # ==========================================================================
+    # # Exp8: ONE ENTITY PER CHUNK
+    # # Target: N chunks → ~N nodes (e.g., 64 chunks → ~64 nodes)
+    # # Strategy:
+    # #   - Extract EXACTLY 1 main entity per chunk
+    # #   - Extract relationships to connect entities across chunks
+    # #   - Graph remains connected via relationship targets
+    # # ==========================================================================
+    # "exp8_one_entity_per_chunk": ExperimentDef(
+    #     id="exp8_one_entity_per_chunk",
+    #     description="1 Entity per Chunk (Target: chunks ≈ nodes)",
 
-        lightrag_kwargs={
-            "chunk_token_size": 4800,       
-            "chunk_overlap_token_size": 100,  
-            "entity_extract_max_gleaning": 0, 
-        },
+    #     lightrag_kwargs={
+    #         "chunk_token_size": 4800,       
+    #         "chunk_overlap_token_size": 100,  
+    #         "entity_extract_max_gleaning": 0, 
+    #     },
 
-        custom_prompts={
-            # Text extraction: 1 entity + relationships
-            "lightrag_entity_extract": ONE_ENTITY_PER_CHUNK_PROMPT,
+    #     custom_prompts={
+    #         # Text extraction: 1 entity + relationships
+    #         "lightrag_entity_extract": ONE_ENTITY_PER_CHUNK_PROMPT,
 
-            # Image: 1 entity per image
-            "vision_prompt_with_context": ONE_ENTITY_VISION_PROMPT,
+    #         # Image: 1 entity per image
+    #         "vision_prompt_with_context": ONE_ENTITY_VISION_PROMPT,
 
-            # Table: 1 entity per table
-            "table_prompt_with_context": ONE_ENTITY_TABLE_PROMPT,
-        }
-    ),
+    #         # Table: 1 entity per table
+    #         "table_prompt_with_context": ONE_ENTITY_TABLE_PROMPT,
+    #     }
+    # ),
 
-    # ==========================================================================
-    # Exp9: STRICT ONE ENTITY - NO RELATIONSHIPS
-    # Target: EXACTLY N chunks = N nodes (guaranteed)
-    # Strategy:
-    #   - Extract EXACTLY 1 entity per chunk (enforced by post-filter)
-    #   - NO relationships = NO implicit nodes created (enforced by post-filter)
-    #   - Graph will be disconnected (isolated nodes) but size is minimized
-    # Use case: When you need absolute control over node count
-    # ==========================================================================
-    "exp9_strict_one_entity": ExperimentDef(
-        id="exp9_strict_one_entity",
-        description="STRICT: 1 Entity, NO Relations (chunks = nodes guaranteed)",
+    # # ==========================================================================
+    # # Exp9: STRICT ONE ENTITY - NO RELATIONSHIPS
+    # # Target: EXACTLY N chunks = N nodes (guaranteed)
+    # # Strategy:
+    # #   - Extract EXACTLY 1 entity per chunk (enforced by post-filter)
+    # #   - NO relationships = NO implicit nodes created (enforced by post-filter)
+    # #   - Graph will be disconnected (isolated nodes) but size is minimized
+    # # Use case: When you need absolute control over node count
+    # # ==========================================================================
+    # "exp9_strict_one_entity": ExperimentDef(
+    #     id="exp9_strict_one_entity",
+    #     description="STRICT: 1 Entity, NO Relations (chunks = nodes guaranteed)",
 
-        lightrag_kwargs={
-            "chunk_token_size": 1200,         # Standard chunk size
-            "chunk_overlap_token_size": 100,  # Small overlap
-            "entity_extract_max_gleaning": 0, # No re-extraction
-        },
+    #     lightrag_kwargs={
+    #         "chunk_token_size": 1200,         # Standard chunk size
+    #         "chunk_overlap_token_size": 100,  # Small overlap
+    #         "entity_extract_max_gleaning": 0, # No re-extraction
+    #     },
 
-        # POST-PROCESSING FILTER: Guarantees graph size regardless of LLM output
-        raganything_kwargs={
-            "max_entities_per_chunk": 1,      # Keep only 1 entity per chunk
-            "max_relations_per_chunk": -1,    # Remove ALL relations (-1 = delete all)
-        },
+    #     # POST-PROCESSING FILTER: Guarantees graph size regardless of LLM output
+    #     raganything_kwargs={
+    #         "max_entities_per_chunk": 1,      # Keep only 1 entity per chunk
+    #         "max_relations_per_chunk": -1,    # Remove ALL relations (-1 = delete all)
+    #     },
 
-        custom_prompts={
-            # Text: 1 entity, NO relationships (prompt guides LLM, filter enforces)
-            "lightrag_entity_extract": STRICT_ONE_ENTITY_PROMPT,
+    #     custom_prompts={
+    #         # Text: 1 entity, NO relationships (prompt guides LLM, filter enforces)
+    #         "lightrag_entity_extract": STRICT_ONE_ENTITY_PROMPT,
 
-            # Image: 1 entity only
-            "vision_prompt_with_context": STRICT_ONE_ENTITY_VISION_PROMPT,
+    #         # Image: 1 entity only
+    #         "vision_prompt_with_context": STRICT_ONE_ENTITY_VISION_PROMPT,
 
-            # Table: 1 entity only
-            "table_prompt_with_context": STRICT_ONE_ENTITY_TABLE_PROMPT,
-        }
-    ),
+    #         # Table: 1 entity only
+    #         "table_prompt_with_context": STRICT_ONE_ENTITY_TABLE_PROMPT,
+    #     }
+    # ),
 
-    "exp13_vlm_strict": ExperimentDef(
-        id="exp13_vlm_strict",
-        description="Exp8 + Stronger VLM skip (more N/A, max 6 words, ignore numbers/artifacts)",
-        lightrag_kwargs={
-            "chunk_token_size": 4800,
-            "chunk_overlap_token_size": 2000,
-            "entity_extract_max_gleaning": 0,
-        },
-        custom_prompts={
-            "lightrag_entity_extract": ONE_ENTITY_PER_CHUNK_PROMPT, 
-            "vision_prompt_with_context": STRICT_SKIP_VLM_PROMPT,
-            "table_prompt_with_context": STRICT_SKIP_VLM_PROMPT,
-        },
-    ),
+    # "exp13_vlm_strict": ExperimentDef(
+    #     id="exp13_vlm_strict",
+    #     description="Exp8 + Stronger VLM skip (more N/A, max 6 words, ignore numbers/artifacts)",
+    #     lightrag_kwargs={
+    #         "chunk_token_size": 4800,
+    #         "chunk_overlap_token_size": 2000,
+    #         "entity_extract_max_gleaning": 0,
+    #     },
+    #     custom_prompts={
+    #         "lightrag_entity_extract": ONE_ENTITY_PER_CHUNK_PROMPT, 
+    #         "vision_prompt_with_context": STRICT_SKIP_VLM_PROMPT,
+    #         "table_prompt_with_context": STRICT_SKIP_VLM_PROMPT,
+    #     },
+    # ),
 
 }

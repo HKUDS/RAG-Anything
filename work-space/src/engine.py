@@ -2,8 +2,11 @@ import os
 import time
 import csv
 import logging
+import json
+import shutil
 from pathlib import Path
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.parser import MineruParser, DoclingParser
 
 # Import PROMPTS
 from raganything.prompt import PROMPTS as RAG_PROMPTS 
@@ -67,8 +70,39 @@ class ExperimentEngine:
             ])
         logger.info(f"✅ Report updated for {data['file_name']}")
 
-    async def run_experiment(self, exp_def: ExperimentDef):
-        logger.info(f"🚀 STARTING: {exp_def.id} (Provider: {exp_def.provider})")
+    @staticmethod
+    def _clear_dir(path: Path):
+        if path.exists():
+            shutil.rmtree(path, ignore_errors=True)
+            logger.info(f"🧹 Cleared: {path}")
+
+    @staticmethod
+    def _filter_files_for_parser(files, parser_name: str):
+        parser_name = (parser_name or "mineru").lower()
+        if parser_name == "mineru":
+            supported = (
+                set([".pdf"])
+                | MineruParser.IMAGE_FORMATS
+                | MineruParser.OFFICE_FORMATS
+                | MineruParser.TEXT_FORMATS
+            )
+        elif parser_name == "docling":
+            supported = set([".pdf"]) | DoclingParser.OFFICE_FORMATS | DoclingParser.HTML_FORMATS
+        elif parser_name in {"kreuzberg", "marker"}:
+            supported = set([".pdf"]) | MineruParser.IMAGE_FORMATS
+        else:
+            return files
+        return [f for f in files if f.suffix.lower() in supported]
+
+    async def run_experiment(self, exp_def: ExperimentDef, fresh_run: bool = False):
+        parser_name = exp_def.parser or ENV.parser
+        parse_method = exp_def.parse_method or ENV.parse_method
+        parser_kwargs = exp_def.parser_kwargs or {}
+
+        logger.info(
+            f"🚀 STARTING: {exp_def.id} "
+            f"(Provider: {exp_def.provider}, Parser: {parser_name}, Method: {parse_method})"
+        )
         
         self._apply_custom_prompts(exp_def.custom_prompts)
 
@@ -81,13 +115,19 @@ class ExperimentEngine:
         exp_dir = Path(ENV.output_base_dir) / exp_def.id
         rag_storage = exp_dir / "rag_storage"
         parser_output = exp_dir / "parser_output"
+
+        # Fresh run mode: remove previous parser output + graph storage for this experiment
+        if fresh_run:
+            self._clear_dir(rag_storage)
+            self._clear_dir(parser_output)
         
         rag = RAGAnything(
             config=RAGAnythingConfig(
                 working_dir=str(rag_storage),
                 parser_output_dir=str(parser_output),
-                parser=ENV.parser,
-                parse_method=ENV.parse_method,
+                parser=parser_name,
+                parse_method=parse_method,
+                parser_kwargs=parser_kwargs,
                 max_concurrent_files=ENV.max_workers,
                 **exp_def.raganything_kwargs
             ),
@@ -96,8 +136,16 @@ class ExperimentEngine:
         )
 
         input_path = Path(ENV.input_dir)
-        files = [f for f in input_path.glob("*.*") if f.suffix.lower() in ['.pdf', '.docx', '.txt']]
-        if not files: return
+        files = [f for f in input_path.glob("*.*") if f.is_file()]
+        files = self._filter_files_for_parser(files, parser_name)
+        if not files:
+            logger.warning(f"No supported input files for parser '{parser_name}' in {input_path}")
+            if hasattr(rag, "close"):
+                rag.close()
+            self._restore_prompts()
+            return
+
+        logger.info(f"Parser kwargs: {json.dumps(parser_kwargs, ensure_ascii=False)}")
 
         for file_path in files:
             logger.info(f"\n📂 Processing: {file_path.name}")

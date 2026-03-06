@@ -47,6 +47,11 @@ class ExperimentDef:
     id: str
     description: str
     provider: str = "ollama" 
+
+    # Parser configuration for end-to-end benchmark
+    parser: Optional[str] = None
+    parse_method: Optional[str] = None
+    parser_kwargs: Dict[str, Any] = field(default_factory=dict)
     
     use_gliner: bool = False
     gliner_labels: list = field(default_factory=list)

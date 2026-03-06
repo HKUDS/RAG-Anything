@@ -1,3 +1,6 @@
 Timestamp,Experiment_ID,File_Name,Parse_Time(s),Graph_Time(s),Total_Time(s),Output_Tokens,API_Calls,Nodes,Edges,Chunks,Entities,Relations,Status
-2026-02-03 02:17:58,exp1_baseline_mineru,RAG-anything.pdf,34.30,8212.27,8246.57,108103,202,677,1243,71,504,1152,Success
-2026-02-25 23:52:19,exp1_baseline_docling,RAG-anything.pdf,92.26,3976.39,4068.65,50154,111,469,727,33,221,411,Success
+2026-03-06 12:49:57,exp1_baseline,RAG-anything.pdf,208.07,8279.07,8487.15,115683,197,710,1400,72,531,1284,Success
+2026-03-06 14:05:28,exp1_baseline_docling,RAG-anything.pdf,1893.90,2635.53,4529.43,141640,263,240,344,105,679,1601,Success
+2026-03-06 14:16:55,exp1_baseline_kreuzberg,RAG-anything.pdf,35.37,649.52,684.89,149266,291,62,66,119,695,1631,Success
+2026-03-06 14:49:58,exp1_baseline_marker,RAG-anything.pdf,980.64,1002.12,1982.75,167725,333,187,235,140,786,1813,Success
+2026-03-06 15:16:32,exp1_baseline_marker_ocr,RAG-anything.pdf,157.72,1435.09,1592.81,179108,413,0,0,140,0,0,Success
