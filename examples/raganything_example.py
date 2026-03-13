@@ -1,48 +1,48 @@
 #!/usr/bin/env python
 """
 Example script demonstrating the integration of MinerU parser with RAGAnything
-
+ 
 This example shows how to:
 1. Process documents with RAGAnything using MinerU parser
 2. Perform pure text queries using aquery() method
 3. Perform multimodal queries with specific multimodal content using aquery_with_multimodal() method
 4. Handle different types of multimodal content (tables, equations) in queries
 """
-
+ 
 import os
 import argparse
 import asyncio
 import logging
 import logging.config
 from pathlib import Path
-
+ 
 # Add project root directory to Python path
 import sys
-
+ 
 sys.path.append(str(Path(__file__).parent.parent))
-
+ 
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc, logger, set_verbose_debug
 from raganything import RAGAnything, RAGAnythingConfig
-
+ 
 from dotenv import load_dotenv
-
+ 
 load_dotenv(dotenv_path=".env", override=False)
-
-
+ 
+ 
 def configure_logging():
     """Configure logging for the application"""
     # Get log directory path from environment variable or use current directory
     log_dir = os.getenv("LOG_DIR", os.getcwd())
     log_file_path = os.path.abspath(os.path.join(log_dir, "raganything_example.log"))
-
+ 
     print(f"\nRAGAnything example log file: {log_file_path}\n")
     os.makedirs(os.path.dirname(log_dir), exist_ok=True)
-
+ 
     # Get log file max size and backup count from environment variables
     log_max_bytes = int(os.getenv("LOG_MAX_BYTES", 10485760))  # Default 10MB
     log_backup_count = int(os.getenv("LOG_BACKUP_COUNT", 5))  # Default 5 backups
-
+ 
     logging.config.dictConfig(
         {
             "version": 1,
@@ -79,13 +79,13 @@ def configure_logging():
             },
         }
     )
-
+ 
     # Set the logger level to INFO
     logger.setLevel(logging.INFO)
     # Enable verbose debug if needed
     set_verbose_debug(os.getenv("VERBOSE", "false").lower() == "true")
-
-
+ 
+ 
 async def process_with_rag(
     file_path: str,
     output_dir: str,
@@ -93,10 +93,11 @@ async def process_with_rag(
     base_url: str = None,
     working_dir: str = None,
     parser: str = None,
+    questions_file: str = None,
 ):
     """
     Process document with RAGAnything
-
+ 
     Args:
         file_path: Path to the document
         output_dir: Output directory for RAG results
@@ -114,7 +115,7 @@ async def process_with_rag(
             enable_table_processing=True,
             enable_equation_processing=True,
         )
-
+ 
         # Define LLM model function
         def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
             return openai_complete_if_cache(
@@ -126,7 +127,7 @@ async def process_with_rag(
                 base_url=base_url,
                 **kwargs,
             )
-
+ 
         # Define vision model function for image processing
         def vision_model_func(
             prompt,
@@ -181,11 +182,11 @@ async def process_with_rag(
             # Pure text format
             else:
                 return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
-
+ 
         # Define embedding function - using environment variables for configuration
         embedding_dim = int(os.getenv("EMBEDDING_DIM", "3072"))
         embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
-
+ 
         embedding_func = EmbeddingFunc(
             embedding_dim=embedding_dim,
             max_token_size=8192,
@@ -196,7 +197,7 @@ async def process_with_rag(
                 base_url=base_url,
             ),
         )
-
+ 
         # Initialize RAGAnything with new dataclass structure
         rag = RAGAnything(
             config=config,
@@ -204,70 +205,82 @@ async def process_with_rag(
             vision_model_func=vision_model_func,
             embedding_func=embedding_func,
         )
-
+ 
         # Process document
         await rag.process_document_complete(
             file_path=file_path, output_dir=output_dir, parse_method="auto"
         )
-
-        # Example queries - demonstrating different query approaches
-        logger.info("\nQuerying processed document:")
-
-        # 1. Pure text queries using aquery()
-        text_queries = [
-            "DocBench Accuracy相关的图第一次在哪里出现？",
-            "第100页讲了什么？",
-            "只根据第8页回答：DocBench Accuracy 的趋势是什么？",
-            "第8页主要讨论了什么，而不是整篇论文。",
-        ]
-
-        for query in text_queries:
-            logger.info(f"\n[Text Query]: {query}")
+ 
+        # Load and query questions from JSON file
+        logger.info("\nQuerying processed document with questions from JSON file:")
+ 
+        import json
+ 
+        with open(questions_file, "r", encoding="utf-8") as f:
+            questions_data = json.load(f)
+ 
+        single_choice_questions = questions_data.get("single_choice", [])
+        logger.info(f"Loaded {len(single_choice_questions)} single-choice questions")
+ 
+        results = []
+        for item in single_choice_questions:
+            qid = item["id"]
+            question = item["question"]
+            options = item["options"]
+            correct_answer = item["answer"]
+ 
+            # Format query: question + options
+            options_text = "\n".join(
+                f"{key}. {value}" for key, value in options.items()
+            )
+            query = (
+                f"{question}\n\n选项：\n{options_text}\n\n"
+                f"请根据文档内容，直接回答正确选项的字母（A/B/C/D），并简要说明理由。"
+            )
+ 
+            logger.info(f"\n[Question {qid}]: {question}")
             result = await rag.aquery(query, mode="hybrid")
-            logger.info(f"Answer: {result}")
-
-        # 2. Multimodal query with specific multimodal content using aquery_with_multimodal()
-        logger.info(
-            "\n[Multimodal Query]: Analyzing performance data in context of document"
-        )
-        multimodal_result = await rag.aquery_with_multimodal(
-            "Compare this performance data with any similar results mentioned in the document",
-            multimodal_content=[
+            logger.info(f"Model Answer: {result}")
+            logger.info(f"Correct Answer: {correct_answer}")
+ 
+            results.append(
                 {
-                    "type": "table",
-                    "table_data": """Method,Accuracy,Processing_Time
-                                RAGAnything,95.2%,120ms
-                                Traditional_RAG,87.3%,180ms
-                                Baseline,82.1%,200ms""",
-                    "table_caption": "Performance comparison results",
+                    "id": qid,
+                    "question": question,
+                    "options": options,
+                    "correct_answer": correct_answer,
+                    "model_answer": result,
                 }
-            ],
-            mode="hybrid",
+            )
+ 
+        # Save results to output file
+        # Calculate accuracy: check if correct_answer letter appears in model's response
+        correct_count = sum(
+            1 for r in results
+            if r["correct_answer"].strip().upper() in r["model_answer"].strip().upper()
         )
-        logger.info(f"Answer: {multimodal_result}")
-
-        # 3. Another multimodal query with equation content
-        logger.info("\n[Multimodal Query]: Mathematical formula analysis")
-        equation_result = await rag.aquery_with_multimodal(
-            "Explain this formula and relate it to any mathematical concepts in the document",
-            multimodal_content=[
-                {
-                    "type": "equation",
-                    "latex": "F1 = 2 \\cdot \\frac{precision \\cdot recall}{precision + recall}",
-                    "equation_caption": "F1-score calculation formula",
-                }
-            ],
-            mode="hybrid",
-        )
-        logger.info(f"Answer: {equation_result}")
-
+        accuracy = correct_count / len(results) if results else 0
+ 
+        output = {
+            "accuracy": f"{accuracy:.2%}",
+            "correct": correct_count,
+            "total": len(results),
+            "results": results,
+        }
+ 
+        results_file = os.path.join(output_dir, "query_results.json")
+        with open(results_file, "w", encoding="utf-8") as f:
+            json.dump(output, f, ensure_ascii=False, indent=4)
+        logger.info(f"\nResults saved to {results_file}")
+        logger.info(f"Accuracy: {accuracy:.2%} ({correct_count}/{len(results)})")
+ 
     except Exception as e:
         logger.error(f"Error processing with RAG: {str(e)}")
         import traceback
-
+ 
         logger.error(traceback.format_exc())
-
-
+ 
+ 
 def main():
     """Main function to run the example"""
     parser = argparse.ArgumentParser(description="MinerU RAG Example")
@@ -277,6 +290,13 @@ def main():
     )
     parser.add_argument(
         "--output", "-o", default="./output", help="Output directory path"
+    )
+    parser.add_argument(
+        "--questions",
+        "-q",
+        default=os.getenv("QUESTIONS_FILE"),
+        required=True,
+        help="Path to the JSON file containing questions (single_choice format)",
     )
     parser.add_argument(
         "--api-key",
@@ -293,19 +313,19 @@ def main():
         default=os.getenv("PARSER", "mineru"),
         help="Optional base URL for API",
     )
-
+ 
     args = parser.parse_args()
-
+ 
     # Check if API key is provided
     if not args.api_key:
         logger.error("Error: OpenAI API key is required")
         logger.error("Set api key environment variable or use --api-key option")
         return
-
+ 
     # Create output directory if specified
     if args.output:
         os.makedirs(args.output, exist_ok=True)
-
+ 
     # Process with RAG
     asyncio.run(
         process_with_rag(
@@ -315,17 +335,18 @@ def main():
             args.base_url,
             args.working_dir,
             args.parser,
+            args.questions,
         )
     )
-
-
+ 
+ 
 if __name__ == "__main__":
     # Configure logging first
     configure_logging()
-
+ 
     print("RAGAnything Example")
     print("=" * 30)
     print("Processing document with multimodal RAG pipeline")
     print("=" * 30)
-
+ 
     main()
