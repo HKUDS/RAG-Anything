@@ -3,6 +3,7 @@ import asyncio
 import csv
 import json
 import logging
+import shutil
 import time
 from pathlib import Path
 from typing import List
@@ -38,6 +39,25 @@ def _ensure_parent_dir(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
 
 
+def _clear_dir(path: Path) -> None:
+    if path.exists():
+        shutil.rmtree(path, ignore_errors=True)
+        logger.info(f"🧹 Cleared: {path}")
+
+
+def _clear_known_parser_cache(parser_name: str) -> None:
+    parser_name = (parser_name or "").lower()
+    if parser_name != "kreuzberg":
+        return
+    candidates = [
+        Path(__file__).resolve().parent / ".kreuzberg",
+        Path.home() / ".kreuzberg",
+    ]
+    for cache_dir in candidates:
+        if cache_dir.exists():
+            _clear_dir(cache_dir)
+
+
 def _append_csv_row(path: Path, row: dict, header: List[str]) -> None:
     _ensure_parent_dir(path)
     file_exists = path.exists()
@@ -48,10 +68,21 @@ def _append_csv_row(path: Path, row: dict, header: List[str]) -> None:
         writer.writerow(row)
 
 
-async def run_experiment(exp_def: ExtractExperimentDef, input_dir: Path, report_path: Path):
+async def run_experiment(
+    exp_def: ExtractExperimentDef,
+    input_dir: Path,
+    report_path: Path,
+    fresh_run: bool = False,
+    fresh_parser_cache: bool = False,
+):
     logger.info(f"\n🚀 EXTRACT START: {exp_def.id} | {exp_def.description}")
 
     exp_dir = Path(ENV.output_base_dir) / "extract_benchmark" / exp_def.id
+    if fresh_run:
+        _clear_dir(exp_dir)
+    if fresh_parser_cache:
+        _clear_known_parser_cache(exp_def.parser)
+
     parser_output = exp_dir / "parser_output"
     content_output = exp_dir / "content_list"
     content_output.mkdir(parents=True, exist_ok=True)
@@ -65,7 +96,11 @@ async def run_experiment(exp_def: ExtractExperimentDef, input_dir: Path, report_
         )
     )
     # Inject parser kwargs from experiment definition
-    rag.config.parser_kwargs = exp_def.parser_kwargs or {}
+    effective_parser_kwargs = dict(exp_def.parser_kwargs or {})
+    if fresh_parser_cache and exp_def.parser == "kreuzberg":
+        # Enforce no-cache mode for fair timing when parser cache is reset.
+        effective_parser_kwargs["use_cache"] = False
+    rag.config.parser_kwargs = effective_parser_kwargs
 
     files = _get_files(input_dir)
     files = _filter_files_for_parser(files, exp_def.parser)
@@ -110,7 +145,7 @@ async def run_experiment(exp_def: ExtractExperimentDef, input_dir: Path, report_
             "Experiment_ID": exp_def.id,
             "Parser": exp_def.parser,
             "Parse_Method": exp_def.parse_method,
-            "Parser_Kwargs": json.dumps(exp_def.parser_kwargs, ensure_ascii=False),
+            "Parser_Kwargs": json.dumps(effective_parser_kwargs, ensure_ascii=False),
             "File_Name": file_path.name,
             "Parse_Time(s)": f"{parse_time:.2f}",
             "Total_Blocks": metrics["total_blocks"],
@@ -145,6 +180,16 @@ async def main():
     parser = argparse.ArgumentParser(description="Extract-only benchmark for RAGAnything")
     parser.add_argument("--exp", type=str, help="Experiment ID to run. If empty, run all.")
     parser.add_argument(
+        "--fresh-run",
+        action="store_true",
+        help="Clear benchmark_outputs/extract_benchmark/<exp_id> before each run.",
+    )
+    parser.add_argument(
+        "--fresh-parser-cache",
+        action="store_true",
+        help="Clear known parser caches (currently Kreuzberg cache dirs) before run.",
+    )
+    parser.add_argument(
         "--input", type=str, default=ENV.input_dir, help="Input directory containing documents"
     )
     parser.add_argument(
@@ -160,13 +205,25 @@ async def main():
 
     if args.exp:
         if args.exp in EXTRACT_EXPERIMENTS:
-            await run_experiment(EXTRACT_EXPERIMENTS[args.exp], input_dir, report_path)
+            await run_experiment(
+                EXTRACT_EXPERIMENTS[args.exp],
+                input_dir,
+                report_path,
+                fresh_run=args.fresh_run,
+                fresh_parser_cache=args.fresh_parser_cache,
+            )
         else:
             print(f"❌ Experiment '{args.exp}' not found. Available: {list(EXTRACT_EXPERIMENTS.keys())}")
     else:
         print("🚀 Running ALL extract experiments...")
         for exp_id, exp_def in EXTRACT_EXPERIMENTS.items():
-            await run_experiment(exp_def, input_dir, report_path)
+            await run_experiment(
+                exp_def,
+                input_dir,
+                report_path,
+                fresh_run=args.fresh_run,
+                fresh_parser_cache=args.fresh_parser_cache,
+            )
 
 
 if __name__ == "__main__":

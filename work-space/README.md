@@ -45,6 +45,12 @@ python run_bench.py --exp exp1_baseline_marker
 python run_bench.py --exp exp1_baseline_marker_ocr
 ```
 
+### 5. Extract benchmark with fresh run/cache
+``` bash
+python run_extract_bench.py --fresh-run
+python run_extract_bench.py --exp ext3_kreuzberg_default --fresh-run --fresh-parser-cache
+```
+
 ### Streamlit web based
 ``` bash
 python -m streamlit run app.py --server.fileWatcherType none
