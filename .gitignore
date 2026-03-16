@@ -67,6 +67,7 @@ download_models_hf.py
 lightrag-dev/
 gui/
 tiktoken_cache/
+todolist.md
 
 # unit-test files
 test_*
@@ -78,3 +79,9 @@ memory-bank/
 .claude/
 .cursor/
 CLAUDE.md
+
+# app
+uploaded_docs_registry.json
+
+#test
+pptbench_tests

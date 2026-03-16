@@ -2224,6 +2224,126 @@ class ProcessorMixin:
 
         self.logger.info(f"Document {file_path} processing complete!")
 
+    async def process_document_complete_with_page_topics(
+        self,
+        file_path: str,
+        output_dir: str = None,
+        parse_method: str = None,
+        display_stats: bool = None,
+        split_by_character: str | None = None,
+        split_by_character_only: bool = False,
+        doc_id: str | None = None,
+        file_name: str | None = None,
+        use_llm_for_topics: bool = True,
+        topic_max_chars: int = 2000,
+        topic_cosine_threshold: float = 0.7,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """
+        Complete document processing workflow with page-topic extraction and relation building.
+
+        This workflow includes:
+        1) parse document
+        2) extract page topics
+        3) build page-topic similarity relations
+        4) build entity-to-page-topic relations (text-only mapping)
+        5) process multimodal content
+
+        Args:
+            file_path: Path to the file to process
+            output_dir: Output directory (defaults to config.parser_output_dir)
+            parse_method: Parse method (defaults to config.parse_method)
+            display_stats: Whether to display content statistics (defaults to config.display_content_stats)
+            split_by_character: Optional character to split the text by
+            split_by_character_only: If True, split only by the specified character
+            doc_id: Optional document ID, if not provided will be generated from content
+            file_name: Optional file reference used for insertion/citation
+            use_llm_for_topics: Whether to use llm for page topic extraction
+            topic_max_chars: Max chars for each page topic extraction prompt
+            topic_cosine_threshold: Cosine threshold for page topic relation edge creation
+            **kwargs: Additional parser parameters
+
+        Returns:
+            Dict[str, Any]: Structured processing result for debugging/inspection.
+        """
+        ensure_result = await self._ensure_lightrag_initialized()
+        if isinstance(ensure_result, dict) and not ensure_result.get("success", True):
+            raise RuntimeError(
+                f"LightRAG 初始化失败: {ensure_result.get('error', 'unknown error')}"
+            )
+
+        if output_dir is None:
+            output_dir = self.config.parser_output_dir
+        if parse_method is None:
+            parse_method = self.config.parse_method
+        if display_stats is None:
+            display_stats = self.config.display_content_stats
+
+        self.logger.info(
+            f"Starting complete document processing with page topics: {file_path}"
+        )
+
+        content_list, content_based_doc_id = await self.parse_document(
+            file_path=file_path,
+            output_dir=output_dir,
+            parse_method=parse_method,
+            display_stats=display_stats,
+            **kwargs,
+        )
+
+        if doc_id is None:
+            doc_id = content_based_doc_id
+
+        topics = await self.extract_page_topics(
+            content_list,
+            use_llm=use_llm_for_topics,
+            max_chars=topic_max_chars,
+        )
+
+        await self.build_page_topic_relations(
+            topics,
+            cosine_threshold=topic_cosine_threshold,
+            file_path=file_path,
+        )
+
+        await self.build_page_entity_topic_relations_text_only(
+            page_topics=topics,
+            content_list=content_list,
+            doc_id=doc_id,
+            file_path=file_path,
+        )
+
+        text_content, multimodal_items = separate_content(content_list)
+
+        if hasattr(self, "set_content_source_for_context") and multimodal_items:
+            self.set_content_source_for_context(content_list, self.config.content_format)
+
+        if file_name is None:
+            file_name = self._get_file_reference(file_path)
+
+        if multimodal_items:
+            await self._process_multimodal_content(multimodal_items, file_name, doc_id)
+        else:
+            await self._mark_multimodal_processing_complete(doc_id)
+            self.logger.debug(
+                f"No multimodal content found in document {doc_id}, marked multimodal processing as complete"
+            )
+
+        self.logger.info(
+            f"Document {file_path} processing with page topics complete!"
+        )
+
+        return {
+            "file_path": file_path,
+            "doc_id": doc_id,
+            "content_blocks": len(content_list),
+            "topics": topics,
+            "topics_count": len(topics),
+            "multimodal_count": len(multimodal_items),
+            "text_content_length": len(text_content),
+            "status": "completed",
+        }
+
     async def process_document_complete_lightrag_api(
         self,
         file_path: str,
