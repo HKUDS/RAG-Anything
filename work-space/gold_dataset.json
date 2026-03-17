@@ -1,27 +1,27 @@
 [
   {
-    "question": "What is the primary objective of the BrainMVP framework as outlined in the abstract?",
-    "answer": "The primary objective of the BrainMVP framework is to propose a multi-modal vision pre-training framework for brain image analysis using multi-parametric MRI scans. It aims to address the issue of missing modalities and achieve multi-modal information fusion.",
+    "question": "What is the primary limitation of existing Retrieval-Augmented Generation (RAG) frameworks that RAG-Anything aims to address?",
+    "answer": "Existing RAG frameworks are limited to textual content, creating fundamental gaps when processing multimodal documents and neglecting the rich multimodal information present in real-world environments.",
     "type": "General"
   },
   {
-    "question": "How many brain MRI scans and individual images were collected for the BrainMVP dataset, and how many different MRI modalities do they encompass?",
-    "answer": "The BrainMVP dataset includes 16,022 brain MRI scans, which amount to over 2.4 million individual images, encompassing eight different MRI modalities.",
+    "question": "Name the two challenging multimodal benchmarks on which RAG-Anything was experimentally validated.",
+    "answer": "RAG-Anything was validated on two challenging multimodal benchmarks: DocBench and MMLongBench.",
     "type": "Specific"
   },
   {
-    "question": "Why does BrainMVP introduce single-modal MRI image inputs during the pre-training stage, and how does this approach, combined with cross-modal reconstruction, help the model learn more effectively?",
-    "answer": "BrainMVP introduces single-modal MRI image inputs to address the issue of insufficient scalability due to mismatched or missing modalities, allowing for the inclusion of an arbitrary number of modalities and significantly expanding the magnitude of available pre-training data. This approach, combined with cross-modal reconstruction via mask modeling, encourages the model to learn the disentanglement across modalities while mining modality-invariant representations, leveraging the significant anatomical similarity among different MRI modalities for the same subject.",
+    "question": "Explain why existing text-only RAG systems are inadequate for knowledge-intensive domains like Scientific Research, Financial Analysis, and Medical Literature Analysis.",
+    "answer": "Existing text-only RAG systems are inadequate because these domains fundamentally depend on visual and structured information, where critical insights are often encoded exclusively in non-textual formats that resist meaningful conversion to plain text. Current frameworks exclude these vital knowledge sources, creating fundamental gaps.",
     "type": "Reasoning"
   },
   {
-    "question": "What were the reported performance improvements for BrainMVP on downstream tasks, specifically in Dice Score for segmentation benchmarks and accuracy for individual classification tasks?",
-    "answer": "BrainMVP demonstrated a Dice Score improvement of 0.28% - 14.47% across six segmentation benchmarks and a consistent accuracy improvement of 0.65% - 18.07% in four individual classification tasks.",
+    "question": "What are the three core components of the RAG-Anything framework?",
+    "answer": "The three core components of the RAG-Anything framework are universal indexing for multimodal knowledge, cross-modal adaptive retrieval, and knowledge-enhanced response generation.",
     "type": "Specific"
   },
   {
-    "question": "Beyond the technical implementation, what are the broader challenges in multi-parametric MRI analysis that BrainMVP aims to overcome, particularly regarding data availability and model generalizability?",
-    "answer": "BrainMVP aims to overcome broader challenges in multi-parametric MRI analysis, including current models' reliance on uni-modal image data, neglecting cross-modal correlations, and struggling with missing modality data. It also addresses the high cost of medical image annotation, limited accessibility of large amounts of multi-modal data, and the lack of a dedicated multi-modal pre-training paradigm with medical image domain expertise, all of which hinder the generalizability of existing models.",
-    "type": "General"
+    "question": "How does RAG-Anything's dual-graph construction strategy enable comprehensive knowledge retrieval across all modalities?",
+    "answer": "RAG-Anything's dual-graph construction strategy bridges cross-modal understanding and fine-grained textual semantics by building complementary knowledge graphs. These graphs preserve both multimodal contextual relationships and detailed textual knowledge, allowing for seamless integration of visual elements, structured data, and mathematical expressions within a unified retrieval framework.",
+    "type": "Reasoning"
   }
 ]

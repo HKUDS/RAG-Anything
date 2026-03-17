@@ -41,6 +41,18 @@ class EnvConfig:
     pruning_default_algorithm: str = os.getenv("PRUNING_DEFAULT_ALGORITHM", "hybrid")
     pruning_benchmark_report: str = os.getenv("PRUNING_BENCHMARK_REPORT", "./pruning_benchmark.csv")
 
+    # Query settings
+    query_default_mode: str = os.getenv("QUERY_DEFAULT_MODE", "mix")
+    query_top_k: int = int(os.getenv("QUERY_TOP_K", 40))
+    query_chunk_top_k: int = int(os.getenv("QUERY_CHUNK_TOP_K", 12))
+    query_response_type: str = os.getenv("QUERY_RESPONSE_TYPE", "Multiple Paragraphs")
+    query_enable_rerank: bool = os.getenv("QUERY_ENABLE_RERANK", "false").lower() in ("1", "true", "yes", "on")
+    query_local_chunk_top_k: int = int(os.getenv("QUERY_LOCAL_CHUNK_TOP_K", 8))
+    query_local_paragraphs_per_chunk: int = int(os.getenv("QUERY_LOCAL_PARAGRAPHS_PER_CHUNK", 2))
+    query_local_evidence_top_k: int = int(os.getenv("QUERY_LOCAL_EVIDENCE_TOP_K", 6))
+    query_local_evidence_max_chars: int = int(os.getenv("QUERY_LOCAL_EVIDENCE_MAX_CHARS", 1200))
+    query_local_min_score: float = float(os.getenv("QUERY_LOCAL_MIN_SCORE", "6.0"))
+
 
 @dataclass
 class ExperimentDef:

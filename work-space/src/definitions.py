@@ -16,8 +16,8 @@ from .custom_prompts import (
 
 EXPERIMENTS = {
     # Exp 1: BASELINE (legacy key kept for backward compatibility)
-    "exp1_baseline": ExperimentDef(
-        id="exp1_baseline",
+    "exp1_baseline_mineru": ExperimentDef(
+        id="exp1_baseline_mineru",
         description="Baseline MinerU (default parser, auto parse)",
         parser="mineru",
         parse_method="auto",

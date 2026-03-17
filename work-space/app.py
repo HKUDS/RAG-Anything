@@ -372,7 +372,7 @@ if selected_exp:
                             my_bar.progress((idx) / total_q, text=f"Processing Q{idx+1}/{total_q}...")
                             
                             # A. RAG Query (Không dùng asyncio.run ở đây nữa, dùng await)
-                            rag_ans = await qa_engine_local.query(q_text, mode="mix")
+                            rag_ans = await qa_engine_local.query(q_text)
                             
                             # B. Judge (Sync func)
                             score = local_evaluator.evaluate_answer(q_text, gold_ans, rag_ans)
@@ -460,7 +460,7 @@ if selected_exp:
                 with st.spinner(f"Querying {selected_exp}..."):
                     try:
                         qa_engine = RAGQueryEngine(selected_exp)
-                        response = asyncio.run(qa_engine.query(prompt, mode="mix"))
+                        response = asyncio.run(qa_engine.query(prompt))
                         st.markdown(response)
                         st.session_state.messages.append({"role": "assistant", "content": response})
                     except Exception as e:
