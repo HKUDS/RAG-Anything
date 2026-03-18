@@ -1,3 +1,5 @@
+# Local development / research environment requirements for this repo.
+# Package release metadata is defined in pyproject.toml and setup.py.
 huggingface_hub
 # LightRAG packages
 lightrag-hku
@@ -14,7 +16,7 @@ tqdm
 # - [office]: requires LibreOffice (external program, not Python package)
 # - [all]: includes all optional dependencies
 #
-# Install with: pip install raganything[image,text] or pip install raganything[all]
-raganything[all]
+# Install the built package with extras, for example:
+#   pip install "gsk-raganything[all]"
 gliner
 tiktoken

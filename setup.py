@@ -39,40 +39,43 @@ def retrieve_metadata():
     return vars2readme
 
 
-# Reading dependencies from requirements.txt
-def read_requirements():
-    deps = []
-    try:
-        with open("./requirements.txt") as f:
-            deps = [
-                line.strip() for line in f if line.strip() and not line.startswith("#")
-            ]
-    except FileNotFoundError:
-        print(
-            "Warning: 'requirements.txt' not found. No dependencies will be installed."
-        )
-    return deps
-
-
 metadata = retrieve_metadata()
 long_description = read_long_description()
-requirements = read_requirements()
+
+install_requires = [
+    "huggingface_hub",
+    "lightrag-hku",
+    "mineru[core]",
+    "tqdm",
+]
 
 # Define extras_require for optional features
 extras_require = {
+    "docling": ["docling"],
+    "kreuzberg": ["kreuzberg"],
+    "marker": ["marker-pdf"],
     "image": ["Pillow>=10.0.0"],  # For image format conversion (BMP, TIFF, GIF, WebP)
     "text": ["reportlab>=4.0.0"],  # For text file to PDF conversion (TXT, MD)
     "office": [],  # Office document processing requires LibreOffice (external program)
-    "all": ["Pillow>=10.0.0", "reportlab>=4.0.0"],  # All optional features
     "markdown": [
         "markdown>=3.4.0",
         "weasyprint>=60.0",
         "pygments>=2.10.0",
     ],  # Enhanced markdown conversion
+    "all": [
+        "docling",
+        "kreuzberg",
+        "marker-pdf",
+        "Pillow>=10.0.0",
+        "reportlab>=4.0.0",
+        "markdown>=3.4.0",
+        "weasyprint>=60.0",
+        "pygments>=2.10.0",
+    ],
 }
 
 setuptools.setup(
-    name="raganything",
+    name="gsk-raganything",
     url=metadata["__url__"],
     version=metadata["__version__"],
     author=metadata["__author__"],
@@ -90,8 +93,8 @@ setuptools.setup(
         "Intended Audience :: Developers",
         "Topic :: Software Development :: Libraries :: Python Modules",
     ],
-    python_requires=">=3.9",
-    install_requires=requirements,
+    python_requires=">=3.10",
+    install_requires=install_requires,
     extras_require=extras_require,
     include_package_data=True,  # Includes non-code files from MANIFEST.in
     project_urls={  # Additional project metadata

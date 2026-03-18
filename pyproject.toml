@@ -3,7 +3,7 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "raganything"
+name = "gsk-raganything"
 dynamic = ["version"]
 authors = [
     {name = "Zirui Guo"}
@@ -28,6 +28,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+docling = ["docling"]
+kreuzberg = ["kreuzberg"]
+marker = ["marker-pdf"]
+
 image = ["Pillow>=10.0.0"]
 text = ["reportlab>=4.0.0"]
 office = []  # Requires LibreOffice (external program)
@@ -36,19 +40,23 @@ markdown = [
     "weasyprint>=60.0",
     "pygments>=2.10.0",
 ]
+
 all = [
+    "docling",
+    "kreuzberg",
+    "marker-pdf",
     "Pillow>=10.0.0",
     "reportlab>=4.0.0",
     "markdown>=3.4.0",
     "weasyprint>=60.0",
-    "pygments>=2.10.0"
+    "pygments>=2.10.0",
 ]
 
 [project.urls]
-Homepage = "https://github.com/HKUDS/RAG-Anything"
-Documentation = "https://github.com/HKUDS/RAG-Anything"
-Repository = "https://github.com/HKUDS/RAG-Anything"
-Issues = "https://github.com/HKUDS/RAG-Anything/issues"
+Homepage = "https://github.com/minhnion/RAG-Anything"
+Documentation = "https://github.com/minhnion/RAG-Anything"
+Repository = "https://github.com/minhnion/RAG-Anything"
+Issues = "https://github.com/minhnion/RAG-Anything/issues"
 
 [tool.uv]
 dev-dependencies = [
