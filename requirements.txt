@@ -5,6 +5,8 @@ huggingface_hub
 lightrag-hku
 # MinerU 2.0 packages (replaces magic-pdf)
 mineru[core]
+python-dotenv>=1.0.0
+dotenv>=0.9.9
 docling
 kreuzberg
 marker-pdf

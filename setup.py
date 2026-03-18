@@ -46,6 +46,8 @@ install_requires = [
     "huggingface_hub",
     "lightrag-hku",
     "mineru[core]",
+    "python-dotenv>=1.0.0",
+    "dotenv>=0.9.9",
     "tqdm",
 ]
 
