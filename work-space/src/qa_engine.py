@@ -1,15 +1,15 @@
-import logging
-import json
 import inspect
-import math
+import json
+import logging
 import re
-import unicodedata
 from pathlib import Path
+
+from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
-from .models import get_model_funcs
+
 from .config import ENV
 from .definitions import EXPERIMENTS
-from lightrag.utils import EmbeddingFunc
+from .models import get_model_funcs
 
 try:
     from lightrag import QueryParam
@@ -22,35 +22,39 @@ logger = logging.getLogger("QA_Engine")
 QUALITY_FIRST_SYSTEM_PROMPT = (
     "You are a document-grounded QA assistant. "
     "Answer only from the retrieved evidence. "
+    "Answer the user's question directly and briefly. "
+    "Do not add headings, summaries, or extra background unless the question asks for them. "
     "Prefer precise facts, numbers, table values, and named entities when available. "
     "If the evidence is insufficient or ambiguous, say so explicitly instead of guessing. "
     "When multiple retrieved snippets disagree, state the conflict briefly and give the most supported answer."
 )
 
-LEXICAL_STOPWORDS = {
-    "a", "an", "the", "and", "or", "but", "if", "then", "else", "to", "of", "for", "in",
-    "on", "at", "by", "with", "from", "as", "is", "are", "was", "were", "be", "been", "being",
-    "what", "which", "who", "whom", "whose", "when", "where", "why", "how", "does", "do", "did",
-    "can", "could", "should", "would", "will", "may", "might", "about", "into", "through", "across",
-    "this", "that", "these", "those", "it", "its", "their", "them", "they", "he", "she", "we", "you",
-    "your", "our", "ours", "his", "her", "than", "such", "more", "most", "other", "some", "any",
-    "all", "each", "both", "between", "during", "over", "under", "also", "there", "here", "very",
-    "aim", "aims", "address", "addresses",
-}
-
-DEFINITION_CUES = (
-    "what is",
-    "what are",
-    "define",
-    "definition",
-    "core idea",
-    "main idea",
-    "primary limitation",
-    "main limitation",
-    "challenge",
-    "contribution",
-    "purpose",
+CONTEXT_GROUNDED_USER_PROMPT = (
+    "Use only the retrieved context below to answer the question.\n"
+    "Output rules:\n"
+    "- Start with the answer immediately.\n"
+    "- Keep the answer as short as the question allows.\n"
+    "- Do not add headings, overviews, summaries, or unrelated findings.\n"
+    "- For name/list/which questions, return only the requested names or items.\n"
+    "- For definition/why/how questions, use at most 2 concise paragraphs.\n"
+    "- Do not use outside knowledge.\n"
+    "- If the context is insufficient, say that explicitly.\n"
+    "- Prefer precise wording grounded in the retrieved evidence.\n\n"
+    "Question:\n{question}\n\n"
+    "Retrieved Context:\n{context}"
 )
+
+CONTEXT_DISTILL_USER_PROMPT = (
+    "Extract only the facts from the retrieved context that are directly needed to answer the question.\n"
+    "Rules:\n"
+    "- Keep exact names, benchmark titles, metrics, dates, and technical terms when present.\n"
+    "- Ignore background, comparisons, methodology, and unrelated sections.\n"
+    "- Output at most 6 short bullet points.\n"
+    "- If the context does not explicitly support the answer, output exactly: INSUFFICIENT EVIDENCE\n\n"
+    "Question:\n{question}\n\n"
+    "Retrieved Context:\n{context}"
+)
+
 
 class RAGQueryEngine:
     def __init__(self, experiment_id: str):
@@ -63,24 +67,21 @@ class RAGQueryEngine:
         self.storage_dir = self.exp_dir / "rag_storage"
         self.parser_name = self.exp_def.parser or ENV.parser
         self.parse_method = self.exp_def.parse_method or ENV.parse_method
-        
+
         # Query nên dùng cùng provider/embedding family với experiment để giữ retrieval ổn định.
         self.llm_f, _, self.embed_f = get_model_funcs(self.exp_def.provider)
         self.rag = None
-        self._text_chunks = None
-        self._chunk_token_df = None
 
     async def initialize(self):
-        """Khởi tạo LightRAG ở chế độ Query (không parse lại)"""
+        """Khởi tạo RAGAnything ở chế độ query-only, không parse lại tài liệu."""
         config = RAGAnythingConfig(
             working_dir=str(self.storage_dir),
             parser=self.parser_name,
             parse_method=self.parse_method,
         )
 
-        # Đồng bộ embedding_dim với storage nếu khác ENV (tránh lỗi mismatch khi query kho cũ)
         self.embed_f = self._align_embedding_dim_with_storage(self.storage_dir, self.embed_f)
-        
+
         self.rag = RAGAnything(
             config=config,
             llm_model_func=self.llm_f,
@@ -91,37 +92,47 @@ class RAGQueryEngine:
 
     async def query(self, question: str, mode: str | None = None):
         """
-        Query pipeline theo hướng chất lượng:
-        1. Ưu tiên lexical evidence retrieval trên text chunks để lấy đoạn chứng cứ sát câu hỏi.
-        2. Tổng hợp câu trả lời grounded trực tiếp từ các evidence blocks đã chọn.
-        3. Chỉ fallback về LightRAG query mode khi evidence quá yếu.
+        Query pipeline ưu tiên core retrieval của RAGAnything/LightRAG:
+        1. Lấy retrieved context từ chính LightRAG (nếu runtime hỗ trợ only_need_context/only_need_prompt).
+        2. Chạy grounded answer synthesis từ context đó.
+        3. Nếu runtime hiện tại không hỗ trợ lấy context thô, fallback về rag.aquery(...) mặc định.
         """
         if self.rag is None:
             await self.initialize()
 
         resolved_mode = mode or ENV.query_default_mode
-        query_kwargs = self._build_quality_query_kwargs()
         normalized_question = self._normalize_user_query(question)
+        query_kwargs = self._build_quality_query_kwargs()
 
         logger.info(
-            "Querying: %s (Normalized: %s, Fallback mode: %s, QueryKwargs: %s)",
+            "Querying via core RAG retrieval: %s (normalized=%s, mode=%s, kwargs=%s)",
             question,
             normalized_question,
             resolved_mode,
             query_kwargs,
         )
 
-        evidence_blocks = self._retrieve_text_evidence_blocks(normalized_question)
-        if evidence_blocks:
+        retrieved_context = await self._retrieve_core_context(
+            normalized_question,
+            mode=resolved_mode,
+            query_kwargs=query_kwargs,
+        )
+        if retrieved_context:
             logger.info(
-                "Using evidence-first QA with %d blocks: %s",
-                len(evidence_blocks),
-                ", ".join(block["label"] for block in evidence_blocks),
+                "Using core retrieval context for grounded synthesis (context chars=%d)",
+                len(retrieved_context),
             )
-            return await self._answer_from_evidence(normalized_question, evidence_blocks)
+            distilled_context = await self._distill_core_context(
+                normalized_question,
+                retrieved_context,
+            )
+            return await self._answer_from_core_context(
+                normalized_question,
+                distilled_context or retrieved_context,
+            )
 
         logger.warning(
-            "Lexical evidence retrieval was weak for query '%s'. Falling back to LightRAG mode '%s'.",
+            "Could not fetch core retrieval context directly for query '%s'. Falling back to LightRAG mode '%s'.",
             normalized_question,
             resolved_mode,
         )
@@ -132,59 +143,16 @@ class RAGQueryEngine:
             **query_kwargs,
         )
 
-    def _load_text_chunks(self) -> list[dict]:
-        if self._text_chunks is not None:
-            return self._text_chunks
-
-        chunks_file = self.storage_dir / "kv_store_text_chunks.json"
-        if not chunks_file.exists():
-            logger.warning("Text chunk store not found: %s", chunks_file)
-            self._text_chunks = []
-            self._chunk_token_df = {}
-            return self._text_chunks
-
-        with open(chunks_file, "r", encoding="utf-8") as f:
-            raw_data = json.load(f)
-
-        chunks = []
-        token_df = {}
-        for chunk_id, chunk in raw_data.items():
-            content = str(chunk.get("content", "")).strip()
-            if not content:
-                continue
-            # Skip parser artifact analyses; they inject layout noise into QA retrieval.
-            if content.startswith("Discarded Content Analysis:") or "Content: {'type': 'discarded'" in content:
-                continue
-            norm = self._normalize_text(content)
-            tokens = self._tokenize(content)
-            token_set = set(tokens)
-            for token in token_set:
-                token_df[token] = token_df.get(token, 0) + 1
-            chunks.append(
-                {
-                    "id": chunk_id,
-                    "content": content,
-                    "chunk_order_index": chunk.get("chunk_order_index", 0),
-                    "norm": norm,
-                    "compact": self._compact_text(norm),
-                    "tokens": tokens,
-                }
-            )
-
-        self._text_chunks = sorted(chunks, key=lambda x: (x["chunk_order_index"], x["id"]))
-        self._chunk_token_df = token_df
-        return self._text_chunks
-
     def _normalize_user_query(self, question: str) -> str:
         normalized = " ".join(str(question).strip().split())
         if not normalized:
             return normalized
 
-        normalized = re.sub(
-            r"(?i)\brag[\s-]*anything\b",
-            "RAG-Anything",
-            normalized,
-        )
+        # Bỏ các quiz prefixes kiểu "Q2:" để retrieval tập trung vào semantic query.
+        normalized = re.sub(r"(?i)^(?:q(?:uestion)?\s*\d+\s*[:.)-]\s*)", "", normalized)
+
+        # Chỉ giữ alias normalization tối thiểu cho proper nouns phổ biến của repo/paper.
+        normalized = re.sub(r"(?i)\brag[\s-]*anything\b", "RAG-Anything", normalized)
         normalized = re.sub(
             r"(?i)\bretrieval augmented generation\b",
             "Retrieval-Augmented Generation",
@@ -192,209 +160,142 @@ class RAGQueryEngine:
         )
         return normalized
 
-    @staticmethod
-    def _normalize_text(text: str) -> str:
-        text = unicodedata.normalize("NFKC", str(text)).lower()
-        text = text.replace("\u2013", "-").replace("\u2014", "-")
-        text = re.sub(r"[^a-z0-9\s-]", " ", text)
-        text = re.sub(r"\s+", " ", text).strip()
-        return text
+    async def _retrieve_core_context(self, question: str, mode: str, query_kwargs: dict) -> str | None:
+        supported = self._get_supported_queryparam_fields()
+        if supported is None:
+            logger.warning("QueryParam signature unavailable; skip direct context retrieval")
+            return None
 
-    @staticmethod
-    def _compact_text(text: str) -> str:
-        return re.sub(r"[\s\-]+", "", text)
+        if "only_need_prompt" in supported:
+            retrieval_attempts = ["only_need_prompt"]
+        else:
+            retrieval_attempts = []
+        if "only_need_context" in supported:
+            retrieval_attempts.append("only_need_context")
 
-    @staticmethod
-    def _tokenize(text: str) -> list[str]:
-        tokens = re.findall(r"[a-z0-9][a-z0-9\-]*", RAGQueryEngine._normalize_text(text))
-        return [t for t in tokens if len(t) > 1 and t not in LEXICAL_STOPWORDS]
-
-    @staticmethod
-    def _generate_query_phrases(query_tokens: list[str]) -> list[str]:
-        phrases = []
-        max_n = min(4, len(query_tokens))
-        for n in range(max_n, 1, -1):
-            for i in range(len(query_tokens) - n + 1):
-                phrase_tokens = query_tokens[i : i + n]
-                if len(phrase_tokens) < 2:
-                    continue
-                phrase = " ".join(phrase_tokens)
-                if phrase not in phrases:
-                    phrases.append(phrase)
-        return phrases[:20]
-
-    def _idf(self, token: str) -> float:
-        token_df = self._chunk_token_df or {}
-        total_docs = max(len(self._text_chunks or []), 1)
-        df = token_df.get(token, 0)
-        return math.log(1 + (total_docs / (1 + df)))
-
-    def _score_block(
-        self,
-        block_text: str,
-        query_norm: str,
-        query_compact: str,
-        query_tokens: list[str],
-        query_phrases: list[str],
-        order_index: int = 0,
-        definition_like: bool = False,
-    ) -> tuple[float, dict]:
-        block_norm = self._normalize_text(block_text)
-        if not block_norm:
-            return 0.0, {}
-
-        block_compact = self._compact_text(block_norm)
-        block_tokens = set(self._tokenize(block_text))
-
-        token_score = sum(self._idf(token) for token in query_tokens if token in block_tokens)
-        phrase_hits = [phrase for phrase in query_phrases if phrase in block_norm]
-        bigram_hits = max(len([p for p in phrase_hits if len(p.split()) == 2]), 0)
-
-        exact_compact_hit = query_compact and query_compact in block_compact
-        full_query_hit = query_norm and query_norm in block_norm
-
-        score = token_score
-        if phrase_hits:
-            score += 3.0 * len(phrase_hits)
-        if bigram_hits:
-            score += 1.5 * bigram_hits
-        if exact_compact_hit:
-            score += 8.0
-        if full_query_hit:
-            score += 10.0
-        if definition_like and order_index <= 2:
-            score += max(0.0, 3.0 - order_index)
-        if definition_like and ("abstract" in block_norm or "introduction" in block_norm):
-            score += 2.0
-
-        details = {
-            "token_score": round(token_score, 3),
-            "phrase_hits": phrase_hits[:6],
-            "exact_compact_hit": exact_compact_hit,
-            "full_query_hit": full_query_hit,
-        }
-        return score, details
-
-    def _retrieve_text_evidence_blocks(self, question: str) -> list[dict]:
-        chunks = self._load_text_chunks()
-        if not chunks:
-            return []
-
-        query_norm = self._normalize_text(question)
-        query_compact = self._compact_text(query_norm)
-        query_tokens = self._tokenize(question)
-        if not query_tokens:
-            return []
-        query_phrases = self._generate_query_phrases(query_tokens)
-        definition_like = any(cue in query_norm for cue in DEFINITION_CUES)
-
-        scored_chunks = []
-        for chunk in chunks:
-            score, details = self._score_block(
-                chunk["content"],
-                query_norm=query_norm,
-                query_compact=query_compact,
-                query_tokens=query_tokens,
-                query_phrases=query_phrases,
-                order_index=chunk["chunk_order_index"],
-                definition_like=definition_like,
+        if not retrieval_attempts:
+            logger.warning(
+                "Current LightRAG runtime does not expose only_need_context/only_need_prompt; "
+                "cannot perform separate context retrieval"
             )
-            if score > 0:
-                scored_chunks.append((score, details, chunk))
+            return None
 
-        scored_chunks.sort(key=lambda item: item[0], reverse=True)
-        top_chunk_candidates = scored_chunks[: ENV.query_local_chunk_top_k]
-        if not top_chunk_candidates:
-            return []
+        retrieval_modes = [mode]
+        if mode != "naive":
+            retrieval_modes.append("naive")
 
-        logger.info(
-            "Top lexical chunks: %s",
-            " | ".join(
-                f"{item[2]['id']}@{item[2]['chunk_order_index']}={item[0]:.2f}"
-                for item in top_chunk_candidates[:5]
-            ),
-        )
-
-        evidence_blocks = []
-        seen_paragraphs = set()
-        for chunk_score, _, chunk in top_chunk_candidates:
-            paragraphs = [
-                p.strip()
-                for p in re.split(r"\n\s*\n+", chunk["content"])
-                if p.strip()
-            ]
-            if not paragraphs:
-                paragraphs = [chunk["content"]]
-
-            scored_paragraphs = []
-            for paragraph in paragraphs:
-                para_score, para_details = self._score_block(
-                    paragraph,
-                    query_norm=query_norm,
-                    query_compact=query_compact,
-                    query_tokens=query_tokens,
-                    query_phrases=query_phrases,
-                    order_index=chunk["chunk_order_index"],
-                    definition_like=definition_like,
-                )
-                if para_score > 0:
-                    combined_score = chunk_score * 0.35 + para_score
-                    scored_paragraphs.append((combined_score, para_details, paragraph))
-
-            scored_paragraphs.sort(key=lambda item: item[0], reverse=True)
-            for combined_score, para_details, paragraph in scored_paragraphs[: ENV.query_local_paragraphs_per_chunk]:
-                paragraph_key = self._normalize_text(paragraph)[:400]
-                if paragraph_key in seen_paragraphs:
+        contexts: list[str] = []
+        seen = set()
+        for retrieval_mode in retrieval_modes:
+            for flag_name in retrieval_attempts:
+                attempt_kwargs = dict(query_kwargs)
+                attempt_kwargs[flag_name] = True
+                try:
+                    raw_result = await self.rag.aquery(
+                        question,
+                        mode=retrieval_mode,
+                        system_prompt=None,
+                        **attempt_kwargs,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Core retrieval context attempt failed (flag=%s, mode=%s): %s",
+                        flag_name,
+                        retrieval_mode,
+                        exc,
+                    )
                     continue
-                seen_paragraphs.add(paragraph_key)
-                evidence_blocks.append(
-                    {
-                        "label": f"E{len(evidence_blocks) + 1}",
-                        "chunk_id": chunk["id"],
-                        "chunk_order_index": chunk["chunk_order_index"],
-                        "score": round(combined_score, 3),
-                        "details": para_details,
-                        "text": paragraph[: ENV.query_local_evidence_max_chars].strip(),
-                    }
+
+                context = self._sanitize_retrieved_context(raw_result)
+                if not context:
+                    continue
+
+                key = re.sub(r"\s+", " ", context[:1000]).strip().lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                logger.info(
+                    "Retrieved core context successfully via %s/%s (chars=%d)",
+                    retrieval_mode,
+                    flag_name,
+                    len(context),
                 )
-                if len(evidence_blocks) >= ENV.query_local_evidence_top_k:
-                    break
-            if len(evidence_blocks) >= ENV.query_local_evidence_top_k:
+                contexts.append(f"[{retrieval_mode}/{flag_name}]\n{context}")
+
+        if not contexts:
+            return None
+
+        merged = "\n\n".join(contexts[:2]).strip()
+        if len(merged) > 10000:
+            merged = merged[:10000].rstrip()
+        return merged
+
+    @staticmethod
+    def _sanitize_retrieved_context(raw_result) -> str | None:
+        if raw_result is None:
+            return None
+
+        if isinstance(raw_result, (dict, list)):
+            context = json.dumps(raw_result, ensure_ascii=False, indent=2).strip()
+        else:
+            context = str(raw_result).strip()
+        if not context:
+            return None
+
+        # Nếu only_need_prompt trả về nguyên prompt, loại bớt một số marker chỉ thị phổ biến
+        # để answer model tập trung hơn vào retrieved evidence.
+        cleanup_patterns = [
+            r"(?im)^system prompt:.*$",
+            r"(?im)^instructions?:.*$",
+            r"(?im)^you are .*assistant.*$",
+            r"(?im)^answer using the provided context.*$",
+            r"(?im)^image path:.*$",
+            r"(?im)^content:\s*\{'type':\s*'discarded'.*$",
+        ]
+        for pattern in cleanup_patterns:
+            context = re.sub(pattern, "", context)
+
+        context = re.sub(r"(?is)discarded content analysis:\s*", "", context)
+
+        # Nếu LightRAG trả về prompt đầy đủ có nhiều sections, ưu tiên giữ phần Sources/Chunks
+        # vì đây thường là evidence trực tiếp nhất cho answer synthesis.
+        prioritized_section_patterns = [
+            r"(?is)(?:^|\n)-{2,}\s*sources\s*-{2,}\s*\n(.*)$",
+            r"(?is)(?:^|\n)-{2,}\s*source chunks?\s*-{2,}\s*\n(.*)$",
+            r"(?is)(?:^|\n)-{2,}\s*chunks?\s*-{2,}\s*\n(.*)$",
+            r"(?is)(?:^|\n)sources?:\s*\n(.*)$",
+        ]
+        for pattern in prioritized_section_patterns:
+            matched = re.search(pattern, context)
+            if matched:
+                context = matched.group(1).strip()
                 break
 
-        if not evidence_blocks:
-            return []
+        context = re.sub(r"\n{3,}", "\n\n", context).strip()
+        if len(context) > 8000:
+            context = context[:8000].rstrip()
+        return context or None
 
-        strongest_score = evidence_blocks[0]["score"]
-        if strongest_score < ENV.query_local_min_score:
-            logger.warning(
-                "Best lexical evidence score %.2f is below threshold %.2f",
-                strongest_score,
-                ENV.query_local_min_score,
-            )
-            return []
+    async def _distill_core_context(self, question: str, retrieved_context: str) -> str:
+        prompt = CONTEXT_DISTILL_USER_PROMPT.format(
+            question=question,
+            context=retrieved_context,
+        )
+        try:
+            distilled = await self.llm_f(prompt, system_prompt=QUALITY_FIRST_SYSTEM_PROMPT)
+        except Exception as exc:
+            logger.warning("Context distillation failed: %s", exc)
+            return retrieved_context
 
-        return evidence_blocks
+        distilled = str(distilled).strip()
+        if not distilled or distilled == "INSUFFICIENT EVIDENCE":
+            return retrieved_context
+        return distilled
 
-    async def _answer_from_evidence(self, question: str, evidence_blocks: list[dict]) -> str:
-        evidence_text = []
-        for block in evidence_blocks:
-            evidence_text.append(
-                f"[{block['label']}] (chunk={block['chunk_id']}, order={block['chunk_order_index']}, score={block['score']})\n"
-                f"{block['text']}"
-            )
-
-        prompt = (
-            "Answer the question using only the evidence blocks below.\n"
-            "Rules:\n"
-            "- Give a direct answer in 1-3 sentences.\n"
-            "- Do not use outside knowledge.\n"
-            "- Do not answer from generic background knowledge about RAG or AI unless it is explicitly stated in the evidence.\n"
-            "- If the evidence is insufficient, say so explicitly.\n"
-            "- Prefer wording that stays close to the evidence.\n"
-            "- Add short inline citations like [E1] or [E2] for the key supporting claims.\n\n"
-            f"Question:\n{question}\n\n"
-            f"Evidence Blocks:\n{chr(10).join(evidence_text)}"
+    async def _answer_from_core_context(self, question: str, retrieved_context: str) -> str:
+        prompt = CONTEXT_GROUNDED_USER_PROMPT.format(
+            question=question,
+            context=retrieved_context,
         )
         return await self.llm_f(prompt, system_prompt=QUALITY_FIRST_SYSTEM_PROMPT)
 
@@ -422,8 +323,10 @@ class RAGQueryEngine:
             return embed_func
 
         logger.warning(
-            f"Embedding dim mismatch detected. Storage: {stored_dim}, current: {current_dim}. "
-            "Auto-adjusting query embedding to match storage."
+            "Embedding dim mismatch detected. Storage: %s, current: %s. "
+            "Auto-adjusting query embedding to match storage.",
+            stored_dim,
+            current_dim,
         )
 
         async def _wrapper(texts):
@@ -437,7 +340,6 @@ class RAGQueryEngine:
                 if len(vec) > stored_dim:
                     adjusted.append(vec[:stored_dim])
                 elif len(vec) < stored_dim:
-                    # pad with zeros to expected dim
                     adjusted.append(vec + [0.0] * (stored_dim - len(vec)))
                 else:
                     adjusted.append(vec)
@@ -469,18 +371,14 @@ class RAGQueryEngine:
             return {"vlm_enhanced": False}
 
         proposed = {
-            # Explicitly disable query-time VLM path in workspace answer pipeline.
             "vlm_enhanced": False,
-            # Quality-first retrieval defaults.
             "top_k": ENV.query_top_k,
             "chunk_top_k": ENV.query_chunk_top_k,
             "response_type": ENV.query_response_type,
             "enable_rerank": ENV.query_enable_rerank,
         }
 
-        # `vlm_enhanced` là tham số của RAGAnything.aquery, không thuộc QueryParam.
         query_kwargs = {"vlm_enhanced": False}
-
         for key, value in proposed.items():
             if key == "vlm_enhanced":
                 continue

@@ -57,12 +57,13 @@ python -m streamlit run app.py --server.fileWatcherType none
 ```
 
 ### Query answer pipeline defaults
-- Workspace query path now defaults to quality-first text QA:
-  - primary strategy: lexical evidence-first retrieval on `kv_store_text_chunks.json`
-  - fallback mode: `mix`
+- Workspace query path now defaults to core RAG retrieval:
+  - primary strategy: ask LightRAG/RAG-Anything for retrieved context first
+  - answer generation: grounded synthesis from that retrieved context
+  - fallback mode: direct `rag.aquery(...)`
   - query-time vision/VLM: disabled
   - `aquery_with_multimodal`: not used in workspace answer flow
-  - answer prompt: grounded, evidence-first, no guessing when context is insufficient
+  - answer prompt: grounded, no guessing when context is insufficient
 - Query-time knobs can be overridden in `work-space/.env`:
 ``` bash
 QUERY_DEFAULT_MODE=mix
@@ -70,9 +71,4 @@ QUERY_TOP_K=40
 QUERY_CHUNK_TOP_K=12
 QUERY_RESPONSE_TYPE=Multiple Paragraphs
 QUERY_ENABLE_RERANK=false
-QUERY_LOCAL_CHUNK_TOP_K=8
-QUERY_LOCAL_PARAGRAPHS_PER_CHUNK=2
-QUERY_LOCAL_EVIDENCE_TOP_K=6
-QUERY_LOCAL_EVIDENCE_MAX_CHARS=1200
-QUERY_LOCAL_MIN_SCORE=6.0
 ```
