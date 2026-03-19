@@ -27,15 +27,15 @@ async def main() -> None:
     api_key = "sk-c4x9pza11AKl8KOirlU1yCjPzZjriUQxjhzjfy6W1AIRcLMa"
     api_base = "https://yunwu.ai/v1"
     model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-    question = os.getenv("TEST_QUESTION", "什么是RAG，简要说明它和传统检索的区别")
+    question = os.getenv("TEST_QUESTION", "rag一般是怎么检索相关信息的？")
 
     if not api_key:
         raise SystemExit("Missing OPENAI_API_KEY")
 
     provider = OpenAIProvider(api_key=api_key, api_base=api_base, default_model=model)
-    loop = AgentLoop(provider=provider)
+    loop = AgentLoop(provider=provider, workspace="./rag_agent_loop")
 
-    result = await loop.run_once(question)
+    result = await loop.process_message(question)
 
     print("final_answer:", result.final_answer)
     print("iterations:", result.iterations)
