@@ -44,7 +44,7 @@ long_description = read_long_description()
 
 install_requires = [
     "huggingface_hub",
-    "lightrag-hku",
+    "lightrag-hku>=1.4.10,<2.0.0",
     "mineru[core]",
     "python-dotenv>=1.0.0",
     "dotenv>=0.9.9",
@@ -53,9 +53,8 @@ install_requires = [
 
 # Define extras_require for optional features
 extras_require = {
-    "docling": ["docling"],
-    "kreuzberg": ["kreuzberg"],
-    "marker": ["marker-pdf"],
+    "docling": ["docling>=2.75.0,<3.0.0"],
+    "kreuzberg": ["kreuzberg>=4.3.8,<5.0.0"],
     "image": ["Pillow>=10.0.0"],  # For image format conversion (BMP, TIFF, GIF, WebP)
     "text": ["reportlab>=4.0.0"],  # For text file to PDF conversion (TXT, MD)
     "office": [],  # Office document processing requires LibreOffice (external program)
@@ -65,9 +64,8 @@ extras_require = {
         "pygments>=2.10.0",
     ],  # Enhanced markdown conversion
     "all": [
-        "docling",
-        "kreuzberg",
-        "marker-pdf",
+        "docling>=2.75.0,<3.0.0",
+        "kreuzberg>=4.3.8,<5.0.0",
         "Pillow>=10.0.0",
         "reportlab>=4.0.0",
         "markdown>=3.4.0",

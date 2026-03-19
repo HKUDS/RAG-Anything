@@ -2,14 +2,13 @@
 # Package release metadata is defined in pyproject.toml and setup.py.
 huggingface_hub
 # LightRAG packages
-lightrag-hku
+lightrag-hku>=1.4.10,<2.0.0
 # MinerU 2.0 packages (replaces magic-pdf)
 mineru[core]
 python-dotenv>=1.0.0
 dotenv>=0.9.9
-docling
-kreuzberg
-marker-pdf
+docling>=2.75.0,<3.0.0
+kreuzberg>=4.3.8,<5.0.0
 # Progress bars for batch processing
 tqdm
 # Note: Optional dependencies are now defined in setup.py extras_require:
