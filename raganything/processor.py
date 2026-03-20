@@ -136,6 +136,118 @@ class ProcessorMixin:
 
         return doc_id
 
+    def _generate_page_topics_cache_key(
+        self, content_list: List[Dict[str, Any]], use_llm: bool, max_chars: int
+    ) -> str:
+        """
+        Generate cache key for page topics based on content and parameters.
+
+        Args:
+            content_list: Parsed content list
+            use_llm: Whether LLM-based topic extraction is enabled
+            max_chars: Max characters used for LLM prompt
+
+        Returns:
+            str: Cache key hash
+        """
+        doc_id = self._generate_content_based_doc_id(content_list)
+        cache_data = {
+            "doc_id": doc_id,
+            "use_llm": bool(use_llm),
+            "max_chars": int(max_chars),
+        }
+        cache_str = json.dumps(cache_data, sort_keys=True, ensure_ascii=False)
+        return hashlib.md5(cache_str.encode()).hexdigest()
+
+    async def _get_cached_page_topics(
+        self,
+        cache_key: str,
+        content_list: List[Dict[str, Any]],
+        use_llm: bool,
+        max_chars: int,
+    ) -> Dict[int, str] | None:
+        """
+        Get cached page topics if available and valid.
+
+        Returns:
+            Dict[int, str] | None: page topics dict or None if invalid/missing
+        """
+        if not hasattr(self, "page_topics_cache") or self.page_topics_cache is None:
+            return None
+
+        try:
+            cached_data = await self.page_topics_cache.get_by_id(cache_key)
+            if not cached_data:
+                return None
+
+            current_doc_id = self._generate_content_based_doc_id(content_list)
+            cached_doc_id = cached_data.get("doc_id")
+            if cached_doc_id != current_doc_id:
+                self.logger.debug(f"Page topics cache invalid - doc changed: {cache_key}")
+                return None
+
+            cached_config = cached_data.get("topic_config", {})
+            current_config = {
+                "use_llm": bool(use_llm),
+                "max_chars": int(max_chars),
+            }
+
+            if cached_config != current_config:
+                self.logger.debug(
+                    f"Page topics cache invalid - config changed: {cache_key}"
+                )
+                return None
+
+            page_topics = cached_data.get("page_topics")
+            if isinstance(page_topics, dict) and page_topics:
+                self.logger.debug(
+                    f"Found valid cached page topics for key: {cache_key}"
+                )
+                return page_topics
+
+            self.logger.debug(
+                f"Page topics cache incomplete - missing page_topics: {cache_key}"
+            )
+            return None
+
+        except Exception as e:
+            self.logger.warning(f"Error accessing page topics cache: {e}")
+            return None
+
+    async def _store_cached_page_topics(
+        self,
+        cache_key: str,
+        content_list: List[Dict[str, Any]],
+        page_topics: Dict[int, str],
+        use_llm: bool,
+        max_chars: int,
+    ) -> None:
+        """
+        Store page topics in cache.
+        """
+        if not hasattr(self, "page_topics_cache") or self.page_topics_cache is None:
+            return
+
+        try:
+            doc_id = self._generate_content_based_doc_id(content_list)
+            cache_data = {
+                cache_key: {
+                    "doc_id": doc_id,
+                    "page_topics": page_topics,
+                    "topic_config": {
+                        "use_llm": bool(use_llm),
+                        "max_chars": int(max_chars),
+                    },
+                    "cached_at": time.time(),
+                    "cache_version": "1.0",
+                }
+            }
+            await self.page_topics_cache.upsert(cache_data)
+            await self.page_topics_cache.index_done_callback()
+            self.logger.info(f"Stored page topics in cache: {cache_key}")
+        except Exception as e:
+            self.logger.warning(f"Error storing page topics to cache: {e}")
+
     async def _call_llm_model(
         self, prompt: str, system_prompt: str | None = None
     ) -> str:
@@ -286,6 +398,25 @@ class ProcessorMixin:
         if not content_list:
             return {}
 
+        # Resolve effective LLM usage based on availability
+        effective_use_llm = (
+            bool(use_llm)
+            and hasattr(self, "llm_model_func")
+            and self.llm_model_func is not None
+        )
+
+        # Check cache first
+        cache_key = self._generate_page_topics_cache_key(
+            content_list, effective_use_llm, max_chars
+        )
+        cached_topics = await self._get_cached_page_topics(
+            cache_key, content_list, effective_use_llm, max_chars
+        )
+        if cached_topics is not None:
+            self._page_topics_dict = cached_topics
+            self.logger.info("Using cached page topics")
+            return cached_topics
+
         page_buckets: Dict[int, List[Dict[str, Any]]] = {}
         for item in content_list:
             if not isinstance(item, dict):
@@ -371,7 +502,7 @@ class ProcessorMixin:
                 page_topics[page_idx] = fallback_topic
                 continue
 
-            if not use_llm or not hasattr(self, "llm_model_func") or self.llm_model_func is None:
+            if not effective_use_llm:
                 page_topics[page_idx] = fallback_topic
                 continue
 
@@ -395,6 +526,9 @@ class ProcessorMixin:
                 page_topics[page_idx] = fallback_topic
 
         self._page_topics_dict = page_topics
+        await self._store_cached_page_topics(
+            cache_key, content_list, page_topics, effective_use_llm, max_chars
+        )
         return page_topics
 
 
@@ -448,6 +582,9 @@ class ProcessorMixin:
             else:
                 merged[norm]["pages"].append(int(page_idx))
 
+        # Prepare entities_vdb payload for page topics
+        entities_vdb_payload: Dict[str, Any] = {}
+
         topics = [item["topic"] for item in merged.values()]
         if len(topics) < 2:
             # still ensure nodes are stored
@@ -464,6 +601,20 @@ class ProcessorMixin:
                 await self.lightrag.chunk_entity_relation_graph.upsert_node(
                     item["topic"], node_data=node_data
                 )
+
+                # Store page topic entity into entities_vdb for vector search
+                entity_id = compute_mdhash_id(item["topic"], prefix="ent-")
+                entities_vdb_payload[entity_id] = {
+                    "entity_name": item["topic"],
+                    "entity_type": "page_topic",
+                    "content": f"{item['topic']}\n{node_data['description']}",
+                    "source_id": "page_topic_dict",
+                    "file_path": file_path,
+                }
+
+            if entities_vdb_payload:
+                await self.lightrag.entities_vdb.upsert(entities_vdb_payload)
+                await self.lightrag.entities_vdb.index_done_callback()
             return
 
         # Compute embeddings
@@ -491,6 +642,20 @@ class ProcessorMixin:
                 item["topic"], node_data=node_data
             )
 
+            # Store page topic entity into entities_vdb for vector search
+            entity_id = compute_mdhash_id(item["topic"], prefix="ent-")
+            entities_vdb_payload[entity_id] = {
+                "entity_name": item["topic"],
+                "entity_type": "page_topic",
+                "content": f"{item['topic']}\n{node_data['description']}",
+                "source_id": "page_topic_dict",
+                "file_path": file_path,
+            }
+
+        if entities_vdb_payload:
+            await self.lightrag.entities_vdb.upsert(entities_vdb_payload)
+            await self.lightrag.entities_vdb.index_done_callback()
+
         # Create edges based on cosine similarity
         topic_list = [item["topic"] for item in merged.values()]
         n = len(topic_list)
@@ -512,22 +677,35 @@ class ProcessorMixin:
                         src, tgt, edge_data=edge_data
                     )
 
-    async def build_page_entity_topic_relations_text_only(self) -> None:
+    async def build_page_entity_topic_relations_text_only(
+        self,
+        page_topics: Dict[int, str],
+        content_list: List[Dict[str, Any]],
+        doc_id: str,
+        file_path: str,
+        separator: str = "\n<<<PAGE_BREAK>>>\n",
+        page_marker_re: str | re.Pattern = r"<<PAGE:(\d+)>>",
+    ) -> None:
         """
         Build relations between page entities and page topic entities (text-only).
 
         Requirements:
-        - No input arguments
-        - Uses cached page_topics dict and latest parsed content
-        - Inserts page-separated text into LightRAG for chunking
+        - Uses explicit inputs only (no cached state)
+        - Text with page markers must have been inserted into LightRAG beforehand
         - Maps entity source_id(chunk_id) to page_idx, then links to page topic
         """
 
-        if not hasattr(self, "_page_topics_dict") or not self._page_topics_dict:
-            raise RuntimeError("未找到页主题字典，请先调用 extract_page_topics")
+        if not page_topics:
+            raise RuntimeError("page_topics 为空，请先调用 extract_page_topics")
 
-        if not hasattr(self, "_latest_content_list") or not self._latest_content_list:
-            raise RuntimeError("未找到解析内容，请先调用 parse_document")
+        if not content_list:
+            raise RuntimeError("content_list 为空，请先完成解析")
+
+        if not doc_id:
+            raise RuntimeError("doc_id 不能为空，请传入文本插入时的 doc_id")
+
+        if not file_path:
+            raise RuntimeError("file_path 不能为空，请传入原始文件路径")
 
         init_result = await self._ensure_lightrag_initialized()
         if isinstance(init_result, dict) and not init_result.get("success", True):
@@ -535,15 +713,13 @@ class ProcessorMixin:
                 f"LightRAG 初始化失败: {init_result.get('error', 'unknown error')}"
             )
 
-        _, _, page_texts = separate_content(
-            self._latest_content_list, return_page_texts=True
-        )
+        if isinstance(page_marker_re, str):
+            page_marker_re = re.compile(page_marker_re)
+
+        _, _, page_texts = separate_content(content_list, return_page_texts=True)
         if not page_texts:
             self.logger.warning("没有可用的纯文本页内容，跳过页实体关系构建")
             return
-
-        page_marker_re = re.compile(r"<<PAGE:(\d+)>>")
-        separator = "\n<<<PAGE_BREAK>>>\n"
 
         page_chunks: List[str] = []
         for page_idx in sorted(page_texts.keys()):
@@ -557,16 +733,7 @@ class ProcessorMixin:
             return
 
         full_text = separator.join(page_chunks)
-        base_doc_id = getattr(self, "_latest_doc_id", None)
-        doc_id = (
-            f"{base_doc_id}-page-text" if base_doc_id else compute_mdhash_id(full_text, prefix="doc-page-")
-        )
-
-        file_ref = getattr(self, "_latest_file_path", None)
-        if file_ref:
-            file_ref = self._get_file_reference(file_ref)
-        else:
-            file_ref = "page_text_only"
+        file_ref = self._get_file_reference(file_path)
 
         await insert_text_content(
             self.lightrag,
@@ -619,7 +786,7 @@ class ProcessorMixin:
                     continue
 
                 page_idx = chunk_to_page[cid]
-                page_topic = self._page_topics_dict.get(page_idx)
+                page_topic = page_topics.get(page_idx)
                 if not page_topic:
                     continue
 
@@ -845,6 +1012,10 @@ class ProcessorMixin:
                 self.logger.info(
                     f"* Total blocks in cached content_list: {len(content_list)}"
                 )
+            # Cache latest parse for downstream page-entity linking
+            self._latest_content_list = content_list
+            self._latest_doc_id = doc_id
+            self._latest_file_path = str(file_path)
             return content_list, doc_id
 
         # Choose appropriate parsing method based on file extension
@@ -2052,6 +2223,126 @@ class ProcessorMixin:
             )
 
         self.logger.info(f"Document {file_path} processing complete!")
+
+    async def process_document_complete_with_page_topics(
+        self,
+        file_path: str,
+        output_dir: str = None,
+        parse_method: str = None,
+        display_stats: bool = None,
+        split_by_character: str | None = None,
+        split_by_character_only: bool = False,
+        doc_id: str | None = None,
+        file_name: str | None = None,
+        use_llm_for_topics: bool = True,
+        topic_max_chars: int = 2000,
+        topic_cosine_threshold: float = 0.7,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """
+        Complete document processing workflow with page-topic extraction and relation building.
+
+        This workflow includes:
+        1) parse document
+        2) extract page topics
+        3) build page-topic similarity relations
+        4) build entity-to-page-topic relations (text-only mapping)
+        5) process multimodal content
+
+        Args:
+            file_path: Path to the file to process
+            output_dir: Output directory (defaults to config.parser_output_dir)
+            parse_method: Parse method (defaults to config.parse_method)
+            display_stats: Whether to display content statistics (defaults to config.display_content_stats)
+            split_by_character: Optional character to split the text by
+            split_by_character_only: If True, split only by the specified character
+            doc_id: Optional document ID, if not provided will be generated from content
+            file_name: Optional file reference used for insertion/citation
+            use_llm_for_topics: Whether to use llm for page topic extraction
+            topic_max_chars: Max chars for each page topic extraction prompt
+            topic_cosine_threshold: Cosine threshold for page topic relation edge creation
+            **kwargs: Additional parser parameters
+
+        Returns:
+            Dict[str, Any]: Structured processing result for debugging/inspection.
+        """
+        ensure_result = await self._ensure_lightrag_initialized()
+        if isinstance(ensure_result, dict) and not ensure_result.get("success", True):
+            raise RuntimeError(
+                f"LightRAG 初始化失败: {ensure_result.get('error', 'unknown error')}"
+            )
+
+        if output_dir is None:
+            output_dir = self.config.parser_output_dir
+        if parse_method is None:
+            parse_method = self.config.parse_method
+        if display_stats is None:
+            display_stats = self.config.display_content_stats
+
+        self.logger.info(
+            f"Starting complete document processing with page topics: {file_path}"
+        )
+
+        content_list, content_based_doc_id = await self.parse_document(
+            file_path=file_path,
+            output_dir=output_dir,
+            parse_method=parse_method,
+            display_stats=display_stats,
+            **kwargs,
+        )
+
+        if doc_id is None:
+            doc_id = content_based_doc_id
+
+        topics = await self.extract_page_topics(
+            content_list,
+            use_llm=use_llm_for_topics,
+            max_chars=topic_max_chars,
+        )
+
+        await self.build_page_topic_relations(
+            topics,
+            cosine_threshold=topic_cosine_threshold,
+            file_path=file_path,
+        )
+
+        await self.build_page_entity_topic_relations_text_only(
+            page_topics=topics,
+            content_list=content_list,
+            doc_id=doc_id,
+            file_path=file_path,
+        )
+
+        text_content, multimodal_items = separate_content(content_list)
+
+        if hasattr(self, "set_content_source_for_context") and multimodal_items:
+            self.set_content_source_for_context(content_list, self.config.content_format)
+
+        if file_name is None:
+            file_name = self._get_file_reference(file_path)
+
+        if multimodal_items:
+            await self._process_multimodal_content(multimodal_items, file_name, doc_id)
+        else:
+            await self._mark_multimodal_processing_complete(doc_id)
+            self.logger.debug(
+                f"No multimodal content found in document {doc_id}, marked multimodal processing as complete"
+            )
+
+        self.logger.info(
+            f"Document {file_path} processing with page topics complete!"
+        )
+
+        return {
+            "file_path": file_path,
+            "doc_id": doc_id,
+            "content_blocks": len(content_list),
+            "topics": topics,
+            "topics_count": len(topics),
+            "multimodal_count": len(multimodal_items),
+            "text_content_length": len(text_content),
+            "status": "completed",
+        }
 
     async def process_document_complete_lightrag_api(
         self,
