@@ -93,6 +93,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
     parse_cache: Optional[Any] = field(default=None, init=False)
     """Parse result cache storage using LightRAG KV storage."""
 
+    page_topics_cache: Optional[Any] = field(default=None, init=False)
+    """Page topics cache storage using LightRAG KV storage."""
+
     _parser_installation_checked: bool = field(default=False, init=False)
     """Flag to track if parser installation has been checked."""
 
@@ -290,6 +293,20 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                         )
                         await self.parse_cache.initialize()
 
+                    if self.page_topics_cache is None:
+                        self.logger.info(
+                            "Initializing page topics cache for pre-provided LightRAG instance"
+                        )
+                        self.page_topics_cache = (
+                            self.lightrag.key_string_value_json_storage_cls(
+                                namespace="page_topics_cache",
+                                workspace=self.lightrag.workspace,
+                                global_config=self.lightrag.__dict__,
+                                embedding_func=self.embedding_func,
+                            )
+                        )
+                        await self.page_topics_cache.initialize()
+
                     # Initialize processors if not already done
                     if not self.modal_processors:
                         self._initialize_processors()
@@ -350,6 +367,17 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 )
                 await self.parse_cache.initialize()
 
+                # Initialize page topics cache storage using LightRAG's KV storage
+                self.page_topics_cache = (
+                    self.lightrag.key_string_value_json_storage_cls(
+                        namespace="page_topics_cache",
+                        workspace=self.lightrag.workspace,
+                        global_config=self.lightrag.__dict__,
+                        embedding_func=self.embedding_func,
+                    )
+                )
+                await self.page_topics_cache.initialize()
+
                 # Initialize processors after LightRAG is ready
                 self._initialize_processors()
 
@@ -397,6 +425,11 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             if self.parse_cache is not None:
                 tasks.append(self.parse_cache.finalize())
                 self.logger.debug("Scheduled parse cache finalization")
+
+            # Finalize page topics cache if it exists
+            if self.page_topics_cache is not None:
+                tasks.append(self.page_topics_cache.finalize())
+                self.logger.debug("Scheduled page topics cache finalization")
 
             # Finalize LightRAG storages if LightRAG is initialized
             if self.lightrag is not None:

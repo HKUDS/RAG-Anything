@@ -31,7 +31,7 @@ async def llm_model_func(prompt, system_prompt=None, history_messages=None, **kw
 
 
 async def main():
-    config = RAGAnythingConfig(working_dir="./rag_storage4", parser="mineru")
+    config = RAGAnythingConfig(working_dir="./rag_storage5", parser="mineru")
     embedding_func = EmbeddingFunc(embedding_dim=32, func=dummy_embed)
 
     rag = RAGAnything(
