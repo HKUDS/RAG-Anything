@@ -33,7 +33,7 @@ class RetrieveTool(Tool):
             "Retrieve relevant evidence from the prebuilt RAG knowledge base by query. "
             "Returns a JSON string with keys: status, query, mode, message, counts, evidence, metadata. "
             "evidence includes entities, relationships, chunks, references. "
-            "Use this tool for retrieval only; final answer generation should be handled by the agent or generate tool."
+            "Use this tool for retrieval only; the final user-facing answer is produced by the agent."
         )
 
     @property

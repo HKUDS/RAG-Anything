@@ -1,4 +1,4 @@
-"""End-to-end validation: RetrieveTool.execute -> GenerateTool.execute.
+"""End-to-end validation: retrieve-only AgentLoop workflow.
 
 Usage:
     python -m rag_agent.agent.tools.validate_retrieve_generate_flow
@@ -14,7 +14,7 @@ Optional env:
     RETRIEVE_TOP_K=5
     RETRIEVE_CHUNK_TOP_K=5
 
-    # Optional: ingest one document before testing the retrieve->generate chain
+    # Optional: ingest one document before testing the agent workflow
     TEST_FILE_PATH=./inputs/demo.pdf
     TEST_OUTPUT_DIR=./output
     TEST_PARSE_METHOD=auto
@@ -38,9 +38,6 @@ if __package__ is None or __package__ == "":
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
-
-from rag_agent.agent.tools.generate import GenerateTool
-from rag_agent.agent.tools.retrieve import RetrieveTool
 from rag_agent.llm.openai_provider import OpenAIProvider
 from rag_agent.agent.loop import AgentLoop
 
@@ -168,20 +165,16 @@ async def _maybe_ingest_file(rag: RAGAnything) -> None:
 async def main() -> None:
     load_dotenv()
 
-    api_key = "sk-c4x9pza11AKl8KOirlU1yCjPzZjriUQxjhzjfy6W1AIRcLMa"
+    api_key = "sk-GPqvN7FUGToh5cIqFKzaY6eZuoUwRUpwHIuUGzip7uEpv5Uo"
     base_url = "https://yunwu.ai/v1"
-    model = os.getenv("OPENAI_MODEL", "").strip() or os.getenv("LLM_MODEL", "gpt-4o-mini").strip()
+    model = os.getenv("OPENAI_MODEL", "").strip() or os.getenv("LLM_MODEL", "gpt-4o").strip()
     embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large").strip()
     working_dir="./rag_storage3"
 
     if not api_key:
         raise SystemExit("Missing OPENAI_API_KEY or LLM_BINDING_API_KEY")
 
-    question = os.getenv("TEST_QUESTION", "请帮我总结example1.pdf这个文档的内容").strip()
-    retrieve_mode = os.getenv("RETRIEVE_MODE", "hybrid").strip() or "hybrid"
-    retrieve_top_k = 20
-    retrieve_chunk_top_k = 20
-
+    question = os.getenv("TEST_QUESTION", "请帮我总结这个文档的内容").strip()
     rag = _build_rag(
         api_key=api_key,
         base_url=base_url,
@@ -204,62 +197,15 @@ async def main() -> None:
         },
     )
 
-    result = await loop.process_message(question,file_path="example1.pdf",parse_method="auto")
+    result = await loop.process_message(question, file_path="example1.pdf", parse_method="auto")
 
     print("final_answer:", result.final_answer)
     print("iterations:", result.iterations)
     print("tools_used:", result.tools_used)
-    '''
-    retrieve_tool = RetrieveTool(
-        rag=rag,
-        mode=retrieve_mode,
-        top_k=retrieve_top_k,
-        chunk_top_k=retrieve_chunk_top_k,
-    )
-    generate_tool = GenerateTool(provider=provider, rag=rag, model=model)
-    
-    print("[STEP 1] retrieve.execute")
-    retrieval_result = await retrieve_tool.execute(query=question)
-    #print(retrieval_result)
-    base_dir = Path(working_dir)
-    output_dir = base_dir / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not result.final_answer.strip():
+        raise SystemExit("Agent loop failed: empty final answer")
 
-    json_file = output_dir / "retrieval_result.json"
-    with open(json_file, "w", encoding="utf-8") as file:
-        json.dump(json.loads(retrieval_result), file, ensure_ascii=False, indent=2)
-
-    try:
-        retrieval_json = json.loads(retrieval_result)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"retrieve output is not valid JSON: {exc}")
-
-    if retrieval_json.get("status") != "success":
-        raise SystemExit(f"retrieve failed: {retrieval_json.get('message', 'unknown error')}")
-
-    counts = retrieval_json.get("counts", {})
-    print(f"[STEP 1] counts: {counts}")
-
-    print("[STEP 2] generate.execute")
-    generate_result = await generate_tool.execute(
-        question=question,
-        retrieval_result=retrieval_result,
-        style="balanced",
-        language="zh-CN",
-        include_citations=True,
-    )
-    print(generate_result)
-
-    try:
-        generate_json = json.loads(generate_result)
-    except json.JSONDecodeError as exc:
-        raise SystemExit(f"generate output is not valid JSON: {exc}")
-
-    if generate_json.get("status") != "success":
-        raise SystemExit(f"generate failed: {generate_json.get('message', 'unknown error')}")
-
-    print("[PASS] retrieve -> generate workflow is healthy")
-    '''
+    print("[PASS] retrieve-only agent workflow is healthy")
 
 
 if __name__ == "__main__":

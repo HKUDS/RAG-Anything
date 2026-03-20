@@ -19,27 +19,27 @@ class ContextBuilder:
         """Return a minimal, task-focused system prompt for RAG QA."""
         return f"""# {self.app_name}
 
-You are a retrieval-augmented assistant focused on answering user questions accurately.
+You are a retrieval-augmented assistant focused on document-grounded QA.
 
 ## Goal
 - Understand the user question.
-- Decide whether retrieval is needed.
-- If needed, call the `retrieve` tool to gather external knowledge.
-- Use the retrieved evidence to produce a clear and faithful final answer.
+- Decide what to retrieve from the target document.
+- Call the `retrieve` tool to gather document evidence before answering factual questions.
+- Use retrieved evidence to produce a clear and faithful final answer in your own words.
 
 ## Tool Usage Policy
-- `retrieve`: Use this when the answer depends on external or document knowledge.
-    It only accepts `query`; retrieval strategy (mode/top_k/chunk_top_k) is system-configured.
+- `retrieve`: Use this for document knowledge lookup.
+    It only accepts `query`; retrieval strategy (mode/top_k/chunk_top_k) is system-configured by the system.
     It returns a JSON string with keys: `status`, `query`, `mode`, `message`, `counts`, `evidence`, `metadata`.
     `evidence` contains `entities`, `relationships`, `chunks`, `references`.
     If `status` is failure or `counts.chunks` is 0, treat evidence as weak and ask for clarification or state uncertainty.
-- `generate`: Use this to draft a final response from user question plus retrieved context.
-    Pass `retrieval_result` as an object (the parsed retrieve JSON), not an escaped string blob.
+    For document-level requests like "summarize this document", include the document name/path terms from runtime context in your retrieval query.
 - Do not fabricate tool results.
 - Do not call tools in an infinite loop; stop once evidence is sufficient.
 
 ## Answer Policy
 - Prioritize grounded answers based on retrieved context.
+- Synthesize the final answer directly yourself; do not call any generation tool.
 - If evidence is missing or weak, explicitly say what is uncertain.
 - Keep the final answer concise, complete, and user-facing.
 
@@ -49,13 +49,19 @@ You are a retrieval-augmented assistant focused on answering user questions accu
 """
 
     @staticmethod
-    def _build_runtime_context(channel: str | None = None, chat_id: str | None = None) -> str:
+    def _build_runtime_context(
+        channel: str | None = None,
+        chat_id: str | None = None,
+        file_path: str | None = None,
+    ) -> str:
         """Build runtime metadata block prepended to user input."""
         now = datetime.now().strftime("%Y-%m-%d %H:%M (%A)")
         tz = time.strftime("%Z") or "UTC"
         lines = [f"Current Time: {now} ({tz})"]
         if channel and chat_id:
             lines += [f"Channel: {channel}", f"Chat ID: {chat_id}"]
+        if file_path:
+            lines.append(f"Target Document: {file_path}")
         return ContextBuilder._RUNTIME_CONTEXT_TAG + "\n" + "\n".join(lines)
 
     def build_messages(
@@ -64,9 +70,10 @@ You are a retrieval-augmented assistant focused on answering user questions accu
         current_message: str,
         channel: str | None = None,
         chat_id: str | None = None,
+        file_path: str | None = None,
     ) -> list[dict[str, Any]]:
         """Build full message list for one LLM call."""
-        runtime_ctx = self._build_runtime_context(channel=channel, chat_id=chat_id)
+        runtime_ctx = self._build_runtime_context(channel=channel, chat_id=chat_id, file_path=file_path)
         user_content = f"{runtime_ctx}\n\n{current_message}"
 
         return [

@@ -13,7 +13,7 @@ from rag_agent.llm.base import LLMProvider
 
 from .context import ContextBuilder
 from .session import Session, SessionManager
-from .tools import GenerateTool, RetrieveTool, ToolRegistry
+from .tools import RetrieveTool, ToolRegistry
 
 
 @dataclass
@@ -72,15 +72,6 @@ class AgentLoop:
                 chunk_top_k=self.retrieve_config.get("chunk_top_k"),
             )
         )
-        self.tools.register(
-            GenerateTool(
-                provider=self.provider,
-                rag=self.rag,
-                model=self.model,
-                temperature=self.temperature,
-                max_tokens=self.max_tokens,
-            )
-        )
 
     async def process_message(
         self,
@@ -110,8 +101,8 @@ class AgentLoop:
             current_message=user_message,
             channel=channel,
             chat_id=chat_id,
+            file_path=file_path,
         )
-        print("[DEBUG] prepared messages for LLM:", json.dumps(messages, indent=2, ensure_ascii=False))
         result = await self.run_once(messages)
         self._save_turn(session=session, messages=result.messages, skip=1 + len(history_messages))
         self.sessions.save(session)
