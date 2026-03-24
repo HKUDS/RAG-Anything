@@ -95,8 +95,8 @@ class Parser:
                 },
             )
 
-            # Open connection to get headers
-            response = urllib.request.urlopen(req)
+            # Open connection to get headers (with an explicit timeout to prevent hanging)
+            response = urllib.request.urlopen(req, timeout=30)
 
             # If no extension in URL, try Content-Type header
             if not suffix:
