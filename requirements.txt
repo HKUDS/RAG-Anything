@@ -1,10 +1,3 @@
-huggingface_hub
-# LightRAG packages
-lightrag-hku
-# MinerU 2.0 packages (replaces magic-pdf)
-mineru[core]
-# Progress bars for batch processing
-tqdm
 # Note: Optional dependencies are now defined in setup.py extras_require:
 # - [image]: Pillow>=10.0.0 (for BMP, TIFF, GIF, WebP format conversion)
 # - [text]: reportlab>=4.0.0 (for TXT, MD to PDF conversion)
@@ -13,3 +6,11 @@ tqdm
 # - [all]: includes all optional dependencies
 #
 # Install with: pip install raganything[image,text] or pip install raganything[all]
+docling==2.72.0
+huggingface_hub
+# LightRAG packages
+lightrag-hku
+# MinerU 2.0 packages (replaces magic-pdf)
+mineru[core]
+# Progress bars for batch processing
+tqdm
