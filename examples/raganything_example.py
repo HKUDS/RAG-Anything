@@ -116,9 +116,12 @@ async def process_with_rag(
         )
 
         # Define LLM model function
+        llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+        vision_model = os.getenv("VISION_MODEL", "gpt-4o")
+
         def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
             return openai_complete_if_cache(
-                "gpt-4o-mini",
+                llm_model,
                 prompt,
                 system_prompt=system_prompt,
                 history_messages=history_messages,
@@ -139,7 +142,7 @@ async def process_with_rag(
             # If messages format is provided (for multimodal VLM enhanced query), use it directly
             if messages:
                 return openai_complete_if_cache(
-                    "gpt-4o",
+                    vision_model,
                     "",
                     system_prompt=None,
                     history_messages=[],
@@ -151,7 +154,7 @@ async def process_with_rag(
             # Traditional single image format
             elif image_data:
                 return openai_complete_if_cache(
-                    "gpt-4o",
+                    vision_model,
                     "",
                     system_prompt=None,
                     history_messages=[],
