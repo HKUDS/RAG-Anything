@@ -4,3 +4,9 @@ Timestamp,Experiment_ID,File_Name,Parse_Time(s),Graph_Time(s),Total_Time(s),Outp
 2026-03-06 14:16:55,exp1_baseline_kreuzberg,RAG-anything.pdf,35.37,649.52,684.89,149266,291,62,66,119,695,1631,Success
 2026-03-06 14:49:58,exp1_baseline_marker,RAG-anything.pdf,980.64,1002.12,1982.75,167725,333,187,235,140,786,1813,Success
 2026-03-06 15:16:32,exp1_baseline_marker_ocr,RAG-anything.pdf,157.72,1435.09,1592.81,179108,413,0,0,140,0,0,Success
+2026-03-19 22:24:39,exp1_baseline_kreuzberg,attention.pdf,1.52,1058.94,1060.46,127037,237,108,172,124,738,1737,Success
+2026-03-19 22:52:26,exp1_baseline_mineru,attention.pdf,104.91,0.00,104.91,117120,212,710,1400,72,531,1284,Failed
+2026-03-19 23:59:01,exp1_baseline_docling,attention.pdf,55.20,3939.54,3994.74,158516,299,372,558,120,794,1815,Success
+2026-03-20 00:19:37,exp1_baseline_kreuzberg,attention.pdf,0.72,1234.21,1234.94,173635,332,150,262,119,737,1715,Success
+2026-03-20 00:19:59,exp1_baseline_marker,attention.pdf,22.55,0.00,22.55,167725,333,187,235,140,786,1813,Failed
+2026-03-20 00:20:06,exp1_baseline_marker_ocr,attention.pdf,6.18,0.00,6.18,179108,413,0,0,140,0,0,Failed
