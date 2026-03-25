@@ -1548,19 +1548,15 @@ class ProcessorMixin:
 
             self.logger.info(f"Starting complete document processing: {file_path}")
 
-            # Step 1: Parse document
             content_list, content_based_doc_id = await self.parse_document(
                 file_path, output_dir, parse_method, display_stats, **kwargs
             )
 
-            # Use provided doc_id or fall back to content-based doc_id
             if doc_id is None:
                 doc_id = content_based_doc_id
 
-            # Step 2: Separate text and multimodal content
             text_content, multimodal_items = separate_content(content_list)
 
-            # Step 2.5: Set content source for context extraction in multimodal processing
             if hasattr(self, "set_content_source_for_context") and multimodal_items:
                 self.logger.info(
                     "Setting content source for context-aware multimodal processing..."
@@ -1569,12 +1565,14 @@ class ProcessorMixin:
                     content_list, self.config.content_format
                 )
 
-            # Step 3: Insert pure text content with all parameters
-            stage = "text_insert"
+            if file_name is None:
+                file_name = self._get_file_reference(file_path)
+
+            stage = "parallel_processing"
+            tasks = []
+            task_names = []
+
             if text_content.strip():
-                if file_name is None:
-                    # Use full path or basename based on config
-                    file_name = self._get_file_reference(file_path)
                 if callback_manager is not None:
                     callback_manager.dispatch(
                         "on_text_insert_start",
@@ -1583,41 +1581,49 @@ class ProcessorMixin:
                         doc_id=doc_id,
                     )
                 insert_start = time.time()
-                await insert_text_content(
-                    self.lightrag,
-                    input=text_content,
-                    file_paths=file_name,
-                    split_by_character=split_by_character,
-                    split_by_character_only=split_by_character_only,
-                    ids=doc_id,
-                )
-                if callback_manager is not None:
-                    insert_duration = time.time() - insert_start
-                    callback_manager.dispatch(
-                        "on_text_insert_complete",
-                        file_path=file_name,
-                        duration_seconds=insert_duration,
-                        doc_id=doc_id,
-                    )
-            else:
-                # Determine file reference even if no text content
-                if file_name is None:
-                    file_name = self._get_file_reference(file_path)
 
-            # Step 4: Process multimodal content (using specialized processors)
-            stage = "multimodal"
+                async def _insert_text_with_callback():
+                    await insert_text_content(
+                        self.lightrag,
+                        input=text_content,
+                        file_paths=file_name,
+                        split_by_character=split_by_character,
+                        split_by_character_only=split_by_character_only,
+                        ids=doc_id,
+                    )
+                    if callback_manager is not None:
+                        insert_duration = time.time() - insert_start
+                        callback_manager.dispatch(
+                            "on_text_insert_complete",
+                            file_path=file_name,
+                            duration_seconds=insert_duration,
+                            doc_id=doc_id,
+                        )
+
+                tasks.append(_insert_text_with_callback())
+                task_names.append("text insertion")
+
             if multimodal_items:
-                await self._process_multimodal_content(
-                    multimodal_items, file_name, doc_id
+                tasks.append(
+                    self._process_multimodal_content(
+                        multimodal_items, file_name, doc_id
+                    )
                 )
+                task_names.append("multimodal processing")
             else:
-                # If no multimodal content, mark multimodal processing as complete
-                # This ensures the document status properly reflects completion of all processing
                 await self._mark_multimodal_processing_complete(doc_id)
                 self.logger.debug(
                     f"No multimodal content found in document {doc_id}, "
                     "marked multimodal processing as complete",
                 )
+
+            if tasks:
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for name, result in zip(task_names, results):
+                    if isinstance(result, Exception):
+                        self.logger.error(
+                            f"{name} failed for {file_path}: {result}"
+                        )
 
         except Exception as exc:
             if callback_manager is not None:
