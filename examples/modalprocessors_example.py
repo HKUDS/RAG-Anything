@@ -175,7 +175,7 @@ async def initialize_rag(api_key: str, base_url: str = None):
         embedding_func=EmbeddingFunc(
             embedding_dim=embedding_dim,
             max_token_size=8192,
-            func=lambda texts: openai_embed(
+            func=lambda texts: openai_embed.func(
                 texts,
                 model=embedding_model,
                 api_key=api_key,

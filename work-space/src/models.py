@@ -94,7 +94,7 @@ def get_model_funcs(provider: str, use_gliner: bool = False, gliner_labels: list
     embed_func = EmbeddingFunc(
         embedding_dim=embed_dim,
         max_token_size=8192,
-        func=lambda texts: openai_embed(
+        func=lambda texts: openai_embed.func(
             texts,
             model=embed_model,
             api_key=api_key,

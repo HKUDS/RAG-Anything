@@ -1,11 +1,14 @@
+# Local development / research environment requirements for this repo.
+# Package release metadata is defined in pyproject.toml and setup.py.
 huggingface_hub
 # LightRAG packages
-lightrag-hku
+lightrag-hku>=1.4.10,<2.0.0
 # MinerU 2.0 packages (replaces magic-pdf)
 mineru[core]
-docling
-kreuzberg
-marker-pdf
+python-dotenv>=1.0.0
+dotenv>=0.9.9
+docling>=2.75.0,<3.0.0
+kreuzberg>=4.3.8,<5.0.0
 # Progress bars for batch processing
 tqdm
 # Note: Optional dependencies are now defined in setup.py extras_require:
@@ -14,7 +17,7 @@ tqdm
 # - [office]: requires LibreOffice (external program, not Python package)
 # - [all]: includes all optional dependencies
 #
-# Install with: pip install raganything[image,text] or pip install raganything[all]
-raganything[all]
+# Install the built package with extras, for example:
+#   pip install "gsk-raganything[all]"
 gliner
 tiktoken
