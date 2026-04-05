@@ -4,7 +4,7 @@ from pathlib import Path
 import logging
 from typing import Optional
 
-from .pruning_algorithms import get_algorithm
+from .algorithms import get_algorithm
 
 logger = logging.getLogger("Visualizer")
 
@@ -63,7 +63,7 @@ class GraphVisualizer:
         Prune graph to a smaller, meaningful subgraph using baseline algorithm.
         """
         # Delegate to baseline algorithm for backward compatibility
-        from .pruning_algorithms import prune_baseline
+        from .algorithms import prune_baseline
         return prune_baseline(G, max_nodes, ensure_chunk_coverage)
 
     def prune_with_algorithm(

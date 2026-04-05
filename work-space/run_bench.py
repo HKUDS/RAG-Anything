@@ -1,35 +1,39 @@
+import argparse
 import asyncio
 import logging
-import argparse
-from src.definitions import EXPERIMENTS
-from src.engine import ExperimentEngine
 
-# Setup basic logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)s | %(message)s')
+from _bootstrap import bootstrap_project_root
+
+bootstrap_project_root()
+
+from src.workbench.experiments.pipeline.definitions import PIPELINE_EXPERIMENTS
+from src.workbench.experiments.pipeline.runner import PipelineBenchmarkRunner
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+
 
 async def main():
-    parser = argparse.ArgumentParser(description="RAG-Anything Auto Benchmark")
-    parser.add_argument("--exp", type=str, help="Experiment ID to run (e.g., exp1_baseline). If empty, run all.")
+    parser = argparse.ArgumentParser(description="RAG-Anything pipeline benchmark runner")
+    parser.add_argument("--exp", type=str, help="Pipeline experiment ID. If empty, run all pipeline experiments.")
     parser.add_argument(
         "--fresh-run",
         action="store_true",
-        help="Clear benchmark_outputs/<exp>/rag_storage and parser_output before each run.",
+        help="Clear benchmark_outputs/<exp>/rag_storage and parser_output before the run.",
     )
     args = parser.parse_args()
 
-    engine = ExperimentEngine()
-
+    runner = PipelineBenchmarkRunner()
     if args.exp:
-        # Run specific experiment
-        if args.exp in EXPERIMENTS:
-            await engine.run_experiment(EXPERIMENTS[args.exp], fresh_run=args.fresh_run)
-        else:
-            print(f"❌ Experiment '{args.exp}' not found. Available: {list(EXPERIMENTS.keys())}")
-    else:
-        # Run ALL experiments sequentially
-        print("🚀 Running ALL experiments...")
-        for exp_id, exp_def in EXPERIMENTS.items():
-            await engine.run_experiment(exp_def, fresh_run=args.fresh_run)
+        if args.exp not in PIPELINE_EXPERIMENTS:
+            raise SystemExit(f"Unknown pipeline experiment '{args.exp}'. Available: {list(PIPELINE_EXPERIMENTS.keys())}")
+        await runner.run(PIPELINE_EXPERIMENTS[args.exp], fresh_run=args.fresh_run)
+        return
+
+    for exp_id, exp_def in PIPELINE_EXPERIMENTS.items():
+        if getattr(exp_def, "legacy_alias", False):
+            continue
+        await runner.run(exp_def, fresh_run=args.fresh_run)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

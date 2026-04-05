@@ -26,6 +26,29 @@ from lightrag.utils import compute_mdhash_id
 class ProcessorMixin:
     """ProcessorMixin class containing document processing functionality for RAGAnything"""
 
+    _PARSE_CACHE_RELEVANT_KWARGS = {
+        "lang",
+        "device",
+        "start_page",
+        "end_page",
+        "formula",
+        "table",
+        "backend",
+        "source",
+        "ocr_lang",
+        "ocr_engine",
+        "ocr_backend",
+        "ocr_languages",
+        "ocr_use_gpu",
+        "ocr_model_tier",
+        "result_format",
+        "output_format",
+        "include_document_structure",
+        "extract_pages",
+        "extract_images",
+        "extract_tables",
+    }
+
     def _resolve_parser_kwargs(self, **kwargs) -> Dict[str, Any]:
         """
         Merge parser kwargs from config (extract_profile + parser_kwargs) with call-time kwargs.
@@ -41,6 +64,13 @@ class ProcessorMixin:
             pass
         merged.update(kwargs)
         return merged
+
+    def _extract_relevant_parse_kwargs(self, **kwargs) -> Dict[str, Any]:
+        return {
+            k: v
+            for k, v in kwargs.items()
+            if k in self._PARSE_CACHE_RELEVANT_KWARGS
+        }
 
     def _generate_cache_key(
         self, file_path: Path, parse_method: str = None, **kwargs
@@ -69,21 +99,7 @@ class ProcessorMixin:
         }
 
         # Add relevant kwargs to config
-        relevant_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k
-            in [
-                "lang",
-                "device",
-                "start_page",
-                "end_page",
-                "formula",
-                "table",
-                "backend",
-                "source",
-            ]
-        }
+        relevant_kwargs = self._extract_relevant_parse_kwargs(**kwargs)
         config_dict.update(relevant_kwargs)
 
         # Generate hash from config
@@ -170,21 +186,7 @@ class ProcessorMixin:
             }
 
             # Add relevant kwargs to current config
-            relevant_kwargs = {
-                k: v
-                for k, v in kwargs.items()
-                if k
-                in [
-                    "lang",
-                    "device",
-                    "start_page",
-                    "end_page",
-                    "formula",
-                    "table",
-                    "backend",
-                    "source",
-                ]
-            }
+            relevant_kwargs = self._extract_relevant_parse_kwargs(**kwargs)
             current_config.update(relevant_kwargs)
 
             if cached_config != current_config:
@@ -244,21 +246,7 @@ class ProcessorMixin:
             }
 
             # Add relevant kwargs to config
-            relevant_kwargs = {
-                k: v
-                for k, v in kwargs.items()
-                if k
-                in [
-                    "lang",
-                    "device",
-                    "start_page",
-                    "end_page",
-                    "formula",
-                    "table",
-                    "backend",
-                    "source",
-                ]
-            }
+            relevant_kwargs = self._extract_relevant_parse_kwargs(**kwargs)
             parse_config.update(relevant_kwargs)
 
             cache_data = {

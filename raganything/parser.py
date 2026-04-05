@@ -814,16 +814,51 @@ class MineruParser(Parser):
         Returns:
             Tuple containing (content list JSON, Markdown text)
         """
-        # Look for the generated files
-        md_file = output_dir / f"{file_stem}.md"
-        json_file = output_dir / f"{file_stem}_content_list.json"
-        images_base_dir = output_dir  # Base directory for images
-
+        # MinerU can emit different subdirectory names for the same logical method,
+        # e.g. `hybrid_auto/` for `method="auto"`. Prefer an exact match first, then
+        # fall back to known aliases and finally scan all generated subdirectories.
         file_stem_subdir = output_dir / file_stem
+        candidate_dirs = [output_dir]
         if file_stem_subdir.exists():
-            md_file = file_stem_subdir / method / f"{file_stem}.md"
-            json_file = file_stem_subdir / method / f"{file_stem}_content_list.json"
-            images_base_dir = file_stem_subdir / method
+            candidate_dirs.append(file_stem_subdir / method)
+            if method == "auto":
+                candidate_dirs.extend(
+                    [
+                        file_stem_subdir / "hybrid_auto",
+                        file_stem_subdir / "auto",
+                    ]
+                )
+            elif method == "ocr":
+                candidate_dirs.append(file_stem_subdir / "hybrid_ocr")
+            elif method == "txt":
+                candidate_dirs.append(file_stem_subdir / "hybrid_txt")
+
+            candidate_dirs.extend(
+                child for child in sorted(file_stem_subdir.iterdir()) if child.is_dir()
+            )
+
+        def _select_paths() -> Tuple[Path, Path, Path]:
+            for candidate_dir in candidate_dirs:
+                json_candidates = [
+                    candidate_dir / f"{file_stem}_content_list.json",
+                    candidate_dir / f"{file_stem}_content_list_v2.json",
+                ]
+                for candidate_json in json_candidates:
+                    if candidate_json.exists():
+                        return (
+                            candidate_dir / f"{file_stem}.md",
+                            candidate_json,
+                            candidate_dir,
+                        )
+
+            # Fallback to the original flat output convention.
+            return (
+                output_dir / f"{file_stem}.md",
+                output_dir / f"{file_stem}_content_list.json",
+                output_dir,
+            )
+
+        md_file, json_file, images_base_dir = _select_paths()
 
         # Read markdown content
         md_content = ""
@@ -1285,13 +1320,16 @@ class DoclingParser(Parser):
                 base_output_dir = pdf_path.parent / "docling_output"
 
             base_output_dir.mkdir(parents=True, exist_ok=True)
+            command_kwargs = dict(kwargs)
+            if lang and "ocr_lang" not in command_kwargs:
+                command_kwargs["ocr_lang"] = lang
 
             # Run docling command
             self._run_docling_command(
                 input_path=pdf_path,
                 output_dir=base_output_dir,
                 file_stem=name_without_suff,
-                **kwargs,
+                **command_kwargs,
             )
 
             # Read the generated output files
@@ -1367,22 +1405,33 @@ class DoclingParser(Parser):
         file_output_dir = Path(output_dir) / file_stem / "docling"
         file_output_dir.mkdir(parents=True, exist_ok=True)
 
-        cmd_json = [
+        option_map = {
+            "device": "--device",
+            "ocr_lang": "--ocr-lang",
+            "num_threads": "--num-threads",
+            "page_batch_size": "--page-batch-size",
+            "document_timeout": "--document-timeout",
+            "pdf_backend": "--pdf-backend",
+            "table_mode": "--table-mode",
+            "ocr_engine": "--ocr-engine",
+            "artifacts_path": "--artifacts-path",
+        }
+        docling_args: List[str] = []
+        for key, flag in option_map.items():
+            value = kwargs.get(key)
+            if value is None:
+                continue
+            if isinstance(value, (list, tuple)):
+                value = ",".join(str(v) for v in value if v is not None)
+            docling_args.extend([flag, str(value)])
+
+        cmd = [
             "docling",
             "--output",
             str(file_output_dir),
-            "--to",
-            "json",
-            str(input_path),
         ]
-        cmd_md = [
-            "docling",
-            "--output",
-            str(file_output_dir),
-            "--to",
-            "md",
-            str(input_path),
-        ]
+        cmd.extend(docling_args)
+        cmd.extend(["--to", "json", "--to", "md", str(input_path)])
 
         try:
             # Prepare subprocess parameters to hide console window on Windows
@@ -1400,13 +1449,11 @@ class DoclingParser(Parser):
             if platform.system() == "Windows":
                 docling_subprocess_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
-            result_json = subprocess.run(cmd_json, **docling_subprocess_kwargs)
-            result_md = subprocess.run(cmd_md, **docling_subprocess_kwargs)
+            logging.info(f"Executing docling command: {' '.join(cmd)}")
+            result = subprocess.run(cmd, **docling_subprocess_kwargs)
             logging.info("Docling command executed successfully")
-            if result_json.stdout:
-                logging.debug(f"JSON cmd output: {result_json.stdout}")
-            if result_md.stdout:
-                logging.debug(f"Markdown cmd output: {result_md.stdout}")
+            if result.stdout:
+                logging.debug(f"Docling cmd output: {result.stdout}")
         except subprocess.CalledProcessError as e:
             logging.error(f"Error running docling command: {e}")
             if e.stderr:
@@ -1602,13 +1649,16 @@ class DoclingParser(Parser):
                 base_output_dir = doc_path.parent / "docling_output"
 
             base_output_dir.mkdir(parents=True, exist_ok=True)
+            command_kwargs = dict(kwargs)
+            if lang and "ocr_lang" not in command_kwargs:
+                command_kwargs["ocr_lang"] = lang
 
             # Run docling command
             self._run_docling_command(
                 input_path=doc_path,
                 output_dir=base_output_dir,
                 file_stem=name_without_suff,
-                **kwargs,
+                **command_kwargs,
             )
 
             # Read the generated output files
@@ -1660,13 +1710,16 @@ class DoclingParser(Parser):
                 base_output_dir = html_path.parent / "docling_output"
 
             base_output_dir.mkdir(parents=True, exist_ok=True)
+            command_kwargs = dict(kwargs)
+            if lang and "ocr_lang" not in command_kwargs:
+                command_kwargs["ocr_lang"] = lang
 
             # Run docling command
             self._run_docling_command(
                 input_path=html_path,
                 output_dir=base_output_dir,
                 file_stem=name_without_suff,
-                **kwargs,
+                **command_kwargs,
             )
 
             # Read the generated output files
@@ -2627,6 +2680,93 @@ class KreuzbergParser(Parser):
         _append_text(doc_text, page_idx=0)
         return content_list
 
+    @staticmethod
+    def _serialize_kreuzberg_obj(obj: Any) -> Any:
+        if obj is None or isinstance(obj, (str, int, float, bool)):
+            return obj
+        if isinstance(obj, Path):
+            return str(obj)
+        if isinstance(obj, (bytes, bytearray)):
+            return {"__bytes__": len(obj)}
+        if isinstance(obj, dict):
+            return {
+                str(k): KreuzbergParser._serialize_kreuzberg_obj(v)
+                for k, v in obj.items()
+            }
+        if isinstance(obj, (list, tuple, set)):
+            return [KreuzbergParser._serialize_kreuzberg_obj(v) for v in obj]
+        try:
+            import dataclasses
+
+            if dataclasses.is_dataclass(obj):
+                return KreuzbergParser._serialize_kreuzberg_obj(dataclasses.asdict(obj))
+        except Exception:
+            pass
+        try:
+            payload = vars(obj)
+        except Exception:
+            payload = None
+        if isinstance(payload, dict) and payload:
+            return {
+                str(k): KreuzbergParser._serialize_kreuzberg_obj(v)
+                for k, v in payload.items()
+                if not str(k).startswith("_")
+            }
+        return str(obj)
+
+    def _write_kreuzberg_output_artifacts(
+        self,
+        result: Any,
+        content_list: List[Dict[str, Any]],
+        base_output_dir: Path,
+        file_stem: str,
+    ) -> None:
+        """
+        Persist lightweight parser artifacts so Kreuzberg benchmark output is inspectable
+        in the same way as MinerU/Docling runs.
+        """
+        artifact_dir = base_output_dir / file_stem / "kreuzberg"
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+
+        md_content = (
+            getattr(result, "content", None)
+            or (result.get("content") if isinstance(result, dict) else None)
+            or ""
+        )
+        with open(artifact_dir / f"{file_stem}.md", "w", encoding="utf-8") as f:
+            f.write(str(md_content))
+
+        with open(
+            artifact_dir / f"{file_stem}_content_list.json", "w", encoding="utf-8"
+        ) as f:
+            json.dump(content_list, f, ensure_ascii=False, indent=2)
+
+        result_payload = {
+            "content": md_content,
+            "pages": self._serialize_kreuzberg_obj(
+                getattr(result, "pages", None)
+                or (result.get("pages") if isinstance(result, dict) else None)
+            ),
+            "tables": self._serialize_kreuzberg_obj(
+                getattr(result, "tables", None)
+                or (result.get("tables") if isinstance(result, dict) else None)
+            ),
+            "images": self._serialize_kreuzberg_obj(
+                getattr(result, "images", None)
+                or (result.get("images") if isinstance(result, dict) else None)
+            ),
+            "elements": self._serialize_kreuzberg_obj(
+                getattr(result, "elements", None)
+                or (result.get("elements") if isinstance(result, dict) else None)
+            ),
+            "metadata": self._serialize_kreuzberg_obj(
+                getattr(result, "metadata", None)
+                or (result.get("metadata") if isinstance(result, dict) else None)
+            ),
+        }
+        with open(artifact_dir / f"{file_stem}_raw_result.json", "w", encoding="utf-8") as f:
+            json.dump(result_payload, f, ensure_ascii=False, indent=2)
+
     def parse_document(
         self,
         file_path: Union[str, Path],
@@ -2645,7 +2785,14 @@ class KreuzbergParser(Parser):
         result = self._extract_with_kreuzberg(
             str(file_path), method=method, lang=lang, **kwargs
         )
-        return self._result_to_content_list(result, base_output_dir)
+        content_list = self._result_to_content_list(result, base_output_dir)
+        self._write_kreuzberg_output_artifacts(
+            result=result,
+            content_list=content_list,
+            base_output_dir=base_output_dir,
+            file_stem=file_path.stem,
+        )
+        return content_list
 
     def parse_pdf(self, pdf_path: Union[str, Path], output_dir: Optional[str] = None, method: str = "auto", lang: Optional[str] = None, **kwargs) -> List[Dict[str, Any]]:
         return self.parse_document(pdf_path, method=method, output_dir=output_dir, lang=lang, **kwargs)

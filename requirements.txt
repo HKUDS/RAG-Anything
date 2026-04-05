@@ -21,3 +21,4 @@ tqdm
 #   pip install "gsk-raganything[all]"
 gliner
 tiktoken
+kreuzberg[paddleocr]

@@ -1,0 +1,216 @@
+from __future__ import annotations
+
+import csv
+import json
+import logging
+import shutil
+import time
+from pathlib import Path
+
+from raganything import RAGAnything, RAGAnythingConfig
+from raganything.parser import DoclingParser, MineruParser
+from raganything.prompt import PROMPTS as RAG_PROMPTS
+from lightrag.prompt import PROMPTS as LIGHTRAG_PROMPTS
+
+from src.config import ENV
+from src.workbench.metrics import extract_storage_stats
+from src.workbench.experiments.base import PipelineExperimentDefinition
+from src.workbench.observability import CSVReportWriter, ProcessedFileManifest
+from src.workbench.runtime import get_model_funcs
+
+logger = logging.getLogger("PipelineRunner")
+
+
+class PipelineBenchmarkRunner:
+    header = [
+        "Timestamp",
+        "Experiment_ID",
+        "Experiment_Profile",
+        "Experiment_Parser",
+        "File_Name",
+        "Parse_Time(s)",
+        "Graph_Time(s)",
+        "Total_Time(s)",
+        "Output_Tokens",
+        "API_Calls",
+        "Nodes",
+        "Edges",
+        "Chunks",
+        "Entities",
+        "Relations",
+        "Status",
+    ]
+
+    def __init__(self, report_file: Path | None = None):
+        self.report_file = Path(report_file or ENV.report_file)
+        self.report_writer = CSVReportWriter(self.report_file, self.header)
+        self.orig_rag_prompts = RAG_PROMPTS.copy()
+        self.orig_lightrag_prompts = LIGHTRAG_PROMPTS.copy()
+
+    def _apply_custom_prompts(self, custom_prompts: dict):
+        if not custom_prompts:
+            return
+        logger.info("Applying custom prompts...")
+        for key, value in custom_prompts.items():
+            if key == "lightrag_entity_extract":
+                LIGHTRAG_PROMPTS["entity_extraction"] = value
+            else:
+                RAG_PROMPTS[key] = value
+
+    def _restore_prompts(self):
+        RAG_PROMPTS.clear()
+        RAG_PROMPTS.update(self.orig_rag_prompts)
+        LIGHTRAG_PROMPTS.clear()
+        LIGHTRAG_PROMPTS.update(self.orig_lightrag_prompts)
+
+    @staticmethod
+    def _clear_dir(path: Path):
+        if path.exists():
+            shutil.rmtree(path, ignore_errors=True)
+            logger.info("Cleared: %s", path)
+
+    @staticmethod
+    def _filter_files_for_parser(files, parser_name: str):
+        parser_name = (parser_name or "mineru").lower()
+        if parser_name == "mineru":
+            supported = set([".pdf"]) | MineruParser.IMAGE_FORMATS | MineruParser.OFFICE_FORMATS | MineruParser.TEXT_FORMATS
+        elif parser_name == "docling":
+            supported = set([".pdf"]) | DoclingParser.OFFICE_FORMATS | DoclingParser.HTML_FORMATS
+        elif parser_name in {"kreuzberg", "marker"}:
+            supported = set([".pdf"]) | MineruParser.IMAGE_FORMATS
+        else:
+            return files
+        return [f for f in files if f.suffix.lower() in supported]
+
+    async def run(self, exp_def: PipelineExperimentDefinition, fresh_run: bool = False):
+        parser_name = exp_def.parser or ENV.parser
+        parse_method = exp_def.parse_method or ENV.parse_method
+        parser_kwargs = exp_def.parser_kwargs or {}
+
+        logger.info(
+            "STARTING %s | profile=%s | provider=%s | parser=%s | method=%s",
+            exp_def.id,
+            exp_def.profile_name,
+            exp_def.provider,
+            parser_name,
+            parse_method,
+        )
+
+        self._apply_custom_prompts(exp_def.custom_prompts)
+        llm_f, vision_f, embed_f = get_model_funcs(exp_def.provider, exp_def.use_gliner, exp_def.gliner_labels)
+
+        exp_dir = Path(ENV.output_base_dir) / exp_def.id
+        rag_storage = exp_dir / "rag_storage"
+        parser_output = exp_dir / "parser_output"
+        manifest = ProcessedFileManifest(exp_dir / "processed_manifest.json")
+
+        if fresh_run:
+            self._clear_dir(rag_storage)
+            self._clear_dir(parser_output)
+            if manifest.path.exists():
+                manifest.path.unlink()
+
+        rag = RAGAnything(
+            config=RAGAnythingConfig(
+                working_dir=str(rag_storage),
+                parser_output_dir=str(parser_output),
+                parser=parser_name,
+                parse_method=parse_method,
+                parser_kwargs=parser_kwargs,
+                max_concurrent_files=ENV.max_workers,
+                **exp_def.raganything_kwargs,
+            ),
+            llm_model_func=llm_f,
+            vision_model_func=vision_f,
+            embedding_func=embed_f,
+            lightrag_kwargs=exp_def.lightrag_kwargs,
+        )
+
+        input_path = Path(ENV.input_dir)
+        files = [f for f in input_path.glob("*.*") if f.is_file()]
+        files = self._filter_files_for_parser(files, parser_name)
+        if not files:
+            logger.warning("No supported input files for parser '%s' in %s", parser_name, input_path)
+            if hasattr(rag, 'close'):
+                rag.close()
+            self._restore_prompts()
+            return
+
+        manifest_data = manifest.load()
+        runnable_files = []
+        for file_path in files:
+            action, fingerprint = manifest.classify(file_path)
+            if action == "skip_unchanged":
+                logger.info("Skip unchanged: %s", file_path.name)
+                continue
+            if action == "skip_changed":
+                logger.warning("Skip changed file to avoid mixed graph state: %s", file_path.name)
+                continue
+            runnable_files.append((file_path, fingerprint))
+
+        if not runnable_files:
+            logger.info("Nothing new to process for %s", exp_def.id)
+            if hasattr(rag, 'close'):
+                rag.close()
+            self._restore_prompts()
+            return
+
+        for file_path, fingerprint in runnable_files:
+            t0 = time.time()
+            t_parsed = 0
+            t_end = 0
+            status = "Success"
+            doc_id = None
+            try:
+                content_list, doc_id = await rag.parse_document(str(file_path), output_dir=str(parser_output), display_stats=False)
+                t_parsed = time.time()
+                await rag.insert_content_list(content_list, str(file_path), doc_id=doc_id, display_stats=False)
+                t_end = time.time()
+                if rag.lightrag:
+                    await rag.lightrag.llm_response_cache.index_done_callback()
+                    await rag.lightrag.full_entities.index_done_callback()
+                    await rag.lightrag.full_relations.index_done_callback()
+                    await rag.lightrag.doc_status.index_done_callback()
+            except Exception as exc:
+                logger.error("Pipeline experiment failed for %s: %s", file_path.name, exc)
+                status = "Failed"
+                t_end = time.time()
+                if t_parsed == 0:
+                    t_parsed = t_end
+
+            stats = extract_storage_stats(str(rag_storage))
+            row = {
+                "Timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "Experiment_ID": exp_def.id,
+                "Experiment_Profile": exp_def.profile_name,
+                "Experiment_Parser": parser_name,
+                "File_Name": file_path.name,
+                "Parse_Time(s)": f"{t_parsed - t0:.2f}",
+                "Graph_Time(s)": f"{(t_end - t_parsed) if status == 'Success' else 0:.2f}",
+                "Total_Time(s)": f"{t_end - t0:.2f}",
+                "Output_Tokens": stats["output_tokens"],
+                "API_Calls": stats["api_calls"],
+                "Nodes": stats["nodes"],
+                "Edges": stats["edges"],
+                "Chunks": stats["chunks"],
+                "Entities": stats["entities"],
+                "Relations": stats["relations"],
+                "Status": status,
+            }
+            self.report_writer.append(row)
+
+            manifest_data.setdefault("files", {})[file_path.name] = {
+                "source_path": str(file_path.resolve()),
+                "content_md5": fingerprint["content_md5"],
+                "size": fingerprint["size"],
+                "mtime": fingerprint["mtime"],
+                "status": status,
+                "doc_id": doc_id,
+                "last_run_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "experiment_id": exp_def.id,
+            }
+            manifest.save(manifest_data)
+
+        if hasattr(rag, 'close'):
+            rag.close()
+        self._restore_prompts()

@@ -1,4 +1,3 @@
-# I. Prompt này ép LLM trả về description là "N/A" để tiết kiệm token
 SLIM_ENTITY_EXTRACTION_PROMPT = """
 -Goal-
 Given a text document and a list of entity types, identify all entities and relationships.
@@ -35,7 +34,6 @@ Return a single JSON object:
 {input_text}
 """
 
-# II. Prompt này dùng trong chế độ Hybrid, chỉ trích xuất quan hệ giữa các entity đã có sẵn
 HYBRID_RELATION_PROMPT = """
 -Goal-
 You are a Medical Knowledge Graph Expert.
@@ -70,64 +68,6 @@ Return a JSON object:
 {input_text}
 """
 
-# III. PROMPTS CHO RAGANYTHING VỚI NGỮ CẢNH Y TẾ
-MEDICAL_VISION_PROMPT = """
-Act as a Medical Researcher and Senior Clinician. Analyze this image in a strict medical context.
-Identify the image type (e.g., Radiological Scan, Histopathology Slide, Kaplan-Meier Plot, Flowchart, Clinical Photograph).
-
-Provide a JSON response with:
-{
-    "detailed_description": "Describe findings using standard medical terminology. For scans: mention modality, orientation, anatomical structures, and pathology (lesions, masses). For charts: interpret axes, significant trends, and p-values. For pathology: describe cellular architecture and staining.",
-    "entity_info": {
-        "entity_name": "Specific condition, anatomical region, or study result shown",
-        "entity_type": "MedicalVisualEvidence",
-        "summary": "Clinical significance and diagnostic implication of this visual data."
-    }
-}
-Context: {context}
-Image Info: {captions}
-"""
-
-# B. TABLE PROMPT: Chuyên trị bảng số liệu lâm sàng
-# Dùng cho: Patient Demographics, Lab Results, Drug Dosage
-MEDICAL_TABLE_PROMPT = """
-Act as a Medical Data Analyst. Analyze this clinical data table.
-Focus on:
-- Patient demographics (n, age, gender distribution)
-- Treatment groups and control arms
-- Statistical significance (confidence intervals, p-values)
-- Clinical outcomes (Adverse events, Efficacy rates)
-
-Provide a JSON response with:
-{
-    "detailed_description": "Summarize the key clinical findings, statistical comparisons, and significant differences between groups.",
-    "entity_info": {
-        "entity_name": "Table Content Summary (e.g. Baseline Characteristics)",
-        "entity_type": "ClinicalTable",
-        "summary": "Key statistical evidence presented in this table."
-    }
-}
-Context: {context}
-Table Info: {table_caption}
-"""
-
-# C. ENTITY SCOPE (Cho Text Extraction - LightRAG)
-# Phủ rộng các khía cạnh y khoa từ cơ sở đến lâm sàng
-MEDICAL_ENTITY_TYPES = [
-    # Lâm sàng
-    "Disease", "Symptom", "Syndrome", "ClinicalSign",
-    # Điều trị
-    "Medication", "MedicalProcedure", "Therapy", "Dosage",
-    # Cận lâm sàng & Cơ sở
-    "Anatomy", "Gene", "Protein", "Biomarker", "Pathogen",
-    # Nghiên cứu
-    "StudyOutcome", "Metric", "PopulationGroup"
-]
-
-
-# IV. Prompt này giới hạn LLM chỉ trích xuất Top 3 entities quan trọng nhất trong mỗi đoạn văn
-# IMPORTANT: Uses LightRAG's delimiter format, NOT JSON!
-
 SIMPLE_LIMIT_PROMPT = """
 -Goal-
 Given a text document, identify the TOP 3 MOST IMPORTANT entities and their relationships.
@@ -160,16 +100,6 @@ CRITICAL:
 - Relationships ONLY between your extracted entities (to prevent implicit nodes)
 - End with <|COMPLETE|>
 
--Example-
-Text: "Temozolomide treats glioblastoma. Radiation therapy is also used. Both target cancer cells."
-Output:
-entity<|#|>Temozolomide<|#|>Treatment<|#|>Chemotherapy drug for brain cancer
-entity<|#|>Glioblastoma<|#|>Disease<|#|>Malignant brain tumor
-entity<|#|>Radiation Therapy<|#|>Treatment<|#|>Cancer treatment using radiation
-relation<|#|>Temozolomide<|#|>Glioblastoma<|#|>treats, therapy<|#|>Primary treatment for glioblastoma
-relation<|#|>Radiation Therapy<|#|>Glioblastoma<|#|>treats, therapy<|#|>Adjuvant treatment for glioblastoma
-<|COMPLETE|>
-
 ######################
 -Data-
 ######################
@@ -177,13 +107,6 @@ relation<|#|>Radiation Therapy<|#|>Glioblastoma<|#|>treats, therapy<|#|>Adjuvant
 ######################
 Output:
 """
-
-# =============================================================================
-# V. ONE ENTITY PER CHUNK PROMPT (LightRAG Delimiter Format)
-# Strategy: 1 main entity per chunk + relationships to connect the graph
-# Target: ~N chunks = ~N nodes (where N = number of chunks)
-# IMPORTANT: Uses LightRAG's delimiter format, NOT JSON!
-# =============================================================================
 
 ONE_ENTITY_PER_CHUNK_PROMPT = """
 -Goal-
@@ -217,20 +140,6 @@ CRITICAL:
 - Output 1-2 relationship lines (to create graph connections)
 - End with <|COMPLETE|>
 
--Example 1-
-Text: "Temozolomide (TMZ) is an alkylating chemotherapy drug used to treat glioblastoma."
-Output:
-entity<|#|>Temozolomide<|#|>Treatment<|#|>Alkylating chemotherapy drug for brain tumors
-relation<|#|>Temozolomide<|#|>Glioblastoma<|#|>treats, therapy<|#|>Used as primary treatment for glioblastoma
-<|COMPLETE|>
-
--Example 2-
-Text: "The patient received radiation therapy at 60 Gy targeting the tumor bed."
-Output:
-entity<|#|>Radiation Therapy<|#|>Treatment<|#|>60 Gy dose targeting tumor bed
-relation<|#|>Radiation Therapy<|#|>Tumor Bed<|#|>targets, treatment<|#|>Radiation directed at tumor location
-<|COMPLETE|>
-
 ######################
 -Data-
 ######################
@@ -239,7 +148,6 @@ relation<|#|>Radiation Therapy<|#|>Tumor Bed<|#|>targets, treatment<|#|>Radiatio
 Output:
 """
 
-# Vision prompt for 1 entity per image
 ONE_ENTITY_VISION_PROMPT = """
 Act as a Medical Image Analyst.
 Analyze this image and extract the SINGLE most important entity it represents.
@@ -258,7 +166,6 @@ Context: {context}
 Image Info: {captions}
 """
 
-# Table prompt for 1 entity per table
 ONE_ENTITY_TABLE_PROMPT = """
 Act as a Medical Data Analyst.
 Analyze this table and extract the SINGLE most important entity it represents.
@@ -276,13 +183,6 @@ Return JSON:
 Context: {context}
 Table Info: {table_caption}
 """
-
-# =============================================================================
-# VI. STRICT ONE ENTITY - NO RELATIONSHIPS (LightRAG Delimiter Format)
-# Strategy: 1 entity per chunk, NO relationships = NO implicit nodes
-# Target: EXACTLY N chunks = N nodes (guaranteed)
-# IMPORTANT: Uses LightRAG's delimiter format, NOT JSON!
-# =============================================================================
 
 STRICT_ONE_ENTITY_PROMPT = """
 -Goal-
@@ -311,24 +211,6 @@ CRITICAL:
 - Output NO relationship lines
 - End with <|COMPLETE|>
 
--Example 1-
-Text: "Temozolomide (TMZ) is an alkylating chemotherapy drug used to treat glioblastoma."
-Output:
-entity<|#|>Temozolomide<|#|>Treatment<|#|>Alkylating chemotherapy drug for brain tumors
-<|COMPLETE|>
-
--Example 2-
-Text: "Dr. Sarah Johnson performed a craniotomy with 85% tumor resection on January 20, 2024."
-Output:
-entity<|#|>Craniotomy<|#|>Medical Procedure<|#|>Surgical brain procedure with 85% tumor resection
-<|COMPLETE|>
-
--Example 3-
-Text: "The MGMT promoter methylation status is a favorable prognostic biomarker."
-Output:
-entity<|#|>Mgmt Promoter Methylation<|#|>Biomarker<|#|>Favorable prognostic indicator for treatment response
-<|COMPLETE|>
-
 ######################
 -Data-
 ######################
@@ -337,7 +219,6 @@ entity<|#|>Mgmt Promoter Methylation<|#|>Biomarker<|#|>Favorable prognostic indi
 Output:
 """
 
-# Vision prompt for strict 1 entity (no relationships)
 STRICT_ONE_ENTITY_VISION_PROMPT = """
 Act as a Medical Image Analyst.
 Extract the SINGLE most important entity from this image.
@@ -357,7 +238,6 @@ Context: {context}
 Image Info: {captions}
 """
 
-# Table prompt for strict 1 entity (no relationships)
 STRICT_ONE_ENTITY_TABLE_PROMPT = """
 Act as a Medical Data Analyst.
 Extract the SINGLE most important entity from this table.

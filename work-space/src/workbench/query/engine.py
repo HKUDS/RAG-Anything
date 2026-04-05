@@ -7,13 +7,13 @@ from pathlib import Path
 from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
 
-from .config import ENV
-from .definitions import EXPERIMENTS
-from .models import get_model_funcs
+from src.config import ENV
+from src.workbench.experiments.pipeline.definitions import PIPELINE_EXPERIMENTS
+from src.workbench.runtime import get_model_funcs
 
 try:
     from lightrag import QueryParam
-except Exception:  # pragma: no cover - fallback for environments that lazy-install LightRAG
+except Exception:  # pragma: no cover
     QueryParam = None
 
 logger = logging.getLogger("QA_Engine")
@@ -58,22 +58,20 @@ CONTEXT_DISTILL_USER_PROMPT = (
 
 class RAGQueryEngine:
     def __init__(self, experiment_id: str):
-        if experiment_id not in EXPERIMENTS:
+        if experiment_id not in PIPELINE_EXPERIMENTS:
             raise ValueError(f"Unknown experiment_id: {experiment_id}")
 
         self.experiment_id = experiment_id
-        self.exp_def = EXPERIMENTS[experiment_id]
+        self.exp_def = PIPELINE_EXPERIMENTS[experiment_id]
         self.exp_dir = Path(ENV.output_base_dir) / experiment_id
         self.storage_dir = self.exp_dir / "rag_storage"
         self.parser_name = self.exp_def.parser or ENV.parser
         self.parse_method = self.exp_def.parse_method or ENV.parse_method
 
-        # Query nên dùng cùng provider/embedding family với experiment để giữ retrieval ổn định.
         self.llm_f, _, self.embed_f = get_model_funcs(self.exp_def.provider)
         self.rag = None
 
     async def initialize(self):
-        """Khởi tạo RAGAnything ở chế độ query-only, không parse lại tài liệu."""
         config = RAGAnythingConfig(
             working_dir=str(self.storage_dir),
             parser=self.parser_name,
@@ -91,12 +89,6 @@ class RAGQueryEngine:
         await self.rag._ensure_lightrag_initialized()
 
     async def query(self, question: str, mode: str | None = None):
-        """
-        Query pipeline ưu tiên core retrieval của RAGAnything/LightRAG:
-        1. Lấy retrieved context từ chính LightRAG (nếu runtime hỗ trợ only_need_context/only_need_prompt).
-        2. Chạy grounded answer synthesis từ context đó.
-        3. Nếu runtime hiện tại không hỗ trợ lấy context thô, fallback về rag.aquery(...) mặc định.
-        """
         if self.rag is None:
             await self.initialize()
 
@@ -148,10 +140,7 @@ class RAGQueryEngine:
         if not normalized:
             return normalized
 
-        # Bỏ các quiz prefixes kiểu "Q2:" để retrieval tập trung vào semantic query.
         normalized = re.sub(r"(?i)^(?:q(?:uestion)?\s*\d+\s*[:.)-]\s*)", "", normalized)
-
-        # Chỉ giữ alias normalization tối thiểu cho proper nouns phổ biến của repo/paper.
         normalized = re.sub(r"(?i)\brag[\s-]*anything\b", "RAG-Anything", normalized)
         normalized = re.sub(
             r"(?i)\bretrieval augmented generation\b",
@@ -166,17 +155,14 @@ class RAGQueryEngine:
             logger.warning("QueryParam signature unavailable; skip direct context retrieval")
             return None
 
+        retrieval_attempts = []
         if "only_need_prompt" in supported:
-            retrieval_attempts = ["only_need_prompt"]
-        else:
-            retrieval_attempts = []
+            retrieval_attempts.append("only_need_prompt")
         if "only_need_context" in supported:
             retrieval_attempts.append("only_need_context")
-
         if not retrieval_attempts:
             logger.warning(
-                "Current LightRAG runtime does not expose only_need_context/only_need_prompt; "
-                "cannot perform separate context retrieval"
+                "Current LightRAG runtime does not expose only_need_context/only_need_prompt; cannot perform separate context retrieval"
             )
             return None
 
@@ -242,8 +228,6 @@ class RAGQueryEngine:
         if not context:
             return None
 
-        # Nếu only_need_prompt trả về nguyên prompt, loại bớt một số marker chỉ thị phổ biến
-        # để answer model tập trung hơn vào retrieved evidence.
         cleanup_patterns = [
             r"(?im)^system prompt:.*$",
             r"(?im)^instructions?:.*$",
@@ -257,8 +241,6 @@ class RAGQueryEngine:
 
         context = re.sub(r"(?is)discarded content analysis:\s*", "", context)
 
-        # Nếu LightRAG trả về prompt đầy đủ có nhiều sections, ưu tiên giữ phần Sources/Chunks
-        # vì đây thường là evidence trực tiếp nhất cho answer synthesis.
         prioritized_section_patterns = [
             r"(?is)(?:^|\n)-{2,}\s*sources\s*-{2,}\s*\n(.*)$",
             r"(?is)(?:^|\n)-{2,}\s*source chunks?\s*-{2,}\s*\n(.*)$",
@@ -301,10 +283,6 @@ class RAGQueryEngine:
 
     @staticmethod
     def _align_embedding_dim_with_storage(storage_dir: Path, embed_func: EmbeddingFunc) -> EmbeddingFunc:
-        """
-        Đọc embedding_dim từ VDB lưu trữ; nếu khác với embed_func hiện tại
-        thì tạo wrapper cắt/padding để khớp, tránh lỗi mismatch khi load kho cũ.
-        """
         vdb_file = storage_dir / "vdb_entities.json"
         if not vdb_file.exists():
             return embed_func
@@ -319,36 +297,27 @@ class RAGQueryEngine:
             return embed_func
 
         current_dim = getattr(embed_func, "embedding_dim", None)
-        if current_dim == stored_dim or not current_dim:
+        if current_dim == stored_dim:
             return embed_func
 
-        logger.warning(
-            "Embedding dim mismatch detected. Storage: %s, current: %s. "
-            "Auto-adjusting query embedding to match storage.",
-            stored_dim,
-            current_dim,
-        )
+        original = embed_func.func
 
-        async def _wrapper(texts):
-            maybe = embed_func.func(texts)
-            if hasattr(maybe, "__await__"):
-                vectors = await maybe
-            else:
-                vectors = maybe
-            adjusted = []
-            for vec in vectors:
-                if len(vec) > stored_dim:
-                    adjusted.append(vec[:stored_dim])
-                elif len(vec) < stored_dim:
-                    adjusted.append(vec + [0.0] * (stored_dim - len(vec)))
-                else:
-                    adjusted.append(vec)
-            return adjusted
+        async def aligned_embed(texts):
+            vectors = await original(texts)
+            aligned = []
+            for vector in vectors:
+                vector = list(vector)
+                if len(vector) > stored_dim:
+                    vector = vector[:stored_dim]
+                elif len(vector) < stored_dim:
+                    vector = vector + [0.0] * (stored_dim - len(vector))
+                aligned.append(vector)
+            return aligned
 
         return EmbeddingFunc(
             embedding_dim=stored_dim,
-            max_token_size=embed_func.max_token_size,
-            func=_wrapper,
+            max_token_size=getattr(embed_func, "max_token_size", 8192),
+            func=aligned_embed,
         )
 
     @staticmethod
@@ -357,32 +326,20 @@ class RAGQueryEngine:
             return None
         try:
             signature = inspect.signature(QueryParam)
-            return set(signature.parameters.keys())
-        except Exception:
+        except (TypeError, ValueError):
             return None
+        return set(signature.parameters.keys())
 
     def _build_quality_query_kwargs(self) -> dict:
-        """
-        Chỉ truyền các tham số QueryParam mà runtime LightRAG hiện tại thực sự hỗ trợ.
-        Điều này giữ cho workspace tương thích giữa các version LightRAG khác nhau.
-        """
         supported = self._get_supported_queryparam_fields()
         if supported is None:
-            return {"vlm_enhanced": False}
+            return {}
 
-        proposed = {
+        candidates = {
             "vlm_enhanced": False,
             "top_k": ENV.query_top_k,
             "chunk_top_k": ENV.query_chunk_top_k,
             "response_type": ENV.query_response_type,
             "enable_rerank": ENV.query_enable_rerank,
         }
-
-        query_kwargs = {"vlm_enhanced": False}
-        for key, value in proposed.items():
-            if key == "vlm_enhanced":
-                continue
-            if key in supported:
-                query_kwargs[key] = value
-
-        return query_kwargs
+        return {key: value for key, value in candidates.items() if key in supported}

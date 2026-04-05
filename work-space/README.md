@@ -20,6 +20,11 @@ Parser benchmark variants available by default:
 python run_bench.py
 ```
 
+Default behavior is incremental per experiment:
+- files already processed successfully with the same content are skipped
+- only new files in `work-space/data_test` are indexed and merged into the existing `rag_storage`
+- changed files are skipped intentionally to avoid mixing old and new versions in the same graph; use `--fresh-run` or a new experiment ID if you need to rebuild them
+
 Fresh run (clear `rag_storage` + `parser_output` before each experiment):
 ``` bash
 python run_bench.py --fresh-run
@@ -30,6 +35,11 @@ python run_bench.py --fresh-run
 python run_bench.py --exp ${exp_name}
 ```
 Output will be in benchmark_report.csv
+
+Each experiment also writes an incremental manifest at:
+``` bash
+benchmark_outputs/<exp_id>/processed_manifest.json
+```
 
 Specific experiment with fresh run:
 ``` bash

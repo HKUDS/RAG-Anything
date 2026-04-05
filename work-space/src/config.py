@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
+from dataclasses import dataclass
 from dotenv import load_dotenv
 
 _ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
@@ -26,12 +25,23 @@ class EnvConfig:
 
     # System settings
     input_dir: str = os.getenv("INPUT_DIR", "./data_test")
+    parser_benchmark_input_dir: str = os.getenv("PARSER_BENCHMARK_INPUT_DIR", "./datasets/parser_benchmark/raw_docs")
     output_base_dir: str = os.getenv("OUTPUT_BASE_DIR", "./benchmark_outputs")
-    report_file: str = os.getenv("REPORT_FILE", "./benchmark_report.csv")
+    report_file: str = os.getenv("REPORT_FILE", "./benchmark_outputs/reports/pipeline_benchmark.csv")
     max_workers: int = int(os.getenv("MAX_WORKERS", 1))
     
     parser: str = os.getenv("PARSER", "mineru")
     parse_method: str = os.getenv("PARSE_METHOD", "auto")
+    mineru_backend: str = os.getenv("MINERU_BACKEND", "hybrid-auto-engine")
+    mineru_device: str = os.getenv("MINERU_DEVICE", "cuda")
+    mineru_lang: str = os.getenv("MINERU_LANG", "en")
+    mineru_source: str = os.getenv("MINERU_SOURCE", "huggingface")
+    docling_device: str = os.getenv("DOCLING_DEVICE", "cuda")
+    docling_ocr_lang: str = os.getenv("DOCLING_OCR_LANG", "en")
+    kreuzberg_ocr_backend: str = os.getenv("KREUZBERG_OCR_BACKEND", "paddleocr")
+    kreuzberg_ocr_language: str = os.getenv("KREUZBERG_OCR_LANGUAGE", "en")
+    kreuzberg_ocr_use_gpu: bool = os.getenv("KREUZBERG_OCR_USE_GPU", "true").lower() in ("1", "true", "yes", "on")
+    kreuzberg_ocr_model_tier: str = os.getenv("KREUZBERG_OCR_MODEL_TIER", "server")
 
     # Google Gemini settings
     google_api_key: str = os.getenv("GOOGLE_API_KEY", "")
@@ -39,7 +49,8 @@ class EnvConfig:
     # Pruning settings for visualization
     pruning_max_nodes: int = int(os.getenv("PRUNING_MAX_NODES", 50))
     pruning_default_algorithm: str = os.getenv("PRUNING_DEFAULT_ALGORITHM", "hybrid")
-    pruning_benchmark_report: str = os.getenv("PRUNING_BENCHMARK_REPORT", "./pruning_benchmark.csv")
+    pruning_benchmark_report: str = os.getenv("PRUNING_BENCHMARK_REPORT", "./benchmark_outputs/reports/pruning_benchmark.csv")
+    gold_dataset_file: str = os.getenv("GOLD_DATASET_FILE", "./benchmark_outputs/reports/gold_dataset.json")
 
     # Query settings
     query_default_mode: str = os.getenv("QUERY_DEFAULT_MODE", "mix")
@@ -47,24 +58,4 @@ class EnvConfig:
     query_chunk_top_k: int = int(os.getenv("QUERY_CHUNK_TOP_K", 12))
     query_response_type: str = os.getenv("QUERY_RESPONSE_TYPE", "Multiple Paragraphs")
     query_enable_rerank: bool = os.getenv("QUERY_ENABLE_RERANK", "false").lower() in ("1", "true", "yes", "on")
-
-
-@dataclass
-class ExperimentDef:
-    id: str
-    description: str
-    provider: str = "ollama" 
-
-    # Parser configuration for end-to-end benchmark
-    parser: Optional[str] = None
-    parse_method: Optional[str] = None
-    parser_kwargs: Dict[str, Any] = field(default_factory=dict)
-    
-    use_gliner: bool = False
-    gliner_labels: list = field(default_factory=list)
-
-    lightrag_kwargs: Dict[str, Any] = field(default_factory=dict)
-    raganything_kwargs: Dict[str, Any] = field(default_factory=dict)
-    custom_prompts: Dict[str, str] = field(default_factory=dict)
-
 ENV = EnvConfig()

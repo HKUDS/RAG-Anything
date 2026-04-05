@@ -378,7 +378,7 @@ class PruningBenchmark:
         Returns:
             List các EvaluationResult, sorted by weighted_score
         """
-        from .pruning_algorithms import PruningAlgorithm
+        from .algorithms import PruningAlgorithm
 
         self.results = []
 
