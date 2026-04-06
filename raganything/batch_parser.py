@@ -85,6 +85,10 @@ class BatchParser:
             self.parser = MineruParser()
         elif parser_type == "docling":
             self.parser = DoclingParser()
+        elif parser_type == "mineru_cloud":
+            from .mineru_cloud import MineruCloudParser
+
+            self.parser = MineruCloudParser()
         elif parser_type == "kreuzberg":
             from .parser import KreuzbergParser
 
@@ -111,6 +115,8 @@ class BatchParser:
         parser_type = self.parser_type
         if parser_type == "docling":
             return list(self.parser.OFFICE_FORMATS | self.parser.HTML_FORMATS | {".pdf"})
+        if parser_type == "mineru_cloud":
+            return list(self.parser.OFFICE_FORMATS | self.parser.IMAGE_FORMATS | self.parser.HTML_FORMATS | {".pdf"})
         if parser_type in ["kreuzberg", "marker"]:
             return list(self.parser.IMAGE_FORMATS | {".pdf"})
         return list(

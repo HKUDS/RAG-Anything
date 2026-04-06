@@ -9,6 +9,7 @@ from pathlib import Path
 
 from raganything import RAGAnything, RAGAnythingConfig
 from raganything.parser import DoclingParser, MineruParser
+from raganything.mineru_cloud import MineruCloudParser
 from raganything.prompt import PROMPTS as RAG_PROMPTS
 from lightrag.prompt import PROMPTS as LIGHTRAG_PROMPTS
 
@@ -74,6 +75,8 @@ class PipelineBenchmarkRunner:
         parser_name = (parser_name or "mineru").lower()
         if parser_name == "mineru":
             supported = set([".pdf"]) | MineruParser.IMAGE_FORMATS | MineruParser.OFFICE_FORMATS | MineruParser.TEXT_FORMATS
+        elif parser_name == "mineru_cloud":
+            supported = {".pdf"} | MineruCloudParser.IMAGE_FORMATS | MineruCloudParser.OFFICE_FORMATS | MineruCloudParser.HTML_FORMATS
         elif parser_name == "docling":
             supported = set([".pdf"]) | DoclingParser.OFFICE_FORMATS | DoclingParser.HTML_FORMATS
         elif parser_name in {"kreuzberg", "marker"}:
@@ -95,6 +98,7 @@ class PipelineBenchmarkRunner:
             parser_name,
             parse_method,
         )
+        logger.info("[%s] Effective parser kwargs: %s", exp_def.id, parser_kwargs)
 
         self._apply_custom_prompts(exp_def.custom_prompts)
         llm_f, vision_f, embed_f = get_model_funcs(exp_def.provider, exp_def.use_gliner, exp_def.gliner_labels)
@@ -126,7 +130,13 @@ class PipelineBenchmarkRunner:
             lightrag_kwargs=exp_def.lightrag_kwargs,
         )
 
-        input_path = Path(ENV.input_dir)
+        input_path = Path(exp_def.input_dir_override or ENV.input_dir)
+        if not input_path.exists():
+            logger.warning("Input directory does not exist: %s", input_path)
+            if hasattr(rag, 'close'):
+                rag.close()
+            self._restore_prompts()
+            return
         files = [f for f in input_path.glob("*.*") if f.is_file()]
         files = self._filter_files_for_parser(files, parser_name)
         if not files:

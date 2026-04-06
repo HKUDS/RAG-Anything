@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import shutil
@@ -9,6 +10,7 @@ from typing import Dict, List
 
 from raganything import RAGAnything, RAGAnythingConfig
 from raganything.parser import DoclingParser, MineruParser
+from raganything.mineru_cloud import MineruCloudParser
 
 from src.config import ENV
 from src.extraction import (
@@ -19,6 +21,7 @@ from src.extraction import (
 )
 from src.workbench.experiments.base import ParserBenchmarkExperimentDefinition
 from src.workbench.observability import CSVReportWriter
+from src.workbench.runtime import MinerUCloudConfig, MinerUPrecisionCloudClient
 
 logger = logging.getLogger("ParserRunner")
 
@@ -88,6 +91,8 @@ class ParserBenchmarkRunner:
     def _filter_files_for_parser(files: List[Path], parser: str) -> List[Path]:
         if parser == "mineru":
             supported = set([".pdf"]) | MineruParser.IMAGE_FORMATS | MineruParser.OFFICE_FORMATS | MineruParser.TEXT_FORMATS
+        elif parser == "mineru_cloud":
+            supported = {".pdf"} | MineruCloudParser.IMAGE_FORMATS | MineruCloudParser.OFFICE_FORMATS | MineruCloudParser.HTML_FORMATS
         elif parser == "docling":
             supported = set([".pdf"]) | DoclingParser.OFFICE_FORMATS | DoclingParser.HTML_FORMATS
         elif parser == "kreuzberg":
@@ -113,19 +118,22 @@ class ParserBenchmarkRunner:
         content_output = exp_dir / "content_list"
         content_output.mkdir(parents=True, exist_ok=True)
 
-        rag = RAGAnything(
-            config=RAGAnythingConfig(
-                working_dir=str(exp_dir / "rag_storage"),
-                parser_output_dir=str(parser_output),
-                parser=exp_def.parser,
-                parse_method=exp_def.parse_method,
-            )
-        )
+        rag = None
         effective_parser_kwargs = dict(exp_def.parser_kwargs or {})
         if fresh_parser_cache and exp_def.parser == "kreuzberg":
             effective_parser_kwargs["use_cache"] = False
-        rag.config.parser_kwargs = effective_parser_kwargs
         logger.info("[%s] Effective parser kwargs: %s", exp_def.id, effective_parser_kwargs)
+
+        if exp_def.parser != "mineru_cloud":
+            rag = RAGAnything(
+                config=RAGAnythingConfig(
+                    working_dir=str(exp_dir / "rag_storage"),
+                    parser_output_dir=str(parser_output),
+                    parser=exp_def.parser,
+                    parse_method=exp_def.parse_method,
+                )
+            )
+            rag.config.parser_kwargs = effective_parser_kwargs
 
         files = [p for p in Path(input_dir).glob("*.*") if p.is_file()]
         files = self._filter_files_for_parser(files, exp_def.parser)
@@ -143,11 +151,35 @@ class ParserBenchmarkRunner:
             content_list = []
             doc_id = ""
             try:
-                content_list, doc_id = await rag.parse_document(
-                    str(file_path),
-                    output_dir=str(parser_output),
-                    display_stats=False,
-                )
+                if exp_def.parser == "mineru_cloud":
+                    if not ENV.mineru_api_key:
+                        raise RuntimeError(
+                            "MINERU_API_KEY is missing. Set it in work-space/.env before running ext4_mineru_cloud_vlm."
+                        )
+                    cloud_client = MinerUPrecisionCloudClient(
+                        MinerUCloudConfig(
+                            api_key=ENV.mineru_api_key,
+                            base_url=str(effective_parser_kwargs.get("api_base_url", ENV.mineru_api_base_url)),
+                            model_version=str(effective_parser_kwargs.get("model_version", ENV.mineru_cloud_model_version)),
+                            language=str(effective_parser_kwargs.get("language", ENV.mineru_cloud_language)),
+                            enable_formula=bool(effective_parser_kwargs.get("enable_formula", True)),
+                            enable_table=bool(effective_parser_kwargs.get("enable_table", True)),
+                            poll_interval_sec=int(effective_parser_kwargs.get("poll_interval_sec", ENV.mineru_cloud_poll_interval_sec)),
+                            timeout_sec=int(effective_parser_kwargs.get("timeout_sec", ENV.mineru_cloud_timeout_sec)),
+                        )
+                    )
+                    content_list, doc_id = await asyncio.to_thread(
+                        cloud_client.parse_file,
+                        file_path=file_path,
+                        parser_output_dir=parser_output,
+                    )
+                else:
+                    assert rag is not None
+                    content_list, doc_id = await rag.parse_document(
+                        str(file_path),
+                        output_dir=str(parser_output),
+                        display_stats=False,
+                    )
                 content_list, normalize_report = normalize_content_list_for_pipeline(content_list)
                 logger.info(
                     "[%s] Normalized content_list: %s -> %s blocks",

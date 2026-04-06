@@ -27,3 +27,16 @@ for index, parser_key in enumerate(["mineru", "docling", "kreuzberg"], start=1):
         notes=preset.notes,
         tags=["parser", parser_key],
     )
+
+cloud_preset = PARSER_PRESETS["mineru_cloud_vlm"]
+PARSER_EXPERIMENTS["ext4_mineru_cloud_vlm"] = ParserBenchmarkExperimentDefinition(
+    id="ext4_mineru_cloud_vlm",
+    description="MinerU official cloud API parser benchmark (vlm)",
+    category="parser",
+    metric_plan=PARSER_METRIC_PLAN,
+    parser=cloud_preset.parser,
+    parse_method=cloud_preset.parse_method,
+    parser_kwargs=dict(cloud_preset.parser_kwargs),
+    notes=cloud_preset.notes,
+    tags=["parser", "mineru", "cloud", "api", "vlm"],
+)

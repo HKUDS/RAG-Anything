@@ -18,9 +18,9 @@ class EnvConfig:
     
     # OpenAI settings
     openai_api_key: str = os.getenv("OPENAI_API_KEY")
-    openai_llm: str = os.getenv("OPENAI_LLM_MODEL")
-    openai_vision: str = os.getenv("OPENAI_VISION_MODEL")
-    openai_embed: str = os.getenv("OPENAI_EMBED_MODEL")
+    openai_llm: str = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
+    openai_vision: str = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")
+    openai_embed: str = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-large")
     openai_dim: int = int(os.getenv("OPENAI_EMBED_DIM", 3072))
 
     # System settings
@@ -36,6 +36,12 @@ class EnvConfig:
     mineru_device: str = os.getenv("MINERU_DEVICE", "cuda")
     mineru_lang: str = os.getenv("MINERU_LANG", "en")
     mineru_source: str = os.getenv("MINERU_SOURCE", "huggingface")
+    mineru_api_key: str = os.getenv("MINERU_API_KEY", "")
+    mineru_api_base_url: str = os.getenv("MINERU_API_BASE_URL", "https://mineru.net")
+    mineru_cloud_model_version: str = os.getenv("MINERU_CLOUD_MODEL_VERSION", "vlm")
+    mineru_cloud_language: str = os.getenv("MINERU_CLOUD_LANGUAGE", "en")
+    mineru_cloud_poll_interval_sec: int = int(os.getenv("MINERU_CLOUD_POLL_INTERVAL_SEC", 5))
+    mineru_cloud_timeout_sec: int = int(os.getenv("MINERU_CLOUD_TIMEOUT_SEC", 1800))
     docling_device: str = os.getenv("DOCLING_DEVICE", "cuda")
     docling_ocr_lang: str = os.getenv("DOCLING_OCR_LANG", "en")
     kreuzberg_ocr_backend: str = os.getenv("KREUZBERG_OCR_BACKEND", "paddleocr")

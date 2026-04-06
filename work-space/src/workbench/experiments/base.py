@@ -21,6 +21,7 @@ class PipelineExperimentDefinition(BaseExperimentDefinition):
     provider: str = "ollama"
     parser: Optional[str] = None
     parse_method: Optional[str] = None
+    input_dir_override: Optional[str] = None
     parser_kwargs: Dict[str, Any] = field(default_factory=dict)
     use_gliner: bool = False
     gliner_labels: list = field(default_factory=list)

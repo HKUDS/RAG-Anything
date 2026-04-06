@@ -3014,7 +3014,7 @@ def main():
     )
     parser.add_argument(
         "--parser",
-        choices=["mineru", "docling", "kreuzberg", "marker"],
+        choices=["mineru", "mineru_cloud", "docling", "kreuzberg", "marker"],
         default="mineru",
         help="Parser selection",
     )
@@ -3029,6 +3029,10 @@ def main():
     if args.check:
         if args.parser == "docling":
             doc_parser = DoclingParser()
+        elif args.parser == "mineru_cloud":
+            from raganything.mineru_cloud import MineruCloudParser
+
+            doc_parser = MineruCloudParser()
         elif args.parser == "kreuzberg":
             doc_parser = KreuzbergParser()
         elif args.parser == "marker":
@@ -3046,6 +3050,10 @@ def main():
         # Parse the document
         if args.parser == "docling":
             doc_parser = DoclingParser()
+        elif args.parser == "mineru_cloud":
+            from raganything.mineru_cloud import MineruCloudParser
+
+            doc_parser = MineruCloudParser()
         elif args.parser == "kreuzberg":
             doc_parser = KreuzbergParser()
         elif args.parser == "marker":

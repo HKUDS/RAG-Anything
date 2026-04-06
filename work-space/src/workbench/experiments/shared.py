@@ -61,6 +61,22 @@ PARSER_PRESETS: dict[str, ParserPreset] = {
         title="Kreuzberg",
         notes="Fast parser preset using Kreuzberg with PaddleOCR for OCR-dependent parsing on the same benchmark dataset.",
     ),
+    "mineru_cloud_vlm": ParserPreset(
+        key="mineru_cloud_vlm",
+        parser="mineru_cloud",
+        parse_method="api",
+        parser_kwargs={
+            "api_base_url": ENV.mineru_api_base_url,
+            "model_version": ENV.mineru_cloud_model_version,
+            "language": ENV.mineru_cloud_language,
+            "enable_formula": True,
+            "enable_table": True,
+            "poll_interval_sec": ENV.mineru_cloud_poll_interval_sec,
+            "timeout_sec": ENV.mineru_cloud_timeout_sec,
+        },
+        title="MinerU Cloud VLM",
+        notes="Official MinerU Precision Extract cloud API benchmark using model_version=vlm. Time reflects upload + remote processing + polling, not raw local parser throughput.",
+    ),
 }
 
 

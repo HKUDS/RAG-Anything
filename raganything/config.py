@@ -28,7 +28,7 @@ class RAGAnythingConfig:
     """Default output directory for parsed content."""
 
     parser: str = field(default=get_env_value("PARSER", "mineru", str))
-    """Parser selection: 'mineru', 'docling', 'kreuzberg', or 'marker'."""
+    """Parser selection: 'mineru', 'mineru_cloud', 'docling', 'kreuzberg', or 'marker'."""
 
     extract_profile: str = field(
         default=get_env_value("EXTRACT_PROFILE", "balanced", str)

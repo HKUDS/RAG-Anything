@@ -111,6 +111,10 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         # Set up document parser
         if self.config.parser == "docling":
             self.doc_parser = DoclingParser()
+        elif self.config.parser == "mineru_cloud":
+            from raganything.mineru_cloud import MineruCloudParser
+
+            self.doc_parser = MineruCloudParser()
         elif self.config.parser == "kreuzberg":
             from raganything.parser import KreuzbergParser
 

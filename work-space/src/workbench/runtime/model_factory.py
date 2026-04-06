@@ -27,6 +27,17 @@ def get_model_funcs(provider: str, use_gliner: bool = False, gliner_labels: list
         embed_model = ENV.ollama_embed
         embed_dim = ENV.ollama_dim
 
+    if not llm_model:
+        raise RuntimeError(f"Missing LLM model configuration for provider '{provider}'.")
+    if not vision_model:
+        raise RuntimeError(f"Missing vision model configuration for provider '{provider}'.")
+    if not embed_model:
+        raise RuntimeError(f"Missing embedding model configuration for provider '{provider}'.")
+    if provider == "openai" and not api_key:
+        raise RuntimeError("OPENAI_API_KEY is missing for provider 'openai'.")
+    if provider != "openai" and not base_url:
+        raise RuntimeError("OLLAMA_BASE_URL is missing for provider 'ollama'.")
+
     async def base_llm_func(prompt, system_prompt=None, history_messages=[], **kwargs):
         return await openai_complete_if_cache(
             model=llm_model,

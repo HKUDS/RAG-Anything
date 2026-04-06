@@ -5,6 +5,7 @@ huggingface_hub
 lightrag-hku>=1.4.10,<2.0.0
 # MinerU 2.0 packages (replaces magic-pdf)
 mineru[core]
+requests>=2.31.0
 python-dotenv>=1.0.0
 dotenv>=0.9.9
 docling>=2.75.0,<3.0.0

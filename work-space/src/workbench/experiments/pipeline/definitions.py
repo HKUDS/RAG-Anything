@@ -61,3 +61,25 @@ for alias, target in {
         tags=list(base.tags) + ["legacy"],
         legacy_alias=True,
     )
+
+cloud_base_profile = PIPELINE_PROFILES["default"]
+cloud_parser_preset = PARSER_PRESETS["mineru_cloud_vlm"]
+PIPELINE_EXPERIMENTS["exp1_baseline_mineru_cloud_openai"] = PipelineExperimentDefinition(
+    id="exp1_baseline_mineru_cloud_openai",
+    description="Basic end-to-end baseline using MinerU Precision cloud parser and OpenAI models.",
+    category="pipeline",
+    metric_plan=PIPELINE_METRIC_PLAN,
+    profile_name="default",
+    provider="openai",
+    parser=cloud_parser_preset.parser,
+    parse_method=cloud_parser_preset.parse_method,
+    input_dir_override="./datasets/parser_benchmark/raw_docs",
+    parser_kwargs=dict(cloud_parser_preset.parser_kwargs),
+    use_gliner=cloud_base_profile.use_gliner,
+    gliner_labels=list(cloud_base_profile.gliner_labels),
+    lightrag_kwargs=dict(cloud_base_profile.lightrag_kwargs),
+    raganything_kwargs=dict(cloud_base_profile.raganything_kwargs),
+    custom_prompts=dict(cloud_base_profile.custom_prompts),
+    notes="Smoke-test pipeline: MinerU official cloud parsing + OpenAI LLM, vision, and embedding models.",
+    tags=["pipeline", "default", "mineru_cloud", "openai", "smoke"],
+)

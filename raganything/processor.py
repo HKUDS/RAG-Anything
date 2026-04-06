@@ -28,13 +28,17 @@ class ProcessorMixin:
 
     _PARSE_CACHE_RELEVANT_KWARGS = {
         "lang",
+        "language",
         "device",
         "start_page",
         "end_page",
         "formula",
         "table",
+        "enable_formula",
+        "enable_table",
         "backend",
         "source",
+        "model_version",
         "ocr_lang",
         "ocr_engine",
         "ocr_backend",
@@ -47,6 +51,10 @@ class ProcessorMixin:
         "extract_pages",
         "extract_images",
         "extract_tables",
+        "api_base_url",
+        "base_url",
+        "is_ocr",
+        "extra_formats",
     }
 
     def _resolve_parser_kwargs(self, **kwargs) -> Dict[str, Any]:
@@ -326,6 +334,10 @@ class ProcessorMixin:
         try:
             if self.config.parser == "docling":
                 doc_parser = DoclingParser()
+            elif self.config.parser == "mineru_cloud":
+                from raganything.mineru_cloud import MineruCloudParser
+
+                doc_parser = MineruCloudParser()
             elif self.config.parser == "kreuzberg":
                 from raganything.parser import KreuzbergParser
 
