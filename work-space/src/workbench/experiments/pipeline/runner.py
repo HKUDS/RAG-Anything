@@ -14,6 +14,7 @@ from raganything.prompt import PROMPTS as RAG_PROMPTS
 from lightrag.prompt import PROMPTS as LIGHTRAG_PROMPTS
 
 from src.config import ENV
+from src.extraction import compute_extract_metrics, get_source_page_count
 from src.workbench.metrics import extract_storage_stats
 from src.workbench.experiments.base import PipelineExperimentDefinition
 from src.workbench.observability import CSVReportWriter, ProcessedFileManifest
@@ -27,19 +28,26 @@ class PipelineBenchmarkRunner:
         "Timestamp",
         "Experiment_ID",
         "Experiment_Profile",
+        "Provider",
         "Experiment_Parser",
         "File_Name",
+        "Source_Pages",
         "Parse_Time(s)",
         "Graph_Time(s)",
         "Total_Time(s)",
+        "End_to_End_Sec_Per_Page",
         "Output_Tokens",
+        "Output_Tokens_Per_Page",
         "API_Calls",
-        "Nodes",
-        "Edges",
-        "Chunks",
-        "Entities",
-        "Relations",
+        "Graph_Expansion_Profile",
+        "Multimodal_Retention_Profile",
+        "Nodes_Delta",
+        "Edges_Delta",
+        "Chunks_Delta",
+        "Entities_Delta",
+        "Relations_Delta",
         "Status",
+        "Error",
     ]
 
     def __init__(self, report_file: Path | None = None):
@@ -171,9 +179,27 @@ class PipelineBenchmarkRunner:
             t_end = 0
             status = "Success"
             doc_id = None
+            error_msg = ""
+            source_pages = get_source_page_count(file_path)
+            output_tokens_delta = 0
+            api_calls_delta = 0
+            nodes_delta = 0
+            edges_delta = 0
+            chunks_delta = 0
+            entities_delta = 0
+            relations_delta = 0
+            graph_expansion_profile = "entities/chunk=0.00 | relations/entity=0.00"
+            multimodal_retention_profile = "img=0.0/100p | table=0.0/100p | eq=0.0/100p"
             try:
+                stats_before = extract_storage_stats(str(rag_storage))
                 content_list, doc_id = await rag.parse_document(str(file_path), output_dir=str(parser_output), display_stats=False)
                 t_parsed = time.time()
+                content_metrics = compute_extract_metrics(content_list, source_pages_override=source_pages)
+                multimodal_retention_profile = (
+                    f"img={content_metrics['figures_per_100_pages']:.1f}/100p | "
+                    f"table={content_metrics['tables_per_100_pages']:.1f}/100p | "
+                    f"eq={content_metrics['equations_per_100_pages']:.1f}/100p"
+                )
                 await rag.insert_content_list(content_list, str(file_path), doc_id=doc_id, display_stats=False)
                 t_end = time.time()
                 if rag.lightrag:
@@ -181,31 +207,54 @@ class PipelineBenchmarkRunner:
                     await rag.lightrag.full_entities.index_done_callback()
                     await rag.lightrag.full_relations.index_done_callback()
                     await rag.lightrag.doc_status.index_done_callback()
+                stats_after = extract_storage_stats(str(rag_storage))
+                output_tokens_delta = max(stats_after["output_tokens"] - stats_before["output_tokens"], 0)
+                api_calls_delta = max(stats_after["api_calls"] - stats_before["api_calls"], 0)
+                nodes_delta = max(stats_after["nodes"] - stats_before["nodes"], 0)
+                edges_delta = max(stats_after["edges"] - stats_before["edges"], 0)
+                chunks_delta = max(stats_after["chunks"] - stats_before["chunks"], 0)
+                entities_delta = max(stats_after["entities"] - stats_before["entities"], 0)
+                relations_delta = max(stats_after["relations"] - stats_before["relations"], 0)
+                entities_per_chunk = (entities_delta / chunks_delta) if chunks_delta > 0 else 0.0
+                relations_per_entity = (relations_delta / entities_delta) if entities_delta > 0 else 0.0
+                graph_expansion_profile = (
+                    f"entities/chunk={entities_per_chunk:.2f} | "
+                    f"relations/entity={relations_per_entity:.2f}"
+                )
             except Exception as exc:
                 logger.error("Pipeline experiment failed for %s: %s", file_path.name, exc)
                 status = "Failed"
+                error_msg = str(exc)
                 t_end = time.time()
                 if t_parsed == 0:
                     t_parsed = t_end
 
-            stats = extract_storage_stats(str(rag_storage))
+            end_to_end_sec_per_page = ((t_end - t0) / source_pages) if source_pages > 0 else 0.0
+            output_tokens_per_page = (output_tokens_delta / source_pages) if source_pages > 0 else 0.0
             row = {
                 "Timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
                 "Experiment_ID": exp_def.id,
                 "Experiment_Profile": exp_def.profile_name,
+                "Provider": exp_def.provider,
                 "Experiment_Parser": parser_name,
                 "File_Name": file_path.name,
+                "Source_Pages": source_pages,
                 "Parse_Time(s)": f"{t_parsed - t0:.2f}",
                 "Graph_Time(s)": f"{(t_end - t_parsed) if status == 'Success' else 0:.2f}",
                 "Total_Time(s)": f"{t_end - t0:.2f}",
-                "Output_Tokens": stats["output_tokens"],
-                "API_Calls": stats["api_calls"],
-                "Nodes": stats["nodes"],
-                "Edges": stats["edges"],
-                "Chunks": stats["chunks"],
-                "Entities": stats["entities"],
-                "Relations": stats["relations"],
+                "End_to_End_Sec_Per_Page": f"{end_to_end_sec_per_page:.2f}",
+                "Output_Tokens": output_tokens_delta,
+                "Output_Tokens_Per_Page": f"{output_tokens_per_page:.2f}",
+                "API_Calls": api_calls_delta,
+                "Graph_Expansion_Profile": graph_expansion_profile,
+                "Multimodal_Retention_Profile": multimodal_retention_profile,
+                "Nodes_Delta": nodes_delta,
+                "Edges_Delta": edges_delta,
+                "Chunks_Delta": chunks_delta,
+                "Entities_Delta": entities_delta,
+                "Relations_Delta": relations_delta,
                 "Status": status,
+                "Error": error_msg,
             }
             self.report_writer.append(row)
 

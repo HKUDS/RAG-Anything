@@ -1,19 +1,57 @@
 from .models import MetricDefinition, MetricPlan
 
 PIPELINE_METRIC_PLAN = MetricPlan(
-    summary="Full-pipeline experiments should separate hardware-biased runtime metrics from graph-quality and answerability signals.",
+    summary=(
+        "Pipeline phase-1 metrics should stay compact: can the run finish, how expensive is it per page, "
+        "how much graph expansion does it create, and how much multimodal content survives into indexing."
+    ),
     metrics=[
-        MetricDefinition("chunks", "Chunks", "Number of chunks inserted into the retrieval substrate.", "structure", hardware_sensitive=False, primary=True),
-        MetricDefinition("entities", "Entities", "Total extracted entities stored by the graph pipeline.", "structure", hardware_sensitive=False, primary=True),
-        MetricDefinition("relations", "Relations", "Total extracted relations stored by the graph pipeline.", "structure", hardware_sensitive=False, primary=True),
-        MetricDefinition("output_tokens", "LLM Output Tokens", "Approximate output-token cost from cached extraction calls.", "cost", hardware_sensitive=False, higher_is_better=False, primary=True),
-        MetricDefinition("api_calls", "LLM API Calls", "Approximate extraction call count.", "cost", hardware_sensitive=False, higher_is_better=False, primary=True),
-        MetricDefinition("graph_time_seconds", "Graph Time", "Observed indexing time after parsing.", "efficiency", hardware_sensitive=True, higher_is_better=False),
-        MetricDefinition("total_time_seconds", "Total Time", "Observed end-to-end runtime.", "efficiency", hardware_sensitive=True, higher_is_better=False),
+        MetricDefinition(
+            "pipeline_success_rate",
+            "Pipeline Success Rate",
+            "Fraction of files that successfully complete parse plus graph build.",
+            "reliability",
+            hardware_sensitive=False,
+            primary=True,
+        ),
+        MetricDefinition(
+            "end_to_end_seconds_per_page",
+            "End-to-End Sec/Page",
+            "Observed parse-to-graph wall time normalized by source pages.",
+            "efficiency",
+            hardware_sensitive=True,
+            higher_is_better=False,
+            primary=True,
+        ),
+        MetricDefinition(
+            "output_tokens_per_page",
+            "Output Tokens/Page",
+            "Approximate LLM output-token cost normalized by source pages.",
+            "cost",
+            hardware_sensitive=False,
+            higher_is_better=False,
+            primary=True,
+        ),
+        MetricDefinition(
+            "graph_expansion_profile",
+            "Graph Expansion Profile",
+            "Compact graph growth proxy: entities per chunk and relations per entity.",
+            "structure",
+            hardware_sensitive=False,
+            primary=True,
+        ),
+        MetricDefinition(
+            "multimodal_retention_profile",
+            "Multimodal Retention Profile",
+            "Compact modality retention proxy from the content entering indexing.",
+            "structure",
+            hardware_sensitive=False,
+            primary=True,
+        ),
     ],
     insight_questions=[
-        "Does a configuration achieve lower cost without collapsing graph coverage?",
-        "Which setup builds the most useful graph per unit of extraction cost?",
-        "How much of the gain comes from parser choice versus prompt/pipeline profile?",
+        "Does the medical prompt profile improve graph structure without exploding cost?",
+        "How much environment/runtime overhead disappears when switching from local MinerU to MinerU cloud?",
+        "Is multimodal retention preserved while graph expansion stays controlled?",
     ],
 )

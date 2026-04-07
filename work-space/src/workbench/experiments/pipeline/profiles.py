@@ -5,8 +5,7 @@ from typing import Any, Dict
 
 from src.prompts import (
     MEDICAL_ENTITY_TYPES,
-    MEDICAL_TABLE_PROMPT,
-    MEDICAL_VISION_PROMPT,
+    MEDICAL_PROMPT_OVERRIDES,
 )
 
 
@@ -39,11 +38,7 @@ PIPELINE_PROFILES = {
             "entity_extract_max_gleaning": 0,
             "addon_params": {"entity_types": MEDICAL_ENTITY_TYPES},
         },
-        custom_prompts={
-            "vision_prompt_with_context": MEDICAL_VISION_PROMPT,
-            "table_prompt_with_context": MEDICAL_TABLE_PROMPT,
-            "generic_prompt_with_context": "Act as a Medical Expert. Analyze this content for clinical relevance...",
-        },
+        custom_prompts=dict(MEDICAL_PROMPT_OVERRIDES),
         notes="Biases extraction toward medically meaningful concepts and evidence.",
     ),
     "hybrid_gliner": PipelineProfile(
