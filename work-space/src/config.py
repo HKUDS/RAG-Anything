@@ -22,6 +22,7 @@ class EnvConfig:
     openai_vision: str = os.getenv("OPENAI_VISION_MODEL", "gpt-4o")
     openai_embed: str = os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-large")
     openai_dim: int = int(os.getenv("OPENAI_EMBED_DIM", 3072))
+    openai_eval_model: str = os.getenv("OPENAI_EVAL_MODEL", os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini"))
 
     # System settings
     input_dir: str = os.getenv("INPUT_DIR", "./data_test")

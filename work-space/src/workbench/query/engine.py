@@ -3,6 +3,7 @@ import json
 import logging
 import re
 from pathlib import Path
+from typing import Any
 
 from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
@@ -89,6 +90,17 @@ class RAGQueryEngine:
         await self.rag._ensure_lightrag_initialized()
 
     async def query(self, question: str, mode: str | None = None):
+        trace = await self.query_with_trace(question, mode=mode)
+        return trace["answer"]
+
+    def close(self) -> None:
+        try:
+            if self.rag is not None and hasattr(self.rag, "close"):
+                self.rag.close()
+        except Exception as exc:
+            logger.warning("Failed to close RAGQueryEngine for %s: %s", self.experiment_id, exc)
+
+    async def query_with_trace(self, question: str, mode: str | None = None) -> dict:
         if self.rag is None:
             await self.initialize()
 
@@ -118,22 +130,42 @@ class RAGQueryEngine:
                 normalized_question,
                 retrieved_context,
             )
-            return await self._answer_from_core_context(
+            answer = await self._answer_from_core_context(
                 normalized_question,
                 distilled_context or retrieved_context,
             )
+            return {
+                "question": question,
+                "normalized_question": normalized_question,
+                "mode": resolved_mode,
+                "query_kwargs": query_kwargs,
+                "retrieved_context": retrieved_context,
+                "distilled_context": distilled_context or retrieved_context,
+                "answer": str(answer).strip(),
+                "fallback_used": False,
+            }
 
         logger.warning(
             "Could not fetch core retrieval context directly for query '%s'. Falling back to LightRAG mode '%s'.",
             normalized_question,
             resolved_mode,
         )
-        return await self.rag.aquery(
+        answer = await self.rag.aquery(
             normalized_question,
             mode=resolved_mode,
             system_prompt=QUALITY_FIRST_SYSTEM_PROMPT,
             **query_kwargs,
         )
+        return {
+            "question": question,
+            "normalized_question": normalized_question,
+            "mode": resolved_mode,
+            "query_kwargs": query_kwargs,
+            "retrieved_context": "",
+            "distilled_context": "",
+            "answer": str(answer).strip(),
+            "fallback_used": True,
+        }
 
     def _normalize_user_query(self, question: str) -> str:
         normalized = " ".join(str(question).strip().split())
@@ -156,10 +188,10 @@ class RAGQueryEngine:
             return None
 
         retrieval_attempts = []
-        if "only_need_prompt" in supported:
-            retrieval_attempts.append("only_need_prompt")
         if "only_need_context" in supported:
             retrieval_attempts.append("only_need_context")
+        if "only_need_prompt" in supported:
+            retrieval_attempts.append("only_need_prompt")
         if not retrieval_attempts:
             logger.warning(
                 "Current LightRAG runtime does not expose only_need_context/only_need_prompt; cannot perform separate context retrieval"
@@ -170,7 +202,7 @@ class RAGQueryEngine:
         if mode != "naive":
             retrieval_modes.append("naive")
 
-        contexts: list[str] = []
+        contexts_by_flag: dict[str, list[str]] = {flag_name: [] for flag_name in retrieval_attempts}
         seen = set()
         for retrieval_mode in retrieval_modes:
             for flag_name in retrieval_attempts:
@@ -192,7 +224,7 @@ class RAGQueryEngine:
                     )
                     continue
 
-                context = self._sanitize_retrieved_context(raw_result)
+                context = self._sanitize_retrieved_context(raw_result, flag_name=flag_name)
                 if not context:
                     continue
 
@@ -206,18 +238,21 @@ class RAGQueryEngine:
                     flag_name,
                     len(context),
                 )
-                contexts.append(f"[{retrieval_mode}/{flag_name}]\n{context}")
+                contexts_by_flag[flag_name].append(f"[{retrieval_mode}]\n{context}")
 
-        if not contexts:
+        preferred_contexts = contexts_by_flag.get("only_need_context") or []
+        if not preferred_contexts:
+            preferred_contexts = contexts_by_flag.get("only_need_prompt") or []
+        if not preferred_contexts:
             return None
 
-        merged = "\n\n".join(contexts[:2]).strip()
+        merged = "\n\n".join(preferred_contexts[:2]).strip()
         if len(merged) > 10000:
             merged = merged[:10000].rstrip()
         return merged
 
     @staticmethod
-    def _sanitize_retrieved_context(raw_result) -> str | None:
+    def _sanitize_retrieved_context(raw_result: Any, *, flag_name: str | None = None) -> str | None:
         if raw_result is None:
             return None
 
@@ -228,6 +263,9 @@ class RAGQueryEngine:
         if not context:
             return None
 
+        if "---Context---" in context:
+            context = context.split("---Context---", 1)[1].strip()
+
         cleanup_patterns = [
             r"(?im)^system prompt:.*$",
             r"(?im)^instructions?:.*$",
@@ -235,23 +273,30 @@ class RAGQueryEngine:
             r"(?im)^answer using the provided context.*$",
             r"(?im)^image path:.*$",
             r"(?im)^content:\s*\{'type':\s*'discarded'.*$",
+            r"(?im)^---role---\s*$",
+            r"(?im)^---goal---\s*$",
+            r"(?im)^---instructions---\s*$",
+            r"(?im)^additional instructions:.*$",
         ]
         for pattern in cleanup_patterns:
             context = re.sub(pattern, "", context)
 
         context = re.sub(r"(?is)discarded content analysis:\s*", "", context)
+        context = re.sub(r"(?im)^---+\s*context\s*---+\s*$", "", context)
+        context = re.sub(r"(?im)^knowledge graph data\s*\((?:entity|relationship)\)\s*:\s*$", "", context)
+        context = re.sub(r"(?im)^document chunks?\s*:\s*$", "", context)
+        context = re.sub(r"(?im)^reference document list\s*:\s*$", "", context)
+        context = re.sub(r"(?im)^sources?\s*:\s*$", "", context)
+        context = re.sub(r"(?im)^```(?:json)?\s*$", "", context)
+        context = re.sub(r"(?im)^#{1,6}\s*references\s*$", "", context)
+        context = re.sub(r"(?im)^\s*-\s*\[\d+\]\s+.*$", "", context)
+        context = re.sub(r"(?im)^\s*\*\s*\[\d+\]\s+.*$", "", context)
+        context = re.sub(r"(?im)^\[(?:mix|naive|local|global|hybrid|default)[^\]]*\]\s*$", "", context)
 
-        prioritized_section_patterns = [
-            r"(?is)(?:^|\n)-{2,}\s*sources\s*-{2,}\s*\n(.*)$",
-            r"(?is)(?:^|\n)-{2,}\s*source chunks?\s*-{2,}\s*\n(.*)$",
-            r"(?is)(?:^|\n)-{2,}\s*chunks?\s*-{2,}\s*\n(.*)$",
-            r"(?is)(?:^|\n)sources?:\s*\n(.*)$",
-        ]
-        for pattern in prioritized_section_patterns:
-            matched = re.search(pattern, context)
-            if matched:
-                context = matched.group(1).strip()
-                break
+        if flag_name == "only_need_prompt" and "Knowledge Graph Data" in context:
+            # only_need_prompt often returns full answer-instruction wrappers; after trimming
+            # we still keep only evidence-like content.
+            context = re.sub(r"(?is)^.*?(knowledge graph data.*)$", r"\1", context).strip()
 
         context = re.sub(r"\n{3,}", "\n\n", context).strip()
         if len(context) > 8000:

@@ -13,28 +13,28 @@ mineru_local_preset = PARSER_PRESETS["mineru"]
 mineru_cloud_preset = PARSER_PRESETS["mineru_cloud_vlm"]
 shared_input_dir = "./datasets/parser_benchmark/raw_docs"
 
-# PIPELINE_EXPERIMENTS["exp1_baseline_mineru_cloud_openai"] = PipelineExperimentDefinition(
-#     id="exp1_baseline_mineru_cloud_openai",
-#     description="Baseline end-to-end smoke test using MinerU official cloud parsing and OpenAI models.",
-#     category="pipeline",
-#     metric_plan=PIPELINE_METRIC_PLAN,
-#     profile_name="default",
-#     provider="openai",
-#     parser=mineru_cloud_preset.parser,
-#     parse_method=mineru_cloud_preset.parse_method,
-#     input_dir_override=shared_input_dir,
-#     parser_kwargs=dict(mineru_cloud_preset.parser_kwargs),
-#     use_gliner=default_profile.use_gliner,
-#     gliner_labels=list(default_profile.gliner_labels),
-#     lightrag_kwargs=dict(default_profile.lightrag_kwargs),
-#     raganything_kwargs=dict(default_profile.raganything_kwargs),
-#     custom_prompts=dict(default_profile.custom_prompts),
-#     notes=(
-#         "Reference deployment-style baseline for partners: official MinerU Precision API + OpenAI. "
-#         "Useful for comparing environment/runtime overhead against local parser runs."
-#     ),
-#     tags=["pipeline", "baseline", "mineru_cloud", "openai"],
-# )
+PIPELINE_EXPERIMENTS["exp1_baseline_mineru_cloud_openai"] = PipelineExperimentDefinition(
+    id="exp1_baseline_mineru_cloud_openai",
+    description="Baseline end-to-end smoke test using MinerU official cloud parsing and OpenAI models.",
+    category="pipeline",
+    metric_plan=PIPELINE_METRIC_PLAN,
+    profile_name="default",
+    provider="openai",
+    parser=mineru_cloud_preset.parser,
+    parse_method=mineru_cloud_preset.parse_method,
+    input_dir_override=shared_input_dir,
+    parser_kwargs=dict(mineru_cloud_preset.parser_kwargs),
+    use_gliner=default_profile.use_gliner,
+    gliner_labels=list(default_profile.gliner_labels),
+    lightrag_kwargs=dict(default_profile.lightrag_kwargs),
+    raganything_kwargs=dict(default_profile.raganything_kwargs),
+    custom_prompts=dict(default_profile.custom_prompts),
+    notes=(
+        "Reference deployment-style baseline for partners: official MinerU Precision API + OpenAI. "
+        "Useful for comparing environment/runtime overhead against local parser runs."
+    ),
+    tags=["pipeline", "baseline", "mineru_cloud", "openai"],
+)
 
 PIPELINE_EXPERIMENTS["exp2_default_mineru_ollama"] = PipelineExperimentDefinition(
     id="exp2_default_mineru_ollama",

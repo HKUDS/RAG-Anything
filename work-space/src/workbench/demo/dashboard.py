@@ -1,306 +1,362 @@
 from __future__ import annotations
 
 import asyncio
+import csv
 import json
-import os
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import streamlit as st
 
 from src.config import ENV
-from src.pruning import GraphVisualizer, PRUNING_ALGORITHMS, PruningBenchmark, list_algorithms
-from src.workbench.judging import GeminiEvaluator
+from src.workbench.experiments.pipeline.definitions import PIPELINE_EXPERIMENTS
 from src.workbench.query import RAGQueryEngine
 
 
-def _load_experiment_dirs(output_path: Path) -> list[str]:
-    if not output_path.exists():
-        return []
-    return sorted([d.name for d in output_path.iterdir() if d.is_dir()])
+class ReportRepository:
+    def __init__(self, output_root: Path):
+        self.output_root = Path(output_root)
+        self.reports_dir = self.output_root / "reports"
+
+    @property
+    def parser_summary_path(self) -> Path:
+        return self.reports_dir / "parser_benchmark_summary.csv"
+
+    @property
+    def pipeline_phase1_path(self) -> Path:
+        return self.reports_dir / "pipeline_benchmark.csv"
+
+    @property
+    def pipeline_phase2_summary_path(self) -> Path:
+        return self.reports_dir / "pipeline_qa_summary.csv"
+
+    @property
+    def pipeline_phase2_detail_path(self) -> Path:
+        return self.reports_dir / "pipeline_qa_details.jsonl"
+
+    def load_csv(self, path: Path) -> pd.DataFrame:
+        if not path.exists():
+            return pd.DataFrame()
+        try:
+            return pd.read_csv(path)
+        except Exception:
+            return self._load_csv_tolerant(path)
+
+    @staticmethod
+    def _load_csv_tolerant(path: Path) -> pd.DataFrame:
+        rows: list[dict[str, Any]] = []
+        try:
+            with open(path, "r", encoding="utf-8", newline="") as f:
+                reader = csv.reader(f)
+                header = next(reader, None)
+                if not header:
+                    return pd.DataFrame()
+                expected_len = len(header)
+                for row in reader:
+                    if len(row) != expected_len:
+                        continue
+                    rows.append(dict(zip(header, row)))
+        except Exception:
+            return pd.DataFrame()
+        return pd.DataFrame(rows)
+
+    def load_jsonl(self, path: Path) -> pd.DataFrame:
+        if not path.exists():
+            return pd.DataFrame()
+        rows: list[dict[str, Any]] = []
+        with open(path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rows.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return pd.DataFrame(rows)
+
+    def load_parser_summary(self) -> pd.DataFrame:
+        return self.load_csv(self.parser_summary_path)
+
+    def load_pipeline_phase1(self) -> pd.DataFrame:
+        return self.load_csv(self.pipeline_phase1_path)
+
+    def load_pipeline_phase2_summary(self) -> pd.DataFrame:
+        return self.load_csv(self.pipeline_phase2_summary_path)
+
+    def load_pipeline_phase2_details(self) -> pd.DataFrame:
+        return self.load_jsonl(self.pipeline_phase2_detail_path)
+
+    def list_available_pipeline_experiments(self) -> list[str]:
+        defined = [
+            exp_id
+            for exp_id, exp_def in PIPELINE_EXPERIMENTS.items()
+            if not getattr(exp_def, "legacy_alias", False)
+        ]
+        available = []
+        for exp_id in defined:
+            storage_dir = self.output_root / exp_id / "rag_storage"
+            if storage_dir.exists():
+                available.append(exp_id)
+        return available or defined
 
 
-def _render_sidebar(output_path: Path) -> str | None:
-    st.sidebar.title("Experiment Control")
-    exp_dirs = _load_experiment_dirs(output_path)
-    if not exp_dirs:
-        st.sidebar.warning("No experiments found. Run the benchmark scripts first.")
-        return None
+class ChatHistoryStore:
+    STATE_KEY = "manual_qa_history_by_experiment"
 
-    selected_exp = st.sidebar.selectbox("Select Experiment", exp_dirs, index=len(exp_dirs) - 1)
-    st.sidebar.success(f"Loaded: {selected_exp}")
-    st.sidebar.divider()
-    st.sidebar.info(f"Default server: {ENV.ollama_base_url}")
-    st.sidebar.info(f"Default LLM: {ENV.ollama_llm}")
-    return selected_exp
+    def __init__(self):
+        if self.STATE_KEY not in st.session_state:
+            st.session_state[self.STATE_KEY] = {}
+
+    def get(self, experiment_id: str) -> list[dict[str, Any]]:
+        history = st.session_state[self.STATE_KEY]
+        history.setdefault(experiment_id, [])
+        return history[experiment_id]
+
+    def append(self, experiment_id: str, message: dict[str, Any]) -> None:
+        self.get(experiment_id).append(message)
+
+    def clear(self, experiment_id: str) -> None:
+        st.session_state[self.STATE_KEY][experiment_id] = []
 
 
-def _render_metrics_tab(selected_exp: str, output_path: Path):
-    st.header(f"Experiment Analysis: {selected_exp}")
-    col1, col2 = st.columns([1, 2])
+class ManualQAService:
+    async def ask(self, experiment_id: str, question: str, mode: str) -> dict[str, Any]:
+        engine = RAGQueryEngine(experiment_id)
+        await engine.initialize()
+        try:
+            return await engine.query_with_trace(question, mode=mode)
+        finally:
+            engine.close()
 
-    with col1:
-        st.subheader("Benchmark Metrics")
-        report_path = Path(ENV.report_file)
-        if not report_path.exists():
-            st.warning("No benchmark report found.")
-        else:
-            df = pd.read_csv(report_path)
-            exp_data = df[df["Experiment_ID"] == selected_exp]
-            if exp_data.empty:
-                st.warning("Metrics not recorded yet.")
-            else:
-                display_df = exp_data.T
-                display_df.columns = ["Value"]
-                st.dataframe(display_df.astype(str), hide_index=False)
+    def ask_sync(self, experiment_id: str, question: str, mode: str) -> dict[str, Any]:
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(self.ask(experiment_id, question, mode))
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
 
-    with col2:
-        st.subheader("Knowledge Graph Topology")
-        algorithm_options = {alg["id"]: alg["name"] for alg in list_algorithms()}
-        selected_algorithm = st.selectbox(
-            "Pruning Algorithm",
-            options=list(algorithm_options.keys()),
-            format_func=lambda x: algorithm_options[x],
-            index=list(algorithm_options.keys()).index("hybrid"),
+
+class WorkbenchDashboard:
+    def __init__(self):
+        self.repo = ReportRepository(Path(ENV.output_base_dir))
+        self.chat_store = ChatHistoryStore()
+        self.qa_service = ManualQAService()
+
+    def render(self) -> None:
+        st.set_page_config(
+            page_title="RAG-Anything Workbench",
+            page_icon="RAG",
+            layout="wide",
+            initial_sidebar_state="expanded",
         )
-        max_nodes = st.slider("Max nodes to display", min_value=20, max_value=300, value=ENV.pruning_max_nodes, step=10)
 
-        if st.button("Generate Interactive Graph", type="primary"):
-            storage_dir = output_path / selected_exp / "rag_storage"
-            with st.spinner(f"Visualizing with {algorithm_options[selected_algorithm]}..."):
-                viz = GraphVisualizer(str(storage_dir))
-                html_path = viz.generate_html(max_nodes=max_nodes, algorithm_id=selected_algorithm)
-                if not html_path:
-                    st.error("Graph file not found.")
-                else:
-                    with open(html_path, "r", encoding="utf-8") as f:
-                        st.components.v1.html(f.read(), height=600, scrolling=True)
-                    st.caption(f"Top-{max_nodes} nodes using {algorithm_options[selected_algorithm]}.")
+        selected_exp, query_mode = self._render_sidebar()
 
+        parser_tab, phase1_tab, phase2_tab, chat_tab = st.tabs(
+            [
+                "Parser Results",
+                "Pipeline Phase 1",
+                "Pipeline Phase 2 QA",
+                "Manual QA",
+            ]
+        )
 
-def _render_pruning_tab(selected_exp: str, output_path: Path):
-    st.header("Pruning Algorithm Benchmark")
-    col1, col2 = st.columns(2)
-    with col1:
-        benchmark_max_nodes = st.number_input("Max Nodes for Benchmark", min_value=10, max_value=200, value=ENV.pruning_max_nodes)
-    with col2:
-        enable_llm_eval = st.checkbox("Enable LLM Evaluation", value=False)
+        with parser_tab:
+            self._render_parser_results()
+        with phase1_tab:
+            self._render_pipeline_phase1(selected_exp)
+        with phase2_tab:
+            self._render_pipeline_phase2(selected_exp)
+        with chat_tab:
+            self._render_manual_qa(selected_exp, query_mode)
 
-    if st.button("Run Benchmark", type="primary", key="run_pruning_benchmark"):
-        storage_dir = output_path / selected_exp / "rag_storage"
-        viz = GraphVisualizer(str(storage_dir))
-        graph = viz.get_full_graph()
-        if graph is None:
-            st.error("Could not load graph.")
-        else:
-            with st.spinner("Running benchmark on all algorithms..."):
-                benchmark = PruningBenchmark(graph, max_nodes=benchmark_max_nodes)
-                results = benchmark.run(PRUNING_ALGORITHMS)
-                st.session_state.pruning_results = results
-                st.session_state.pruning_summary = benchmark.get_summary()
-                benchmark.to_csv(str(Path(ENV.pruning_benchmark_report)))
-                st.success("Benchmark complete.")
-
-    if st.session_state.get("pruning_results"):
-        results = st.session_state.pruning_results
-        best = results[0]
-        st.success(f"Recommended: {best.algorithm_name} (Score: {best.weighted_score:.4f})")
-        results_data = []
-        for result in results:
-            results_data.append(
-                {
-                    "Algorithm": result.algorithm_name,
-                    "Nodes": result.actual_nodes,
-                    "Edges": result.actual_edges,
-                    "Hub Ret.": f"{result.hub_retention:.2%}",
-                    "Bridge Ret.": f"{result.bridge_retention:.2%}",
-                    "Cluster Cov.": f"{result.cluster_coverage:.2%}",
-                    "Connectivity": f"{result.connectivity:.2%}",
-                    "LLM Score": f"{result.llm_score:.2f}" if result.llm_score is not None else "N/A",
-                    "Total Score": f"{result.weighted_score:.4f}",
-                }
+    def _render_sidebar(self) -> tuple[str | None, str]:
+        st.sidebar.title("Workbench")
+        experiments = self.repo.list_available_pipeline_experiments()
+        selected_exp = None
+        if experiments:
+            selected_exp = st.sidebar.selectbox(
+                "Pipeline Experiment",
+                experiments,
+                index=len(experiments) - 1,
             )
-        st.dataframe(pd.DataFrame(results_data), hide_index=True, use_container_width=True)
-        chart_data = pd.DataFrame(
-            {
-                "Algorithm": [r.algorithm_name for r in results],
-                "Hub Retention": [r.hub_retention for r in results],
-                "Bridge Retention": [r.bridge_retention for r in results],
-                "Cluster Coverage": [r.cluster_coverage for r in results],
-                "Connectivity": [r.connectivity for r in results],
-            }
-        ).set_index("Algorithm")
-        st.bar_chart(chart_data)
-        with st.expander("Full Summary"):
-            st.code(st.session_state.pruning_summary)
-
-
-def _render_judge_tab(selected_exp: str, output_path: Path):
-    st.header("Automated Evaluation with Gemini")
-    gold_dataset_path = Path(ENV.gold_dataset_file)
-
-    if not ENV.google_api_key:
-        st.error("Missing GOOGLE_API_KEY in .env file.")
-        return
-
-    if "gold_questions" not in st.session_state:
-        if gold_dataset_path.exists():
-            try:
-                with open(gold_dataset_path, "r", encoding="utf-8") as f:
-                    st.session_state.gold_questions = json.load(f)
-            except Exception:
-                st.session_state.gold_questions = []
         else:
-            st.session_state.gold_questions = []
+            st.sidebar.warning("No pipeline experiments available yet.")
 
-    if "eval_results" not in st.session_state:
-        st.session_state.eval_results = []
+        query_mode = st.sidebar.selectbox(
+            "Query Mode",
+            ["mix", "naive", "local", "global", "hybrid"],
+            index=0,
+        )
 
-    st.subheader("Step 1: Test Dataset Management")
-    col_gen, col_reset = st.columns([1, 4])
-    with col_gen:
-        btn_label = "Generate New Questions" if not st.session_state.gold_questions else "Regenerate Questions"
-        if st.button(btn_label, type="primary" if not st.session_state.gold_questions else "secondary"):
-            chunk_file = output_path / selected_exp / "rag_storage" / "kv_store_text_chunks.json"
-            if chunk_file.exists():
-                with st.spinner("Gemini is reading document to generate QA pairs..."):
-                    with open(chunk_file, "r", encoding="utf-8") as f:
-                        chunks = json.load(f)
-                    context_samples = [chunk["content"] for chunk in list(chunks.values())[:15]]
-                    questions = GeminiEvaluator().generate_gold_questions("\n".join(context_samples))
-                    if questions:
-                        st.session_state.gold_questions = questions
-                        gold_dataset_path.parent.mkdir(parents=True, exist_ok=True)
-                        with open(gold_dataset_path, "w", encoding="utf-8") as f:
-                            json.dump(questions, f, indent=2)
-                        st.success(f"Generated {len(questions)} questions and saved to file.")
-                        st.rerun()
-                    else:
-                        st.error("Empty response from Gemini.")
-            else:
-                st.error("Text chunks file not found.")
-    with col_reset:
-        if st.button("Delete Dataset"):
-            if gold_dataset_path.exists():
-                os.remove(gold_dataset_path)
-            st.session_state.gold_questions = []
-            st.session_state.eval_results = []
-            st.rerun()
+        if selected_exp:
+            st.sidebar.caption(f"Selected: `{selected_exp}`")
+            if st.sidebar.button("Clear Chat History", use_container_width=True):
+                self.chat_store.clear(selected_exp)
+                st.rerun()
+        st.sidebar.divider()
+        st.sidebar.caption(f"Ollama: `{ENV.ollama_llm}`")
+        st.sidebar.caption(f"OpenAI: `{ENV.openai_llm}`")
+        return selected_exp, query_mode
 
-    if st.session_state.gold_questions:
-        st.divider()
-        st.subheader(f"Step 2: Evaluate {selected_exp}")
-        with st.expander(f"View Gold Dataset ({len(st.session_state.gold_questions)} Pairs)", expanded=False):
-            for idx, question in enumerate(st.session_state.gold_questions, start=1):
-                st.markdown(f"**Q{idx}: {question.get('question')}**")
-                st.caption(f"Ref Answer: {question.get('answer')}")
-                st.markdown("---")
+    def _render_parser_results(self) -> None:
+        st.subheader("Parser Benchmark Summary")
+        parser_df = self.repo.load_parser_summary()
+        if parser_df.empty:
+            st.info("Parser benchmark summary not found.")
+            return
 
-        if st.button("Run Evaluation", type="primary"):
-            async def run_full_evaluation_session():
-                qa_engine = RAGQueryEngine(selected_exp)
-                await qa_engine.initialize()
-                evaluator = GeminiEvaluator()
-                session_results = []
-                total_q = len(st.session_state.gold_questions)
-                for idx, q_item in enumerate(st.session_state.gold_questions):
-                    my_bar.progress((idx) / total_q, text=f"Processing Q{idx + 1}/{total_q}...")
-                    rag_answer = await qa_engine.query(q_item.get("question"))
-                    score = evaluator.evaluate_answer(q_item.get("question"), q_item.get("answer"), rag_answer)
-                    session_results.append(
-                        {
-                            "Question": q_item.get("question"),
-                            "RAG Answer": rag_answer,
-                            "Gold Answer": q_item.get("answer"),
-                            "Faithfulness": score.get("faithfulness_score", 0),
-                            "Completeness": score.get("completeness_score", 0),
-                            "Reasoning": score.get("reasoning", ""),
-                        }
-                    )
-                return session_results
+        st.dataframe(parser_df.astype(str), use_container_width=True, hide_index=True)
+        numeric_df = parser_df.copy()
+        for col in ["Parse_Success_Rate", "Median_Sec_Per_Page", "Median_Noise_Ratio", "Median_Tokens_Per_Page"]:
+            if col in numeric_df.columns:
+                numeric_df[col] = pd.to_numeric(numeric_df[col], errors="coerce")
 
-            my_bar = st.progress(0, text="Initializing Engine...")
-            st.session_state.eval_results = asyncio.run(run_full_evaluation_session())
-            my_bar.progress(1.0, text="Done!")
-            st.success("Evaluation finished.")
+        chart_cols = [c for c in ["Median_Sec_Per_Page", "Median_Noise_Ratio", "Median_Tokens_Per_Page"] if c in numeric_df.columns]
+        if chart_cols:
+            chart_df = numeric_df[["Experiment_ID", *chart_cols]].set_index("Experiment_ID")
+            st.bar_chart(chart_df)
 
-    if st.session_state.eval_results:
-        df = pd.DataFrame(st.session_state.eval_results)
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Avg Faithfulness", f"{df['Faithfulness'].mean():.1f}/10")
-        m2.metric("Avg Completeness", f"{df['Completeness'].mean():.1f}/10")
-        m3.info("Score by Gemini 2.5 Flash")
-        st.dataframe(df[["Question", "Faithfulness", "Completeness", "Reasoning"]].astype(str), hide_index=False)
-        with st.expander("Compare Answers (Detailed View)"):
-            for idx, row in df.iterrows():
-                st.markdown(f"**Q: {row['Question']}**")
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.info(f"RAG: {row['RAG Answer']}")
-                with c2:
-                    st.success(f"Gold: {st.session_state.gold_questions[idx]['answer']}")
-                st.caption(f"Judge: {row['Reasoning']}")
-                st.divider()
+    def _render_pipeline_phase1(self, selected_exp: str | None) -> None:
+        st.subheader("Pipeline Benchmark Phase 1")
+        phase1_df = self.repo.load_pipeline_phase1()
+        if phase1_df.empty:
+            st.info("Pipeline phase 1 report not found.")
+            return
 
+        st.dataframe(phase1_df.astype(str), use_container_width=True, hide_index=True)
 
-def _render_chat_tab(selected_exp: str):
-    st.header("Chat with Document")
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+        if not selected_exp:
+            return
+        selected_rows = phase1_df[phase1_df["Experiment_ID"] == selected_exp]
+        if selected_rows.empty:
+            st.info("No phase 1 row for selected experiment.")
+            return
 
-    for msg in st.session_state.messages:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+        row = selected_rows.iloc[-1]
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Sec / Page", row.get("End_to_End_Sec_Per_Page", ""))
+        col2.metric("Tokens / Page", row.get("Output_Tokens_Per_Page", ""))
+        col3.metric("API Calls", row.get("API_Calls", ""))
+        st.caption(f"Graph Expansion: {row.get('Graph_Expansion_Profile', '')}")
+        st.caption(f"Multimodal Retention: {row.get('Multimodal_Retention_Profile', '')}")
 
-    if prompt := st.chat_input("Ask a question..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
+    def _render_pipeline_phase2(self, selected_exp: str | None) -> None:
+        st.subheader("Pipeline Benchmark Phase 2 QA")
+        summary_df = self.repo.load_pipeline_phase2_summary()
+        detail_df = self.repo.load_pipeline_phase2_details()
+
+        if summary_df.empty:
+            st.info("Pipeline QA summary not found.")
+            return
+
+        st.dataframe(summary_df.astype(str), use_container_width=True, hide_index=True)
+
+        numeric_summary = summary_df.copy()
+        for col in [
+            "Evidence_Recall_at_10",
+            "Correctness",
+            "Groundedness",
+            "Completeness",
+            "Unsupported_Claim_Rate",
+            "Final_QA_Score",
+        ]:
+            if col in numeric_summary.columns:
+                numeric_summary[col] = pd.to_numeric(numeric_summary[col], errors="coerce")
+        if "Final_QA_Score" in numeric_summary.columns:
+            chart_df = numeric_summary[["Experiment_ID", "Final_QA_Score", "Evidence_Recall_at_10"]].set_index("Experiment_ID")
+            st.bar_chart(chart_df)
+
+        if not selected_exp or detail_df.empty:
+            return
+
+        selected_summary = summary_df[summary_df["Experiment_ID"] == selected_exp]
+        if not selected_summary.empty:
+            row = selected_summary.iloc[-1]
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Final QA Score", row.get("Final_QA_Score", ""))
+            c2.metric("Evidence Recall@10", row.get("Evidence_Recall_at_10", ""))
+            c3.metric("Unsupported Claim Rate", row.get("Unsupported_Claim_Rate", ""))
+
+        selected_details = detail_df[detail_df["experiment_id"] == selected_exp].copy()
+        if selected_details.empty:
+            return
+
+        visible_cols = [
+            "question_id",
+            "difficulty",
+            "question_type",
+            "question",
+            "correctness",
+            "groundedness",
+            "completeness",
+            "evidence_recall_at_10",
+            "unsupported_claim",
+            "judge_cache_hit",
+        ]
+        visible_cols = [c for c in visible_cols if c in selected_details.columns]
+        st.dataframe(selected_details[visible_cols].astype(str), use_container_width=True, hide_index=True)
+
+    def _render_manual_qa(self, selected_exp: str | None, query_mode: str) -> None:
+        st.subheader("Manual QA Playground")
+        if not selected_exp:
+            st.info("Select a pipeline experiment from the sidebar.")
+            return
+
+        history = self.chat_store.get(selected_exp)
+        for message in history:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+                trace = message.get("trace")
+                if message["role"] == "assistant" and trace:
+                    self._render_trace(trace)
+
+        prompt = st.chat_input(f"Ask {selected_exp}...")
+        if not prompt:
+            return
+
+        self.chat_store.append(selected_exp, {"role": "user", "content": prompt})
         with st.chat_message("user"):
             st.markdown(prompt)
 
         with st.chat_message("assistant"):
             with st.spinner(f"Querying {selected_exp}..."):
-                qa_engine = RAGQueryEngine(selected_exp)
-                response = asyncio.run(qa_engine.query(prompt))
-                st.markdown(response)
-                st.session_state.messages.append({"role": "assistant", "content": response})
+                trace = self.qa_service.ask_sync(selected_exp, prompt, query_mode)
+            answer = str(trace.get("answer", "")).strip()
+            st.markdown(answer)
+            self._render_trace(trace)
+            self.chat_store.append(
+                selected_exp,
+                {
+                    "role": "assistant",
+                    "content": answer,
+                    "trace": trace,
+                },
+            )
+
+    @staticmethod
+    def _render_trace(trace: dict[str, Any]) -> None:
+        retrieved_context = str(trace.get("retrieved_context", "") or "").strip()
+        distilled_context = str(trace.get("distilled_context", "") or "").strip()
+        fallback_used = bool(trace.get("fallback_used", False))
+
+        meta_parts = [
+            f"mode=`{trace.get('mode', '')}`",
+            f"fallback=`{fallback_used}`",
+        ]
+        st.caption(" | ".join(meta_parts))
+
+        if retrieved_context:
+            with st.expander("Retrieved Context", expanded=False):
+                st.code(retrieved_context)
+        if distilled_context and distilled_context != retrieved_context:
+            with st.expander("Distilled Context", expanded=False):
+                st.code(distilled_context)
 
 
-def render_dashboard():
-    st.set_page_config(
-        page_title="RAG-Anything Workbench",
-        page_icon="🧬",
-        layout="wide",
-        initial_sidebar_state="expanded",
-    )
-    st.markdown(
-        """
-        <style>
-            .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-            .stTabs [data-baseweb="tab"] { height: 50px; white-space: pre-wrap; background-color: #f0f2f6; border-radius: 4px 4px 0px 0px; gap: 1px; padding-top: 10px; padding-bottom: 10px; }
-            .stTabs [aria-selected="true"] { background-color: #ffffff; border-top: 2px solid #ff4b4b; }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    output_path = Path(ENV.output_base_dir)
-    selected_exp = _render_sidebar(output_path)
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "Graph & Metrics",
-        "Pruning Benchmark",
-        "AI Judge (Gemini)",
-        "Chat Playground",
-    ])
-
-    if not selected_exp:
-        st.info("Please select an experiment from the sidebar.")
-        return
-
-    with tab1:
-        _render_metrics_tab(selected_exp, output_path)
-    with tab2:
-        _render_pruning_tab(selected_exp, output_path)
-    with tab3:
-        _render_judge_tab(selected_exp, output_path)
-    with tab4:
-        _render_chat_tab(selected_exp)
+def render_dashboard() -> None:
+    WorkbenchDashboard().render()
