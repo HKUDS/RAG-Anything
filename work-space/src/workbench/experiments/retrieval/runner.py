@@ -1,29 +1,26 @@
 from __future__ import annotations
 
-import time
-from dataclasses import asdict
 from pathlib import Path
 
 from src.config import ENV
+from src.workbench.evaluation import RetrievalEvaluator
 from src.workbench.experiments.base import RetrievalExperimentDefinition
-from src.workbench.observability import JSONLReportWriter
 
 
 class RetrievalExperimentRunner:
-    def __init__(self, report_file: Path | None = None):
-        self.report_writer = JSONLReportWriter(
-            Path(report_file or Path(ENV.output_base_dir) / "reports" / "retrieval_benchmark.jsonl")
+    def __init__(
+        self,
+        summary_report_file: Path | None = None,
+        detail_report_file: Path | None = None,
+    ):
+        reports_dir = Path(ENV.output_base_dir) / "reports"
+        self.evaluator = RetrievalEvaluator(
+            summary_report_file=summary_report_file or reports_dir / "retrieval_benchmark_summary.csv",
+            detail_report_file=detail_report_file or reports_dir / "retrieval_benchmark_details.jsonl",
         )
 
-    def run(self, exp_def: RetrievalExperimentDefinition) -> dict:
-        result = {
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "status": "scaffold",
-            "message": (
-                "Retrieval benchmarking module scaffold created. "
-                "Implement labeled or LLM-judged evidence evaluation next."
-            ),
-            **asdict(exp_def),
-        }
-        self.report_writer.append(result)
-        return result
+    async def run(self, exp_def: RetrievalExperimentDefinition) -> dict:
+        return await self.evaluator.evaluate_experiment(exp_def.id)
+
+    async def run_many(self, exp_defs: list[RetrievalExperimentDefinition]) -> list[dict]:
+        return await self.evaluator.evaluate_many([exp.id for exp in exp_defs])

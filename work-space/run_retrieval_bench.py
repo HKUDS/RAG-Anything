@@ -1,6 +1,7 @@
 import argparse
-import json
+import asyncio
 import logging
+from pathlib import Path
 
 from _bootstrap import bootstrap_project_root
 
@@ -12,21 +13,37 @@ from src.workbench.experiments.retrieval.runner import RetrievalExperimentRunner
 logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Retrieval / reranker benchmark scaffold runner")
-    parser.add_argument("--exp", type=str, help="Retrieval experiment ID. If empty, run all retrieval scaffold entries.")
+def _remove_if_exists(path: Path) -> None:
+    if path.exists():
+        path.unlink()
+
+
+async def main():
+    parser = argparse.ArgumentParser(description="Retrieval benchmark runner")
+    parser.add_argument("--exp", type=str, help="Retrieval experiment ID. If empty, run all retrieval experiments.")
+    parser.add_argument(
+        "--fresh-report",
+        action="store_true",
+        help="Delete retrieval summary/detail reports before running.",
+    )
     args = parser.parse_args()
+
+    reports_dir = Path("benchmark_outputs/reports")
+    if args.fresh_report:
+        _remove_if_exists(reports_dir / "retrieval_benchmark_summary.csv")
+        _remove_if_exists(reports_dir / "retrieval_benchmark_details.jsonl")
 
     runner = RetrievalExperimentRunner()
     if args.exp:
         if args.exp not in RETRIEVAL_EXPERIMENTS:
             raise SystemExit(f"Unknown retrieval experiment '{args.exp}'. Available: {list(RETRIEVAL_EXPERIMENTS.keys())}")
-        print(json.dumps(runner.run(RETRIEVAL_EXPERIMENTS[args.exp]), ensure_ascii=False, indent=2))
+        result = await runner.run(RETRIEVAL_EXPERIMENTS[args.exp])
+        logging.info("Completed retrieval benchmark: %s", result)
         return
 
-    for exp_def in RETRIEVAL_EXPERIMENTS.values():
-        print(json.dumps(runner.run(exp_def), ensure_ascii=False, indent=2))
+    await runner.run_many(list(RETRIEVAL_EXPERIMENTS.values()))
+    logging.info("Completed retrieval benchmark for %d experiments", len(RETRIEVAL_EXPERIMENTS))
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

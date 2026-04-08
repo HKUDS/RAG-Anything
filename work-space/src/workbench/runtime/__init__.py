@@ -1,4 +1,10 @@
 from .model_factory import get_model_funcs
 from .mineru_cloud import MinerUCloudConfig, MinerUPrecisionCloudClient
+from .reranker import get_rerank_model_func
 
-__all__ = ["get_model_funcs", "MinerUCloudConfig", "MinerUPrecisionCloudClient"]
+__all__ = [
+    "get_model_funcs",
+    "get_rerank_model_func",
+    "MinerUCloudConfig",
+    "MinerUPrecisionCloudClient",
+]

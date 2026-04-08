@@ -65,4 +65,10 @@ class EnvConfig:
     query_chunk_top_k: int = int(os.getenv("QUERY_CHUNK_TOP_K", 12))
     query_response_type: str = os.getenv("QUERY_RESPONSE_TYPE", "Multiple Paragraphs")
     query_enable_rerank: bool = os.getenv("QUERY_ENABLE_RERANK", "false").lower() in ("1", "true", "yes", "on")
+    reranker_model_name: str = os.getenv("RERANKER_MODEL_NAME", "BAAI/bge-reranker-v2-m3")
+    reranker_device: str = os.getenv("RERANKER_DEVICE", "cuda")
+    reranker_use_fp16: bool = os.getenv("RERANKER_USE_FP16", "true").lower() in ("1", "true", "yes", "on")
+    reranker_batch_size: int = int(os.getenv("RERANKER_BATCH_SIZE", 32))
+    reranker_max_length: int = int(os.getenv("RERANKER_MAX_LENGTH", 512))
+    reranker_cache_dir: str | None = os.getenv("RERANKER_CACHE_DIR") or None
 ENV = EnvConfig()

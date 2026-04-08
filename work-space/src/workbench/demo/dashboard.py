@@ -35,6 +35,14 @@ class ReportRepository:
     def pipeline_phase2_detail_path(self) -> Path:
         return self.reports_dir / "pipeline_qa_details.jsonl"
 
+    @property
+    def retrieval_summary_path(self) -> Path:
+        return self.reports_dir / "retrieval_benchmark_summary.csv"
+
+    @property
+    def retrieval_detail_path(self) -> Path:
+        return self.reports_dir / "retrieval_benchmark_details.jsonl"
+
     def load_csv(self, path: Path) -> pd.DataFrame:
         if not path.exists():
             return pd.DataFrame()
@@ -87,6 +95,12 @@ class ReportRepository:
 
     def load_pipeline_phase2_details(self) -> pd.DataFrame:
         return self.load_jsonl(self.pipeline_phase2_detail_path)
+
+    def load_retrieval_summary(self) -> pd.DataFrame:
+        return self.load_csv(self.retrieval_summary_path)
+
+    def load_retrieval_details(self) -> pd.DataFrame:
+        return self.load_jsonl(self.retrieval_detail_path)
 
     def list_available_pipeline_experiments(self) -> list[str]:
         defined = [
@@ -156,11 +170,12 @@ class WorkbenchDashboard:
 
         selected_exp, query_mode = self._render_sidebar()
 
-        parser_tab, phase1_tab, phase2_tab, chat_tab = st.tabs(
+        parser_tab, phase1_tab, phase2_tab, retrieval_tab, chat_tab = st.tabs(
             [
                 "Parser Results",
                 "Pipeline Phase 1",
                 "Pipeline Phase 2 QA",
+                "Retrieval Results",
                 "Manual QA",
             ]
         )
@@ -171,6 +186,8 @@ class WorkbenchDashboard:
             self._render_pipeline_phase1(selected_exp)
         with phase2_tab:
             self._render_pipeline_phase2(selected_exp)
+        with retrieval_tab:
+            self._render_retrieval_results(selected_exp)
         with chat_tab:
             self._render_manual_qa(selected_exp, query_mode)
 
@@ -300,6 +317,88 @@ class WorkbenchDashboard:
         ]
         visible_cols = [c for c in visible_cols if c in selected_details.columns]
         st.dataframe(selected_details[visible_cols].astype(str), use_container_width=True, hide_index=True)
+
+    def _render_retrieval_results(self, selected_exp: str | None) -> None:
+        st.subheader("Retrieval Benchmark")
+        summary_df = self.repo.load_retrieval_summary()
+        detail_df = self.repo.load_retrieval_details()
+
+        if summary_df.empty:
+            st.info("Retrieval benchmark summary not found.")
+            return
+
+        st.dataframe(summary_df.astype(str), use_container_width=True, hide_index=True)
+
+        numeric_summary = summary_df.copy()
+        for col in ["Evidence_Recall_at_5", "Evidence_Recall_at_10", "MRR", "Precision_at_5"]:
+            if col in numeric_summary.columns:
+                numeric_summary[col] = pd.to_numeric(numeric_summary[col], errors="coerce")
+
+        if "Retrieval_Experiment_ID" in numeric_summary.columns:
+            chart_cols = [c for c in ["MRR", "Precision_at_5", "Evidence_Recall_at_10"] if c in numeric_summary.columns]
+            if chart_cols:
+                chart_df = numeric_summary[["Retrieval_Experiment_ID", *chart_cols]].set_index("Retrieval_Experiment_ID")
+                st.bar_chart(chart_df)
+
+        if not selected_exp:
+            return
+
+        selected_summary = summary_df[summary_df["Base_Experiment_ID"] == selected_exp].copy()
+        if selected_summary.empty:
+            st.info("No retrieval rows for selected experiment.")
+            return
+
+        st.markdown(f"**Selected Base Experiment:** `{selected_exp}`")
+        st.dataframe(selected_summary.astype(str), use_container_width=True, hide_index=True)
+
+        mode_options = sorted(selected_summary["Query_Mode"].dropna().unique().tolist())
+        selected_mode = st.selectbox(
+            "Retrieval Query Mode",
+            mode_options,
+            key=f"retrieval_mode_{selected_exp}",
+        )
+
+        mode_summary = selected_summary[selected_summary["Query_Mode"] == selected_mode].copy()
+        if not mode_summary.empty:
+            mode_summary["Reranker"] = mode_summary["Retrieval_Experiment_ID"].apply(
+                lambda value: "bge-reranker-v2-m3" if "bge_reranker_v2_m3" in str(value) else "none"
+            )
+            comparison_cols = ["Reranker", "MRR", "Precision_at_5", "Evidence_Recall_at_10", "Evidence_Recall_at_5"]
+            available_comparison_cols = [c for c in comparison_cols if c in mode_summary.columns]
+            st.markdown(f"**Mode Comparison:** `{selected_mode}`")
+            st.dataframe(mode_summary[available_comparison_cols].astype(str), use_container_width=True, hide_index=True)
+
+        if detail_df.empty:
+            return
+
+        selected_detail = detail_df[
+            (detail_df["base_experiment_id"] == selected_exp) & (detail_df["query_mode"] == selected_mode)
+        ].copy()
+        if selected_detail.empty:
+            return
+
+        detail_experiment_ids = sorted(selected_detail["retrieval_experiment_id"].dropna().unique().tolist())
+        selected_retrieval_exp = st.selectbox(
+            "Retrieval Experiment Detail",
+            detail_experiment_ids,
+            key=f"retrieval_exp_detail_{selected_exp}_{selected_mode}",
+        )
+        selected_detail = selected_detail[selected_detail["retrieval_experiment_id"] == selected_retrieval_exp].copy()
+
+        visible_cols = [
+            "question_id",
+            "difficulty",
+            "question_type",
+            "question",
+            "evidence_recall_at_5",
+            "evidence_recall_at_10",
+            "mrr",
+            "precision_at_5",
+            "reranker_name",
+            "total_retrieved_chunks",
+        ]
+        visible_cols = [c for c in visible_cols if c in selected_detail.columns]
+        st.dataframe(selected_detail[visible_cols].astype(str), use_container_width=True, hide_index=True)
 
     def _render_manual_qa(self, selected_exp: str | None, query_mode: str) -> None:
         st.subheader("Manual QA Playground")

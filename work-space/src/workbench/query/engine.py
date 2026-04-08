@@ -10,7 +10,7 @@ from raganything import RAGAnything, RAGAnythingConfig
 
 from src.config import ENV
 from src.workbench.experiments.pipeline.definitions import PIPELINE_EXPERIMENTS
-from src.workbench.runtime import get_model_funcs
+from src.workbench.runtime import get_model_funcs, get_rerank_model_func
 
 try:
     from lightrag import QueryParam
@@ -58,7 +58,7 @@ CONTEXT_DISTILL_USER_PROMPT = (
 
 
 class RAGQueryEngine:
-    def __init__(self, experiment_id: str):
+    def __init__(self, experiment_id: str, reranker_name: str | None = None):
         if experiment_id not in PIPELINE_EXPERIMENTS:
             raise ValueError(f"Unknown experiment_id: {experiment_id}")
 
@@ -70,6 +70,12 @@ class RAGQueryEngine:
         self.parse_method = self.exp_def.parse_method or ENV.parse_method
 
         self.llm_f, _, self.embed_f = get_model_funcs(self.exp_def.provider)
+        self.reranker_name = reranker_name
+        self.rerank_model_func = get_rerank_model_func(reranker_name)
+        self.lightrag_kwargs = dict(self.exp_def.lightrag_kwargs)
+        if self.rerank_model_func is not None:
+            self.lightrag_kwargs["rerank_model_func"] = self.rerank_model_func
+            self.lightrag_kwargs.setdefault("min_rerank_score", 0.0)
         self.rag = None
 
     async def initialize(self):
@@ -85,13 +91,39 @@ class RAGQueryEngine:
             config=config,
             llm_model_func=self.llm_f,
             embedding_func=self.embed_f,
-            lightrag_kwargs=self.exp_def.lightrag_kwargs,
+            lightrag_kwargs=self.lightrag_kwargs,
         )
         await self.rag._ensure_lightrag_initialized()
 
     async def query(self, question: str, mode: str | None = None):
         trace = await self.query_with_trace(question, mode=mode)
         return trace["answer"]
+
+    async def retrieve_data(self, question: str, mode: str | None = None, **overrides) -> dict:
+        if self.rag is None:
+            await self.initialize()
+
+        if QueryParam is None:
+            raise RuntimeError("LightRAG QueryParam is unavailable in the current runtime.")
+
+        resolved_mode = mode or ENV.query_default_mode
+        normalized_question = self._normalize_user_query(question)
+        query_kwargs = self._build_quality_query_kwargs()
+        query_kwargs.update(overrides)
+        if query_kwargs.get("enable_rerank") and self.rerank_model_func is None:
+            raise RuntimeError(
+                "enable_rerank=True but no reranker is configured for this query engine."
+            )
+
+        query_param = QueryParam(mode=resolved_mode, **query_kwargs)
+        raw_result = await self.rag.lightrag.aquery_data(normalized_question, param=query_param)
+        return {
+            "question": question,
+            "normalized_question": normalized_question,
+            "mode": resolved_mode,
+            "query_kwargs": query_kwargs,
+            "raw_result": raw_result,
+        }
 
     def close(self) -> None:
         try:
