@@ -49,6 +49,16 @@ class RetrievalExperimentDefinition(BaseExperimentDefinition):
 
 
 @dataclass
+class PruningExperimentDefinition(BaseExperimentDefinition):
+    base_experiment_id: str = ""
+    pruning_method: str = "hybrid"
+    top_k: int = 50
+    candidate_pool_size: int = 90
+    pruning_kwargs: Dict[str, Any] = field(default_factory=dict)
+    llm_model_name: Optional[str] = None
+
+
+@dataclass
 class PostprocessingExperimentDefinition(BaseExperimentDefinition):
     base_experiment_id: str = ""
     postprocess_strategy: str = "identity"

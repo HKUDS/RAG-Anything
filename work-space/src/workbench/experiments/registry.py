@@ -6,6 +6,7 @@ from typing import Dict, Iterable, Iterator, Mapping
 from src.workbench.experiments.base import (
     ParserBenchmarkExperimentDefinition,
     PipelineExperimentDefinition,
+    PruningExperimentDefinition,
     PostprocessingExperimentDefinition,
     RetrievalExperimentDefinition,
 )
@@ -16,6 +17,7 @@ class ExperimentSuite:
     parser: Mapping[str, ParserBenchmarkExperimentDefinition]
     pipeline: Mapping[str, PipelineExperimentDefinition]
     retrieval: Mapping[str, RetrievalExperimentDefinition]
+    pruning: Mapping[str, PruningExperimentDefinition]
     postprocessing: Mapping[str, PostprocessingExperimentDefinition]
 
     @property
@@ -24,6 +26,7 @@ class ExperimentSuite:
         experiments.update(self.parser)
         experiments.update(self.pipeline)
         experiments.update(self.retrieval)
+        experiments.update(self.pruning)
         experiments.update(self.postprocessing)
         return experiments
 

@@ -8,6 +8,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from src.config import ENV
 from src.workbench.experiments.pipeline.definitions import PIPELINE_EXPERIMENTS
@@ -42,6 +43,14 @@ class ReportRepository:
     @property
     def retrieval_detail_path(self) -> Path:
         return self.reports_dir / "retrieval_benchmark_details.jsonl"
+
+    @property
+    def pruning_summary_path(self) -> Path:
+        return self.reports_dir / "pruning_benchmark_summary.csv"
+
+    @property
+    def pruning_detail_path(self) -> Path:
+        return self.reports_dir / "pruning_benchmark_details.jsonl"
 
     def load_csv(self, path: Path) -> pd.DataFrame:
         if not path.exists():
@@ -101,6 +110,12 @@ class ReportRepository:
 
     def load_retrieval_details(self) -> pd.DataFrame:
         return self.load_jsonl(self.retrieval_detail_path)
+
+    def load_pruning_summary(self) -> pd.DataFrame:
+        return self.load_csv(self.pruning_summary_path)
+
+    def load_pruning_details(self) -> pd.DataFrame:
+        return self.load_jsonl(self.pruning_detail_path)
 
     def list_available_pipeline_experiments(self) -> list[str]:
         defined = [
@@ -170,12 +185,13 @@ class WorkbenchDashboard:
 
         selected_exp, query_mode = self._render_sidebar()
 
-        parser_tab, phase1_tab, phase2_tab, retrieval_tab, chat_tab = st.tabs(
+        parser_tab, phase1_tab, phase2_tab, retrieval_tab, pruning_tab, chat_tab = st.tabs(
             [
                 "Parser Results",
                 "Pipeline Phase 1",
                 "Pipeline Phase 2 QA",
                 "Retrieval Results",
+                "Graph Pruning",
                 "Manual QA",
             ]
         )
@@ -188,6 +204,8 @@ class WorkbenchDashboard:
             self._render_pipeline_phase2(selected_exp)
         with retrieval_tab:
             self._render_retrieval_results(selected_exp)
+        with pruning_tab:
+            self._render_pruning_results(selected_exp)
         with chat_tab:
             self._render_manual_qa(selected_exp, query_mode)
 
@@ -400,6 +418,115 @@ class WorkbenchDashboard:
         visible_cols = [c for c in visible_cols if c in selected_detail.columns]
         st.dataframe(selected_detail[visible_cols].astype(str), use_container_width=True, hide_index=True)
 
+    def _render_pruning_results(self, selected_exp: str | None) -> None:
+        st.subheader("Graph Pruning Benchmark")
+        summary_df = self.repo.load_pruning_summary()
+        if summary_df.empty:
+            st.info("Pruning benchmark summary not found.")
+            return
+
+        st.dataframe(summary_df.astype(str), use_container_width=True, hide_index=True)
+
+        numeric_summary = summary_df.copy()
+        for col in [
+            "Important_Node_Retention",
+            "Evidence_Entity_Coverage",
+            "Community_Coverage",
+            "Noise_Ratio",
+            "Chunk_Leakage_Ratio",
+            "Connectivity",
+            "Merge_Safety",
+            "Compression_Gain",
+            "Weighted_Score",
+        ]:
+            if col in numeric_summary.columns:
+                numeric_summary[col] = pd.to_numeric(numeric_summary[col], errors="coerce")
+
+        chart_cols = [c for c in ["Weighted_Score", "Evidence_Entity_Coverage", "Important_Node_Retention"] if c in numeric_summary.columns]
+        if chart_cols and "Pruning_Experiment_ID" in numeric_summary.columns:
+            chart_df = numeric_summary[["Pruning_Experiment_ID", *chart_cols]].set_index("Pruning_Experiment_ID")
+            st.bar_chart(chart_df)
+
+        filtered = summary_df.copy()
+        if selected_exp:
+            filtered = filtered[filtered["Base_Experiment_ID"] == selected_exp]
+            if filtered.empty:
+                st.info("No pruning rows for selected experiment.")
+                return
+            st.markdown(f"**Selected Base Experiment:** `{selected_exp}`")
+
+        method_options = sorted(filtered["Pruning_Method"].dropna().unique().tolist())
+        selected_method = st.selectbox(
+            "Pruning Method",
+            method_options,
+            key=f"pruning_method_{selected_exp or 'all'}",
+        )
+        filtered = filtered[filtered["Pruning_Method"] == selected_method].copy()
+        st.dataframe(filtered.astype(str), use_container_width=True, hide_index=True)
+
+        pruning_experiment_ids = filtered["Pruning_Experiment_ID"].dropna().unique().tolist()
+        selected_pruning_exp = st.selectbox(
+            "Pruning Experiment Detail",
+            pruning_experiment_ids,
+            key=f"pruning_exp_detail_{selected_exp or 'all'}_{selected_method}",
+        )
+        selected_row = filtered[filtered["Pruning_Experiment_ID"] == selected_pruning_exp].iloc[-1]
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Weighted Score", selected_row.get("Weighted_Score", ""))
+        c2.metric("Important Retention", selected_row.get("Important_Node_Retention", ""))
+        c3.metric("Evidence Coverage", selected_row.get("Evidence_Entity_Coverage", ""))
+        st.caption(
+            " | ".join(
+                [
+                    f"Connectivity=`{selected_row.get('Connectivity', '')}`",
+                    f"Noise=`{selected_row.get('Noise_Ratio', '')}`",
+                    f"Chunk Leakage=`{selected_row.get('Chunk_Leakage_Ratio', '')}`",
+                    f"Compression Gain=`{selected_row.get('Compression_Gain', '')}`",
+                ]
+            )
+        )
+
+        metadata = self._load_json_path(selected_row.get("Artifact_Metadata_Path", ""))
+
+        if metadata:
+            selected_nodes = metadata.get("selected_display_nodes", [])
+            if selected_nodes:
+                nodes_df = pd.DataFrame(selected_nodes)
+                preferred_cols = [
+                    "label",
+                    "entity_type",
+                    "description",
+                    "is_virtual_merged",
+                    "merged_from",
+                    "node_id",
+                ]
+                visible_cols = [c for c in preferred_cols if c in nodes_df.columns]
+                st.markdown("**Selected Nodes**")
+                st.dataframe(nodes_df[visible_cols].astype(str), use_container_width=True, hide_index=True)
+
+            merge_groups = metadata.get("merge_groups", [])
+            if merge_groups:
+                st.markdown("**Virtual Merge Groups**")
+                st.dataframe(pd.DataFrame(merge_groups).astype(str), use_container_width=True, hide_index=True)
+
+            debug_info = metadata.get("debug_info", {})
+            if debug_info:
+                with st.expander("Selection Debug Info", expanded=False):
+                    st.json(debug_info)
+
+            llm_response = metadata.get("llm_response")
+            if llm_response:
+                with st.expander("LLM Selection Response", expanded=False):
+                    st.json(llm_response)
+
+        html_content = self._load_html_path(selected_row.get("Artifact_HTML_Path", ""))
+        if html_content:
+            st.markdown("**Interactive Graph**")
+            components.html(html_content, height=760, scrolling=True)
+        else:
+            st.info("Interactive pruning graph artifact not found.")
+
     def _render_manual_qa(self, selected_exp: str | None, query_mode: str) -> None:
         st.subheader("Manual QA Playground")
         if not selected_exp:
@@ -455,6 +582,52 @@ class WorkbenchDashboard:
         if distilled_context and distilled_context != retrieved_context:
             with st.expander("Distilled Context", expanded=False):
                 st.code(distilled_context)
+
+    @staticmethod
+    def _load_json_path(path_value: Any) -> dict[str, Any] | None:
+        raw_value = str(path_value or "").strip()
+        if not raw_value:
+            return None
+        resolved = WorkbenchDashboard._resolve_artifact_path(raw_value)
+        if not resolved or not resolved.exists():
+            return None
+        if resolved.is_dir():
+            return None
+        try:
+            with open(resolved, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            return data if isinstance(data, dict) else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _load_html_path(path_value: Any) -> str | None:
+        raw_value = str(path_value or "").strip()
+        if not raw_value:
+            return None
+        resolved = WorkbenchDashboard._resolve_artifact_path(raw_value)
+        if not resolved or not resolved.exists():
+            return None
+        if resolved.is_dir():
+            return None
+        try:
+            return resolved.read_text(encoding="utf-8")
+        except Exception:
+            return None
+
+    @staticmethod
+    def _resolve_artifact_path(path_value: Any) -> Path | None:
+        raw_value = str(path_value or "").strip()
+        if not raw_value:
+            return None
+        raw = Path(raw_value)
+        candidates = [raw]
+        if not raw.is_absolute():
+            candidates.append(Path.cwd() / raw)
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return candidates[0] if candidates else None
 
 
 def render_dashboard() -> None:

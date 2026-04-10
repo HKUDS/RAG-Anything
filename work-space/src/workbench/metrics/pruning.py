@@ -1,0 +1,76 @@
+from .models import MetricDefinition, MetricPlan
+
+PRUNING_METRIC_PLAN = MetricPlan(
+    summary="Graph pruning experiments should measure how well a FE-sized graph preserves important concepts, evidence-linked nodes, and coherent structure without retaining noisy or chunk-heavy nodes.",
+    metrics=[
+        MetricDefinition(
+            "important_node_retention",
+            "Important Node Retention",
+            "Fraction of structurally important nodes from the full graph retained in the FE graph.",
+            "quality",
+            hardware_sensitive=False,
+            primary=True,
+        ),
+        MetricDefinition(
+            "evidence_entity_coverage",
+            "Evidence Entity Coverage",
+            "Fraction of evidence-linked entities retained from the full graph.",
+            "quality",
+            hardware_sensitive=False,
+            primary=True,
+        ),
+        MetricDefinition(
+            "community_coverage",
+            "Community Coverage",
+            "Fraction of graph communities represented in the FE graph.",
+            "quality",
+            hardware_sensitive=False,
+            primary=True,
+        ),
+        MetricDefinition(
+            "noise_ratio",
+            "Noise Ratio",
+            "Fraction of retained nodes and edges judged generic, redundant, or low-value for FE display.",
+            "quality",
+            hardware_sensitive=False,
+            higher_is_better=False,
+            primary=True,
+        ),
+        MetricDefinition(
+            "chunk_leakage_ratio",
+            "Chunk Leakage Ratio",
+            "Fraction of FE nodes that are chunk/artifact nodes rather than knowledge nodes.",
+            "quality",
+            hardware_sensitive=False,
+            higher_is_better=False,
+            primary=True,
+        ),
+        MetricDefinition(
+            "connectivity",
+            "Connectivity",
+            "Largest connected component ratio of the FE graph.",
+            "quality",
+            hardware_sensitive=False,
+            primary=True,
+        ),
+        MetricDefinition(
+            "merge_safety",
+            "Merge Safety",
+            "Heuristic safety score for virtual FE merge groups proposed by LLM-based pruning.",
+            "quality",
+            hardware_sensitive=False,
+        ),
+        MetricDefinition(
+            "compression_gain",
+            "Compression Gain",
+            "Relative node-count reduction obtained via safe virtual merges.",
+            "efficiency",
+            hardware_sensitive=False,
+        ),
+    ],
+    insight_questions=[
+        "Which pruning method keeps the FE graph focused on the most important and evidence-linked concepts?",
+        "Which pruning method produces the cleanest graph without losing community coverage or coherence?",
+        "Do LLM-based FE summaries outperform graph heuristics, and if so, is virtual merge helping safely?",
+    ],
+)
