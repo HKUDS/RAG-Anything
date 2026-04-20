@@ -4,6 +4,7 @@ from src.workbench.experiments.base import PipelineExperimentDefinition
 from src.workbench.experiments.pipeline.profiles import PIPELINE_PROFILES
 from src.workbench.experiments.shared import PARSER_PRESETS
 from src.workbench.metrics import PIPELINE_METRIC_PLAN
+from src.config import ENV
 
 PIPELINE_EXPERIMENTS: dict[str, PipelineExperimentDefinition] = {}
 
@@ -78,4 +79,35 @@ PIPELINE_EXPERIMENTS["exp4_medical_scope_mineru_ollama"] = PipelineExperimentDef
         "`work-space/src/workbench/experiments/pipeline/profiles.py`."
     ),
     tags=["pipeline", "medical", "mineru", "ollama"],
+)
+
+PIPELINE_EXPERIMENTS["exp5_medical_scope_mineru_ollama_radgraph_xl"] = PipelineExperimentDefinition(
+    id="exp5_medical_scope_mineru_ollama_radgraph_xl",
+    description=(
+        "Medical-domain pipeline using local MinerU parsing and RadGraph-XL for "
+        "entity/relation extraction over textified multimodal chunks."
+    ),
+    category="pipeline",
+    metric_plan=PIPELINE_METRIC_PLAN,
+    profile_name="medical",
+    provider="ollama",
+    parser=mineru_local_preset.parser,
+    parse_method=mineru_local_preset.parse_method,
+    input_dir_override=shared_input_dir,
+    parser_kwargs=dict(mineru_local_preset.parser_kwargs),
+    entity_relation_backend="radgraph_xl",
+    entity_relation_kwargs={
+        "model_type": ENV.radgraph_model_type,
+        "batch_size": ENV.radgraph_batch_size,
+    },
+    use_gliner=medical_profile.use_gliner,
+    gliner_labels=list(medical_profile.gliner_labels),
+    lightrag_kwargs=dict(medical_profile.lightrag_kwargs),
+    raganything_kwargs=dict(medical_profile.raganything_kwargs),
+    custom_prompts=dict(medical_profile.custom_prompts),
+    notes=(
+        "Variant-2 NER/RE experiment: keep current MinerU + multimodal-to-text flow, "
+        "but replace LightRAG LLM extraction with RadGraph-XL on the final text chunks."
+    ),
+    tags=["pipeline", "medical", "mineru", "ollama", "radgraph_xl", "ner"],
 )

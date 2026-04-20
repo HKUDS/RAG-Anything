@@ -23,6 +23,8 @@ class PipelineExperimentDefinition(BaseExperimentDefinition):
     parse_method: Optional[str] = None
     input_dir_override: Optional[str] = None
     parser_kwargs: Dict[str, Any] = field(default_factory=dict)
+    entity_relation_backend: str = "llm"
+    entity_relation_kwargs: Dict[str, Any] = field(default_factory=dict)
     use_gliner: bool = False
     gliner_labels: list = field(default_factory=list)
     lightrag_kwargs: Dict[str, Any] = field(default_factory=dict)

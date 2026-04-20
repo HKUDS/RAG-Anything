@@ -18,7 +18,11 @@ from src.extraction import compute_extract_metrics, get_source_page_count
 from src.workbench.metrics import extract_storage_stats
 from src.workbench.experiments.base import PipelineExperimentDefinition
 from src.workbench.observability import CSVReportWriter, ProcessedFileManifest
-from src.workbench.runtime import get_model_funcs
+from src.workbench.runtime import (
+    RadGraphXLConfig,
+    RadGraphXLExtractionPatch,
+    get_model_funcs,
+)
 
 logger = logging.getLogger("PipelineRunner")
 
@@ -99,12 +103,13 @@ class PipelineBenchmarkRunner:
         parser_kwargs = exp_def.parser_kwargs or {}
 
         logger.info(
-            "STARTING %s | profile=%s | provider=%s | parser=%s | method=%s",
+            "STARTING %s | profile=%s | provider=%s | parser=%s | method=%s | extraction_backend=%s",
             exp_def.id,
             exp_def.profile_name,
             exp_def.provider,
             parser_name,
             parse_method,
+            exp_def.entity_relation_backend,
         )
         logger.info("[%s] Effective parser kwargs: %s", exp_def.id, parser_kwargs)
 
@@ -137,6 +142,21 @@ class PipelineBenchmarkRunner:
             embedding_func=embed_f,
             lightrag_kwargs=exp_def.lightrag_kwargs,
         )
+
+        extraction_patch = None
+        if exp_def.entity_relation_backend == "radgraph_xl":
+            extraction_patch = RadGraphXLExtractionPatch(
+                RadGraphXLConfig(
+                    model_type=exp_def.entity_relation_kwargs.get(
+                        "model_type", ENV.radgraph_model_type
+                    ),
+                    batch_size=int(
+                        exp_def.entity_relation_kwargs.get(
+                            "batch_size", ENV.radgraph_batch_size
+                        )
+                    ),
+                )
+            )
 
         input_path = Path(exp_def.input_dir_override or ENV.input_dir)
         if not input_path.exists():
@@ -173,6 +193,14 @@ class PipelineBenchmarkRunner:
             self._restore_prompts()
             return
 
+        if extraction_patch is not None:
+            extraction_patch.validate()
+            logger.info(
+                "[%s] Using RadGraph-XL extraction backend with config=%s",
+                exp_def.id,
+                exp_def.entity_relation_kwargs,
+            )
+
         for file_path, fingerprint in runnable_files:
             t0 = time.time()
             t_parsed = 0
@@ -200,7 +228,18 @@ class PipelineBenchmarkRunner:
                     f"table={content_metrics['tables_per_100_pages']:.1f}/100p | "
                     f"eq={content_metrics['equations_per_100_pages']:.1f}/100p"
                 )
-                await rag.insert_content_list(content_list, str(file_path), doc_id=doc_id, display_stats=False)
+                if extraction_patch is not None:
+                    extraction_patch.install()
+                try:
+                    await rag.insert_content_list(
+                        content_list,
+                        str(file_path),
+                        doc_id=doc_id,
+                        display_stats=False,
+                    )
+                finally:
+                    if extraction_patch is not None:
+                        extraction_patch.restore()
                 t_end = time.time()
                 if rag.lightrag:
                     await rag.lightrag.llm_response_cache.index_done_callback()

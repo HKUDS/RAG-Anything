@@ -1,84 +1,101 @@
-### 1. Definition exp in file work-space/src/definitions.py
-Example: 
-    "exp1_baseline": ExperimentDef(
-        id="exp1_baseline",
-        description="Baseline MinerU (default parser, auto parse)",
-        parser="mineru",
-        parse_method="auto",
-        parser_kwargs={},
-        lightrag_kwargs={}
-    ),
+# Workbench README
 
-Parser benchmark variants available by default:
-- `exp1_baseline_docling`
-- `exp1_baseline_kreuzberg`
-- `exp1_baseline_marker`
-- `exp1_baseline_marker_ocr`
+Thư mục `work-space/` là nơi chạy toàn bộ benchmark và dashboard cho RAG-Anything.
 
-### 2. Run all exps:
-``` bash
-python run_bench.py
+## Thành phần chính
+
+- `run_extract_bench.py`: benchmark parser
+- `run_bench.py`: benchmark pipeline end-to-end
+- `run_pipeline_qa_eval.py`: benchmark QA end-to-end
+- `run_retrieval_bench.py`: benchmark retrieval
+- `run_pruning_bench.py`: benchmark graph pruning cho FE
+- `app.py`: dashboard Streamlit
+
+## Các nhóm thí nghiệm
+
+1. `Parser benchmark`
+- so parser theo quality, modalities, noise, tốc độ
+
+2. `Pipeline benchmark phase 1`
+- đo parse + graph build + indexing cost
+
+3. `Pipeline benchmark phase 2 QA`
+- đo chất lượng hỏi đáp end-to-end
+
+4. `Retrieval benchmark`
+- đo Recall/MRR/Precision của các query modes và reranker
+
+5. `Pruning benchmark`
+- chọn `display graph` gọn cho FE
+- không sửa graph/storage gốc
+
+6. `Postprocess graph`
+- tài liệu giải thích phần graph FE và pruning
+
+## Tài liệu
+
+Các tài liệu benchmark nằm trong:
+
+- `work-space/docs/parser_benchmark_phase1.md`
+- `work-space/docs/pipeline_benchmark_phase1.md`
+- `work-space/docs/pipeline_benchmark_phase2_qa.md`
+- `work-space/docs/retrieval_benchmark_phase_a.md`
+- `work-space/docs/retrieval_benchmark_phase_b.md`
+- `work-space/docs/pruning_benchmark_phase_a.md`
+- `work-space/docs/postprocess_graph.md`
+- `work-space/docs/streamlit_workbench.md`
+- `work-space/docs/pipeline_smoke_test_mineru_cloud_openai.md`
+
+PDF tham khảo:
+
+- `work-space/docs/mineruV2.5.pdf`
+- `work-space/docs/docling.pdf`
+
+## Lệnh chạy nhanh
+
+Parser:
+
+```bash
+cd work-space
+python run_extract_bench.py --fresh-run --fresh-parser-cache
 ```
 
-Default behavior is incremental per experiment:
-- files already processed successfully with the same content are skipped
-- only new files in `work-space/data_test` are indexed and merged into the existing `rag_storage`
-- changed files are skipped intentionally to avoid mixing old and new versions in the same graph; use `--fresh-run` or a new experiment ID if you need to rebuild them
+Pipeline:
 
-Fresh run (clear `rag_storage` + `parser_output` before each experiment):
-``` bash
+```bash
 python run_bench.py --fresh-run
 ```
 
-### 3. Run a specific exp:
-``` bash
-python run_bench.py --exp ${exp_name}
-```
-Output will be in benchmark_report.csv
+QA:
 
-Each experiment also writes an incremental manifest at:
-``` bash
-benchmark_outputs/<exp_id>/processed_manifest.json
+```bash
+python run_pipeline_qa_eval.py --fresh-report
 ```
 
-Specific experiment with fresh run:
-``` bash
-python run_bench.py --exp ${exp_name} --fresh-run
+Retrieval:
+
+```bash
+python run_retrieval_bench.py --fresh-report
 ```
 
-### 4. Recommended commands for parser end-to-end baseline
-``` bash
-python run_bench.py --exp exp1_baseline
-python run_bench.py --exp exp1_baseline_docling
-python run_bench.py --exp exp1_baseline_kreuzberg
-python run_bench.py --exp exp1_baseline_marker
-python run_bench.py --exp exp1_baseline_marker_ocr
+Pruning:
+
+```bash
+python run_pruning_bench.py --fresh-report
 ```
 
-### 5. Extract benchmark with fresh run/cache
-``` bash
-python run_extract_bench.py --fresh-run
-python run_extract_bench.py --exp ext3_kreuzberg_default --fresh-run --fresh-parser-cache
+Dashboard:
+
+```bash
+streamlit run app.py
 ```
 
-### Streamlit web based
-``` bash
-python -m streamlit run app.py --server.fileWatcherType none
-```
+## Kết quả
 
-### Query answer pipeline defaults
-- Workspace query path now defaults to core RAG retrieval:
-  - primary strategy: ask LightRAG/RAG-Anything for retrieved context first
-  - answer generation: grounded synthesis from that retrieved context
-  - fallback mode: direct `rag.aquery(...)`
-  - query-time vision/VLM: disabled
-  - `aquery_with_multimodal`: not used in workspace answer flow
-  - answer prompt: grounded, no guessing when context is insufficient
-- Query-time knobs can be overridden in `work-space/.env`:
-``` bash
-QUERY_DEFAULT_MODE=mix
-QUERY_TOP_K=40
-QUERY_CHUNK_TOP_K=12
-QUERY_RESPONSE_TYPE=Multiple Paragraphs
-QUERY_ENABLE_RERANK=false
-```
+Report CSV/JSONL nằm ở:
+
+- `work-space/benchmark_outputs/reports/`
+
+Artifacts theo từng experiment nằm ở:
+
+- `work-space/benchmark_outputs/`

@@ -71,4 +71,8 @@ class EnvConfig:
     reranker_batch_size: int = int(os.getenv("RERANKER_BATCH_SIZE", 32))
     reranker_max_length: int = int(os.getenv("RERANKER_MAX_LENGTH", 512))
     reranker_cache_dir: str | None = os.getenv("RERANKER_CACHE_DIR") or None
+
+    # RadGraph-XL extraction settings
+    radgraph_model_type: str = os.getenv("RADGRAPH_MODEL_TYPE", "modern-radgraph-xl")
+    radgraph_batch_size: int = int(os.getenv("RADGRAPH_BATCH_SIZE", 8))
 ENV = EnvConfig()

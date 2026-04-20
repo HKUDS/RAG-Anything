@@ -23,3 +23,4 @@ tqdm
 gliner
 tiktoken
 kreuzberg[paddleocr]
+radgraph
