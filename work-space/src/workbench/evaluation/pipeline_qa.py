@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import logging
@@ -176,6 +177,43 @@ class PipelineQAEvaluator:
 
     def _gold_file(self, doc_path: Path) -> Path:
         return self.gold_dir / f"{doc_path.stem}.json"
+
+    def _remove_existing_records(self, experiment_id: str, query_mode: str) -> None:
+        summary_path = self.summary_writer.path
+        if summary_path.exists():
+            with open(summary_path, "r", newline="", encoding="utf-8") as f:
+                rows = list(csv.DictReader(f))
+            filtered = [
+                row
+                for row in rows
+                if not (
+                    row.get("Experiment_ID") == experiment_id
+                    and row.get("Query_Mode", "mix") == query_mode
+                )
+            ]
+            with open(summary_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=self.summary_header)
+                writer.writeheader()
+                writer.writerows(filtered)
+
+        detail_path = self.detail_writer.path
+        if detail_path.exists():
+            kept_lines: list[str] = []
+            with open(detail_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        record = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if (
+                        record.get("experiment_id") == experiment_id
+                        and record.get("query_mode", "mix") == query_mode
+                    ):
+                        continue
+                    kept_lines.append(json.dumps(record, ensure_ascii=False))
+            with open(detail_path, "w", encoding="utf-8") as f:
+                for line in kept_lines:
+                    f.write(line + "\n")
 
     def _judge_cache_file(
         self,
@@ -368,6 +406,7 @@ class PipelineQAEvaluator:
 
         exp_def = PIPELINE_EXPERIMENTS[experiment_id]
         docs = _resolve_successful_docs_for_experiment(exp_def)
+        self._remove_existing_records(experiment_id, query_mode)
 
         query_engine = RAGQueryEngine(experiment_id)
         await query_engine.initialize()

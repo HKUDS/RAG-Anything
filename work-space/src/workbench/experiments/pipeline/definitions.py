@@ -84,21 +84,26 @@ PIPELINE_EXPERIMENTS["exp4_medical_scope_mineru_ollama"] = PipelineExperimentDef
 PIPELINE_EXPERIMENTS["exp5_medical_scope_mineru_ollama_radgraph_xl"] = PipelineExperimentDefinition(
     id="exp5_medical_scope_mineru_ollama_radgraph_xl",
     description=(
-        "Medical-domain pipeline using local MinerU parsing and RadGraph-XL for "
+        "Medical-domain pipeline using MinerU cloud parsing and RadGraph-XL for "
         "entity/relation extraction over textified multimodal chunks."
     ),
     category="pipeline",
     metric_plan=PIPELINE_METRIC_PLAN,
     profile_name="medical",
     provider="ollama",
-    parser=mineru_local_preset.parser,
-    parse_method=mineru_local_preset.parse_method,
+    parser=mineru_cloud_preset.parser,
+    parse_method=mineru_cloud_preset.parse_method,
     input_dir_override=shared_input_dir,
-    parser_kwargs=dict(mineru_local_preset.parser_kwargs),
+    parser_kwargs=dict(mineru_cloud_preset.parser_kwargs),
     entity_relation_backend="radgraph_xl",
     entity_relation_kwargs={
         "model_type": ENV.radgraph_model_type,
         "batch_size": ENV.radgraph_batch_size,
+        "cuda_device": ENV.radgraph_cuda_device,
+        "split_chunks": ENV.radgraph_split_chunks,
+        "max_segment_chars": ENV.radgraph_max_segment_chars,
+        "sentence_overlap": ENV.radgraph_sentence_overlap,
+        "empty_cache_each_batch": ENV.radgraph_empty_cache_each_batch,
     },
     use_gliner=medical_profile.use_gliner,
     gliner_labels=list(medical_profile.gliner_labels),
@@ -106,8 +111,8 @@ PIPELINE_EXPERIMENTS["exp5_medical_scope_mineru_ollama_radgraph_xl"] = PipelineE
     raganything_kwargs=dict(medical_profile.raganything_kwargs),
     custom_prompts=dict(medical_profile.custom_prompts),
     notes=(
-        "Variant-2 NER/RE experiment: keep current MinerU + multimodal-to-text flow, "
+        "Variant-2 NER/RE experiment: keep current MinerU multimodal-to-text flow, "
         "but replace LightRAG LLM extraction with RadGraph-XL on the final text chunks."
     ),
-    tags=["pipeline", "medical", "mineru", "ollama", "radgraph_xl", "ner"],
+    tags=["pipeline", "medical", "mineru_cloud", "ollama", "radgraph_xl", "ner"],
 )

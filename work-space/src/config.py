@@ -75,4 +75,9 @@ class EnvConfig:
     # RadGraph-XL extraction settings
     radgraph_model_type: str = os.getenv("RADGRAPH_MODEL_TYPE", "modern-radgraph-xl")
     radgraph_batch_size: int = int(os.getenv("RADGRAPH_BATCH_SIZE", 8))
+    radgraph_cuda_device: int = int(os.getenv("RADGRAPH_CUDA_DEVICE", 0))
+    radgraph_split_chunks: bool = os.getenv("RADGRAPH_SPLIT_CHUNKS", "false").lower() in ("1", "true", "yes", "on")
+    radgraph_max_segment_chars: int = int(os.getenv("RADGRAPH_MAX_SEGMENT_CHARS", 1400))
+    radgraph_sentence_overlap: int = int(os.getenv("RADGRAPH_SENTENCE_OVERLAP", 1))
+    radgraph_empty_cache_each_batch: bool = os.getenv("RADGRAPH_EMPTY_CACHE_EACH_BATCH", "true").lower() in ("1", "true", "yes", "on")
 ENV = EnvConfig()

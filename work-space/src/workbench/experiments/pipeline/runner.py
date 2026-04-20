@@ -155,6 +155,32 @@ class PipelineBenchmarkRunner:
                             "batch_size", ENV.radgraph_batch_size
                         )
                     ),
+                    cuda_device=int(
+                        exp_def.entity_relation_kwargs.get(
+                            "cuda_device", ENV.radgraph_cuda_device
+                        )
+                    ),
+                    split_chunks=bool(
+                        exp_def.entity_relation_kwargs.get(
+                            "split_chunks", ENV.radgraph_split_chunks
+                        )
+                    ),
+                    max_segment_chars=int(
+                        exp_def.entity_relation_kwargs.get(
+                            "max_segment_chars", ENV.radgraph_max_segment_chars
+                        )
+                    ),
+                    sentence_overlap=int(
+                        exp_def.entity_relation_kwargs.get(
+                            "sentence_overlap", ENV.radgraph_sentence_overlap
+                        )
+                    ),
+                    empty_cache_each_batch=bool(
+                        exp_def.entity_relation_kwargs.get(
+                            "empty_cache_each_batch",
+                            ENV.radgraph_empty_cache_each_batch,
+                        )
+                    ),
                 )
             )
 
@@ -246,6 +272,12 @@ class PipelineBenchmarkRunner:
                     await rag.lightrag.full_entities.index_done_callback()
                     await rag.lightrag.full_relations.index_done_callback()
                     await rag.lightrag.doc_status.index_done_callback()
+                    doc_status = await rag.lightrag.doc_status.get_by_id(doc_id)
+                    if doc_status and str(doc_status.get("status", "")).lower() == "failed":
+                        raise RuntimeError(
+                            doc_status.get("error_msg")
+                            or f"Document {doc_id} ended in failed doc_status"
+                        )
                 stats_after = extract_storage_stats(str(rag_storage))
                 output_tokens_delta = max(stats_after["output_tokens"] - stats_before["output_tokens"], 0)
                 api_calls_delta = max(stats_after["api_calls"] - stats_before["api_calls"], 0)

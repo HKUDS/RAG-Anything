@@ -7,6 +7,7 @@ BASE_PIPELINE_EXPERIMENTS = [
     "exp1_baseline_mineru_cloud_openai",
     "exp2_default_mineru_ollama",
     "exp4_medical_scope_mineru_ollama",
+    "exp5_medical_scope_mineru_ollama_radgraph_xl",
 ]
 
 PRUNING_METHODS = [

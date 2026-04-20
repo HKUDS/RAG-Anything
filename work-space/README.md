@@ -72,16 +72,34 @@ QA:
 python run_pipeline_qa_eval.py --fresh-report
 ```
 
+QA cho riêng `exp5`:
+
+```bash
+python run_pipeline_qa_eval.py --exp exp5_medical_scope_mineru_ollama_radgraph_xl --fresh-report
+```
+
 Retrieval:
 
 ```bash
 python run_retrieval_bench.py --fresh-report
 ```
 
+Retrieval cho riêng `exp5`:
+
+```bash
+python run_retrieval_bench.py --base-exp exp5_medical_scope_mineru_ollama_radgraph_xl --fresh-report
+```
+
 Pruning:
 
 ```bash
 python run_pruning_bench.py --fresh-report
+```
+
+Pruning cho riêng `exp5`:
+
+```bash
+python run_pruning_bench.py --base-exp exp5_medical_scope_mineru_ollama_radgraph_xl --fresh-report
 ```
 
 Dashboard:
