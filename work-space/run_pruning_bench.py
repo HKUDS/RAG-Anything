@@ -6,8 +6,7 @@ from pathlib import Path
 from _bootstrap import bootstrap_project_root
 
 bootstrap_project_root()
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+from src.workbench.logging_utils import configure_workbench_logging
 
 
 def _remove_if_exists(path: Path) -> None:
@@ -29,6 +28,10 @@ async def main():
         help="Delete pruning summary/detail reports before running.",
     )
     args = parser.parse_args()
+    configure_workbench_logging(
+        "run_pruning_bench",
+        args.exp or args.base_exp or "all",
+    )
 
     from src.workbench.experiments.pruning.definitions import PRUNING_EXPERIMENTS
     from src.workbench.experiments.pruning.runner import PruningExperimentRunner

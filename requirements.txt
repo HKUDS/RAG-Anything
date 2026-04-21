@@ -24,3 +24,4 @@ gliner
 tiktoken
 kreuzberg[paddleocr]
 radgraph
+git+https://github.com/fleonce/iter

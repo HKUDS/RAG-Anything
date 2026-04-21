@@ -9,8 +9,7 @@ bootstrap_project_root()
 
 from src.workbench.experiments.retrieval.definitions import RETRIEVAL_EXPERIMENTS
 from src.workbench.experiments.retrieval.runner import RetrievalExperimentRunner
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+from src.workbench.logging_utils import configure_workbench_logging
 
 
 def _remove_if_exists(path: Path) -> None:
@@ -32,6 +31,10 @@ async def main():
         help="Delete retrieval summary/detail reports before running.",
     )
     args = parser.parse_args()
+    configure_workbench_logging(
+        "run_retrieval_bench",
+        args.exp or args.base_exp or "all",
+    )
 
     reports_dir = Path("benchmark_outputs/reports")
     if args.fresh_report:

@@ -8,14 +8,14 @@ bootstrap_project_root()
 
 from src.workbench.experiments.postprocessing.definitions import POSTPROCESSING_EXPERIMENTS
 from src.workbench.experiments.postprocessing.runner import PostprocessingExperimentRunner
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+from src.workbench.logging_utils import configure_workbench_logging
 
 
 def main():
     parser = argparse.ArgumentParser(description="Postprocessing benchmark scaffold runner")
     parser.add_argument("--exp", type=str, help="Postprocessing experiment ID. If empty, run all scaffold entries.")
     args = parser.parse_args()
+    configure_workbench_logging("run_postprocess_bench", args.exp or "all")
 
     runner = PostprocessingExperimentRunner()
     if args.exp:

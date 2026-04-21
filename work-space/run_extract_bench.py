@@ -11,9 +11,7 @@ from src.config import ENV
 from src.workbench.experiments.parser.definitions import PARSER_EXPERIMENTS
 from src.workbench.experiments.parser.runner import ParserBenchmarkRunner
 import raganything
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
-logging.getLogger(__name__).info("Using raganything from: %s", getattr(raganything, "__file__", "unknown"))
+from src.workbench.logging_utils import configure_workbench_logging
 
 
 async def main():
@@ -48,6 +46,8 @@ async def main():
         help="Per-experiment parser benchmark CSV path",
     )
     args = parser.parse_args()
+    configure_workbench_logging("run_extract_bench", args.exp or "all")
+    logging.getLogger(__name__).info("Using raganything from: %s", getattr(raganything, "__file__", "unknown"))
 
     input_dir = Path(args.input)
     if not input_dir.exists():

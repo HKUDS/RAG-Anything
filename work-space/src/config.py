@@ -80,4 +80,13 @@ class EnvConfig:
     radgraph_max_segment_chars: int = int(os.getenv("RADGRAPH_MAX_SEGMENT_CHARS", 1400))
     radgraph_sentence_overlap: int = int(os.getenv("RADGRAPH_SENTENCE_OVERLAP", 1))
     radgraph_empty_cache_each_batch: bool = os.getenv("RADGRAPH_EMPTY_CACHE_EACH_BATCH", "true").lower() in ("1", "true", "yes", "on")
+
+    # ITER + ADE extraction settings
+    iter_model_name: str = os.getenv("ITER_MODEL_NAME", "fleonce/iter-ade-deberta-large")
+    iter_device: str = os.getenv("ITER_DEVICE", "cuda")
+    iter_split_chunks: bool = os.getenv("ITER_SPLIT_CHUNKS", "true").lower() in ("1", "true", "yes", "on")
+    iter_max_length: int = int(os.getenv("ITER_MAX_LENGTH", 512))
+    iter_sentence_overlap: int = int(os.getenv("ITER_SENTENCE_OVERLAP", 1))
+    iter_empty_cache_each_batch: bool = os.getenv("ITER_EMPTY_CACHE_EACH_BATCH", "true").lower() in ("1", "true", "yes", "on")
+    iter_debug_output: bool = os.getenv("ITER_DEBUG_OUTPUT", "false").lower() in ("1", "true", "yes", "on")
 ENV = EnvConfig()

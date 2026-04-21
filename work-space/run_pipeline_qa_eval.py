@@ -10,8 +10,7 @@ bootstrap_project_root()
 from src.config import ENV
 from src.workbench.evaluation import PipelineQAEvaluator
 from src.workbench.experiments.pipeline.definitions import PIPELINE_EXPERIMENTS
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+from src.workbench.logging_utils import configure_workbench_logging
 
 
 def _remove_if_exists(path: Path) -> None:
@@ -32,6 +31,10 @@ async def main():
         help="Delete pipeline QA summary/detail report files before evaluation.",
     )
     args = parser.parse_args()
+    configure_workbench_logging(
+        "run_pipeline_qa_eval",
+        args.exp or f"query_mode_{args.query_mode}",
+    )
 
     reports_dir = Path(ENV.output_base_dir) / "reports"
     if args.fresh_report:

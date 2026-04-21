@@ -78,6 +78,12 @@ QA cho riêng `exp5`:
 python run_pipeline_qa_eval.py --exp exp5_medical_scope_mineru_ollama_radgraph_xl --fresh-report
 ```
 
+QA cho riêng `exp6` và append vào report hiện có:
+
+```bash
+python run_pipeline_qa_eval.py --exp exp6_medical_scope_mineru_ollama_iter_ade
+```
+
 Retrieval:
 
 ```bash
@@ -88,6 +94,12 @@ Retrieval cho riêng `exp5`:
 
 ```bash
 python run_retrieval_bench.py --base-exp exp5_medical_scope_mineru_ollama_radgraph_xl --fresh-report
+```
+
+Retrieval cho riêng `exp6` và append vào report hiện có:
+
+```bash
+python run_retrieval_bench.py --base-exp exp6_medical_scope_mineru_ollama_iter_ade
 ```
 
 Pruning:
@@ -102,6 +114,18 @@ Pruning cho riêng `exp5`:
 python run_pruning_bench.py --base-exp exp5_medical_scope_mineru_ollama_radgraph_xl --fresh-report
 ```
 
+Pruning cho riêng `exp6` và append vào report hiện có:
+
+```bash
+python run_pruning_bench.py --base-exp exp6_medical_scope_mineru_ollama_iter_ade
+```
+
+Nếu chạy `exp6`, cần cài thêm ITER:
+
+```bash
+/mnt/disk1/aiotlab/envs/raganything/bin/pip install git+https://github.com/fleonce/iter
+```
+
 Dashboard:
 
 ```bash
@@ -113,6 +137,10 @@ streamlit run app.py
 Report CSV/JSONL nằm ở:
 
 - `work-space/benchmark_outputs/reports/`
+
+Log của từng lần chạy benchmark nằm ở:
+
+- `work-space/benchmark_outputs/logs/`
 
 Artifacts theo từng experiment nằm ở:
 

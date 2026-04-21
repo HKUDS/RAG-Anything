@@ -8,8 +8,7 @@ bootstrap_project_root()
 
 from src.workbench.experiments.pipeline.definitions import PIPELINE_EXPERIMENTS
 from src.workbench.experiments.pipeline.runner import PipelineBenchmarkRunner
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s | %(levelname)s | %(message)s")
+from src.workbench.logging_utils import configure_workbench_logging
 
 
 async def main():
@@ -21,6 +20,7 @@ async def main():
         help="Clear benchmark_outputs/<exp>/rag_storage and parser_output before the run.",
     )
     args = parser.parse_args()
+    configure_workbench_logging("run_bench", args.exp or "all")
 
     runner = PipelineBenchmarkRunner()
     if args.exp:

@@ -19,6 +19,8 @@ from src.workbench.metrics import extract_storage_stats
 from src.workbench.experiments.base import PipelineExperimentDefinition
 from src.workbench.observability import CSVReportWriter, ProcessedFileManifest
 from src.workbench.runtime import (
+    ITERADEConfig,
+    ITERADEExtractionPatch,
     RadGraphXLConfig,
     RadGraphXLExtractionPatch,
     get_model_funcs,
@@ -183,6 +185,43 @@ class PipelineBenchmarkRunner:
                     ),
                 )
             )
+        elif exp_def.entity_relation_backend == "iter_ade":
+            extraction_patch = ITERADEExtractionPatch(
+                ITERADEConfig(
+                    model_name=exp_def.entity_relation_kwargs.get(
+                        "model_name", ENV.iter_model_name
+                    ),
+                    device=exp_def.entity_relation_kwargs.get(
+                        "device", ENV.iter_device
+                    ),
+                    split_chunks=bool(
+                        exp_def.entity_relation_kwargs.get(
+                            "split_chunks", ENV.iter_split_chunks
+                        )
+                    ),
+                    max_length=int(
+                        exp_def.entity_relation_kwargs.get(
+                            "max_length", ENV.iter_max_length
+                        )
+                    ),
+                    sentence_overlap=int(
+                        exp_def.entity_relation_kwargs.get(
+                            "sentence_overlap", ENV.iter_sentence_overlap
+                        )
+                    ),
+                    empty_cache_each_batch=bool(
+                        exp_def.entity_relation_kwargs.get(
+                            "empty_cache_each_batch",
+                            ENV.iter_empty_cache_each_batch,
+                        )
+                    ),
+                    debug_output=bool(
+                        exp_def.entity_relation_kwargs.get(
+                            "debug_output", ENV.iter_debug_output
+                        )
+                    ),
+                )
+            )
 
         input_path = Path(exp_def.input_dir_override or ENV.input_dir)
         if not input_path.exists():
@@ -222,8 +261,9 @@ class PipelineBenchmarkRunner:
         if extraction_patch is not None:
             extraction_patch.validate()
             logger.info(
-                "[%s] Using RadGraph-XL extraction backend with config=%s",
+                "[%s] Using %s extraction backend with config=%s",
                 exp_def.id,
+                exp_def.entity_relation_backend,
                 exp_def.entity_relation_kwargs,
             )
 
