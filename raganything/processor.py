@@ -531,29 +531,34 @@ class ProcessorMixin:
                 doc_id=doc_id,
             )
 
-        # Check multimodal processing status - handle LightRAG's early DocStatus.PROCESSED marking
+        # Check multimodal processing status using the dedicated multimodal_status store
+        # (kept separate from LightRAG's doc_status so the LightRAG Server API never
+        # encounters unknown fields when deserializing DocProcessingStatus objects)
         try:
+            multimodal_record = (
+                await self.multimodal_status.get_by_id(doc_id)
+                if self.multimodal_status is not None
+                else None
+            )
+            multimodal_processed = (
+                multimodal_record.get("multimodal_processed", False)
+                if multimodal_record
+                else False
+            )
+
+            if multimodal_processed:
+                self.logger.info(
+                    f"Document {doc_id} multimodal content is already processed"
+                )
+                return
+
             existing_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
             if existing_doc_status:
-                # Check if multimodal content is already processed
-                multimodal_processed = existing_doc_status.get(
-                    "multimodal_processed", False
-                )
-
-                if multimodal_processed:
-                    self.logger.info(
-                        f"Document {doc_id} multimodal content is already processed"
-                    )
-                    return
-
-                # Even if status is DocStatus.PROCESSED (text processing done),
-                # we still need to process multimodal content if not yet done
                 doc_status = existing_doc_status.get("status", "")
                 if doc_status == DocStatus.PROCESSED and not multimodal_processed:
                     self.logger.info(
                         f"Document {doc_id} text processing is complete, but multimodal content still needs processing"
                     )
-                    # Continue with multimodal processing
                 elif doc_status == DocStatus.PROCESSED and multimodal_processed:
                     self.logger.info(
                         f"Document {doc_id} is fully processed (text + multimodal)"
@@ -1407,20 +1412,18 @@ class ProcessorMixin:
             )
 
     async def _mark_multimodal_processing_complete(self, doc_id: str):
-        """Mark multimodal content processing as complete in the document status."""
+        """Mark multimodal content processing as complete in the dedicated multimodal_status store."""
         try:
-            current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
-            if current_doc_status:
-                await self.lightrag.doc_status.upsert(
+            if self.multimodal_status is not None:
+                await self.multimodal_status.upsert(
                     {
                         doc_id: {
-                            **current_doc_status,
                             "multimodal_processed": True,
                             "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                         }
                     }
                 )
-                await self.lightrag.doc_status.index_done_callback()
+                await self.multimodal_status.index_done_callback()
                 self.logger.debug(
                     f"Marked multimodal content processing as complete for document {doc_id}"
                 )
@@ -1445,7 +1448,17 @@ class ProcessorMixin:
                 return False
 
             text_processed = doc_status.get("status") == DocStatus.PROCESSED
-            multimodal_processed = doc_status.get("multimodal_processed", False)
+
+            multimodal_record = (
+                await self.multimodal_status.get_by_id(doc_id)
+                if self.multimodal_status is not None
+                else None
+            )
+            multimodal_processed = (
+                multimodal_record.get("multimodal_processed", False)
+                if multimodal_record
+                else False
+            )
 
             return text_processed and multimodal_processed
 
@@ -1477,7 +1490,17 @@ class ProcessorMixin:
                 }
 
             text_processed = doc_status.get("status") == DocStatus.PROCESSED
-            multimodal_processed = doc_status.get("multimodal_processed", False)
+
+            multimodal_record = (
+                await self.multimodal_status.get_by_id(doc_id)
+                if self.multimodal_status is not None
+                else None
+            )
+            multimodal_processed = (
+                multimodal_record.get("multimodal_processed", False)
+                if multimodal_record
+                else False
+            )
             fully_processed = text_processed and multimodal_processed
 
             return {
