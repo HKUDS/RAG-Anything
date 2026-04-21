@@ -1619,11 +1619,24 @@ class ProcessorMixin:
 
             if tasks:
                 results = await asyncio.gather(*tasks, return_exceptions=True)
-                for name, result in zip(task_names, results):
-                    if isinstance(result, Exception):
+                failures = [
+                    (name, result)
+                    for name, result in zip(task_names, results)
+                    if isinstance(result, BaseException)
+                ]
+                if failures:
+                    for name, result in failures:
                         self.logger.error(
                             f"{name} failed for {file_path}: {result}"
                         )
+                    primary_name, primary_exc = failures[0]
+                    if len(failures) > 1:
+                        other_names = ", ".join(name for name, _ in failures[1:])
+                        raise RuntimeError(
+                            f"{primary_name} failed for {file_path}: {primary_exc}; "
+                            f"additional failures in: {other_names}"
+                        ) from primary_exc
+                    raise primary_exc
 
         except Exception as exc:
             if callback_manager is not None:

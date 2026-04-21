@@ -57,7 +57,9 @@ async def test_text_and_multimodal_run_concurrently(processor):
 
 @pytest.mark.parametrize("failing_branch", ["text", "multimodal"])
 @pytest.mark.asyncio
-async def test_one_branch_failing_does_not_block_the_other(processor, failing_branch):
+async def test_one_branch_failing_lets_the_other_finish_then_raises(
+    processor, failing_branch
+):
     survived = False
 
     async def fake_parse(*args, **kwargs):
@@ -80,14 +82,60 @@ async def test_one_branch_failing_does_not_block_the_other(processor, failing_br
 
     processor.parse_document = fake_parse
     processor._process_multimodal_content = fake_process_multimodal
+    processor.callback_manager = MagicMock()
 
     with patch("raganything.processor.separate_content") as mock_sep, \
          patch("raganything.processor.insert_text_content", new=fake_insert_text):
         mock_sep.return_value = ("Hello", [{"type": "image", "data": "img"}])
 
-        await processor.process_document_complete("test.pdf")
+        with pytest.raises(RuntimeError, match="failed"):
+            await processor.process_document_complete("test.pdf")
 
-    assert survived, f"Non-failing branch should complete when {failing_branch} fails"
+    assert survived, (
+        f"Non-failing branch should still complete when {failing_branch} fails "
+        "(gather must not cancel the sibling)"
+    )
+
+    dispatched_events = [
+        call.args[0] for call in processor.callback_manager.dispatch.call_args_list
+    ]
+    assert "on_document_error" in dispatched_events, (
+        "on_document_error should fire when a branch fails"
+    )
+    assert "on_document_complete" not in dispatched_events, (
+        "on_document_complete must not fire when a branch fails (would silently "
+        "report a partially ingested document as successful)"
+    )
+
+
+@pytest.mark.asyncio
+async def test_both_branches_failing_raises_and_mentions_both(processor):
+    async def fake_parse(*args, **kwargs):
+        return [
+            {"type": "text", "text": "Hello"},
+            {"type": "image", "data": "img"},
+        ], "doc123"
+
+    async def fake_insert_text(*args, **kwargs):
+        raise RuntimeError("Text boom")
+
+    async def fake_process_multimodal(*args, **kwargs):
+        raise RuntimeError("Multimodal boom")
+
+    processor.parse_document = fake_parse
+    processor._process_multimodal_content = fake_process_multimodal
+
+    with patch("raganything.processor.separate_content") as mock_sep, \
+         patch("raganything.processor.insert_text_content", new=fake_insert_text):
+        mock_sep.return_value = ("Hello", [{"type": "image", "data": "img"}])
+
+        with pytest.raises(RuntimeError) as excinfo:
+            await processor.process_document_complete("test.pdf")
+
+    message = str(excinfo.value)
+    assert "additional failures" in message, (
+        "Aggregated error should indicate that more than one branch failed"
+    )
 
 
 @pytest.mark.asyncio
