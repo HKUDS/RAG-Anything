@@ -203,10 +203,14 @@ async def insert_text_content_with_multimodal_content(
         file_paths: single string of the file path or list of file paths, used for citation
         scheme_name: scheme name (optional)
     """
+    import inspect
+
     logger.info("Starting text content insertion into LightRAG...")
 
-    # Use LightRAG's insert method with all parameters
-    try:
+    sig = inspect.signature(lightrag.ainsert)
+    supports_multimodal = "multimodal_content" in sig.parameters
+
+    if supports_multimodal:
         await lightrag.ainsert(
             input=input,
             multimodal_content=multimodal_content,
@@ -216,10 +220,19 @@ async def insert_text_content_with_multimodal_content(
             ids=ids,
             scheme_name=scheme_name,
         )
-    except Exception as e:
-        logger.info(f"Error: {e}")
-        logger.info(
-            "If the error is caused by the ainsert function not having a multimodal content parameter, please update the raganything branch of lightrag"
+    else:
+        logger.warning(
+            "LightRAG.ainsert does not support multimodal_content; "
+            "falling back to text-only insertion. Upgrade to the RAGAnything "
+            "branch of LightRAG to enable full multimodal support."
+        )
+        await lightrag.ainsert(
+            input=input,
+            file_paths=file_paths,
+            split_by_character=split_by_character,
+            split_by_character_only=split_by_character_only,
+            ids=ids,
+            scheme_name=scheme_name,
         )
 
     logger.info("Text content insertion complete")
