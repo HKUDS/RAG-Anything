@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RAG-Anything 体验台</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --border: #2d3a4d;
+      --text: #e6edf3;
+      --muted: #8b9cb3;
+      --accent: #3d9cf5;
+      --accent-dim: #2563a8;
+      --ok: #3ecf8e;
+      --err: #f87171;
+      --font: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+    header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #152030 0%, var(--bg) 100%);
+    }
+    header h1 { margin: 0; font-size: 1.35rem; font-weight: 600; }
+    header p { margin: 0.35rem 0 0; color: var(--muted); font-size: 0.9rem; }
+    main { max-width: 920px; margin: 0 auto; padding: 1.5rem; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.25rem 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    section h2 {
+      margin: 0 0 1rem;
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: #c8d4e4;
+    }
+    label { display: block; font-size: 0.8rem; color: var(--muted); margin-bottom: 0.25rem; }
+    .row { display: grid; gap: 0.75rem; margin-bottom: 0.75rem; }
+    @media (min-width: 640px) {
+      .row.cols-2 { grid-template-columns: 1fr 1fr; }
+    }
+    input[type="text"], input[type="password"], input[type="file"], select, textarea {
+      width: 100%;
+      padding: 0.5rem 0.65rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0d1117;
+      color: var(--text);
+      font-size: 0.9rem;
+    }
+    textarea { min-height: 88px; resize: vertical; font-family: ui-monospace, monospace; }
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 6px;
+      padding: 0.55rem 1rem;
+      font-size: 0.9rem;
+      font-weight: 500;
+      background: var(--accent);
+      color: #fff;
+    }
+    button:hover { background: var(--accent-dim); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.75rem; }
+    .pill {
+      display: inline-block;
+      padding: 0.2rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .pill.ok { background: rgba(62, 207, 142, 0.15); color: var(--ok); }
+    .pill.bad { background: rgba(248, 113, 113, 0.12); color: var(--err); }
+    .pill.neutral { background: rgba(139, 156, 179, 0.15); color: var(--muted); }
+    #statusLine { font-size: 0.85rem; margin-top: 0.5rem; color: var(--muted); }
+    .answer {
+      margin-top: 0.75rem;
+      padding: 0.85rem;
+      border-radius: 8px;
+      background: #0d1117;
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+      font-size: 0.88rem;
+      max-height: 420px;
+      overflow: auto;
+    }
+    .hint { font-size: 0.8rem; color: var(--muted); margin-top: 0.5rem; }
+    .inline { display: flex; align-items: center; gap: 0.5rem; margin-top: 0.5rem; }
+    .inline input { width: auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>RAG-Anything 体验台</h1>
+    <p>本地网页：连接模型 → 上传文档入库 → 文本 / 多模态问答（需已安装 MinerU 等解析依赖）</p>
+  </header>
+  <main>
+    <section>
+      <h2>服务状态</h2>
+      <div>
+        <span id="pillInit" class="pill neutral">未连接</span>
+        <span id="pillParser" class="pill neutral">解析器</span>
+      </div>
+      <div id="statusLine"></div>
+    </section>
+
+    <section>
+      <h2>1. 连接模型</h2>
+      <p class="hint">API Key 可留空，此时使用环境变量 <code>OPENAI_API_KEY</code>；Base URL 留空则用 <code>OPENAI_BASE_URL</code> 或官方地址。</p>
+      <div class="row cols-2">
+        <div>
+          <label for="apiKey">API Key</label>
+          <input type="password" id="apiKey" autocomplete="off" placeholder="sk-..." />
+        </div>
+        <div>
+          <label for="baseUrl">Base URL（可选）</label>
+          <input type="text" id="baseUrl" placeholder="https://api.openai.com/v1" />
+        </div>
+      </div>
+      <div class="row cols-2">
+        <div>
+          <label for="llmModel">对话模型</label>
+          <input type="text" id="llmModel" value="gpt-4o-mini" />
+        </div>
+        <div>
+          <label for="visionModel">视觉模型（图 / VLM）</label>
+          <input type="text" id="visionModel" value="gpt-4o" />
+        </div>
+      </div>
+      <div class="row cols-2">
+        <div>
+          <label for="embModel">Embedding 模型</label>
+          <input type="text" id="embModel" value="text-embedding-3-large" />
+        </div>
+        <div>
+          <label for="embDim">Embedding 维度</label>
+          <input type="text" id="embDim" value="3072" />
+        </div>
+      </div>
+      <div class="row cols-2">
+        <div>
+          <label for="workingDir">工作目录（图谱与向量）</label>
+          <input type="text" id="workingDir" value="./rag_storage_web" />
+        </div>
+        <div>
+          <label for="outputDir">解析输出目录</label>
+          <input type="text" id="outputDir" value="./output_web" />
+        </div>
+      </div>
+      <div class="row cols-2">
+        <div>
+          <label for="parser">解析器</label>
+          <select id="parser">
+            <option value="mineru">mineru</option>
+            <option value="docling">docling</option>
+            <option value="paddleocr">paddleocr</option>
+          </select>
+        </div>
+        <div>
+          <label for="parseMethod">解析方式</label>
+          <select id="parseMethod">
+            <option value="auto">auto</option>
+            <option value="ocr">ocr</option>
+            <option value="txt">txt</option>
+          </select>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button type="button" id="btnConnect">连接并初始化</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>2. 上传文档</h2>
+      <label for="fileInput">选择文件（PDF / Office / 图片等，与 README 中扩展名一致）</label>
+      <input type="file" id="fileInput" />
+      <div class="btn-row">
+        <button type="button" id="btnUpload" disabled>解析并写入知识库</button>
+      </div>
+      <p class="hint" id="uploadHint">请先完成「连接模型」。</p>
+    </section>
+
+    <section>
+      <h2>3. 文本问答</h2>
+      <label for="qText">问题</label>
+      <textarea id="qText" placeholder="例如：这篇文档的主要内容是什么？"></textarea>
+      <div class="row cols-2">
+        <div>
+          <label for="qMode">检索模式</label>
+          <select id="qMode">
+            <option value="hybrid">hybrid</option>
+            <option value="local">local</option>
+            <option value="global">global</option>
+            <option value="mix">mix</option>
+            <option value="naive">naive</option>
+          </select>
+        </div>
+        <div class="inline" style="align-self: end;">
+          <input type="checkbox" id="vlmToggle" />
+          <label for="vlmToggle" style="margin:0">VLM 增强（需视觉模型可用）</label>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button type="button" id="btnQuery" disabled>提问</button>
+      </div>
+      <div id="answerText" class="answer" hidden></div>
+    </section>
+
+    <section>
+      <h2>4. 多模态问答（表格 / 公式）</h2>
+      <label for="mqQuestion">问题</label>
+      <textarea id="mqQuestion" placeholder="结合下方附加内容与知识库回答"></textarea>
+      <div class="row cols-2">
+        <div>
+          <label for="mqType">附加类型</label>
+          <select id="mqType">
+            <option value="table">表格（CSV 文本）</option>
+            <option value="equation">公式（LaTeX）</option>
+          </select>
+        </div>
+        <div>
+          <label for="mqMode">检索模式</label>
+          <select id="mqMode">
+            <option value="hybrid">hybrid</option>
+            <option value="local">local</option>
+            <option value="global">global</option>
+            <option value="mix">mix</option>
+            <option value="naive">naive</option>
+          </select>
+        </div>
+      </div>
+      <div id="tableFields">
+        <label for="tableCsv">表格数据（CSV）</label>
+        <textarea id="tableCsv" placeholder="列1,列2&#10;A,1"></textarea>
+        <label for="tableCap">表题（可选）</label>
+        <input type="text" id="tableCap" />
+      </div>
+      <div id="eqFields" hidden>
+        <label for="latexIn">LaTeX</label>
+        <textarea id="latexIn" placeholder="E = mc^2"></textarea>
+        <label for="eqCap">说明（可选）</label>
+        <input type="text" id="eqCap" />
+      </div>
+      <div class="btn-row">
+        <button type="button" id="btnMq" disabled>多模态提问</button>
+      </div>
+      <div id="answerMq" class="answer" hidden></div>
+    </section>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+
+    async function refreshStatus() {
+      try {
+        const r = await fetch("/api/status");
+        const d = await r.json();
+        $("pillInit").textContent = d.initialized ? "已连接" : "未连接";
+        $("pillInit").className = "pill " + (d.initialized ? "ok" : "neutral");
+        if (d.parser_ok === true) {
+          $("pillParser").textContent = "解析器可用";
+          $("pillParser").className = "pill ok";
+        } else if (d.parser_ok === false) {
+          $("pillParser").textContent = "解析器异常";
+          $("pillParser").className = "pill bad";
+        } else {
+          $("pillParser").textContent = "解析器";
+          $("pillParser").className = "pill neutral";
+        }
+        let line = "";
+        if (d.working_dir) line += "工作目录: " + d.working_dir + " · ";
+        if (d.last_error) line += "上次错误: " + d.last_error;
+        $("statusLine").textContent = line || (d.env_has_api_key ? "检测到环境变量中的 API Key。" : "");
+        $("btnUpload").disabled = !d.initialized;
+        $("btnQuery").disabled = !d.initialized;
+        $("btnMq").disabled = !d.initialized;
+        $("uploadHint").textContent = d.initialized
+          ? "上传后需等待解析与入库完成（大文件可能较久）。"
+          : "请先完成「连接模型」。";
+      } catch (e) {
+        $("statusLine").textContent = "无法连接后端，请确认已启动 uvicorn。";
+      }
+    }
+
+    $("btnConnect").onclick = async () => {
+      const body = {
+        api_key: $("apiKey").value.trim(),
+        base_url: $("baseUrl").value.trim() || null,
+        llm_model: $("llmModel").value.trim(),
+        vision_model: $("visionModel").value.trim(),
+        embedding_model: $("embModel").value.trim(),
+        embedding_dim: parseInt($("embDim").value, 10) || 3072,
+        working_dir: $("workingDir").value.trim(),
+        output_dir: $("outputDir").value.trim(),
+        parser: $("parser").value,
+        parse_method: $("parseMethod").value,
+      };
+      $("btnConnect").disabled = true;
+      try {
+        const r = await fetch("/api/configure", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(d.detail || r.statusText);
+        alert("初始化成功。");
+      } catch (e) {
+        alert("初始化失败: " + e.message);
+      } finally {
+        $("btnConnect").disabled = false;
+        refreshStatus();
+      }
+    };
+
+    $("btnUpload").onclick = async () => {
+      const f = $("fileInput").files[0];
+      if (!f) { alert("请选择文件"); return; }
+      const fd = new FormData();
+      fd.append("file", f);
+      fd.append("parse_method", $("parseMethod").value);
+      $("btnUpload").disabled = true;
+      try {
+        const r = await fetch("/api/upload", { method: "POST", body: fd });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail));
+        alert("已处理: " + (d.original_name || ""));
+      } catch (e) {
+        alert("上传失败: " + e.message);
+      } finally {
+        $("btnUpload").disabled = false;
+        refreshStatus();
+      }
+    };
+
+    $("btnQuery").onclick = async () => {
+      const body = {
+        question: $("qText").value.trim(),
+        mode: $("qMode").value,
+      };
+      if ($("vlmToggle").checked) body.vlm_enhanced = true;
+      if (!body.question) { alert("请输入问题"); return; }
+      $("btnQuery").disabled = true;
+      try {
+        const r = await fetch("/api/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail));
+        $("answerText").hidden = false;
+        $("answerText").textContent = d.answer || "";
+      } catch (e) {
+        alert("查询失败: " + e.message);
+      } finally {
+        $("btnQuery").disabled = false;
+        refreshStatus();
+      }
+    };
+
+    $("mqType").onchange = () => {
+      const t = $("mqType").value;
+      $("tableFields").hidden = t !== "table";
+      $("eqFields").hidden = t !== "equation";
+    };
+
+    $("btnMq").onclick = async () => {
+      const t = $("mqType").value;
+      const body = {
+        question: $("mqQuestion").value.trim(),
+        mode: $("mqMode").value,
+        content_type: t,
+        table_csv: t === "table" ? $("tableCsv").value : null,
+        table_caption: $("tableCap").value,
+        latex: t === "equation" ? $("latexIn").value : null,
+        equation_caption: $("eqCap").value,
+      };
+      if (!body.question) { alert("请输入问题"); return; }
+      $("btnMq").disabled = true;
+      try {
+        const r = await fetch("/api/query_multimodal", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(typeof d.detail === "string" ? d.detail : JSON.stringify(d.detail));
+        $("answerMq").hidden = false;
+        $("answerMq").textContent = d.answer || "";
+      } catch (e) {
+        alert("查询失败: " + e.message);
+      } finally {
+        $("btnMq").disabled = false;
+      }
+    };
+
+    refreshStatus();
+    setInterval(refreshStatus, 8000);
+  </script>
+</body>
+</html>
