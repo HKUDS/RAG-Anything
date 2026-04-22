@@ -83,6 +83,7 @@ class EnvConfig:
 
     # ITER + ADE extraction settings
     iter_model_name: str = os.getenv("ITER_MODEL_NAME", "fleonce/iter-ade-deberta-large")
+    iter_scierc_model_name: str = os.getenv("ITER_SCIERC_MODEL_NAME", "fleonce/iter-scierc-deberta-large")
     iter_device: str = os.getenv("ITER_DEVICE", "cuda")
     iter_split_chunks: bool = os.getenv("ITER_SPLIT_CHUNKS", "true").lower() in ("1", "true", "yes", "on")
     iter_max_length: int = int(os.getenv("ITER_MAX_LENGTH", 512))

@@ -152,3 +152,39 @@ PIPELINE_EXPERIMENTS["exp6_medical_scope_mineru_ollama_iter_ade"] = PipelineExpe
     ),
     tags=["pipeline", "medical", "mineru_cloud", "ollama", "iter", "iter-ade", "ner"],
 )
+
+PIPELINE_EXPERIMENTS["exp7_medical_scope_mineru_ollama_iter_scierc"] = PipelineExperimentDefinition(
+    id="exp7_medical_scope_mineru_ollama_iter_scierc",
+    description=(
+        "Medical-domain pipeline using MinerU cloud parsing and ITER + SciERC checkpoint "
+        "for entity/relation extraction over textified multimodal chunks."
+    ),
+    category="pipeline",
+    metric_plan=PIPELINE_METRIC_PLAN,
+    profile_name="medical",
+    provider="ollama",
+    parser=mineru_cloud_preset.parser,
+    parse_method=mineru_cloud_preset.parse_method,
+    input_dir_override=shared_input_dir,
+    parser_kwargs=dict(mineru_cloud_preset.parser_kwargs),
+    entity_relation_backend="iter_scierc",
+    entity_relation_kwargs={
+        "model_name": ENV.iter_scierc_model_name,
+        "device": ENV.iter_device,
+        "split_chunks": ENV.iter_split_chunks,
+        "max_length": ENV.iter_max_length,
+        "sentence_overlap": ENV.iter_sentence_overlap,
+        "empty_cache_each_batch": ENV.iter_empty_cache_each_batch,
+        "debug_output": ENV.iter_debug_output,
+    },
+    use_gliner=medical_profile.use_gliner,
+    gliner_labels=list(medical_profile.gliner_labels),
+    lightrag_kwargs=dict(medical_profile.lightrag_kwargs),
+    raganything_kwargs=dict(medical_profile.raganything_kwargs),
+    custom_prompts=dict(medical_profile.custom_prompts),
+    notes=(
+        "Variant-2 NER/RE experiment: keep current MinerU multimodal-to-text flow, "
+        "but replace LightRAG LLM extraction with ITER + SciERC checkpoint on the final text chunks."
+    ),
+    tags=["pipeline", "medical", "mineru_cloud", "ollama", "iter", "iter-scierc", "ner"],
+)

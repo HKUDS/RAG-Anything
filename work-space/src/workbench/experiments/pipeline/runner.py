@@ -185,7 +185,7 @@ class PipelineBenchmarkRunner:
                     ),
                 )
             )
-        elif exp_def.entity_relation_backend == "iter_ade":
+        elif exp_def.entity_relation_backend in {"iter_ade", "iter_scierc"}:
             extraction_patch = ITERADEExtractionPatch(
                 ITERADEConfig(
                     model_name=exp_def.entity_relation_kwargs.get(

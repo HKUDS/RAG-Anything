@@ -84,6 +84,12 @@ QA cho riêng `exp6` và append vào report hiện có:
 python run_pipeline_qa_eval.py --exp exp6_medical_scope_mineru_ollama_iter_ade
 ```
 
+QA cho riêng `exp7` và append vào report hiện có:
+
+```bash
+python run_pipeline_qa_eval.py --exp exp7_medical_scope_mineru_ollama_iter_scierc
+```
+
 Retrieval:
 
 ```bash
@@ -100,6 +106,12 @@ Retrieval cho riêng `exp6` và append vào report hiện có:
 
 ```bash
 python run_retrieval_bench.py --base-exp exp6_medical_scope_mineru_ollama_iter_ade
+```
+
+Retrieval cho riêng `exp7` và append vào report hiện có:
+
+```bash
+python run_retrieval_bench.py --base-exp exp7_medical_scope_mineru_ollama_iter_scierc
 ```
 
 Pruning:
@@ -120,7 +132,13 @@ Pruning cho riêng `exp6` và append vào report hiện có:
 python run_pruning_bench.py --base-exp exp6_medical_scope_mineru_ollama_iter_ade
 ```
 
-Nếu chạy `exp6`, cần cài thêm ITER:
+Pruning cho riêng `exp7` và append vào report hiện có:
+
+```bash
+python run_pruning_bench.py --base-exp exp7_medical_scope_mineru_ollama_iter_scierc
+```
+
+Nếu chạy `exp6` hoặc `exp7`, cần cài thêm ITER:
 
 ```bash
 /mnt/disk1/aiotlab/envs/raganything/bin/pip install git+https://github.com/fleonce/iter

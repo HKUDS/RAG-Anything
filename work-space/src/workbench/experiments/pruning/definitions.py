@@ -9,6 +9,7 @@ BASE_PIPELINE_EXPERIMENTS = [
     "exp4_medical_scope_mineru_ollama",
     "exp5_medical_scope_mineru_ollama_radgraph_xl",
     "exp6_medical_scope_mineru_ollama_iter_ade",
+    "exp7_medical_scope_mineru_ollama_iter_scierc",
 ]
 
 PRUNING_METHODS = [
