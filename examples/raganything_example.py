@@ -105,6 +105,9 @@ async def process_with_rag(
         working_dir: Working directory for RAG storage
     """
     try:
+        llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+        vision_model = os.getenv("VISION_MODEL", "gpt-4o")
+
         # Create RAGAnything configuration
         config = RAGAnythingConfig(
             working_dir=working_dir or "./rag_storage",
@@ -118,7 +121,7 @@ async def process_with_rag(
         # Define LLM model function
         def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
             return openai_complete_if_cache(
-                "gpt-4o-mini",
+                llm_model,
                 prompt,
                 system_prompt=system_prompt,
                 history_messages=history_messages,
@@ -139,7 +142,7 @@ async def process_with_rag(
             # If messages format is provided (for multimodal VLM enhanced query), use it directly
             if messages:
                 return openai_complete_if_cache(
-                    "gpt-4o",
+                    vision_model,
                     "",
                     system_prompt=None,
                     history_messages=[],
@@ -151,7 +154,7 @@ async def process_with_rag(
             # Traditional single image format
             elif image_data:
                 return openai_complete_if_cache(
-                    "gpt-4o",
+                    vision_model,
                     "",
                     system_prompt=None,
                     history_messages=[],
@@ -274,7 +277,10 @@ def main():
         "--working_dir", "-w", default="./rag_storage", help="Working directory path"
     )
     parser.add_argument(
-        "--output", "-o", default="./output", help="Output directory path"
+        "--output",
+        "-o",
+        default=os.getenv("OUTPUT_DIR", "./output"),
+        help="Output directory path",
     )
     parser.add_argument(
         "--api-key",

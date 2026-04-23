@@ -20,6 +20,7 @@ import uuid
 from pathlib import Path
 from typing import Any, Optional
 
+import numpy as np
 from dotenv import load_dotenv
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -52,18 +53,31 @@ def _abs_workspace_path(path_str: str) -> str:
 class ConfigureBody(BaseModel):
     api_key: str = Field(
         default="",
-        description="OpenAI-compatible API key; if empty, OPENAI_API_KEY env is used.",
+        description=(
+            "OpenAI-compatible API key; if empty, OPENAI_API_KEY/LLM_BINDING_API_KEY env is used."
+        ),
     )
     base_url: Optional[str] = None
-    llm_model: str = Field(default_factory=lambda: os.getenv("LLM_MODEL", "gpt-4o-mini"))
+    llm_model: str = Field(
+        default_factory=lambda: os.getenv("LLM_MODEL", "qwen2.5-omni-7b")
+    )
     vision_model: str = Field(
-        default_factory=lambda: os.getenv("VISION_MODEL", "gpt-4o")
+        default_factory=lambda: os.getenv("VISION_MODEL", "qwen2.5-omni-7b")
+    )
+    embedding_binding: str = Field(
+        default_factory=lambda: os.getenv("EMBEDDING_BINDING", "dashscope_mm")
+    )
+    dashscope_api_key: str = Field(
+        default="",
+        description="Optional DashScope API key for embedding_binding=dashscope_mm.",
     )
     embedding_model: str = Field(
-        default_factory=lambda: os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
+        default_factory=lambda: os.getenv(
+            "EMBEDDING_MODEL", "tongyi-embedding-vision-flash-2026-03-06"
+        )
     )
     embedding_dim: int = Field(
-        default_factory=lambda: int(os.getenv("EMBEDDING_DIM", "3072"))
+        default_factory=lambda: int(os.getenv("EMBEDDING_DIM", "768"))
     )
     working_dir: str = Field(
         default_factory=lambda: os.getenv("WORKING_DIR", "./rag_storage_web")
@@ -119,12 +133,21 @@ async def _lifespan(_: FastAPI):
 
 
 def _build_rag_from_config(body: ConfigureBody) -> RAGAnything:
-    api_key = (body.api_key or "").strip() or (os.getenv("OPENAI_API_KEY") or "").strip()
+    api_key = (
+        (body.api_key or "").strip()
+        or (os.getenv("OPENAI_API_KEY") or "").strip()
+        or (os.getenv("LLM_BINDING_API_KEY") or "").strip()
+    )
     if not api_key:
         raise ValueError(
-            "缺少 API Key：请在页面填写，或设置环境变量 OPENAI_API_KEY。"
+            "缺少 API Key：请在页面填写，或设置环境变量 OPENAI_API_KEY/LLM_BINDING_API_KEY。"
         )
-    base_url = (body.base_url or "").strip() or os.getenv("OPENAI_BASE_URL") or None
+    base_url = (
+        (body.base_url or "").strip()
+        or os.getenv("OPENAI_BASE_URL")
+        or os.getenv("LLM_BINDING_HOST")
+        or None
+    )
     if base_url == "":
         base_url = None
     working_dir = _abs_workspace_path(body.working_dir)
@@ -197,16 +220,90 @@ def _build_rag_from_config(body: ConfigureBody) -> RAGAnything:
             )
         return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
 
-    embedding_func = EmbeddingFunc(
-        embedding_dim=body.embedding_dim,
-        max_token_size=8192,
-        func=lambda texts: openai_embed.func(
-            texts,
-            model=body.embedding_model,
-            api_key=api_key,
-            base_url=base_url,
-        ),
-    )
+    embedding_binding = (body.embedding_binding or "openai_compatible").strip().lower()
+
+    def _extract_dashscope_vectors(resp: Any) -> np.ndarray:
+        status_code = getattr(resp, "status_code", None)
+        if status_code is None and isinstance(resp, dict):
+            status_code = resp.get("status_code")
+        if status_code not in (None, 200):
+            msg = getattr(resp, "message", None)
+            if not msg and isinstance(resp, dict):
+                msg = resp.get("message") or resp.get("code")
+            raise RuntimeError(f"DashScope embedding request failed: {msg or status_code}")
+
+        output = getattr(resp, "output", None)
+        if output is None and isinstance(resp, dict):
+            output = resp.get("output")
+
+        items = None
+        if isinstance(output, dict):
+            items = output.get("embeddings") or output.get("data")
+        elif output is not None:
+            items = getattr(output, "embeddings", None) or getattr(output, "data", None)
+        if items is None and isinstance(resp, dict):
+            items = resp.get("embeddings")
+
+        vectors: list[list[float]] = []
+        if items:
+            for item in items:
+                vec = None
+                if isinstance(item, dict):
+                    vec = item.get("embedding") or item.get("vector")
+                else:
+                    vec = getattr(item, "embedding", None) or getattr(item, "vector", None)
+                if vec:
+                    vectors.append(vec)
+
+        if not vectors:
+            raise RuntimeError("DashScope embedding response missing vectors")
+        # LightRAG embedding pipeline expects numpy arrays (uses `.size`).
+        return np.asarray(vectors, dtype=np.float32)
+
+    if embedding_binding == "dashscope_mm":
+        dashscope_api_key = (
+            (body.dashscope_api_key or "").strip()
+            or (os.getenv("DASHSCOPE_API_KEY") or "").strip()
+            or api_key
+        )
+        if not dashscope_api_key:
+            raise ValueError(
+                "embedding_binding=dashscope_mm 时需要 DashScope API Key。"
+            )
+        dashscope_model = (
+            (body.embedding_model or "").strip()
+            or "tongyi-embedding-vision-flash-2026-03-06"
+        )
+
+        async def dashscope_mm_embed(texts: list[str]) -> np.ndarray:
+            def _call():
+                import dashscope
+
+                dashscope.api_key = dashscope_api_key
+                return dashscope.MultiModalEmbedding.call(
+                    model=dashscope_model,
+                    input=[{"text": t} for t in texts],
+                )
+
+            resp = await asyncio.to_thread(_call)
+            return _extract_dashscope_vectors(resp)
+
+        embedding_func = EmbeddingFunc(
+            embedding_dim=body.embedding_dim,
+            max_token_size=8192,
+            func=dashscope_mm_embed,
+        )
+    else:
+        embedding_func = EmbeddingFunc(
+            embedding_dim=body.embedding_dim,
+            max_token_size=8192,
+            func=lambda texts: openai_embed.func(
+                texts,
+                model=body.embedding_model,
+                api_key=api_key,
+                base_url=base_url,
+            ),
+        )
 
     cfg = RAGAnythingConfig(
         working_dir=working_dir,
@@ -261,7 +358,11 @@ async def api_status():
         "parser_ok": parser_ok,
         "last_error": state.last_init_error,
         "working_dir": state.rag.config.working_dir if state.rag else None,
-        "env_has_api_key": bool(os.getenv("OPENAI_API_KEY", "").strip()),
+        "env_has_api_key": bool(
+            os.getenv("OPENAI_API_KEY", "").strip()
+            or os.getenv("LLM_BINDING_API_KEY", "").strip()
+            or os.getenv("DASHSCOPE_API_KEY", "").strip()
+        ),
     }
 
 
