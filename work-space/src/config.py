@@ -58,6 +58,18 @@ class EnvConfig:
     pruning_default_algorithm: str = os.getenv("PRUNING_DEFAULT_ALGORITHM", "hybrid")
     pruning_benchmark_report: str = os.getenv("PRUNING_BENCHMARK_REPORT", "./benchmark_outputs/reports/pruning_benchmark.csv")
     gold_dataset_file: str = os.getenv("GOLD_DATASET_FILE", "./benchmark_outputs/reports/gold_dataset.json")
+    pruning_embedding_model: str = os.getenv(
+        "PRUNING_EMBEDDING_MODEL",
+        os.getenv("OPENAI_EMBED_MODEL", "text-embedding-3-large"),
+    )
+    pruning_embedding_provider: str = os.getenv("PRUNING_EMBEDDING_PROVIDER", "auto")
+    pruning_embedding_cache_file: str = os.getenv(
+        "PRUNING_EMBEDDING_CACHE_FILE",
+        "./benchmark_outputs/reports/pruning_embedding_cache.json",
+    )
+    pruning_semantic_seed_ratio: float = float(os.getenv("PRUNING_SEMANTIC_SEED_RATIO", 0.60))
+    pruning_semantic_mmr_lambda: float = float(os.getenv("PRUNING_SEMANTIC_MMR_LAMBDA", 0.75))
+    pruning_semantic_max_extra_edges: int = int(os.getenv("PRUNING_SEMANTIC_MAX_EXTRA_EDGES", 12))
 
     # Query settings
     query_default_mode: str = os.getenv("QUERY_DEFAULT_MODE", "mix")

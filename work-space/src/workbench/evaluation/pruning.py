@@ -14,6 +14,7 @@ from pyvis.network import Network
 
 from src.config import ENV
 from src.pruning.algorithms import prune_baseline, prune_hybrid
+from src.pruning.semantic_summary import EmbeddingSemanticSummarizer, SemanticSummaryConfig
 from src.workbench.experiments.pipeline.definitions import PIPELINE_EXPERIMENTS
 from src.workbench.experiments.pruning.definitions import PRUNING_EXPERIMENTS
 from src.workbench.judging import build_openai_pruning_client
@@ -593,8 +594,17 @@ class PrunedGraphBuilder:
         graph: nx.Graph,
         selected_node_ids: list[str],
         merge_groups: list[dict[str, Any]],
+        edge_allowlist: set[tuple[str, str]] | None = None,
     ) -> tuple[nx.Graph, set[str]]:
         selected_graph = graph.subgraph(selected_node_ids).copy()
+        if edge_allowlist is not None:
+            removable_edges = []
+            for source, target in selected_graph.edges():
+                edge_key = tuple(sorted((str(source), str(target))))
+                if edge_key not in edge_allowlist:
+                    removable_edges.append((source, target))
+            if removable_edges:
+                selected_graph.remove_edges_from(removable_edges)
         retained_source_nodes = set(selected_graph.nodes())
         if not merge_groups:
             return selected_graph, retained_source_nodes
@@ -846,6 +856,7 @@ class PruningBenchmarkEvaluator:
             context = self.context_builder.load_context(exp_def.base_experiment_id)
             candidate_rows, ordered_candidate_ids = CandidatePoolBuilder(context).build(exp_def.candidate_pool_size)
 
+            edge_allowlist: set[tuple[str, str]] | None = None
             if exp_def.pruning_method == "baseline":
                 selected_ids, debug_info = PruningMethodSuite.baseline(context.graph, exp_def.top_k)
                 merge_groups: list[dict[str, Any]] = []
@@ -860,6 +871,47 @@ class PruningBenchmarkEvaluator:
                     exp_def.top_k,
                     context.evidence_nodes,
                 )
+                merge_groups = []
+                llm_response = None
+            elif exp_def.pruning_method == "embedding_semantic_summary":
+                provider = ENV.pruning_embedding_provider.lower()
+                if provider == "openai":
+                    model = ENV.pruning_embedding_model
+                    api_key = ENV.openai_api_key
+                    base_url = None
+                elif provider == "ollama":
+                    model = ENV.ollama_embed
+                    api_key = ENV.ollama_api_key
+                    base_url = ENV.ollama_base_url
+                else:
+                    if ENV.openai_api_key:
+                        model = ENV.pruning_embedding_model
+                        api_key = ENV.openai_api_key
+                        base_url = None
+                    else:
+                        model = ENV.ollama_embed
+                        api_key = ENV.ollama_api_key
+                        base_url = ENV.ollama_base_url
+                summarizer = EmbeddingSemanticSummarizer(
+                    SemanticSummaryConfig(
+                        model=model,
+                        api_key=api_key,
+                        base_url=base_url,
+                        cache_file=Path(ENV.pruning_embedding_cache_file),
+                        seed_ratio=ENV.pruning_semantic_seed_ratio,
+                        mmr_lambda=ENV.pruning_semantic_mmr_lambda,
+                        max_extra_edges=ENV.pruning_semantic_max_extra_edges,
+                    )
+                )
+                semantic_result = await summarizer.summarize(
+                    graph=context.graph,
+                    candidate_rows=candidate_rows,
+                    top_k=exp_def.top_k,
+                    evidence_nodes=context.evidence_nodes,
+                )
+                selected_ids = semantic_result.selected_node_ids
+                edge_allowlist = semantic_result.edge_allowlist
+                debug_info = semantic_result.debug_info
                 merge_groups = []
                 llm_response = None
             elif exp_def.pruning_method == "llm_strict_topk":
@@ -889,6 +941,7 @@ class PruningBenchmarkEvaluator:
                 context.graph,
                 selected_ids,
                 merge_groups,
+                edge_allowlist=edge_allowlist,
             )
 
             merge_safety = GraphPruningMetrics.merge_safety(merge_groups)
@@ -940,6 +993,7 @@ class PruningBenchmarkEvaluator:
                 "selected_source_node_ids": selected_ids,
                 "selected_display_nodes": selected_node_records,
                 "merge_groups": merge_groups,
+                "edge_allowlist": sorted([list(edge) for edge in edge_allowlist]) if edge_allowlist else [],
                 "llm_response": llm_response,
                 "debug_info": debug_info,
                 "metrics": {

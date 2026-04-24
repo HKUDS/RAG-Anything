@@ -28,6 +28,7 @@ Thư mục `work-space/` là nơi chạy toàn bộ benchmark và dashboard cho 
 5. `Pruning benchmark`
 - chọn `display graph` gọn cho FE
 - không sửa graph/storage gốc
+- hiện có thêm method `embedding_semantic_summary` bám paper semantic-summary + linking
 
 6. `Postprocess graph`
 - tài liệu giải thích phần graph FE và pruning

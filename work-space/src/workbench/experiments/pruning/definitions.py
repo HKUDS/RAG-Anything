@@ -16,6 +16,7 @@ PRUNING_METHODS = [
     ("baseline", "baseline_degree_pagerank"),
     ("hybrid", "hybrid_community_centrality"),
     ("personalized_pagerank", "personalized_pagerank_document_aware"),
+    ("embedding_semantic_summary", "embedding_semantic_summary_with_approximate_linking"),
     ("llm_strict_topk", "llm_strict_topk"),
     ("llm_strict_topk_safe_merge", "llm_strict_topk_safe_merge"),
 ]
