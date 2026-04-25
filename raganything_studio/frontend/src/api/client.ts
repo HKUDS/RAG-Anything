@@ -5,9 +5,11 @@ import type {
   ContentListResponse,
   DocumentRecord,
   EnvironmentResponse,
+  GraphLabelsResponse,
   InstallDepRequest,
   InstallDepResponse,
   JobRecord,
+  KnowledgeGraphResponse,
   ModelListRequest,
   ModelListResponse,
   ProcessOptions,
@@ -118,4 +120,20 @@ export async function installDep(payload: InstallDepRequest): Promise<InstallDep
 
 export async function browseDir(path: string): Promise<BrowseDirResponse> {
   return request<BrowseDirResponse>(`/api/settings/browse-dir?path=${encodeURIComponent(path)}`)
+}
+
+export async function getGraphLabels(profileId?: string | null): Promise<GraphLabelsResponse> {
+  const params = profileId ? `?profile_id=${encodeURIComponent(profileId)}` : ''
+  return request<GraphLabelsResponse>(`/api/graph/labels${params}`)
+}
+
+export async function getGraphSubgraph(
+  nodeLabel: string,
+  maxDepth = 3,
+  maxNodes = 200,
+  profileId?: string | null,
+): Promise<KnowledgeGraphResponse> {
+  const params = new URLSearchParams({ node_label: nodeLabel, max_depth: String(maxDepth), max_nodes: String(maxNodes) })
+  if (profileId) params.set('profile_id', profileId)
+  return request<KnowledgeGraphResponse>(`/api/graph/subgraph?${params}`)
 }

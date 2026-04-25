@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from raganything_studio.backend.api import documents, health, jobs, query, settings
+from raganything_studio.backend.api import documents, graph, health, jobs, query, settings
 from raganything_studio.backend.dependencies import settings as studio_settings
 
 
@@ -27,6 +27,7 @@ def create_app() -> FastAPI:
     app.include_router(jobs.router, prefix="/api/jobs", tags=["jobs"])
     app.include_router(query.router, prefix="/api/query", tags=["query"])
     app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
+    app.include_router(graph.router, prefix="/api/graph", tags=["graph"])
 
     static_dir = studio_settings.static_dir
     assets_dir = static_dir / "assets"

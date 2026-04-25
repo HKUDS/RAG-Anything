@@ -231,7 +231,11 @@ class RAGAnythingService:
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        effective = _effective_options(self._settings, options)
+        effective = _effective_options(self._settings, options) if options is not None else None
+        _llm_concurrency = (effective.llm_max_concurrency if effective is not None else None) or self._settings.llm_max_concurrency
+        _vlm_concurrency = (effective.vlm_max_concurrency if effective is not None else None) or self._settings.vlm_max_concurrency
+        _emb_concurrency = (effective.embedding_max_concurrency if effective is not None else None) or self._settings.embedding_max_concurrency
+        _emb_batch = (effective.embedding_batch_size if effective is not None else None) or self._settings.embedding_batch_size
 
         def llm_model_func(
             prompt: str,
@@ -241,7 +245,7 @@ class RAGAnythingService:
         ) -> Any:
             return self._call_model_with_limits(
                 "llm",
-                effective.llm_max_concurrency or self._settings.llm_max_concurrency,
+                _llm_concurrency,
                 effective,
                 lambda: openai_complete_if_cache(
                 profile.llm.model,
@@ -265,7 +269,7 @@ class RAGAnythingService:
             if messages:
                 return self._call_model_with_limits(
                     "vlm",
-                    effective.vlm_max_concurrency or self._settings.vlm_max_concurrency,
+                    _vlm_concurrency,
                     effective,
                     lambda: openai_complete_if_cache(
                     profile.vision.model,
@@ -279,7 +283,7 @@ class RAGAnythingService:
             if image_data:
                 return self._call_model_with_limits(
                     "vlm",
-                    effective.vlm_max_concurrency or self._settings.vlm_max_concurrency,
+                    _vlm_concurrency,
                     effective,
                     lambda: openai_complete_if_cache(
                     profile.vision.model,
@@ -311,7 +315,7 @@ class RAGAnythingService:
         def embedding_call(texts: list[str]) -> Any:
             return self._call_model_with_limits(
                 "embedding",
-                effective.embedding_max_concurrency or self._settings.embedding_max_concurrency,
+                _emb_concurrency,
                 effective,
                 lambda: openai_embed.func(
                     texts,
@@ -350,16 +354,9 @@ class RAGAnythingService:
             vision_model_func=vision_model_func if enable_vlm_enhancement else None,
             embedding_func=embedding_func,
             lightrag_kwargs={
-                "embedding_batch_num": effective.embedding_batch_size
-                or self._settings.embedding_batch_size,
-                "embedding_func_max_async": (
-                    effective.embedding_max_concurrency
-                    or self._settings.embedding_max_concurrency
-                ),
-                "llm_model_max_async": (
-                    effective.llm_max_concurrency
-                    or self._settings.llm_max_concurrency
-                ),
+                "embedding_batch_num": _emb_batch,
+                "embedding_func_max_async": _emb_concurrency,
+                "llm_model_max_async": _llm_concurrency,
             },
         )
 
@@ -387,15 +384,15 @@ class RAGAnythingService:
         self,
         role: str,
         limit: int,
-        options: ProcessOptions,
+        options: ProcessOptions | None,
         call: Callable[[], Any],
     ) -> Any:
         semaphore = self._api_semaphore_for(role, max(1, limit))
-        attempts = options.retry_max_attempts or self._settings.retry_max_attempts
-        base_delay = options.retry_base_delay
+        attempts = (options.retry_max_attempts if options is not None else None) or self._settings.retry_max_attempts
+        base_delay = options.retry_base_delay if options is not None else None
         if base_delay is None:
             base_delay = self._settings.retry_base_delay
-        max_delay = options.retry_max_delay
+        max_delay = options.retry_max_delay if options is not None else None
         if max_delay is None:
             max_delay = self._settings.retry_max_delay
 

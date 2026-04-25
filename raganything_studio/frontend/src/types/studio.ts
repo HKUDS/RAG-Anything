@@ -232,6 +232,30 @@ export interface ModelListResponse {
   error?: string | null
 }
 
+export interface GraphNode {
+  id: string
+  labels: string[]
+  properties: Record<string, unknown>
+}
+
+export interface GraphEdge {
+  id: string
+  type: string | null
+  source: string
+  target: string
+  properties: Record<string, unknown>
+}
+
+export interface KnowledgeGraphResponse {
+  nodes: GraphNode[]
+  edges: GraphEdge[]
+  is_truncated: boolean
+}
+
+export interface GraphLabelsResponse {
+  labels: string[]
+}
+
 export interface StudioSettingsUpdate {
   data_dir?: string | null
   upload_dir?: string | null
