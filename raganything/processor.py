@@ -91,6 +91,67 @@ class ProcessorMixin:
 
         return cache_key
 
+    @staticmethod
+    def _current_doc_status_timestamp() -> str:
+        """Return a stable UTC timestamp for doc_status bookkeeping."""
+        return time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
+
+    async def _ensure_doc_status_record(
+        self,
+        doc_id: str,
+        file_path: str,
+        *,
+        scheme_name: str | None = None,
+        status: DocStatus = DocStatus.READY,
+    ) -> Dict[str, Any]:
+        """Create a minimal doc_status entry when LightRAG has not created one yet."""
+        current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
+        if current_doc_status:
+            return current_doc_status
+
+        timestamp = self._current_doc_status_timestamp()
+        doc_status_payload: Dict[str, Any] = {
+            "status": status,
+            "content": "",
+            "content_summary": "",
+            "content_length": 0,
+            "error_msg": "",
+            "chunks_count": 0,
+            "chunks_list": [],
+            "created_at": timestamp,
+            "updated_at": timestamp,
+            "file_path": self._get_file_reference(file_path),
+        }
+        if scheme_name is not None:
+            doc_status_payload["scheme_name"] = scheme_name
+
+        await self.lightrag.doc_status.upsert({doc_id: doc_status_payload})
+        await self.lightrag.doc_status.index_done_callback()
+        return await self.lightrag.doc_status.get_by_id(doc_id) or doc_status_payload
+
+    async def _upsert_doc_status(
+        self,
+        doc_id: str,
+        file_path: str,
+        *,
+        scheme_name: str | None = None,
+        **updates,
+    ) -> Dict[str, Any]:
+        """Merge doc_status updates while preserving any existing LightRAG fields."""
+        current_doc_status = await self._ensure_doc_status_record(
+            doc_id,
+            file_path,
+            scheme_name=scheme_name,
+        )
+        updated_doc_status = {
+            **current_doc_status,
+            **updates,
+            "updated_at": self._current_doc_status_timestamp(),
+        }
+        await self.lightrag.doc_status.upsert({doc_id: updated_doc_status})
+        await self.lightrag.doc_status.index_done_callback()
+        return updated_doc_status
+
     def _generate_content_based_doc_id(self, content_list: List[Dict[str, Any]]) -> str:
         """
         Generate doc_id based on document content
@@ -1411,15 +1472,32 @@ class ProcessorMixin:
         try:
             current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
             if current_doc_status:
-                await self.lightrag.doc_status.upsert(
-                    {
-                        doc_id: {
-                            **current_doc_status,
-                            "multimodal_processed": True,
-                            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                        }
+                final_status = current_doc_status.get("status") or DocStatus.PROCESSED
+                if final_status != DocStatus.FAILED:
+                    final_status = DocStatus.PROCESSED
+                update_payload = {
+                    **current_doc_status,
+                    "status": final_status,
+                    "multimodal_processed": True,
+                    "updated_at": self._current_doc_status_timestamp(),
+                }
+                try:
+                    await self.lightrag.doc_status.upsert({doc_id: update_payload})
+                except Exception as exc:
+                    # Older LightRAG versions reject unknown doc_status fields such as
+                    # multimodal_processed. Fall back to a schema-compatible status-only
+                    # update so image-only and multimodal documents still complete.
+                    self.logger.debug(
+                        "Falling back to schema-compatible doc_status update for %s: %s",
+                        doc_id,
+                        exc,
+                    )
+                    fallback_payload = {
+                        **current_doc_status,
+                        "status": final_status,
+                        "updated_at": self._current_doc_status_timestamp(),
                     }
-                )
+                    await self.lightrag.doc_status.upsert({doc_id: fallback_payload})
                 await self.lightrag.doc_status.index_done_callback()
                 self.logger.debug(
                     f"Marked multimodal content processing as complete for document {doc_id}"
@@ -1533,6 +1611,7 @@ class ProcessorMixin:
         callback_manager = getattr(self, "callback_manager", None)
         doc_start_time = time.time()
         stage = "parse"
+        file_name = file_name or self._get_file_reference(file_path)
 
         try:
             # Ensure LightRAG is initialized
@@ -1557,6 +1636,13 @@ class ProcessorMixin:
             if doc_id is None:
                 doc_id = content_based_doc_id
 
+            await self._upsert_doc_status(
+                doc_id,
+                file_name,
+                status=DocStatus.HANDLING,
+                error_msg="",
+            )
+
             # Step 2: Separate text and multimodal content
             text_content, multimodal_items = separate_content(content_list)
 
@@ -1572,9 +1658,6 @@ class ProcessorMixin:
             # Step 3: Insert pure text content with all parameters
             stage = "text_insert"
             if text_content.strip():
-                if file_name is None:
-                    # Use full path or basename based on config
-                    file_name = self._get_file_reference(file_path)
                 if callback_manager is not None:
                     callback_manager.dispatch(
                         "on_text_insert_start",
@@ -1600,9 +1683,8 @@ class ProcessorMixin:
                         doc_id=doc_id,
                     )
             else:
-                # Determine file reference even if no text content
-                if file_name is None:
-                    file_name = self._get_file_reference(file_path)
+                # file_name was resolved before parsing so doc_status can be initialized early
+                pass
 
             # Step 4: Process multimodal content (using specialized processors)
             stage = "multimodal"
@@ -1620,6 +1702,18 @@ class ProcessorMixin:
                 )
 
         except Exception as exc:
+            if doc_id is not None:
+                try:
+                    await self._upsert_doc_status(
+                        doc_id,
+                        file_name,
+                        status=DocStatus.FAILED,
+                        error_msg=str(exc),
+                    )
+                except Exception as status_exc:
+                    self.logger.debug(
+                        f"Failed to persist doc_status error state for {doc_id}: {status_exc}"
+                    )
             if callback_manager is not None:
                 callback_manager.dispatch(
                     "on_document_error",
@@ -1790,6 +1884,14 @@ class ProcessorMixin:
             if doc_id is None:
                 doc_id = content_based_doc_id
 
+            await self._upsert_doc_status(
+                doc_id,
+                file_name,
+                scheme_name=scheme_name,
+                status=DocStatus.HANDLING,
+                error_msg="",
+            )
+
             # Step 2: Separate text and multimodal content
             text_content, multimodal_items = separate_content(content_list)
 
@@ -1917,6 +2019,14 @@ class ProcessorMixin:
         if doc_id is None:
             doc_id = self._generate_content_based_doc_id(content_list)
 
+        file_ref = self._get_file_reference(file_path)
+        await self._upsert_doc_status(
+            doc_id,
+            file_ref,
+            status=DocStatus.HANDLING,
+            error_msg="",
+        )
+
         # Display content statistics if requested
         if display_stats:
             self.logger.info("\nContent Information:")
@@ -1948,8 +2058,6 @@ class ProcessorMixin:
 
         # Step 2: Insert pure text content with all parameters
         if text_content.strip():
-            # Use full path or basename based on config
-            file_ref = self._get_file_reference(file_path)
             if callback_manager is not None:
                 callback_manager.dispatch(
                     "on_text_insert_start",
@@ -1975,8 +2083,8 @@ class ProcessorMixin:
                     doc_id=doc_id,
                 )
         else:
-            # Determine file reference even if no text content
-            file_ref = self._get_file_reference(file_path)
+            # file_ref was resolved before insertion so doc_status can be initialized early
+            pass
 
         # Step 3: Process multimodal content (using specialized processors)
         if multimodal_items:

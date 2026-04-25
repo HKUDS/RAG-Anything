@@ -5,6 +5,7 @@ Contains helper functions for content separation, text insertion, and other util
 """
 
 import base64
+import inspect
 from typing import Dict, List, Any, Tuple
 from pathlib import Path
 from lightrag.utils import logger
@@ -205,22 +206,46 @@ async def insert_text_content_with_multimodal_content(
     """
     logger.info("Starting text content insertion into LightRAG...")
 
-    # Use LightRAG's insert method with all parameters
+    insert_kwargs = {
+        "input": input,
+        "file_paths": file_paths,
+        "split_by_character": split_by_character,
+        "split_by_character_only": split_by_character_only,
+        "ids": ids,
+    }
+
     try:
-        await lightrag.ainsert(
-            input=input,
-            multimodal_content=multimodal_content,
-            file_paths=file_paths,
-            split_by_character=split_by_character,
-            split_by_character_only=split_by_character_only,
-            ids=ids,
-            scheme_name=scheme_name,
+        insert_signature = inspect.signature(lightrag.ainsert)
+        supported_params = insert_signature.parameters
+        accepts_any_kwargs = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in supported_params.values()
         )
-    except Exception as e:
-        logger.info(f"Error: {e}")
-        logger.info(
-            "If the error is caused by the ainsert function not having a multimodal content parameter, please update the raganything branch of lightrag"
+    except (TypeError, ValueError):
+        supported_params = {}
+        accepts_any_kwargs = True
+
+    if multimodal_content is not None and (
+        accepts_any_kwargs or "multimodal_content" in supported_params
+    ):
+        insert_kwargs["multimodal_content"] = multimodal_content
+    elif multimodal_content is not None:
+        logger.warning(
+            "LightRAG ainsert() does not accept multimodal_content; "
+            "retrying with text-only insertion so doc_status is still created"
         )
+
+    if scheme_name is not None and (
+        accepts_any_kwargs or "scheme_name" in supported_params
+    ):
+        insert_kwargs["scheme_name"] = scheme_name
+    elif scheme_name is not None:
+        logger.warning(
+            "LightRAG ainsert() does not accept scheme_name; "
+            "continuing without it for compatibility"
+        )
+
+    await lightrag.ainsert(**insert_kwargs)
 
     logger.info("Text content insertion complete")
 
