@@ -5,6 +5,11 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status }: StatusBadgeProps) {
-  return <span className={`status status-${status}`}>{status}</span>
+  return <span className={`status status-${status}`}>{statusLabel(status)}</span>
 }
 
+function statusLabel(status: string) {
+  if (status === 'indexed') return 'completed'
+  if (status === 'uploaded') return 'pending'
+  return status
+}

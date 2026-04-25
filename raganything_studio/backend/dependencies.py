@@ -10,7 +10,7 @@ from raganything_studio.backend.services.raganything_service import RAGAnythingS
 settings = get_settings()
 settings_store = SettingsStore(settings)
 document_store = DocumentStore(settings)
-job_manager = JobManager()
+job_manager = JobManager(settings.data_dir / "jobs.json")
 rag_service = RAGAnythingService(settings)
 content_list_service = ContentListService()
 

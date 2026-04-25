@@ -1,8 +1,33 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+@dataclass
+class ModelChannelConfig:
+    """Provider settings for one model role inside a Studio profile."""
+
+    provider: str
+    model: str
+    base_url: str | None = None
+    api_key: str | None = None
+    embedding_dim: int | None = None
+    embedding_max_token_size: int | None = None
+
+
+@dataclass
+class ModelProviderProfile:
+    """A reusable RAG model profile selected during indexing/querying."""
+
+    id: str
+    name: str
+    llm: ModelChannelConfig
+    embedding: ModelChannelConfig
+    vision: ModelChannelConfig
 
 
 @dataclass
@@ -35,15 +60,57 @@ class StudioSettings:
     default_parse_method: str
     default_language: str
     default_device: str
+    default_enable_vlm_enhancement: bool = False
+    max_concurrent_files: int = 1
+    active_profile_id: str = "default"
+    profiles: list[ModelProviderProfile] = field(default_factory=list)
 
 
 def _env_path(name: str, default: str) -> Path:
     return Path(os.getenv(name, default)).expanduser().resolve()
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def get_settings() -> StudioSettings:
+    for env_file in (Path(".env"), Path("reproduce/.env")):
+        if env_file.exists():
+            load_dotenv(env_file, override=False)
+
     data_dir = _env_path("RAGANYTHING_STUDIO_DATA_DIR", "./studio_data")
     static_dir = Path(__file__).parent / "static"
+
+    llm_provider = os.getenv("LLM_PROVIDER", "openai-compatible")
+    llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+    llm_base_url = os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+    llm_api_key = (
+        os.getenv("LLM_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("LLM_BINDING_API_KEY")
+    )
+    embedding_provider = os.getenv("EMBEDDING_PROVIDER", "openai-compatible")
+    embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
+    embedding_dim = int(os.getenv("EMBEDDING_DIM", "3072"))
+    embedding_max_token_size = int(os.getenv("EMBEDDING_MAX_TOKEN_SIZE", "8192"))
+    embedding_base_url = os.getenv("EMBEDDING_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+    embedding_api_key = (
+        os.getenv("EMBEDDING_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("EMBEDDING_BINDING_API_KEY")
+    )
+    vision_provider = os.getenv("VISION_PROVIDER", "openai-compatible")
+    vision_model = os.getenv("VISION_MODEL", "gpt-4o")
+    vision_base_url = os.getenv("VISION_BASE_URL") or os.getenv("OPENAI_BASE_URL")
+    vision_api_key = (
+        os.getenv("VISION_API_KEY")
+        or os.getenv("OPENAI_API_KEY")
+        or os.getenv("VLM_BINDING_API_KEY")
+    )
 
     settings = StudioSettings(
         data_dir=data_dir,
@@ -56,24 +123,63 @@ def get_settings() -> StudioSettings:
         settings_file=_env_path(
             "RAGANYTHING_STUDIO_SETTINGS_FILE", str(data_dir / "settings.json")
         ),
-        llm_provider=os.getenv("LLM_PROVIDER", "openai-compatible"),
-        llm_model=os.getenv("LLM_MODEL", "gpt-4o-mini"),
-        llm_base_url=os.getenv("LLM_BASE_URL") or os.getenv("OPENAI_BASE_URL"),
-        llm_api_key=os.getenv("LLM_API_KEY") or os.getenv("OPENAI_API_KEY"),
-        embedding_provider=os.getenv("EMBEDDING_PROVIDER", "openai-compatible"),
-        embedding_model=os.getenv("EMBEDDING_MODEL", "text-embedding-3-large"),
-        embedding_dim=int(os.getenv("EMBEDDING_DIM", "3072")),
-        embedding_max_token_size=int(os.getenv("EMBEDDING_MAX_TOKEN_SIZE", "8192")),
-        embedding_base_url=os.getenv("EMBEDDING_BASE_URL") or os.getenv("OPENAI_BASE_URL"),
-        embedding_api_key=os.getenv("EMBEDDING_API_KEY") or os.getenv("OPENAI_API_KEY"),
-        vision_provider=os.getenv("VISION_PROVIDER", "openai-compatible"),
-        vision_model=os.getenv("VISION_MODEL", "gpt-4o"),
-        vision_base_url=os.getenv("VISION_BASE_URL") or os.getenv("OPENAI_BASE_URL"),
-        vision_api_key=os.getenv("VISION_API_KEY") or os.getenv("OPENAI_API_KEY"),
+        llm_provider=llm_provider,
+        llm_model=llm_model,
+        llm_base_url=llm_base_url,
+        llm_api_key=llm_api_key,
+        embedding_provider=embedding_provider,
+        embedding_model=embedding_model,
+        embedding_dim=embedding_dim,
+        embedding_max_token_size=embedding_max_token_size,
+        embedding_base_url=embedding_base_url,
+        embedding_api_key=embedding_api_key,
+        vision_provider=vision_provider,
+        vision_model=vision_model,
+        vision_base_url=vision_base_url,
+        vision_api_key=vision_api_key,
         default_parser=os.getenv("RAGANYTHING_STUDIO_DEFAULT_PARSER", "mineru"),
         default_parse_method=os.getenv("RAGANYTHING_STUDIO_DEFAULT_PARSE_METHOD", "auto"),
         default_language=os.getenv("RAGANYTHING_STUDIO_DEFAULT_LANGUAGE", "ch"),
         default_device=os.getenv("RAGANYTHING_STUDIO_DEFAULT_DEVICE", "cpu"),
+        default_enable_vlm_enhancement=_env_bool(
+            "RAGANYTHING_STUDIO_ENABLE_VLM_ENHANCEMENT", False
+        ),
+        max_concurrent_files=max(
+            1,
+            int(
+                os.getenv(
+                    "RAGANYTHING_STUDIO_MAX_CONCURRENT_FILES",
+                    os.getenv("MAX_CONCURRENT_FILES", "1"),
+                )
+            ),
+        ),
+        active_profile_id=os.getenv("RAGANYTHING_STUDIO_ACTIVE_PROFILE_ID", "default"),
+        profiles=[
+            ModelProviderProfile(
+                id="default",
+                name="Default RAG Profile",
+                llm=ModelChannelConfig(
+                    provider=llm_provider,
+                    model=llm_model,
+                    base_url=llm_base_url,
+                    api_key=llm_api_key,
+                ),
+                embedding=ModelChannelConfig(
+                    provider=embedding_provider,
+                    model=embedding_model,
+                    base_url=embedding_base_url,
+                    api_key=embedding_api_key,
+                    embedding_dim=embedding_dim,
+                    embedding_max_token_size=embedding_max_token_size,
+                ),
+                vision=ModelChannelConfig(
+                    provider=vision_provider,
+                    model=vision_model,
+                    base_url=vision_base_url,
+                    api_key=vision_api_key,
+                ),
+            )
+        ],
     )
 
     for directory in (

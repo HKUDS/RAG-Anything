@@ -44,9 +44,12 @@ temp/
 # Framework-specific files
 local_neo4jWorkDir/
 neo4jWorkDir/
+node_modules/
+*.tsbuildinfo
 
 # Data & Storage
 inputs/
+studio_data/
 rag_storage*/
 examples/input/
 examples/output/
@@ -78,6 +81,8 @@ tiktoken_cache/
 
 # unit-test files
 test_*
+!tests/studio/
+!tests/studio/test_studio_core.py
 
 # Cline files
 memory-bank/

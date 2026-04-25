@@ -33,8 +33,11 @@ export function ReadinessProvider({ children }: { children: ReactNode }) {
     staleTime: 10_000,
   })
 
-  const llmReady = settings?.llm_api_key_configured ?? false
-  const embeddingReady = settings?.embedding_api_key_configured ?? false
+  const activeProfile = settings?.profiles.find((profile) => profile.id === settings.active_profile_id)
+  const llmReady = activeProfile?.llm.api_key_configured ?? settings?.llm_api_key_configured ?? false
+  const embeddingReady = activeProfile?.embedding.api_key_configured
+    ?? settings?.embedding_api_key_configured
+    ?? false
   const indexedCount = documents.filter((d) => d.status === 'indexed').length
 
   const value: ReadinessState = {

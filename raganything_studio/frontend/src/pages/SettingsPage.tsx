@@ -2,10 +2,12 @@ import { FormEvent, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  CheckCircle2, ChevronDown, Copy, KeyRound, Loader2, Plus, RefreshCw,
-  RotateCcw, Save, ScanSearch, ServerCog, Trash2, XCircle, Zap,
+  AlertTriangle, CheckCircle2, ChevronDown, Copy, Download, FolderOpen,
+  KeyRound, Loader2, Plus, RefreshCw, RotateCcw, Save, ScanSearch,
+  ServerCog, Trash2, XCircle, Zap,
 } from 'lucide-react'
-import { getEnvironment, getStudioSettings, listModels, testConnection, updateStudioSettings } from '../api/client'
+import { browseDir, getEnvironment, getStudioSettings, installDep, listModels, testConnection, updateStudioSettings } from '../api/client'
+import type { BrowseDirEntry } from '../types/studio'
 import type {
   ConnectionTestKind, ConnectionTestResponse, ModelInfo, ModelProfile,
   ModelProfileUpdate, StudioSettings, StudioSettingsUpdate,
@@ -64,6 +66,8 @@ interface SettingsForm {
   default_parse_method: string
   default_language: string
   default_device: string
+  default_enable_vlm_enhancement: boolean
+  max_concurrent_files: number
   active_profile_id: string
   profiles: ProfileForm[]
 }
@@ -195,6 +199,7 @@ export default function SettingsPage() {
         provider: channel.provider,
         base_url: channel.base_url || null,
         api_key: channel.api_key || null,
+        kind,
       })
       setPickers((prev) => ({
         ...prev,
@@ -269,19 +274,9 @@ export default function SettingsPage() {
   const selectedProfile = form.profiles.find((profile) => profile.id === selectedProfileId)
     ?? form.profiles[0]
   const selectedChannel = selectedProfile?.[selectedKind]
-  const envRows = environment
-    ? [
-        ['Python', environment.python],
-        ['RAG-Anything', environment.raganything_installed ? 'available' : 'missing'],
-        ['LightRAG', environment.lightrag_installed ? 'available' : 'missing'],
-        ['MinerU', environment.mineru_available ? 'available' : 'missing'],
-        ['LibreOffice', environment.libreoffice_available ? 'available' : 'missing'],
-        ['CUDA', environment.cuda_available ? 'available' : 'missing'],
-      ]
-    : []
 
   return (
-    <section className="page">
+    <section className="page settings-page">
       <div className="page-header">
         <div>
           <h1>Settings</h1>
@@ -451,20 +446,34 @@ export default function SettingsPage() {
             <div className="split">
               <div className="panel stack">
                 <h2>Directories</h2>
-                <label>Data directory<input value={form.data_dir} onChange={(e) => updateField('data_dir', e.target.value)} /></label>
-                <label>Upload directory<input value={form.upload_dir} onChange={(e) => updateField('upload_dir', e.target.value)} /></label>
-                <label>Working directory<input value={form.working_dir} onChange={(e) => updateField('working_dir', e.target.value)} /></label>
-                <label>Output directory<input value={form.output_dir} onChange={(e) => updateField('output_dir', e.target.value)} /></label>
-                <label>Settings file<input value={settings.settings_file} readOnly /></label>
+                <DirPickerRow label="Data directory" value={form.data_dir} onChange={(v) => updateField('data_dir', v)} />
+                <DirPickerRow label="Upload directory" value={form.upload_dir} onChange={(v) => updateField('upload_dir', v)} />
+                <DirPickerRow label="Working directory" value={form.working_dir} onChange={(v) => updateField('working_dir', v)} />
+                <DirPickerRow label="Output directory" value={form.output_dir} onChange={(v) => updateField('output_dir', v)} />
+                <label className="dir-picker-label">
+                  Settings file
+                  <input className="dir-picker-input" value={settings.settings_file} readOnly />
+                </label>
               </div>
               <div className="panel stack">
                 <h2>Environment</h2>
-                {envRows.map(([label, value]) => (
-                  <div className="setting-row" key={label}>
-                    <span>{label}</span>
-                    <strong className={value === 'missing' ? 'env-missing' : ''}>{value}</strong>
-                  </div>
-                ))}
+                {environment ? (
+                  <>
+                    <div className="setting-row">
+                      <span>Python</span>
+                      <strong>{environment.python}</strong>
+                    </div>
+                    <EnvDepRow label="RAG-Anything" available={environment.raganything_installed} />
+                    <EnvDepRow label="LightRAG" available={environment.lightrag_installed} />
+                    <EnvDepRow label="MinerU" available={environment.mineru_available} pkg="mineru[core]" />
+                    <EnvDepRow label="Docling" available={environment.docling_available} pkg="docling" />
+                    <EnvDepRow label="PaddleOCR" available={environment.paddleocr_available} pkg="paddleocr" />
+                    <EnvDepRow label="LibreOffice" available={environment.libreoffice_available} note="Install via system package manager (apt / brew)" />
+                    <CudaEnvRow gpuPresent={environment.cuda_gpu_present} cudaAvailable={environment.cuda_available} />
+                  </>
+                ) : (
+                  <div className="empty">Loading…</div>
+                )}
               </div>
             </div>
           )}
@@ -500,12 +509,45 @@ export default function SettingsPage() {
                   Device
                   <select value={form.default_device} onChange={(e) => updateField('default_device', e.target.value)}>
                     <option value="cpu">cpu</option>
-                    <option value="cuda">cuda</option>
-                    <option value="cuda:0">cuda:0</option>
-                    <option value="mps">mps</option>
+                    {environment?.cuda_available ? (
+                      <>
+                        <option value="cuda">cuda</option>
+                        <option value="cuda:0">cuda:0</option>
+                      </>
+                    ) : null}
+                    {environment?.mps_available ? (
+                      <option value="mps">mps (Apple Silicon)</option>
+                    ) : null}
                   </select>
                 </label>
+                <label>
+                  Concurrent files
+                  <input
+                    min={1}
+                    max={32}
+                    type="number"
+                    value={form.max_concurrent_files}
+                    onChange={(e) => updateField('max_concurrent_files', Number(e.target.value))}
+                  />
+                </label>
               </div>
+              <label className="inline-check">
+                <input
+                  checked={form.default_enable_vlm_enhancement}
+                  type="checkbox"
+                  onChange={(e) => updateField('default_enable_vlm_enhancement', e.target.checked)}
+                />
+                Enable VLM enhancement by default
+              </label>
+              {environment?.cuda_gpu_present && !environment.cuda_available ? (
+                <div className="cuda-install-hint">
+                  <AlertTriangle size={14} />
+                  <span>NVIDIA GPU detected but CUDA is not available. Install PyTorch with CUDA support to enable GPU acceleration.</span>
+                  <a href="https://pytorch.org/get-started/locally/" target="_blank" rel="noreferrer" className="button">
+                    <Download size={13} /> PyTorch install guide
+                  </a>
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -514,6 +556,215 @@ export default function SettingsPage() {
         </form>
       </div>
     </section>
+  )
+}
+
+function DirPickerRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <label className="dir-picker-label" onClick={(e) => e.preventDefault()}>
+      {label}
+      <div className="dir-picker-row">
+        <input
+          className="dir-picker-input"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="/path/to/directory"
+        />
+        <button type="button" className="button dir-browse-btn" onClick={() => setOpen(true)} title="Browse filesystem">
+          <FolderOpen size={14} />
+        </button>
+      </div>
+      {open ? (
+        <DirBrowserModal
+          initialPath={value}
+          onSelect={(path) => { onChange(path); setOpen(false) }}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
+    </label>
+  )
+}
+
+function DirBrowserModal({ initialPath, onSelect, onClose }: {
+  initialPath: string
+  onSelect: (path: string) => void
+  onClose: () => void
+}) {
+  const [currentPath, setCurrentPath] = useState(initialPath || '')
+  const [entries, setEntries] = useState<BrowseDirEntry[]>([])
+  const [resolvedPath, setResolvedPath] = useState('')
+  const [parentPath, setParentPath] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    navigate(currentPath)
+  }, [])
+
+  async function navigate(path: string) {
+    setLoading(true)
+    setError(null)
+    try {
+      const result = await browseDir(path)
+      setResolvedPath(result.path)
+      setParentPath(result.parent)
+      setEntries(result.entries)
+      setCurrentPath(result.path)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="dir-modal-backdrop" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="dir-modal">
+        <div className="dir-modal-header">
+          <span className="dir-modal-path" title={resolvedPath}>{resolvedPath || '…'}</span>
+          <button type="button" className="icon-button" onClick={onClose}><XCircle size={16} /></button>
+        </div>
+
+        <div className="dir-modal-body">
+          {loading ? (
+            <div className="dir-modal-status"><Loader2 size={16} className="spin" /> Loading…</div>
+          ) : error ? (
+            <div className="dir-modal-status dir-modal-error">{error}</div>
+          ) : (
+            <div className="dir-entry-list">
+              {parentPath !== null ? (
+                <button type="button" className="dir-entry dir-entry--up" onClick={() => navigate(parentPath!)}>
+                  <FolderOpen size={14} /> ..
+                </button>
+              ) : null}
+              {entries.filter((e) => e.is_dir).map((entry) => (
+                <button
+                  key={entry.path}
+                  type="button"
+                  className="dir-entry"
+                  onClick={() => navigate(entry.path)}
+                >
+                  <FolderOpen size={14} />
+                  <span>{entry.name}</span>
+                </button>
+              ))}
+              {entries.filter((e) => e.is_dir).length === 0 && !loading ? (
+                <div className="dir-modal-status">No subdirectories</div>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <div className="dir-modal-footer">
+          <span className="dir-modal-selection">{resolvedPath}</span>
+          <button type="button" className="button primary" onClick={() => onSelect(resolvedPath)} disabled={!resolvedPath}>
+            Select
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type InstallStatus = 'idle' | 'installing' | 'done' | 'error'
+
+function EnvDepRow({ label, available, pkg, note }: {
+  label: string
+  available: boolean
+  pkg?: string
+  note?: string
+}) {
+  const [status, setStatus] = useState<InstallStatus>('idle')
+  const [errorMsg, setErrorMsg] = useState<string | null>(null)
+
+  async function handleInstall() {
+    if (!pkg) return
+    setStatus('installing')
+    setErrorMsg(null)
+    try {
+      const result = await installDep({ package: pkg })
+      if (result.ok) {
+        setStatus('done')
+      } else {
+        setStatus('error')
+        setErrorMsg(result.error ?? 'Installation failed')
+      }
+    } catch (err) {
+      setStatus('error')
+      setErrorMsg(err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  const effectivelyAvailable = available || status === 'done'
+
+  return (
+    <div className="env-dep-row">
+      <span className="env-dep-label">{label}</span>
+      {effectivelyAvailable ? (
+        <span className="env-badge env-badge--ok">available</span>
+      ) : note ? (
+        <span className="env-badge env-badge--note" title={note}>system pkg</span>
+      ) : pkg ? (
+        <div className="env-dep-actions">
+          {status === 'error' && errorMsg ? (
+            <span className="env-dep-error" title={errorMsg}><XCircle size={12} /> failed</span>
+          ) : (
+            <>
+              <span className="env-badge env-badge--missing">missing</span>
+              <button
+                type="button"
+                className="button env-install-btn"
+                disabled={status === 'installing'}
+                onClick={handleInstall}
+              >
+                {status === 'installing'
+                  ? <><Loader2 size={12} className="spin" /> Installing…</>
+                  : <><Download size={12} /> Install</>}
+              </button>
+            </>
+          )}
+        </div>
+      ) : (
+        <span className="env-badge env-badge--missing">missing</span>
+      )}
+    </div>
+  )
+}
+
+function CudaEnvRow({ gpuPresent, cudaAvailable }: { gpuPresent: boolean; cudaAvailable: boolean }) {
+  if (cudaAvailable) {
+    return (
+      <div className="env-dep-row">
+        <span className="env-dep-label">CUDA</span>
+        <span className="env-badge env-badge--ok">available</span>
+      </div>
+    )
+  }
+  if (!gpuPresent) {
+    return (
+      <div className="env-dep-row">
+        <span className="env-dep-label">CUDA</span>
+        <span className="env-badge env-badge--na">N/A (no NVIDIA GPU)</span>
+      </div>
+    )
+  }
+  return (
+    <div className="env-dep-row env-dep-row--cuda-warn">
+      <span className="env-dep-label">CUDA</span>
+      <div className="env-dep-actions">
+        <span className="env-badge env-badge--warn">GPU found, CUDA missing</span>
+        <a
+          href="https://pytorch.org/get-started/locally/"
+          target="_blank"
+          rel="noreferrer"
+          className="button env-install-btn"
+        >
+          <Download size={12} /> Setup guide
+        </a>
+      </div>
+    </div>
   )
 }
 
@@ -791,6 +1042,8 @@ function makeForm(settings: StudioSettings): SettingsForm {
     default_parse_method: settings.default_parse_method,
     default_language: settings.default_language,
     default_device: settings.default_device,
+    default_enable_vlm_enhancement: settings.default_enable_vlm_enhancement,
+    max_concurrent_files: settings.max_concurrent_files,
     active_profile_id: settings.active_profile_id || profiles[0].id,
     profiles,
   }
@@ -881,6 +1134,8 @@ function toPayload(form: SettingsForm): StudioSettingsUpdate {
     default_parse_method: form.default_parse_method,
     default_language: form.default_language,
     default_device: form.default_device,
+    default_enable_vlm_enhancement: form.default_enable_vlm_enhancement,
+    max_concurrent_files: form.max_concurrent_files,
     active_profile_id: form.active_profile_id,
     profiles: form.profiles.map(profileToPayload),
   }

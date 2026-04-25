@@ -7,8 +7,9 @@ from pydantic import BaseModel, Field
 
 class QueryRequest(BaseModel):
     question: str
+    profile_id: str | None = None
     mode: str = "hybrid"
-    use_multimodal: bool = True
+    use_multimodal: bool = False
     top_k: int | None = None
 
 
@@ -27,4 +28,3 @@ class QueryResponse(BaseModel):
     sources: list[SourceItem] = Field(default_factory=list)
     raw: dict[str, Any] | None = None
     trace: dict[str, Any] | None = None
-

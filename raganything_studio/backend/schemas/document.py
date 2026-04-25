@@ -24,6 +24,15 @@ class DocumentRecord(BaseModel):
     created_at: datetime
     updated_at: datetime
     error: str | None = None
+    latest_job_id: str | None = None
+    latest_job_status: str | None = None
+    latest_job_stage: str | None = None
+    latest_job_progress: float | None = None
+    latest_job_message: str | None = None
+    status_detail: str | None = None
+    result_available: bool = False
+    content_items_count: int | None = None
+    chunks_count: int | None = None
 
 
 class DocumentListResponse(BaseModel):
@@ -39,4 +48,3 @@ class DocumentUploadResponse(BaseModel):
 class ContentListResponse(BaseModel):
     document_id: str
     items: list[dict[str, Any]] = Field(default_factory=list)
-

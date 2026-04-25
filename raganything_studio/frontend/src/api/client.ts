@@ -1,8 +1,12 @@
 import type {
+  BrowseDirResponse,
   ConnectionTestRequest,
   ConnectionTestResponse,
+  ContentListResponse,
   DocumentRecord,
   EnvironmentResponse,
+  InstallDepRequest,
+  InstallDepResponse,
   JobRecord,
   ModelListRequest,
   ModelListResponse,
@@ -27,6 +31,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return response.json() as Promise<T>
+}
+
+export async function getDocumentContentList(documentId: string): Promise<ContentListResponse> {
+  return request<ContentListResponse>(`/api/documents/${documentId}/content-list`)
 }
 
 export async function getDocuments(): Promise<DocumentRecord[]> {
@@ -54,9 +62,19 @@ export async function getJob(jobId: string): Promise<JobRecord> {
   return request<JobRecord>(`/api/jobs/${jobId}`)
 }
 
-export async function submitQuery(question: string, mode: string, useMultimodal: boolean) {
+export async function submitQuery(
+  question: string,
+  mode: string,
+  useMultimodal: boolean,
+  profileId?: string | null,
+  topK?: number | null,
+) {
   return request<QueryResponse>('/api/query', {
-    body: JSON.stringify({ question, mode, use_multimodal: useMultimodal }),
+    body: JSON.stringify({
+      question, mode, use_multimodal: useMultimodal,
+      profile_id: profileId ?? null,
+      top_k: topK ?? null,
+    }),
     method: 'POST',
   })
 }
@@ -89,4 +107,15 @@ export async function listModels(payload: ModelListRequest): Promise<ModelListRe
     body: JSON.stringify(payload),
     method: 'POST',
   })
+}
+
+export async function installDep(payload: InstallDepRequest): Promise<InstallDepResponse> {
+  return request<InstallDepResponse>('/api/settings/install-dep', {
+    body: JSON.stringify(payload),
+    method: 'POST',
+  })
+}
+
+export async function browseDir(path: string): Promise<BrowseDirResponse> {
+  return request<BrowseDirResponse>(`/api/settings/browse-dir?path=${encodeURIComponent(path)}`)
 }

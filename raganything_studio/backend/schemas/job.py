@@ -29,12 +29,16 @@ class JobStage(str, Enum):
 
 
 class ProcessOptions(BaseModel):
+    profile_id: str | None = None
+
     parser: str = "mineru"
     parse_method: str = "auto"
 
+    enable_vlm_enhancement: bool = False
     enable_image_processing: bool = True
     enable_table_processing: bool = True
     enable_equation_processing: bool = True
+    max_concurrent_files: int | None = Field(default=None, ge=1, le=32)
 
     lang: str = "ch"
     device: str = "cpu"
@@ -62,4 +66,3 @@ class JobRecord(BaseModel):
 class JobStartResponse(BaseModel):
     job_id: str
     status: JobStatus
-

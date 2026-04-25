@@ -11,6 +11,15 @@ export interface DocumentRecord {
   created_at: string
   updated_at: string
   error?: string | null
+  latest_job_id?: string | null
+  latest_job_status?: string | null
+  latest_job_stage?: string | null
+  latest_job_progress?: number | null
+  latest_job_message?: string | null
+  status_detail?: string | null
+  result_available: boolean
+  content_items_count?: number | null
+  chunks_count?: number | null
 }
 
 export interface JobRecord {
@@ -30,9 +39,11 @@ export interface ProcessOptions {
   profile_id?: string | null
   parser: string
   parse_method: string
+  enable_vlm_enhancement: boolean
   enable_image_processing: boolean
   enable_table_processing: boolean
   enable_equation_processing: boolean
+  max_concurrent_files?: number | null
   lang: string
   device: string
 }
@@ -44,13 +55,44 @@ export interface QueryResponse {
   trace?: Record<string, unknown> | null
 }
 
+export interface ContentListResponse {
+  document_id: string
+  items: Array<Record<string, unknown>>
+}
+
 export interface EnvironmentResponse {
   python: string
   raganything_installed: boolean
   lightrag_installed: boolean
   mineru_available: boolean
+  docling_available: boolean
+  paddleocr_available: boolean
   libreoffice_available: boolean
+  cuda_gpu_present: boolean
   cuda_available: boolean
+  mps_available: boolean
+}
+
+export interface BrowseDirEntry {
+  name: string
+  path: string
+  is_dir: boolean
+}
+
+export interface BrowseDirResponse {
+  path: string
+  parent: string | null
+  entries: BrowseDirEntry[]
+}
+
+export interface InstallDepRequest {
+  package: string
+}
+
+export interface InstallDepResponse {
+  ok: boolean
+  output: string
+  error?: string | null
 }
 
 export interface StudioSettings {
@@ -77,6 +119,8 @@ export interface StudioSettings {
   default_parse_method: string
   default_language: string
   default_device: string
+  default_enable_vlm_enhancement: boolean
+  max_concurrent_files: number
   active_profile_id: string
   profiles: ModelProfile[]
 }
@@ -146,6 +190,7 @@ export interface ModelListRequest {
   provider: string
   base_url?: string | null
   api_key?: string | null
+  kind?: ConnectionTestKind | null
 }
 
 export interface ModelListResponse {
@@ -177,6 +222,8 @@ export interface StudioSettingsUpdate {
   default_parse_method: string
   default_language: string
   default_device: string
+  default_enable_vlm_enhancement: boolean
+  max_concurrent_files: number
   active_profile_id?: string | null
   profiles?: ModelProfileUpdate[] | null
 }

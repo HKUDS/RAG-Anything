@@ -8,8 +8,34 @@ class EnvironmentResponse(BaseModel):
     raganything_installed: bool
     lightrag_installed: bool
     mineru_available: bool
+    docling_available: bool
+    paddleocr_available: bool
     libreoffice_available: bool
-    cuda_available: bool
+    cuda_gpu_present: bool   # NVIDIA GPU hardware detected (nvcc/nvidia-smi)
+    cuda_available: bool     # torch.cuda.is_available() — full stack ready
+    mps_available: bool      # Apple Silicon MPS (macOS arm64)
+
+
+class BrowseDirEntry(BaseModel):
+    name: str
+    path: str
+    is_dir: bool
+
+
+class BrowseDirResponse(BaseModel):
+    path: str          # resolved absolute path that was listed
+    parent: str | None  # parent path, None at filesystem root
+    entries: list[BrowseDirEntry]
+
+
+class InstallDepRequest(BaseModel):
+    package: str  # pip install target, e.g. "docling", "mineru[core]"
+
+
+class InstallDepResponse(BaseModel):
+    ok: bool
+    output: str
+    error: str | None = None
 
 
 class ModelChannelResponse(BaseModel):
@@ -53,6 +79,8 @@ class StudioSettingsResponse(BaseModel):
     default_parse_method: str
     default_language: str
     default_device: str
+    default_enable_vlm_enhancement: bool
+    max_concurrent_files: int
     active_profile_id: str
     profiles: list[ModelProfileResponse]
 
@@ -101,6 +129,8 @@ class StudioSettingsUpdate(BaseModel):
     default_parse_method: str = Field(min_length=1)
     default_language: str = Field(min_length=1)
     default_device: str = Field(min_length=1)
+    default_enable_vlm_enhancement: bool = False
+    max_concurrent_files: int = Field(default=1, ge=1, le=32)
     active_profile_id: str | None = None
     profiles: list[ModelProfileUpdate] | None = None
 
@@ -139,6 +169,7 @@ class ModelListRequest(BaseModel):
     provider: str
     base_url: str | None = None
     api_key: str | None = None
+    kind: str | None = None  # "llm" | "embedding" | "vision"
 
 
 class ModelListResponse(BaseModel):

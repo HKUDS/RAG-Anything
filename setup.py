@@ -78,6 +78,11 @@ extras_require = {
         "weasyprint>=60.0",
         "pygments>=2.10.0",
     ],  # Enhanced markdown conversion
+    "studio": [
+        "fastapi",
+        "uvicorn[standard]",
+        "python-multipart",
+    ],
 }
 
 setuptools.setup(
@@ -102,6 +107,11 @@ setuptools.setup(
     python_requires=">=3.9",
     install_requires=requirements,
     extras_require=extras_require,
+    entry_points={
+        "console_scripts": [
+            "raganything-studio=raganything_studio.__main__:main",
+        ]
+    },
     include_package_data=True,  # Includes non-code files from MANIFEST.in
     project_urls={  # Additional project metadata
         "Documentation": metadata.get("__url__", ""),

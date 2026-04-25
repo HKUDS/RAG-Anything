@@ -15,6 +15,7 @@ from raganything_studio.backend.dependencies import (
 )
 from raganything_studio.backend.schemas.document import (
     ContentListResponse,
+    DocumentRecord,
     DocumentListResponse,
     DocumentStatus,
     DocumentUploadResponse,
@@ -32,8 +33,10 @@ router = APIRouter()
 @router.get("", response_model=DocumentListResponse)
 async def list_documents(
     document_store: DocumentStore = Depends(get_document_store),
+    job_manager: JobManager = Depends(get_job_manager),
 ) -> DocumentListResponse:
-    return DocumentListResponse(items=document_store.list_documents())
+    items = [_with_latest_job(doc, job_manager) for doc in document_store.list_documents()]
+    return DocumentListResponse(items=items)
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
@@ -132,3 +135,20 @@ def _copy_process_options(options: ProcessOptions, update: dict) -> ProcessOptio
     if hasattr(options, "model_copy"):
         return options.model_copy(update=update)
     return options.copy(update=update)
+
+
+def _with_latest_job(document: DocumentRecord, job_manager: JobManager) -> DocumentRecord:
+    job = job_manager.latest_job_for_document(document.id)
+    if job is None:
+        return document
+
+    update = {
+        "latest_job_id": job.id,
+        "latest_job_status": job.status.value,
+        "latest_job_stage": job.stage.value,
+        "latest_job_progress": job.progress,
+        "latest_job_message": job.message,
+    }
+    if hasattr(document, "model_copy"):
+        return document.model_copy(update=update)
+    return document.copy(update=update)
