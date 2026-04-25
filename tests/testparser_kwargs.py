@@ -4,8 +4,13 @@ Parser Validation Test Script for RAG-Anything (Pytest)
 
 This script validates the environment variable propagation and
 argument validation logic for both MineruParser and DoclingParser.
-It ensures that environment variables are correctly passed to subprocesses
-and that invalid inputs are handled properly (fail-fast).
+
+For MineruParser, env={...} is still propagated to the subprocess and is
+asserted as such. For DoclingParser the implementation now uses the Docling
+Python API rather than the `docling` CLI; the legacy env kwarg is therefore
+accepted for backward compatibility but ignored, and the tests below
+exercise the Python-API path through DocumentConverter mocks instead of
+subprocess mocks.
 
 Requirements:
 - RAG-Anything package
@@ -36,6 +41,17 @@ def dummy_path():
     return "dummy.pdf"
 
 
+def _mock_docling_converter() -> MagicMock:
+    """Build a DocumentConverter mock with the minimum API surface used by
+    `DoclingParser._run_docling_python`."""
+    fake_doc = MagicMock()
+    fake_doc.export_to_dict.return_value = {"body": {}}
+    fake_doc.export_to_markdown.return_value = ""
+    converter = MagicMock()
+    converter.convert.return_value = MagicMock(document=fake_doc)
+    return converter
+
+
 @patch("subprocess.Popen")
 @patch("pathlib.Path.exists")
 @patch("pathlib.Path.mkdir")
@@ -64,19 +80,26 @@ def test_mineru_env_propagation(
     assert kwargs["env"]["PATH"] == os.environ["PATH"]
 
 
-@patch("subprocess.run")
-def test_docling_env_propagation(mock_run, docling_parser, dummy_path):
-    mock_run.return_value = MagicMock(returncode=0, stdout="")
+@patch.object(DoclingParser, "_get_converter")
+def test_docling_env_accepted_but_ignored(
+    mock_get_converter, docling_parser, dummy_path, tmp_path
+):
+    """Docling now ignores `env={...}`: the call must succeed without raising
+    and the underlying DocumentConverter must still be invoked."""
+    mock_get_converter.return_value = _mock_docling_converter()
 
     custom_env = {"DOCLING_VAR": "docling_value"}
+    docling_parser._run_docling_python(
+        input_path=dummy_path,
+        output_dir=tmp_path,
+        file_stem="stem",
+        env=custom_env,
+    )
 
-    # Test env propagation
-    docling_parser._run_docling_command(dummy_path, "out", "stem", env=custom_env)
-
-    args, kwargs = mock_run.call_args
-    assert "env" in kwargs
-    assert kwargs["env"]["DOCLING_VAR"] == "docling_value"
-    assert kwargs["env"]["PATH"] == os.environ["PATH"]
+    # The Python-API path was used (no subprocess), env was silently dropped.
+    mock_get_converter.assert_called_once()
+    converter = mock_get_converter.return_value
+    converter.convert.assert_called_once_with(str(dummy_path))
 
 
 def test_mineru_unknown_kwargs(mineru_parser, dummy_path):
@@ -86,27 +109,103 @@ def test_mineru_unknown_kwargs(mineru_parser, dummy_path):
     assert "unexpected keyword argument(s): unknown_arg" in str(excinfo.value)
 
 
-@patch("subprocess.run")
-def test_docling_unknown_kwargs(mock_run, docling_parser, dummy_path):
-    mock_run.return_value = MagicMock(returncode=0, stdout="")
-    # Docling should NOT fail on unknown kwargs as per user request
-    docling_parser._run_docling_command(dummy_path, "out", "stem", unknown_arg="allow")
-    # No exception means success
+@patch.object(DoclingParser, "_get_converter")
+def test_docling_unknown_kwargs(
+    mock_get_converter, docling_parser, dummy_path, tmp_path
+):
+    """Docling should accept unknown kwargs without raising — they are
+    forwarded to `_get_converter` and silently ignored if unrecognized."""
+    mock_get_converter.return_value = _mock_docling_converter()
+
+    docling_parser._run_docling_python(
+        input_path=dummy_path,
+        output_dir=tmp_path,
+        file_stem="stem",
+        unknown_arg="allow",
+    )
+    mock_get_converter.assert_called_once()
 
 
-def test_invalid_env_type(mineru_parser, docling_parser, dummy_path):
+def test_invalid_env_type(mineru_parser, docling_parser, dummy_path, tmp_path):
     # Test non-dict env
     with pytest.raises(TypeError, match="env must be a dictionary"):
         mineru_parser._run_mineru_command(dummy_path, "out", env=["not", "a", "dict"])
 
+    # Validation happens before any converter call, so no mocking needed.
     with pytest.raises(TypeError, match="env must be a dictionary"):
-        docling_parser._run_docling_command(dummy_path, "out", "stem", env="string")
+        docling_parser._run_docling_python(
+            input_path=dummy_path,
+            output_dir=tmp_path,
+            file_stem="stem",
+            env="string",
+        )
 
 
-def test_invalid_env_contents(mineru_parser, docling_parser, dummy_path):
+def test_invalid_env_contents(mineru_parser, docling_parser, dummy_path, tmp_path):
     # Test non-string keys/values
     with pytest.raises(TypeError, match="env keys and values must be strings"):
         mineru_parser._run_mineru_command(dummy_path, "out", env={1: "string_val"})
 
     with pytest.raises(TypeError, match="env keys and values must be strings"):
-        docling_parser._run_docling_command(dummy_path, "out", "stem", env={"key": 123})
+        docling_parser._run_docling_python(
+            input_path=dummy_path,
+            output_dir=tmp_path,
+            file_stem="stem",
+            env={"key": 123},
+        )
+
+
+@patch.object(DoclingParser, "_get_converter")
+def test_docling_converter_cache_reused(
+    mock_get_converter, docling_parser, dummy_path, tmp_path
+):
+    """Two parses with the same kwargs must reuse the cached converter."""
+    mock_get_converter.return_value = _mock_docling_converter()
+
+    docling_parser._run_docling_python(
+        input_path=dummy_path,
+        output_dir=tmp_path,
+        file_stem="stem1",
+    )
+    docling_parser._run_docling_python(
+        input_path=dummy_path,
+        output_dir=tmp_path,
+        file_stem="stem2",
+    )
+
+    # _get_converter was called twice (once per parse), but a real, unmocked
+    # implementation would build the underlying DocumentConverter only once
+    # thanks to `_converter_cache`. The cache itself is exercised in
+    # `test_docling_converter_cache_unit` below.
+    assert mock_get_converter.call_count == 2
+
+
+def test_docling_converter_cache_unit(docling_parser):
+    """Direct unit test for the cache: same kwargs return the same converter
+    instance, different kwargs build a new one."""
+    sentinel_a = object()
+    sentinel_b = object()
+
+    def fake_build(**kwargs):
+        # Mimic the real `_get_converter` cache_key:
+        key = (
+            str(kwargs.get("table_mode", "fast")).lower(),
+            bool(kwargs.get("tables", True)),
+            bool(kwargs.get("allow_ocr", True)),
+            kwargs.get("artifacts_path"),
+        )
+        cached = docling_parser._converter_cache.get(key)
+        if cached is not None:
+            return cached
+        new = sentinel_a if key[0] == "fast" else sentinel_b
+        docling_parser._converter_cache[key] = new
+        return new
+
+    with patch.object(DoclingParser, "_get_converter", side_effect=fake_build):
+        a1 = docling_parser._get_converter()
+        a2 = docling_parser._get_converter()
+        b = docling_parser._get_converter(table_mode="accurate")
+
+    assert a1 is a2 is sentinel_a
+    assert b is sentinel_b
+    assert a1 is not b
