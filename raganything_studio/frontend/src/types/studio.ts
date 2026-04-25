@@ -27,6 +27,7 @@ export interface JobRecord {
 }
 
 export interface ProcessOptions {
+  profile_id?: string | null
   parser: string
   parse_method: string
   enable_image_processing: boolean
@@ -76,12 +77,49 @@ export interface StudioSettings {
   default_parse_method: string
   default_language: string
   default_device: string
+  active_profile_id: string
+  profiles: ModelProfile[]
 }
 
 export type ConnectionTestKind = 'llm' | 'embedding' | 'vision'
 
+export interface ModelChannel {
+  provider: string
+  model: string
+  base_url?: string | null
+  api_key_configured: boolean
+  embedding_dim?: number | null
+  embedding_max_token_size?: number | null
+}
+
+export interface ModelProfile {
+  id: string
+  name: string
+  llm: ModelChannel
+  embedding: ModelChannel
+  vision: ModelChannel
+}
+
+export interface ModelChannelUpdate {
+  provider: string
+  model: string
+  base_url?: string | null
+  api_key?: string | null
+  embedding_dim?: number | null
+  embedding_max_token_size?: number | null
+}
+
+export interface ModelProfileUpdate {
+  id: string
+  name: string
+  llm: ModelChannelUpdate
+  embedding: ModelChannelUpdate
+  vision: ModelChannelUpdate
+}
+
 export interface ConnectionTestRequest {
   kind: ConnectionTestKind
+  profile_id?: string | null
   provider: string
   model: string
   base_url?: string | null
@@ -101,6 +139,7 @@ export interface ModelInfo {
   id: string
   owned_by: string
   context_length?: number | null
+  vision_capable?: boolean
 }
 
 export interface ModelListRequest {
@@ -138,4 +177,6 @@ export interface StudioSettingsUpdate {
   default_parse_method: string
   default_language: string
   default_device: string
+  active_profile_id?: string | null
+  profiles?: ModelProfileUpdate[] | null
 }

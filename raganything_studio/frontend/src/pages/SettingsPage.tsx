@@ -2,13 +2,14 @@ import { FormEvent, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  CheckCircle2, ChevronDown, KeyRound, Loader2, RefreshCw,
-  RotateCcw, Save, ScanSearch, ServerCog, XCircle, Zap,
+  CheckCircle2, ChevronDown, Copy, KeyRound, Loader2, Plus, RefreshCw,
+  RotateCcw, Save, ScanSearch, ServerCog, Trash2, XCircle, Zap,
 } from 'lucide-react'
 import { getEnvironment, getStudioSettings, listModels, testConnection, updateStudioSettings } from '../api/client'
-import type { ConnectionTestKind, ConnectionTestResponse, ModelInfo, StudioSettings, StudioSettingsUpdate } from '../types/studio'
-
-// ── known providers with preconfigured base URLs ──────────────────────────────
+import type {
+  ConnectionTestKind, ConnectionTestResponse, ModelInfo, ModelProfile,
+  ModelProfileUpdate, StudioSettings, StudioSettingsUpdate,
+} from '../types/studio'
 
 interface ProviderMeta {
   label: string
@@ -17,61 +18,55 @@ interface ProviderMeta {
 }
 
 const KNOWN_PROVIDERS: Record<string, ProviderMeta> = {
-  'openai': { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', supportsModelList: true },
-  'siliconflow': { label: '硅基流动 (SiliconFlow)', baseUrl: 'https://api.siliconflow.cn/v1', supportsModelList: true },
+  openai: { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', supportsModelList: true },
+  siliconflow: { label: '硅基流动 (SiliconFlow)', baseUrl: 'https://api.siliconflow.cn/v1', supportsModelList: true },
   'aliyun-bailian': { label: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', supportsModelList: true },
   'baidu-qianfan': { label: '百度千帆', baseUrl: 'https://qianfan.baidubce.com/v2', supportsModelList: true },
-  'volcengine': { label: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', supportsModelList: true },
-  'openrouter': { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', supportsModelList: true },
-  'deepseek': { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', supportsModelList: true },
-  'zhipu': { label: '智谱 AI (Zhipu)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', supportsModelList: true },
-  'moonshot': { label: '月之暗面 (Moonshot)', baseUrl: 'https://api.moonshot.cn/v1', supportsModelList: true },
-  'groq': { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', supportsModelList: true },
-  'together': { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1', supportsModelList: true },
-  'mistral': { label: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', supportsModelList: true },
-  'ollama': { label: 'Ollama', baseUrl: 'http://localhost:11434/v1', supportsModelList: true },
-  'lmstudio': { label: 'LM Studio', baseUrl: 'http://localhost:1234/v1', supportsModelList: true },
-  'vllm': { label: 'vLLM', baseUrl: 'http://localhost:8000/v1', supportsModelList: true },
+  volcengine: { label: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', supportsModelList: true },
+  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', supportsModelList: true },
+  deepseek: { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', supportsModelList: true },
+  zhipu: { label: '智谱 AI (Zhipu)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', supportsModelList: true },
+  moonshot: { label: '月之暗面 (Moonshot)', baseUrl: 'https://api.moonshot.cn/v1', supportsModelList: true },
+  groq: { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', supportsModelList: true },
+  together: { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1', supportsModelList: true },
+  mistral: { label: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', supportsModelList: true },
+  ollama: { label: 'Ollama', baseUrl: 'http://localhost:11434/v1', supportsModelList: true },
+  lmstudio: { label: 'LM Studio', baseUrl: 'http://localhost:1234/v1', supportsModelList: true },
+  vllm: { label: 'vLLM', baseUrl: 'http://localhost:8000/v1', supportsModelList: true },
   'openai-compatible': { label: 'OpenAI Compatible', baseUrl: '', supportsModelList: true },
-  'custom': { label: 'Custom', baseUrl: '', supportsModelList: false },
+  custom: { label: 'Custom', baseUrl: '', supportsModelList: false },
 }
 
-// ── form state ────────────────────────────────────────────────────────────────
-
-interface SettingsForm extends StudioSettingsUpdate {
-  llm_api_key: string
-  embedding_api_key: string
-  vision_api_key: string
+interface ChannelForm {
+  provider: string
+  model: string
+  base_url: string
+  api_key: string
+  api_key_configured: boolean
+  embedding_dim?: number
+  embedding_max_token_size?: number
 }
 
-function makeForm(settings: StudioSettings): SettingsForm {
-  return {
-    data_dir: settings.data_dir,
-    upload_dir: settings.upload_dir,
-    working_dir: settings.working_dir,
-    output_dir: settings.output_dir,
-    llm_provider: settings.llm_provider,
-    llm_model: settings.llm_model,
-    llm_base_url: settings.llm_base_url ?? '',
-    llm_api_key: '',
-    embedding_provider: settings.embedding_provider,
-    embedding_model: settings.embedding_model,
-    embedding_dim: settings.embedding_dim,
-    embedding_max_token_size: settings.embedding_max_token_size,
-    embedding_base_url: settings.embedding_base_url ?? '',
-    embedding_api_key: '',
-    vision_provider: settings.vision_provider,
-    vision_model: settings.vision_model,
-    vision_base_url: settings.vision_base_url ?? '',
-    vision_api_key: '',
-    default_parser: settings.default_parser,
-    default_parse_method: settings.default_parse_method,
-    default_language: settings.default_language,
-    default_device: settings.default_device,
-  }
+interface ProfileForm {
+  id: string
+  name: string
+  llm: ChannelForm
+  embedding: ChannelForm
+  vision: ChannelForm
 }
 
-// ── test state ────────────────────────────────────────────────────────────────
+interface SettingsForm {
+  data_dir: string
+  upload_dir: string
+  working_dir: string
+  output_dir: string
+  default_parser: string
+  default_parse_method: string
+  default_language: string
+  default_device: string
+  active_profile_id: string
+  profiles: ProfileForm[]
+}
 
 interface TestState {
   status: 'idle' | 'pending' | 'ok' | 'error'
@@ -80,36 +75,32 @@ interface TestState {
   detected_dim?: number | null
 }
 
-const idleTest: TestState = { status: 'idle' }
-
-// ── model picker state ────────────────────────────────────────────────────────
-
 interface ModelPickerState {
   status: 'idle' | 'loading' | 'loaded' | 'error'
   models: ModelInfo[]
   error?: string | null
 }
 
+const idleTest: TestState = { status: 'idle' }
 const idlePicker: ModelPickerState = { status: 'idle', models: [] }
-
-// ── page ──────────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const queryClient = useQueryClient()
   const [activePanel, setActivePanel] = useState<'models' | 'runtime' | 'defaults'>('models')
+  const [selectedProfileId, setSelectedProfileId] = useState('default')
+  const [selectedKind, setSelectedKind] = useState<ConnectionTestKind>('llm')
   const [form, setForm] = useState<SettingsForm | null>(null)
-  const [tests, setTests] = useState<Record<ConnectionTestKind, TestState>>({
-    llm: idleTest, embedding: idleTest, vision: idleTest,
-  })
-  const [pickers, setPickers] = useState<Record<ConnectionTestKind, ModelPickerState>>({
-    llm: idlePicker, embedding: idlePicker, vision: idlePicker,
-  })
+  const [tests, setTests] = useState<Record<string, TestState>>({})
+  const [pickers, setPickers] = useState<Record<string, ModelPickerState>>({})
 
   const { data: environment } = useQuery({ queryKey: ['environment'], queryFn: getEnvironment })
   const { data: settings, error } = useQuery({ queryKey: ['settings'], queryFn: getStudioSettings })
 
   useEffect(() => {
-    if (settings) setForm(makeForm(settings))
+    if (!settings) return
+    const nextForm = makeForm(settings)
+    setForm(nextForm)
+    setSelectedProfileId(settings.active_profile_id || nextForm.profiles[0]?.id || 'default')
   }, [settings])
 
   const saveMutation = useMutation({
@@ -120,6 +111,7 @@ export default function SettingsPage() {
     onSuccess: (updated) => {
       queryClient.setQueryData(['settings'], updated)
       setForm(makeForm(updated))
+      setSelectedProfileId(updated.active_profile_id)
       queryClient.invalidateQueries({ queryKey: ['settings'] })
     },
   })
@@ -128,89 +120,155 @@ export default function SettingsPage() {
     setForm((current) => (current ? { ...current, [key]: value } : current))
   }
 
-  function setTestState(kind: ConnectionTestKind, state: TestState) {
-    setTests((prev) => ({ ...prev, [kind]: state }))
+  function updateProfile(profileId: string, update: Partial<ProfileForm>) {
+    setForm((current) => current ? {
+      ...current,
+      profiles: current.profiles.map((profile) => (
+        profile.id === profileId ? { ...profile, ...update } : profile
+      )),
+    } : current)
   }
 
-  function setPickerState(kind: ConnectionTestKind, state: ModelPickerState) {
-    setPickers((prev) => ({ ...prev, [kind]: state }))
+  function updateChannel(profileId: string, kind: ConnectionTestKind, update: Partial<ChannelForm>) {
+    setForm((current) => current ? {
+      ...current,
+      profiles: current.profiles.map((profile) => (
+        profile.id === profileId
+          ? { ...profile, [kind]: { ...profile[kind], ...update } }
+          : profile
+      )),
+    } : current)
   }
 
-  // When a known provider is selected, auto-fill its base URL
-  function handleProviderChange(kind: ConnectionTestKind, value: string) {
-    const providerKey = `${kind}_provider` as keyof SettingsForm
-    const baseUrlKey = `${kind}_base_url` as keyof SettingsForm
-    updateField(providerKey, value)
-
-    const meta = KNOWN_PROVIDERS[value]
-    if (meta?.baseUrl) {
-      updateField(baseUrlKey, meta.baseUrl)
-    }
-    // Reset picker when provider changes
-    setPickerState(kind, idlePicker)
+  function addProfile() {
+    setForm((current) => {
+      if (!current) return current
+      const base = current.profiles.find((profile) => profile.id === selectedProfileId) ?? current.profiles[0]
+      const id = `profile-${Date.now()}`
+      const profile = cloneProfile(base, id, 'New RAG Profile')
+      setSelectedProfileId(id)
+      setSelectedKind('llm')
+      return { ...current, profiles: [...current.profiles, profile] }
+    })
   }
 
-  async function handleLoadModels(kind: ConnectionTestKind) {
+  function duplicateProfile() {
     if (!form) return
-    setPickerState(kind, { status: 'loading', models: [] })
+    const base = selectedProfile ?? form.profiles[0]
+    if (!base) return
+    const id = `profile-${Date.now()}`
+    setSelectedProfileId(id)
+    setForm({
+      ...form,
+      profiles: [...form.profiles, cloneProfile(base, id, `${base.name} Copy`)],
+    })
+  }
 
-    const provider = kind === 'llm' ? form.llm_provider
-      : kind === 'embedding' ? form.embedding_provider
-      : form.vision_provider
-    const baseUrl = kind === 'llm' ? form.llm_base_url
-      : kind === 'embedding' ? form.embedding_base_url
-      : form.vision_base_url
-    const apiKey = kind === 'llm' ? form.llm_api_key
-      : kind === 'embedding' ? form.embedding_api_key
-      : form.vision_api_key
+  function removeProfile(profileId: string) {
+    setForm((current) => {
+      if (!current || current.profiles.length <= 1) return current
+      const profiles = current.profiles.filter((profile) => profile.id !== profileId)
+      const activeProfileId = current.active_profile_id === profileId
+        ? profiles[0].id
+        : current.active_profile_id
+      const selectedId = selectedProfileId === profileId ? profiles[0].id : selectedProfileId
+      setSelectedProfileId(selectedId)
+      return { ...current, active_profile_id: activeProfileId, profiles }
+    })
+  }
 
+  function handleProviderChange(profileId: string, kind: ConnectionTestKind, provider: string) {
+    const meta = KNOWN_PROVIDERS[provider]
+    updateChannel(profileId, kind, {
+      provider,
+      ...(meta?.baseUrl ? { base_url: meta.baseUrl } : {}),
+    })
+    setPickers((prev) => ({ ...prev, [stateKey(profileId, kind)]: idlePicker }))
+  }
+
+  async function handleLoadModels(profile: ProfileForm, kind: ConnectionTestKind) {
+    const key = stateKey(profile.id, kind)
+    const channel = profile[kind]
+    setPickers((prev) => ({ ...prev, [key]: { status: 'loading', models: [] } }))
     try {
       const result = await listModels({
-        provider,
-        base_url: baseUrl || null,
-        api_key: apiKey || null,
+        provider: channel.provider,
+        base_url: channel.base_url || null,
+        api_key: channel.api_key || null,
       })
-      if (result.ok) {
-        setPickerState(kind, { status: 'loaded', models: result.models })
-      } else {
-        setPickerState(kind, { status: 'error', models: [], error: result.error ?? 'Failed to load models' })
-      }
+      setPickers((prev) => ({
+        ...prev,
+        [key]: result.ok
+          ? { status: 'loaded', models: result.models }
+          : { status: 'error', models: [], error: result.error ?? 'Failed to load models' },
+      }))
     } catch (err) {
-      setPickerState(kind, {
-        status: 'error', models: [],
-        error: err instanceof Error ? err.message : String(err),
-      })
+      setPickers((prev) => ({
+        ...prev,
+        [key]: {
+          status: 'error', models: [],
+          error: err instanceof Error ? err.message : String(err),
+        },
+      }))
     }
   }
 
-  async function handleTest(kind: ConnectionTestKind) {
-    if (!form) return
-    setTestState(kind, { status: 'pending' })
-
-    const payload = {
-      kind,
-      provider: kind === 'llm' ? form.llm_provider : kind === 'embedding' ? form.embedding_provider : form.vision_provider,
-      model: kind === 'llm' ? form.llm_model : kind === 'embedding' ? form.embedding_model : form.vision_model,
-      base_url: (kind === 'llm' ? form.llm_base_url : kind === 'embedding' ? form.embedding_base_url : form.vision_base_url) || null,
-      api_key: (kind === 'llm' ? form.llm_api_key : kind === 'embedding' ? form.embedding_api_key : form.vision_api_key) || null,
-      ...(kind === 'embedding' ? { embedding_dim: form.embedding_dim, embedding_max_token_size: form.embedding_max_token_size } : {}),
-    }
-
+  async function handleTest(profile: ProfileForm, kind: ConnectionTestKind) {
+    const key = stateKey(profile.id, kind)
+    const channel = profile[kind]
+    setTests((prev) => ({ ...prev, [key]: { status: 'pending' } }))
     try {
-      const result: ConnectionTestResponse = await testConnection(payload)
+      const result: ConnectionTestResponse = await testConnection({
+        kind,
+        profile_id: profile.id,
+        provider: channel.provider,
+        model: channel.model,
+        base_url: channel.base_url || null,
+        api_key: channel.api_key || null,
+        ...(kind === 'embedding'
+          ? {
+              embedding_dim: channel.embedding_dim,
+              embedding_max_token_size: channel.embedding_max_token_size,
+            }
+          : {}),
+      })
       if (result.ok) {
-        setTestState(kind, { status: 'ok', latency: result.latency_ms, detected_dim: result.detected_dim })
+        setTests((prev) => ({
+          ...prev,
+          [key]: { status: 'ok', latency: result.latency_ms, detected_dim: result.detected_dim },
+        }))
         if (kind === 'embedding' && result.detected_dim != null) {
-          updateField('embedding_dim', result.detected_dim)
+          updateChannel(profile.id, 'embedding', { embedding_dim: result.detected_dim })
         }
       } else {
-        setTestState(kind, { status: 'error', error: result.error ?? 'Connection failed' })
+        setTests((prev) => ({
+          ...prev,
+          [key]: { status: 'error', error: result.error ?? 'Connection failed' },
+        }))
       }
     } catch (err) {
-      setTestState(kind, { status: 'error', error: err instanceof Error ? err.message : String(err) })
+      setTests((prev) => ({
+        ...prev,
+        [key]: { status: 'error', error: err instanceof Error ? err.message : String(err) },
+      }))
     }
   }
 
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    saveMutation.mutate()
+  }
+
+  if (error) {
+    return <section className="page"><div className="error-panel">{(error as Error).message}</div></section>
+  }
+  if (!form || !settings) {
+    return <section className="page"><div className="empty">Loading settings…</div></section>
+  }
+
+  const selectedProfile = form.profiles.find((profile) => profile.id === selectedProfileId)
+    ?? form.profiles[0]
+  const selectedChannel = selectedProfile?.[selectedKind]
   const envRows = environment
     ? [
         ['Python', environment.python],
@@ -222,25 +280,12 @@ export default function SettingsPage() {
       ]
     : []
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    saveMutation.mutate()
-  }
-
-  if (error) {
-    return <section className="page"><div className="error-panel">{(error as Error).message}</div></section>
-  }
-
-  if (!form || !settings) {
-    return <section className="page"><div className="empty">Loading settings…</div></section>
-  }
-
   return (
     <section className="page">
       <div className="page-header">
         <div>
           <h1>Settings</h1>
-          <p>Model providers, credentials, directories, and processing defaults</p>
+          <p>Model profiles, credentials, directories, and processing defaults</p>
         </div>
         <div className="actions">
           <button className="button" type="button" onClick={() => setForm(makeForm(settings))}>
@@ -248,84 +293,157 @@ export default function SettingsPage() {
           </button>
           <button className="button primary" form="studio-settings-form" disabled={saveMutation.isPending}>
             <Save size={16} />
-            {saveMutation.isPending ? 'Saving…' : 'Save Settings'}
+            {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
           </button>
         </div>
       </div>
 
       <div className="settings-layout">
         <aside className="settings-nav">
-          <button className={activePanel === 'models' ? 'active' : ''} onClick={() => setActivePanel('models')}>
+          <button className={activePanel === 'models' ? 'active' : ''} onClick={() => setActivePanel('models')} type="button">
             <KeyRound size={16} /> Models
           </button>
-          <button className={activePanel === 'runtime' ? 'active' : ''} onClick={() => setActivePanel('runtime')}>
+          <button className={activePanel === 'runtime' ? 'active' : ''} onClick={() => setActivePanel('runtime')} type="button">
             <ServerCog size={16} /> Runtime
           </button>
-          <button className={activePanel === 'defaults' ? 'active' : ''} onClick={() => setActivePanel('defaults')}>
+          <button className={activePanel === 'defaults' ? 'active' : ''} onClick={() => setActivePanel('defaults')} type="button">
             <CheckCircle2 size={16} /> Defaults
           </button>
         </aside>
 
         <form className="settings-content" id="studio-settings-form" onSubmit={handleSubmit}>
-          {activePanel === 'models' && (
-            <div className="provider-grid">
-              <ProviderSection
-                title="LLM" kind="llm"
-                provider={form.llm_provider} model={form.llm_model}
-                baseUrl={form.llm_base_url ?? ''} apiKey={form.llm_api_key}
-                configured={settings.llm_api_key_configured}
-                testState={tests.llm} pickerState={pickers.llm}
-                onProvider={(v) => handleProviderChange('llm', v)}
-                onModel={(v) => updateField('llm_model', v)}
-                onBaseUrl={(v) => updateField('llm_base_url', v)}
-                onApiKey={(v) => updateField('llm_api_key', v)}
-                onTest={() => handleTest('llm')}
-                onLoadModels={() => handleLoadModels('llm')}
-              />
-              <ProviderSection
-                title="Embedding" kind="embedding"
-                provider={form.embedding_provider} model={form.embedding_model}
-                baseUrl={form.embedding_base_url ?? ''} apiKey={form.embedding_api_key}
-                configured={settings.embedding_api_key_configured}
-                testState={tests.embedding} pickerState={pickers.embedding}
-                onProvider={(v) => handleProviderChange('embedding', v)}
-                onModel={(v) => updateField('embedding_model', v)}
-                onBaseUrl={(v) => updateField('embedding_base_url', v)}
-                onApiKey={(v) => updateField('embedding_api_key', v)}
-                onTest={() => handleTest('embedding')}
-                onLoadModels={() => handleLoadModels('embedding')}
-              >
-                <div className="dim-row">
-                  <label style={{ flex: 1 }}>
-                    Dimension
-                    <input min={1} type="number" value={form.embedding_dim}
-                      onChange={(e) => updateField('embedding_dim', Number(e.target.value))} />
-                  </label>
-                  {tests.embedding.status === 'ok' && tests.embedding.detected_dim != null && (
-                    <span className="dim-detected">
-                      <ScanSearch size={13} /> Auto-detected: {tests.embedding.detected_dim}
-                    </span>
-                  )}
+          {activePanel === 'models' && selectedProfile && selectedChannel && (
+            <div className="model-settings-shell">
+              <aside className="model-service-rail">
+                <div className="profile-rail-header">
+                  <div className="model-service-search">Search RAG profile...</div>
+                  <button className="icon-button" type="button" onClick={addProfile} title="Add profile">
+                    <Plus size={16} />
+                  </button>
                 </div>
-                <label>
-                  Max tokens
-                  <input min={1} type="number" value={form.embedding_max_token_size}
-                    onChange={(e) => updateField('embedding_max_token_size', Number(e.target.value))} />
-                </label>
-              </ProviderSection>
-              <ProviderSection
-                title="Vision" kind="vision"
-                provider={form.vision_provider} model={form.vision_model}
-                baseUrl={form.vision_base_url ?? ''} apiKey={form.vision_api_key}
-                configured={settings.vision_api_key_configured}
-                testState={tests.vision} pickerState={pickers.vision}
-                onProvider={(v) => handleProviderChange('vision', v)}
-                onModel={(v) => updateField('vision_model', v)}
-                onBaseUrl={(v) => updateField('vision_base_url', v)}
-                onApiKey={(v) => updateField('vision_api_key', v)}
-                onTest={() => handleTest('vision')}
-                onLoadModels={() => handleLoadModels('vision')}
-              />
+                <div className="model-service-list">
+                  {form.profiles.map((profile) => (
+                    <button
+                      className={`model-service-item ${selectedProfileId === profile.id ? 'active' : ''}`}
+                      key={profile.id}
+                      onClick={() => setSelectedProfileId(profile.id)}
+                      type="button"
+                    >
+                      <span className="provider-avatar">{providerInitial(profile.llm.provider)}</span>
+                      <span className="model-service-body">
+                        <strong>{profile.name}</strong>
+                        <small>{profile.llm.model} / {profile.embedding.model}</small>
+                      </span>
+                      <span className={profileReady(profile) ? 'on-pill' : 'off-pill'}>
+                        {form.active_profile_id === profile.id ? 'RAG' : profileReady(profile) ? 'ON' : 'SET'}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                <div className="profile-actions">
+                  <button className="button" type="button" onClick={duplicateProfile}>
+                    <Copy size={14} /> Duplicate
+                  </button>
+                  <button
+                    className="button danger"
+                    disabled={form.profiles.length <= 1}
+                    type="button"
+                    onClick={() => removeProfile(selectedProfile.id)}
+                  >
+                    <Trash2 size={14} /> Remove
+                  </button>
+                </div>
+              </aside>
+
+              <div className="model-detail-pane">
+                <div className="model-detail-hero">
+                  <span className="provider-avatar provider-avatar-large">
+                    {providerInitial(selectedChannel.provider)}
+                  </span>
+                  <div>
+                    <input
+                      className="profile-name-input"
+                      value={selectedProfile.name}
+                      onChange={(event) => updateProfile(selectedProfile.id, { name: event.target.value })}
+                    />
+                    <p>{profileReady(selectedProfile) ? 'Ready for RAG selection' : 'LLM and Embedding keys are required'}</p>
+                  </div>
+                  <button
+                    className={form.active_profile_id === selectedProfile.id ? 'button primary' : 'button'}
+                    type="button"
+                    onClick={() => updateField('active_profile_id', selectedProfile.id)}
+                  >
+                    {form.active_profile_id === selectedProfile.id ? 'Default for RAG' : 'Use for RAG'}
+                  </button>
+                </div>
+
+                <div className="profile-tabs">
+                  {(['llm', 'embedding', 'vision'] as ConnectionTestKind[]).map((kind) => (
+                    <button
+                      className={selectedKind === kind ? 'active' : ''}
+                      key={kind}
+                      type="button"
+                      onClick={() => setSelectedKind(kind)}
+                    >
+                      {kindLabel(kind)}
+                      <span className={selectedProfile[kind].api_key_configured || selectedProfile[kind].api_key ? 'tab-dot ok' : 'tab-dot'} />
+                    </button>
+                  ))}
+                </div>
+
+                <ProviderSection
+                  key={`${selectedProfile.id}-${selectedKind}`}
+                  title={kindLabel(selectedKind)}
+                  kind={selectedKind}
+                  channel={selectedChannel}
+                  testState={tests[stateKey(selectedProfile.id, selectedKind)] ?? idleTest}
+                  pickerState={pickers[stateKey(selectedProfile.id, selectedKind)] ?? idlePicker}
+                  onProvider={(provider) => handleProviderChange(selectedProfile.id, selectedKind, provider)}
+                  onModel={(model) => updateChannel(selectedProfile.id, selectedKind, { model })}
+                  onBaseUrl={(baseUrl) => updateChannel(selectedProfile.id, selectedKind, { base_url: baseUrl })}
+                  onApiKey={(apiKey) => updateChannel(selectedProfile.id, selectedKind, { api_key: apiKey })}
+                  onTest={() => handleTest(selectedProfile, selectedKind)}
+                  onLoadModels={() => handleLoadModels(selectedProfile, selectedKind)}
+                >
+                  {selectedKind === 'embedding' ? (
+                    <>
+                      <div className="dim-row">
+                        <label style={{ flex: 1 }}>
+                          Dimension
+                          <input
+                            min={1}
+                            type="number"
+                            value={selectedChannel.embedding_dim ?? 3072}
+                            onChange={(event) => updateChannel(
+                              selectedProfile.id, 'embedding',
+                              { embedding_dim: Number(event.target.value) },
+                            )}
+                          />
+                        </label>
+                        {(tests[stateKey(selectedProfile.id, 'embedding')]?.status === 'ok'
+                          && tests[stateKey(selectedProfile.id, 'embedding')]?.detected_dim != null) ? (
+                            <span className="dim-detected">
+                              <ScanSearch size={13} />
+                              Auto-detected: {tests[stateKey(selectedProfile.id, 'embedding')]?.detected_dim}
+                            </span>
+                          ) : null}
+                      </div>
+                      <label>
+                        Max tokens
+                        <input
+                          min={1}
+                          type="number"
+                          value={selectedChannel.embedding_max_token_size ?? 8192}
+                          onChange={(event) => updateChannel(
+                            selectedProfile.id, 'embedding',
+                            { embedding_max_token_size: Number(event.target.value) },
+                          )}
+                        />
+                      </label>
+                    </>
+                  ) : null}
+                </ProviderSection>
+              </div>
             </div>
           )}
 
@@ -333,10 +451,10 @@ export default function SettingsPage() {
             <div className="split">
               <div className="panel stack">
                 <h2>Directories</h2>
-                <label>Data directory<input value={form.data_dir ?? ''} onChange={(e) => updateField('data_dir', e.target.value)} /></label>
-                <label>Upload directory<input value={form.upload_dir ?? ''} onChange={(e) => updateField('upload_dir', e.target.value)} /></label>
-                <label>Working directory<input value={form.working_dir ?? ''} onChange={(e) => updateField('working_dir', e.target.value)} /></label>
-                <label>Output directory<input value={form.output_dir ?? ''} onChange={(e) => updateField('output_dir', e.target.value)} /></label>
+                <label>Data directory<input value={form.data_dir} onChange={(e) => updateField('data_dir', e.target.value)} /></label>
+                <label>Upload directory<input value={form.upload_dir} onChange={(e) => updateField('upload_dir', e.target.value)} /></label>
+                <label>Working directory<input value={form.working_dir} onChange={(e) => updateField('working_dir', e.target.value)} /></label>
+                <label>Output directory<input value={form.output_dir} onChange={(e) => updateField('output_dir', e.target.value)} /></label>
                 <label>Settings file<input value={settings.settings_file} readOnly /></label>
               </div>
               <div className="panel stack">
@@ -399,16 +517,10 @@ export default function SettingsPage() {
   )
 }
 
-// ── ProviderSection ───────────────────────────────────────────────────────────
-
 interface ProviderSectionProps {
   title: string
   kind: ConnectionTestKind
-  provider: string
-  model: string
-  baseUrl: string
-  apiKey: string
-  configured: boolean
+  channel: ChannelForm
   testState: TestState
   pickerState: ModelPickerState
   onProvider: (v: string) => void
@@ -421,15 +533,15 @@ interface ProviderSectionProps {
 }
 
 function ProviderSection({
-  title, kind, provider, model, baseUrl, apiKey, configured,
-  testState, pickerState, onProvider, onModel, onBaseUrl, onApiKey,
-  onTest, onLoadModels, children,
+  title, kind, channel, testState, pickerState, onProvider, onModel,
+  onBaseUrl, onApiKey, onTest, onLoadModels, children,
 }: ProviderSectionProps) {
   const isPending = testState.status === 'pending'
   const isLoadingModels = pickerState.status === 'loading'
   const hasModels = pickerState.status === 'loaded' && pickerState.models.length > 0
-  const meta = KNOWN_PROVIDERS[provider]
-  const isCustomBaseUrl = !meta?.baseUrl || provider === 'openai-compatible' || provider === 'custom'
+  const meta = KNOWN_PROVIDERS[channel.provider]
+  const isCustomBaseUrl = !meta?.baseUrl || channel.provider === 'openai-compatible' || channel.provider === 'custom'
+  const configured = channel.api_key_configured || Boolean(channel.api_key)
 
   return (
     <div className="panel stack provider-panel">
@@ -442,7 +554,7 @@ function ProviderSection({
 
       <label>
         Provider
-        <select value={provider} onChange={(e) => onProvider(e.target.value)}>
+        <select value={channel.provider} onChange={(e) => onProvider(e.target.value)}>
           <optgroup label="Popular platforms">
             <option value="siliconflow">硅基流动 (SiliconFlow)</option>
             <option value="aliyun-bailian">阿里云百炼</option>
@@ -471,10 +583,9 @@ function ProviderSection({
         </select>
       </label>
 
-      {isCustomBaseUrl && (
-        <label>Base URL<input value={baseUrl} onChange={(e) => onBaseUrl(e.target.value)} placeholder="https://…/v1" /></label>
-      )}
-      {!isCustomBaseUrl && (
+      {isCustomBaseUrl ? (
+        <label>Base URL<input value={channel.base_url} onChange={(e) => onBaseUrl(e.target.value)} placeholder="https://.../v1" /></label>
+      ) : (
         <div className="setting-row base-url-display">
           <span className="base-url-label">Base URL</span>
           <span className="base-url-value">{meta.baseUrl}</span>
@@ -485,15 +596,15 @@ function ProviderSection({
         API key
         <input
           type="password"
-          value={apiKey}
-          placeholder={configured ? '••••••••  (leave blank to keep saved key)' : 'Enter API key…'}
+          value={channel.api_key}
+          placeholder={channel.api_key_configured ? 'Saved key, leave blank to keep it' : 'Enter API key...'}
           onChange={(e) => onApiKey(e.target.value)}
         />
       </label>
 
       <ModelPickerField
         kind={kind}
-        model={model}
+        model={channel.model}
         pickerState={pickerState}
         onModel={onModel}
         onLoadModels={onLoadModels}
@@ -506,16 +617,20 @@ function ProviderSection({
       <div className="test-row">
         <button type="button" className="button test-btn" onClick={onTest} disabled={isPending}>
           {isPending
-            ? <><Loader2 size={14} className="spin" /> Testing…</>
+            ? <><Loader2 size={14} className="spin" /> Testing...</>
             : <><Zap size={14} /> Test connection</>}
         </button>
         <TestResultBadge state={testState} kind={kind} />
       </div>
+      {testState.status === 'error' && testState.error ? (
+        <div className="test-error-message">{summarizeProviderError(testState.error)}</div>
+      ) : null}
+      {pickerState.status === 'error' && pickerState.error ? (
+        <div className="test-error-message">{summarizeProviderError(pickerState.error)}</div>
+      ) : null}
     </div>
   )
 }
-
-// ── ModelPickerField ──────────────────────────────────────────────────────────
 
 interface ModelPickerFieldProps {
   kind: ConnectionTestKind
@@ -527,24 +642,14 @@ interface ModelPickerFieldProps {
   hasModels: boolean
 }
 
-function groupModelsByOwner(models: ModelInfo[]): Map<string, ModelInfo[]> {
-  const groups = new Map<string, ModelInfo[]>()
-  for (const m of models) {
-    const owner = m.owned_by || 'Other'
-    if (!groups.has(owner)) groups.set(owner, [])
-    groups.get(owner)!.push(m)
-  }
-  return groups
-}
-
 function ModelPickerField({
   kind, model, pickerState, onModel, onLoadModels, isLoadingModels, hasModels,
 }: ModelPickerFieldProps) {
   const dropdownRef = useRef<HTMLDivElement>(null)
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
+  const [visionOnly, setVisionOnly] = useState(kind === 'vision')
 
-  // Close dropdown when clicking outside
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
@@ -560,11 +665,7 @@ function ModelPickerField({
       <div className="model-picker-row">
         <label style={{ flex: 1 }}>
           Model
-          <input
-            value={model}
-            onChange={(e) => onModel(e.target.value)}
-            placeholder="e.g. gpt-4o-mini"
-          />
+          <input value={model} onChange={(e) => onModel(e.target.value)} placeholder="e.g. gpt-4o-mini" />
         </label>
         <button
           type="button"
@@ -573,22 +674,21 @@ function ModelPickerField({
           disabled={isLoadingModels}
           title="Fetch available models from provider"
         >
-          {isLoadingModels
-            ? <Loader2 size={14} className="spin" />
-            : <RefreshCw size={14} />}
-          {isLoadingModels ? 'Loading…' : 'Load models'}
+          {isLoadingModels ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />}
+          {isLoadingModels ? 'Loading...' : 'Load models'}
         </button>
-        {pickerState.status === 'error' && (
+        {pickerState.status === 'error' ? (
           <span className="model-load-error" title={pickerState.error ?? undefined}>
             <XCircle size={13} /> Failed
           </span>
-        )}
+        ) : null}
       </div>
     )
   }
 
-  // Models are loaded — show grouped dropdown
-  const groups = groupModelsByOwner(pickerState.models)
+  const visionCount = pickerState.models.filter((m) => m.vision_capable).length
+  const baseModels = visionOnly ? pickerState.models.filter((m) => m.vision_capable) : pickerState.models
+  const groups = groupModelsByOwner(baseModels)
   const lowerSearch = search.toLowerCase()
   const filteredGroups = new Map<string, ModelInfo[]>()
   for (const [owner, models] of groups) {
@@ -607,20 +707,30 @@ function ModelPickerField({
             className="model-dropdown-trigger"
             onClick={() => { setOpen((o) => !o); setSearch('') }}
           >
-            <span className="model-dropdown-value">{model || 'Select a model…'}</span>
+            <span className="model-dropdown-value">{model || 'Select a model...'}</span>
             <ChevronDown size={14} className={open ? 'chevron open' : 'chevron'} />
           </button>
 
-          {open && (
+          {open ? (
             <div className="model-dropdown-panel">
               <div className="model-search-row">
                 <input
                   autoFocus
                   className="model-search"
-                  placeholder="Search models…"
+                  placeholder="Search models..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
+                {kind === 'vision' && visionCount > 0 ? (
+                  <button
+                    type="button"
+                    className={`vision-filter-btn ${visionOnly ? 'active' : ''}`}
+                    onClick={() => setVisionOnly((v) => !v)}
+                    title={visionOnly ? 'Show all models' : 'Show vision-capable models only'}
+                  >
+                    VL {visionOnly ? `${visionCount}` : 'only'}
+                  </button>
+                ) : null}
                 <span className="model-count">{totalFiltered}</span>
               </div>
               <div className="model-list">
@@ -635,19 +745,24 @@ function ModelPickerField({
                         onClick={() => { onModel(m.id); setOpen(false) }}
                       >
                         <span className="model-id">{m.id}</span>
-                        {m.context_length ? (
-                          <span className="model-ctx">{formatCtx(m.context_length)}</span>
-                        ) : null}
+                        <span className="model-badges">
+                          {m.vision_capable ? <span className="model-badge model-badge--vision">VL</span> : null}
+                          {m.context_length ? <span className="model-ctx">{formatCtx(m.context_length)}</span> : null}
+                        </span>
                       </button>
                     ))}
                   </div>
                 ))}
-                {totalFiltered === 0 && (
-                  <div className="model-empty">No models match "{search}"</div>
-                )}
+                {totalFiltered === 0 ? (
+                  <div className="model-empty">
+                    {visionOnly
+                      ? 'No vision-capable models found. Toggle "VL only" to see all.'
+                      : `No models match "${search}"`}
+                  </div>
+                ) : null}
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       </label>
       <button
@@ -663,13 +778,177 @@ function ModelPickerField({
   )
 }
 
+function makeForm(settings: StudioSettings): SettingsForm {
+  const profiles = settings.profiles.length > 0
+    ? settings.profiles.map(profileFromResponse)
+    : [legacyProfile(settings)]
+  return {
+    data_dir: settings.data_dir,
+    upload_dir: settings.upload_dir,
+    working_dir: settings.working_dir,
+    output_dir: settings.output_dir,
+    default_parser: settings.default_parser,
+    default_parse_method: settings.default_parse_method,
+    default_language: settings.default_language,
+    default_device: settings.default_device,
+    active_profile_id: settings.active_profile_id || profiles[0].id,
+    profiles,
+  }
+}
+
+function profileFromResponse(profile: ModelProfile): ProfileForm {
+  return {
+    id: profile.id,
+    name: profile.name,
+    llm: {
+      provider: profile.llm.provider,
+      model: profile.llm.model,
+      base_url: profile.llm.base_url ?? '',
+      api_key: '',
+      api_key_configured: profile.llm.api_key_configured,
+    },
+    embedding: {
+      provider: profile.embedding.provider,
+      model: profile.embedding.model,
+      base_url: profile.embedding.base_url ?? '',
+      api_key: '',
+      api_key_configured: profile.embedding.api_key_configured,
+      embedding_dim: profile.embedding.embedding_dim ?? 3072,
+      embedding_max_token_size: profile.embedding.embedding_max_token_size ?? 8192,
+    },
+    vision: {
+      provider: profile.vision.provider,
+      model: profile.vision.model,
+      base_url: profile.vision.base_url ?? '',
+      api_key: '',
+      api_key_configured: profile.vision.api_key_configured,
+    },
+  }
+}
+
+function legacyProfile(settings: StudioSettings): ProfileForm {
+  return {
+    id: 'default',
+    name: 'Default RAG Profile',
+    llm: {
+      provider: settings.llm_provider,
+      model: settings.llm_model,
+      base_url: settings.llm_base_url ?? '',
+      api_key: '',
+      api_key_configured: settings.llm_api_key_configured,
+    },
+    embedding: {
+      provider: settings.embedding_provider,
+      model: settings.embedding_model,
+      base_url: settings.embedding_base_url ?? '',
+      api_key: '',
+      api_key_configured: settings.embedding_api_key_configured,
+      embedding_dim: settings.embedding_dim,
+      embedding_max_token_size: settings.embedding_max_token_size,
+    },
+    vision: {
+      provider: settings.vision_provider,
+      model: settings.vision_model,
+      base_url: settings.vision_base_url ?? '',
+      api_key: '',
+      api_key_configured: settings.vision_api_key_configured,
+    },
+  }
+}
+
+function toPayload(form: SettingsForm): StudioSettingsUpdate {
+  const activeProfile = form.profiles.find((profile) => profile.id === form.active_profile_id) ?? form.profiles[0]
+  return {
+    data_dir: form.data_dir,
+    upload_dir: form.upload_dir,
+    working_dir: form.working_dir,
+    output_dir: form.output_dir,
+    llm_provider: activeProfile.llm.provider,
+    llm_model: activeProfile.llm.model,
+    llm_base_url: activeProfile.llm.base_url || null,
+    llm_api_key: activeProfile.llm.api_key || null,
+    embedding_provider: activeProfile.embedding.provider,
+    embedding_model: activeProfile.embedding.model,
+    embedding_dim: activeProfile.embedding.embedding_dim ?? 3072,
+    embedding_max_token_size: activeProfile.embedding.embedding_max_token_size ?? 8192,
+    embedding_base_url: activeProfile.embedding.base_url || null,
+    embedding_api_key: activeProfile.embedding.api_key || null,
+    vision_provider: activeProfile.vision.provider,
+    vision_model: activeProfile.vision.model,
+    vision_base_url: activeProfile.vision.base_url || null,
+    vision_api_key: activeProfile.vision.api_key || null,
+    default_parser: form.default_parser,
+    default_parse_method: form.default_parse_method,
+    default_language: form.default_language,
+    default_device: form.default_device,
+    active_profile_id: form.active_profile_id,
+    profiles: form.profiles.map(profileToPayload),
+  }
+}
+
+function profileToPayload(profile: ProfileForm): ModelProfileUpdate {
+  return {
+    id: profile.id,
+    name: profile.name || profile.id,
+    llm: channelToPayload(profile.llm),
+    embedding: channelToPayload(profile.embedding),
+    vision: channelToPayload(profile.vision),
+  }
+}
+
+function channelToPayload(channel: ChannelForm) {
+  return {
+    provider: channel.provider,
+    model: channel.model,
+    base_url: channel.base_url || null,
+    api_key: channel.api_key || null,
+    embedding_dim: channel.embedding_dim ?? null,
+    embedding_max_token_size: channel.embedding_max_token_size ?? null,
+  }
+}
+
+function cloneProfile(profile: ProfileForm, id: string, name: string): ProfileForm {
+  return {
+    id,
+    name,
+    llm: { ...profile.llm, api_key: '', api_key_configured: false },
+    embedding: { ...profile.embedding, api_key: '', api_key_configured: false },
+    vision: { ...profile.vision, api_key: '', api_key_configured: false },
+  }
+}
+
+function stateKey(profileId: string, kind: ConnectionTestKind) {
+  return `${profileId}:${kind}`
+}
+
+function profileReady(profile: ProfileForm) {
+  return Boolean(
+    (profile.llm.api_key_configured || profile.llm.api_key)
+    && (profile.embedding.api_key_configured || profile.embedding.api_key),
+  )
+}
+
+function kindLabel(kind: ConnectionTestKind): string {
+  if (kind === 'llm') return 'LLM'
+  if (kind === 'embedding') return 'Embedding'
+  return 'Vision'
+}
+
+function groupModelsByOwner(models: ModelInfo[]): Map<string, ModelInfo[]> {
+  const groups = new Map<string, ModelInfo[]>()
+  for (const model of models) {
+    const owner = model.owned_by || 'Other'
+    if (!groups.has(owner)) groups.set(owner, [])
+    groups.get(owner)!.push(model)
+  }
+  return groups
+}
+
 function formatCtx(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M ctx`
   if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k ctx`
   return `${n} ctx`
 }
-
-// ── TestResultBadge ───────────────────────────────────────────────────────────
 
 function TestResultBadge({ state, kind }: { state: TestState; kind: ConnectionTestKind }) {
   if (state.status === 'idle' || state.status === 'pending') return null
@@ -689,16 +968,24 @@ function TestResultBadge({ state, kind }: { state: TestState; kind: ConnectionTe
   )
 }
 
-// ── payload serializer ────────────────────────────────────────────────────────
+function providerName(provider: string): string {
+  return KNOWN_PROVIDERS[provider]?.label ?? provider
+}
 
-function toPayload(form: SettingsForm): StudioSettingsUpdate {
-  return {
-    ...form,
-    llm_base_url: form.llm_base_url || null,
-    llm_api_key: form.llm_api_key || null,
-    embedding_base_url: form.embedding_base_url || null,
-    embedding_api_key: form.embedding_api_key || null,
-    vision_base_url: form.vision_base_url || null,
-    vision_api_key: form.vision_api_key || null,
-  }
+function providerInitial(provider: string): string {
+  const label = providerName(provider).trim()
+  if (!label) return 'R'
+  if (/[\u4e00-\u9fff]/.test(label[0])) return label[0]
+  return label.slice(0, 1).toUpperCase()
+}
+
+function summarizeProviderError(error: string): string {
+  const invalidKey = error.match(/Incorrect API key provided/i)
+  if (invalidKey) return 'Invalid API key: the provider rejected the key currently saved in Studio.'
+
+  const code = error.match(/Error code:\s*(\d+)/i)?.[1]
+  const message = error.match(/'message':\s*'([^']+)'/)?.[1]
+    ?? error.match(/"message":\s*"([^"]+)"/)?.[1]
+  const summary = message ?? error
+  return code ? `${code}: ${summary}` : summary.slice(0, 220)
 }

@@ -12,6 +12,23 @@ class EnvironmentResponse(BaseModel):
     cuda_available: bool
 
 
+class ModelChannelResponse(BaseModel):
+    provider: str
+    model: str
+    base_url: str | None = None
+    api_key_configured: bool
+    embedding_dim: int | None = None
+    embedding_max_token_size: int | None = None
+
+
+class ModelProfileResponse(BaseModel):
+    id: str
+    name: str
+    llm: ModelChannelResponse
+    embedding: ModelChannelResponse
+    vision: ModelChannelResponse
+
+
 class StudioSettingsResponse(BaseModel):
     data_dir: str
     upload_dir: str
@@ -36,6 +53,25 @@ class StudioSettingsResponse(BaseModel):
     default_parse_method: str
     default_language: str
     default_device: str
+    active_profile_id: str
+    profiles: list[ModelProfileResponse]
+
+
+class ModelChannelUpdate(BaseModel):
+    provider: str = "openai-compatible"
+    model: str = Field(min_length=1)
+    base_url: str | None = None
+    api_key: str | None = None
+    embedding_dim: int | None = Field(default=None, gt=0)
+    embedding_max_token_size: int | None = Field(default=None, gt=0)
+
+
+class ModelProfileUpdate(BaseModel):
+    id: str = Field(min_length=1)
+    name: str = Field(min_length=1)
+    llm: ModelChannelUpdate
+    embedding: ModelChannelUpdate
+    vision: ModelChannelUpdate
 
 
 class StudioSettingsUpdate(BaseModel):
@@ -65,6 +101,8 @@ class StudioSettingsUpdate(BaseModel):
     default_parse_method: str = Field(min_length=1)
     default_language: str = Field(min_length=1)
     default_device: str = Field(min_length=1)
+    active_profile_id: str | None = None
+    profiles: list[ModelProfileUpdate] | None = None
 
 
 class SettingsSaveResponse(BaseModel):
@@ -74,6 +112,7 @@ class SettingsSaveResponse(BaseModel):
 class ConnectionTestRequest(BaseModel):
     """Payload for testing a single provider connection using unsaved form values."""
     kind: str  # "llm" | "embedding" | "vision"
+    profile_id: str | None = None
     provider: str
     model: str
     base_url: str | None = None
@@ -93,6 +132,7 @@ class ModelInfo(BaseModel):
     id: str
     owned_by: str = ""
     context_length: int | None = None
+    vision_capable: bool = False
 
 
 class ModelListRequest(BaseModel):
