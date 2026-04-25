@@ -700,6 +700,59 @@ textarea { resize: vertical; }
 .compact-settings { max-width: 720px; }
 .setting-row { font-size: 13.5px; }
 .setting-row span { color: var(--color-text-2); }
+.env-missing { color: var(--color-danger) !important; }
+
+/* ── Test connection row ──────────────────────────────────────── */
+.test-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px solid var(--color-border);
+  margin-top: 4px;
+}
+
+.test-btn {
+  min-height: 32px;
+  font-size: 12.5px;
+  padding: 0 12px;
+}
+
+.test-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12.5px;
+  font-weight: 650;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+}
+
+.test-result--ok    { background: var(--color-accent-light); color: var(--color-accent); }
+.test-result--error { background: var(--color-danger-bg); color: var(--color-danger); cursor: help; }
+
+/* ── Embedding dim auto-detect ───────────────────────────────── */
+.dim-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.dim-detected {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 650;
+  color: var(--color-accent);
+  white-space: nowrap;
+  padding-bottom: 10px;
+}
+
+/* ── Spinner animation ────────────────────────────────────────── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spin { animation: spin 0.8s linear infinite; }
 
 /* ── Answer area ──────────────────────────────────────────────── */
 .answer {

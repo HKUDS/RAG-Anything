@@ -1,4 +1,6 @@
 import type {
+  ConnectionTestRequest,
+  ConnectionTestResponse,
   DocumentRecord,
   EnvironmentResponse,
   JobRecord,
@@ -71,4 +73,11 @@ export async function updateStudioSettings(settings: StudioSettingsUpdate): Prom
     method: 'PUT',
   })
   return response.settings
+}
+
+export async function testConnection(payload: ConnectionTestRequest): Promise<ConnectionTestResponse> {
+  return request<ConnectionTestResponse>('/api/settings/test-connection', {
+    body: JSON.stringify(payload),
+    method: 'POST',
+  })
 }

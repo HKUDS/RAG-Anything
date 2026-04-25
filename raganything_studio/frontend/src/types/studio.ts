@@ -78,6 +78,25 @@ export interface StudioSettings {
   default_device: string
 }
 
+export type ConnectionTestKind = 'llm' | 'embedding' | 'vision'
+
+export interface ConnectionTestRequest {
+  kind: ConnectionTestKind
+  provider: string
+  model: string
+  base_url?: string | null
+  api_key?: string | null
+  embedding_dim?: number
+  embedding_max_token_size?: number
+}
+
+export interface ConnectionTestResponse {
+  ok: boolean
+  latency_ms?: number | null
+  error?: string | null
+  detected_dim?: number | null
+}
+
 export interface StudioSettingsUpdate {
   data_dir?: string | null
   upload_dir?: string | null
