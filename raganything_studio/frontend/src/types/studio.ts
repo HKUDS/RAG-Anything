@@ -97,6 +97,24 @@ export interface ConnectionTestResponse {
   detected_dim?: number | null
 }
 
+export interface ModelInfo {
+  id: string
+  owned_by: string
+  context_length?: number | null
+}
+
+export interface ModelListRequest {
+  provider: string
+  base_url?: string | null
+  api_key?: string | null
+}
+
+export interface ModelListResponse {
+  ok: boolean
+  models: ModelInfo[]
+  error?: string | null
+}
+
 export interface StudioSettingsUpdate {
   data_dir?: string | null
   upload_dir?: string | null

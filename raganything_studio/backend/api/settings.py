@@ -14,6 +14,9 @@ from raganything_studio.backend.schemas.settings import (
     ConnectionTestRequest,
     ConnectionTestResponse,
     EnvironmentResponse,
+    ModelInfo,
+    ModelListRequest,
+    ModelListResponse,
     SettingsSaveResponse,
     StudioSettingsResponse,
     StudioSettingsUpdate,
@@ -84,6 +87,50 @@ async def test_connection(
         return ConnectionTestResponse(ok=False, error=str(exc))
 
 
+# ── provider base-URL registry ───────────────────────────────────────────────
+
+PROVIDER_BASE_URLS: dict[str, str] = {
+    "openai": "https://api.openai.com/v1",
+    "siliconflow": "https://api.siliconflow.cn/v1",
+    "aliyun-bailian": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "baidu-qianfan": "https://qianfan.baidubce.com/v2",
+    "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+    "moonshot": "https://api.moonshot.cn/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "together": "https://api.together.xyz/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "anthropic-compatible": "https://api.anthropic.com/v1",
+}
+
+
+@router.post("/list-models", response_model=ModelListResponse)
+async def list_models(
+    payload: ModelListRequest,
+    settings_store: SettingsStore = Depends(get_settings_store),
+) -> ModelListResponse:
+    """
+    Fetch the model list for a provider. Uses the OpenAI-compatible /models
+    endpoint which nearly all platforms support. Falls back to saved API key
+    when the submitted key is blank.
+    """
+    saved = settings_store.get()
+
+    # Pick the best saved key across all three roles as fallback
+    saved_key = saved.llm_api_key or saved.embedding_api_key or saved.vision_api_key
+    api_key = payload.api_key if payload.api_key else saved_key
+
+    base_url = payload.base_url or PROVIDER_BASE_URLS.get(payload.provider)
+
+    try:
+        models = await _fetch_models(base_url, api_key)
+        return ModelListResponse(ok=True, models=models)
+    except Exception as exc:  # noqa: BLE001
+        return ModelListResponse(ok=False, error=str(exc))
+
+
 # ── provider test helpers ─────────────────────────────────────────────────────
 
 async def _test_llm(model: str, base_url: str | None, api_key: str | None) -> float:
@@ -148,6 +195,37 @@ async def _test_vision(model: str, base_url: str | None, api_key: str | None) ->
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
+
+async def _fetch_models(base_url: str | None, api_key: str | None) -> list[ModelInfo]:
+    import httpx
+
+    if not base_url:
+        raise ValueError("No base URL configured for this provider")
+
+    url = base_url.rstrip("/") + "/models"
+    headers: dict[str, str] = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        response = await client.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+
+    raw_models: list[dict] = data.get("data", data) if isinstance(data, dict) else data
+    if not isinstance(raw_models, list):
+        raise ValueError(f"Unexpected response format from {url}")
+
+    return [
+        ModelInfo(
+            id=m.get("id", ""),
+            owned_by=m.get("owned_by", ""),
+            context_length=m.get("context_length") or m.get("max_tokens"),
+        )
+        for m in raw_models
+        if m.get("id")
+    ]
+
 
 def _settings_response(current_settings: StudioSettings) -> StudioSettingsResponse:
     return StudioSettingsResponse(

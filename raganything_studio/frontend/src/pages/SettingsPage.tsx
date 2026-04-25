@@ -1,9 +1,42 @@
-import { FormEvent, useEffect, useState } from 'react'
+import { FormEvent, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { CheckCircle2, KeyRound, Loader2, RotateCcw, Save, ScanSearch, ServerCog, XCircle, Zap } from 'lucide-react'
-import { getEnvironment, getStudioSettings, testConnection, updateStudioSettings } from '../api/client'
-import type { ConnectionTestKind, ConnectionTestResponse, StudioSettings, StudioSettingsUpdate } from '../types/studio'
+import {
+  CheckCircle2, ChevronDown, KeyRound, Loader2, RefreshCw,
+  RotateCcw, Save, ScanSearch, ServerCog, XCircle, Zap,
+} from 'lucide-react'
+import { getEnvironment, getStudioSettings, listModels, testConnection, updateStudioSettings } from '../api/client'
+import type { ConnectionTestKind, ConnectionTestResponse, ModelInfo, StudioSettings, StudioSettingsUpdate } from '../types/studio'
+
+// ── known providers with preconfigured base URLs ──────────────────────────────
+
+interface ProviderMeta {
+  label: string
+  baseUrl: string
+  supportsModelList: boolean
+}
+
+const KNOWN_PROVIDERS: Record<string, ProviderMeta> = {
+  'openai': { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', supportsModelList: true },
+  'siliconflow': { label: '硅基流动 (SiliconFlow)', baseUrl: 'https://api.siliconflow.cn/v1', supportsModelList: true },
+  'aliyun-bailian': { label: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', supportsModelList: true },
+  'baidu-qianfan': { label: '百度千帆', baseUrl: 'https://qianfan.baidubce.com/v2', supportsModelList: true },
+  'volcengine': { label: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', supportsModelList: true },
+  'openrouter': { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', supportsModelList: true },
+  'deepseek': { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', supportsModelList: true },
+  'zhipu': { label: '智谱 AI (Zhipu)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', supportsModelList: true },
+  'moonshot': { label: '月之暗面 (Moonshot)', baseUrl: 'https://api.moonshot.cn/v1', supportsModelList: true },
+  'groq': { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', supportsModelList: true },
+  'together': { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1', supportsModelList: true },
+  'mistral': { label: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', supportsModelList: true },
+  'ollama': { label: 'Ollama', baseUrl: 'http://localhost:11434/v1', supportsModelList: true },
+  'lmstudio': { label: 'LM Studio', baseUrl: 'http://localhost:1234/v1', supportsModelList: true },
+  'vllm': { label: 'vLLM', baseUrl: 'http://localhost:8000/v1', supportsModelList: true },
+  'openai-compatible': { label: 'OpenAI Compatible', baseUrl: '', supportsModelList: true },
+  'custom': { label: 'Custom', baseUrl: '', supportsModelList: false },
+}
+
+// ── form state ────────────────────────────────────────────────────────────────
 
 interface SettingsForm extends StudioSettingsUpdate {
   llm_api_key: string
@@ -38,6 +71,8 @@ function makeForm(settings: StudioSettings): SettingsForm {
   }
 }
 
+// ── test state ────────────────────────────────────────────────────────────────
+
 interface TestState {
   status: 'idle' | 'pending' | 'ok' | 'error'
   latency?: number | null
@@ -47,12 +82,27 @@ interface TestState {
 
 const idleTest: TestState = { status: 'idle' }
 
+// ── model picker state ────────────────────────────────────────────────────────
+
+interface ModelPickerState {
+  status: 'idle' | 'loading' | 'loaded' | 'error'
+  models: ModelInfo[]
+  error?: string | null
+}
+
+const idlePicker: ModelPickerState = { status: 'idle', models: [] }
+
+// ── page ──────────────────────────────────────────────────────────────────────
+
 export default function SettingsPage() {
   const queryClient = useQueryClient()
   const [activePanel, setActivePanel] = useState<'models' | 'runtime' | 'defaults'>('models')
   const [form, setForm] = useState<SettingsForm | null>(null)
   const [tests, setTests] = useState<Record<ConnectionTestKind, TestState>>({
     llm: idleTest, embedding: idleTest, vision: idleTest,
+  })
+  const [pickers, setPickers] = useState<Record<ConnectionTestKind, ModelPickerState>>({
+    llm: idlePicker, embedding: idlePicker, vision: idlePicker,
   })
 
   const { data: environment } = useQuery({ queryKey: ['environment'], queryFn: getEnvironment })
@@ -80,6 +130,57 @@ export default function SettingsPage() {
 
   function setTestState(kind: ConnectionTestKind, state: TestState) {
     setTests((prev) => ({ ...prev, [kind]: state }))
+  }
+
+  function setPickerState(kind: ConnectionTestKind, state: ModelPickerState) {
+    setPickers((prev) => ({ ...prev, [kind]: state }))
+  }
+
+  // When a known provider is selected, auto-fill its base URL
+  function handleProviderChange(kind: ConnectionTestKind, value: string) {
+    const providerKey = `${kind}_provider` as keyof SettingsForm
+    const baseUrlKey = `${kind}_base_url` as keyof SettingsForm
+    updateField(providerKey, value)
+
+    const meta = KNOWN_PROVIDERS[value]
+    if (meta?.baseUrl) {
+      updateField(baseUrlKey, meta.baseUrl)
+    }
+    // Reset picker when provider changes
+    setPickerState(kind, idlePicker)
+  }
+
+  async function handleLoadModels(kind: ConnectionTestKind) {
+    if (!form) return
+    setPickerState(kind, { status: 'loading', models: [] })
+
+    const provider = kind === 'llm' ? form.llm_provider
+      : kind === 'embedding' ? form.embedding_provider
+      : form.vision_provider
+    const baseUrl = kind === 'llm' ? form.llm_base_url
+      : kind === 'embedding' ? form.embedding_base_url
+      : form.vision_base_url
+    const apiKey = kind === 'llm' ? form.llm_api_key
+      : kind === 'embedding' ? form.embedding_api_key
+      : form.vision_api_key
+
+    try {
+      const result = await listModels({
+        provider,
+        base_url: baseUrl || null,
+        api_key: apiKey || null,
+      })
+      if (result.ok) {
+        setPickerState(kind, { status: 'loaded', models: result.models })
+      } else {
+        setPickerState(kind, { status: 'error', models: [], error: result.error ?? 'Failed to load models' })
+      }
+    } catch (err) {
+      setPickerState(kind, {
+        status: 'error', models: [],
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
 
   async function handleTest(kind: ConnectionTestKind) {
@@ -172,23 +273,27 @@ export default function SettingsPage() {
                 title="LLM" kind="llm"
                 provider={form.llm_provider} model={form.llm_model}
                 baseUrl={form.llm_base_url ?? ''} apiKey={form.llm_api_key}
-                configured={settings.llm_api_key_configured} testState={tests.llm}
-                onProvider={(v) => updateField('llm_provider', v)}
+                configured={settings.llm_api_key_configured}
+                testState={tests.llm} pickerState={pickers.llm}
+                onProvider={(v) => handleProviderChange('llm', v)}
                 onModel={(v) => updateField('llm_model', v)}
                 onBaseUrl={(v) => updateField('llm_base_url', v)}
                 onApiKey={(v) => updateField('llm_api_key', v)}
                 onTest={() => handleTest('llm')}
+                onLoadModels={() => handleLoadModels('llm')}
               />
               <ProviderSection
                 title="Embedding" kind="embedding"
                 provider={form.embedding_provider} model={form.embedding_model}
                 baseUrl={form.embedding_base_url ?? ''} apiKey={form.embedding_api_key}
-                configured={settings.embedding_api_key_configured} testState={tests.embedding}
-                onProvider={(v) => updateField('embedding_provider', v)}
+                configured={settings.embedding_api_key_configured}
+                testState={tests.embedding} pickerState={pickers.embedding}
+                onProvider={(v) => handleProviderChange('embedding', v)}
                 onModel={(v) => updateField('embedding_model', v)}
                 onBaseUrl={(v) => updateField('embedding_base_url', v)}
                 onApiKey={(v) => updateField('embedding_api_key', v)}
                 onTest={() => handleTest('embedding')}
+                onLoadModels={() => handleLoadModels('embedding')}
               >
                 <div className="dim-row">
                   <label style={{ flex: 1 }}>
@@ -212,12 +317,14 @@ export default function SettingsPage() {
                 title="Vision" kind="vision"
                 provider={form.vision_provider} model={form.vision_model}
                 baseUrl={form.vision_base_url ?? ''} apiKey={form.vision_api_key}
-                configured={settings.vision_api_key_configured} testState={tests.vision}
-                onProvider={(v) => updateField('vision_provider', v)}
+                configured={settings.vision_api_key_configured}
+                testState={tests.vision} pickerState={pickers.vision}
+                onProvider={(v) => handleProviderChange('vision', v)}
                 onModel={(v) => updateField('vision_model', v)}
                 onBaseUrl={(v) => updateField('vision_base_url', v)}
                 onApiKey={(v) => updateField('vision_api_key', v)}
                 onTest={() => handleTest('vision')}
+                onLoadModels={() => handleLoadModels('vision')}
               />
             </div>
           )}
@@ -292,6 +399,8 @@ export default function SettingsPage() {
   )
 }
 
+// ── ProviderSection ───────────────────────────────────────────────────────────
+
 interface ProviderSectionProps {
   title: string
   kind: ConnectionTestKind
@@ -301,19 +410,27 @@ interface ProviderSectionProps {
   apiKey: string
   configured: boolean
   testState: TestState
+  pickerState: ModelPickerState
   onProvider: (v: string) => void
   onModel: (v: string) => void
   onBaseUrl: (v: string) => void
   onApiKey: (v: string) => void
   onTest: () => void
+  onLoadModels: () => void
   children?: ReactNode
 }
 
 function ProviderSection({
   title, kind, provider, model, baseUrl, apiKey, configured,
-  testState, onProvider, onModel, onBaseUrl, onApiKey, onTest, children,
+  testState, pickerState, onProvider, onModel, onBaseUrl, onApiKey,
+  onTest, onLoadModels, children,
 }: ProviderSectionProps) {
   const isPending = testState.status === 'pending'
+  const isLoadingModels = pickerState.status === 'loading'
+  const hasModels = pickerState.status === 'loaded' && pickerState.models.length > 0
+  const meta = KNOWN_PROVIDERS[provider]
+  const isCustomBaseUrl = !meta?.baseUrl || provider === 'openai-compatible' || provider === 'custom'
+
   return (
     <div className="panel stack provider-panel">
       <div className="provider-header">
@@ -322,29 +439,70 @@ function ProviderSection({
           {configured ? 'Key saved' : 'No key'}
         </span>
       </div>
+
       <label>
         Provider
         <select value={provider} onChange={(e) => onProvider(e.target.value)}>
-          <option value="openai-compatible">OpenAI compatible</option>
-          <option value="openai">OpenAI</option>
-          <option value="ollama">Ollama</option>
-          <option value="lmstudio">LM Studio</option>
-          <option value="vllm">vLLM</option>
-          <option value="custom">Custom</option>
+          <optgroup label="Popular platforms">
+            <option value="siliconflow">硅基流动 (SiliconFlow)</option>
+            <option value="aliyun-bailian">阿里云百炼</option>
+            <option value="baidu-qianfan">百度千帆</option>
+            <option value="volcengine">火山引擎</option>
+            <option value="zhipu">智谱 AI (Zhipu)</option>
+            <option value="moonshot">月之暗面 (Moonshot)</option>
+            <option value="deepseek">DeepSeek</option>
+          </optgroup>
+          <optgroup label="International">
+            <option value="openai">OpenAI</option>
+            <option value="openrouter">OpenRouter</option>
+            <option value="groq">Groq</option>
+            <option value="together">Together AI</option>
+            <option value="mistral">Mistral AI</option>
+          </optgroup>
+          <optgroup label="Self-hosted">
+            <option value="ollama">Ollama</option>
+            <option value="lmstudio">LM Studio</option>
+            <option value="vllm">vLLM</option>
+          </optgroup>
+          <optgroup label="Other">
+            <option value="openai-compatible">OpenAI Compatible</option>
+            <option value="custom">Custom</option>
+          </optgroup>
         </select>
       </label>
-      <label>Model<input value={model} onChange={(e) => onModel(e.target.value)} /></label>
-      <label>Base URL<input value={baseUrl} onChange={(e) => onBaseUrl(e.target.value)} /></label>
+
+      {isCustomBaseUrl && (
+        <label>Base URL<input value={baseUrl} onChange={(e) => onBaseUrl(e.target.value)} placeholder="https://…/v1" /></label>
+      )}
+      {!isCustomBaseUrl && (
+        <div className="setting-row base-url-display">
+          <span className="base-url-label">Base URL</span>
+          <span className="base-url-value">{meta.baseUrl}</span>
+        </div>
+      )}
+
       <label>
         API key
         <input
           type="password"
           value={apiKey}
-          placeholder={configured ? '••••••••  (leave blank to keep saved key)' : ''}
+          placeholder={configured ? '••••••••  (leave blank to keep saved key)' : 'Enter API key…'}
           onChange={(e) => onApiKey(e.target.value)}
         />
       </label>
+
+      <ModelPickerField
+        kind={kind}
+        model={model}
+        pickerState={pickerState}
+        onModel={onModel}
+        onLoadModels={onLoadModels}
+        isLoadingModels={isLoadingModels}
+        hasModels={hasModels}
+      />
+
       {children}
+
       <div className="test-row">
         <button type="button" className="button test-btn" onClick={onTest} disabled={isPending}>
           {isPending
@@ -356,6 +514,162 @@ function ProviderSection({
     </div>
   )
 }
+
+// ── ModelPickerField ──────────────────────────────────────────────────────────
+
+interface ModelPickerFieldProps {
+  kind: ConnectionTestKind
+  model: string
+  pickerState: ModelPickerState
+  onModel: (v: string) => void
+  onLoadModels: () => void
+  isLoadingModels: boolean
+  hasModels: boolean
+}
+
+function groupModelsByOwner(models: ModelInfo[]): Map<string, ModelInfo[]> {
+  const groups = new Map<string, ModelInfo[]>()
+  for (const m of models) {
+    const owner = m.owned_by || 'Other'
+    if (!groups.has(owner)) groups.set(owner, [])
+    groups.get(owner)!.push(m)
+  }
+  return groups
+}
+
+function ModelPickerField({
+  kind, model, pickerState, onModel, onLoadModels, isLoadingModels, hasModels,
+}: ModelPickerFieldProps) {
+  const dropdownRef = useRef<HTMLDivElement>(null)
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  if (!hasModels) {
+    return (
+      <div className="model-picker-row">
+        <label style={{ flex: 1 }}>
+          Model
+          <input
+            value={model}
+            onChange={(e) => onModel(e.target.value)}
+            placeholder="e.g. gpt-4o-mini"
+          />
+        </label>
+        <button
+          type="button"
+          className="button load-models-btn"
+          onClick={onLoadModels}
+          disabled={isLoadingModels}
+          title="Fetch available models from provider"
+        >
+          {isLoadingModels
+            ? <Loader2 size={14} className="spin" />
+            : <RefreshCw size={14} />}
+          {isLoadingModels ? 'Loading…' : 'Load models'}
+        </button>
+        {pickerState.status === 'error' && (
+          <span className="model-load-error" title={pickerState.error ?? undefined}>
+            <XCircle size={13} /> Failed
+          </span>
+        )}
+      </div>
+    )
+  }
+
+  // Models are loaded — show grouped dropdown
+  const groups = groupModelsByOwner(pickerState.models)
+  const lowerSearch = search.toLowerCase()
+  const filteredGroups = new Map<string, ModelInfo[]>()
+  for (const [owner, models] of groups) {
+    const filtered = models.filter((m) => m.id.toLowerCase().includes(lowerSearch))
+    if (filtered.length > 0) filteredGroups.set(owner, filtered)
+  }
+  const totalFiltered = [...filteredGroups.values()].reduce((n, ms) => n + ms.length, 0)
+
+  return (
+    <div className="model-picker-row">
+      <label style={{ flex: 1 }}>
+        Model
+        <div className="model-dropdown-wrapper" ref={dropdownRef}>
+          <button
+            type="button"
+            className="model-dropdown-trigger"
+            onClick={() => { setOpen((o) => !o); setSearch('') }}
+          >
+            <span className="model-dropdown-value">{model || 'Select a model…'}</span>
+            <ChevronDown size={14} className={open ? 'chevron open' : 'chevron'} />
+          </button>
+
+          {open && (
+            <div className="model-dropdown-panel">
+              <div className="model-search-row">
+                <input
+                  autoFocus
+                  className="model-search"
+                  placeholder="Search models…"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+                <span className="model-count">{totalFiltered}</span>
+              </div>
+              <div className="model-list">
+                {[...filteredGroups.entries()].map(([owner, models]) => (
+                  <div key={owner} className="model-group">
+                    <div className="model-group-label">{owner}</div>
+                    {models.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className={`model-option ${m.id === model ? 'selected' : ''}`}
+                        onClick={() => { onModel(m.id); setOpen(false) }}
+                      >
+                        <span className="model-id">{m.id}</span>
+                        {m.context_length ? (
+                          <span className="model-ctx">{formatCtx(m.context_length)}</span>
+                        ) : null}
+                      </button>
+                    ))}
+                  </div>
+                ))}
+                {totalFiltered === 0 && (
+                  <div className="model-empty">No models match "{search}"</div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </label>
+      <button
+        type="button"
+        className="button load-models-btn"
+        onClick={onLoadModels}
+        disabled={isLoadingModels}
+        title="Refresh model list"
+      >
+        <RefreshCw size={14} className={isLoadingModels ? 'spin' : ''} />
+      </button>
+    </div>
+  )
+}
+
+function formatCtx(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(0)}M ctx`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k ctx`
+  return `${n} ctx`
+}
+
+// ── TestResultBadge ───────────────────────────────────────────────────────────
 
 function TestResultBadge({ state, kind }: { state: TestState; kind: ConnectionTestKind }) {
   if (state.status === 'idle' || state.status === 'pending') return null
@@ -374,6 +688,8 @@ function TestResultBadge({ state, kind }: { state: TestState; kind: ConnectionTe
     </span>
   )
 }
+
+// ── payload serializer ────────────────────────────────────────────────────────
 
 function toPayload(form: SettingsForm): StudioSettingsUpdate {
   return {

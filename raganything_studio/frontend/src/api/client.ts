@@ -4,6 +4,8 @@ import type {
   DocumentRecord,
   EnvironmentResponse,
   JobRecord,
+  ModelListRequest,
+  ModelListResponse,
   ProcessOptions,
   QueryResponse,
   StudioSettings,
@@ -77,6 +79,13 @@ export async function updateStudioSettings(settings: StudioSettingsUpdate): Prom
 
 export async function testConnection(payload: ConnectionTestRequest): Promise<ConnectionTestResponse> {
   return request<ConnectionTestResponse>('/api/settings/test-connection', {
+    body: JSON.stringify(payload),
+    method: 'POST',
+  })
+}
+
+export async function listModels(payload: ModelListRequest): Promise<ModelListResponse> {
+  return request<ModelListResponse>('/api/settings/list-models', {
     body: JSON.stringify(payload),
     method: 'POST',
   })

@@ -87,3 +87,21 @@ class ConnectionTestResponse(BaseModel):
     latency_ms: float | None = None
     error: str | None = None
     detected_dim: int | None = None  # populated only when kind=="embedding" and ok==True
+
+
+class ModelInfo(BaseModel):
+    id: str
+    owned_by: str = ""
+    context_length: int | None = None
+
+
+class ModelListRequest(BaseModel):
+    provider: str
+    base_url: str | None = None
+    api_key: str | None = None
+
+
+class ModelListResponse(BaseModel):
+    ok: bool
+    models: list[ModelInfo] = []
+    error: str | None = None

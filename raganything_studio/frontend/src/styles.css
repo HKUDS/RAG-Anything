@@ -750,6 +750,185 @@ textarea { resize: vertical; }
   padding-bottom: 10px;
 }
 
+/* ── Base URL display row ─────────────────────────────────────── */
+.base-url-display {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--color-surface-2);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+.base-url-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-2);
+  white-space: nowrap;
+}
+.base-url-value {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--color-text-2);
+  word-break: break-all;
+}
+
+/* ── Model picker ─────────────────────────────────────────────── */
+.model-picker-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.load-models-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+  padding: 7px 11px;
+}
+
+.model-load-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-danger);
+  white-space: nowrap;
+  padding-bottom: 2px;
+}
+
+.model-dropdown-wrapper {
+  position: relative;
+}
+
+.model-dropdown-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: 13.5px;
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s;
+}
+.model-dropdown-trigger:hover { border-color: var(--color-accent); }
+
+.model-dropdown-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.chevron { transition: transform 0.18s; flex-shrink: 0; }
+.chevron.open { transform: rotate(180deg); }
+
+.model-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 200;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.14);
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow: hidden;
+}
+
+.model-search-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.model-search {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--color-text);
+  outline: none;
+  padding: 2px 0;
+}
+.model-search::placeholder { color: var(--color-text-3); }
+
+.model-count {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--color-text-3);
+  background: var(--color-surface-2);
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.model-list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.model-group { padding: 4px 0; }
+
+.model-group-label {
+  padding: 5px 12px 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-3);
+}
+
+.model-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.model-option:hover { background: var(--color-surface-2); }
+.model-option.selected { background: var(--color-accent-light); }
+
+.model-id {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-option.selected .model-id { color: var(--color-accent); font-weight: 600; }
+
+.model-ctx {
+  font-size: 11px;
+  color: var(--color-text-3);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.model-empty {
+  padding: 14px 12px;
+  font-size: 13px;
+  color: var(--color-text-3);
+  text-align: center;
+}
+
 /* ── Spinner animation ────────────────────────────────────────── */
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 0.8s linear infinite; }
