@@ -124,9 +124,26 @@ class SettingsStore:
 def _coerce_value(key: str, value: Any) -> Any:
     if key in PATH_FIELDS:
         return Path(str(value)).expanduser().resolve()
-    if key in {"embedding_dim", "embedding_max_token_size", "max_concurrent_files"}:
+    if key in {
+        "embedding_dim",
+        "embedding_max_token_size",
+        "max_concurrent_files",
+        "embedding_batch_size",
+        "llm_max_concurrency",
+        "vlm_max_concurrency",
+        "embedding_max_concurrency",
+        "retry_max_attempts",
+    }:
         return max(1, int(value))
-    if key == "default_enable_vlm_enhancement":
+    if key in {"retry_base_delay", "retry_max_delay"}:
+        return max(0.0, float(value))
+    if key in {
+        "default_enable_vlm_enhancement",
+        "default_enable_parse_cache",
+        "default_enable_modal_cache",
+        "default_preview_mode",
+        "write_lock_enabled",
+    }:
         if isinstance(value, str):
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)

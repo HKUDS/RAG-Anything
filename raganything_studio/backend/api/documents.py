@@ -112,7 +112,7 @@ async def _run_process_job(
     job_id: str,
 ) -> None:
     try:
-        await rag_service.process_document(
+        result = await rag_service.process_document(
             document_path=document_path,
             document_id=document_id,
             options=options,
@@ -121,6 +121,7 @@ async def _run_process_job(
                 job_id, stage, progress, message
             ),
         )
+        job_manager.update_metrics(job_id, **result.stats)
     except Exception as exc:
         error = format_traceback(exc)
         job_manager.mark_failed(job_id, error)
@@ -128,7 +129,10 @@ async def _run_process_job(
         return
 
     job_manager.mark_succeeded(job_id)
-    document_store.set_status(document_id, DocumentStatus.INDEXED)
+    document_store.set_status(
+        document_id,
+        DocumentStatus.INDEXED if result.indexed else DocumentStatus.UPLOADED,
+    )
 
 
 def _copy_process_options(options: ProcessOptions, update: dict) -> ProcessOptions:

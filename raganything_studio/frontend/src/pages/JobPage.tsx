@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2, MessageSquare, XCircle } from 'lucide-react'
+import { BarChart3, CheckCircle2, ChevronDown, ChevronUp, Circle, Loader2, MessageSquare, XCircle } from 'lucide-react'
 import { getJob } from '../api/client'
 import { StatusBadge } from '../components/StatusBadge'
 
@@ -114,8 +114,22 @@ export default function JobPage() {
             <Signal label="Log lines" value={String(job.logs.length)} />
             <Signal label="Content blocks" value={logStats.blocks ?? '—'} />
             <Signal label="Modal items" value={logStats.modalItems ?? '—'} />
+            <Signal label="Cache hits" value={String(sumValues(job.cache_hits))} />
+            <Signal label="API calls" value={String(sumValues(job.api_call_counts))} />
             <Signal label="Last update" value={new Date(job.updated_at).toLocaleTimeString()} />
           </div>
+        </div>
+      </div>
+
+      <div className="panel stack">
+        <div className="panel-header-row">
+          <h2><BarChart3 size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />Ingestion Profile</h2>
+        </div>
+        <div className="profile-metrics-grid">
+          <MetricGroup title="Stage durations" values={formatDurationMetrics(job.stage_durations)} empty="No timings yet" />
+          <MetricGroup title="API calls" values={formatCountMetrics(job.api_call_counts)} empty="No calls yet" />
+          <MetricGroup title="Cache hits" values={formatCountMetrics(job.cache_hits)} empty="No hits yet" />
+          <MetricGroup title="Cache misses" values={formatCountMetrics(job.cache_misses)} empty="No misses yet" />
         </div>
       </div>
 
@@ -159,6 +173,36 @@ function Signal({ label, value }: { label: string; value: string }) {
       <strong>{value}</strong>
     </div>
   )
+}
+
+function MetricGroup({ title, values, empty }: { title: string; values: Array<[string, string]>; empty: string }) {
+  return (
+    <div className="metric-group">
+      <strong>{title}</strong>
+      {values.length > 0 ? values.map(([label, value]) => (
+        <span key={label}>
+          <small>{label}</small>
+          <b>{value}</b>
+        </span>
+      )) : <em>{empty}</em>}
+    </div>
+  )
+}
+
+function formatDurationMetrics(values: Record<string, number>): Array<[string, string]> {
+  return Object.entries(values ?? {}).map(([key, value]) => [humanizeMetric(key), `${value.toFixed(2)}s`])
+}
+
+function formatCountMetrics(values: Record<string, number>): Array<[string, string]> {
+  return Object.entries(values ?? {}).map(([key, value]) => [humanizeMetric(key), String(value)])
+}
+
+function sumValues(values: Record<string, number> | undefined): number {
+  return Object.values(values ?? {}).reduce((sum, value) => sum + Number(value || 0), 0)
+}
+
+function humanizeMetric(key: string): string {
+  return key.replace(/_/g, ' ').replace(/\b\w/g, (letter) => letter.toUpperCase())
 }
 
 function summarizeLogs(logs: string[]): { blocks?: string; modalItems?: string } {

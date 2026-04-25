@@ -31,6 +31,12 @@ class JobStage(str, Enum):
 class ProcessOptions(BaseModel):
     profile_id: str | None = None
 
+    processing_preset: str = "balanced"
+    enable_profiling: bool = True
+    enable_parse_cache: bool = True
+    enable_modal_cache: bool = True
+    preview_mode: bool = False
+
     parser: str = "mineru"
     parse_method: str = "auto"
 
@@ -39,6 +45,14 @@ class ProcessOptions(BaseModel):
     enable_table_processing: bool = True
     enable_equation_processing: bool = True
     max_concurrent_files: int | None = Field(default=None, ge=1, le=32)
+    embedding_batch_size: int | None = Field(default=None, ge=1, le=1024)
+    llm_max_concurrency: int | None = Field(default=None, ge=1, le=64)
+    vlm_max_concurrency: int | None = Field(default=None, ge=1, le=64)
+    embedding_max_concurrency: int | None = Field(default=None, ge=1, le=128)
+    retry_max_attempts: int | None = Field(default=None, ge=1, le=10)
+    retry_base_delay: float | None = Field(default=None, ge=0, le=60)
+    retry_max_delay: float | None = Field(default=None, ge=0, le=300)
+    write_lock_enabled: bool = True
 
     lang: str = "ch"
     device: str = "cpu"
@@ -59,6 +73,10 @@ class JobRecord(BaseModel):
     message: str = ""
     logs: list[str] = Field(default_factory=list)
     error: str | None = None
+    stage_durations: dict[str, float] = Field(default_factory=dict)
+    api_call_counts: dict[str, int] = Field(default_factory=dict)
+    cache_hits: dict[str, int] = Field(default_factory=dict)
+    cache_misses: dict[str, int] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 

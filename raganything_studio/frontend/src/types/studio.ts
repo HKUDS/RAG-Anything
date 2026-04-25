@@ -31,12 +31,23 @@ export interface JobRecord {
   message: string
   logs: string[]
   error?: string | null
+  stage_durations: Record<string, number>
+  api_call_counts: Record<string, number>
+  cache_hits: Record<string, number>
+  cache_misses: Record<string, number>
   created_at: string
   updated_at: string
 }
 
+export type ProcessingPreset = 'fast' | 'balanced' | 'deep' | 'custom'
+
 export interface ProcessOptions {
   profile_id?: string | null
+  processing_preset: ProcessingPreset
+  enable_profiling: boolean
+  enable_parse_cache: boolean
+  enable_modal_cache: boolean
+  preview_mode: boolean
   parser: string
   parse_method: string
   enable_vlm_enhancement: boolean
@@ -44,8 +55,18 @@ export interface ProcessOptions {
   enable_table_processing: boolean
   enable_equation_processing: boolean
   max_concurrent_files?: number | null
+  embedding_batch_size?: number | null
+  llm_max_concurrency?: number | null
+  vlm_max_concurrency?: number | null
+  embedding_max_concurrency?: number | null
+  retry_max_attempts?: number | null
+  retry_base_delay?: number | null
+  retry_max_delay?: number | null
+  write_lock_enabled: boolean
   lang: string
   device: string
+  start_page?: number | null
+  end_page?: number | null
 }
 
 export interface QueryResponse {
@@ -121,6 +142,18 @@ export interface StudioSettings {
   default_device: string
   default_enable_vlm_enhancement: boolean
   max_concurrent_files: number
+  default_processing_preset: ProcessingPreset
+  default_enable_parse_cache: boolean
+  default_enable_modal_cache: boolean
+  default_preview_mode: boolean
+  embedding_batch_size: number
+  llm_max_concurrency: number
+  vlm_max_concurrency: number
+  embedding_max_concurrency: number
+  retry_max_attempts: number
+  retry_base_delay: number
+  retry_max_delay: number
+  write_lock_enabled: boolean
   active_profile_id: string
   profiles: ModelProfile[]
 }
@@ -224,6 +257,18 @@ export interface StudioSettingsUpdate {
   default_device: string
   default_enable_vlm_enhancement: boolean
   max_concurrent_files: number
+  default_processing_preset: ProcessingPreset
+  default_enable_parse_cache: boolean
+  default_enable_modal_cache: boolean
+  default_preview_mode: boolean
+  embedding_batch_size: number
+  llm_max_concurrency: number
+  vlm_max_concurrency: number
+  embedding_max_concurrency: number
+  retry_max_attempts: number
+  retry_base_delay: number
+  retry_max_delay: number
+  write_lock_enabled: boolean
   active_profile_id?: string | null
   profiles?: ModelProfileUpdate[] | null
 }

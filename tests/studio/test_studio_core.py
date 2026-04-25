@@ -14,7 +14,10 @@ from raganything_studio.backend.schemas.job import JobStage, JobStatus
 from raganything_studio.backend.schemas.job import ProcessOptions
 from raganything_studio.backend.schemas.settings import StudioSettingsUpdate
 from raganything_studio.backend.services.content_list_service import ContentListService
-from raganything_studio.backend.services.raganything_service import _config_updates
+from raganything_studio.backend.services.raganything_service import (
+    _config_updates,
+    _effective_options,
+)
 
 
 def make_settings(tmp_path: Path) -> StudioSettings:
@@ -112,6 +115,13 @@ def test_job_manager_tracks_status_and_logs():
     job = manager.create_job(document_id="doc_1")
 
     manager.update_progress(job.id, JobStage.PARSING, 0.25, "Parsing document")
+    manager.update_metrics(
+        job.id,
+        stage_durations={"parse": 1.25},
+        api_call_counts={"embedding": 3},
+        cache_hits={"parse": 1},
+        cache_misses={"modal": 2},
+    )
     manager.mark_succeeded(job.id)
 
     updated = manager.get_job(job.id)
@@ -119,6 +129,10 @@ def test_job_manager_tracks_status_and_logs():
     assert updated.stage == JobStage.DONE
     assert updated.progress == 1.0
     assert any("Parsing document" in line for line in updated.logs)
+    assert updated.stage_durations["parse"] == 1.25
+    assert updated.api_call_counts["embedding"] == 3
+    assert updated.cache_hits["parse"] == 1
+    assert updated.cache_misses["modal"] == 2
 
 
 def test_job_manager_persists_jobs(tmp_path):
@@ -215,6 +229,18 @@ def test_settings_store_persists_model_configuration(tmp_path):
             default_device="cpu",
             default_enable_vlm_enhancement=True,
             max_concurrent_files=3,
+            default_processing_preset="deep",
+            default_enable_parse_cache=False,
+            default_enable_modal_cache=True,
+            default_preview_mode=True,
+            embedding_batch_size=24,
+            llm_max_concurrency=2,
+            vlm_max_concurrency=1,
+            embedding_max_concurrency=5,
+            retry_max_attempts=4,
+            retry_base_delay=0.5,
+            retry_max_delay=6.0,
+            write_lock_enabled=False,
         )
     )
 
@@ -227,6 +253,13 @@ def test_settings_store_persists_model_configuration(tmp_path):
     assert reloaded.default_parser == "docling"
     assert reloaded.default_enable_vlm_enhancement is True
     assert reloaded.max_concurrent_files == 3
+    assert reloaded.default_processing_preset == "deep"
+    assert reloaded.default_enable_parse_cache is False
+    assert reloaded.default_preview_mode is True
+    assert reloaded.embedding_batch_size == 24
+    assert reloaded.embedding_max_concurrency == 5
+    assert reloaded.retry_max_attempts == 4
+    assert reloaded.write_lock_enabled is False
 
 
 def test_rag_config_disables_vlm_processing_by_default(tmp_path):
@@ -256,3 +289,15 @@ def test_rag_config_enables_selected_vlm_processors(tmp_path):
     assert updates["enable_table_processing"] is False
     assert updates["enable_equation_processing"] is True
     assert updates["max_concurrent_files"] == 4
+
+
+def test_processing_preset_does_not_override_explicit_manual_toggles(tmp_path):
+    settings = make_settings(tmp_path)
+
+    options = _effective_options(
+        settings,
+        ProcessOptions(processing_preset="deep", enable_modal_cache=False),
+    )
+
+    assert options.enable_vlm_enhancement is True
+    assert options.enable_modal_cache is False

@@ -113,6 +113,33 @@ class JobManager:
             )
             self.append_log(job_id, "Failed")
 
+    def update_metrics(
+        self,
+        job_id: str,
+        *,
+        stage_durations: dict[str, float] | None = None,
+        api_call_counts: dict[str, int] | None = None,
+        cache_hits: dict[str, int] | None = None,
+        cache_misses: dict[str, int] | None = None,
+    ) -> None:
+        with self._lock:
+            job = self.get_job(job_id)
+            self._jobs[job_id] = _copy_model(
+                job,
+                {
+                    "stage_durations": _merge_numeric_dicts(
+                        job.stage_durations, stage_durations
+                    ),
+                    "api_call_counts": _merge_int_dicts(
+                        job.api_call_counts, api_call_counts
+                    ),
+                    "cache_hits": _merge_int_dicts(job.cache_hits, cache_hits),
+                    "cache_misses": _merge_int_dicts(job.cache_misses, cache_misses),
+                    "updated_at": _utc_now(),
+                },
+            )
+            self._save()
+
     def mark_succeeded(self, job_id: str) -> None:
         with self._lock:
             job = self.get_job(job_id)
@@ -193,3 +220,21 @@ def _copy_model(job: JobRecord, update: dict) -> JobRecord:
     if hasattr(job, "model_copy"):
         return job.model_copy(update=update)
     return job.copy(update=update)
+
+
+def _merge_numeric_dicts(
+    current: dict[str, float], update: dict[str, float] | None
+) -> dict[str, float]:
+    merged = dict(current)
+    for key, value in (update or {}).items():
+        merged[key] = round(float(value), 3)
+    return merged
+
+
+def _merge_int_dicts(
+    current: dict[str, int], update: dict[str, int] | None
+) -> dict[str, int]:
+    merged = dict(current)
+    for key, value in (update or {}).items():
+        merged[key] = int(value)
+    return merged

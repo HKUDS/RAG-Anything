@@ -62,6 +62,18 @@ class StudioSettings:
     default_device: str
     default_enable_vlm_enhancement: bool = False
     max_concurrent_files: int = 1
+    default_processing_preset: str = "balanced"
+    default_enable_parse_cache: bool = True
+    default_enable_modal_cache: bool = True
+    default_preview_mode: bool = False
+    embedding_batch_size: int = 16
+    llm_max_concurrency: int = 2
+    vlm_max_concurrency: int = 1
+    embedding_max_concurrency: int = 4
+    retry_max_attempts: int = 3
+    retry_base_delay: float = 0.75
+    retry_max_delay: float = 8.0
+    write_lock_enabled: bool = True
     active_profile_id: str = "default"
     profiles: list[ModelProviderProfile] = field(default_factory=list)
 
@@ -153,6 +165,38 @@ def get_settings() -> StudioSettings:
                 )
             ),
         ),
+        default_processing_preset=os.getenv(
+            "RAGANYTHING_STUDIO_PROCESSING_PRESET", "balanced"
+        ),
+        default_enable_parse_cache=_env_bool(
+            "RAGANYTHING_STUDIO_ENABLE_PARSE_CACHE", True
+        ),
+        default_enable_modal_cache=_env_bool(
+            "RAGANYTHING_STUDIO_ENABLE_MODAL_CACHE", True
+        ),
+        default_preview_mode=_env_bool("RAGANYTHING_STUDIO_PREVIEW_MODE", False),
+        embedding_batch_size=max(
+            1, int(os.getenv("RAGANYTHING_STUDIO_EMBEDDING_BATCH_SIZE", "16"))
+        ),
+        llm_max_concurrency=max(
+            1, int(os.getenv("RAGANYTHING_STUDIO_LLM_MAX_CONCURRENCY", "2"))
+        ),
+        vlm_max_concurrency=max(
+            1, int(os.getenv("RAGANYTHING_STUDIO_VLM_MAX_CONCURRENCY", "1"))
+        ),
+        embedding_max_concurrency=max(
+            1, int(os.getenv("RAGANYTHING_STUDIO_EMBEDDING_MAX_CONCURRENCY", "4"))
+        ),
+        retry_max_attempts=max(
+            1, int(os.getenv("RAGANYTHING_STUDIO_RETRY_MAX_ATTEMPTS", "3"))
+        ),
+        retry_base_delay=max(
+            0.0, float(os.getenv("RAGANYTHING_STUDIO_RETRY_BASE_DELAY", "0.75"))
+        ),
+        retry_max_delay=max(
+            0.0, float(os.getenv("RAGANYTHING_STUDIO_RETRY_MAX_DELAY", "8.0"))
+        ),
+        write_lock_enabled=_env_bool("RAGANYTHING_STUDIO_WRITE_LOCK_ENABLED", True),
         active_profile_id=os.getenv("RAGANYTHING_STUDIO_ACTIVE_PROFILE_ID", "default"),
         profiles=[
             ModelProviderProfile(

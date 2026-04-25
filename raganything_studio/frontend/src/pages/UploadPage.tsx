@@ -4,10 +4,15 @@ import { useMutation, useQuery } from '@tanstack/react-query'
 import { AlertTriangle, Settings, UploadCloud } from 'lucide-react'
 import { getEnvironment, getStudioSettings, processDocument, uploadDocument } from '../api/client'
 import { useReadiness } from '../context/readiness'
-import type { ProcessOptions } from '../types/studio'
+import type { ProcessingPreset, ProcessOptions } from '../types/studio'
 
 const defaultOptions: ProcessOptions = {
   profile_id: null,
+  processing_preset: 'balanced',
+  enable_profiling: true,
+  enable_parse_cache: true,
+  enable_modal_cache: true,
+  preview_mode: false,
   parser: 'mineru',
   parse_method: 'auto',
   enable_vlm_enhancement: false,
@@ -15,8 +20,60 @@ const defaultOptions: ProcessOptions = {
   enable_table_processing: true,
   enable_equation_processing: true,
   max_concurrent_files: 1,
+  embedding_batch_size: 16,
+  llm_max_concurrency: 2,
+  vlm_max_concurrency: 1,
+  embedding_max_concurrency: 4,
+  retry_max_attempts: 3,
+  retry_base_delay: 0.75,
+  retry_max_delay: 8,
+  write_lock_enabled: true,
   lang: 'ch',
   device: 'cpu',
+  start_page: null,
+  end_page: null,
+}
+
+const presetOptions: Record<ProcessingPreset, Partial<ProcessOptions>> = {
+  fast: {
+    processing_preset: 'fast',
+    enable_vlm_enhancement: false,
+    enable_image_processing: false,
+    enable_table_processing: false,
+    enable_equation_processing: false,
+    embedding_batch_size: 32,
+    llm_max_concurrency: 2,
+    vlm_max_concurrency: 1,
+    embedding_max_concurrency: 8,
+    retry_max_attempts: 2,
+    enable_parse_cache: true,
+    enable_modal_cache: true,
+  },
+  balanced: {
+    processing_preset: 'balanced',
+    embedding_batch_size: 16,
+    llm_max_concurrency: 2,
+    vlm_max_concurrency: 1,
+    embedding_max_concurrency: 4,
+    retry_max_attempts: 3,
+    enable_parse_cache: true,
+    enable_modal_cache: true,
+  },
+  deep: {
+    processing_preset: 'deep',
+    enable_vlm_enhancement: true,
+    enable_image_processing: true,
+    enable_table_processing: true,
+    enable_equation_processing: true,
+    embedding_batch_size: 8,
+    llm_max_concurrency: 1,
+    vlm_max_concurrency: 1,
+    embedding_max_concurrency: 2,
+    retry_max_attempts: 4,
+    enable_parse_cache: true,
+    enable_modal_cache: true,
+  },
+  custom: { processing_preset: 'custom' },
 }
 
 export default function UploadPage() {
@@ -59,6 +116,18 @@ export default function UploadPage() {
         parse_method: studioSettings.default_parse_method,
         enable_vlm_enhancement: studioSettings.default_enable_vlm_enhancement,
         max_concurrent_files: studioSettings.max_concurrent_files,
+        processing_preset: studioSettings.default_processing_preset,
+        enable_parse_cache: studioSettings.default_enable_parse_cache,
+        enable_modal_cache: studioSettings.default_enable_modal_cache,
+        preview_mode: studioSettings.default_preview_mode,
+        embedding_batch_size: studioSettings.embedding_batch_size,
+        llm_max_concurrency: studioSettings.llm_max_concurrency,
+        vlm_max_concurrency: studioSettings.vlm_max_concurrency,
+        embedding_max_concurrency: studioSettings.embedding_max_concurrency,
+        retry_max_attempts: studioSettings.retry_max_attempts,
+        retry_base_delay: studioSettings.retry_base_delay,
+        retry_max_delay: studioSettings.retry_max_delay,
+        write_lock_enabled: studioSettings.write_lock_enabled,
         lang: studioSettings.default_language,
         device: studioSettings.default_device,
       }))
@@ -96,7 +165,15 @@ export default function UploadPage() {
   })
 
   function updateOption<K extends keyof ProcessOptions>(key: K, value: ProcessOptions[K]) {
-    setOptions((current) => ({ ...current, [key]: value }))
+    setOptions((current) => ({
+      ...current,
+      ...(isPerformanceOverride(key) ? { processing_preset: 'custom' as ProcessingPreset } : {}),
+      [key]: value,
+    }))
+  }
+
+  function applyPreset(preset: ProcessingPreset) {
+    setOptions((current) => ({ ...current, ...presetOptions[preset] }))
   }
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -143,6 +220,15 @@ export default function UploadPage() {
         </label>
 
         <div className="form-grid">
+          <label>
+            Processing preset
+            <select value={options.processing_preset} onChange={(e) => applyPreset(e.target.value as ProcessingPreset)}>
+              <option value="fast">Fast</option>
+              <option value="balanced">Balanced</option>
+              <option value="deep">Deep</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
           <label>
             RAG profile
             <select
@@ -194,6 +280,24 @@ export default function UploadPage() {
               onChange={(e) => updateOption('max_concurrent_files', Number(e.target.value))}
             />
           </label>
+          <label>
+            Page start
+            <input
+              min={0}
+              type="number"
+              value={options.start_page ?? ''}
+              onChange={(e) => updateOption('start_page', e.target.value === '' ? null : Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Page end
+            <input
+              min={0}
+              type="number"
+              value={options.end_page ?? ''}
+              onChange={(e) => updateOption('end_page', e.target.value === '' ? null : Number(e.target.value))}
+            />
+          </label>
         </div>
 
         <div className="toggle-row">
@@ -213,6 +317,56 @@ export default function UploadPage() {
             <input checked={options.enable_equation_processing} disabled={!options.enable_vlm_enhancement} type="checkbox" onChange={(e) => updateOption('enable_equation_processing', e.target.checked)} />
             Equation
           </label>
+          <label>
+            <input checked={options.preview_mode} type="checkbox" onChange={(e) => updateOption('preview_mode', e.target.checked)} />
+            Preview only
+          </label>
+        </div>
+
+        <div className="form-grid">
+          <label>
+            Embedding batch
+            <input min={1} max={1024} type="number" value={options.embedding_batch_size ?? 16} onChange={(e) => updateOption('embedding_batch_size', Number(e.target.value))} />
+          </label>
+          <label>
+            LLM concurrency
+            <input min={1} max={64} type="number" value={options.llm_max_concurrency ?? 2} onChange={(e) => updateOption('llm_max_concurrency', Number(e.target.value))} />
+          </label>
+          <label>
+            VLM concurrency
+            <input min={1} max={64} type="number" value={options.vlm_max_concurrency ?? 1} onChange={(e) => updateOption('vlm_max_concurrency', Number(e.target.value))} />
+          </label>
+          <label>
+            Embedding concurrency
+            <input min={1} max={128} type="number" value={options.embedding_max_concurrency ?? 4} onChange={(e) => updateOption('embedding_max_concurrency', Number(e.target.value))} />
+          </label>
+          <label>
+            Retry attempts
+            <input min={1} max={10} type="number" value={options.retry_max_attempts ?? 3} onChange={(e) => updateOption('retry_max_attempts', Number(e.target.value))} />
+          </label>
+          <label>
+            Retry base delay
+            <input min={0} max={60} step={0.1} type="number" value={options.retry_base_delay ?? 0.75} onChange={(e) => updateOption('retry_base_delay', Number(e.target.value))} />
+          </label>
+          <label>
+            Retry max delay
+            <input min={0} max={300} step={0.1} type="number" value={options.retry_max_delay ?? 8} onChange={(e) => updateOption('retry_max_delay', Number(e.target.value))} />
+          </label>
+        </div>
+
+        <div className="toggle-row">
+          <label>
+            <input checked={options.enable_parse_cache} type="checkbox" onChange={(e) => updateOption('enable_parse_cache', e.target.checked)} />
+            Parse cache
+          </label>
+          <label>
+            <input checked={options.enable_modal_cache} type="checkbox" onChange={(e) => updateOption('enable_modal_cache', e.target.checked)} />
+            Modal cache
+          </label>
+          <label>
+            <input checked={options.write_lock_enabled} type="checkbox" onChange={(e) => updateOption('write_lock_enabled', e.target.checked)} />
+            Write lock
+          </label>
         </div>
 
         {uploadMutation.error ? <div className="error-panel">{uploadMutation.error.message}</div> : null}
@@ -228,4 +382,24 @@ export default function UploadPage() {
       </form>
     </section>
   )
+}
+
+function isPerformanceOverride(key: keyof ProcessOptions): boolean {
+  return [
+    'enable_vlm_enhancement',
+    'enable_image_processing',
+    'enable_table_processing',
+    'enable_equation_processing',
+    'embedding_batch_size',
+    'llm_max_concurrency',
+    'vlm_max_concurrency',
+    'embedding_max_concurrency',
+    'retry_max_attempts',
+    'retry_base_delay',
+    'retry_max_delay',
+    'enable_parse_cache',
+    'enable_modal_cache',
+    'preview_mode',
+    'write_lock_enabled',
+  ].includes(key)
 }

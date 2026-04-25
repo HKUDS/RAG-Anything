@@ -412,6 +412,18 @@ def _settings_response(current_settings: StudioSettings) -> StudioSettingsRespon
             current_settings.default_enable_vlm_enhancement
         ),
         max_concurrent_files=current_settings.max_concurrent_files,
+        default_processing_preset=current_settings.default_processing_preset,
+        default_enable_parse_cache=current_settings.default_enable_parse_cache,
+        default_enable_modal_cache=current_settings.default_enable_modal_cache,
+        default_preview_mode=current_settings.default_preview_mode,
+        embedding_batch_size=current_settings.embedding_batch_size,
+        llm_max_concurrency=current_settings.llm_max_concurrency,
+        vlm_max_concurrency=current_settings.vlm_max_concurrency,
+        embedding_max_concurrency=current_settings.embedding_max_concurrency,
+        retry_max_attempts=current_settings.retry_max_attempts,
+        retry_base_delay=current_settings.retry_base_delay,
+        retry_max_delay=current_settings.retry_max_delay,
+        write_lock_enabled=current_settings.write_lock_enabled,
         active_profile_id=current_settings.active_profile_id,
         profiles=[
             _profile_response(profile) for profile in current_settings.profiles

@@ -1836,6 +1836,44 @@ textarea { resize: vertical; }
   font-size: 12px;
 }
 
+.profile-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.metric-group {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-2);
+  padding: 10px;
+}
+
+.metric-group > strong {
+  font-size: 12px;
+  color: var(--color-text);
+}
+
+.metric-group span {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.metric-group small,
+.metric-group em {
+  color: var(--color-text-3);
+  font-style: normal;
+}
+
+.metric-group b {
+  font-weight: 750;
+}
+
 /* ── Dir browser modal ────────────────────────────────────────── */
 .dir-modal-backdrop {
   position: fixed;
@@ -2514,6 +2552,10 @@ textarea { resize: vertical; }
 
   .retrieval-params {
     max-height: none;
+  }
+
+  .profile-metrics-grid {
+    grid-template-columns: 1fr;
   }
 
   .metric-grid,

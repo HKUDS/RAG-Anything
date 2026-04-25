@@ -9,7 +9,7 @@ import {
 import { browseDir, getEnvironment, getStudioSettings, installDep, listModels, testConnection, updateStudioSettings } from '../api/client'
 import type { BrowseDirEntry } from '../types/studio'
 import type {
-  ConnectionTestKind, ConnectionTestResponse, ModelInfo, ModelProfile,
+  ConnectionTestKind, ConnectionTestResponse, ModelInfo, ModelProfile, ProcessingPreset,
   ModelProfileUpdate, StudioSettings, StudioSettingsUpdate,
 } from '../types/studio'
 
@@ -68,6 +68,18 @@ interface SettingsForm {
   default_device: string
   default_enable_vlm_enhancement: boolean
   max_concurrent_files: number
+  default_processing_preset: ProcessingPreset
+  default_enable_parse_cache: boolean
+  default_enable_modal_cache: boolean
+  default_preview_mode: boolean
+  embedding_batch_size: number
+  llm_max_concurrency: number
+  vlm_max_concurrency: number
+  embedding_max_concurrency: number
+  retry_max_attempts: number
+  retry_base_delay: number
+  retry_max_delay: number
+  write_lock_enabled: boolean
   active_profile_id: string
   profiles: ProfileForm[]
 }
@@ -539,6 +551,111 @@ export default function SettingsPage() {
                 />
                 Enable VLM enhancement by default
               </label>
+              <h2>Performance Layer</h2>
+              <div className="form-grid">
+                <label>
+                  Processing preset
+                  <select
+                    value={form.default_processing_preset}
+                    onChange={(e) => updateField('default_processing_preset', e.target.value as ProcessingPreset)}
+                  >
+                    <option value="fast">Fast</option>
+                    <option value="balanced">Balanced</option>
+                    <option value="deep">Deep</option>
+                    <option value="custom">Custom</option>
+                  </select>
+                </label>
+                <label>
+                  Embedding batch
+                  <input
+                    min={1}
+                    max={1024}
+                    type="number"
+                    value={form.embedding_batch_size}
+                    onChange={(e) => updateField('embedding_batch_size', Number(e.target.value))}
+                  />
+                </label>
+                <label>
+                  LLM concurrency
+                  <input
+                    min={1}
+                    max={64}
+                    type="number"
+                    value={form.llm_max_concurrency}
+                    onChange={(e) => updateField('llm_max_concurrency', Number(e.target.value))}
+                  />
+                </label>
+                <label>
+                  VLM concurrency
+                  <input
+                    min={1}
+                    max={64}
+                    type="number"
+                    value={form.vlm_max_concurrency}
+                    onChange={(e) => updateField('vlm_max_concurrency', Number(e.target.value))}
+                  />
+                </label>
+                <label>
+                  Embedding concurrency
+                  <input
+                    min={1}
+                    max={128}
+                    type="number"
+                    value={form.embedding_max_concurrency}
+                    onChange={(e) => updateField('embedding_max_concurrency', Number(e.target.value))}
+                  />
+                </label>
+                <label>
+                  Retry attempts
+                  <input
+                    min={1}
+                    max={10}
+                    type="number"
+                    value={form.retry_max_attempts}
+                    onChange={(e) => updateField('retry_max_attempts', Number(e.target.value))}
+                  />
+                </label>
+                <label>
+                  Retry base delay
+                  <input
+                    min={0}
+                    max={60}
+                    step={0.1}
+                    type="number"
+                    value={form.retry_base_delay}
+                    onChange={(e) => updateField('retry_base_delay', Number(e.target.value))}
+                  />
+                </label>
+                <label>
+                  Retry max delay
+                  <input
+                    min={0}
+                    max={300}
+                    step={0.1}
+                    type="number"
+                    value={form.retry_max_delay}
+                    onChange={(e) => updateField('retry_max_delay', Number(e.target.value))}
+                  />
+                </label>
+              </div>
+              <div className="toggle-row">
+                <label>
+                  <input checked={form.default_enable_parse_cache} type="checkbox" onChange={(e) => updateField('default_enable_parse_cache', e.target.checked)} />
+                  Parse cache
+                </label>
+                <label>
+                  <input checked={form.default_enable_modal_cache} type="checkbox" onChange={(e) => updateField('default_enable_modal_cache', e.target.checked)} />
+                  Modal cache
+                </label>
+                <label>
+                  <input checked={form.default_preview_mode} type="checkbox" onChange={(e) => updateField('default_preview_mode', e.target.checked)} />
+                  Preview mode
+                </label>
+                <label>
+                  <input checked={form.write_lock_enabled} type="checkbox" onChange={(e) => updateField('write_lock_enabled', e.target.checked)} />
+                  Working-dir write lock
+                </label>
+              </div>
               {environment?.cuda_gpu_present && !environment.cuda_available ? (
                 <div className="cuda-install-hint">
                   <AlertTriangle size={14} />
@@ -1044,6 +1161,18 @@ function makeForm(settings: StudioSettings): SettingsForm {
     default_device: settings.default_device,
     default_enable_vlm_enhancement: settings.default_enable_vlm_enhancement,
     max_concurrent_files: settings.max_concurrent_files,
+    default_processing_preset: settings.default_processing_preset,
+    default_enable_parse_cache: settings.default_enable_parse_cache,
+    default_enable_modal_cache: settings.default_enable_modal_cache,
+    default_preview_mode: settings.default_preview_mode,
+    embedding_batch_size: settings.embedding_batch_size,
+    llm_max_concurrency: settings.llm_max_concurrency,
+    vlm_max_concurrency: settings.vlm_max_concurrency,
+    embedding_max_concurrency: settings.embedding_max_concurrency,
+    retry_max_attempts: settings.retry_max_attempts,
+    retry_base_delay: settings.retry_base_delay,
+    retry_max_delay: settings.retry_max_delay,
+    write_lock_enabled: settings.write_lock_enabled,
     active_profile_id: settings.active_profile_id || profiles[0].id,
     profiles,
   }
@@ -1136,6 +1265,18 @@ function toPayload(form: SettingsForm): StudioSettingsUpdate {
     default_device: form.default_device,
     default_enable_vlm_enhancement: form.default_enable_vlm_enhancement,
     max_concurrent_files: form.max_concurrent_files,
+    default_processing_preset: form.default_processing_preset,
+    default_enable_parse_cache: form.default_enable_parse_cache,
+    default_enable_modal_cache: form.default_enable_modal_cache,
+    default_preview_mode: form.default_preview_mode,
+    embedding_batch_size: form.embedding_batch_size,
+    llm_max_concurrency: form.llm_max_concurrency,
+    vlm_max_concurrency: form.vlm_max_concurrency,
+    embedding_max_concurrency: form.embedding_max_concurrency,
+    retry_max_attempts: form.retry_max_attempts,
+    retry_base_delay: form.retry_base_delay,
+    retry_max_delay: form.retry_max_delay,
+    write_lock_enabled: form.write_lock_enabled,
     active_profile_id: form.active_profile_id,
     profiles: form.profiles.map(profileToPayload),
   }

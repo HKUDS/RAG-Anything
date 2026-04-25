@@ -81,6 +81,18 @@ class StudioSettingsResponse(BaseModel):
     default_device: str
     default_enable_vlm_enhancement: bool
     max_concurrent_files: int
+    default_processing_preset: str
+    default_enable_parse_cache: bool
+    default_enable_modal_cache: bool
+    default_preview_mode: bool
+    embedding_batch_size: int
+    llm_max_concurrency: int
+    vlm_max_concurrency: int
+    embedding_max_concurrency: int
+    retry_max_attempts: int
+    retry_base_delay: float
+    retry_max_delay: float
+    write_lock_enabled: bool
     active_profile_id: str
     profiles: list[ModelProfileResponse]
 
@@ -131,6 +143,18 @@ class StudioSettingsUpdate(BaseModel):
     default_device: str = Field(min_length=1)
     default_enable_vlm_enhancement: bool = False
     max_concurrent_files: int = Field(default=1, ge=1, le=32)
+    default_processing_preset: str = "balanced"
+    default_enable_parse_cache: bool = True
+    default_enable_modal_cache: bool = True
+    default_preview_mode: bool = False
+    embedding_batch_size: int = Field(default=16, ge=1, le=1024)
+    llm_max_concurrency: int = Field(default=2, ge=1, le=64)
+    vlm_max_concurrency: int = Field(default=1, ge=1, le=64)
+    embedding_max_concurrency: int = Field(default=4, ge=1, le=128)
+    retry_max_attempts: int = Field(default=3, ge=1, le=10)
+    retry_base_delay: float = Field(default=0.75, ge=0, le=60)
+    retry_max_delay: float = Field(default=8.0, ge=0, le=300)
+    write_lock_enabled: bool = True
     active_profile_id: str | None = None
     profiles: list[ModelProfileUpdate] | None = None
 
