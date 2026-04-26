@@ -71,9 +71,52 @@ export interface ProcessOptions {
 
 export interface QueryResponse {
   answer: string
-  sources: Array<Record<string, unknown>>
+  sources: SourceItem[]
+  answer_blocks: AnswerBlock[]
+  media: MediaItem[]
+  relation_trace: RelationStep[]
   raw?: Record<string, unknown> | null
   trace?: Record<string, unknown> | null
+}
+
+export interface SourceItem {
+  document_id?: string | null
+  filename?: string | null
+  page_idx?: number | null
+  type?: string | null
+  score?: number | null
+  preview?: string | null
+  raw?: Record<string, unknown> | null
+}
+
+export interface AnswerBlock {
+  type: string
+  title?: string | null
+  content?: string | null
+  source_ids: string[]
+  media_ids: string[]
+  raw?: Record<string, unknown> | null
+}
+
+export interface MediaItem {
+  id: string
+  type: string
+  title?: string | null
+  url?: string | null
+  path?: string | null
+  page_idx?: number | null
+  caption?: string | null
+  source_id?: string | null
+  raw?: Record<string, unknown> | null
+}
+
+export interface RelationStep {
+  id: string
+  type: string
+  label: string
+  description?: string | null
+  source_ids: string[]
+  raw?: Record<string, unknown> | null
 }
 
 export interface ContentListResponse {

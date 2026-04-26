@@ -70,12 +70,28 @@ export async function submitQuery(
   useMultimodal: boolean,
   profileId?: string | null,
   topK?: number | null,
+  chunkTopK?: number | null,
+  maxEntityTokens?: number | null,
+  maxRelationTokens?: number | null,
+  maxTotalTokens?: number | null,
+  enableRerank = true,
+  onlyNeedContext = false,
+  onlyNeedPrompt = false,
+  stream = false,
 ) {
   return request<QueryResponse>('/api/query', {
     body: JSON.stringify({
       question, mode, use_multimodal: useMultimodal,
       profile_id: profileId ?? null,
       top_k: topK ?? null,
+      chunk_top_k: chunkTopK ?? null,
+      max_entity_tokens: maxEntityTokens ?? null,
+      max_relation_tokens: maxRelationTokens ?? null,
+      max_total_tokens: maxTotalTokens ?? null,
+      enable_rerank: enableRerank,
+      only_need_context: onlyNeedContext,
+      only_need_prompt: onlyNeedPrompt,
+      stream,
     }),
     method: 'POST',
   })

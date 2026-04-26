@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 
 from fastapi import UploadFile
 
+from raganything.query import QueryMixin
 from raganything_studio.backend.config import StudioSettings
 from raganything_studio.backend.core.document_store import DocumentStore
 from raganything_studio.backend.core.job_manager import JobManager
@@ -15,6 +17,7 @@ from raganything_studio.backend.schemas.job import ProcessOptions
 from raganything_studio.backend.schemas.settings import StudioSettingsUpdate
 from raganything_studio.backend.services.content_list_service import ContentListService
 from raganything_studio.backend.services.raganything_service import (
+    _build_query_artifacts,
     _config_updates,
     _effective_options,
 )
@@ -301,3 +304,122 @@ def test_processing_preset_does_not_override_explicit_manual_toggles(tmp_path):
 
     assert options.enable_vlm_enhancement is True
     assert options.enable_modal_cache is False
+
+
+def test_text_query_initializes_lightrag_before_querying():
+    class Logger:
+        def info(self, *_):
+            pass
+
+        def warning(self, *_):
+            pass
+
+    class LightRAGStub:
+        def __init__(self):
+            self.calls = []
+
+        async def aquery(self, query, param, system_prompt=None):
+            self.calls.append((query, param.mode, system_prompt))
+            return "answer"
+
+    class RAGStub(QueryMixin):
+        def __init__(self):
+            self.lightrag = None
+            self.logger = Logger()
+            self.initialized = 0
+
+        async def _ensure_lightrag_initialized(self):
+            self.initialized += 1
+            self.lightrag = LightRAGStub()
+            return {"success": True}
+
+    async def run_query():
+        rag = RAGStub()
+        result = await rag.aquery("What is indexed?", mode="global")
+        return rag, result
+
+    rag, result = asyncio.run(run_query())
+
+    assert result == "answer"
+    assert rag.initialized == 1
+    assert rag.lightrag.calls == [("What is indexed?", "global", None)]
+
+
+def test_query_artifacts_extract_multimodal_evidence(tmp_path):
+    settings = make_settings(tmp_path)
+    image_path = settings.output_dir / "doc_1" / "page.png"
+    image_path.parent.mkdir(parents=True)
+    image_path.write_bytes(b"png")
+    retrieval_data = {
+        "status": "success",
+        "data": {
+            "chunks": [
+                {
+                    "chunk_id": "chunk_1",
+                    "file_path": str(settings.output_dir / "doc_1" / "paper.pdf"),
+                    "content": f"Image Path: {image_path}\nA transistor diagram.",
+                }
+            ],
+            "entities": [
+                {
+                    "entity_name": "TRANSISTOR",
+                    "description": "A semiconductor device.",
+                    "source_id": "chunk_1",
+                }
+            ],
+            "relationships": [
+                {
+                    "src_id": "TRANSISTOR",
+                    "tgt_id": "BJT",
+                    "description": "BJT is a transistor type.",
+                    "source_id": "chunk_1",
+                }
+            ],
+        },
+    }
+
+    artifacts = _build_query_artifacts(
+        answer="BJT and FET are two transistor types.",
+        retrieval_data=retrieval_data,
+        settings=settings,
+    )
+
+    assert artifacts.sources[0].type == "image"
+    assert artifacts.media[0].url is not None
+    assert artifacts.relation_trace[0].label == "TRANSISTOR"
+    assert artifacts.trace["retrieved_images"][0]["title"] == "page.png"
+
+
+def test_query_artifacts_downgrade_uncertain_equations(tmp_path):
+    settings = make_settings(tmp_path)
+    retrieval_data = {
+        "status": "success",
+        "data": {
+            "chunks": [
+                {
+                    "chunk_id": "chunk_eq",
+                    "file_path": str(settings.output_dir / "doc_1" / "paper.pdf"),
+                    "content": (
+                        "Mathematical Equation Analysis: Equation: I_B I_C = \ufffd \ufffd "
+                        "Format: unknown Mathematical Analysis: The equation appears "
+                        "to be a typo or transcription error."
+                    ),
+                }
+            ],
+            "entities": [],
+            "relationships": [],
+        },
+    }
+
+    artifacts = _build_query_artifacts(
+        answer="The equation transcription is unreliable.",
+        retrieval_data=retrieval_data,
+        settings=settings,
+    )
+    equation = artifacts.sources[0].raw["equation"]
+
+    assert artifacts.sources[0].type == "equation"
+    assert equation["formula"] == ""
+    assert equation["format"] is None
+    assert equation["uncertain"] is True
+    assert "\ufffd" not in artifacts.sources[0].preview

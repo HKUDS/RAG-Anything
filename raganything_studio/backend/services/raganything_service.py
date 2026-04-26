@@ -5,12 +5,14 @@ import contextvars
 import hashlib
 import inspect
 import json
+import re
 import time
 import traceback
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 from fastapi import status
 
@@ -18,11 +20,25 @@ from raganything_studio.backend.config import ModelProviderProfile
 from raganything_studio.backend.config import StudioSettings
 from raganything_studio.backend.core.errors import api_error
 from raganything_studio.backend.schemas.job import JobStage, ProcessOptions
-from raganything_studio.backend.schemas.query import QueryRequest, QueryResponse
+from raganything_studio.backend.schemas.query import (
+    AnswerBlock,
+    MediaItem,
+    QueryRequest,
+    QueryResponse,
+    RelationStep,
+    SourceItem,
+)
 
 _CURRENT_STATS: contextvars.ContextVar["ProcessingStats | None"] = (
     contextvars.ContextVar("raganything_studio_processing_stats", default=None)
 )
+
+_IMAGE_PATH_RE = re.compile(
+    r"(?:Image Path|图片路径|img_path|table_img_path|equation_img_path)['\"：: ]+"
+    r"['\"]?([^'\"\n\r,}]+\.(?:png|jpg|jpeg|webp|gif))",
+    re.IGNORECASE,
+)
+_ALLOWED_MEDIA_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".gif"}
 
 
 class RAGAnythingService:
@@ -180,12 +196,25 @@ class RAGAnythingService:
             profile_id=request.profile_id,
             enable_vlm_enhancement=request.use_multimodal,
         )
-        query_kwargs: dict[str, Any] = {"vlm_enhanced": request.use_multimodal}
-        if request.top_k is not None:
-            query_kwargs["top_k"] = request.top_k
+        initializer = getattr(rag, "_ensure_lightrag_initialized", None)
+        if callable(initializer):
+            init_result = await initializer()
+            if isinstance(init_result, dict) and not init_result.get("success", True):
+                raise api_error(
+                    "QUERY_FAILED",
+                    f"Query failed: {init_result.get('error') or 'LightRAG initialization failed'}",
+                    status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+
+        query_kwargs = _query_param_kwargs(request)
+        if request.use_multimodal:
+            query_kwargs.pop("only_need_context", None)
+            query_kwargs.pop("only_need_prompt", None)
+        query_kwargs["vlm_enhanced"] = request.use_multimodal
 
         try:
             result = await rag.aquery(request.question, mode=request.mode, **query_kwargs)
+            retrieval_data = await _query_retrieval_data(rag, request)
         except Exception as exc:
             raise api_error(
                 "QUERY_FAILED",
@@ -193,18 +222,20 @@ class RAGAnythingService:
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             ) from exc
 
+        structured = _build_query_artifacts(
+            answer=str(result),
+            retrieval_data=retrieval_data,
+            settings=self._settings,
+        )
+
         return QueryResponse(
             answer=str(result),
-            sources=[],
-            raw={"result": result},
-            trace={
-                "retrieved_text": [],
-                "retrieved_images": [],
-                "retrieved_tables": [],
-                "retrieved_equations": [],
-                "graph_entities": [],
-                "context": "",
-            },
+            sources=structured.sources,
+            answer_blocks=structured.answer_blocks,
+            media=structured.media,
+            relation_trace=structured.relation_trace,
+            raw={"result": result, "retrieval_data": retrieval_data},
+            trace=structured.trace,
         )
 
     def _create_rag(
@@ -935,6 +966,418 @@ def _register_job_callback(
             log(f"Document processing error: {error}")
 
     manager.register(StudioCallback())
+
+
+@dataclass
+class QueryArtifacts:
+    sources: list[SourceItem]
+    answer_blocks: list[AnswerBlock]
+    media: list[MediaItem]
+    relation_trace: list[RelationStep]
+    trace: dict[str, Any]
+
+
+def _query_param_kwargs(request: QueryRequest) -> dict[str, Any]:
+    kwargs: dict[str, Any] = {
+        "only_need_context": request.only_need_context,
+        "only_need_prompt": request.only_need_prompt,
+        "enable_rerank": request.enable_rerank,
+        # Studio does not yet consume async iterators, so keep query responses
+        # non-streaming even if the UI preference is enabled.
+        "stream": False,
+    }
+    for request_key, query_key in (
+        ("top_k", "top_k"),
+        ("chunk_top_k", "chunk_top_k"),
+        ("max_entity_tokens", "max_entity_tokens"),
+        ("max_relation_tokens", "max_relation_tokens"),
+        ("max_total_tokens", "max_total_tokens"),
+    ):
+        value = getattr(request, request_key)
+        if value is not None:
+            kwargs[query_key] = value
+    return kwargs
+
+
+async def _query_retrieval_data(rag: Any, request: QueryRequest) -> dict[str, Any]:
+    lightrag = getattr(rag, "lightrag", None)
+    if lightrag is None or not hasattr(lightrag, "aquery_data"):
+        return {"status": "failure", "message": "LightRAG data API unavailable", "data": {}}
+
+    from lightrag import QueryParam
+
+    param = QueryParam(mode=request.mode, **_query_param_kwargs(request))
+    return await lightrag.aquery_data(request.question, param=param)
+
+
+def _build_query_artifacts(
+    *, answer: str, retrieval_data: dict[str, Any], settings: StudioSettings
+) -> QueryArtifacts:
+    data = retrieval_data.get("data") if isinstance(retrieval_data, dict) else {}
+    data = data if isinstance(data, dict) else {}
+    chunks = _list_of_dicts(data.get("chunks"))
+    entities = _list_of_dicts(data.get("entities"))
+    relationships = _list_of_dicts(data.get("relationships"))
+
+    sources = [_source_from_chunk(chunk, index) for index, chunk in enumerate(chunks[:16])]
+    media = _media_from_sources(sources, settings)
+    relation_trace = _relation_trace_from_data(entities, relationships, chunks)
+    answer_blocks = _answer_blocks_from_result(answer, media)
+    trace = {
+        "retrieved_text": [_dump_model(source) for source in sources if source.type == "text"],
+        "retrieved_images": [_dump_model(item) for item in media if item.type == "image"],
+        "retrieved_tables": [_dump_model(source) for source in sources if source.type == "table"],
+        "retrieved_equations": [
+            _dump_model(source) for source in sources if source.type == "equation"
+        ],
+        "graph_entities": [
+            entity.get("entity_name") or entity.get("id") or entity.get("name")
+            for entity in entities[:24]
+        ],
+        "graph_relationships": [
+            {
+                "source": rel.get("src_id") or rel.get("source"),
+                "target": rel.get("tgt_id") or rel.get("target"),
+                "description": rel.get("description"),
+            }
+            for rel in relationships[:24]
+        ],
+        "context": "\n\n".join(source.preview or "" for source in sources[:8]).strip(),
+        "retrieval_status": retrieval_data.get("status") if isinstance(retrieval_data, dict) else None,
+    }
+    return QueryArtifacts(
+        sources=sources,
+        answer_blocks=answer_blocks,
+        media=media,
+        relation_trace=relation_trace,
+        trace=trace,
+    )
+
+
+def _source_from_chunk(chunk: dict[str, Any], index: int) -> SourceItem:
+    content = str(chunk.get("content") or "")
+    file_path = str(chunk.get("file_path") or "")
+    source_type = _detect_source_type(content)
+    equation_info = _extract_equation_info(content) if source_type == "equation" else None
+    return SourceItem(
+        document_id=_document_id_from_file_path(file_path),
+        filename=Path(file_path).name if file_path else None,
+        page_idx=_page_index_from_content(content),
+        type=source_type,
+        score=_safe_float(chunk.get("score")),
+        preview=(
+            equation_info.get("description")
+            if equation_info and equation_info.get("description")
+            else _preview_text(_clean_display_text(content))
+        ),
+        raw={
+            "id": chunk.get("chunk_id") or chunk.get("reference_id") or f"chunk_{index}",
+            "chunk_id": chunk.get("chunk_id"),
+            "reference_id": chunk.get("reference_id"),
+            "file_path": file_path,
+            "image_paths": _extract_image_paths(content),
+            "equation": equation_info,
+        },
+    )
+
+
+def _media_from_sources(sources: list[SourceItem], settings: StudioSettings) -> list[MediaItem]:
+    media: list[MediaItem] = []
+    seen: set[str] = set()
+    for source in sources:
+        raw = source.raw or {}
+        source_id = str(raw.get("id") or "")
+        for image_path in raw.get("image_paths") or []:
+            if image_path in seen:
+                continue
+            seen.add(image_path)
+            media_id = f"media_{len(media) + 1}"
+            media.append(
+                MediaItem(
+                    id=media_id,
+                    type="image",
+                    title=Path(str(image_path)).name,
+                    url=_media_url_for_path(str(image_path), settings),
+                    path=str(image_path),
+                    page_idx=source.page_idx,
+                    caption=source.preview,
+                    source_id=source_id or None,
+                    raw={"source": source_id, "filename": source.filename},
+                )
+            )
+    return media
+
+
+def _relation_trace_from_data(
+    entities: list[dict[str, Any]],
+    relationships: list[dict[str, Any]],
+    chunks: list[dict[str, Any]],
+) -> list[RelationStep]:
+    steps: list[RelationStep] = []
+    for entity in entities[:8]:
+        label = str(
+            entity.get("entity_name")
+            or entity.get("entity_id")
+            or entity.get("id")
+            or "Entity"
+        )
+        steps.append(
+            RelationStep(
+                id=f"entity_{len(steps) + 1}",
+                type="entity",
+                label=label,
+                description=_preview_text(str(entity.get("description") or ""), 180),
+                source_ids=_split_source_ids(entity.get("source_id")),
+                raw=entity,
+            )
+        )
+    for relation in relationships[:6]:
+        source = relation.get("src_id") or relation.get("source") or "source"
+        target = relation.get("tgt_id") or relation.get("target") or "target"
+        steps.append(
+            RelationStep(
+                id=f"relation_{len(steps) + 1}",
+                type="relation",
+                label=f"{source} -> {target}",
+                description=_preview_text(str(relation.get("description") or ""), 180),
+                source_ids=_split_source_ids(relation.get("source_id")),
+                raw=relation,
+            )
+        )
+    for chunk in chunks[:4]:
+        chunk_id = str(chunk.get("chunk_id") or chunk.get("reference_id") or "")
+        if chunk_id:
+            steps.append(
+                RelationStep(
+                    id=f"chunk_{len(steps) + 1}",
+                    type="chunk",
+                    label=chunk_id,
+                    description=_preview_text(str(chunk.get("content") or ""), 160),
+                    source_ids=[chunk_id],
+                    raw=chunk,
+                )
+            )
+    return steps
+
+
+def _answer_blocks_from_result(answer: str, media: list[MediaItem]) -> list[AnswerBlock]:
+    blocks: list[AnswerBlock] = []
+    paragraphs = [part.strip() for part in re.split(r"\n\s*\n", answer) if part.strip()]
+    for index, paragraph in enumerate(paragraphs or [answer.strip()]):
+        if paragraph:
+            blocks.append(
+                AnswerBlock(
+                    type="text",
+                    title="Answer" if index == 0 else None,
+                    content=paragraph,
+                )
+            )
+    if media:
+        blocks.append(
+            AnswerBlock(
+                type="media_gallery",
+                title="Visual Evidence",
+                content=f"{len(media)} visual item(s) retrieved from indexed documents.",
+                media_ids=[item.id for item in media[:6]],
+            )
+        )
+    return blocks
+
+
+def _media_url_for_path(path_value: str, settings: StudioSettings) -> str | None:
+    path = Path(path_value).expanduser()
+    if path.suffix.lower() not in _ALLOWED_MEDIA_SUFFIXES:
+        return None
+    try:
+        resolved = path.resolve()
+    except Exception:
+        return None
+    allowed_roots = [
+        settings.data_dir.resolve(),
+        settings.output_dir.resolve(),
+        settings.working_dir.resolve(),
+        settings.upload_dir.resolve(),
+    ]
+    if not any(_is_relative_to(resolved, root) for root in allowed_roots):
+        return None
+    return f"/api/query/media?path={quote(str(resolved), safe='')}"
+
+
+def _detect_source_type(content: str) -> str:
+    lowered = content.lower()
+    if _extract_image_paths(content):
+        return "image"
+    if "table data" in lowered or "table:" in lowered or "表格" in content:
+        return "table"
+    if "latex formula" in lowered or "mathematical equation" in lowered or "公式" in content:
+        return "equation"
+    return "text"
+
+
+def _extract_image_paths(content: str) -> list[str]:
+    return [match.strip() for match in _IMAGE_PATH_RE.findall(content)]
+
+
+def _preview_text(content: str, limit: int = 420) -> str:
+    text = re.sub(r"\s+", " ", _clean_display_text(content)).strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit - 1].rstrip()}..."
+
+
+def _extract_equation_info(content: str) -> dict[str, Any]:
+    had_bad_chars = "\ufffd" in content or "�" in content
+    cleaned = _clean_display_text(content)
+    formula = _first_match(
+        cleaned,
+        [
+            r"LaTeX formula:\s*(.*?)(?:Formula caption:|$)",
+            r"Equation:\s*(.*?)(?:Format:|Mathematical Equation Analysis:|$)",
+            r"公式[:：]\s*(.*?)(?:格式[:：]|$)",
+        ],
+    )
+    formula = _clean_formula_text(formula)
+    equation_format = _first_match(
+        cleaned,
+        [
+            r"Format:\s*(.*?)(?:Mathematical Equation Analysis:|$)",
+            r"格式[:：]\s*(.*?)(?:数学公式分析[:：]|$)",
+        ],
+    )
+    description = cleaned
+    for pattern in (
+        r"Mathematical Equation Analysis:\s*",
+        r"Equation:\s*.*?(?:Format:|Mathematical Equation Analysis:|$)",
+        r"Format:\s*unknown\s*",
+        r"LaTeX formula:\s*.*?(?:Formula caption:|$)",
+        r"数学公式分析[:：]\s*",
+    ):
+        description = re.sub(pattern, " ", description, flags=re.IGNORECASE)
+    description = _preview_text(description, 260)
+    uncertain = _formula_is_uncertain(formula, description, had_bad_chars)
+    if uncertain:
+        formula = ""
+        equation_format = ""
+    return {
+        "formula": formula,
+        "format": _preview_text(equation_format, 80) if equation_format else None,
+        "description": description,
+        "uncertain": uncertain,
+    }
+
+
+def _first_match(content: str, patterns: list[str]) -> str:
+    for pattern in patterns:
+        match = re.search(pattern, content, flags=re.IGNORECASE | re.DOTALL)
+        if match:
+            return match.group(1).strip()
+    return ""
+
+
+def _clean_display_text(content: str) -> str:
+    text = content.replace("\ufffd", " ")
+    text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f]", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _clean_formula_text(formula: str) -> str:
+    formula = _clean_display_text(formula)
+    formula = re.sub(r"\bFormat:\s*unknown\b", "", formula, flags=re.IGNORECASE)
+    formula = re.sub(r"\bMathematical Equation Analysis\b.*", "", formula, flags=re.IGNORECASE)
+    return formula.strip(" :-")
+
+
+def _formula_is_uncertain(formula: str, description: str = "", had_bad_chars: bool = False) -> bool:
+    lowered = f"{formula} {description}".lower()
+    if had_bad_chars:
+        return True
+    if any(
+        marker in lowered
+        for marker in (
+            "appears to be a typo",
+            "typographical",
+            "transcription error",
+            "formatting artifact",
+            "corrupted",
+            "misrendered",
+            "misrepresented",
+            "does not represent",
+            "not represent a mathematically valid",
+        )
+    ):
+        return True
+    if not formula:
+        return True
+    if len(formula) < 2:
+        return True
+    compact = re.sub(r"\s+", "", formula)
+    if re.fullmatch(r"[A-Za-z_ ]+", formula):
+        return True
+    if len(compact) <= 8 and re.fullmatch(r"[A-Za-z_]+", compact):
+        return True
+    symbol_count = len(re.findall(r"[=+\-*/^_\\\\(){}\[\]|∑∫√≤≥≠≈]", formula))
+    alpha_tokens = re.findall(r"[A-Za-z]+", formula)
+    if symbol_count == 0 and len(alpha_tokens) > 4:
+        return True
+    return False
+
+
+def _page_index_from_content(content: str) -> int | None:
+    match = re.search(r"(?:page_idx|page|页码)['\"：: ]+(\d+)", content, re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def _document_id_from_file_path(file_path: str) -> str | None:
+    if not file_path:
+        return None
+    for part in Path(file_path).parts:
+        if part.startswith("doc_"):
+            return part
+    return None
+
+
+def _split_source_ids(value: Any) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item) for item in value if item]
+    return [part for part in re.split(r"[|,;\s]+", str(value)) if part]
+
+
+def _list_of_dicts(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _safe_float(value: Any) -> float | None:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dump_model(model: Any) -> dict[str, Any]:
+    dump = getattr(model, "model_dump", None)
+    if callable(dump):
+        return dump()
+    legacy_dump = getattr(model, "dict", None)
+    if callable(legacy_dump):
+        return legacy_dump()
+    return dict(model)
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
 
 
 def format_traceback(exc: BaseException) -> str:
