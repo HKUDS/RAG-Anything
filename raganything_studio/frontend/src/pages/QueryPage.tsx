@@ -1,4 +1,4 @@
-import { FormEvent, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -47,12 +47,21 @@ export default function QueryPage() {
   function clearQuery() {
     setQuestion('')
     queryMutation.reset()
+    window.sessionStorage.removeItem('raganything:lastQueryTrace')
   }
 
   const notReady = !readinessLoading && (!fullyConfigured || indexedCount === 0)
   const sourceCount = queryMutation.data?.sources.length ?? 0
   const trace = queryMutation.data?.trace ?? null
   const traceStats = getTraceStats(trace)
+
+  useEffect(() => {
+    if (!queryMutation.data) return
+    window.sessionStorage.setItem('raganything:lastQueryTrace', JSON.stringify({
+      trace: queryMutation.data.trace ?? null,
+      sources: queryMutation.data.sources,
+    }))
+  }, [queryMutation.data])
 
   return (
     <section className="retrieval-shell">

@@ -128,12 +128,13 @@ export async function getGraphLabels(profileId?: string | null): Promise<GraphLa
 }
 
 export async function getGraphSubgraph(
-  nodeLabel: string,
+  nodeLabel?: string | null,
   maxDepth = 3,
-  maxNodes = 200,
+  maxNodes = 150,
   profileId?: string | null,
 ): Promise<KnowledgeGraphResponse> {
-  const params = new URLSearchParams({ node_label: nodeLabel, max_depth: String(maxDepth), max_nodes: String(maxNodes) })
+  const params = new URLSearchParams({ max_depth: String(maxDepth), max_nodes: String(maxNodes) })
+  if (nodeLabel) params.set('node_label', nodeLabel)
   if (profileId) params.set('profile_id', profileId)
   return request<KnowledgeGraphResponse>(`/api/graph/subgraph?${params}`)
 }
