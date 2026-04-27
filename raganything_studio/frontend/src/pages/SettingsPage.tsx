@@ -92,7 +92,7 @@ const DOC_STATUS_STORAGE_OPTIONS = [
 const STORAGE_PRESETS: Record<StoragePresetKey, StoragePreset> = {
   local: {
     label: 'Local files',
-    description: 'Everything stays under the local metadata/cache directory.',
+    description: 'JSON, NanoVectorDB, and NetworkX for single-machine experiments.',
     kv_storage: 'JsonKVStorage',
     vector_storage: 'NanoVectorDBStorage',
     graph_storage: 'NetworkXStorage',
@@ -102,7 +102,7 @@ const STORAGE_PRESETS: Record<StoragePresetKey, StoragePreset> = {
   },
   qdrant: {
     label: 'Qdrant vector',
-    description: 'Hybrid mode: vectors in Qdrant, KV/graph/status stay local.',
+    description: 'Remote Qdrant vectors with local JSON KV, graph, and status files.',
     kv_storage: 'JsonKVStorage',
     vector_storage: 'QdrantVectorDBStorage',
     graph_storage: 'NetworkXStorage',
@@ -115,7 +115,7 @@ const STORAGE_PRESETS: Record<StoragePresetKey, StoragePreset> = {
   },
   milvus: {
     label: 'Milvus vector',
-    description: 'Hybrid mode: vectors in Milvus/Zilliz, metadata stays local.',
+    description: 'Milvus or Zilliz vector retrieval with local metadata stores.',
     kv_storage: 'JsonKVStorage',
     vector_storage: 'MilvusVectorDBStorage',
     graph_storage: 'NetworkXStorage',
@@ -129,7 +129,7 @@ const STORAGE_PRESETS: Record<StoragePresetKey, StoragePreset> = {
   },
   postgres: {
     label: 'Postgres stack',
-    description: 'All primary RAG stores use Postgres/pgvector.',
+    description: 'PG KV, pgvector, PG graph, and PG document status in one database.',
     kv_storage: 'PGKVStorage',
     vector_storage: 'PGVectorStorage',
     graph_storage: 'PGGraphStorage',
@@ -629,7 +629,7 @@ export default function SettingsPage() {
               <div className="storage-panel-header">
                 <div>
                   <h2>Storage Backends</h2>
-                  <p>Choose where LightRAG stores vectors, text/KV metadata, graph data, and document status. Vector databases such as Qdrant and Milvus only replace the vector layer unless the other storage classes are changed too.</p>
+                  <p>Choose the LightRAG storage classes used by RAG-Anything, then provide backend-specific environment overrides.</p>
                 </div>
                 <span className="storage-current-pill">{form.vector_storage}</span>
               </div>
@@ -655,45 +655,30 @@ export default function SettingsPage() {
                 })}
               </div>
 
-              <div className="storage-guidance">
-                <div>
-                  <strong>{localStorageState.mode}</strong>
-                  <span>{localStorageState.summary}</span>
-                </div>
-                <div>
-                  <strong>Rule of thumb</strong>
-                  <span>Use Qdrant/Milvus for vector search scale; move KV, graph, and status to PG/Redis/Mongo/Neo4j only when you also want metadata off local disk.</span>
-                </div>
-              </div>
-
               <div className="form-grid">
                 <label>
                   KV storage
                   <select value={form.kv_storage} onChange={(e) => updateField('kv_storage', e.target.value)}>
                     {KV_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
-                  <span className="field-hint">Stores chunk text, doc metadata, prompt/cache records, and other key-value state.</span>
                 </label>
                 <label>
                   Vector storage
                   <select value={form.vector_storage} onChange={(e) => updateField('vector_storage', e.target.value)}>
                     {VECTOR_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
-                  <span className="field-hint">Stores embeddings and similarity indexes. Qdrant/Milvus settings live in Storage env JSON.</span>
                 </label>
                 <label>
                   Graph storage
                   <select value={form.graph_storage} onChange={(e) => updateField('graph_storage', e.target.value)}>
                     {GRAPH_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
-                  <span className="field-hint">Stores entity/relation graph data used by graph-aware retrieval.</span>
                 </label>
                 <label>
                   Document status storage
                   <select value={form.doc_status_storage} onChange={(e) => updateField('doc_status_storage', e.target.value)}>
                     {DOC_STATUS_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
                   </select>
-                  <span className="field-hint">Tracks inserted documents, chunk counts, and indexing status.</span>
                 </label>
               </div>
 
@@ -706,7 +691,7 @@ export default function SettingsPage() {
                     value={form.vector_db_storage_cls_kwargs_json}
                     onChange={(e) => updateField('vector_db_storage_cls_kwargs_json', e.target.value)}
                   />
-                  <span className="field-hint">Advanced per-vector-store constructor options passed to LightRAG as vector_db_storage_cls_kwargs.</span>
+                  <span className="field-hint">Passed to LightRAG as vector_db_storage_cls_kwargs.</span>
                 </label>
                 <label>
                   Storage env JSON
@@ -716,17 +701,17 @@ export default function SettingsPage() {
                     value={form.storage_env_json}
                     onChange={(e) => updateField('storage_env_json', e.target.value)}
                   />
-                  <span className="field-hint">Connection settings and secrets for storage backends. These are applied before a new RAG instance is initialized.</span>
+                  <span className="field-hint">Applied to the Studio process before a new RAG instance is initialized.</span>
                 </label>
               </div>
 
               {localStorageState.usesLocal ? (
                 <div className="local-storage-workspace">
                   <div>
-                    <h3>Local Metadata/Cache Directory</h3>
+                    <h3>Local Storage Workspace</h3>
                     <p>{localStorageState.reason}</p>
                   </div>
-                  <DirPickerRow label="Local metadata/cache directory" value={form.working_dir} onChange={(v) => updateField('working_dir', v)} />
+                  <DirPickerRow label="Working directory" value={form.working_dir} onChange={(v) => updateField('working_dir', v)} />
                 </div>
               ) : (
                 <div className="external-storage-note">
@@ -1586,28 +1571,10 @@ function localStorageUsage(form: SettingsForm) {
     'JsonDocStatusStorage',
     'ChromaVectorDBStorage',
   ].includes(name))
-  const vectorIsRemote = [
-    'QdrantVectorDBStorage',
-    'MilvusVectorDBStorage',
-    'PGVectorStorage',
-    'MongoVectorDBStorage',
-    'OpenSearchVectorDBStorage',
-  ].includes(form.vector_storage)
-  const mode = localClasses.length > 0
-    ? vectorIsRemote
-      ? 'Hybrid storage'
-      : 'Local storage'
-    : 'External storage'
   return {
     usesLocal: localClasses.length > 0,
-    mode,
-    summary: localClasses.length > 0
-      ? vectorIsRemote
-        ? `${form.vector_storage} handles vectors, while ${localClasses.join(', ')} still write local metadata/cache files.`
-        : `${localClasses.join(', ')} keep the active RAG index on local disk.`
-      : 'All selected primary storage classes are external; the local workspace is not part of the active RAG index.',
     reason: localClasses.length > 0
-      ? `${localClasses.join(', ')} use this directory for local indexes, graph files, document status, or metadata/cache records. Qdrant and Milvus do not need this for vectors; the local directory appears because at least one non-vector layer is still local.`
+      ? `${localClasses.join(', ')} use this directory for local indexes or metadata.`
       : 'No selected storage class requires a local index workspace.',
   }
 }

@@ -1056,32 +1056,6 @@ textarea { resize: vertical; }
   transform: translateY(-1px);
 }
 
-.storage-guidance {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.storage-guidance div {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
-  background: var(--color-surface-2);
-  padding: 11px 12px;
-  display: grid;
-  gap: 4px;
-}
-
-.storage-guidance strong {
-  color: var(--color-text);
-  font-size: 12.5px;
-}
-
-.storage-guidance span {
-  color: var(--color-text-2);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
 .storage-json-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3824,7 +3798,6 @@ textarea { resize: vertical; }
   .settings-layout,
   .provider-grid,
   .storage-preset-grid,
-  .storage-guidance,
   .storage-json-grid,
   .local-storage-workspace,
   .upload-layout,
