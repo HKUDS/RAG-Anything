@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -74,6 +75,12 @@ class StudioSettings:
     retry_base_delay: float = 0.75
     retry_max_delay: float = 8.0
     write_lock_enabled: bool = True
+    kv_storage: str = "JsonKVStorage"
+    vector_storage: str = "NanoVectorDBStorage"
+    graph_storage: str = "NetworkXStorage"
+    doc_status_storage: str = "JsonDocStatusStorage"
+    vector_db_storage_cls_kwargs: dict = field(default_factory=dict)
+    storage_env: dict[str, str] = field(default_factory=dict)
     active_profile_id: str = "default"
     profiles: list[ModelProviderProfile] = field(default_factory=list)
 
@@ -87,6 +94,17 @@ def _env_bool(name: str, default: bool) -> bool:
     if raw is None:
         return default
     return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _env_json(name: str) -> dict:
+    raw = os.getenv(name)
+    if not raw:
+        return {}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return payload if isinstance(payload, dict) else {}
 
 
 def get_settings() -> StudioSettings:
@@ -197,6 +215,18 @@ def get_settings() -> StudioSettings:
             0.0, float(os.getenv("RAGANYTHING_STUDIO_RETRY_MAX_DELAY", "8.0"))
         ),
         write_lock_enabled=_env_bool("RAGANYTHING_STUDIO_WRITE_LOCK_ENABLED", True),
+        kv_storage=os.getenv("RAGANYTHING_STUDIO_KV_STORAGE", "JsonKVStorage"),
+        vector_storage=os.getenv(
+            "RAGANYTHING_STUDIO_VECTOR_STORAGE", "NanoVectorDBStorage"
+        ),
+        graph_storage=os.getenv("RAGANYTHING_STUDIO_GRAPH_STORAGE", "NetworkXStorage"),
+        doc_status_storage=os.getenv(
+            "RAGANYTHING_STUDIO_DOC_STATUS_STORAGE", "JsonDocStatusStorage"
+        ),
+        vector_db_storage_cls_kwargs=_env_json(
+            "RAGANYTHING_STUDIO_VECTOR_DB_STORAGE_CLS_KWARGS"
+        ),
+        storage_env=_env_json("RAGANYTHING_STUDIO_STORAGE_ENV"),
         active_profile_id=os.getenv("RAGANYTHING_STUDIO_ACTIVE_PROFILE_ID", "default"),
         profiles=[
             ModelProviderProfile(

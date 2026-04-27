@@ -25,6 +25,7 @@ PATH_FIELDS = {
 
 SECRET_FIELDS = {"llm_api_key", "embedding_api_key", "vision_api_key"}
 PROFILE_CHANNELS = ("llm", "embedding", "vision")
+DICT_FIELDS = {"vector_db_storage_cls_kwargs", "storage_env"}
 
 
 class SettingsStore:
@@ -147,6 +148,8 @@ def _coerce_value(key: str, value: Any) -> Any:
         if isinstance(value, str):
             return value.strip().lower() in {"1", "true", "yes", "on"}
         return bool(value)
+    if key in DICT_FIELDS:
+        return value if isinstance(value, dict) else {}
     if key == "profiles":
         return _coerce_profiles(value)
     return value

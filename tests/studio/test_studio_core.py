@@ -244,11 +244,19 @@ def test_settings_store_persists_model_configuration(tmp_path):
             retry_base_delay=0.5,
             retry_max_delay=6.0,
             write_lock_enabled=False,
+            kv_storage="JsonKVStorage",
+            vector_storage="QdrantVectorDBStorage",
+            graph_storage="NetworkXStorage",
+            doc_status_storage="JsonDocStatusStorage",
+            vector_db_storage_cls_kwargs={"cosine_better_than_threshold": 0.25},
+            storage_env={"QDRANT_URL": "http://localhost:6333"},
         )
     )
 
     assert updated.llm_model == "gpt-4.1-mini"
     assert updated.llm_api_key == "secret"
+    assert updated.vector_storage == "QdrantVectorDBStorage"
+    assert updated.storage_env["QDRANT_URL"] == "http://localhost:6333"
     assert settings.settings_file.exists()
 
     reloaded = SettingsStore(make_settings(tmp_path)).get()
@@ -263,6 +271,9 @@ def test_settings_store_persists_model_configuration(tmp_path):
     assert reloaded.embedding_max_concurrency == 5
     assert reloaded.retry_max_attempts == 4
     assert reloaded.write_lock_enabled is False
+    assert reloaded.vector_storage == "QdrantVectorDBStorage"
+    assert reloaded.vector_db_storage_cls_kwargs["cosine_better_than_threshold"] == 0.25
+    assert reloaded.storage_env["QDRANT_URL"] == "http://localhost:6333"
 
 
 def test_rag_config_disables_vlm_processing_by_default(tmp_path):

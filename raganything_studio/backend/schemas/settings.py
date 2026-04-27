@@ -93,6 +93,12 @@ class StudioSettingsResponse(BaseModel):
     retry_base_delay: float
     retry_max_delay: float
     write_lock_enabled: bool
+    kv_storage: str
+    vector_storage: str
+    graph_storage: str
+    doc_status_storage: str
+    vector_db_storage_cls_kwargs: dict = Field(default_factory=dict)
+    storage_env: dict[str, str] = Field(default_factory=dict)
     active_profile_id: str
     profiles: list[ModelProfileResponse]
 
@@ -155,6 +161,12 @@ class StudioSettingsUpdate(BaseModel):
     retry_base_delay: float = Field(default=0.75, ge=0, le=60)
     retry_max_delay: float = Field(default=8.0, ge=0, le=300)
     write_lock_enabled: bool = True
+    kv_storage: str = "JsonKVStorage"
+    vector_storage: str = "NanoVectorDBStorage"
+    graph_storage: str = "NetworkXStorage"
+    doc_status_storage: str = "JsonDocStatusStorage"
+    vector_db_storage_cls_kwargs: dict = Field(default_factory=dict)
+    storage_env: dict[str, str] = Field(default_factory=dict)
     active_profile_id: str | None = None
     profiles: list[ModelProfileUpdate] | None = None
 

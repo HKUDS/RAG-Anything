@@ -424,6 +424,12 @@ def _settings_response(current_settings: StudioSettings) -> StudioSettingsRespon
         retry_base_delay=current_settings.retry_base_delay,
         retry_max_delay=current_settings.retry_max_delay,
         write_lock_enabled=current_settings.write_lock_enabled,
+        kv_storage=current_settings.kv_storage,
+        vector_storage=current_settings.vector_storage,
+        graph_storage=current_settings.graph_storage,
+        doc_status_storage=current_settings.doc_status_storage,
+        vector_db_storage_cls_kwargs=current_settings.vector_db_storage_cls_kwargs,
+        storage_env=current_settings.storage_env,
         active_profile_id=current_settings.active_profile_id,
         profiles=[
             _profile_response(profile) for profile in current_settings.profiles

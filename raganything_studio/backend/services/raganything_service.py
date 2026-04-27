@@ -5,6 +5,7 @@ import contextvars
 import hashlib
 import inspect
 import json
+import os
 import re
 import time
 import traceback
@@ -262,6 +263,7 @@ class RAGAnythingService:
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
+        _apply_storage_env(self._settings.storage_env)
         effective = _effective_options(self._settings, options) if options is not None else None
         _llm_concurrency = (effective.llm_max_concurrency if effective is not None else None) or self._settings.llm_max_concurrency
         _vlm_concurrency = (effective.vlm_max_concurrency if effective is not None else None) or self._settings.vlm_max_concurrency
@@ -385,6 +387,13 @@ class RAGAnythingService:
             vision_model_func=vision_model_func if enable_vlm_enhancement else None,
             embedding_func=embedding_func,
             lightrag_kwargs={
+                "kv_storage": self._settings.kv_storage,
+                "vector_storage": self._settings.vector_storage,
+                "graph_storage": self._settings.graph_storage,
+                "doc_status_storage": self._settings.doc_status_storage,
+                "vector_db_storage_cls_kwargs": (
+                    self._settings.vector_db_storage_cls_kwargs or {}
+                ),
                 "embedding_batch_num": _emb_batch,
                 "embedding_func_max_async": _emb_concurrency,
                 "llm_model_max_async": _llm_concurrency,
@@ -819,6 +828,16 @@ def _config_updates(
         ),
         "max_concurrent_files": _processing_limit(settings, options),
     }
+
+
+def _apply_storage_env(storage_env: dict[str, str] | None) -> None:
+    if not storage_env:
+        return
+    for key, value in storage_env.items():
+        key = str(key).strip()
+        if not key:
+            continue
+        os.environ[key] = str(value)
 
 
 def _vlm_enabled(

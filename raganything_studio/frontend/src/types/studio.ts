@@ -197,6 +197,12 @@ export interface StudioSettings {
   retry_base_delay: number
   retry_max_delay: number
   write_lock_enabled: boolean
+  kv_storage: string
+  vector_storage: string
+  graph_storage: string
+  doc_status_storage: string
+  vector_db_storage_cls_kwargs: Record<string, unknown>
+  storage_env: Record<string, string>
   active_profile_id: string
   profiles: ModelProfile[]
 }
@@ -336,6 +342,12 @@ export interface StudioSettingsUpdate {
   retry_base_delay: number
   retry_max_delay: number
   write_lock_enabled: boolean
+  kv_storage: string
+  vector_storage: string
+  graph_storage: string
+  doc_status_storage: string
+  vector_db_storage_cls_kwargs: Record<string, unknown>
+  storage_env: Record<string, string>
   active_profile_id?: string | null
   profiles?: ModelProfileUpdate[] | null
 }

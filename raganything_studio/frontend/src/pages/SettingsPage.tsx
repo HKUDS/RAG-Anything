@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, CheckCircle2, ChevronDown, Copy, Download, FolderOpen,
   KeyRound, Loader2, Plus, RefreshCw, RotateCcw, Save, ScanSearch,
-  ServerCog, Trash2, XCircle, Zap,
+  Database, ServerCog, Trash2, XCircle, Zap,
 } from 'lucide-react'
 import { browseDir, getEnvironment, getStudioSettings, installDep, listModels, testConnection, updateStudioSettings } from '../api/client'
 import type { BrowseDirEntry } from '../types/studio'
@@ -37,6 +37,112 @@ const KNOWN_PROVIDERS: Record<string, ProviderMeta> = {
   vllm: { label: 'vLLM', baseUrl: 'http://localhost:8000/v1', supportsModelList: true },
   'openai-compatible': { label: 'OpenAI Compatible', baseUrl: '', supportsModelList: true },
   custom: { label: 'Custom', baseUrl: '', supportsModelList: false },
+}
+
+type StoragePresetKey = 'local' | 'qdrant' | 'milvus' | 'postgres'
+
+interface StoragePreset {
+  label: string
+  description: string
+  kv_storage: string
+  vector_storage: string
+  graph_storage: string
+  doc_status_storage: string
+  vector_db_storage_cls_kwargs: Record<string, unknown>
+  storage_env: Record<string, string>
+}
+
+const KV_STORAGE_OPTIONS = [
+  'JsonKVStorage',
+  'RedisKVStorage',
+  'PGKVStorage',
+  'MongoKVStorage',
+  'OpenSearchKVStorage',
+]
+
+const VECTOR_STORAGE_OPTIONS = [
+  'NanoVectorDBStorage',
+  'FaissVectorDBStorage',
+  'QdrantVectorDBStorage',
+  'MilvusVectorDBStorage',
+  'PGVectorStorage',
+  'MongoVectorDBStorage',
+  'OpenSearchVectorDBStorage',
+  'ChromaVectorDBStorage',
+]
+
+const GRAPH_STORAGE_OPTIONS = [
+  'NetworkXStorage',
+  'Neo4JStorage',
+  'MemgraphStorage',
+  'AGEStorage',
+  'PGGraphStorage',
+  'MongoGraphStorage',
+  'OpenSearchGraphStorage',
+]
+
+const DOC_STATUS_STORAGE_OPTIONS = [
+  'JsonDocStatusStorage',
+  'RedisDocStatusStorage',
+  'PGDocStatusStorage',
+  'MongoDocStatusStorage',
+  'OpenSearchDocStatusStorage',
+]
+
+const STORAGE_PRESETS: Record<StoragePresetKey, StoragePreset> = {
+  local: {
+    label: 'Local files',
+    description: 'Everything stays under the local metadata/cache directory.',
+    kv_storage: 'JsonKVStorage',
+    vector_storage: 'NanoVectorDBStorage',
+    graph_storage: 'NetworkXStorage',
+    doc_status_storage: 'JsonDocStatusStorage',
+    vector_db_storage_cls_kwargs: {},
+    storage_env: {},
+  },
+  qdrant: {
+    label: 'Qdrant vector',
+    description: 'Hybrid mode: vectors in Qdrant, KV/graph/status stay local.',
+    kv_storage: 'JsonKVStorage',
+    vector_storage: 'QdrantVectorDBStorage',
+    graph_storage: 'NetworkXStorage',
+    doc_status_storage: 'JsonDocStatusStorage',
+    vector_db_storage_cls_kwargs: {},
+    storage_env: {
+      QDRANT_URL: 'http://localhost:6333',
+      QDRANT_API_KEY: '',
+    },
+  },
+  milvus: {
+    label: 'Milvus vector',
+    description: 'Hybrid mode: vectors in Milvus/Zilliz, metadata stays local.',
+    kv_storage: 'JsonKVStorage',
+    vector_storage: 'MilvusVectorDBStorage',
+    graph_storage: 'NetworkXStorage',
+    doc_status_storage: 'JsonDocStatusStorage',
+    vector_db_storage_cls_kwargs: {},
+    storage_env: {
+      MILVUS_URI: 'http://localhost:19530',
+      MILVUS_DB_NAME: 'default',
+      MILVUS_TOKEN: '',
+    },
+  },
+  postgres: {
+    label: 'Postgres stack',
+    description: 'All primary RAG stores use Postgres/pgvector.',
+    kv_storage: 'PGKVStorage',
+    vector_storage: 'PGVectorStorage',
+    graph_storage: 'PGGraphStorage',
+    doc_status_storage: 'PGDocStatusStorage',
+    vector_db_storage_cls_kwargs: {},
+    storage_env: {
+      POSTGRES_HOST: 'localhost',
+      POSTGRES_PORT: '5432',
+      POSTGRES_USER: 'postgres',
+      POSTGRES_PASSWORD: '',
+      POSTGRES_DATABASE: 'raganything',
+    },
+  },
 }
 
 interface ChannelForm {
@@ -80,6 +186,12 @@ interface SettingsForm {
   retry_base_delay: number
   retry_max_delay: number
   write_lock_enabled: boolean
+  kv_storage: string
+  vector_storage: string
+  graph_storage: string
+  doc_status_storage: string
+  vector_db_storage_cls_kwargs_json: string
+  storage_env_json: string
   active_profile_id: string
   profiles: ProfileForm[]
 }
@@ -102,7 +214,7 @@ const idlePicker: ModelPickerState = { status: 'idle', models: [] }
 
 export default function SettingsPage() {
   const queryClient = useQueryClient()
-  const [activePanel, setActivePanel] = useState<'models' | 'runtime' | 'defaults'>('models')
+  const [activePanel, setActivePanel] = useState<'models' | 'runtime' | 'storage' | 'defaults'>('models')
   const [selectedProfileId, setSelectedProfileId] = useState('default')
   const [selectedKind, setSelectedKind] = useState<ConnectionTestKind>('llm')
   const [form, setForm] = useState<SettingsForm | null>(null)
@@ -134,6 +246,19 @@ export default function SettingsPage() {
 
   function updateField<K extends keyof SettingsForm>(key: K, value: SettingsForm[K]) {
     setForm((current) => (current ? { ...current, [key]: value } : current))
+  }
+
+  function applyStoragePreset(presetKey: StoragePresetKey) {
+    const preset = STORAGE_PRESETS[presetKey]
+    setForm((current) => current ? {
+      ...current,
+      kv_storage: preset.kv_storage,
+      vector_storage: preset.vector_storage,
+      graph_storage: preset.graph_storage,
+      doc_status_storage: preset.doc_status_storage,
+      vector_db_storage_cls_kwargs_json: stringifyJson(preset.vector_db_storage_cls_kwargs),
+      storage_env_json: stringifyJson(preset.storage_env),
+    } : current)
   }
 
   function updateProfile(profileId: string, update: Partial<ProfileForm>) {
@@ -286,6 +411,7 @@ export default function SettingsPage() {
   const selectedProfile = form.profiles.find((profile) => profile.id === selectedProfileId)
     ?? form.profiles[0]
   const selectedChannel = selectedProfile?.[selectedKind]
+  const localStorageState = localStorageUsage(form)
 
   return (
     <section className="page settings-page">
@@ -312,6 +438,9 @@ export default function SettingsPage() {
           </button>
           <button className={activePanel === 'runtime' ? 'active' : ''} onClick={() => setActivePanel('runtime')} type="button">
             <ServerCog size={16} /> Runtime
+          </button>
+          <button className={activePanel === 'storage' ? 'active' : ''} onClick={() => setActivePanel('storage')} type="button">
+            <Database size={16} /> Storage
           </button>
           <button className={activePanel === 'defaults' ? 'active' : ''} onClick={() => setActivePanel('defaults')} type="button">
             <CheckCircle2 size={16} /> Defaults
@@ -457,10 +586,15 @@ export default function SettingsPage() {
           {activePanel === 'runtime' && (
             <div className="split">
               <div className="panel stack">
-                <h2>Directories</h2>
+                <div className="storage-panel-header">
+                  <div>
+                    <h2>Studio Workspace</h2>
+                    <p>Local files used by the Studio shell for uploads, parser output, and settings.</p>
+                  </div>
+                  <span className="storage-current-pill">runtime</span>
+                </div>
                 <DirPickerRow label="Data directory" value={form.data_dir} onChange={(v) => updateField('data_dir', v)} />
                 <DirPickerRow label="Upload directory" value={form.upload_dir} onChange={(v) => updateField('upload_dir', v)} />
-                <DirPickerRow label="Working directory" value={form.working_dir} onChange={(v) => updateField('working_dir', v)} />
                 <DirPickerRow label="Output directory" value={form.output_dir} onChange={(v) => updateField('output_dir', v)} />
                 <label className="dir-picker-label">
                   Settings file
@@ -487,6 +621,119 @@ export default function SettingsPage() {
                   <div className="empty">Loading…</div>
                 )}
               </div>
+            </div>
+          )}
+
+          {activePanel === 'storage' && (
+            <div className="panel stack compact-settings storage-settings-panel">
+              <div className="storage-panel-header">
+                <div>
+                  <h2>Storage Backends</h2>
+                  <p>Choose where LightRAG stores vectors, text/KV metadata, graph data, and document status. Vector databases such as Qdrant and Milvus only replace the vector layer unless the other storage classes are changed too.</p>
+                </div>
+                <span className="storage-current-pill">{form.vector_storage}</span>
+              </div>
+
+              <div className="storage-preset-grid">
+                {(Object.keys(STORAGE_PRESETS) as StoragePresetKey[]).map((key) => {
+                  const preset = STORAGE_PRESETS[key]
+                  const active = form.kv_storage === preset.kv_storage
+                    && form.vector_storage === preset.vector_storage
+                    && form.graph_storage === preset.graph_storage
+                    && form.doc_status_storage === preset.doc_status_storage
+                  return (
+                    <button
+                      className={`storage-preset-card ${active ? 'active' : ''}`}
+                      key={key}
+                      type="button"
+                      onClick={() => applyStoragePreset(key)}
+                    >
+                      <strong>{preset.label}</strong>
+                      <span>{preset.description}</span>
+                    </button>
+                  )
+                })}
+              </div>
+
+              <div className="storage-guidance">
+                <div>
+                  <strong>{localStorageState.mode}</strong>
+                  <span>{localStorageState.summary}</span>
+                </div>
+                <div>
+                  <strong>Rule of thumb</strong>
+                  <span>Use Qdrant/Milvus for vector search scale; move KV, graph, and status to PG/Redis/Mongo/Neo4j only when you also want metadata off local disk.</span>
+                </div>
+              </div>
+
+              <div className="form-grid">
+                <label>
+                  KV storage
+                  <select value={form.kv_storage} onChange={(e) => updateField('kv_storage', e.target.value)}>
+                    {KV_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                  <span className="field-hint">Stores chunk text, doc metadata, prompt/cache records, and other key-value state.</span>
+                </label>
+                <label>
+                  Vector storage
+                  <select value={form.vector_storage} onChange={(e) => updateField('vector_storage', e.target.value)}>
+                    {VECTOR_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                  <span className="field-hint">Stores embeddings and similarity indexes. Qdrant/Milvus settings live in Storage env JSON.</span>
+                </label>
+                <label>
+                  Graph storage
+                  <select value={form.graph_storage} onChange={(e) => updateField('graph_storage', e.target.value)}>
+                    {GRAPH_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                  <span className="field-hint">Stores entity/relation graph data used by graph-aware retrieval.</span>
+                </label>
+                <label>
+                  Document status storage
+                  <select value={form.doc_status_storage} onChange={(e) => updateField('doc_status_storage', e.target.value)}>
+                    {DOC_STATUS_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
+                  </select>
+                  <span className="field-hint">Tracks inserted documents, chunk counts, and indexing status.</span>
+                </label>
+              </div>
+
+              <div className="storage-json-grid">
+                <label>
+                  Vector DB kwargs JSON
+                  <textarea
+                    className="json-textarea"
+                    spellCheck={false}
+                    value={form.vector_db_storage_cls_kwargs_json}
+                    onChange={(e) => updateField('vector_db_storage_cls_kwargs_json', e.target.value)}
+                  />
+                  <span className="field-hint">Advanced per-vector-store constructor options passed to LightRAG as vector_db_storage_cls_kwargs.</span>
+                </label>
+                <label>
+                  Storage env JSON
+                  <textarea
+                    className="json-textarea"
+                    spellCheck={false}
+                    value={form.storage_env_json}
+                    onChange={(e) => updateField('storage_env_json', e.target.value)}
+                  />
+                  <span className="field-hint">Connection settings and secrets for storage backends. These are applied before a new RAG instance is initialized.</span>
+                </label>
+              </div>
+
+              {localStorageState.usesLocal ? (
+                <div className="local-storage-workspace">
+                  <div>
+                    <h3>Local Metadata/Cache Directory</h3>
+                    <p>{localStorageState.reason}</p>
+                  </div>
+                  <DirPickerRow label="Local metadata/cache directory" value={form.working_dir} onChange={(v) => updateField('working_dir', v)} />
+                </div>
+              ) : (
+                <div className="external-storage-note">
+                  <strong>External storage mode</strong>
+                  <span>Primary RAG indexes are resolved through the configured backend classes and environment settings.</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -1173,6 +1420,12 @@ function makeForm(settings: StudioSettings): SettingsForm {
     retry_base_delay: settings.retry_base_delay,
     retry_max_delay: settings.retry_max_delay,
     write_lock_enabled: settings.write_lock_enabled,
+    kv_storage: settings.kv_storage,
+    vector_storage: settings.vector_storage,
+    graph_storage: settings.graph_storage,
+    doc_status_storage: settings.doc_status_storage,
+    vector_db_storage_cls_kwargs_json: stringifyJson(settings.vector_db_storage_cls_kwargs ?? {}),
+    storage_env_json: stringifyJson(settings.storage_env ?? {}),
     active_profile_id: settings.active_profile_id || profiles[0].id,
     profiles,
   }
@@ -1240,6 +1493,11 @@ function legacyProfile(settings: StudioSettings): ProfileForm {
 
 function toPayload(form: SettingsForm): StudioSettingsUpdate {
   const activeProfile = form.profiles.find((profile) => profile.id === form.active_profile_id) ?? form.profiles[0]
+  const vectorDbStorageClsKwargs = parseJsonObject(
+    form.vector_db_storage_cls_kwargs_json,
+    'Vector DB kwargs JSON',
+  )
+  const storageEnv = stringifyRecord(parseJsonObject(form.storage_env_json, 'Storage env JSON'))
   return {
     data_dir: form.data_dir,
     upload_dir: form.upload_dir,
@@ -1277,8 +1535,80 @@ function toPayload(form: SettingsForm): StudioSettingsUpdate {
     retry_base_delay: form.retry_base_delay,
     retry_max_delay: form.retry_max_delay,
     write_lock_enabled: form.write_lock_enabled,
+    kv_storage: form.kv_storage,
+    vector_storage: form.vector_storage,
+    graph_storage: form.graph_storage,
+    doc_status_storage: form.doc_status_storage,
+    vector_db_storage_cls_kwargs: vectorDbStorageClsKwargs,
+    storage_env: storageEnv,
     active_profile_id: form.active_profile_id,
     profiles: form.profiles.map(profileToPayload),
+  }
+}
+
+function stringifyJson(value: Record<string, unknown>) {
+  return JSON.stringify(value, null, 2)
+}
+
+function parseJsonObject(text: string, label: string): Record<string, unknown> {
+  const trimmed = text.trim()
+  if (!trimmed) return {}
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    throw new Error(`${label} is not valid JSON: ${detail}`)
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error(`${label} must be a JSON object`)
+  }
+  return parsed as Record<string, unknown>
+}
+
+function stringifyRecord(value: Record<string, unknown>): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, val]) => [key, val == null ? '' : String(val)]),
+  )
+}
+
+function localStorageUsage(form: SettingsForm) {
+  const localClasses = [
+    form.kv_storage,
+    form.vector_storage,
+    form.graph_storage,
+    form.doc_status_storage,
+  ].filter((name) => [
+    'JsonKVStorage',
+    'NanoVectorDBStorage',
+    'FaissVectorDBStorage',
+    'NetworkXStorage',
+    'JsonDocStatusStorage',
+    'ChromaVectorDBStorage',
+  ].includes(name))
+  const vectorIsRemote = [
+    'QdrantVectorDBStorage',
+    'MilvusVectorDBStorage',
+    'PGVectorStorage',
+    'MongoVectorDBStorage',
+    'OpenSearchVectorDBStorage',
+  ].includes(form.vector_storage)
+  const mode = localClasses.length > 0
+    ? vectorIsRemote
+      ? 'Hybrid storage'
+      : 'Local storage'
+    : 'External storage'
+  return {
+    usesLocal: localClasses.length > 0,
+    mode,
+    summary: localClasses.length > 0
+      ? vectorIsRemote
+        ? `${form.vector_storage} handles vectors, while ${localClasses.join(', ')} still write local metadata/cache files.`
+        : `${localClasses.join(', ')} keep the active RAG index on local disk.`
+      : 'All selected primary storage classes are external; the local workspace is not part of the active RAG index.',
+    reason: localClasses.length > 0
+      ? `${localClasses.join(', ')} use this directory for local indexes, graph files, document status, or metadata/cache records. Qdrant and Milvus do not need this for vectors; the local directory appears because at least one non-vector layer is still local.`
+      : 'No selected storage class requires a local index workspace.',
   }
 }
 
