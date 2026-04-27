@@ -10,9 +10,37 @@ from fastapi.staticfiles import StaticFiles
 from raganything_studio.backend.api import documents, graph, health, jobs, query, settings
 from raganything_studio.backend.dependencies import settings as studio_settings
 
+OPENAPI_TAGS = [
+    {"name": "health", "description": "Studio readiness and health checks."},
+    {"name": "documents", "description": "Upload, list, and process documents."},
+    {"name": "jobs", "description": "Inspect asynchronous ingestion jobs."},
+    {"name": "query", "description": "Run LightRAG/RAG-Anything retrieval queries."},
+    {"name": "graph", "description": "Browse indexed knowledge graph data."},
+    {"name": "settings", "description": "Configure model profiles, runtime, and storage."},
+]
+
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="RAG-Anything Studio")
+    app = FastAPI(
+        title="RAG-Anything Studio API",
+        summary="REST API for the local RAG-Anything Studio server.",
+        description=(
+            "RAG-Anything Studio exposes document ingestion, multimodal retrieval, "
+            "knowledge graph, job, and settings endpoints under `/api`."
+        ),
+        version="0.1.0",
+        docs_url="/docs",
+        redoc_url="/redoc",
+        openapi_url="/openapi.json",
+        openapi_tags=OPENAPI_TAGS,
+        swagger_ui_parameters={
+            "displayRequestDuration": True,
+            "persistAuthorization": True,
+            "tryItOutEnabled": True,
+            "tagsSorter": "alpha",
+            "operationsSorter": "alpha",
+        },
+    )
 
     app.add_middleware(
         CORSMiddleware,
@@ -59,4 +87,3 @@ def _is_static_child(path: Path, static_dir: Path) -> bool:
 
 
 app = create_app()
-

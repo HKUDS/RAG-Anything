@@ -1,36 +1,36 @@
-import { Code2, ServerCog } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { BookOpen, Code2, ExternalLink, FileJson } from 'lucide-react'
 
 export default function ApiPage() {
   return (
     <section className="page api-page">
-      <div className="panel stack api-panel">
-        <div className="panel-header-row">
-          <h1>API</h1>
-          <Code2 size={20} />
+      <div className="api-docs-header">
+        <div>
+          <h1>API Reference</h1>
+          <p>FastAPI-generated OpenAPI documentation for the local Studio server.</p>
         </div>
-        <p>Studio serves local REST endpoints under <code>/api</code>.</p>
-        <div className="api-endpoint-list">
-          <Endpoint method="GET" path="/api/documents" />
-          <Endpoint method="POST" path="/api/documents/upload" />
-          <Endpoint method="POST" path="/api/documents/{id}/process" />
-          <Endpoint method="POST" path="/api/query" />
-          <Endpoint method="GET" path="/api/settings" />
+        <div className="actions">
+          <a className="button" href="/openapi.json" target="_blank" rel="noreferrer">
+            <FileJson size={16} />
+            OpenAPI JSON
+          </a>
+          <a className="button" href="/redoc" target="_blank" rel="noreferrer">
+            <BookOpen size={16} />
+            ReDoc
+          </a>
+          <a className="button primary" href="/docs" target="_blank" rel="noreferrer">
+            <ExternalLink size={16} />
+            Swagger UI
+          </a>
         </div>
-        <Link className="button" to="/settings">
-          <ServerCog size={16} />
-          Provider Settings
-        </Link>
+      </div>
+
+      <div className="api-docs-frame-shell">
+        <div className="api-docs-frame-toolbar">
+          <span><Code2 size={15} /> /docs</span>
+          <a href="/docs" target="_blank" rel="noreferrer">Open in new tab</a>
+        </div>
+        <iframe className="api-docs-frame" src="/docs" title="RAG-Anything Studio API docs" />
       </div>
     </section>
-  )
-}
-
-function Endpoint({ method, path }: { method: string; path: string }) {
-  return (
-    <div className="api-endpoint">
-      <span>{method}</span>
-      <code>{path}</code>
-    </div>
   )
 }
