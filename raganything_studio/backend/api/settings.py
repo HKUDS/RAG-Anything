@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import asyncio
 import shutil
 import sys
 import time
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends
 
@@ -30,6 +32,7 @@ from raganything_studio.backend.schemas.settings import (
     SettingsSaveResponse,
     StudioSettingsResponse,
     StudioSettingsUpdate,
+    StorageConnectionTestRequest,
 )
 from raganything_studio.backend.services.raganything_service import RAGAnythingService
 
@@ -99,6 +102,20 @@ async def test_connection(
 
         return ConnectionTestResponse(ok=False, error=f"Unknown kind: {payload.kind!r}")
 
+    except Exception as exc:  # noqa: BLE001
+        return ConnectionTestResponse(ok=False, error=str(exc))
+
+
+@router.post("/test-storage-connection", response_model=ConnectionTestResponse)
+async def test_storage_connection(
+    payload: StorageConnectionTestRequest,
+    settings_store: SettingsStore = Depends(get_settings_store),
+) -> ConnectionTestResponse:
+    saved_env = settings_store.get().storage_env
+    storage_env = _merge_storage_env_for_test(saved_env, payload.storage_env)
+    try:
+        latency = await _test_storage_group(payload.group, storage_env)
+        return ConnectionTestResponse(ok=True, latency_ms=latency)
     except Exception as exc:  # noqa: BLE001
         return ConnectionTestResponse(ok=False, error=str(exc))
 
@@ -383,6 +400,114 @@ def _provider_error(response: object) -> str:
     return f"{status_code}: {text[:300]}"
 
 
+# ── storage connection test helpers ──────────────────────────────────────────
+
+def _merge_storage_env_for_test(
+    saved_env: dict[str, str], submitted_env: dict[str, str]
+) -> dict[str, str]:
+    merged: dict[str, str] = {}
+    for raw_key, raw_value in submitted_env.items():
+        key = str(raw_key)
+        value = "" if raw_value is None else str(raw_value)
+        if _is_storage_secret(key) and value == "" and saved_env.get(key):
+            merged[key] = str(saved_env[key])
+        else:
+            merged[key] = value
+    return merged
+
+
+async def _test_storage_group(group: str, env: dict[str, str]) -> float:
+    started = time.perf_counter()
+    if group == "qdrant":
+        await _test_qdrant(env)
+    elif group == "opensearch":
+        await _test_opensearch(env)
+    elif group == "postgres":
+        await _test_tcp(
+            env.get("POSTGRES_HOST") or "localhost",
+            _int_env(env, "POSTGRES_PORT", 5432),
+            "Postgres",
+        )
+    elif group == "redis":
+        parsed = _parse_uri(env.get("REDIS_URI") or "redis://localhost:6379")
+        await _test_tcp(parsed.hostname or "localhost", parsed.port or 6379, "Redis")
+    elif group == "mongodb":
+        parsed = _parse_uri(env.get("MONGO_URI") or "mongodb://localhost:27017/")
+        await _test_tcp(parsed.hostname or "localhost", parsed.port or 27017, "MongoDB")
+    elif group == "milvus":
+        parsed = _parse_uri(env.get("MILVUS_URI") or "http://localhost:19530")
+        await _test_tcp(parsed.hostname or "localhost", parsed.port or 19530, "Milvus")
+    elif group == "neo4j":
+        parsed = _parse_uri(env.get("NEO4J_URI") or "bolt://localhost:7687")
+        await _test_tcp(parsed.hostname or "localhost", parsed.port or 7687, "Neo4j")
+    elif group == "memgraph":
+        parsed = _parse_uri(env.get("MEMGRAPH_URI") or "bolt://localhost:7687")
+        await _test_tcp(parsed.hostname or "localhost", parsed.port or 7687, "Memgraph")
+    else:
+        raise ValueError(f"Unknown storage connection group: {group!r}")
+    return round((time.perf_counter() - started) * 1000, 1)
+
+
+async def _test_tcp(host: str, port: int, label: str) -> None:
+    try:
+        reader, writer = await asyncio.wait_for(
+            asyncio.open_connection(host, port),
+            timeout=5,
+        )
+        writer.close()
+        await writer.wait_closed()
+        del reader
+    except Exception as exc:
+        raise ValueError(f"{label} is not reachable at {host}:{port}: {exc}") from exc
+
+
+async def _test_qdrant(env: dict[str, str]) -> None:
+    import httpx
+
+    url = (env.get("QDRANT_URL") or "http://localhost:6333").rstrip("/")
+    headers = {}
+    if env.get("QDRANT_API_KEY"):
+        headers["api-key"] = env["QDRANT_API_KEY"]
+    async with httpx.AsyncClient(timeout=8) as client:
+        response = await client.get(f"{url}/collections", headers=headers)
+    if response.status_code >= 400:
+        raise ValueError(_provider_error(response))
+
+
+async def _test_opensearch(env: dict[str, str]) -> None:
+    import httpx
+
+    hosts = [host.strip() for host in (env.get("OPENSEARCH_HOSTS") or "localhost:9200").split(",")]
+    host = next((item for item in hosts if item), "localhost:9200")
+    use_ssl = str(env.get("OPENSEARCH_USE_SSL") or "true").lower() in {"1", "true", "yes"}
+    scheme = "https" if use_ssl else "http"
+    url = host if host.startswith(("http://", "https://")) else f"{scheme}://{host}"
+    auth = None
+    if env.get("OPENSEARCH_USER"):
+        auth = (env["OPENSEARCH_USER"], env.get("OPENSEARCH_PASSWORD") or "")
+    verify = str(env.get("OPENSEARCH_VERIFY_CERTS") or "false").lower() in {"1", "true", "yes"}
+    async with httpx.AsyncClient(timeout=8, verify=verify) as client:
+        response = await client.get(url.rstrip("/"), auth=auth)
+    if response.status_code >= 400:
+        raise ValueError(_provider_error(response))
+
+
+def _parse_uri(raw: str):
+    parsed = urlparse(raw)
+    if parsed.hostname:
+        return parsed
+    if "://" not in raw:
+        return urlparse(f"tcp://{raw}")
+    return parsed
+
+
+def _int_env(env: dict[str, str], key: str, default: int) -> int:
+    try:
+        return int(env.get(key) or default)
+    except ValueError:
+        return default
+
+
 def _settings_response(current_settings: StudioSettings) -> StudioSettingsResponse:
     return StudioSettingsResponse(
         data_dir=str(current_settings.data_dir),
@@ -429,7 +554,12 @@ def _settings_response(current_settings: StudioSettings) -> StudioSettingsRespon
         graph_storage=current_settings.graph_storage,
         doc_status_storage=current_settings.doc_status_storage,
         vector_db_storage_cls_kwargs=current_settings.vector_db_storage_cls_kwargs,
-        storage_env=current_settings.storage_env,
+        storage_env=_redact_storage_env(current_settings.storage_env),
+        storage_env_configured={
+            key: bool(value)
+            for key, value in current_settings.storage_env.items()
+            if _is_storage_secret(key)
+        },
         active_profile_id=current_settings.active_profile_id,
         profiles=[
             _profile_response(profile) for profile in current_settings.profiles
@@ -494,6 +624,18 @@ def _channel_response(channel: ModelChannelConfig) -> ModelChannelResponse:
         embedding_dim=channel.embedding_dim,
         embedding_max_token_size=channel.embedding_max_token_size,
     )
+
+
+def _is_storage_secret(key: str) -> bool:
+    upper = key.upper()
+    return any(token in upper for token in ("PASSWORD", "TOKEN", "API_KEY", "SECRET"))
+
+
+def _redact_storage_env(storage_env: dict[str, str]) -> dict[str, str]:
+    return {
+        key: "" if _is_storage_secret(key) else value
+        for key, value in storage_env.items()
+    }
 
 
 @router.get("/environment", response_model=EnvironmentResponse)

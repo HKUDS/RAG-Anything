@@ -203,6 +203,7 @@ export interface StudioSettings {
   doc_status_storage: string
   vector_db_storage_cls_kwargs: Record<string, unknown>
   storage_env: Record<string, string>
+  storage_env_configured: Record<string, boolean>
   active_profile_id: string
   profiles: ModelProfile[]
 }
@@ -259,6 +260,11 @@ export interface ConnectionTestResponse {
   latency_ms?: number | null
   error?: string | null
   detected_dim?: number | null
+}
+
+export interface StorageConnectionTestRequest {
+  group: string
+  storage_env: Record<string, string>
 }
 
 export interface ModelInfo {

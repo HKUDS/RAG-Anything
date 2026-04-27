@@ -1,12 +1,15 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { ChangeEvent, ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   AlertTriangle, CheckCircle2, ChevronDown, Copy, Download, FolderOpen,
   KeyRound, Loader2, Plus, RefreshCw, RotateCcw, Save, ScanSearch,
   Database, ServerCog, Trash2, XCircle, Zap,
 } from 'lucide-react'
-import { browseDir, getEnvironment, getStudioSettings, installDep, listModels, testConnection, updateStudioSettings } from '../api/client'
+import {
+  browseDir, getEnvironment, getStudioSettings, installDep, listModels,
+  testConnection, testStorageConnection, updateStudioSettings,
+} from '../api/client'
 import type { BrowseDirEntry } from '../types/studio'
 import type {
   ConnectionTestKind, ConnectionTestResponse, ModelInfo, ModelProfile, ProcessingPreset,
@@ -39,7 +42,36 @@ const KNOWN_PROVIDERS: Record<string, ProviderMeta> = {
   custom: { label: 'Custom', baseUrl: '', supportsModelList: false },
 }
 
-type StoragePresetKey = 'local' | 'qdrant' | 'milvus' | 'postgres'
+type StoragePresetKey =
+  | 'local'
+  | 'localFaiss'
+  | 'qdrant'
+  | 'milvus'
+  | 'postgres'
+  | 'mongodb'
+  | 'opensearch'
+  | 'neo4j'
+  | 'memgraph'
+type StorageLayerKey = 'kv' | 'vector' | 'graph' | 'docStatus'
+type StorageLocationKey =
+  | 'local'
+  | 'faiss'
+  | 'qdrant'
+  | 'milvus'
+  | 'postgres'
+  | 'redis'
+  | 'mongodb'
+  | 'opensearch'
+  | 'neo4j'
+  | 'memgraph'
+
+interface StorageLayerOption {
+  location: StorageLocationKey
+  label: string
+  className: string
+  description: string
+  connectionGroup?: StorageConnectionGroupKey
+}
 
 interface StoragePreset {
   label: string
@@ -48,46 +80,204 @@ interface StoragePreset {
   vector_storage: string
   graph_storage: string
   doc_status_storage: string
-  vector_db_storage_cls_kwargs: Record<string, unknown>
-  storage_env: Record<string, string>
 }
 
-const KV_STORAGE_OPTIONS = [
-  'JsonKVStorage',
-  'RedisKVStorage',
-  'PGKVStorage',
-  'MongoKVStorage',
-  'OpenSearchKVStorage',
-]
+type StorageConnectionGroupKey =
+  | 'qdrant'
+  | 'milvus'
+  | 'postgres'
+  | 'redis'
+  | 'mongodb'
+  | 'opensearch'
+  | 'neo4j'
+  | 'memgraph'
 
-const VECTOR_STORAGE_OPTIONS = [
-  'NanoVectorDBStorage',
-  'FaissVectorDBStorage',
-  'QdrantVectorDBStorage',
-  'MilvusVectorDBStorage',
-  'PGVectorStorage',
-  'MongoVectorDBStorage',
-  'OpenSearchVectorDBStorage',
-  'ChromaVectorDBStorage',
-]
+interface StorageConnectionField {
+  key: string
+  label: string
+  type?: 'text' | 'password' | 'number' | 'select'
+  placeholder?: string
+  options?: Array<{ value: string; label: string }>
+}
 
-const GRAPH_STORAGE_OPTIONS = [
-  'NetworkXStorage',
-  'Neo4JStorage',
-  'MemgraphStorage',
-  'AGEStorage',
-  'PGGraphStorage',
-  'MongoGraphStorage',
-  'OpenSearchGraphStorage',
-]
+interface StorageConnectionGroup {
+  label: string
+  description: string
+  fields: StorageConnectionField[]
+}
 
-const DOC_STATUS_STORAGE_OPTIONS = [
-  'JsonDocStatusStorage',
-  'RedisDocStatusStorage',
-  'PGDocStatusStorage',
-  'MongoDocStatusStorage',
-  'OpenSearchDocStatusStorage',
-]
+const STORAGE_LAYER_LABELS: Record<StorageLayerKey, string> = {
+  kv: 'KV metadata',
+  vector: 'Vector index',
+  graph: 'Knowledge graph',
+  docStatus: 'Document status',
+}
+
+const STORAGE_LAYER_OPTIONS: Record<StorageLayerKey, StorageLayerOption[]> = {
+  kv: [
+    { location: 'local', label: 'Local files', className: 'JsonKVStorage', description: 'JSON metadata in the local workspace.' },
+    { location: 'redis', label: 'Redis', className: 'RedisKVStorage', description: 'Remote Redis key-value store.', connectionGroup: 'redis' },
+    { location: 'postgres', label: 'Postgres', className: 'PGKVStorage', description: 'Postgres tables for KV metadata.', connectionGroup: 'postgres' },
+    { location: 'mongodb', label: 'MongoDB', className: 'MongoKVStorage', description: 'MongoDB collections for KV metadata.', connectionGroup: 'mongodb' },
+    { location: 'opensearch', label: 'OpenSearch', className: 'OpenSearchKVStorage', description: 'OpenSearch indexes for KV metadata.', connectionGroup: 'opensearch' },
+  ],
+  vector: [
+    { location: 'local', label: 'NanoVectorDB', className: 'NanoVectorDBStorage', description: 'Local NanoVectorDB files.' },
+    { location: 'faiss', label: 'FAISS', className: 'FaissVectorDBStorage', description: 'Local FAISS index files.' },
+    { location: 'qdrant', label: 'Qdrant', className: 'QdrantVectorDBStorage', description: 'Remote Qdrant collection.', connectionGroup: 'qdrant' },
+    { location: 'milvus', label: 'Milvus / Zilliz', className: 'MilvusVectorDBStorage', description: 'Remote Milvus or Zilliz collection.', connectionGroup: 'milvus' },
+    { location: 'postgres', label: 'Postgres pgvector', className: 'PGVectorStorage', description: 'Postgres pgvector tables.', connectionGroup: 'postgres' },
+    { location: 'mongodb', label: 'MongoDB Atlas', className: 'MongoVectorDBStorage', description: 'MongoDB vector search collections.', connectionGroup: 'mongodb' },
+    { location: 'opensearch', label: 'OpenSearch k-NN', className: 'OpenSearchVectorDBStorage', description: 'OpenSearch vector indexes.', connectionGroup: 'opensearch' },
+  ],
+  graph: [
+    { location: 'local', label: 'Local NetworkX', className: 'NetworkXStorage', description: 'Local NetworkX graph files.' },
+    { location: 'neo4j', label: 'Neo4j', className: 'Neo4JStorage', description: 'Neo4j graph database.', connectionGroup: 'neo4j' },
+    { location: 'memgraph', label: 'Memgraph', className: 'MemgraphStorage', description: 'Memgraph graph database.', connectionGroup: 'memgraph' },
+    { location: 'postgres', label: 'Postgres AGE', className: 'PGGraphStorage', description: 'Postgres with Apache AGE graph tables.', connectionGroup: 'postgres' },
+    { location: 'mongodb', label: 'MongoDB', className: 'MongoGraphStorage', description: 'MongoDB graph collections.', connectionGroup: 'mongodb' },
+    { location: 'opensearch', label: 'OpenSearch', className: 'OpenSearchGraphStorage', description: 'OpenSearch graph indexes.', connectionGroup: 'opensearch' },
+  ],
+  docStatus: [
+    { location: 'local', label: 'Local JSON', className: 'JsonDocStatusStorage', description: 'Local JSON document status file.' },
+    { location: 'redis', label: 'Redis', className: 'RedisDocStatusStorage', description: 'Remote Redis document status.', connectionGroup: 'redis' },
+    { location: 'postgres', label: 'Postgres', className: 'PGDocStatusStorage', description: 'Postgres document status table.', connectionGroup: 'postgres' },
+    { location: 'mongodb', label: 'MongoDB', className: 'MongoDocStatusStorage', description: 'MongoDB document status collection.', connectionGroup: 'mongodb' },
+    { location: 'opensearch', label: 'OpenSearch', className: 'OpenSearchDocStatusStorage', description: 'OpenSearch document status index.', connectionGroup: 'opensearch' },
+  ],
+}
+
+const STORAGE_CONNECTION_GROUPS: Record<StorageConnectionGroupKey, StorageConnectionGroup> = {
+  qdrant: {
+    label: 'Qdrant connection',
+    description: 'Endpoint used by QdrantVectorDBStorage.',
+    fields: [
+      { key: 'QDRANT_URL', label: 'URL', placeholder: 'http://localhost:6333' },
+      { key: 'QDRANT_API_KEY', label: 'API key', type: 'password' },
+    ],
+  },
+  milvus: {
+    label: 'Milvus / Zilliz connection',
+    description: 'Connection used by MilvusVectorDBStorage.',
+    fields: [
+      { key: 'MILVUS_URI', label: 'URI', placeholder: 'http://localhost:19530' },
+      { key: 'MILVUS_DB_NAME', label: 'Database', placeholder: 'lightrag' },
+      { key: 'MILVUS_USER', label: 'User' },
+      { key: 'MILVUS_PASSWORD', label: 'Password', type: 'password' },
+      { key: 'MILVUS_TOKEN', label: 'Token', type: 'password' },
+    ],
+  },
+  postgres: {
+    label: 'Postgres connection',
+    description: 'Shared by PG KV, pgvector, PG graph, and PG document status storage.',
+    fields: [
+      { key: 'POSTGRES_HOST', label: 'Host', placeholder: 'localhost' },
+      { key: 'POSTGRES_PORT', label: 'Port', type: 'number', placeholder: '5432' },
+      { key: 'POSTGRES_DATABASE', label: 'Database', placeholder: 'raganything' },
+      { key: 'POSTGRES_USER', label: 'User', placeholder: 'postgres' },
+      { key: 'POSTGRES_PASSWORD', label: 'Password', type: 'password' },
+      { key: 'POSTGRES_MAX_CONNECTIONS', label: 'Max connections', type: 'number', placeholder: '12' },
+      {
+        key: 'POSTGRES_SSL_MODE',
+        label: 'SSL mode',
+        type: 'select',
+        options: [
+          { value: '', label: 'Default' },
+          { value: 'disable', label: 'disable' },
+          { value: 'allow', label: 'allow' },
+          { value: 'prefer', label: 'prefer' },
+          { value: 'require', label: 'require' },
+          { value: 'verify-ca', label: 'verify-ca' },
+          { value: 'verify-full', label: 'verify-full' },
+        ],
+      },
+    ],
+  },
+  redis: {
+    label: 'Redis connection',
+    description: 'Connection URI used by Redis KV and document status storage.',
+    fields: [
+      { key: 'REDIS_URI', label: 'URI', placeholder: 'redis://localhost:6379' },
+      { key: 'REDIS_MAX_CONNECTIONS', label: 'Max connections', type: 'number', placeholder: '200' },
+    ],
+  },
+  mongodb: {
+    label: 'MongoDB connection',
+    description: 'Connection used by MongoDB KV, vector, graph, and document status storage.',
+    fields: [
+      { key: 'MONGO_URI', label: 'URI', placeholder: 'mongodb://localhost:27017/' },
+      { key: 'MONGO_DATABASE', label: 'Database', placeholder: 'LightRAG' },
+    ],
+  },
+  opensearch: {
+    label: 'OpenSearch connection',
+    description: 'Connection used by OpenSearch KV, vector, graph, and document status storage.',
+    fields: [
+      { key: 'OPENSEARCH_HOSTS', label: 'Hosts', placeholder: 'localhost:9200' },
+      { key: 'OPENSEARCH_USER', label: 'User', placeholder: 'admin' },
+      { key: 'OPENSEARCH_PASSWORD', label: 'Password', type: 'password' },
+      {
+        key: 'OPENSEARCH_USE_SSL',
+        label: 'Use SSL',
+        type: 'select',
+        options: [
+          { value: 'true', label: 'true' },
+          { value: 'false', label: 'false' },
+        ],
+      },
+      {
+        key: 'OPENSEARCH_VERIFY_CERTS',
+        label: 'Verify certs',
+        type: 'select',
+        options: [
+          { value: 'false', label: 'false' },
+          { value: 'true', label: 'true' },
+        ],
+      },
+    ],
+  },
+  neo4j: {
+    label: 'Neo4j connection',
+    description: 'Connection used by Neo4JStorage for the knowledge graph.',
+    fields: [
+      { key: 'NEO4J_URI', label: 'URI', placeholder: 'neo4j+s://host.databases.neo4j.io' },
+      { key: 'NEO4J_USERNAME', label: 'User', placeholder: 'neo4j' },
+      { key: 'NEO4J_PASSWORD', label: 'Password', type: 'password' },
+      { key: 'NEO4J_DATABASE', label: 'Database', placeholder: 'neo4j' },
+    ],
+  },
+  memgraph: {
+    label: 'Memgraph connection',
+    description: 'Connection used by MemgraphStorage for the knowledge graph.',
+    fields: [
+      { key: 'MEMGRAPH_URI', label: 'URI', placeholder: 'bolt://localhost:7687' },
+      { key: 'MEMGRAPH_USERNAME', label: 'User' },
+      { key: 'MEMGRAPH_PASSWORD', label: 'Password', type: 'password' },
+      { key: 'MEMGRAPH_DATABASE', label: 'Database', placeholder: 'memgraph' },
+    ],
+  },
+}
+
+const STORAGE_ENV_DEFAULTS: Record<string, string> = {
+  QDRANT_URL: 'http://localhost:6333',
+  MILVUS_URI: 'http://localhost:19530',
+  MILVUS_DB_NAME: 'lightrag',
+  POSTGRES_HOST: 'localhost',
+  POSTGRES_PORT: '5432',
+  POSTGRES_DATABASE: 'raganything',
+  POSTGRES_USER: 'postgres',
+  POSTGRES_MAX_CONNECTIONS: '12',
+  REDIS_URI: 'redis://localhost:6379',
+  MONGO_URI: 'mongodb://localhost:27017/',
+  MONGO_DATABASE: 'LightRAG',
+  OPENSEARCH_HOSTS: 'localhost:9200',
+  OPENSEARCH_USER: 'admin',
+  OPENSEARCH_USE_SSL: 'true',
+  OPENSEARCH_VERIFY_CERTS: 'false',
+  NEO4J_USERNAME: 'neo4j',
+  MEMGRAPH_URI: 'bolt://localhost:7687',
+  MEMGRAPH_DATABASE: 'memgraph',
+}
 
 const STORAGE_PRESETS: Record<StoragePresetKey, StoragePreset> = {
   local: {
@@ -97,8 +287,14 @@ const STORAGE_PRESETS: Record<StoragePresetKey, StoragePreset> = {
     vector_storage: 'NanoVectorDBStorage',
     graph_storage: 'NetworkXStorage',
     doc_status_storage: 'JsonDocStatusStorage',
-    vector_db_storage_cls_kwargs: {},
-    storage_env: {},
+  },
+  localFaiss: {
+    label: 'Local FAISS',
+    description: 'Local JSON metadata, FAISS vectors, and NetworkX graph files.',
+    kv_storage: 'JsonKVStorage',
+    vector_storage: 'FaissVectorDBStorage',
+    graph_storage: 'NetworkXStorage',
+    doc_status_storage: 'JsonDocStatusStorage',
   },
   qdrant: {
     label: 'Qdrant vector',
@@ -107,11 +303,6 @@ const STORAGE_PRESETS: Record<StoragePresetKey, StoragePreset> = {
     vector_storage: 'QdrantVectorDBStorage',
     graph_storage: 'NetworkXStorage',
     doc_status_storage: 'JsonDocStatusStorage',
-    vector_db_storage_cls_kwargs: {},
-    storage_env: {
-      QDRANT_URL: 'http://localhost:6333',
-      QDRANT_API_KEY: '',
-    },
   },
   milvus: {
     label: 'Milvus vector',
@@ -120,12 +311,6 @@ const STORAGE_PRESETS: Record<StoragePresetKey, StoragePreset> = {
     vector_storage: 'MilvusVectorDBStorage',
     graph_storage: 'NetworkXStorage',
     doc_status_storage: 'JsonDocStatusStorage',
-    vector_db_storage_cls_kwargs: {},
-    storage_env: {
-      MILVUS_URI: 'http://localhost:19530',
-      MILVUS_DB_NAME: 'default',
-      MILVUS_TOKEN: '',
-    },
   },
   postgres: {
     label: 'Postgres stack',
@@ -134,14 +319,38 @@ const STORAGE_PRESETS: Record<StoragePresetKey, StoragePreset> = {
     vector_storage: 'PGVectorStorage',
     graph_storage: 'PGGraphStorage',
     doc_status_storage: 'PGDocStatusStorage',
-    vector_db_storage_cls_kwargs: {},
-    storage_env: {
-      POSTGRES_HOST: 'localhost',
-      POSTGRES_PORT: '5432',
-      POSTGRES_USER: 'postgres',
-      POSTGRES_PASSWORD: '',
-      POSTGRES_DATABASE: 'raganything',
-    },
+  },
+  mongodb: {
+    label: 'MongoDB stack',
+    description: 'MongoDB KV, vector, graph, and document status collections.',
+    kv_storage: 'MongoKVStorage',
+    vector_storage: 'MongoVectorDBStorage',
+    graph_storage: 'MongoGraphStorage',
+    doc_status_storage: 'MongoDocStatusStorage',
+  },
+  opensearch: {
+    label: 'OpenSearch stack',
+    description: 'OpenSearch KV, k-NN vector, graph, and status indexes.',
+    kv_storage: 'OpenSearchKVStorage',
+    vector_storage: 'OpenSearchVectorDBStorage',
+    graph_storage: 'OpenSearchGraphStorage',
+    doc_status_storage: 'OpenSearchDocStatusStorage',
+  },
+  neo4j: {
+    label: 'Neo4j graph',
+    description: 'Local files for KV/vector/status with Neo4j for graph storage.',
+    kv_storage: 'JsonKVStorage',
+    vector_storage: 'NanoVectorDBStorage',
+    graph_storage: 'Neo4JStorage',
+    doc_status_storage: 'JsonDocStatusStorage',
+  },
+  memgraph: {
+    label: 'Memgraph graph',
+    description: 'Local files for KV/vector/status with Memgraph for graph storage.',
+    kv_storage: 'JsonKVStorage',
+    vector_storage: 'NanoVectorDBStorage',
+    graph_storage: 'MemgraphStorage',
+    doc_status_storage: 'JsonDocStatusStorage',
   },
 }
 
@@ -190,8 +399,9 @@ interface SettingsForm {
   vector_storage: string
   graph_storage: string
   doc_status_storage: string
-  vector_db_storage_cls_kwargs_json: string
-  storage_env_json: string
+  vector_db_storage_cls_kwargs: Record<string, unknown>
+  storage_env: Record<string, string>
+  storage_env_configured: Record<string, boolean>
   active_profile_id: string
   profiles: ProfileForm[]
 }
@@ -220,6 +430,7 @@ export default function SettingsPage() {
   const [form, setForm] = useState<SettingsForm | null>(null)
   const [tests, setTests] = useState<Record<string, TestState>>({})
   const [pickers, setPickers] = useState<Record<string, ModelPickerState>>({})
+  const [storageTests, setStorageTests] = useState<Record<string, TestState>>({})
 
   const { data: environment } = useQuery({ queryKey: ['environment'], queryFn: getEnvironment })
   const { data: settings, error } = useQuery({ queryKey: ['settings'], queryFn: getStudioSettings })
@@ -250,15 +461,54 @@ export default function SettingsPage() {
 
   function applyStoragePreset(presetKey: StoragePresetKey) {
     const preset = STORAGE_PRESETS[presetKey]
+    setForm((current) => {
+      if (!current) return current
+      const next = {
+        ...current,
+        kv_storage: preset.kv_storage,
+        vector_storage: preset.vector_storage,
+        graph_storage: preset.graph_storage,
+        doc_status_storage: preset.doc_status_storage,
+      }
+      return {
+        ...next,
+        storage_env: ensureStorageEnvDefaults(next.storage_env, requiredConnectionGroups(next)),
+      }
+    })
+  }
+
+  function updateStorageEnv(key: string, value: string) {
     setForm((current) => current ? {
       ...current,
-      kv_storage: preset.kv_storage,
-      vector_storage: preset.vector_storage,
-      graph_storage: preset.graph_storage,
-      doc_status_storage: preset.doc_status_storage,
-      vector_db_storage_cls_kwargs_json: stringifyJson(preset.vector_db_storage_cls_kwargs),
-      storage_env_json: stringifyJson(preset.storage_env),
+      storage_env: { ...current.storage_env, [key]: value },
     } : current)
+  }
+
+  function updateVectorKwarg(key: string, value: unknown) {
+    setForm((current) => {
+      if (!current) return current
+      const nextKwargs = { ...current.vector_db_storage_cls_kwargs }
+      if (value === '' || value === null || value === undefined) {
+        delete nextKwargs[key]
+      } else {
+        nextKwargs[key] = value
+      }
+      return { ...current, vector_db_storage_cls_kwargs: nextKwargs }
+    })
+  }
+
+  function updateStorageClass(layer: StorageLayerKey, className: string) {
+    setForm((current) => {
+      if (!current) return current
+      const next = {
+        ...current,
+        [storageFieldForLayer(layer)]: className,
+      }
+      return {
+        ...next,
+        storage_env: ensureStorageEnvDefaults(next.storage_env, requiredConnectionGroups(next)),
+      }
+    })
   }
 
   function updateProfile(profileId: string, update: Partial<ProfileForm>) {
@@ -396,8 +646,31 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleStorageTest(group: StorageConnectionGroupKey) {
+    if (!form) return
+    setStorageTests((prev) => ({ ...prev, [group]: { status: 'pending' } }))
+    try {
+      const result = await testStorageConnection({
+        group,
+        storage_env: buildStorageEnvForGroup(form, group),
+      })
+      setStorageTests((prev) => ({
+        ...prev,
+        [group]: result.ok
+          ? { status: 'ok', latency: result.latency_ms }
+          : { status: 'error', error: result.error ?? 'Connection failed' },
+      }))
+    } catch (err) {
+      setStorageTests((prev) => ({
+        ...prev,
+        [group]: { status: 'error', error: err instanceof Error ? err.message : String(err) },
+      }))
+    }
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (form && !storagePresetForForm(form)) return
     saveMutation.mutate()
   }
 
@@ -412,6 +685,8 @@ export default function SettingsPage() {
     ?? form.profiles[0]
   const selectedChannel = selectedProfile?.[selectedKind]
   const localStorageState = localStorageUsage(form)
+  const currentStoragePreset = storagePresetForForm(form)
+  const storageComboError = currentStoragePreset ? null : unsupportedStorageMessage(form)
 
   return (
     <section className="page settings-page">
@@ -424,7 +699,12 @@ export default function SettingsPage() {
           <button className="button" type="button" onClick={() => setForm(makeForm(settings))}>
             <RotateCcw size={16} /> Reset
           </button>
-          <button className="button primary" form="studio-settings-form" disabled={saveMutation.isPending}>
+          <button
+            className="button primary"
+            form="studio-settings-form"
+            disabled={saveMutation.isPending || Boolean(storageComboError)}
+            title={storageComboError ?? undefined}
+          >
             <Save size={16} />
             {saveMutation.isPending ? 'Saving...' : 'Save Settings'}
           </button>
@@ -629,18 +909,46 @@ export default function SettingsPage() {
               <div className="storage-panel-header">
                 <div>
                   <h2>Storage Backends</h2>
-                  <p>Choose the LightRAG storage classes used by RAG-Anything, then provide backend-specific environment overrides.</p>
+                  <p>Choose storage for KV metadata, vectors, graph, and document status. Each dropdown only shows options that still form a supported LightRAG layout.</p>
                 </div>
-                <span className="storage-current-pill">{form.vector_storage}</span>
+                <span className="storage-current-pill">{currentStoragePreset?.label ?? 'Unsupported'}</span>
+              </div>
+
+              {storageComboError ? (
+                <div className="storage-combo-warning">
+                  <AlertTriangle size={15} />
+                  <span>{storageComboError}</span>
+                </div>
+              ) : null}
+
+              <div className="storage-class-summary">
+                {(['kv', 'vector', 'graph', 'docStatus'] as StorageLayerKey[]).map((layer) => {
+                  const currentOption = optionForClass(layer, storageClassForLayer(form, layer))
+                  const options = validLayerOptions(form, layer)
+                  return (
+                    <label className="storage-layer-card" key={layer}>
+                      <span>{STORAGE_LAYER_LABELS[layer]}</span>
+                      <select
+                        value={storageClassForLayer(form, layer)}
+                        onChange={(event) => updateStorageClass(layer, event.target.value)}
+                      >
+                        {options.map((option) => (
+                          <option key={option.className} value={option.className}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <small>{currentOption.className}</small>
+                      <em>{currentOption.description}</em>
+                    </label>
+                  )
+                })}
               </div>
 
               <div className="storage-preset-grid">
                 {(Object.keys(STORAGE_PRESETS) as StoragePresetKey[]).map((key) => {
                   const preset = STORAGE_PRESETS[key]
-                  const active = form.kv_storage === preset.kv_storage
-                    && form.vector_storage === preset.vector_storage
-                    && form.graph_storage === preset.graph_storage
-                    && form.doc_status_storage === preset.doc_status_storage
+                  const active = currentStoragePreset === preset
                   return (
                     <button
                       className={`storage-preset-card ${active ? 'active' : ''}`}
@@ -655,55 +963,34 @@ export default function SettingsPage() {
                 })}
               </div>
 
-              <div className="form-grid">
+              <div className="storage-vector-panel">
+                <div>
+                  <h3>Vector retrieval</h3>
+                  <p>Optional LightRAG vector search tuning without exposing raw kwargs.</p>
+                </div>
                 <label>
-                  KV storage
-                  <select value={form.kv_storage} onChange={(e) => updateField('kv_storage', e.target.value)}>
-                    {KV_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Vector storage
-                  <select value={form.vector_storage} onChange={(e) => updateField('vector_storage', e.target.value)}>
-                    {VECTOR_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Graph storage
-                  <select value={form.graph_storage} onChange={(e) => updateField('graph_storage', e.target.value)}>
-                    {GRAPH_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
-                </label>
-                <label>
-                  Document status storage
-                  <select value={form.doc_status_storage} onChange={(e) => updateField('doc_status_storage', e.target.value)}>
-                    {DOC_STATUS_STORAGE_OPTIONS.map((name) => <option key={name} value={name}>{name}</option>)}
-                  </select>
+                  Cosine threshold
+                  <input
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    type="number"
+                    value={kwargNumber(form.vector_db_storage_cls_kwargs, 'cosine_better_than_threshold')}
+                    onChange={(e) => updateVectorKwarg(
+                      'cosine_better_than_threshold',
+                      e.target.value === '' ? undefined : Number(e.target.value),
+                    )}
+                    placeholder="Backend default"
+                  />
                 </label>
               </div>
 
-              <div className="storage-json-grid">
-                <label>
-                  Vector DB kwargs JSON
-                  <textarea
-                    className="json-textarea"
-                    spellCheck={false}
-                    value={form.vector_db_storage_cls_kwargs_json}
-                    onChange={(e) => updateField('vector_db_storage_cls_kwargs_json', e.target.value)}
-                  />
-                  <span className="field-hint">Passed to LightRAG as vector_db_storage_cls_kwargs.</span>
-                </label>
-                <label>
-                  Storage env JSON
-                  <textarea
-                    className="json-textarea"
-                    spellCheck={false}
-                    value={form.storage_env_json}
-                    onChange={(e) => updateField('storage_env_json', e.target.value)}
-                  />
-                  <span className="field-hint">Applied to the Studio process before a new RAG instance is initialized.</span>
-                </label>
-              </div>
+              <StorageConnectionForms
+                form={form}
+                testStates={storageTests}
+                onChange={updateStorageEnv}
+                onTest={handleStorageTest}
+              />
 
               {localStorageState.usesLocal ? (
                 <div className="local-storage-workspace">
@@ -901,6 +1188,7 @@ export default function SettingsPage() {
           )}
 
           {saveMutation.error ? <div className="error-panel">{saveMutation.error.message}</div> : null}
+          {storageComboError ? <div className="error-panel">{storageComboError}</div> : null}
           {saveMutation.isSuccess ? <div className="success-panel">Settings saved</div> : null}
         </form>
       </div>
@@ -1117,6 +1405,103 @@ function CudaEnvRow({ gpuPresent, cudaAvailable }: { gpuPresent: boolean; cudaAv
   )
 }
 
+function StorageConnectionForms({ form, testStates, onChange, onTest }: {
+  form: SettingsForm
+  testStates: Record<string, TestState>
+  onChange: (key: string, value: string) => void
+  onTest: (group: StorageConnectionGroupKey) => void
+}) {
+  const groups = requiredConnectionGroups(form)
+  if (groups.length === 0) return null
+
+  return (
+    <div className="storage-connection-stack">
+      {groups.map((groupKey) => {
+        const group = STORAGE_CONNECTION_GROUPS[groupKey]
+        return (
+          <section className="storage-connection-panel" key={groupKey}>
+            <div className="storage-connection-header">
+              <div>
+                <h3>{group.label}</h3>
+                <p>{group.description}</p>
+              </div>
+              <div className="storage-connection-actions">
+                <span>{groupKey}</span>
+                <button
+                  className="button test-btn"
+                  disabled={testStates[groupKey]?.status === 'pending'}
+                  onClick={() => onTest(groupKey)}
+                  type="button"
+                >
+                  {testStates[groupKey]?.status === 'pending'
+                    ? <><Loader2 size={13} className="spin" /> Testing...</>
+                    : <><Zap size={13} /> Test connection</>}
+                </button>
+              </div>
+            </div>
+            <div className="storage-connection-grid">
+              {group.fields.map((field) => {
+                const configured = form.storage_env_configured[field.key]
+                const value = form.storage_env[field.key] ?? ''
+                const commonProps = {
+                  value,
+                  onChange: (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => (
+                    onChange(field.key, event.target.value)
+                  ),
+                }
+                return (
+                  <label key={field.key}>
+                    {field.label}
+                    {field.type === 'select' ? (
+                      <select {...commonProps}>
+                        {(field.options ?? []).map((option) => (
+                          <option key={option.value} value={option.value}>{option.label}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        {...commonProps}
+                        type={field.type === 'password' ? 'password' : field.type === 'number' ? 'number' : 'text'}
+                        placeholder={
+                          field.type === 'password' && configured
+                            ? '••••••••••••'
+                            : field.placeholder
+                        }
+                      />
+                    )}
+                    {field.type === 'password' && configured && !value ? (
+                      <span className="field-hint">Saved value will be kept unless you enter a replacement.</span>
+                    ) : null}
+                  </label>
+                )
+              })}
+            </div>
+            <StorageTestResult state={testStates[groupKey] ?? idleTest} />
+          </section>
+        )
+      })}
+    </div>
+  )
+}
+
+function StorageTestResult({ state }: { state: TestState }) {
+  if (state.status === 'idle' || state.status === 'pending') return null
+  if (state.status === 'ok') {
+    return (
+      <div className="storage-test-result storage-test-result--ok">
+        <CheckCircle2 size={13} />
+        <span>{state.latency != null ? `Connected in ${state.latency} ms` : 'Connected'}</span>
+      </div>
+    )
+  }
+  return (
+    <div className="storage-test-result storage-test-result--error" title={state.error ?? undefined}>
+      <XCircle size={13} />
+      <span>{state.error ? summarizeProviderError(state.error) : 'Connection failed'}</span>
+    </div>
+  )
+}
+
 interface ProviderSectionProps {
   title: string
   kind: ConnectionTestKind
@@ -1197,9 +1582,12 @@ function ProviderSection({
         <input
           type="password"
           value={channel.api_key}
-          placeholder={channel.api_key_configured ? 'Saved key, leave blank to keep it' : 'Enter API key...'}
+          placeholder={channel.api_key_configured ? '••••••••••••••••' : 'Enter API key...'}
           onChange={(e) => onApiKey(e.target.value)}
         />
+        {channel.api_key_configured && !channel.api_key ? (
+          <span className="field-hint">Saved key will be kept unless you enter a replacement.</span>
+        ) : null}
       </label>
 
       <ModelPickerField
@@ -1382,7 +1770,7 @@ function makeForm(settings: StudioSettings): SettingsForm {
   const profiles = settings.profiles.length > 0
     ? settings.profiles.map(profileFromResponse)
     : [legacyProfile(settings)]
-  return {
+  const form: SettingsForm = {
     data_dir: settings.data_dir,
     upload_dir: settings.upload_dir,
     working_dir: settings.working_dir,
@@ -1409,10 +1797,15 @@ function makeForm(settings: StudioSettings): SettingsForm {
     vector_storage: settings.vector_storage,
     graph_storage: settings.graph_storage,
     doc_status_storage: settings.doc_status_storage,
-    vector_db_storage_cls_kwargs_json: stringifyJson(settings.vector_db_storage_cls_kwargs ?? {}),
-    storage_env_json: stringifyJson(settings.storage_env ?? {}),
+    vector_db_storage_cls_kwargs: settings.vector_db_storage_cls_kwargs ?? {},
+    storage_env: settings.storage_env ?? {},
+    storage_env_configured: settings.storage_env_configured ?? {},
     active_profile_id: settings.active_profile_id || profiles[0].id,
     profiles,
+  }
+  return {
+    ...form,
+    storage_env: ensureStorageEnvDefaults(form.storage_env, requiredConnectionGroups(form)),
   }
 }
 
@@ -1478,11 +1871,8 @@ function legacyProfile(settings: StudioSettings): ProfileForm {
 
 function toPayload(form: SettingsForm): StudioSettingsUpdate {
   const activeProfile = form.profiles.find((profile) => profile.id === form.active_profile_id) ?? form.profiles[0]
-  const vectorDbStorageClsKwargs = parseJsonObject(
-    form.vector_db_storage_cls_kwargs_json,
-    'Vector DB kwargs JSON',
-  )
-  const storageEnv = stringifyRecord(parseJsonObject(form.storage_env_json, 'Storage env JSON'))
+  const vectorDbStorageClsKwargs = cleanRecord(form.vector_db_storage_cls_kwargs)
+  const storageEnv = buildStorageEnvPayload(form)
   return {
     data_dir: form.data_dir,
     upload_dir: form.upload_dir,
@@ -1531,52 +1921,164 @@ function toPayload(form: SettingsForm): StudioSettingsUpdate {
   }
 }
 
-function stringifyJson(value: Record<string, unknown>) {
-  return JSON.stringify(value, null, 2)
-}
-
-function parseJsonObject(text: string, label: string): Record<string, unknown> {
-  const trimmed = text.trim()
-  if (!trimmed) return {}
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(trimmed)
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err)
-    throw new Error(`${label} is not valid JSON: ${detail}`)
-  }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`${label} must be a JSON object`)
-  }
-  return parsed as Record<string, unknown>
-}
-
-function stringifyRecord(value: Record<string, unknown>): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(value).map(([key, val]) => [key, val == null ? '' : String(val)]),
-  )
-}
-
 function localStorageUsage(form: SettingsForm) {
-  const localClasses = [
-    form.kv_storage,
-    form.vector_storage,
-    form.graph_storage,
-    form.doc_status_storage,
-  ].filter((name) => [
-    'JsonKVStorage',
-    'NanoVectorDBStorage',
-    'FaissVectorDBStorage',
-    'NetworkXStorage',
-    'JsonDocStatusStorage',
-    'ChromaVectorDBStorage',
-  ].includes(name))
+  const localClasses = (['kv', 'vector', 'graph', 'docStatus'] as StorageLayerKey[])
+    .map((layer) => storageClassForLayer(form, layer))
+    .filter((name) => [
+      'JsonKVStorage',
+      'NanoVectorDBStorage',
+      'FaissVectorDBStorage',
+      'NetworkXStorage',
+      'JsonDocStatusStorage',
+    ].includes(name))
   return {
     usesLocal: localClasses.length > 0,
     reason: localClasses.length > 0
       ? `${localClasses.join(', ')} use this directory for local indexes or metadata.`
       : 'No selected storage class requires a local index workspace.',
   }
+}
+
+function storageFieldForLayer(layer: StorageLayerKey): keyof Pick<
+  SettingsForm,
+  'kv_storage' | 'vector_storage' | 'graph_storage' | 'doc_status_storage'
+> {
+  if (layer === 'kv') return 'kv_storage'
+  if (layer === 'vector') return 'vector_storage'
+  if (layer === 'graph') return 'graph_storage'
+  return 'doc_status_storage'
+}
+
+function storageClassForLayer(form: SettingsForm, layer: StorageLayerKey): string {
+  return form[storageFieldForLayer(layer)]
+}
+
+function optionForClass(layer: StorageLayerKey, className: string): StorageLayerOption {
+  return STORAGE_LAYER_OPTIONS[layer].find((option) => option.className === className)
+    ?? STORAGE_LAYER_OPTIONS[layer][0]
+}
+
+function validLayerOptions(form: SettingsForm, layer: StorageLayerKey): StorageLayerOption[] {
+  const validClassNames = new Set(
+    supportedStoragePresetsForLayer(form, layer)
+      .map((preset) => storageClassFromPreset(preset, layer)),
+  )
+  const options = STORAGE_LAYER_OPTIONS[layer].filter((option) => (
+    option.className === storageClassForLayer(form, layer)
+    || validClassNames.has(option.className)
+  ))
+  return options.length > 0 ? uniqueStorageOptions(options) : STORAGE_LAYER_OPTIONS[layer]
+}
+
+function supportedStoragePresetsForLayer(form: SettingsForm, layer: StorageLayerKey): StoragePreset[] {
+  return (Object.keys(STORAGE_PRESETS) as StoragePresetKey[])
+    .map((key) => STORAGE_PRESETS[key])
+    .filter((preset) => (
+      layer === 'kv' || form.kv_storage === preset.kv_storage
+    ))
+    .filter((preset) => (
+      layer === 'vector' || form.vector_storage === preset.vector_storage
+    ))
+    .filter((preset) => (
+      layer === 'graph' || form.graph_storage === preset.graph_storage
+    ))
+    .filter((preset) => (
+      layer === 'docStatus' || form.doc_status_storage === preset.doc_status_storage
+    ))
+}
+
+function uniqueStorageOptions(options: StorageLayerOption[]): StorageLayerOption[] {
+  const seen = new Set<string>()
+  return options.filter((option) => {
+    if (seen.has(option.className)) return false
+    seen.add(option.className)
+    return true
+  })
+}
+
+function storageClassFromPreset(preset: StoragePreset, layer: StorageLayerKey): string {
+  if (layer === 'kv') return preset.kv_storage
+  if (layer === 'vector') return preset.vector_storage
+  if (layer === 'graph') return preset.graph_storage
+  return preset.doc_status_storage
+}
+
+function requiredConnectionGroups(form: SettingsForm): StorageConnectionGroupKey[] {
+  const groups = new Set<StorageConnectionGroupKey>()
+  for (const layer of ['kv', 'vector', 'graph', 'docStatus'] as StorageLayerKey[]) {
+    const group = optionForClass(layer, storageClassForLayer(form, layer)).connectionGroup
+    if (group) groups.add(group)
+  }
+  return [...groups]
+}
+
+function ensureStorageEnvDefaults(
+  current: Record<string, string>,
+  groups: StorageConnectionGroupKey[],
+): Record<string, string> {
+  const next = { ...current }
+  for (const group of groups) {
+    for (const field of STORAGE_CONNECTION_GROUPS[group].fields) {
+      if (next[field.key] == null) {
+        next[field.key] = STORAGE_ENV_DEFAULTS[field.key] ?? ''
+      }
+    }
+  }
+  return next
+}
+
+function buildStorageEnvPayload(form: SettingsForm): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const group of requiredConnectionGroups(form)) {
+    Object.assign(env, buildStorageEnvForGroup(form, group))
+  }
+  return env
+}
+
+function buildStorageEnvForGroup(
+  form: SettingsForm,
+  group: StorageConnectionGroupKey,
+): Record<string, string> {
+  const env: Record<string, string> = {}
+  for (const field of STORAGE_CONNECTION_GROUPS[group].fields) {
+    const value = form.storage_env[field.key] ?? ''
+    if (value || form.storage_env_configured[field.key] || STORAGE_ENV_DEFAULTS[field.key] != null) {
+      env[field.key] = value
+    }
+  }
+  return env
+}
+
+function storagePresetForForm(form: SettingsForm): StoragePreset | null {
+  return (Object.keys(STORAGE_PRESETS) as StoragePresetKey[])
+    .map((key) => STORAGE_PRESETS[key])
+    .find((preset) => (
+      form.kv_storage === preset.kv_storage
+      && form.vector_storage === preset.vector_storage
+      && form.graph_storage === preset.graph_storage
+      && form.doc_status_storage === preset.doc_status_storage
+    )) ?? null
+}
+
+function unsupportedStorageMessage(form: SettingsForm): string {
+  return [
+    'Unsupported storage combination:',
+    form.kv_storage,
+    form.vector_storage,
+    form.graph_storage,
+    form.doc_status_storage,
+  ].join(' ')
+}
+
+function kwargNumber(kwargs: Record<string, unknown>, key: string): number | '' {
+  const value = kwargs[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : ''
+}
+
+function cleanRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).filter(([, val]) => val !== '' && val !== null && val !== undefined),
+  )
 }
 
 function profileToPayload(profile: ProfileForm): ModelProfileUpdate {

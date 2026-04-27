@@ -99,6 +99,7 @@ class StudioSettingsResponse(BaseModel):
     doc_status_storage: str
     vector_db_storage_cls_kwargs: dict = Field(default_factory=dict)
     storage_env: dict[str, str] = Field(default_factory=dict)
+    storage_env_configured: dict[str, bool] = Field(default_factory=dict)
     active_profile_id: str
     profiles: list[ModelProfileResponse]
 
@@ -192,6 +193,11 @@ class ConnectionTestResponse(BaseModel):
     latency_ms: float | None = None
     error: str | None = None
     detected_dim: int | None = None  # populated only when kind=="embedding" and ok==True
+
+
+class StorageConnectionTestRequest(BaseModel):
+    group: str
+    storage_env: dict[str, str] = Field(default_factory=dict)
 
 
 class ModelInfo(BaseModel):

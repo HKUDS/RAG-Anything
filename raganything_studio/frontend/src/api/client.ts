@@ -14,6 +14,7 @@ import type {
   ModelListResponse,
   ProcessOptions,
   QueryResponse,
+  StorageConnectionTestRequest,
   StudioSettings,
   StudioSettingsUpdate,
 } from '../types/studio'
@@ -115,6 +116,13 @@ export async function updateStudioSettings(settings: StudioSettingsUpdate): Prom
 
 export async function testConnection(payload: ConnectionTestRequest): Promise<ConnectionTestResponse> {
   return request<ConnectionTestResponse>('/api/settings/test-connection', {
+    body: JSON.stringify(payload),
+    method: 'POST',
+  })
+}
+
+export async function testStorageConnection(payload: StorageConnectionTestRequest): Promise<ConnectionTestResponse> {
+  return request<ConnectionTestResponse>('/api/settings/test-storage-connection', {
     body: JSON.stringify(payload),
     method: 'POST',
   })

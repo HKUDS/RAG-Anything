@@ -4,6 +4,8 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+from fastapi import HTTPException
 from fastapi import UploadFile
 
 from raganything.query import QueryMixin
@@ -15,6 +17,10 @@ from raganything_studio.backend.schemas.document import DocumentStatus
 from raganything_studio.backend.schemas.job import JobStage, JobStatus
 from raganything_studio.backend.schemas.job import ProcessOptions
 from raganything_studio.backend.schemas.settings import StudioSettingsUpdate
+from raganything_studio.backend.api.settings import (
+    _merge_storage_env_for_test,
+    _settings_response,
+)
 from raganything_studio.backend.services.content_list_service import ContentListService
 from raganything_studio.backend.services.raganything_service import (
     _build_query_artifacts,
@@ -274,6 +280,131 @@ def test_settings_store_persists_model_configuration(tmp_path):
     assert reloaded.vector_storage == "QdrantVectorDBStorage"
     assert reloaded.vector_db_storage_cls_kwargs["cosine_better_than_threshold"] == 0.25
     assert reloaded.storage_env["QDRANT_URL"] == "http://localhost:6333"
+
+
+def test_storage_env_secrets_are_redacted_and_preserved(tmp_path):
+    settings = make_settings(tmp_path)
+    store = SettingsStore(settings)
+
+    updated = store.update(
+        StudioSettingsUpdate(
+            llm_provider="openai-compatible",
+            llm_model="gpt-4.1-mini",
+            llm_base_url=None,
+            llm_api_key="secret",
+            embedding_provider="openai-compatible",
+            embedding_model="text-embedding-3-small",
+            embedding_dim=1536,
+            embedding_max_token_size=4096,
+            embedding_base_url=None,
+            embedding_api_key="embed-secret",
+            vision_provider="openai-compatible",
+            vision_model="gpt-4.1",
+            vision_base_url=None,
+            vision_api_key=None,
+            default_parser="mineru",
+            default_parse_method="auto",
+            default_language="ch",
+            default_device="cpu",
+            kv_storage="JsonKVStorage",
+            vector_storage="QdrantVectorDBStorage",
+            graph_storage="NetworkXStorage",
+            doc_status_storage="JsonDocStatusStorage",
+            vector_db_storage_cls_kwargs={},
+            storage_env={
+                "QDRANT_URL": "http://localhost:6333",
+                "QDRANT_API_KEY": "qdrant-secret",
+            },
+        )
+    )
+
+    response = _settings_response(updated)
+    assert response.storage_env["QDRANT_URL"] == "http://localhost:6333"
+    assert response.storage_env["QDRANT_API_KEY"] == ""
+    assert response.storage_env_configured["QDRANT_API_KEY"] is True
+
+    preserved = store.update(
+        StudioSettingsUpdate(
+            llm_provider="openai-compatible",
+            llm_model="gpt-4.1-mini",
+            llm_base_url=None,
+            llm_api_key=None,
+            embedding_provider="openai-compatible",
+            embedding_model="text-embedding-3-small",
+            embedding_dim=1536,
+            embedding_max_token_size=4096,
+            embedding_base_url=None,
+            embedding_api_key=None,
+            vision_provider="openai-compatible",
+            vision_model="gpt-4.1",
+            vision_base_url=None,
+            vision_api_key=None,
+            default_parser="mineru",
+            default_parse_method="auto",
+            default_language="ch",
+            default_device="cpu",
+            kv_storage="JsonKVStorage",
+            vector_storage="QdrantVectorDBStorage",
+            graph_storage="NetworkXStorage",
+            doc_status_storage="JsonDocStatusStorage",
+            vector_db_storage_cls_kwargs={},
+            storage_env={
+                "QDRANT_URL": "http://localhost:6334",
+                "QDRANT_API_KEY": "",
+            },
+        )
+    )
+
+    assert preserved.storage_env["QDRANT_URL"] == "http://localhost:6334"
+    assert preserved.storage_env["QDRANT_API_KEY"] == "qdrant-secret"
+
+
+def test_storage_connection_test_payload_reuses_saved_secret():
+    merged = _merge_storage_env_for_test(
+        {"QDRANT_API_KEY": "saved-secret"},
+        {"QDRANT_URL": "http://localhost:6333", "QDRANT_API_KEY": ""},
+    )
+
+    assert merged["QDRANT_URL"] == "http://localhost:6333"
+    assert merged["QDRANT_API_KEY"] == "saved-secret"
+
+
+def test_settings_store_rejects_unsupported_storage_combination(tmp_path):
+    settings = make_settings(tmp_path)
+    store = SettingsStore(settings)
+
+    with pytest.raises(HTTPException) as exc_info:
+        store.update(
+            StudioSettingsUpdate(
+                llm_provider="openai-compatible",
+                llm_model="gpt-4.1-mini",
+                llm_base_url=None,
+                llm_api_key="secret",
+                embedding_provider="openai-compatible",
+                embedding_model="text-embedding-3-small",
+                embedding_dim=1536,
+                embedding_max_token_size=4096,
+                embedding_base_url=None,
+                embedding_api_key="embed-secret",
+                vision_provider="openai-compatible",
+                vision_model="gpt-4.1",
+                vision_base_url=None,
+                vision_api_key=None,
+                default_parser="mineru",
+                default_parse_method="auto",
+                default_language="ch",
+                default_device="cpu",
+                kv_storage="PGKVStorage",
+                vector_storage="QdrantVectorDBStorage",
+                graph_storage="NetworkXStorage",
+                doc_status_storage="JsonDocStatusStorage",
+                vector_db_storage_cls_kwargs={},
+                storage_env={"QDRANT_URL": "http://localhost:6333"},
+            )
+        )
+
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail["code"] == "UNSUPPORTED_STORAGE_COMBINATION"
 
 
 def test_rag_config_disables_vlm_processing_by_default(tmp_path):

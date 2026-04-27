@@ -26,6 +26,69 @@ PATH_FIELDS = {
 SECRET_FIELDS = {"llm_api_key", "embedding_api_key", "vision_api_key"}
 PROFILE_CHANNELS = ("llm", "embedding", "vision")
 DICT_FIELDS = {"vector_db_storage_cls_kwargs", "storage_env"}
+STORAGE_CLASS_FIELDS = (
+    "kv_storage",
+    "vector_storage",
+    "graph_storage",
+    "doc_status_storage",
+)
+
+SUPPORTED_STORAGE_COMBINATIONS = {
+    (
+        "JsonKVStorage",
+        "NanoVectorDBStorage",
+        "NetworkXStorage",
+        "JsonDocStatusStorage",
+    ),
+    (
+        "JsonKVStorage",
+        "FaissVectorDBStorage",
+        "NetworkXStorage",
+        "JsonDocStatusStorage",
+    ),
+    (
+        "JsonKVStorage",
+        "QdrantVectorDBStorage",
+        "NetworkXStorage",
+        "JsonDocStatusStorage",
+    ),
+    (
+        "JsonKVStorage",
+        "MilvusVectorDBStorage",
+        "NetworkXStorage",
+        "JsonDocStatusStorage",
+    ),
+    (
+        "PGKVStorage",
+        "PGVectorStorage",
+        "PGGraphStorage",
+        "PGDocStatusStorage",
+    ),
+    (
+        "MongoKVStorage",
+        "MongoVectorDBStorage",
+        "MongoGraphStorage",
+        "MongoDocStatusStorage",
+    ),
+    (
+        "OpenSearchKVStorage",
+        "OpenSearchVectorDBStorage",
+        "OpenSearchGraphStorage",
+        "OpenSearchDocStatusStorage",
+    ),
+    (
+        "JsonKVStorage",
+        "NanoVectorDBStorage",
+        "Neo4JStorage",
+        "JsonDocStatusStorage",
+    ),
+    (
+        "JsonKVStorage",
+        "NanoVectorDBStorage",
+        "MemgraphStorage",
+        "JsonDocStatusStorage",
+    ),
+}
 
 
 class SettingsStore:
@@ -43,6 +106,13 @@ class SettingsStore:
     def update(self, payload: StudioSettingsUpdate) -> StudioSettings:
         with self._lock:
             updates = payload.model_dump(exclude_unset=True)
+            if any(key in updates for key in STORAGE_CLASS_FIELDS):
+                _validate_storage_combination(
+                    tuple(
+                        str(updates.get(key, getattr(self._settings, key)))
+                        for key in STORAGE_CLASS_FIELDS
+                    )
+                )
 
             for key, value in updates.items():
                 if key == "profiles":
@@ -50,6 +120,11 @@ class SettingsStore:
                         self._settings.profiles, value
                     )
                     _sync_legacy_model_fields(self._settings)
+                    continue
+                if key == "storage_env":
+                    self._settings.storage_env = _merge_storage_env(
+                        self._settings.storage_env, value
+                    )
                     continue
                 if key.endswith("_api_key") and value == "":
                     continue
@@ -153,6 +228,36 @@ def _coerce_value(key: str, value: Any) -> Any:
     if key == "profiles":
         return _coerce_profiles(value)
     return value
+
+
+def _validate_storage_combination(combo: tuple[str, str, str, str]) -> None:
+    if combo in SUPPORTED_STORAGE_COMBINATIONS:
+        return
+    raise api_error(
+        "UNSUPPORTED_STORAGE_COMBINATION",
+        "Unsupported storage combination. Choose one supported Studio storage layout.",
+        status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _is_storage_secret(key: str) -> bool:
+    upper = key.upper()
+    return any(token in upper for token in ("PASSWORD", "TOKEN", "API_KEY", "SECRET"))
+
+
+def _merge_storage_env(existing: dict[str, str], incoming: Any) -> dict[str, str]:
+    if not isinstance(incoming, dict):
+        return {}
+
+    merged: dict[str, str] = {}
+    for raw_key, raw_value in incoming.items():
+        key = str(raw_key)
+        value = "" if raw_value is None else str(raw_value)
+        if _is_storage_secret(key) and value == "" and existing.get(key):
+            merged[key] = str(existing[key])
+        else:
+            merged[key] = value
+    return merged
 
 
 def _serialize_settings(settings: StudioSettings) -> dict[str, Any]:
