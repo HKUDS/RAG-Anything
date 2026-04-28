@@ -21,11 +21,18 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "fastapi",
+    "httpx>=0.25",
     "huggingface_hub",
     "lightrag-hku",
     "mineru[core]",
+    "python-multipart",
     "tqdm",
+    "uvicorn[standard]",
 ]
+
+[project.scripts]
+raganything-studio = "raganything_studio.__main__:main"
 
 [project.optional-dependencies]
 image = ["Pillow>=10.0.0"]
@@ -69,7 +76,7 @@ dev-dependencies = [
 ]
 
 [tool.setuptools.packages.find]
-include = ["raganything*"]
+include = ["raganything*", "raganything_studio*"]
 
 [tool.setuptools]
 include-package-data = true

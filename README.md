@@ -1242,6 +1242,51 @@ If you find RAG-Anything useful in your research, please cite our paper:
 
 ---
 
+## RAG-Anything Studio
+
+RAG-Anything Studio is a local-first Web workspace for visualizing and debugging the multimodal RAG pipeline of RAG-Anything.
+
+### Features
+
+- Document upload and parser configuration
+- Async processing jobs with live logs
+- Query console for multimodal RAG
+- Content list inspector API for text, images, tables, and equations
+- Retrieval trace and source preview fields reserved for downstream integration
+
+### Quick Start
+
+```bash
+pip install -e .
+python -m raganything_studio --host 127.0.0.1 --port 7860
+```
+
+Or use the console command:
+
+```bash
+raganything-studio --host 127.0.0.1 --port 7860
+```
+
+Open:
+
+```text
+http://127.0.0.1:7860
+```
+
+For document processing and query, open **Settings** in the Studio UI and configure local provider profiles for LLM, embedding, and vision models. Environment variables such as `OPENAI_API_KEY`, `LLM_MODEL`, `EMBEDDING_MODEL`, and `VISION_MODEL` are still supported as initial defaults. Saved UI settings are stored locally in `studio_data/settings.json`.
+
+To work on the frontend during development:
+
+```bash
+cd raganything_studio/frontend
+npm install
+npm run dev
+```
+
+Build output is written to `raganything_studio/backend/static`, so the Python server can serve the Studio UI directly.
+
+---
+
 ## ⭐ Star History
 
 *Community Growth Trajectory*
