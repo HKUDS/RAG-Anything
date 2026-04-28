@@ -17,8 +17,13 @@ from urllib.parse import quote
 
 from fastapi import status
 
-from raganything_studio.backend.config import ModelProviderProfile
+from raganything_studio.backend.config import ModelChannelConfig, ModelProviderProfile
 from raganything_studio.backend.config import StudioSettings
+from raganything_studio.backend.config import (
+    effective_model_api_key,
+    effective_model_base_url,
+    provider_api_key_optional,
+)
 from raganything_studio.backend.core.errors import api_error
 from raganything_studio.backend.schemas.job import JobStage, ProcessOptions
 from raganything_studio.backend.schemas.query import (
@@ -256,12 +261,22 @@ class RAGAnythingService:
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             ) from exc
 
-        if not profile.llm.api_key or not profile.embedding.api_key:
+        if (
+            not _channel_can_run_without_prompting(profile.llm)
+            or not _channel_can_run_without_prompting(profile.embedding)
+        ):
             raise api_error(
                 "RAG_INIT_FAILED",
-                f"Profile {profile.name!r} needs LLM and Embedding API keys before processing or querying",
+                f"Profile {profile.name!r} needs LLM and Embedding credentials before processing or querying",
                 status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+        llm_base_url = effective_model_base_url(profile.llm)
+        llm_api_key = effective_model_api_key(profile.llm)
+        embedding_base_url = effective_model_base_url(profile.embedding)
+        embedding_api_key = effective_model_api_key(profile.embedding)
+        vision_base_url = effective_model_base_url(profile.vision) or llm_base_url
+        vision_api_key = effective_model_api_key(profile.vision) or llm_api_key
 
         _apply_storage_env(self._settings.storage_env)
         effective = _effective_options(self._settings, options) if options is not None else None
@@ -281,13 +296,13 @@ class RAGAnythingService:
                 _llm_concurrency,
                 effective,
                 lambda: openai_complete_if_cache(
-                profile.llm.model,
-                prompt,
-                system_prompt=system_prompt,
-                history_messages=history_messages or [],
-                api_key=profile.llm.api_key,
-                base_url=profile.llm.base_url,
-                **kwargs,
+                    profile.llm.model,
+                    prompt,
+                    system_prompt=system_prompt,
+                    history_messages=history_messages or [],
+                    api_key=llm_api_key,
+                    base_url=llm_base_url,
+                    **kwargs,
                 ),
             )
 
@@ -305,12 +320,12 @@ class RAGAnythingService:
                     _vlm_concurrency,
                     effective,
                     lambda: openai_complete_if_cache(
-                    profile.vision.model,
-                    "",
-                    messages=messages,
-                    api_key=profile.vision.api_key or profile.llm.api_key,
-                    base_url=profile.vision.base_url or profile.llm.base_url,
-                    **kwargs,
+                        profile.vision.model,
+                        "",
+                        messages=messages,
+                        api_key=vision_api_key,
+                        base_url=vision_base_url,
+                        **kwargs,
                     ),
                 )
             if image_data:
@@ -319,28 +334,28 @@ class RAGAnythingService:
                     _vlm_concurrency,
                     effective,
                     lambda: openai_complete_if_cache(
-                    profile.vision.model,
-                    "",
-                    messages=[
-                        {"role": "system", "content": system_prompt}
-                        if system_prompt
-                        else None,
-                        {
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": prompt},
-                                {
-                                    "type": "image_url",
-                                    "image_url": {
-                                        "url": f"data:image/jpeg;base64,{image_data}"
+                        profile.vision.model,
+                        "",
+                        messages=[
+                            {"role": "system", "content": system_prompt}
+                            if system_prompt
+                            else None,
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt},
+                                    {
+                                        "type": "image_url",
+                                        "image_url": {
+                                            "url": f"data:image/jpeg;base64,{image_data}"
+                                        },
                                     },
-                                },
-                            ],
-                        },
-                    ],
-                    api_key=profile.vision.api_key or profile.llm.api_key,
-                    base_url=profile.vision.base_url or profile.llm.base_url,
-                    **kwargs,
+                                ],
+                            },
+                        ],
+                        api_key=vision_api_key,
+                        base_url=vision_base_url,
+                        **kwargs,
                     ),
                 )
             return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
@@ -353,8 +368,8 @@ class RAGAnythingService:
                 lambda: openai_embed.func(
                     texts,
                     model=profile.embedding.model,
-                    api_key=profile.embedding.api_key,
-                    base_url=profile.embedding.base_url,
+                    api_key=embedding_api_key,
+                    base_url=embedding_base_url,
                     embedding_dim=(
                         profile.embedding.embedding_dim or self._settings.embedding_dim
                     ),
@@ -550,6 +565,11 @@ PRESET_OVERRIDES: dict[str, dict[str, Any]] = {
         "enable_modal_cache": True,
     },
 }
+
+
+def _channel_can_run_without_prompting(channel: ModelChannelConfig) -> bool:
+    has_credentials = bool(channel.api_key or provider_api_key_optional(channel.provider))
+    return bool(has_credentials and effective_model_base_url(channel))
 
 
 def _effective_options(settings: StudioSettings, options: ProcessOptions) -> ProcessOptions:

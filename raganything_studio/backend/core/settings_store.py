@@ -24,6 +24,11 @@ PATH_FIELDS = {
 }
 
 SECRET_FIELDS = {"llm_api_key", "embedding_api_key", "vision_api_key"}
+SECRET_PROVIDER_FIELDS = {
+    "llm_api_key": "llm_provider",
+    "embedding_api_key": "embedding_provider",
+    "vision_api_key": "vision_provider",
+}
 PROFILE_CHANNELS = ("llm", "embedding", "vision")
 DICT_FIELDS = {"vector_db_storage_cls_kwargs", "storage_env"}
 STORAGE_CLASS_FIELDS = (
@@ -129,6 +134,12 @@ class SettingsStore:
                 if key.endswith("_api_key") and value == "":
                     continue
                 if value is None and key in SECRET_FIELDS:
+                    provider_field = SECRET_PROVIDER_FIELDS[key]
+                    if (
+                        provider_field in updates
+                        and str(updates[provider_field]) != getattr(self._settings, provider_field)
+                    ):
+                        setattr(self._settings, key, None)
                     continue
                 if value is None:
                     setattr(self._settings, key, None)
@@ -317,7 +328,10 @@ def _merge_profiles(
             for channel_name in PROFILE_CHANNELS:
                 incoming_channel = getattr(profile, channel_name)
                 saved_channel = getattr(saved, channel_name)
-                if not incoming_channel.api_key:
+                if (
+                    not incoming_channel.api_key
+                    and incoming_channel.provider == saved_channel.provider
+                ):
                     incoming_channel.api_key = saved_channel.api_key
         merged.append(profile)
     return merged

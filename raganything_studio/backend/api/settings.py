@@ -12,7 +12,10 @@ from fastapi import APIRouter, Depends
 from raganything_studio.backend.config import (
     ModelChannelConfig,
     ModelProviderProfile,
+    PROVIDER_BASE_URLS,
     StudioSettings,
+    effective_model_api_key,
+    effective_model_base_url,
 )
 from raganything_studio.backend.core.settings_store import SettingsStore
 from raganything_studio.backend.dependencies import get_rag_service, get_settings_store
@@ -69,34 +72,52 @@ async def test_connection(
     """
     saved = settings_store.get()
 
-    # Resolve the API key: use the submitted value when non-empty,
-    # otherwise fall back to the already-saved key so the user does
-    # not have to re-enter it just to run a test.
-    def resolve_key(
-        submitted: str | None, saved_key: str | None
-    ) -> str | None:
-        return submitted if submitted else saved_key
+    # Resolve the API key: use the submitted value when non-empty. If the
+    # provider did not change, fall back to the already-saved key so the user
+    # does not have to re-enter it just to run a test.
+    def resolve_channel(
+        submitted: str | None,
+        saved_channel: ModelChannelConfig,
+    ) -> ModelChannelConfig:
+        saved_key = saved_channel.api_key if saved_channel.provider == payload.provider else None
+        return ModelChannelConfig(
+            provider=payload.provider,
+            model=payload.model,
+            base_url=payload.base_url or PROVIDER_BASE_URLS.get(payload.provider),
+            api_key=submitted or saved_key,
+            embedding_dim=payload.embedding_dim,
+            embedding_max_token_size=payload.embedding_max_token_size,
+        )
 
     saved_profile = _profile_for_request(saved, payload.profile_id)
 
     try:
         if payload.kind == "llm":
-            api_key = resolve_key(payload.api_key, saved_profile.llm.api_key)
-            latency = await _test_llm(payload.model, payload.base_url, api_key)
+            channel = resolve_channel(payload.api_key, saved_profile.llm)
+            latency = await _test_llm(
+                payload.model,
+                effective_model_base_url(channel),
+                effective_model_api_key(channel),
+            )
             return ConnectionTestResponse(ok=True, latency_ms=latency)
 
         if payload.kind == "embedding":
-            api_key = resolve_key(payload.api_key, saved_profile.embedding.api_key)
+            channel = resolve_channel(payload.api_key, saved_profile.embedding)
             latency, dim = await _test_embedding(
-                payload.model, payload.base_url, api_key,
+                payload.model,
+                effective_model_base_url(channel),
+                effective_model_api_key(channel),
                 payload.embedding_dim, payload.embedding_max_token_size,
             )
             return ConnectionTestResponse(ok=True, latency_ms=latency, detected_dim=dim)
 
         if payload.kind == "vision":
-            api_key = resolve_key(payload.api_key, saved_profile.vision.api_key)
+            channel = resolve_channel(payload.api_key, saved_profile.vision)
             latency = await _test_vision(
-                payload.model, payload.base_url, api_key, payload.provider
+                payload.model,
+                effective_model_base_url(channel),
+                channel.api_key,
+                payload.provider,
             )
             return ConnectionTestResponse(ok=True, latency_ms=latency)
 
@@ -122,23 +143,6 @@ async def test_storage_connection(
 
 # ── provider base-URL registry ───────────────────────────────────────────────
 
-PROVIDER_BASE_URLS: dict[str, str] = {
-    "openai": "https://api.openai.com/v1",
-    "siliconflow": "https://api.siliconflow.cn/v1",
-    "aliyun-bailian": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-    "baidu-qianfan": "https://qianfan.baidubce.com/v2",
-    "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
-    "openrouter": "https://openrouter.ai/api/v1",
-    "deepseek": "https://api.deepseek.com/v1",
-    "zhipu": "https://open.bigmodel.cn/api/paas/v4",
-    "moonshot": "https://api.moonshot.cn/v1",
-    "groq": "https://api.groq.com/openai/v1",
-    "together": "https://api.together.xyz/v1",
-    "mistral": "https://api.mistral.ai/v1",
-    "anthropic-compatible": "https://api.anthropic.com/v1",
-}
-
-
 @router.post("/list-models", response_model=ModelListResponse)
 async def list_models(
     payload: ModelListRequest,
@@ -151,16 +155,8 @@ async def list_models(
     """
     saved = settings_store.get()
 
-    # Pick the best saved key across all three roles as fallback
-    profile = _profile_for_request(saved, None)
-    saved_key = (
-        profile.llm.api_key
-        or profile.embedding.api_key
-        or profile.vision.api_key
-        or saved.llm_api_key
-        or saved.embedding_api_key
-        or saved.vision_api_key
-    )
+    profile = _profile_for_request(saved, payload.profile_id)
+    saved_key = _saved_key_for_model_list(saved, profile, payload)
     api_key = payload.api_key if payload.api_key else saved_key
 
     base_url = payload.base_url or PROVIDER_BASE_URLS.get(payload.provider)
@@ -379,6 +375,27 @@ def _merge_model_lists(
         seen.add(model.id)
         merged.append(model)
     return merged
+
+
+def _saved_key_for_model_list(
+    saved: StudioSettings,
+    profile: ModelProviderProfile,
+    payload: ModelListRequest,
+) -> str | None:
+    if payload.kind in {"llm", "embedding", "vision"}:
+        channel = getattr(profile, payload.kind)
+        if channel.provider == payload.provider:
+            return channel.api_key
+
+    legacy_pairs = (
+        (saved.llm_provider, saved.llm_api_key),
+        (saved.embedding_provider, saved.embedding_api_key),
+        (saved.vision_provider, saved.vision_api_key),
+    )
+    for provider, api_key in legacy_pairs:
+        if provider == payload.provider and api_key:
+            return api_key
+    return None
 
 
 def _provider_error(response: object) -> str:

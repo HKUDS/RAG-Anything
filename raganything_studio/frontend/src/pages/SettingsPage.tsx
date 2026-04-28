@@ -20,26 +20,28 @@ interface ProviderMeta {
   label: string
   baseUrl: string
   supportsModelList: boolean
+  auth: 'required' | 'optional'
+  local?: boolean
 }
 
 const KNOWN_PROVIDERS: Record<string, ProviderMeta> = {
-  openai: { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', supportsModelList: true },
-  siliconflow: { label: '硅基流动 (SiliconFlow)', baseUrl: 'https://api.siliconflow.cn/v1', supportsModelList: true },
-  'aliyun-bailian': { label: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', supportsModelList: true },
-  'baidu-qianfan': { label: '百度千帆', baseUrl: 'https://qianfan.baidubce.com/v2', supportsModelList: true },
-  volcengine: { label: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', supportsModelList: true },
-  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', supportsModelList: true },
-  deepseek: { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', supportsModelList: true },
-  zhipu: { label: '智谱 AI (Zhipu)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', supportsModelList: true },
-  moonshot: { label: '月之暗面 (Moonshot)', baseUrl: 'https://api.moonshot.cn/v1', supportsModelList: true },
-  groq: { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', supportsModelList: true },
-  together: { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1', supportsModelList: true },
-  mistral: { label: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', supportsModelList: true },
-  ollama: { label: 'Ollama', baseUrl: 'http://localhost:11434/v1', supportsModelList: true },
-  lmstudio: { label: 'LM Studio', baseUrl: 'http://localhost:1234/v1', supportsModelList: true },
-  vllm: { label: 'vLLM', baseUrl: 'http://localhost:8000/v1', supportsModelList: true },
-  'openai-compatible': { label: 'OpenAI Compatible', baseUrl: '', supportsModelList: true },
-  custom: { label: 'Custom', baseUrl: '', supportsModelList: false },
+  openai: { label: 'OpenAI', baseUrl: 'https://api.openai.com/v1', supportsModelList: true, auth: 'required' },
+  siliconflow: { label: '硅基流动 (SiliconFlow)', baseUrl: 'https://api.siliconflow.cn/v1', supportsModelList: true, auth: 'required' },
+  'aliyun-bailian': { label: '阿里云百炼', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', supportsModelList: true, auth: 'required' },
+  'baidu-qianfan': { label: '百度千帆', baseUrl: 'https://qianfan.baidubce.com/v2', supportsModelList: true, auth: 'required' },
+  volcengine: { label: '火山引擎', baseUrl: 'https://ark.cn-beijing.volces.com/api/v3', supportsModelList: true, auth: 'required' },
+  openrouter: { label: 'OpenRouter', baseUrl: 'https://openrouter.ai/api/v1', supportsModelList: true, auth: 'required' },
+  deepseek: { label: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', supportsModelList: true, auth: 'required' },
+  zhipu: { label: '智谱 AI (Zhipu)', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', supportsModelList: true, auth: 'required' },
+  moonshot: { label: '月之暗面 (Moonshot)', baseUrl: 'https://api.moonshot.cn/v1', supportsModelList: true, auth: 'required' },
+  groq: { label: 'Groq', baseUrl: 'https://api.groq.com/openai/v1', supportsModelList: true, auth: 'required' },
+  together: { label: 'Together AI', baseUrl: 'https://api.together.xyz/v1', supportsModelList: true, auth: 'required' },
+  mistral: { label: 'Mistral AI', baseUrl: 'https://api.mistral.ai/v1', supportsModelList: true, auth: 'required' },
+  ollama: { label: 'Ollama', baseUrl: 'http://localhost:11434/v1', supportsModelList: true, auth: 'optional', local: true },
+  lmstudio: { label: 'LM Studio', baseUrl: 'http://localhost:1234/v1', supportsModelList: true, auth: 'optional', local: true },
+  vllm: { label: 'vLLM', baseUrl: 'http://localhost:8000/v1', supportsModelList: true, auth: 'optional', local: true },
+  'openai-compatible': { label: 'OpenAI Compatible', baseUrl: '', supportsModelList: true, auth: 'optional' },
+  custom: { label: 'Custom', baseUrl: '', supportsModelList: false, auth: 'optional' },
 }
 
 type StoragePresetKey =
@@ -572,7 +574,9 @@ export default function SettingsPage() {
     const meta = KNOWN_PROVIDERS[provider]
     updateChannel(profileId, kind, {
       provider,
-      ...(meta?.baseUrl ? { base_url: meta.baseUrl } : {}),
+      base_url: meta?.baseUrl ?? '',
+      api_key: '',
+      api_key_configured: false,
     })
     setPickers((prev) => ({ ...prev, [stateKey(profileId, kind)]: idlePicker }))
   }
@@ -584,7 +588,8 @@ export default function SettingsPage() {
     try {
       const result = await listModels({
         provider: channel.provider,
-        base_url: channel.base_url || null,
+        profile_id: profile.id,
+        base_url: effectiveBaseUrl(channel) || null,
         api_key: channel.api_key || null,
         kind,
       })
@@ -615,7 +620,7 @@ export default function SettingsPage() {
         profile_id: profile.id,
         provider: channel.provider,
         model: channel.model,
-        base_url: channel.base_url || null,
+        base_url: effectiveBaseUrl(channel) || null,
         api_key: channel.api_key || null,
         ...(kind === 'embedding'
           ? {
@@ -782,7 +787,7 @@ export default function SettingsPage() {
                       value={selectedProfile.name}
                       onChange={(event) => updateProfile(selectedProfile.id, { name: event.target.value })}
                     />
-                    <p>{profileReady(selectedProfile) ? 'Ready for RAG selection' : 'LLM and Embedding keys are required'}</p>
+                    <p>{profileReady(selectedProfile) ? 'Ready for RAG selection' : profileSetupMessage(selectedProfile)}</p>
                   </div>
                   <button
                     className={form.active_profile_id === selectedProfile.id ? 'button primary' : 'button'}
@@ -802,7 +807,7 @@ export default function SettingsPage() {
                       onClick={() => setSelectedKind(kind)}
                     >
                       {kindLabel(kind)}
-                      <span className={selectedProfile[kind].api_key_configured || selectedProfile[kind].api_key ? 'tab-dot ok' : 'tab-dot'} />
+                      <span className={channelReady(selectedProfile[kind]) ? 'tab-dot ok' : 'tab-dot'} />
                     </button>
                   ))}
                 </div>
@@ -1525,16 +1530,21 @@ function ProviderSection({
   const isLoadingModels = pickerState.status === 'loading'
   const hasModels = pickerState.status === 'loaded' && pickerState.models.length > 0
   const meta = KNOWN_PROVIDERS[channel.provider]
-  const isCustomBaseUrl = !meta?.baseUrl || channel.provider === 'openai-compatible' || channel.provider === 'custom'
+  const authOptional = providerApiKeyOptional(channel.provider)
+  const isEditableBaseUrl = !meta?.baseUrl || authOptional
   const configured = channel.api_key_configured || Boolean(channel.api_key)
+  const secretClass = configured
+    ? 'secret-state configured'
+    : authOptional
+      ? 'secret-state optional'
+      : 'secret-state'
+  const secretLabel = configured ? 'Key saved' : authOptional ? 'Key optional' : 'No key'
 
   return (
     <div className="panel stack provider-panel">
       <div className="provider-header">
         <h2>{title}</h2>
-        <span className={configured ? 'secret-state configured' : 'secret-state'}>
-          {configured ? 'Key saved' : 'No key'}
-        </span>
+        <span className={secretClass}>{secretLabel}</span>
       </div>
 
       <label>
@@ -1568,8 +1578,18 @@ function ProviderSection({
         </select>
       </label>
 
-      {isCustomBaseUrl ? (
-        <label>Base URL<input value={channel.base_url} onChange={(e) => onBaseUrl(e.target.value)} placeholder="https://.../v1" /></label>
+      {isEditableBaseUrl ? (
+        <label>
+          Base URL
+          <input
+            value={channel.base_url}
+            onChange={(e) => onBaseUrl(e.target.value)}
+            placeholder={meta?.baseUrl || 'https://.../v1'}
+          />
+          {meta?.local ? (
+            <span className="field-hint">Use the local default or replace it with the LAN/remote service URL.</span>
+          ) : null}
+        </label>
       ) : (
         <div className="setting-row base-url-display">
           <span className="base-url-label">Base URL</span>
@@ -1577,16 +1597,27 @@ function ProviderSection({
         </div>
       )}
 
+      {authOptional ? (
+        <div className="local-provider-note">
+          <ServerCog size={15} />
+          <span>
+            OpenAI-compatible local endpoints can run without a cloud API key. Use Test connection after the service is running.
+          </span>
+        </div>
+      ) : null}
+
       <label>
-        API key
+        {authOptional ? 'API key (optional)' : 'API key'}
         <input
           type="password"
           value={channel.api_key}
-          placeholder={channel.api_key_configured ? '••••••••••••••••' : 'Enter API key...'}
+          placeholder={channel.api_key_configured ? '••••••••••••••••' : authOptional ? 'Optional token...' : 'Enter API key...'}
           onChange={(e) => onApiKey(e.target.value)}
         />
         {channel.api_key_configured && !channel.api_key ? (
           <span className="field-hint">Saved key will be kept unless you enter a replacement.</span>
+        ) : authOptional ? (
+          <span className="field-hint">Leave blank for Ollama, LM Studio, vLLM, or any local endpoint that does not require auth.</span>
         ) : null}
       </label>
 
@@ -2117,10 +2148,31 @@ function stateKey(profileId: string, kind: ConnectionTestKind) {
 }
 
 function profileReady(profile: ProfileForm) {
+  return channelReady(profile.llm) && channelReady(profile.embedding)
+}
+
+function profileSetupMessage(profile: ProfileForm) {
+  const missing: string[] = []
+  if (!channelReady(profile.llm)) missing.push('LLM')
+  if (!channelReady(profile.embedding)) missing.push('Embedding')
+  if (missing.length === 0) return 'Ready for RAG selection'
+  return `${missing.join(' and ')} model, endpoint, or credentials need attention`
+}
+
+function channelReady(channel: ChannelForm) {
   return Boolean(
-    (profile.llm.api_key_configured || profile.llm.api_key)
-    && (profile.embedding.api_key_configured || profile.embedding.api_key),
+    channel.model
+    && effectiveBaseUrl(channel)
+    && (providerApiKeyOptional(channel.provider) || channel.api_key_configured || channel.api_key),
   )
+}
+
+function effectiveBaseUrl(channel: Pick<ChannelForm, 'provider' | 'base_url'>) {
+  return channel.base_url || KNOWN_PROVIDERS[channel.provider]?.baseUrl || ''
+}
+
+function providerApiKeyOptional(provider: string) {
+  return KNOWN_PROVIDERS[provider]?.auth === 'optional'
 }
 
 function kindLabel(kind: ConnectionTestKind): string {

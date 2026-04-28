@@ -276,6 +276,7 @@ export interface ModelInfo {
 
 export interface ModelListRequest {
   provider: string
+  profile_id?: string | null
   base_url?: string | null
   api_key?: string | null
   kind?: ConnectionTestKind | null

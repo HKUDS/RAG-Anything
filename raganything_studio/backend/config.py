@@ -8,6 +8,37 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 
+PROVIDER_BASE_URLS: dict[str, str] = {
+    "openai": "https://api.openai.com/v1",
+    "siliconflow": "https://api.siliconflow.cn/v1",
+    "aliyun-bailian": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "baidu-qianfan": "https://qianfan.baidubce.com/v2",
+    "volcengine": "https://ark.cn-beijing.volces.com/api/v3",
+    "openrouter": "https://openrouter.ai/api/v1",
+    "deepseek": "https://api.deepseek.com/v1",
+    "zhipu": "https://open.bigmodel.cn/api/paas/v4",
+    "moonshot": "https://api.moonshot.cn/v1",
+    "groq": "https://api.groq.com/openai/v1",
+    "together": "https://api.together.xyz/v1",
+    "mistral": "https://api.mistral.ai/v1",
+    "ollama": "http://localhost:11434/v1",
+    "lmstudio": "http://localhost:1234/v1",
+    "vllm": "http://localhost:8000/v1",
+    "anthropic-compatible": "https://api.anthropic.com/v1",
+}
+
+KEY_OPTIONAL_PROVIDERS = {
+    "ollama",
+    "lmstudio",
+    "vllm",
+    "openai-compatible",
+    "custom",
+}
+
+LOCAL_MODEL_PROVIDERS = {"ollama", "lmstudio", "vllm"}
+LOCAL_MODEL_DUMMY_API_KEY = "local"
+
+
 @dataclass
 class ModelChannelConfig:
     """Provider settings for one model role inside a Studio profile."""
@@ -18,6 +49,22 @@ class ModelChannelConfig:
     api_key: str | None = None
     embedding_dim: int | None = None
     embedding_max_token_size: int | None = None
+
+
+def provider_api_key_optional(provider: str) -> bool:
+    return provider in KEY_OPTIONAL_PROVIDERS
+
+
+def effective_model_base_url(channel: ModelChannelConfig) -> str | None:
+    return channel.base_url or PROVIDER_BASE_URLS.get(channel.provider)
+
+
+def effective_model_api_key(channel: ModelChannelConfig) -> str | None:
+    if channel.api_key:
+        return channel.api_key
+    if provider_api_key_optional(channel.provider):
+        return LOCAL_MODEL_DUMMY_API_KEY
+    return None
 
 
 @dataclass

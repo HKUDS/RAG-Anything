@@ -209,6 +209,7 @@ class ModelInfo(BaseModel):
 
 class ModelListRequest(BaseModel):
     provider: str
+    profile_id: str | None = None
     base_url: str | None = None
     api_key: str | None = None
     kind: str | None = None  # "llm" | "embedding" | "vision"

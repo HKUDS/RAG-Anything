@@ -1504,6 +1504,26 @@ textarea { resize: vertical; }
 }
 
 .secret-state.configured { background: var(--color-accent-light); color: var(--color-accent); }
+.secret-state.optional { background: #eef2ff; color: #4f46e5; }
+
+.local-provider-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  color: var(--color-text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+  padding: 8px 10px;
+}
+
+.local-provider-note svg {
+  flex-shrink: 0;
+  color: var(--color-accent);
+  margin-top: 1px;
+}
 
 .compact-settings { max-width: 720px; }
 .setting-row { font-size: 13.5px; }

@@ -9,7 +9,12 @@ from fastapi import HTTPException
 from fastapi import UploadFile
 
 from raganything.query import QueryMixin
-from raganything_studio.backend.config import StudioSettings
+from raganything_studio.backend.config import (
+    ModelChannelConfig,
+    StudioSettings,
+    effective_model_api_key,
+    effective_model_base_url,
+)
 from raganything_studio.backend.core.document_store import DocumentStore
 from raganything_studio.backend.core.job_manager import JobManager
 from raganything_studio.backend.core.settings_store import SettingsStore
@@ -357,6 +362,115 @@ def test_storage_env_secrets_are_redacted_and_preserved(tmp_path):
 
     assert preserved.storage_env["QDRANT_URL"] == "http://localhost:6334"
     assert preserved.storage_env["QDRANT_API_KEY"] == "qdrant-secret"
+
+
+def test_switching_provider_does_not_preserve_previous_secret(tmp_path):
+    settings = make_settings(tmp_path)
+    store = SettingsStore(settings)
+
+    saved = store.update(
+        StudioSettingsUpdate(
+            llm_provider="openai",
+            llm_model="gpt-4o-mini",
+            llm_base_url=None,
+            llm_api_key="openai-secret",
+            embedding_provider="openai",
+            embedding_model="text-embedding-3-small",
+            embedding_dim=1536,
+            embedding_max_token_size=8192,
+            embedding_base_url=None,
+            embedding_api_key="embed-secret",
+            vision_provider="openai",
+            vision_model="gpt-4o-mini",
+            vision_base_url=None,
+            vision_api_key=None,
+            default_parser="mineru",
+            default_parse_method="auto",
+            default_language="ch",
+            default_device="cpu",
+            profiles=[
+                {
+                    "id": "default",
+                    "name": "Default",
+                    "llm": {
+                        "provider": "openai",
+                        "model": "gpt-4o-mini",
+                        "api_key": "openai-secret",
+                    },
+                    "embedding": {
+                        "provider": "openai",
+                        "model": "text-embedding-3-small",
+                        "api_key": "embed-secret",
+                        "embedding_dim": 1536,
+                        "embedding_max_token_size": 8192,
+                    },
+                    "vision": {
+                        "provider": "openai",
+                        "model": "gpt-4o-mini",
+                    },
+                }
+            ],
+        )
+    )
+    assert saved.profiles[0].llm.api_key == "openai-secret"
+
+    switched = store.update(
+        StudioSettingsUpdate(
+            llm_provider="ollama",
+            llm_model="llama3.2",
+            llm_base_url="http://localhost:11434/v1",
+            llm_api_key=None,
+            embedding_provider="ollama",
+            embedding_model="nomic-embed-text",
+            embedding_dim=768,
+            embedding_max_token_size=8192,
+            embedding_base_url="http://localhost:11434/v1",
+            embedding_api_key=None,
+            vision_provider="ollama",
+            vision_model="llava",
+            vision_base_url="http://localhost:11434/v1",
+            vision_api_key=None,
+            default_parser="mineru",
+            default_parse_method="auto",
+            default_language="ch",
+            default_device="cpu",
+            profiles=[
+                {
+                    "id": "default",
+                    "name": "Local",
+                    "llm": {
+                        "provider": "ollama",
+                        "model": "llama3.2",
+                        "base_url": "http://localhost:11434/v1",
+                    },
+                    "embedding": {
+                        "provider": "ollama",
+                        "model": "nomic-embed-text",
+                        "base_url": "http://localhost:11434/v1",
+                        "embedding_dim": 768,
+                        "embedding_max_token_size": 8192,
+                    },
+                    "vision": {
+                        "provider": "ollama",
+                        "model": "llava",
+                        "base_url": "http://localhost:11434/v1",
+                    },
+                }
+            ],
+        )
+    )
+
+    assert switched.profiles[0].llm.api_key is None
+    assert switched.profiles[0].embedding.api_key is None
+    assert switched.llm_api_key is None
+    assert switched.embedding_api_key is None
+
+
+def test_local_model_channel_defaults_to_endpoint_and_dummy_key():
+    channel = ModelChannelConfig(provider="ollama", model="llama3.2")
+
+    assert effective_model_base_url(channel) == "http://localhost:11434/v1"
+    assert effective_model_api_key(channel) == "local"
 
 
 def test_storage_connection_test_payload_reuses_saved_secret():
