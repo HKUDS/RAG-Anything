@@ -94,6 +94,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
     parse_cache: Optional[Any] = field(default=None, init=False)
     """Parse result cache storage using LightRAG KV storage."""
 
+    multimodal_status_cache: Optional[Any] = field(default=None, init=False)
+    """Compatibility KV storage for multimodal completion state."""
+
     callback_manager: CallbackManager = field(
         default_factory=CallbackManager, init=False, repr=False
     )
@@ -314,6 +317,20 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                         )
                         await self.parse_cache.initialize()
 
+                    if self.multimodal_status_cache is None:
+                        self.logger.info(
+                            "Initializing multimodal status cache for pre-provided LightRAG instance"
+                        )
+                        self.multimodal_status_cache = (
+                            self.lightrag.key_string_value_json_storage_cls(
+                                namespace="multimodal_status",
+                                workspace=self.lightrag.workspace,
+                                global_config=self.lightrag.__dict__,
+                                embedding_func=self.embedding_func,
+                            )
+                        )
+                        await self.multimodal_status_cache.initialize()
+
                     # Initialize processors if not already done
                     if not self.modal_processors:
                         self._initialize_processors()
@@ -374,11 +391,21 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 )
                 await self.parse_cache.initialize()
 
+                self.multimodal_status_cache = (
+                    self.lightrag.key_string_value_json_storage_cls(
+                        namespace="multimodal_status",
+                        workspace=self.lightrag.workspace,
+                        global_config=self.lightrag.__dict__,
+                        embedding_func=self.embedding_func,
+                    )
+                )
+                await self.multimodal_status_cache.initialize()
+
                 # Initialize processors after LightRAG is ready
                 self._initialize_processors()
 
                 self.logger.info(
-                    "LightRAG, parse cache, and multimodal processors initialized"
+                    "LightRAG, parse cache, multimodal status cache, and multimodal processors initialized"
                 )
                 return {"success": True}
 
@@ -421,6 +448,10 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             if self.parse_cache is not None:
                 tasks.append(self.parse_cache.finalize())
                 self.logger.debug("Scheduled parse cache finalization")
+
+            if self.multimodal_status_cache is not None:
+                tasks.append(self.multimodal_status_cache.finalize())
+                self.logger.debug("Scheduled multimodal status cache finalization")
 
             # Finalize LightRAG storages if LightRAG is initialized
             if self.lightrag is not None:
