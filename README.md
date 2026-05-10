@@ -246,6 +246,60 @@ The hybrid retrieval system combines vector similarity search with graph travers
 
 ---
 
+## 🐳 Docker Deployment
+
+Build and run locally:
+
+```bash
+# Build the image
+docker build -t raganything:latest .
+
+# Run the container
+docker run -d -p 8000:8000 \
+  -v rag_storage:/app/rag_storage \
+  -e LLM_API_KEY=your_api_key \
+  raganything:latest
+```
+
+### Coolify Deployment
+
+RAG-Anything can be easily deployed on Coolify using the included configuration files.
+
+**Files included:**
+- `Dockerfile` - Container definition
+- `docker-compose.yml` - Compose configuration with Traefik
+- `coolify.json` - Coolify application config
+
+**Deploy on Coolify:**
+
+1. Push the Docker configuration to GitHub:
+```bash
+git checkout -b feature/docker-coolify
+git add Dockerfile docker-compose.yml coolify.json coolify.yaml .dockerignore
+git commit -m "Add Coolify deployment configuration"
+git push -u origin feature/docker-coolify
+```
+
+2. In Coolify dashboard:
+   - Create new application → Git Repository
+   - Select branch: `feature/docker-coolify`
+   - Configure environment variables:
+     - `LLM_API_KEY` (required)
+     - `LLM_MODEL` = gpt-4o-mini
+     - `EMBEDDING_MODEL` = text-embedding-3-large
+   - Set port: 8000
+   - Deploy
+
+**Environment Variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| WORKING_DIR | /app/rag_storage | Storage directory |
+| LLM_API_KEY | (required) | LLM API key |
+| LLM_MODEL | gpt-4o-mini | LLM model |
+| EMBEDDING_MODEL | text-embedding-3-large | Embedding model |
+| PARSER | mineru | Document parser |
+
 ## 🚀 Quick Start
 
 *Initialize Your AI Journey*

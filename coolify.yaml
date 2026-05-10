@@ -1,0 +1,54 @@
+# Coolify Application Configuration for RAG-Anything
+# https://coolify.io/docs
+
+app:
+  name: raganything
+  description: All-in-One RAG Framework for multimodal document processing
+  repository: https://github.com/HKUDS/RAG-Anything
+
+# Build configuration
+build:
+  dockerfile: Dockerfile
+  context: .
+
+# Runtime configuration  
+runtime:
+  image: python:3.10-slim
+  command: python -c "print('RAG-Anything ready')"
+  port: 8000
+
+# Environment variables (configure in Coolify dashboard)
+environment:
+  - WORKING_DIR=/app/rag_storage
+  - PYTHONUNBUFFERED=1
+  # Required - set in Coolify
+  - LLM_API_KEY={{LLM_API_KEY}}
+  - LLM_MODEL=gpt-4o-mini
+  - EMBEDDING_MODEL=text-embedding-3-large
+
+# Persistent volumes
+volumes:
+  - name: rag_storage
+    path: /app/rag_storage
+
+# Resource limits
+resources:
+  memory: 4GB
+  cpu: 2
+  shm_size: 2GB
+
+# Health check
+healthCheck:
+  enabled: true
+  port: 8000
+  path: /
+  interval: 30s
+  timeout: 10s
+  retries: 3
+
+# Proxy configuration (Traefik)
+proxy:
+  enabled: true
+  rules:
+    - path: /
+      port: 8000

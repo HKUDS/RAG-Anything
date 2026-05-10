@@ -1,0 +1,77 @@
+{
+  "name": "RAG-Anything",
+  "description": "All-in-One RAG Framework for multimodal document processing",
+  "repository": "https://github.com/HKUDS/RAG-Anything",
+  "website": "https://arxiv.org/abs/2510.12323",
+  "env": [
+    {
+      "name": "WORKING_DIR",
+      "label": "Working Directory",
+      "default": "/app/rag_storage",
+      "description": "Directory for RAG storage"
+    },
+    {
+      "name": "LLM_API_KEY",
+      "label": "LLM API Key",
+      "required": true,
+      "description": "API key for LLM (OpenAI, Azure, or custom)"
+    },
+    {
+      "name": "LLM_MODEL",
+      "label": "LLM Model",
+      "default": "gpt-4o-mini",
+      "description": "LLM model name"
+    },
+    {
+      "name": "EMBEDDING_MODEL",
+      "label": "Embedding Model", 
+      "default": "text-embedding-3-large",
+      "description": "Embedding model name"
+    },
+    {
+      "name": "PARSER",
+      "label": "Document Parser",
+      "default": "mineru",
+      "description": "Parser to use: mineru, docling, or paddleocr"
+    }
+  ],
+  "ports": [
+    {
+      "container": 8000,
+      "expose": 8000
+    }
+  ],
+  " volumes": [
+    {
+      "name": "rag_storage",
+      "path": "/app/rag_storage",
+      "description": "Persistent storage for RAG indices"
+    }
+  ],
+  " compose": {
+    "version": "3.8",
+    "services": {
+      "raganything": {
+        "image": "raganything:latest",
+        "restart": "unless-stopped",
+        "environment": [
+          "WORKING_DIR=/app/rag_storage",
+          "PYTHONUNBUFFERED=1"
+        ],
+        "volumes": [
+          "rag_storage:/app/rag_storage"
+        ],
+        "shm_size": "2gb"
+      }
+    },
+    "volumes": {
+      "rag_storage": {
+        "driver": "local"
+      }
+    }
+  },
+  "build": {
+    "context": ".",
+    "dockerfile": "Dockerfile"
+  }
+}

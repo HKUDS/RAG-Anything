@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  raganything:
+    image: raganything:latest
+    container_name: raganything
+    environment:
+      - WORKING_DIR=/app/rag_storage
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - rag_storage:/app/rag_storage
+    ports:
+      - "8000:8000"
+    shm_size: '2gb'
+    restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.raganything.rule=PathPrefix(`/`)"
+      - "traefik.http.services.raganything.loadbalancer.server.port=8000"
+
+volumes:
+  rag_storage:
+    driver: local
