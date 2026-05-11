@@ -5,8 +5,7 @@ from src.workbench.metrics import RETRIEVAL_METRIC_PLAN
 
 BASE_PIPELINE_EXPERIMENTS = [
     "exp1_baseline_mineru_cloud_openai",
-    "exp2_default_mineru_ollama",
-    "exp4_medical_scope_mineru_ollama",
+    "exp4_medical_scope_mineru_cloud_ollama",
     "exp5_medical_scope_mineru_ollama_radgraph_xl",
     "exp6_medical_scope_mineru_ollama_iter_ade",
     "exp7_medical_scope_mineru_ollama_iter_scierc",
@@ -17,8 +16,8 @@ BASE_PIPELINE_EXPERIMENTS = [
 
 QUERY_MODES = ["mix", "naive", "local", "global"]
 RERANK_PHASE_BASE_EXPERIMENTS = [
-    "exp2_default_mineru_ollama",
-    "exp4_medical_scope_mineru_ollama",
+    "exp1_baseline_mineru_cloud_openai",
+    "exp4_medical_scope_mineru_cloud_ollama",
 ]
 RERANK_PHASE_QUERY_MODES = ["mix", "naive"]
 BGE_RERANKER = "BAAI/bge-reranker-v2-m3"

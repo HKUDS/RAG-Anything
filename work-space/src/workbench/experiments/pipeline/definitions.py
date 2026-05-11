@@ -37,48 +37,52 @@ PIPELINE_EXPERIMENTS["exp1_baseline_mineru_cloud_openai"] = PipelineExperimentDe
     tags=["pipeline", "baseline", "mineru_cloud", "openai"],
 )
 
-PIPELINE_EXPERIMENTS["exp2_default_mineru_ollama"] = PipelineExperimentDefinition(
-    id="exp2_default_mineru_ollama",
-    description="Default pipeline using local MinerU parser and Ollama-compatible models.",
-    category="pipeline",
-    metric_plan=PIPELINE_METRIC_PLAN,
-    profile_name="default",
-    provider="ollama",
-    parser=mineru_local_preset.parser,
-    parse_method=mineru_local_preset.parse_method,
-    input_dir_override=shared_input_dir,
-    parser_kwargs=dict(mineru_local_preset.parser_kwargs),
-    use_gliner=default_profile.use_gliner,
-    gliner_labels=list(default_profile.gliner_labels),
-    lightrag_kwargs=dict(default_profile.lightrag_kwargs),
-    raganything_kwargs=dict(default_profile.raganything_kwargs),
-    custom_prompts=dict(default_profile.custom_prompts),
-    notes="Local default pipeline baseline using MinerU + Ollama-compatible serving.",
-    tags=["pipeline", "default", "mineru", "ollama"],
-)
+# exp2_default_mineru_ollama: disabled — local MinerU retired after parser selection
+# finalized on MinerU. Kept commented for git history; re-enable only if a local-parser
+# baseline is required.
+# PIPELINE_EXPERIMENTS["exp2_default_mineru_ollama"] = PipelineExperimentDefinition(
+#     id="exp2_default_mineru_ollama",
+#     description="Default pipeline using local MinerU parser and Ollama-compatible models.",
+#     category="pipeline",
+#     metric_plan=PIPELINE_METRIC_PLAN,
+#     profile_name="default",
+#     provider="ollama",
+#     parser=mineru_local_preset.parser,
+#     parse_method=mineru_local_preset.parse_method,
+#     input_dir_override=shared_input_dir,
+#     parser_kwargs=dict(mineru_local_preset.parser_kwargs),
+#     use_gliner=default_profile.use_gliner,
+#     gliner_labels=list(default_profile.gliner_labels),
+#     lightrag_kwargs=dict(default_profile.lightrag_kwargs),
+#     raganything_kwargs=dict(default_profile.raganything_kwargs),
+#     custom_prompts=dict(default_profile.custom_prompts),
+#     notes="Local default pipeline baseline using MinerU + Ollama-compatible serving.",
+#     tags=["pipeline", "default", "mineru", "ollama"],
+# )
 
-PIPELINE_EXPERIMENTS["exp4_medical_scope_mineru_ollama"] = PipelineExperimentDefinition(
-    id="exp4_medical_scope_mineru_ollama",
-    description="Medical-domain pipeline using local MinerU parser and Ollama-compatible models.",
+PIPELINE_EXPERIMENTS["exp4_medical_scope_mineru_cloud_ollama"] = PipelineExperimentDefinition(
+    id="exp4_medical_scope_mineru_cloud_ollama",
+    description="Medical-domain pipeline using MinerU cloud parser and Ollama-compatible models.",
     category="pipeline",
     metric_plan=PIPELINE_METRIC_PLAN,
     profile_name="medical",
     provider="ollama",
-    parser=mineru_local_preset.parser,
-    parse_method=mineru_local_preset.parse_method,
+    parser=mineru_cloud_preset.parser,
+    parse_method=mineru_cloud_preset.parse_method,
     input_dir_override=shared_input_dir,
-    parser_kwargs=dict(mineru_local_preset.parser_kwargs),
+    parser_kwargs=dict(mineru_cloud_preset.parser_kwargs),
     use_gliner=medical_profile.use_gliner,
     gliner_labels=list(medical_profile.gliner_labels),
     lightrag_kwargs=dict(medical_profile.lightrag_kwargs),
     raganything_kwargs=dict(medical_profile.raganything_kwargs),
     custom_prompts=dict(medical_profile.custom_prompts),
     notes=(
-        "Medical-domain prompt shaping over the default pipeline. "
+        "Medical-domain prompt shaping with MinerU cloud parsing and Ollama LLM extraction. "
+        "Baseline counterpart to exp5/6/7 (medical + alt extraction backends). "
         "Prompt overrides live in `work-space/src/prompts/medical.py` and are wired in "
         "`work-space/src/workbench/experiments/pipeline/profiles.py`."
     ),
-    tags=["pipeline", "medical", "mineru", "ollama"],
+    tags=["pipeline", "medical", "mineru_cloud", "ollama"],
 )
 
 PIPELINE_EXPERIMENTS["exp5_medical_scope_mineru_ollama_radgraph_xl"] = PipelineExperimentDefinition(

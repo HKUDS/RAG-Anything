@@ -25,3 +25,6 @@ tiktoken
 kreuzberg[paddleocr]
 radgraph
 git+https://github.com/fleonce/iter
+# Office page-count helpers for work-space benchmark metrics (.pptx/.docx)
+python-pptx
+python-docx

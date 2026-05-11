@@ -1,8 +1,11 @@
 import hashlib
+import math
 import re
 from pathlib import Path
 from statistics import median
 from typing import Any, Dict, Iterable, List, Optional
+
+DOCX_CHARS_PER_PAGE = 1800
 
 
 def _count_tokens(text: str) -> int:
@@ -201,6 +204,32 @@ def get_source_page_count(file_path: str | Path) -> int:
             except Exception:
                 return 0
 
+    if suffix == ".pptx":
+        try:
+            from pptx import Presentation
+
+            return len(Presentation(str(path)).slides)
+        except Exception:
+            return 0
+
+    if suffix == ".docx":
+        # docx has no fixed page concept; Word computes pages only at render time.
+        # Heuristic: total visible char count / DOCX_CHARS_PER_PAGE (~500 words/page).
+        try:
+            from docx import Document
+
+            doc = Document(str(path))
+            total_chars = sum(len(p.text or "") for p in doc.paragraphs)
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        total_chars += len(cell.text or "")
+            if total_chars <= 0:
+                return 0
+            return max(1, math.ceil(total_chars / DOCX_CHARS_PER_PAGE))
+        except Exception:
+            return 0
+
     return 0
 
 
@@ -324,21 +353,22 @@ def compute_extract_metrics(
             else:
                 text_parts.append(str(text))
                 metrics["text_chars"] += len(str(text))
-        elif item_type == "image":
+        elif item_type in {"image", "chart"}:
             metrics["image_blocks"] += 1
-            img_path = item.get("img_path")
-            if img_path:
-                try:
-                    import os
+            if item_type == "image":
+                img_path = item.get("img_path")
+                if img_path:
+                    try:
+                        import os
 
-                    if os.path.exists(img_path) and _is_valid_image_file(img_path):
-                        metrics["image_files_exist"] += 1
-                    else:
+                        if os.path.exists(img_path) and _is_valid_image_file(img_path):
+                            metrics["image_files_exist"] += 1
+                        else:
+                            metrics["image_files_missing"] += 1
+                    except Exception:
                         metrics["image_files_missing"] += 1
-                except Exception:
+                else:
                     metrics["image_files_missing"] += 1
-            else:
-                metrics["image_files_missing"] += 1
         elif item_type == "table":
             metrics["table_blocks"] += 1
             table_body = item.get("table_body")
