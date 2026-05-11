@@ -91,6 +91,24 @@ QA cho riêng `exp7` và append vào report hiện có:
 python run_pipeline_qa_eval.py --exp exp7_medical_scope_mineru_ollama_iter_scierc
 ```
 
+QA cho riêng `exp8` và append vào report hiện có:
+
+```bash
+python run_pipeline_qa_eval.py --exp exp8_default_mineru_ollama_radgraph_xl
+```
+
+QA cho riêng `exp9` và append vào report hiện có:
+
+```bash
+python run_pipeline_qa_eval.py --exp exp9_default_mineru_ollama_iter_ade
+```
+
+QA cho riêng `exp10` và append vào report hiện có:
+
+```bash
+python run_pipeline_qa_eval.py --exp exp10_default_mineru_ollama_iter_scierc
+```
+
 Retrieval:
 
 ```bash
@@ -115,6 +133,24 @@ Retrieval cho riêng `exp7` và append vào report hiện có:
 python run_retrieval_bench.py --base-exp exp7_medical_scope_mineru_ollama_iter_scierc
 ```
 
+Retrieval cho riêng `exp8` và append vào report hiện có:
+
+```bash
+python run_retrieval_bench.py --base-exp exp8_default_mineru_ollama_radgraph_xl
+```
+
+Retrieval cho riêng `exp9` và append vào report hiện có:
+
+```bash
+python run_retrieval_bench.py --base-exp exp9_default_mineru_ollama_iter_ade
+```
+
+Retrieval cho riêng `exp10` và append vào report hiện có:
+
+```bash
+python run_retrieval_bench.py --base-exp exp10_default_mineru_ollama_iter_scierc
+```
+
 Pruning:
 
 ```bash
@@ -137,6 +173,24 @@ Pruning cho riêng `exp7` và append vào report hiện có:
 
 ```bash
 python run_pruning_bench.py --base-exp exp7_medical_scope_mineru_ollama_iter_scierc
+```
+
+Pruning cho riêng `exp8` và append vào report hiện có:
+
+```bash
+python run_pruning_bench.py --base-exp exp8_default_mineru_ollama_radgraph_xl
+```
+
+Pruning cho riêng `exp9` và append vào report hiện có:
+
+```bash
+python run_pruning_bench.py --base-exp exp9_default_mineru_ollama_iter_ade
+```
+
+Pruning cho riêng `exp10` và append vào report hiện có:
+
+```bash
+python run_pruning_bench.py --base-exp exp10_default_mineru_ollama_iter_scierc
 ```
 
 Nếu chạy `exp6` hoặc `exp7`, cần cài thêm ITER:

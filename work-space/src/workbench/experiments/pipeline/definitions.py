@@ -188,3 +188,114 @@ PIPELINE_EXPERIMENTS["exp7_medical_scope_mineru_ollama_iter_scierc"] = PipelineE
     ),
     tags=["pipeline", "medical", "mineru_cloud", "ollama", "iter", "iter-scierc", "ner"],
 )
+
+PIPELINE_EXPERIMENTS["exp8_default_mineru_ollama_radgraph_xl"] = PipelineExperimentDefinition(
+    id="exp8_default_mineru_ollama_radgraph_xl",
+    description=(
+        "Default-profile pipeline using MinerU cloud parsing and RadGraph-XL for "
+        "entity/relation extraction over textified multimodal chunks."
+    ),
+    category="pipeline",
+    metric_plan=PIPELINE_METRIC_PLAN,
+    profile_name="default",
+    provider="ollama",
+    parser=mineru_cloud_preset.parser,
+    parse_method=mineru_cloud_preset.parse_method,
+    input_dir_override=shared_input_dir,
+    parser_kwargs=dict(mineru_cloud_preset.parser_kwargs),
+    entity_relation_backend="radgraph_xl",
+    entity_relation_kwargs={
+        "model_type": ENV.radgraph_model_type,
+        "batch_size": ENV.radgraph_batch_size,
+        "cuda_device": ENV.radgraph_cuda_device,
+        "split_chunks": ENV.radgraph_split_chunks,
+        "max_segment_chars": ENV.radgraph_max_segment_chars,
+        "sentence_overlap": ENV.radgraph_sentence_overlap,
+        "empty_cache_each_batch": ENV.radgraph_empty_cache_each_batch,
+    },
+    use_gliner=default_profile.use_gliner,
+    gliner_labels=list(default_profile.gliner_labels),
+    lightrag_kwargs=dict(default_profile.lightrag_kwargs),
+    raganything_kwargs=dict(default_profile.raganything_kwargs),
+    custom_prompts=dict(default_profile.custom_prompts),
+    notes=(
+        "Default-profile control for the RadGraph-XL branch. Keeps MinerU cloud parsing "
+        "and the standard multimodal-to-text flow, but replaces LightRAG LLM extraction "
+        "with RadGraph-XL on the final text chunks."
+    ),
+    tags=["pipeline", "default", "mineru_cloud", "ollama", "radgraph_xl", "ner"],
+)
+
+PIPELINE_EXPERIMENTS["exp9_default_mineru_ollama_iter_ade"] = PipelineExperimentDefinition(
+    id="exp9_default_mineru_ollama_iter_ade",
+    description=(
+        "Default-profile pipeline using MinerU cloud parsing and ITER + ADE checkpoint "
+        "for entity/relation extraction over textified multimodal chunks."
+    ),
+    category="pipeline",
+    metric_plan=PIPELINE_METRIC_PLAN,
+    profile_name="default",
+    provider="ollama",
+    parser=mineru_cloud_preset.parser,
+    parse_method=mineru_cloud_preset.parse_method,
+    input_dir_override=shared_input_dir,
+    parser_kwargs=dict(mineru_cloud_preset.parser_kwargs),
+    entity_relation_backend="iter_ade",
+    entity_relation_kwargs={
+        "model_name": ENV.iter_model_name,
+        "device": ENV.iter_device,
+        "split_chunks": ENV.iter_split_chunks,
+        "max_length": ENV.iter_max_length,
+        "sentence_overlap": ENV.iter_sentence_overlap,
+        "empty_cache_each_batch": ENV.iter_empty_cache_each_batch,
+        "debug_output": ENV.iter_debug_output,
+    },
+    use_gliner=default_profile.use_gliner,
+    gliner_labels=list(default_profile.gliner_labels),
+    lightrag_kwargs=dict(default_profile.lightrag_kwargs),
+    raganything_kwargs=dict(default_profile.raganything_kwargs),
+    custom_prompts=dict(default_profile.custom_prompts),
+    notes=(
+        "Default-profile control for the ITER + ADE branch. Keeps MinerU cloud parsing "
+        "and the standard multimodal-to-text flow, but replaces LightRAG LLM extraction "
+        "with ITER + ADE on the final text chunks."
+    ),
+    tags=["pipeline", "default", "mineru_cloud", "ollama", "iter", "iter-ade", "ner"],
+)
+
+PIPELINE_EXPERIMENTS["exp10_default_mineru_ollama_iter_scierc"] = PipelineExperimentDefinition(
+    id="exp10_default_mineru_ollama_iter_scierc",
+    description=(
+        "Default-profile pipeline using MinerU cloud parsing and ITER + SciERC checkpoint "
+        "for entity/relation extraction over textified multimodal chunks."
+    ),
+    category="pipeline",
+    metric_plan=PIPELINE_METRIC_PLAN,
+    profile_name="default",
+    provider="ollama",
+    parser=mineru_cloud_preset.parser,
+    parse_method=mineru_cloud_preset.parse_method,
+    input_dir_override=shared_input_dir,
+    parser_kwargs=dict(mineru_cloud_preset.parser_kwargs),
+    entity_relation_backend="iter_scierc",
+    entity_relation_kwargs={
+        "model_name": ENV.iter_scierc_model_name,
+        "device": ENV.iter_device,
+        "split_chunks": ENV.iter_split_chunks,
+        "max_length": ENV.iter_max_length,
+        "sentence_overlap": ENV.iter_sentence_overlap,
+        "empty_cache_each_batch": ENV.iter_empty_cache_each_batch,
+        "debug_output": ENV.iter_debug_output,
+    },
+    use_gliner=default_profile.use_gliner,
+    gliner_labels=list(default_profile.gliner_labels),
+    lightrag_kwargs=dict(default_profile.lightrag_kwargs),
+    raganything_kwargs=dict(default_profile.raganything_kwargs),
+    custom_prompts=dict(default_profile.custom_prompts),
+    notes=(
+        "Default-profile control for the ITER + SciERC branch. Keeps MinerU cloud parsing "
+        "and the standard multimodal-to-text flow, but replaces LightRAG LLM extraction "
+        "with ITER + SciERC on the final text chunks."
+    ),
+    tags=["pipeline", "default", "mineru_cloud", "ollama", "iter", "iter-scierc", "ner"],
+)
