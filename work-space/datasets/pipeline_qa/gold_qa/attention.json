@@ -1,0 +1,162 @@
+{
+  "document_name": "attention.pdf",
+  "source_path": "/home/azureuser/minhnion/RAG-Anything/work-space/datasets/parser_benchmark/raw_docs/attention.pdf",
+  "source_md5": "18e1b007a1dab45b30cc861ba2dfda25",
+  "reference_source": "/home/azureuser/minhnion/RAG-Anything/work-space/datasets/parser_benchmark/raw_docs/attention.pdf",
+  "questions_per_doc": 10,
+  "generated_at": "2026-05-12 04:13:23",
+  "generator_model": "gpt-4o-mini",
+  "questions": [
+    {
+      "question_id": "q01",
+      "difficulty": "easy",
+      "question_type": "factoid",
+      "question": "What new model architecture is proposed in the document?",
+      "gold_answer": "The Transformer.",
+      "evidence_snippets": [
+        "We propose a new simple network architecture, the Transformer, based solely on attention mechanisms."
+      ],
+      "evidence_keywords": [
+        "Transformer",
+        "architecture"
+      ]
+    },
+    {
+      "question_id": "q02",
+      "difficulty": "easy",
+      "question_type": "factoid",
+      "question": "How many identical layers does the Transformer encoder have?",
+      "gold_answer": "The encoder has six identical layers.",
+      "evidence_snippets": [
+        "The encoder is composed of a stack of N = 6 identical layers."
+      ],
+      "evidence_keywords": [
+        "encoder",
+        "layers",
+        "N = 6"
+      ]
+    },
+    {
+      "question_id": "q03",
+      "difficulty": "medium",
+      "question_type": "factoid",
+      "question": "What is the BLEU score achieved by the Transformer on the English-to-German translation task?",
+      "gold_answer": "28.4 BLEU.",
+      "evidence_snippets": [
+        "Our model achieves 28.4 BLEU on the WMT 2014 English-to-German translation task."
+      ],
+      "evidence_keywords": [
+        "BLEU",
+        "English-to-German"
+      ]
+    },
+    {
+      "question_id": "q04",
+      "difficulty": "medium",
+      "question_type": "comparison",
+      "question": "How does the training cost of the Transformer (big) model compare to that of the previous state-of-the-art model on the English-to-French task?",
+      "gold_answer": "The Transformer (big) model has less than 1/4 the training cost of the previous state-of-the-art model.",
+      "evidence_snippets": [
+        "outperforming all of the previously published single models, at less than 1/4 the training cost of the previous state-of-the-art model."
+      ],
+      "evidence_keywords": [
+        "Transformer (big)",
+        "training cost",
+        "state-of-the-art"
+      ]
+    },
+    {
+      "question_id": "q05",
+      "difficulty": "medium",
+      "question_type": "factoid",
+      "question": "What is the dimensionality of input and output in the position-wise feed-forward networks of the Transformer?",
+      "gold_answer": "dmodel = 512, and the inner-layer has dimensionality df f = 2048.",
+      "evidence_snippets": [
+        "the dimensionality of input and output is dmodel = 512 , and the inner-layer has dimensionality df f = 2048."
+      ],
+      "evidence_keywords": [
+        "feed-forward networks",
+        "dimensionality",
+        "dmodel"
+      ]
+    },
+    {
+      "question_id": "q06",
+      "difficulty": "hard",
+      "question_type": "reasoning",
+      "question": "Why does the Transformer model use a sinusoidal function for positional encodings?",
+      "gold_answer": "It was hypothesized that the sinusoidal function would allow the model to easily learn to attend by relative positions.",
+      "evidence_snippets": [
+        "We chose this function because we hypothesized it would allow the model to easily learn to attend by relative positions."
+      ],
+      "evidence_keywords": [
+        "positional encodings",
+        "sinusoidal",
+        "attend"
+      ]
+    },
+    {
+      "question_id": "q07",
+      "difficulty": "hard",
+      "question_type": "synthesis",
+      "question": "Summarize the main advantage of using self-attention compared to recurrent networks as discussed in the document.",
+      "gold_answer": "Self-attention layers allow for constant computational complexity and parallelization, making it faster and more efficient for sequence transduction tasks.",
+      "evidence_snippets": [
+        "A self-attention layer connects all positions with a constant number of sequentially executed operations",
+        "self-attention layers are faster than recurrent layers."
+      ],
+      "evidence_keywords": [
+        "self-attention",
+        "recurrent networks",
+        "computational complexity"
+      ]
+    },
+    {
+      "question_id": "q08",
+      "difficulty": "hard",
+      "question_type": "multimodal",
+      "question": "Referencing Table 2, how does the BLEU score of the Transformer (big) compare to the BLEU scores of other models on the English-to-French task?",
+      "gold_answer": "The Transformer (big) achieves the highest BLEU score of 41.8 among the compared models.",
+      "evidence_snippets": [
+        "Transformer (big) 28.4 41.8",
+        "outperforming all of the previously published single models."
+      ],
+      "evidence_keywords": [
+        "Table 2",
+        "BLEU score",
+        "Transformer"
+      ]
+    },
+    {
+      "question_id": "q09",
+      "difficulty": "hard",
+      "question_type": "comparison",
+      "question": "What are the advantages of the Transformer architecture over convolutional models as detailed in Table 1?",
+      "gold_answer": "The Transformer allows for constant path lengths in processing, while convolutions increase the length of paths required to connect input and output positions.",
+      "evidence_snippets": [
+        "Self-Attention O(n2 · d) O(1) O(1)",
+        "A single convolutional layer ... increases the length of the longest paths."
+      ],
+      "evidence_keywords": [
+        "Table 1",
+        "Self-Attention",
+        "convolutional layers"
+      ]
+    },
+    {
+      "question_id": "q10",
+      "difficulty": "hard",
+      "question_type": "reasoning",
+      "question": "Discuss how the choice of using 8 parallel attention heads improves the performance of the Transformer.",
+      "gold_answer": "It allows the model to jointly attend to information from different representation subspaces at different positions, enhancing the learning capacity.",
+      "evidence_snippets": [
+        "Multi-head attention allows the model to jointly attend to information from different representation subspaces."
+      ],
+      "evidence_keywords": [
+        "8 heads",
+        "multi-head attention",
+        "performance"
+      ]
+    }
+  ]
+}

@@ -5,13 +5,14 @@ from src.workbench.metrics import PRUNING_METRIC_PLAN
 
 BASE_PIPELINE_EXPERIMENTS = [
     "exp1_baseline_mineru_cloud_openai",
+    "exp2_default_mineru_cloud_ollama",
     "exp4_medical_scope_mineru_cloud_ollama",
-    "exp5_medical_scope_mineru_ollama_radgraph_xl",
-    "exp6_medical_scope_mineru_ollama_iter_ade",
-    "exp7_medical_scope_mineru_ollama_iter_scierc",
-    "exp8_default_mineru_ollama_radgraph_xl",
-    "exp9_default_mineru_ollama_iter_ade",
-    "exp10_default_mineru_ollama_iter_scierc",
+    # "exp5_medical_scope_mineru_ollama_radgraph_xl",
+    # "exp6_medical_scope_mineru_ollama_iter_ade",
+    # "exp7_medical_scope_mineru_ollama_iter_scierc",
+    # "exp8_default_mineru_ollama_radgraph_xl",
+    # "exp9_default_mineru_ollama_iter_ade",
+    # "exp10_default_mineru_ollama_iter_scierc",
 ]
 
 PRUNING_METHODS = [

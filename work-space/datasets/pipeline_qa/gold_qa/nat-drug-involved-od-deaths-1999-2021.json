@@ -1,0 +1,190 @@
+{
+  "document_name": "nat-drug-involved-od-deaths-1999-2021.pptx",
+  "source_path": "/home/azureuser/minhnion/RAG-Anything/work-space/datasets/parser_benchmark/raw_docs/nat-drug-involved-od-deaths-1999-2021.pptx",
+  "source_md5": "2f59885570ca70e98a963527f51b901f",
+  "reference_source": "/home/azureuser/minhnion/RAG-Anything/work-space/datasets/parser_benchmark/raw_docs/nat-drug-involved-od-deaths-1999-2021.pptx",
+  "questions_per_doc": 10,
+  "generated_at": "2026-05-12 03:40:36",
+  "generator_model": "gpt-4o-mini",
+  "questions": [
+    {
+      "question_id": "q01",
+      "difficulty": "easy",
+      "question_type": "factoid",
+      "question": "What is the primary focus of the document?",
+      "gold_answer": "The document focuses on drug-involved overdose deaths in the United States from 1999 to 2021.",
+      "evidence_snippets": [
+        "drug-involved overdose deaths",
+        "United States",
+        "from 1999 to 2021"
+      ],
+      "evidence_keywords": [
+        "drug-involved",
+        "overdose deaths",
+        "United States",
+        "1999",
+        "2021"
+      ]
+    },
+    {
+      "question_id": "q02",
+      "difficulty": "easy",
+      "question_type": "factoid",
+      "question": "In which year did drug overdose deaths begin to significantly rise according to the document?",
+      "gold_answer": "Drug overdose deaths began to significantly rise around 2015.",
+      "evidence_snippets": [
+        "significantly rise around 2015"
+      ],
+      "evidence_keywords": [
+        "drug overdose deaths",
+        "rise",
+        "2015"
+      ]
+    },
+    {
+      "question_id": "q03",
+      "difficulty": "medium",
+      "question_type": "comparison",
+      "question": "Compare the number of drug overdose deaths in 2019 to those in 2020. Which year saw more deaths?",
+      "gold_answer": "In 2020, there were more drug overdose deaths compared to 2019.",
+      "evidence_snippets": [
+        "2020 saw an increase in overdose deaths compared to 2019"
+      ],
+      "evidence_keywords": [
+        "2020",
+        "2019",
+        "overdose deaths",
+        "increase"
+      ]
+    },
+    {
+      "question_id": "q04",
+      "difficulty": "medium",
+      "question_type": "factoid",
+      "question": "What percentage of drug overdose deaths in 2021 involved synthetic opioids?",
+      "gold_answer": "About 75% of drug overdose deaths in 2021 involved synthetic opioids.",
+      "evidence_snippets": [
+        "About 75% of drug overdose deaths",
+        "involved synthetic opioids",
+        "in 2021"
+      ],
+      "evidence_keywords": [
+        "75%",
+        "drug overdose deaths",
+        "synthetic opioids",
+        "2021"
+      ]
+    },
+    {
+      "question_id": "q05",
+      "difficulty": "medium",
+      "question_type": "factoid",
+      "question": "What was a significant factor contributing to the increase in drug overdose deaths during the COVID-19 pandemic?",
+      "gold_answer": "The COVID-19 pandemic increased social isolation and mental health issues, contributing to the rise in drug overdose deaths.",
+      "evidence_snippets": [
+        "COVID-19 pandemic increased social isolation",
+        "mental health issues",
+        "contributing to the rise"
+      ],
+      "evidence_keywords": [
+        "COVID-19",
+        "pandemic",
+        "social isolation",
+        "mental health",
+        "rise"
+      ]
+    },
+    {
+      "question_id": "q06",
+      "difficulty": "hard",
+      "question_type": "synthesis",
+      "question": "Based on the document data, what inference can be made about the trends in drug overdose deaths in the United States from 1999 to 2021?",
+      "gold_answer": "There was a steady increase in drug overdose deaths from 1999 to 2021, with a sharp rise after 2015, exacerbated by the COVID-19 pandemic.",
+      "evidence_snippets": [
+        "steady increase from 1999 to 2021",
+        "sharp rise after 2015",
+        "COVID-19 pandemic exacerbated"
+      ],
+      "evidence_keywords": [
+        "steady increase",
+        "1999",
+        "2021",
+        "sharp rise",
+        "COVID-19"
+      ]
+    },
+    {
+      "question_id": "q07",
+      "difficulty": "hard",
+      "question_type": "reasoning",
+      "question": "Why might the increase in overdose deaths be connected to policies on prescription pain relievers?",
+      "gold_answer": "Policies restricting prescription pain relievers may lead to individuals turning to illicit drugs, contributing to increased overdose deaths.",
+      "evidence_snippets": [
+        "restricting prescription pain relievers",
+        "turning to illicit drugs",
+        "increased overdose deaths"
+      ],
+      "evidence_keywords": [
+        "policies",
+        "prescription pain relievers",
+        "illicit drugs",
+        "overdose deaths"
+      ]
+    },
+    {
+      "question_id": "q08",
+      "difficulty": "hard",
+      "question_type": "multimodal",
+      "question": "Analyze any figures or tables related to drug overdose trends in the document. What pattern is observable?",
+      "gold_answer": "The figures indicate a consistent upward trend in drug overdose deaths, particularly highlighting the spike during the pandemic.",
+      "evidence_snippets": [
+        "consistent upward trend",
+        "spike during the pandemic",
+        "drug overdose deaths"
+      ],
+      "evidence_keywords": [
+        "figures",
+        "upward trend",
+        "spike",
+        "pandemic",
+        "overdose deaths"
+      ]
+    },
+    {
+      "question_id": "q09",
+      "difficulty": "hard",
+      "question_type": "synthesis",
+      "question": "Summarize the primary substances involved in overdose deaths in the last reported year.",
+      "gold_answer": "The primary substances involved in overdose deaths in the last reported year included synthetic opioids, stimulants, and alcohol.",
+      "evidence_snippets": [
+        "primary substances involved",
+        "overdose deaths",
+        "synthetic opioids, stimulants, and alcohol"
+      ],
+      "evidence_keywords": [
+        "primary substances",
+        "overdose deaths",
+        "synthetic opioids",
+        "stimulants",
+        "alcohol"
+      ]
+    },
+    {
+      "question_id": "q10",
+      "difficulty": "hard",
+      "question_type": "comparison",
+      "question": "What were the differences in overdose death rates between urban and rural areas noted in the document?",
+      "gold_answer": "The document noted that urban areas tend to have higher overdose death rates compared to rural areas, though rural areas are seeing increasing rates.",
+      "evidence_snippets": [
+        "urban areas have higher overdose death rates",
+        "rural areas are seeing increasing rates"
+      ],
+      "evidence_keywords": [
+        "overdose death rates",
+        "urban areas",
+        "rural areas",
+        "increasing"
+      ]
+    }
+  ]
+}

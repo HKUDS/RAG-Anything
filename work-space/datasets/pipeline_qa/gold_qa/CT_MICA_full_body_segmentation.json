@@ -1,10 +1,10 @@
 {
   "document_name": "CT_MICA_full_body_segmentation.pdf",
-  "source_path": "/mnt/disk1/aiotlab/minhnn225043/RAG-Anything/work-space/datasets/parser_benchmark/raw_docs/CT_MICA_full_body_segmentation.pdf",
+  "source_path": "/home/azureuser/minhnion/RAG-Anything/work-space/datasets/parser_benchmark/raw_docs/CT_MICA_full_body_segmentation.pdf",
   "source_md5": "ea2e28fd730a6b28e0258fa6e5b108c1",
-  "reference_source": "benchmark_outputs/extract_benchmark/ext4_mineru_cloud_vlm/content_list/CT_MICA_full_body_segmentation_content_list.json",
+  "reference_source": "/home/azureuser/minhnion/RAG-Anything/work-space/datasets/parser_benchmark/raw_docs/CT_MICA_full_body_segmentation.pdf",
   "questions_per_doc": 10,
-  "generated_at": "2026-04-07 21:11:53",
+  "generated_at": "2026-05-12 04:11:10",
   "generator_model": "gpt-4o-mini",
   "questions": [
     {
@@ -14,147 +14,148 @@
       "question": "How many organs are annotated in the MICA dataset?",
       "gold_answer": "11 organs.",
       "evidence_snippets": [
-        "Each scan includes annotations for 11 organs."
+        "Each scan includes annotations for 11 organs: brain, lungs, left ventricle of the heart, heart, small intestine, kidneys, liver, spleen, large intestine, right inguinal lymph node, and bone marrow."
       ],
       "evidence_keywords": [
-        "11",
-        "organs"
+        "MICA dataset",
+        "11 organs"
       ]
     },
     {
       "question_id": "q02",
       "difficulty": "easy",
       "question_type": "factoid",
-      "question": "What type of model is the Full-CT?",
-      "gold_answer": "A pre-trained SegResNet model for volumetric (3D) segmentation.",
+      "question": "What software was used to annotate the organs in the CT scans?",
+      "gold_answer": "VivoQuant software.",
       "evidence_snippets": [
-        "The Full-CT model utilizes a pre-trained SegResNet model for volumetric (3D) segmentation."
+        "The annotations were conducted using VivoQuant1 software."
       ],
       "evidence_keywords": [
-        "Full-CT",
-        "SegResNet"
+        "VivoQuant",
+        "annotations"
       ]
     },
     {
       "question_id": "q03",
       "difficulty": "medium",
       "question_type": "comparison",
-      "question": "Which model, DeepEdit or Full-CT, had better segmentation performance, particularly for the organs sharing common labels?",
-      "gold_answer": "Full-CT model had better performance.",
+      "question": "Which CNN model, DeepEdit or Full-CT, has a higher average accuracy in organ segmentation?",
+      "gold_answer": "Full-CT surpasses DeepEdit.",
       "evidence_snippets": [
-        "Full-CT, pre-trained on human CT scans, surpasses DeepEdit in organs sharing common labels."
+        "...Full-CT, pre-trained on human CT scans, surpasses DeepEdit in organs sharing common labels..."
       ],
       "evidence_keywords": [
         "Full-CT",
         "DeepEdit",
-        "surpasses"
+        "accuracy"
       ]
     },
     {
       "question_id": "q04",
       "difficulty": "medium",
       "question_type": "factoid",
-      "question": "How many training sessions were executed for each CNN model?",
-      "gold_answer": "Multiple training sessions.",
+      "question": "How many time points are captured in the CT scans referenced in the MICA dataset?",
+      "gold_answer": "Three time points: days 1, 3, and 7.",
       "evidence_snippets": [
-        "For each CNN model, we executed multiple training sessions."
+        "...captured at three distinct time points: days 1, 3, and 7."
       ],
       "evidence_keywords": [
-        "training",
-        "sessions"
+        "time points",
+        "days",
+        "MICA dataset"
       ]
     },
     {
       "question_id": "q05",
       "difficulty": "medium",
-      "question_type": "reasoning",
-      "question": "Why did DeepEdit sometimes predict zero volumes for certain organs?",
-      "gold_answer": "Because of small physical volumes and inconsistencies in segmentation masks.",
+      "question_type": "synthesis",
+      "question": "What were the major limitations observed regarding organ segmentation from the DeepEdit model?",
+      "gold_answer": "Poor prediction for small volume organs and inconsistent segmentation masks.",
       "evidence_snippets": [
-        "prediction is extremely poor when: An organ has a small physical volume... There is an inconsistency in segmentation masks..."
+        "...prediction is extremely poor when an organ has a small physical volume...",
+        "...an inconsistency in segmentation masks..."
       ],
       "evidence_keywords": [
-        "zero",
-        "volumes",
-        "small physical volumes",
-        "inconsistency"
+        "DeepEdit",
+        "limitations",
+        "segmentation quality"
       ]
     },
     {
       "question_id": "q06",
       "difficulty": "hard",
-      "question_type": "synthesis",
-      "question": "Based on the analysis, what is a key limitation of the DeepEdit model compared to Full-CT?",
-      "gold_answer": "DeepEdit is trained on only 5 NHP CT data, while Full-CT is trained on 1228 human CT scans.",
+      "question_type": "table/figure reading",
+      "question": "In the comparison of model predictions against manual measurements shown in Figure 5, which organ showed the highest correlation coefficient (R²) with Full-CT model predictions?",
+      "gold_answer": "Brain, with an R² = 0.77.",
       "evidence_snippets": [
-        "DeepEdit is trained on only 5 NHP CT data. The Full-CT model is trained on 1228 human CT scans."
+        "Notably, ... the Full-CT model does not generate zero values for predicted volumes. We also observe a robust correlation for the brain (R² = 0.77) ..."
       ],
       "evidence_keywords": [
-        "DeepEdit",
-        "trained",
-        "5 NHP",
+        "brain",
         "Full-CT",
-        "1228 human"
+        "R² = 0.77"
       ]
     },
     {
       "question_id": "q07",
       "difficulty": "hard",
-      "question_type": "multimodal",
-      "question": "Refer to Table 1. How many CT scans are available in the MICA dataset?",
-      "gold_answer": "18 CT scans.",
+      "question_type": "reasoning",
+      "question": "What might be the impact of training models like Full-CT extensively on human CT scans compared to those like DeepEdit trained on limited NHP CT data?",
+      "gold_answer": "Models trained on human data might generalize better and predict more accurately due to diverse training data.",
       "evidence_snippets": [
-        "MICA... Number of CT scans: 18."
+        "Our findings underscore the superiority of models trained on human data compared to those trained from scratch.",
+        "...the Full-CT model is trained on 1228 human CT scans..."
       ],
       "evidence_keywords": [
-        "MICA",
-        "CT scans",
-        "18"
+        "superiority",
+        "human data",
+        "training model"
       ]
     },
     {
       "question_id": "q08",
       "difficulty": "hard",
-      "question_type": "table/figure reading",
-      "question": "What does Figure 2 illustrate concerning organ volume measurements in the MICA dataset?",
-      "gold_answer": "Lung volumes exhibit the highest maximum measurements, while right inguinal lymph node volumes are at the lower end.",
+      "question_type": "factoid",
+      "question": "What technology is integrated with MONAI Label for model training and image analysis?",
+      "gold_answer": "3D Slicer platform.",
       "evidence_snippets": [
-        "Figure 2 displays the distribution of volume measurements... lung volumes exhibit the highest maximum measurements... right inguinal lymph node volumes occupy the lower end."
+        "...MONAI Label seamlessly integrates with the 3D Slicer platform..."
       ],
       "evidence_keywords": [
-        "Figure 2",
-        "volume measurements",
-        "lung volumes",
-        "right inguinal lymph node"
+        "MONAI Label",
+        "3D Slicer",
+        "model training"
       ]
     },
     {
       "question_id": "q09",
       "difficulty": "hard",
-      "question_type": "reasoning",
-      "question": "What is one reason the study emphasized the need for diversity in training data?",
-      "gold_answer": "To effectively learn parameters and accurately predict outcomes based on the diversity of organs and their volumes.",
+      "question_type": "comparison",
+      "question": "Between DeepEdit and Full-CT, which model consistently reported zero values for predicted organ volumes?",
+      "gold_answer": "DeepEdit model.",
       "evidence_snippets": [
-        "A crucial need for additional training data arises... It is important for a model to encounter various scenarios related to a given organ."
+        "...the DeepEdit model... predicts zero volumes for organs such as the right inguinal lymph nodes, spleen, bone marrow, and small/large intestines."
       ],
       "evidence_keywords": [
-        "training data",
-        "diversity",
-        "accurately predict"
+        "DeepEdit",
+        "predicted volumes",
+        "zero values"
       ]
     },
     {
       "question_id": "q10",
       "difficulty": "hard",
-      "question_type": "factoid",
-      "question": "How many NHP IDs are listed in Table 2 of the report?",
-      "gold_answer": "6 NHP IDs.",
+      "question_type": "synthesis",
+      "question": "Identify two significant recommendations for future work based on the discussions in this study.",
+      "gold_answer": "Expand training data diversity and explore active learning approaches for model annotation.",
       "evidence_snippets": [
-        "Table 2: IDs associated with NHPs in MICA datasets analyzed in this work."
+        "Given the diverse array of organs and their volumes, a crucial need for additional training data arises.",
+        "...we propose exploring an active learning approach instead of annotating each CT scan from scratch."
       ],
       "evidence_keywords": [
-        "NHP IDs",
-        "6"
+        "future work",
+        "training data",
+        "active learning"
       ]
     }
   ]

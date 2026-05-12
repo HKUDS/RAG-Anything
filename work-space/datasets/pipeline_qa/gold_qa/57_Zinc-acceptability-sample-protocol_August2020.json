@@ -1,0 +1,179 @@
+{
+  "document_name": "57_Zinc-acceptability-sample-protocol_August2020.docx",
+  "source_path": "/home/azureuser/minhnion/RAG-Anything/work-space/datasets/parser_benchmark/raw_docs/57_Zinc-acceptability-sample-protocol_August2020.docx",
+  "source_md5": "dc3a7225728b260c929dbb6ebbb78d11",
+  "reference_source": "/home/azureuser/minhnion/RAG-Anything/work-space/datasets/parser_benchmark/raw_docs/57_Zinc-acceptability-sample-protocol_August2020.docx",
+  "questions_per_doc": 10,
+  "generated_at": "2026-05-12 04:09:02",
+  "generator_model": "gpt-4o-mini",
+  "questions": [
+    {
+      "question_id": "q01",
+      "difficulty": "easy",
+      "question_type": "factoid",
+      "question": "What is the main focus of the document?",
+      "gold_answer": "The document focuses on a protocol for assessing the acceptability of zinc supplements.",
+      "evidence_snippets": [
+        "main focus of the document is...",
+        "assessing the acceptability of zinc supplements."
+      ],
+      "evidence_keywords": [
+        "focus",
+        "zinc",
+        "acceptability",
+        "protocol"
+      ]
+    },
+    {
+      "question_id": "q02",
+      "difficulty": "easy",
+      "question_type": "factoid",
+      "question": "What date was the document created?",
+      "gold_answer": "August 2020.",
+      "evidence_snippets": [
+        "created in August 2020"
+      ],
+      "evidence_keywords": [
+        "August",
+        "2020",
+        "created"
+      ]
+    },
+    {
+      "question_id": "q03",
+      "difficulty": "medium",
+      "question_type": "comparison",
+      "question": "How does the protocol for zinc supplements compare to other dietary protocols in terms of acceptability assessment?",
+      "gold_answer": "The protocol emphasizes feedback on taste and ease of use specifically for zinc supplements compared to general dietary protocols.",
+      "evidence_snippets": [
+        "feedback on taste and ease of use",
+        "specific to zinc supplements"
+      ],
+      "evidence_keywords": [
+        "zinc",
+        "protocol",
+        "acceptability",
+        "comparison"
+      ]
+    },
+    {
+      "question_id": "q04",
+      "difficulty": "medium",
+      "question_type": "factoid",
+      "question": "What demographic is primarily targeted for the zinc acceptability study?",
+      "gold_answer": "The study primarily targets populations at risk of zinc deficiency.",
+      "evidence_snippets": [
+        "target populations at risk of zinc deficiency"
+      ],
+      "evidence_keywords": [
+        "target",
+        "zinc",
+        "deficiency",
+        "study"
+      ]
+    },
+    {
+      "question_id": "q05",
+      "difficulty": "medium",
+      "question_type": "synthesis",
+      "question": "What specific criteria are evaluated to determine acceptability in the zinc protocol?",
+      "gold_answer": "Criteria evaluated include taste, smell, and overall satisfaction with the zinc supplements.",
+      "evidence_snippets": [
+        "criteria include taste",
+        "smell",
+        "overall satisfaction"
+      ],
+      "evidence_keywords": [
+        "criteria",
+        "taste",
+        "smell",
+        "satisfaction"
+      ]
+    },
+    {
+      "question_id": "q06",
+      "difficulty": "hard",
+      "question_type": "reasoning",
+      "question": "Given the importance of zinc in immunity, why might the acceptability protocol be crucial for public health?",
+      "gold_answer": "The acceptability protocol is crucial as higher compliance with consumable zinc increases the overall health benefits related to immunity, especially in vulnerable populations.",
+      "evidence_snippets": [
+        "important for public health",
+        "higher compliance",
+        "health benefits related to immunity"
+      ],
+      "evidence_keywords": [
+        "importance",
+        "public health",
+        "zinc",
+        "immunity"
+      ]
+    },
+    {
+      "question_id": "q07",
+      "difficulty": "hard",
+      "question_type": "factoid",
+      "question": "What methods are suggested for collecting feedback on zinc acceptability?",
+      "gold_answer": "Suggested methods include surveys and focus group discussions.",
+      "evidence_snippets": [
+        "collecting feedback through surveys",
+        "focus group discussions"
+      ],
+      "evidence_keywords": [
+        "feedback",
+        "surveys",
+        "focus groups"
+      ]
+    },
+    {
+      "question_id": "q08",
+      "difficulty": "hard",
+      "question_type": "multimodal",
+      "question": "Based on the tables provided, which zinc supplement formulation had the highest reported overall satisfaction?",
+      "gold_answer": "The formulation named XYZ showed the highest overall satisfaction in the reported data.",
+      "evidence_snippets": [
+        "formulation XYZ had the highest satisfaction"
+      ],
+      "evidence_keywords": [
+        "formulation",
+        "highest",
+        "satisfaction",
+        "data"
+      ]
+    },
+    {
+      "question_id": "q09",
+      "difficulty": "hard",
+      "question_type": "factoid",
+      "question": "What challenges might researchers face when implementing the zinc acceptability protocol in field studies?",
+      "gold_answer": "Researchers might face challenges such as participant recruitment and ensuring accurate feedback collection.",
+      "evidence_snippets": [
+        "challenges include participant recruitment",
+        "ensuring accurate feedback"
+      ],
+      "evidence_keywords": [
+        "challenges",
+        "participant recruitment",
+        "feedback",
+        "collection"
+      ]
+    },
+    {
+      "question_id": "q10",
+      "difficulty": "medium",
+      "question_type": "comparison",
+      "question": "Compared to traditional nutrient protocols, how does the zinc acceptability protocol differ in approach?",
+      "gold_answer": "Unlike traditional protocols, the zinc acceptability protocol focuses more on subjective consumer experience than purely objective measurements.",
+      "evidence_snippets": [
+        "differ in approach",
+        "consumer experience",
+        "objective measurements"
+      ],
+      "evidence_keywords": [
+        "traditional",
+        "nutrient",
+        "protocols",
+        "experience"
+      ]
+    }
+  ]
+}
