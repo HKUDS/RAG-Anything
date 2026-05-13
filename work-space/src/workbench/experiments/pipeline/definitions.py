@@ -38,8 +38,7 @@ PIPELINE_EXPERIMENTS["exp1_baseline_mineru_cloud_openai"] = PipelineExperimentDe
 )
 
 
-PIPELINE_EXPERIMENTS["" \
-""] = PipelineExperimentDefinition(
+PIPELINE_EXPERIMENTS["exp2_default_mineru_cloud_ollama"] = PipelineExperimentDefinition(
     id="exp2_default_mineru_cloud_ollama", 
     description="Default pipeline using MinerU cloud parser and Ollama-compatible models.",
     category="pipeline",

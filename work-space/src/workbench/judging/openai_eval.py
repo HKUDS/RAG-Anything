@@ -21,9 +21,66 @@ def _strip_json_fence(text: str) -> str:
     return text
 
 
+def _escape_non_json_backslashes(text: str) -> str:
+    r"""Repair LLM JSON-like output that contains literal backslashes in string values.
+
+    We preserve structural JSON escapes such as \", \\, \/, and valid \\uXXXX
+    sequences, but rewrite everything else as a literal backslash so json.loads
+    can parse responses containing LaTeX-like snippets such as \(d_{model}\).
+    """
+    repaired: list[str] = []
+    in_string = False
+    i = 0
+
+    while i < len(text):
+        ch = text[i]
+
+        if not in_string:
+            repaired.append(ch)
+            if ch == '"':
+                in_string = True
+            i += 1
+            continue
+
+        if ch == "\\":
+            nxt = text[i + 1] if i + 1 < len(text) else ""
+            if nxt in {'"', "\\", "/"}:
+                repaired.append(ch)
+                repaired.append(nxt)
+                i += 2
+                continue
+            if nxt == "u" and i + 5 < len(text):
+                candidate = text[i + 2 : i + 6]
+                if re.fullmatch(r"[0-9a-fA-F]{4}", candidate):
+                    repaired.append(ch)
+                    repaired.append("u")
+                    repaired.append(candidate)
+                    i += 6
+                    continue
+
+            # Keep the following character unchanged, but escape the backslash itself.
+            repaired.append("\\\\")
+            i += 1
+            continue
+
+        repaired.append(ch)
+        if ch == '"':
+            in_string = False
+        i += 1
+
+    return "".join(repaired)
+
+
 def _loads_json(text: str) -> Any:
     cleaned = _strip_json_fence(text)
-    return json.loads(cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        repaired = _escape_non_json_backslashes(cleaned)
+        if repaired == cleaned:
+            raise
+        logger.warning("Repaired non-JSON backslashes in OpenAI evaluator response before parsing.")
+        return json.loads(repaired)
 
 
 @dataclass
@@ -144,6 +201,11 @@ Return strict JSON:
   "unsupported_claim": 0,
   "reasoning": "short explanation"
 }}
+
+Formatting rules:
+- Return valid JSON only.
+- Do not use Markdown, LaTeX, or backslashes in any field.
+- Keep reasoning plain text in one short sentence.
 
 Question:
 {question}
