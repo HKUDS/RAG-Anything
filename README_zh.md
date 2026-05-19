@@ -47,6 +47,27 @@
 
 ---
 
+<div align="center">
+  <table>
+    <tr>
+      <td style="vertical-align: middle;">
+        <img src="./assets/LiteWrite.png"
+             width="56"
+             height="56"
+             alt="LiteWrite"
+             style="border-radius: 12px;" />
+      </td>
+      <td style="vertical-align: middle; padding-left: 12px;">
+        <a href="https://litewrite.ai">
+          <img src="https://img.shields.io/badge/🚀%20LiteWrite-AI%20原生%20LaTeX%20编辑器-ff6b6b?style=for-the-badge&logoColor=white&labelColor=1a1a2e">
+        </a>
+      </td>
+    </tr>
+  </table>
+</div>
+
+---
+
 ## 🎉 新闻
 - [X] [2025.08.12]🎯📢 🔍 RAGAnything 现在支持 **VLM增强查询** 模式！当文档包含图片时，系统可以自动将图片与文本上下文一起直接传递给VLM进行综合多模态分析。
 - [X] [2025.07.05]🎯📢 RAGAnything 新增[上下文配置模块](docs/context_aware_processing.md)，支持为多模态内容处理添加相关上下文信息。
@@ -283,6 +304,7 @@ python -c "from raganything import RAGAnything; rag = RAGAnything(); print('✅ 
 
 ```python
 import asyncio
+from functools import partial
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
@@ -421,6 +443,7 @@ if __name__ == "__main__":
 
 ```python
 import asyncio
+from functools import partial
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
@@ -636,6 +659,7 @@ equation_result = await rag.aquery_with_multimodal(
 
 ```python
 import asyncio
+from functools import partial
 from raganything import RAGAnything
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
@@ -764,6 +788,7 @@ if __name__ == "__main__":
 
 ```python
 import asyncio
+from functools import partial
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
@@ -1068,9 +1093,9 @@ await rag.process_document_complete(
     end_page=10,                 # 结束页码（0为基准，适用于PDF）
     formula=True,                # 启用公式解析
     table=True,                  # 启用表格解析
-    backend="pipeline",          # 解析后端：pipeline|vlm-transformers|vlm-sglang-engine|vlm-sglang-client
+    backend="pipeline",          # 解析后端：pipeline|hybrid-auto-engine|hybrid-http-client|vlm-auto-engine|vlm-http-client
     source="huggingface",        # 模型源："huggingface", "modelscope", "local"
-    # vlm_url="http://127.0.0.1:3000" # 当backend=vlm-sglang-client时，需指定服务地址
+    # vlm_url="http://127.0.0.1:3000" # 当backend=vlm-http-client时，需指定服务地址
 
     # RAGAnything标准参数
     display_stats=True,          # 显示内容统计信息

@@ -70,7 +70,11 @@ class BatchMixin:
         if max_workers is None:
             max_workers = self.config.max_concurrent_files
 
-        await self._ensure_lightrag_initialized()
+        init_result = await self._ensure_lightrag_initialized()
+        if not init_result or not init_result.get("success"):
+            raise RuntimeError(
+                f"LightRAG initialization failed: {(init_result or {}).get('error', 'unknown error')}"
+            )
 
         # Get all files in the folder
         folder_path_obj = Path(folder_path)
@@ -105,10 +109,9 @@ class BatchMixin:
         async def process_single_file(file_path: Path):
             async with semaphore:
                 is_in_subdir = (
-                    lambda file_path, dir_path: len(
-                        file_path.relative_to(dir_path).parents
+                    lambda file_path, dir_path: (
+                        len(file_path.relative_to(dir_path).parents) > 1
                     )
-                    > 1
                 )(file_path, folder_path_obj)
 
                 try:
@@ -329,6 +332,14 @@ class BatchMixin:
             Dict containing both parse results and RAG processing results
         """
         start_time = time.time()
+        callback_manager = getattr(self, "callback_manager", None)
+        total_files = len(file_paths)
+
+        if callback_manager is not None:
+            callback_manager.dispatch(
+                "on_batch_start",
+                file_count=total_files,
+            )
 
         # Use config defaults if not specified
         if output_dir is None:
@@ -355,7 +366,11 @@ class BatchMixin:
 
         # Step 2: Process with RAG
         # Initialize RAG system
-        await self._ensure_lightrag_initialized()
+        init_result = await self._ensure_lightrag_initialized()
+        if not init_result or not init_result.get("success"):
+            raise RuntimeError(
+                f"LightRAG initialization failed: {(init_result or {}).get('error', 'unknown error')}"
+            )
 
         # Then, process each successful file with RAG
         rag_results = {}
@@ -392,14 +407,22 @@ class BatchMixin:
 
         processing_time = time.time() - start_time
 
+        successful_rag_files = len([r for r in rag_results.values() if r["processed"]])
+        failed_rag_files = len([r for r in rag_results.values() if not r["processed"]])
+
+        if callback_manager is not None:
+            callback_manager.dispatch(
+                "on_batch_complete",
+                total_files=total_files,
+                successful=successful_rag_files,
+                failed=failed_rag_files,
+                duration_seconds=processing_time,
+            )
+
         return {
             "parse_result": parse_result,
             "rag_results": rag_results,
             "total_processing_time": processing_time,
-            "successful_rag_files": len(
-                [r for r in rag_results.values() if r["processed"]]
-            ),
-            "failed_rag_files": len(
-                [r for r in rag_results.values() if not r["processed"]]
-            ),
+            "successful_rag_files": successful_rag_files,
+            "failed_rag_files": failed_rag_files,
         }

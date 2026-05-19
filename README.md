@@ -50,6 +50,27 @@
 
 ---
 
+<div align="center">
+  <table>
+    <tr>
+      <td style="vertical-align: middle;">
+        <img src="./assets/LiteWrite.png"
+             width="56"
+             height="56"
+             alt="LiteWrite"
+             style="border-radius: 12px;" />
+      </td>
+      <td style="vertical-align: middle; padding-left: 12px;">
+        <a href="https://litewrite.ai">
+          <img src="https://img.shields.io/badge/🚀%20LiteWrite-AI%20Native%20LaTeX%20Editor-ff6b6b?style=for-the-badge&logoColor=white&labelColor=1a1a2e">
+        </a>
+      </td>
+    </tr>
+  </table>
+</div>
+
+---
+
 ## 🎉 News
 - [X] [2025.10]🎯📢 🚀 We have released the technical report of [RAG-Anything](http://arxiv.org/abs/2510.12323). Access it now to explore our latest research findings.
 - [X] [2025.08]🎯📢 🔍 RAG-Anything now features **VLM-Enhanced Query** mode! When documents include images, the system seamlessly integrates them into VLM for advanced multimodal analysis, combining visual and textual context for deeper insights.
@@ -303,6 +324,7 @@ Models are downloaded automatically on first use. For manual download, refer to 
 
 ```python
 import asyncio
+from functools import partial
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
@@ -315,7 +337,7 @@ async def main():
     # Create RAGAnything configuration
     config = RAGAnythingConfig(
         working_dir="./rag_storage",
-        parser="mineru",  # Parser selection: mineru or docling
+        parser="mineru",  # Parser selection: mineru, docling, or paddleocr
         parse_method="auto",  # Parse method: auto, ocr, or txt
         enable_image_processing=True,
         enable_table_processing=True,
@@ -439,6 +461,7 @@ if __name__ == "__main__":
 
 ```python
 import asyncio
+from functools import partial
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
@@ -654,6 +677,7 @@ equation_result = await rag.aquery_with_multimodal(
 
 ```python
 import asyncio
+from functools import partial
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
@@ -783,6 +807,7 @@ For scenarios where you already have a pre-parsed content list (e.g., from exter
 
 ```python
 import asyncio
+from functools import partial
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
@@ -1026,7 +1051,7 @@ Create a `.env` file (refer to `.env.example`):
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_BASE_URL=your_base_url  # Optional
 OUTPUT_DIR=./output             # Default output directory for parsed documents
-PARSER=mineru                   # Parser selection: mineru or docling
+PARSER=mineru                   # Parser selection: mineru, docling, or paddleocr
 PARSE_METHOD=auto              # Parse method: auto, ocr, or txt
 ```
 
@@ -1034,6 +1059,25 @@ PARSE_METHOD=auto              # Parse method: auto, ocr, or txt
 - `MINERU_PARSE_METHOD` is deprecated, please use `PARSE_METHOD`
 
 > **Note**: API keys are only required for full RAG processing with LLM integration. The parsing test files (`office_document_test.py` and `image_format_test.py`) only test parser functionality and do not require API keys.
+
+### Troubleshooting and multimodal checklist
+
+- See **[docs/multimodal_rag_failure_modes.md](docs/multimodal_rag_failure_modes.md)** for a short checklist of common pipeline issues (OCR, tables, retrieval bias, debugging tips). Related: [#207](https://github.com/HKUDS/RAG-Anything/issues/207), [#213](https://github.com/HKUDS/RAG-Anything/issues/213).
+
+### Public media URLs (CDN / object storage)
+
+When ingestion runs on a server but your UI or another service needs **HTTPS** (or S3-style) links to figures, set:
+
+```bash
+# Base URL for assets (no trailing slash required)
+RAGANYTHING_PUBLIC_ASSET_BASE_URL=https://my-bucket.s3.us-east-1.amazonaws.com/prefix
+# Filesystem root that should be stripped from absolute paths under that tree
+RAGANYTHING_PUBLIC_ASSET_STRIP_PREFIX=/var/rag/output
+```
+
+After parsing, each non-empty `img_path`, `table_img_path`, or `equation_img_path` may gain a sibling field `*_public_url` while the original path stays on disk for local processing. See [#272](https://github.com/HKUDS/RAG-Anything/issues/272).
+
+> **Scope today**: this mapping runs in the MinerU parser path only. Other parsers (e.g. Docling) keep working but will not produce `*_public_url` fields until the helper is wired into their content_list post-processing as well. If only one of the two env vars is set, RAG-Anything logs a warning and skips URL attachment.
 
 ### Parser Configuration
 
@@ -1048,6 +1092,21 @@ RAGAnything now supports multiple parsers, each with specific advantages:
 - Optimized for Office documents and HTML files
 - Better document structure preservation
 - Native support for multiple Office formats
+
+#### PaddleOCR Parser
+- OCR-focused parser for images and PDFs
+- Produces text blocks compatible with existing `content_list` processing
+- Supports optional Office/TXT/MD parsing by converting to PDF first
+
+Install PaddleOCR parser extras:
+
+```bash
+pip install -e ".[paddleocr]"
+# or
+uv sync --extra paddleocr
+```
+
+> **Note**: PaddleOCR also requires `paddlepaddle` (CPU/GPU package varies by platform). Install it with the official guide: https://www.paddlepaddle.org.cn/install/quick
 
 ### MinerU Configuration
 
@@ -1070,7 +1129,7 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # or "ocr", "txt"
-    parser="mineru"               # Optional: "mineru" or "docling"
+    parser="mineru"               # Optional: "mineru", "docling", or "paddleocr"
 )
 
 # Advanced parsing configuration with special parameters
@@ -1078,7 +1137,7 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # Parsing method: "auto", "ocr", "txt"
-    parser="mineru",              # Parser selection: "mineru" or "docling"
+    parser="mineru",              # Parser selection: "mineru", "docling", or "paddleocr"
 
     # MinerU special parameters - all supported kwargs:
     lang="ch",                   # Document language for OCR optimization (e.g., "ch", "en", "ja")
@@ -1087,9 +1146,9 @@ await rag.process_document_complete(
     end_page=10,                 # Ending page number (0-based, for PDF)
     formula=True,                # Enable formula parsing
     table=True,                  # Enable table parsing
-    backend="pipeline",          # Parsing backend: pipeline|vlm-transformers|vlm-sglang-engine|vlm-sglang-client.
+    backend="pipeline",          # Parsing backend: pipeline|hybrid-auto-engine|hybrid-http-client|vlm-auto-engine|vlm-http-client.
     source="huggingface",        # Model source: "huggingface", "modelscope", "local"
-    # vlm_url="http://127.0.0.1:3000" # Service address when using backend=vlm-sglang-client
+    # vlm_url="http://127.0.0.1:3000" # Service address when using backend=vlm-http-client
 
     # Standard RAGAnything parameters
     display_stats=True,          # Display content statistics
@@ -1098,7 +1157,7 @@ await rag.process_document_complete(
 )
 ```
 
-> **Note**: MinerU 2.0 no longer uses the `magic-pdf.json` configuration file. All settings are now passed as command-line parameters or function arguments. RAG-Anything now supports multiple document parsers - you can choose between MinerU and Docling based on your needs.
+> **Note**: MinerU 2.0 no longer uses the `magic-pdf.json` configuration file. All settings are now passed as command-line parameters or function arguments. RAG-Anything supports multiple document parsers, including MinerU, Docling, and PaddleOCR.
 
 ### Processing Requirements
 
@@ -1107,6 +1166,7 @@ Different content types require specific optional dependencies:
 - **Office Documents** (.doc, .docx, .ppt, .pptx, .xls, .xlsx): Install [LibreOffice](https://www.libreoffice.org/download/download/)
 - **Extended Image Formats** (.bmp, .tiff, .gif, .webp): Install with `pip install raganything[image]`
 - **Text Files** (.txt, .md): Install with `pip install raganything[text]`
+- **PaddleOCR Parser** (`parser="paddleocr"`): Install with `pip install raganything[paddleocr]`, then install `paddlepaddle` for your platform
 
 > **📋 Quick Install**: Use `pip install raganything[all]` to enable all format support (Python dependencies only - LibreOffice still needs separate installation)
 

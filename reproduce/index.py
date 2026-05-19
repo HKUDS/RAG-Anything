@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 """
-Example script demonstrating parser integration with RAGAnything
+Example script demonstrating the integration of MinerU parser with RAGAnything
 
 This example shows how to:
-1. Process documents with RAGAnything using configurable parsers
+1. Process documents with RAGAnything using MinerU parser
 2. Perform pure text queries using aquery() method
 3. Perform multimodal queries with specific multimodal content using aquery_with_multimodal() method
 4. Handle different types of multimodal content (tables, equations) in queries
@@ -14,7 +14,6 @@ import argparse
 import asyncio
 import logging
 import logging.config
-from functools import partial
 from pathlib import Path
 
 # Add project root directory to Python path
@@ -38,7 +37,7 @@ def configure_logging():
     log_file_path = os.path.abspath(os.path.join(log_dir, "raganything_example.log"))
 
     print(f"\nRAGAnything example log file: {log_file_path}\n")
-    os.makedirs(os.path.dirname(log_file_path) or ".", exist_ok=True)
+    os.makedirs(os.path.dirname(log_dir), exist_ok=True)
 
     # Get log file max size and backup count from environment variables
     log_max_bytes = int(os.getenv("LOG_MAX_BYTES", 10485760))  # Default 10MB
@@ -109,7 +108,7 @@ async def process_with_rag(
         # Create RAGAnything configuration
         config = RAGAnythingConfig(
             working_dir=working_dir or "./rag_storage",
-            parser=parser,  # Parser selection: mineru, docling, or paddleocr
+            parser=parser,  # Parser selection: mineru or docling
             parse_method="auto",  # Parse method: auto, ocr, or txt
             enable_image_processing=True,
             enable_table_processing=True,
@@ -117,12 +116,9 @@ async def process_with_rag(
         )
 
         # Define LLM model function
-        llm_model = os.getenv("LLM_MODEL", "gpt-4o-mini")
-        vision_model = os.getenv("VISION_MODEL", "gpt-4o")
-
         def llm_model_func(prompt, system_prompt=None, history_messages=[], **kwargs):
             return openai_complete_if_cache(
-                llm_model,
+                "gpt-4o-mini",
                 prompt,
                 system_prompt=system_prompt,
                 history_messages=history_messages,
@@ -143,7 +139,7 @@ async def process_with_rag(
             # If messages format is provided (for multimodal VLM enhanced query), use it directly
             if messages:
                 return openai_complete_if_cache(
-                    vision_model,
+                    "gpt-4o-mini",
                     "",
                     system_prompt=None,
                     history_messages=[],
@@ -155,7 +151,7 @@ async def process_with_rag(
             # Traditional single image format
             elif image_data:
                 return openai_complete_if_cache(
-                    vision_model,
+                    "gpt-4o-mini",
                     "",
                     system_prompt=None,
                     history_messages=[],
@@ -186,16 +182,13 @@ async def process_with_rag(
             else:
                 return llm_model_func(prompt, system_prompt, history_messages, **kwargs)
 
-        # Define embedding function - using environment variables for configuration
-        embedding_dim = int(os.getenv("EMBEDDING_DIM", "3072"))
-        embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-large")
-
+        # Define embedding function
         embedding_func = EmbeddingFunc(
-            embedding_dim=embedding_dim,
+            embedding_dim=3072,
             max_token_size=8192,
-            func=lambda texts: openai_embed.func(
+            func=lambda texts: openai_embed(
                 texts,
-                model=embedding_model,
+                model="text-embedding-3-large",
                 api_key=api_key,
                 base_url=base_url,
             ),
@@ -211,57 +204,16 @@ async def process_with_rag(
 
         # Process document
         await rag.process_document_complete(
-            file_path=file_path, output_dir=output_dir, parse_method="auto"
+            file_path=file_path,
+            output_dir=output_dir,
+            parse_method="auto",
+            source="modelscope",
+            backend="pipeline",
+            device="cuda:0",
         )
 
         # Example queries - demonstrating different query approaches
         logger.info("\nQuerying processed document:")
-
-        # 1. Pure text queries using aquery()
-        text_queries = [
-            "What is the main content of the document?",
-            "What are the key topics discussed?",
-        ]
-
-        for query in text_queries:
-            logger.info(f"\n[Text Query]: {query}")
-            result = await rag.aquery(query, mode="hybrid")
-            logger.info(f"Answer: {result}")
-
-        # 2. Multimodal query with specific multimodal content using aquery_with_multimodal()
-        logger.info(
-            "\n[Multimodal Query]: Analyzing performance data in context of document"
-        )
-        multimodal_result = await rag.aquery_with_multimodal(
-            "Compare this performance data with any similar results mentioned in the document",
-            multimodal_content=[
-                {
-                    "type": "table",
-                    "table_data": """Method,Accuracy,Processing_Time
-                                RAGAnything,95.2%,120ms
-                                Traditional_RAG,87.3%,180ms
-                                Baseline,82.1%,200ms""",
-                    "table_caption": "Performance comparison results",
-                }
-            ],
-            mode="hybrid",
-        )
-        logger.info(f"Answer: {multimodal_result}")
-
-        # 3. Another multimodal query with equation content
-        logger.info("\n[Multimodal Query]: Mathematical formula analysis")
-        equation_result = await rag.aquery_with_multimodal(
-            "Explain this formula and relate it to any mathematical concepts in the document",
-            multimodal_content=[
-                {
-                    "type": "equation",
-                    "latex": "F1 = 2 \\cdot \\frac{precision \\cdot recall}{precision + recall}",
-                    "equation_caption": "F1-score calculation formula",
-                }
-            ],
-            mode="hybrid",
-        )
-        logger.info(f"Answer: {equation_result}")
 
     except Exception as e:
         logger.error(f"Error processing with RAG: {str(e)}")
@@ -293,13 +245,7 @@ def main():
     parser.add_argument(
         "--parser",
         default=os.getenv("PARSER", "mineru"),
-        help=(
-            "Parser selection. Built-ins: mineru, docling, paddleocr. "
-            "Custom parsers that you register via register_parser() in the "
-            "same Python process are also accepted when using RAGAnything as "
-            "a library. This example script does not perform any automatic "
-            "plugin discovery."
-        ),
+        help="Optional base URL for API",
     )
 
     args = parser.parse_args()
@@ -328,7 +274,6 @@ def main():
 
 
 if __name__ == "__main__":
-    # Configure logging first
     configure_logging()
 
     print("RAGAnything Example")

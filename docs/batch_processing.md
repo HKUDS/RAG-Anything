@@ -12,6 +12,7 @@ The batch processing feature allows you to process multiple documents concurrent
 - **Progress Tracking**: Real-time progress bars with `tqdm`
 - **Error Handling**: Comprehensive error reporting and recovery
 - **Flexible Input**: Support for files, directories, and recursive search
+- **Dry Run**: Preview which files would be processed without running parsers
 - **Configurable Workers**: Adjustable number of parallel workers
 - **Installation Check Bypass**: Optional skip for environments with package conflicts
 
@@ -23,6 +24,9 @@ pip install raganything[all]
 
 # Required for batch processing
 pip install tqdm
+
+# Optional for parser='paddleocr'
+pip install raganything[paddleocr]
 ```
 
 ## Usage
@@ -34,7 +38,7 @@ from raganything.batch_parser import BatchParser
 
 # Create batch parser
 batch_parser = BatchParser(
-    parser_type="mineru",  # or "docling"
+    parser_type="mineru",  # or "docling" or "paddleocr"
     max_workers=4,
     show_progress=True,
     timeout_per_file=300,
@@ -118,13 +122,17 @@ print(f"Total processing time: {result['total_processing_time']:.2f} seconds")
 
 ```bash
 # Basic batch processing
-python -m raganything.batch_parser path/to/docs/ --output ./output --workers 4
+python -m raganything.batch_parser examples/sample_docs/ --output ./output --workers 4
 
 # With specific parser
-python -m raganything.batch_parser path/to/docs/ --parser mineru --method auto
+python -m raganything.batch_parser examples/sample_docs/ --parser mineru --method auto
+python -m raganything.batch_parser examples/sample_docs/ --parser paddleocr --method ocr
 
 # Without progress bar
-python -m raganything.batch_parser path/to/docs/ --output ./output --no-progress
+python -m raganything.batch_parser examples/sample_docs/ --output ./output --no-progress
+
+# Dry run (list supported files without processing)
+python -m raganything.batch_parser examples/sample_docs/ --output ./output --dry-run
 
 # Help
 python -m raganything.batch_parser --help
@@ -144,7 +152,7 @@ PARSER_OUTPUT_DIR=./parsed_output
 
 ### BatchParser Parameters
 
-- **parser_type**: `"mineru"` or `"docling"` (default: `"mineru"`)
+- **parser_type**: `"mineru"`, `"docling"`, or `"paddleocr"` (default: `"mineru"`)
 - **max_workers**: Number of parallel workers (default: `4`)
 - **show_progress**: Show progress bar (default: `True`)
 - **timeout_per_file**: Timeout per file in seconds (default: `300`)
@@ -170,6 +178,7 @@ class BatchProcessingResult:
     processing_time: float           # Total processing time in seconds
     errors: Dict[str, str]           # Error messages for failed files
     output_dir: str                  # Output directory used
+    dry_run: bool                    # True if run was a dry-run
 
     def summary(self) -> str:        # Human-readable summary
     def success_rate(self) -> float: # Success rate as percentage

@@ -33,7 +33,8 @@ from raganything.query import QueryMixin
 from raganything.processor import ProcessorMixin
 from raganything.batch import BatchMixin
 from raganything.utils import get_processor_supports
-from raganything.parser import MineruParser, DoclingParser
+from raganything.parser import MineruParser, SUPPORTED_PARSERS, get_parser
+from raganything.callbacks import CallbackManager
 
 # Import specialized processors
 from raganything.modalprocessors import (
@@ -93,6 +94,14 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
     parse_cache: Optional[Any] = field(default=None, init=False)
     """Parse result cache storage using LightRAG KV storage."""
 
+    multimodal_status_cache: Optional[Any] = field(default=None, init=False)
+    """Compatibility KV storage for multimodal completion state."""
+
+    callback_manager: CallbackManager = field(
+        default_factory=CallbackManager, init=False, repr=False
+    )
+    """Processing callbacks manager (optional hooks for observability and metrics)."""
+
     _parser_installation_checked: bool = field(default=False, init=False)
     """Flag to track if parser installation has been checked."""
 
@@ -147,19 +156,42 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         self.logger.info(f"  Max concurrent files: {self.config.max_concurrent_files}")
 
     def close(self):
-        """Cleanup resources when object is destroyed"""
+        """Cleanup resources when object is destroyed.
+
+        Handles three common scenarios:
+        1. Inside a running async context (e.g., FastAPI shutdown) -> schedule task
+        2. No event loop in thread (typical atexit) -> create one with asyncio.run()
+        3. Event loop exists but is closed/closing (atexit race) -> create new loop
+        """
         try:
             import asyncio
 
-            if asyncio.get_event_loop().is_running():
-                # If we're in an async context, schedule cleanup
-                asyncio.create_task(self.finalize_storages())
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop is not None and loop.is_running():
+                # Case 1: We're inside a running event loop, schedule cleanup task
+                loop.create_task(self.finalize_storages())
             else:
-                # Run cleanup synchronously
+                # Case 2/3: No running loop. Clean up any stale loop reference
+                # so asyncio.run() can create a fresh one (Python 3.10+ raises
+                # RuntimeError if a loop is already set for the thread).
+                if loop is not None:
+                    try:
+                        loop.close()
+                    except Exception:
+                        pass
+                    asyncio.set_event_loop(None)
                 asyncio.run(self.finalize_storages())
-        except Exception as e:
-            # Use print instead of logger since logger might be cleaned up already
-            print(f"Warning: Failed to finalize RAGAnything storages: {e}")
+        except Exception:
+            # Silently ignore during interpreter shutdown - the event loop and
+            # resources are being torn down anyway, and printing may fail if
+            # stdout/stderr are already closed. This avoids the noisy
+            # "There is no current event loop in thread 'MainThread'" warning
+            # that confused users (#135).
+            pass
 
     def _create_context_config(self) -> ContextConfig:
         """Create context configuration from RAGAnything config"""
@@ -256,6 +288,19 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
 
             if self.lightrag is not None:
                 # LightRAG was pre-provided, but we need to ensure it's properly initialized
+                # Inherit model functions from LightRAG if not explicitly provided
+                if self.llm_model_func is None and hasattr(
+                    self.lightrag, "llm_model_func"
+                ):
+                    self.llm_model_func = self.lightrag.llm_model_func
+                    self.logger.debug("Inherited llm_model_func from LightRAG instance")
+
+                if self.embedding_func is None and hasattr(
+                    self.lightrag, "embedding_func"
+                ):
+                    self.embedding_func = self.lightrag.embedding_func
+                    self.logger.debug("Inherited embedding_func from LightRAG instance")
+
                 try:
                     # Ensure LightRAG storages are initialized
                     if (
@@ -286,6 +331,20 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                             )
                         )
                         await self.parse_cache.initialize()
+
+                    if self.multimodal_status_cache is None:
+                        self.logger.info(
+                            "Initializing multimodal status cache for pre-provided LightRAG instance"
+                        )
+                        self.multimodal_status_cache = (
+                            self.lightrag.key_string_value_json_storage_cls(
+                                namespace="multimodal_status",
+                                workspace=self.lightrag.workspace,
+                                global_config=self.lightrag.__dict__,
+                                embedding_func=self.embedding_func,
+                            )
+                        )
+                        await self.multimodal_status_cache.initialize()
 
                     # Initialize processors if not already done
                     if not self.modal_processors:
@@ -347,11 +406,21 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 )
                 await self.parse_cache.initialize()
 
+                self.multimodal_status_cache = (
+                    self.lightrag.key_string_value_json_storage_cls(
+                        namespace="multimodal_status",
+                        workspace=self.lightrag.workspace,
+                        global_config=self.lightrag.__dict__,
+                        embedding_func=self.embedding_func,
+                    )
+                )
+                await self.multimodal_status_cache.initialize()
+
                 # Initialize processors after LightRAG is ready
                 self._initialize_processors()
 
                 self.logger.info(
-                    "LightRAG, parse cache, and multimodal processors initialized"
+                    "LightRAG, parse cache, multimodal status cache, and multimodal processors initialized"
                 )
                 return {"success": True}
 
@@ -394,6 +463,10 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             if self.parse_cache is not None:
                 tasks.append(self.parse_cache.finalize())
                 self.logger.debug("Scheduled parse cache finalization")
+
+            if self.multimodal_status_cache is not None:
+                tasks.append(self.multimodal_status_cache.finalize())
+                self.logger.debug("Scheduled multimodal status cache finalization")
 
             # Finalize LightRAG storages if LightRAG is initialized
             if self.lightrag is not None:
@@ -551,6 +624,10 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         """Get processor information"""
         base_info = {
             "mineru_installed": MineruParser.check_installation(MineruParser()),
+            "parser_installation": {
+                parser_name: get_parser(parser_name).check_installation()
+                for parser_name in SUPPORTED_PARSERS
+            },
             "config": self.get_config_info(),
             "models": {
                 "llm_model": "External function"

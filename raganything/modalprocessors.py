@@ -28,6 +28,12 @@ from lightrag.operate import extract_entities, merge_nodes_and_edges
 
 # Import prompt templates
 from raganything.prompt import PROMPTS
+from raganything.utils import (
+    format_table_body,
+    get_equation_text_and_format,
+    get_table_body,
+    normalize_caption_list,
+)
 
 
 @dataclass
@@ -544,6 +550,30 @@ class BaseModalProcessor:
             chunk_results,
         )
 
+    @staticmethod
+    def _strip_thinking_tags(text: str) -> str:
+        """Remove <think>/<thinking> tags produced by reasoning models.
+
+        Models such as DeepSeek-R1 and Qwen2.5-think wrap their internal
+        chain-of-thought in ``<think>…</think>`` or ``<thinking>…</thinking>``
+        blocks before emitting the final answer.  When JSON parsing fails and
+        the raw LLM response is used as a fallback, storing the entire response
+        (including the reasoning preamble) pollutes the knowledge graph with
+        internal model thoughts rather than actual content descriptions.
+
+        This helper strips those blocks so that only the final answer text is
+        stored or surfaced to callers.
+        """
+        import re
+
+        cleaned = re.sub(
+            r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE
+        )
+        cleaned = re.sub(
+            r"<thinking>.*?</thinking>", "", cleaned, flags=re.DOTALL | re.IGNORECASE
+        )
+        return cleaned.strip()
+
     def _robust_json_parse(self, response: str) -> dict:
         """Robust JSON parsing with multiple fallback strategies"""
 
@@ -574,17 +604,31 @@ class BaseModalProcessor:
         """Extract all possible JSON candidates from response"""
         candidates = []
 
-        # Method 1: JSON in code blocks
         import re
 
-        json_blocks = re.findall(r"```(?:json)?\s*(\{.*?\})\s*```", response, re.DOTALL)
+        # Pre-process: Remove thinking/reasoning tags that some models use
+        # This handles models like qwen2.5-think, deepseek-r1 that wrap reasoning in tags
+        cleaned_response = re.sub(
+            r"<think>.*?</think>", "", response, flags=re.DOTALL | re.IGNORECASE
+        )
+        cleaned_response = re.sub(
+            r"<thinking>.*?</thinking>",
+            "",
+            cleaned_response,
+            flags=re.DOTALL | re.IGNORECASE,
+        )
+
+        # Method 1: JSON in code blocks
+        json_blocks = re.findall(
+            r"```(?:json)?\s*(\{.*?\})\s*```", cleaned_response, re.DOTALL
+        )
         candidates.extend(json_blocks)
 
         # Method 2: Balanced braces
         brace_count = 0
         start_pos = -1
 
-        for i, char in enumerate(response):
+        for i, char in enumerate(cleaned_response):
             if char == "{":
                 if brace_count == 0:
                     start_pos = i
@@ -592,10 +636,10 @@ class BaseModalProcessor:
             elif char == "}":
                 brace_count -= 1
                 if brace_count == 0 and start_pos != -1:
-                    candidates.append(response[start_pos : i + 1])
+                    candidates.append(cleaned_response[start_pos : i + 1])
 
         # Method 3: Simple regex fallback
-        simple_match = re.search(r"\{.*\}", response, re.DOTALL)
+        simple_match = re.search(r"\{.*\}", cleaned_response, re.DOTALL)
         if simple_match:
             candidates.append(simple_match.group(0))
 
@@ -759,18 +803,24 @@ class BaseModalProcessor:
         if not batch_mode:
             # Merge with correct file_path parameter
             file_path = chunk_data.get("file_path", "manual_creation")
+            doc_id = chunk_data.get("full_doc_id")
             await merge_nodes_and_edges(
                 chunk_results=chunk_results,
                 knowledge_graph_inst=self.knowledge_graph_inst,
                 entity_vdb=self.entities_vdb,
                 relationships_vdb=self.relationships_vdb,
                 global_config=self.global_config,
+                full_entities_storage=self.lightrag.full_entities,
+                full_relations_storage=self.lightrag.full_relations,
+                doc_id=doc_id,
                 pipeline_status=pipeline_status,
                 pipeline_status_lock=pipeline_status_lock,
                 llm_response_cache=self.hashing_kv,
+                entity_chunks_storage=self.lightrag.entity_chunks,
+                relation_chunks_storage=self.lightrag.relation_chunks,
                 current_file_number=1,
                 total_files=1,
-                file_path=file_path,  # Pass the correct file_path
+                file_path=file_path,
             )
 
             # Ensure all storage updates are complete
@@ -1005,14 +1055,15 @@ class ImageModalProcessor(BaseModalProcessor):
         except (json.JSONDecodeError, AttributeError, ValueError) as e:
             logger.error(f"Error parsing image analysis response: {e}")
             logger.debug(f"Raw response: {response}")
+            cleaned = self._strip_thinking_tags(response)
             fallback_entity = {
                 "entity_name": entity_name
                 if entity_name
-                else f"image_{compute_mdhash_id(response)}",
+                else f"image_{compute_mdhash_id(cleaned)}",
                 "entity_type": "image",
-                "summary": response[:100] + "..." if len(response) > 100 else response,
+                "summary": cleaned[:100] + "..." if len(cleaned) > 100 else cleaned,
             }
-            return response, fallback_entity
+            return cleaned, fallback_entity
 
 
 class TableModalProcessor(BaseModalProcessor):
@@ -1049,9 +1100,9 @@ class TableModalProcessor(BaseModalProcessor):
                 content_data = modal_content
 
             table_img_path = content_data.get("img_path")
-            table_caption = content_data.get("table_caption", [])
-            table_body = content_data.get("table_body", "")
-            table_footnote = content_data.get("table_footnote", [])
+            table_caption = normalize_caption_list(content_data.get("table_caption"))
+            table_body = format_table_body(get_table_body(content_data))
+            table_footnote = normalize_caption_list(content_data.get("table_footnote"))
 
             # Extract context for current item
             context = ""
@@ -1136,9 +1187,9 @@ class TableModalProcessor(BaseModalProcessor):
                 content_data = modal_content
 
             table_img_path = content_data.get("img_path")
-            table_caption = content_data.get("table_caption", [])
-            table_body = content_data.get("table_body", "")
-            table_footnote = content_data.get("table_footnote", [])
+            table_caption = normalize_caption_list(content_data.get("table_caption"))
+            table_body = format_table_body(get_table_body(content_data))
+            table_footnote = normalize_caption_list(content_data.get("table_footnote"))
 
             # Build complete table content
             modal_chunk = PROMPTS["table_chunk"].format(
@@ -1199,14 +1250,15 @@ class TableModalProcessor(BaseModalProcessor):
         except (json.JSONDecodeError, AttributeError, ValueError) as e:
             logger.error(f"Error parsing table analysis response: {e}")
             logger.debug(f"Raw response: {response}")
+            cleaned = self._strip_thinking_tags(response)
             fallback_entity = {
                 "entity_name": entity_name
                 if entity_name
-                else f"table_{compute_mdhash_id(response)}",
+                else f"table_{compute_mdhash_id(cleaned)}",
                 "entity_type": "table",
-                "summary": response[:100] + "..." if len(response) > 100 else response,
+                "summary": cleaned[:100] + "..." if len(cleaned) > 100 else cleaned,
             }
-            return response, fallback_entity
+            return cleaned, fallback_entity
 
 
 class EquationModalProcessor(BaseModalProcessor):
@@ -1242,8 +1294,7 @@ class EquationModalProcessor(BaseModalProcessor):
             else:
                 content_data = modal_content
 
-            equation_text = content_data.get("text")
-            equation_format = content_data.get("text_format", "")
+            equation_text, equation_format = get_equation_text_and_format(content_data)
 
             # Extract context for current item
             context = ""
@@ -1323,8 +1374,7 @@ class EquationModalProcessor(BaseModalProcessor):
             else:
                 content_data = modal_content
 
-            equation_text = content_data.get("text")
-            equation_format = content_data.get("text_format", "")
+            equation_text, equation_format = get_equation_text_and_format(content_data)
 
             # Build complete equation content
             modal_chunk = PROMPTS["equation_chunk"].format(
@@ -1383,14 +1433,15 @@ class EquationModalProcessor(BaseModalProcessor):
         except (json.JSONDecodeError, AttributeError, ValueError) as e:
             logger.error(f"Error parsing equation analysis response: {e}")
             logger.debug(f"Raw response: {response}")
+            cleaned = self._strip_thinking_tags(response)
             fallback_entity = {
                 "entity_name": entity_name
                 if entity_name
-                else f"equation_{compute_mdhash_id(response)}",
+                else f"equation_{compute_mdhash_id(cleaned)}",
                 "entity_type": "equation",
-                "summary": response[:100] + "..." if len(response) > 100 else response,
+                "summary": cleaned[:100] + "..." if len(cleaned) > 100 else cleaned,
             }
-            return response, fallback_entity
+            return cleaned, fallback_entity
 
 
 class GenericModalProcessor(BaseModalProcessor):
@@ -1545,11 +1596,12 @@ class GenericModalProcessor(BaseModalProcessor):
         except (json.JSONDecodeError, AttributeError, ValueError) as e:
             logger.error(f"Error parsing {content_type} analysis response: {e}")
             logger.debug(f"Raw response: {response}")
+            cleaned = self._strip_thinking_tags(response)
             fallback_entity = {
                 "entity_name": entity_name
                 if entity_name
-                else f"{content_type}_{compute_mdhash_id(response)}",
+                else f"{content_type}_{compute_mdhash_id(cleaned)}",
                 "entity_type": content_type,
-                "summary": response[:100] + "..." if len(response) > 100 else response,
+                "summary": cleaned[:100] + "..." if len(cleaned) > 100 else cleaned,
             }
-            return response, fallback_entity
+            return cleaned, fallback_entity

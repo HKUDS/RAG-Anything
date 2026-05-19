@@ -15,7 +15,7 @@ import time
 
 from tqdm import tqdm
 
-from .parser import MineruParser, DoclingParser
+from .parser import get_parser
 
 
 @dataclass
@@ -28,6 +28,7 @@ class BatchProcessingResult:
     processing_time: float
     errors: Dict[str, str]
     output_dir: str
+    dry_run: bool = False
 
     @property
     def success_rate(self) -> float:
@@ -44,7 +45,8 @@ class BatchProcessingResult:
             f"  Successful: {len(self.successful_files)} ({self.success_rate:.1f}%)\n"
             f"  Failed: {len(self.failed_files)}\n"
             f"  Processing time: {self.processing_time:.2f} seconds\n"
-            f"  Output directory: {self.output_dir}"
+            f"  Output directory: {self.output_dir}\n"
+            f"  Dry run: {self.dry_run}"
         )
 
 
@@ -68,7 +70,7 @@ class BatchParser:
         Initialize batch parser
 
         Args:
-            parser_type: Type of parser to use ("mineru" or "docling")
+            parser_type: Type of parser to use ("mineru", "docling", or "paddleocr")
             max_workers: Maximum number of parallel workers
             show_progress: Whether to show progress bars
             timeout_per_file: Timeout in seconds for each file
@@ -225,6 +227,7 @@ class BatchParser:
         output_dir: str,
         parse_method: str = "auto",
         recursive: bool = True,
+        dry_run: bool = False,
         **kwargs,
     ) -> BatchProcessingResult:
         """
@@ -235,6 +238,7 @@ class BatchParser:
             output_dir: Base output directory
             parse_method: Parsing method for all files
             recursive: Whether to search directories recursively
+            dry_run: When True, only list files without processing them
             **kwargs: Additional parser arguments
 
         Returns:
@@ -254,9 +258,24 @@ class BatchParser:
                 processing_time=0.0,
                 errors={},
                 output_dir=output_dir,
+                dry_run=dry_run,
             )
 
         self.logger.info(f"Found {len(supported_files)} files to process")
+
+        if dry_run:
+            self.logger.info(
+                f"Dry run enabled. {len(supported_files)} files would be processed."
+            )
+            return BatchProcessingResult(
+                successful_files=supported_files,
+                failed_files=[],
+                total_files=len(supported_files),
+                processing_time=0.0,
+                errors={},
+                output_dir=output_dir,
+                dry_run=True,
+            )
 
         # Create output directory
         output_path = Path(output_dir)
@@ -330,6 +349,7 @@ class BatchParser:
             processing_time=processing_time,
             errors=errors,
             output_dir=output_dir,
+            dry_run=False,
         )
 
         # Log summary
@@ -343,6 +363,7 @@ class BatchParser:
         output_dir: str,
         parse_method: str = "auto",
         recursive: bool = True,
+        dry_run: bool = False,
         **kwargs,
     ) -> BatchProcessingResult:
         """
@@ -353,6 +374,7 @@ class BatchParser:
             output_dir: Base output directory
             parse_method: Parsing method for all files
             recursive: Whether to search directories recursively
+            dry_run: When True, only list files without processing them
             **kwargs: Additional parser arguments
 
         Returns:
@@ -367,6 +389,7 @@ class BatchParser:
             output_dir,
             parse_method,
             recursive,
+            dry_run,
             **kwargs,
         )
 
@@ -382,7 +405,13 @@ def main():
         "--parser",
         choices=["mineru", "docling", "kreuzberg", "marker"],
         default="mineru",
-        help="Parser to use",
+        help=(
+            "Parser to use. Built-ins: mineru, docling, paddleocr. "
+            "When using RAGAnything as a library, any custom parsers that you "
+            "have registered via register_parser() in the current process "
+            "are also accepted. The standalone CLI itself does not perform "
+            "plugin discovery."
+        ),
     )
     parser.add_argument(
         "--method",
@@ -404,6 +433,11 @@ def main():
     )
     parser.add_argument(
         "--timeout", type=int, default=300, help="Timeout per file (seconds)"
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List files that would be processed without running parsers",
     )
 
     args = parser.parse_args()
@@ -429,10 +463,19 @@ def main():
             output_dir=args.output,
             parse_method=args.method,
             recursive=args.recursive,
+            dry_run=args.dry_run,
         )
 
         # Print summary
         print("\n" + result.summary())
+
+        if args.dry_run:
+            if result.successful_files:
+                print("\nDry run: files that would be processed:")
+                for file_path in result.successful_files:
+                    print(f"  - {file_path}")
+            else:
+                print("\nDry run: no supported files found.")
 
         # Exit with error code if any files failed
         if result.failed_files:

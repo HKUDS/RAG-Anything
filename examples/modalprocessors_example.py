@@ -6,6 +6,7 @@ This example demonstrates how to use RAG-Anything's modal processors directly wi
 
 import asyncio
 import argparse
+from functools import partial
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from lightrag.kg.shared_storage import initialize_pipeline_status

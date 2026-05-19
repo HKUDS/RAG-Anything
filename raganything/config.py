@@ -71,11 +71,14 @@ class RAGAnythingConfig:
     """Maximum number of files to process concurrently."""
 
     supported_file_extensions: List[str] = field(
-        default_factory=lambda: get_env_value(
-            "SUPPORTED_FILE_EXTENSIONS",
-            ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md",
-            str,
-        ).split(",")
+        default_factory=lambda: [
+            x.strip()
+            for x in get_env_value(
+                "SUPPORTED_FILE_EXTENSIONS",
+                ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md",
+                str,
+            ).split(",")
+        ]
     )
     """List of supported file extensions for batch processing."""
 
@@ -106,9 +109,12 @@ class RAGAnythingConfig:
     """Whether to include image/table captions in context."""
 
     context_filter_content_types: List[str] = field(
-        default_factory=lambda: get_env_value(
-            "CONTEXT_FILTER_CONTENT_TYPES", "text", str
-        ).split(",")
+        default_factory=lambda: [
+            x.strip()
+            for x in get_env_value("CONTEXT_FILTER_CONTENT_TYPES", "text", str).split(
+                ","
+            )
+        ]
     )
     """Content types to include in context extraction (e.g., 'text', 'image', 'table')."""
 

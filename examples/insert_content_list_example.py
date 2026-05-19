@@ -15,6 +15,7 @@ import argparse
 import asyncio
 import logging
 import logging.config
+from functools import partial
 from pathlib import Path
 
 # Add project root directory to Python path
@@ -211,9 +212,26 @@ async def demo_insert_content_list(
 
         # Define vision model function for image processing
         def vision_model_func(
-            prompt, system_prompt=None, history_messages=[], image_data=None, **kwargs
+            prompt,
+            system_prompt=None,
+            history_messages=[],
+            image_data=None,
+            messages=None,
+            **kwargs,
         ):
-            if image_data:
+            # If pre-built messages are provided (VLM enhanced query path), use them directly
+            if messages:
+                return openai_complete_if_cache(
+                    "gpt-4o",
+                    "",
+                    system_prompt=None,
+                    history_messages=[],
+                    messages=messages,
+                    api_key=api_key,
+                    base_url=base_url,
+                    **kwargs,
+                )
+            elif image_data:
                 return openai_complete_if_cache(
                     "gpt-4o",
                     "",

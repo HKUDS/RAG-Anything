@@ -5,9 +5,85 @@ Contains helper functions for content separation, text insertion, and other util
 """
 
 import base64
+import inspect
 from typing import Dict, List, Any, Tuple
 from pathlib import Path
 from lightrag.utils import logger
+
+
+def normalize_caption_list(value: Any) -> List[str]:
+    """Return captions and footnotes as a clean list of strings."""
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, str) and value.strip():
+        return [value.strip()]
+    return []
+
+
+def get_table_body(item: Dict[str, Any]) -> Any:
+    """Read table content across common content-list alias fields."""
+    if item.get("table_body") not in (None, ""):
+        return item.get("table_body")
+    if item.get("table_data") not in (None, ""):
+        return item.get("table_data")
+    return item.get("text", "")
+
+
+def format_table_body(table_body: Any) -> str:
+    """Serialize table content for prompts and chunks without dropping aliases.
+
+    Strings are passed through unchanged. List-of-lists (the common
+    ``table_data`` shape from non-MinerU parsers) are rendered as a simple
+    Markdown table so the LLM sees structured rows instead of a Python repr.
+    Other shapes fall back to a newline-joined string of ``str(...)`` items.
+    """
+    if isinstance(table_body, str):
+        return table_body
+    if isinstance(table_body, list):
+        if not table_body:
+            return ""
+        if all(isinstance(row, (list, tuple)) for row in table_body):
+            rendered_rows = [
+                "| " + " | ".join(str(cell) for cell in row) + " |"
+                for row in table_body
+            ]
+            if len(rendered_rows) >= 1:
+                column_count = max(len(row) for row in table_body)
+                separator = "| " + " | ".join(["---"] * column_count) + " |"
+                rendered_rows.insert(1, separator)
+            return "\n".join(rendered_rows)
+        return "\n".join(str(row) for row in table_body)
+    return str(table_body)
+
+
+def get_equation_text_and_format(item: Dict[str, Any]) -> Tuple[str, str]:
+    """Read equation content while preserving LaTeX aliases from content lists.
+
+    Field priority follows MinerU first (``text`` + ``text_format``), then
+    falls back to ``latex`` and ``equation`` aliases used by other parsers.
+    The textual description is intentionally NOT concatenated into the
+    equation body: the ``equation_chunk`` template has a separate
+    ``enhanced_caption`` slot for that.
+    """
+    text = str(item.get("text", "") or "").strip()
+    latex = str(item.get("latex", "") or "").strip()
+    equation = str(item.get("equation", "") or "").strip()
+    equation_format = str(item.get("text_format", "") or "").strip()
+
+    if text:
+        equation_text = text
+    elif latex:
+        equation_text = latex
+        if not equation_format:
+            equation_format = "latex"
+    elif equation:
+        equation_text = equation
+    else:
+        equation_text = ""
+
+    return equation_text, equation_format
 
 
 def separate_content(
@@ -25,7 +101,7 @@ def separate_content(
     text_parts = []
     multimodal_items = []
 
-    for item in content_list:
+    for index, item in enumerate(content_list):
         content_type = item.get("type", "text")
 
         if content_type == "text":
@@ -35,7 +111,9 @@ def separate_content(
                 text_parts.append(text)
         else:
             # Multimodal content (image, table, equation, etc.)
-            multimodal_items.append(item)
+            multimodal_item = dict(item)
+            multimodal_item.setdefault("_content_list_index", index)
+            multimodal_items.append(multimodal_item)
 
     # Merge all text content
     text_content = "\n\n".join(text_parts)
@@ -93,9 +171,13 @@ def validate_image_file(image_path: str, max_size_mb: int = 50) -> bool:
         logger.debug(f"Resolved path object: {path}")
         logger.debug(f"Path exists check: {path.exists()}")
 
-        # Check if file exists
+        # Check if file exists and is not a symlink (for security)
         if not path.exists():
             logger.warning(f"Image file not found: {image_path}")
+            return False
+
+        if path.is_symlink():
+            logger.warning(f"Blocking symlink for security: {image_path}")
             return False
 
         # Check file extension
@@ -201,22 +283,46 @@ async def insert_text_content_with_multimodal_content(
     """
     logger.info("Starting text content insertion into LightRAG...")
 
-    # Use LightRAG's insert method with all parameters
+    insert_kwargs = {
+        "input": input,
+        "file_paths": file_paths,
+        "split_by_character": split_by_character,
+        "split_by_character_only": split_by_character_only,
+        "ids": ids,
+    }
+
     try:
-        await lightrag.ainsert(
-            input=input,
-            multimodal_content=multimodal_content,
-            file_paths=file_paths,
-            split_by_character=split_by_character,
-            split_by_character_only=split_by_character_only,
-            ids=ids,
-            scheme_name=scheme_name,
+        insert_signature = inspect.signature(lightrag.ainsert)
+        supported_params = insert_signature.parameters
+        accepts_any_kwargs = any(
+            parameter.kind == inspect.Parameter.VAR_KEYWORD
+            for parameter in supported_params.values()
         )
-    except Exception as e:
-        logger.info(f"Error: {e}")
-        logger.info(
-            "If the error is caused by the ainsert function not having a multimodal content parameter, please update the raganything branch of lightrag"
+    except (TypeError, ValueError):
+        supported_params = {}
+        accepts_any_kwargs = True
+
+    if multimodal_content is not None and (
+        accepts_any_kwargs or "multimodal_content" in supported_params
+    ):
+        insert_kwargs["multimodal_content"] = multimodal_content
+    elif multimodal_content is not None:
+        logger.warning(
+            "LightRAG ainsert() does not accept multimodal_content; "
+            "retrying with text-only insertion so doc_status is still created"
         )
+
+    if scheme_name is not None and (
+        accepts_any_kwargs or "scheme_name" in supported_params
+    ):
+        insert_kwargs["scheme_name"] = scheme_name
+    elif scheme_name is not None:
+        logger.warning(
+            "LightRAG ainsert() does not accept scheme_name; "
+            "continuing without it for compatibility"
+        )
+
+    await lightrag.ainsert(**insert_kwargs)
 
     logger.info("Text content insertion complete")
 

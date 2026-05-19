@@ -6,10 +6,63 @@ different types of content (images, tables, equations, etc.)
 """
 
 from __future__ import annotations
+from collections.abc import ItemsView, Iterator, KeysView, ValuesView
 from typing import Any
 
 
-PROMPTS: dict[str, Any] = {}
+class PromptRegistry:
+    """Stable prompt container with atomic snapshot swapping.
+
+    Readers keep a reference to this object, while language switches replace the
+    underlying prompt dictionary in one step via :meth:`swap`.
+    """
+
+    def __init__(self) -> None:
+        self._data: dict[str, Any] = {}
+
+    def swap(self, prompts: dict[str, Any]) -> None:
+        """Atomically replace the active prompt snapshot."""
+        self._data = dict(prompts)
+
+    def snapshot(self) -> dict[str, Any]:
+        """Return a copy of the active prompt set."""
+        return dict(self._data)
+
+    def __getitem__(self, key: str) -> Any:
+        return self._data[key]
+
+    def __setitem__(self, key: str, value: Any) -> None:
+        self._data[key] = value
+
+    def __delitem__(self, key: str) -> None:
+        del self._data[key]
+
+    def __contains__(self, key: object) -> bool:
+        return key in self._data
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return self._data.get(key, default)
+
+    def keys(self) -> KeysView[str]:
+        return self._data.keys()
+
+    def items(self) -> ItemsView[str, Any]:
+        return self._data.items()
+
+    def values(self) -> ValuesView[Any]:
+        return self._data.values()
+
+    def __repr__(self) -> str:
+        return f"PromptRegistry({self._data!r})"
+
+
+PROMPTS = PromptRegistry()
 
 # System prompts for different analysis types
 PROMPTS["IMAGE_ANALYSIS_SYSTEM"] = (
