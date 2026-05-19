@@ -20,6 +20,7 @@ PRUNING_METHODS = [
     ("hybrid", "hybrid_community_centrality"),
     ("personalized_pagerank", "personalized_pagerank_document_aware"),
     ("embedding_semantic_summary", "embedding_semantic_summary_with_approximate_linking"),
+    ("global_narrative_steiner_summary", "global_narrative_steiner_summary"),
     ("llm_strict_topk", "llm_strict_topk"),
     ("llm_strict_topk_safe_merge", "llm_strict_topk_safe_merge"),
 ]
@@ -37,6 +38,11 @@ for base_experiment_id in BASE_PIPELINE_EXPERIMENTS:
             "Does not modify storage or retrieval data. "
             "Produces a compact graph artifact for Streamlit visualization."
         )
+        if method_id == "global_narrative_steiner_summary":
+            notes += (
+                " Uses global embedding salience, community anchors, and approximate Steiner linking "
+                "to keep a presentation-oriented story graph without using QA gold evidence."
+            )
         if method_id.startswith("llm_"):
             notes += (
                 " Uses a strict OpenAI-based graph summarization prompt over a heuristic candidate pool "

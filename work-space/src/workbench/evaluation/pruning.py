@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import base64
 import csv
+import html as html_lib
 import json
 import math
+import mimetypes
 import re
 import time
 from dataclasses import dataclass
@@ -14,7 +17,11 @@ from pyvis.network import Network
 
 from src.config import ENV
 from src.pruning.algorithms import prune_baseline, prune_hybrid
-from src.pruning.semantic_summary import EmbeddingSemanticSummarizer, SemanticSummaryConfig
+from src.pruning.semantic_summary import (
+    EmbeddingSemanticSummarizer,
+    GlobalNarrativeSteinerSummarizer,
+    SemanticSummaryConfig,
+)
 from src.workbench.experiments.pipeline.definitions import PIPELINE_EXPERIMENTS
 from src.workbench.experiments.pruning.definitions import PRUNING_EXPERIMENTS
 from src.workbench.judging import build_openai_pruning_client
@@ -281,7 +288,12 @@ class CandidatePoolBuilder:
     def __init__(self, context: GraphBenchmarkContext):
         self.context = context
 
-    def build(self, candidate_pool_size: int) -> tuple[list[dict[str, Any]], list[str]]:
+    def build(
+        self,
+        candidate_pool_size: int,
+        *,
+        include_evidence: bool = True,
+    ) -> tuple[list[dict[str, Any]], list[str]]:
         graph = self.context.graph
         working_graph = graph.copy()
         working_graph.remove_nodes_from(
@@ -314,7 +326,7 @@ class CandidatePoolBuilder:
             degree_norm = degrees.get(node_id, 0) / max_degree if max_degree else 0.0
             pr_norm = pagerank.get(node_id, 0.0) / max_pr if max_pr else 0.0
             bt_norm = betweenness.get(node_id, 0.0) / max_bt if max_bt else 0.0
-            evidence_hit = 1.0 if node_id in self.context.evidence_nodes else 0.0
+            evidence_hit = 1.0 if include_evidence and node_id in self.context.evidence_nodes else 0.0
             support_count = len(_split_source_ids(attrs.get("source_id", "")))
             multimodal = 1.0 if _is_multimodal_anchor(attrs) else 0.0
             score = (
@@ -362,18 +374,19 @@ class CandidatePoolBuilder:
             selected_set.add(node_id)
             return True
 
-        evidence_candidates = [
-            str(node_id)
-            for node_id in self.context.evidence_nodes
-            if str(node_id) in working_graph
-        ]
-        evidence_candidates.sort(
-            key=lambda node_id: score_lookup.get(node_id, 0.0),
-            reverse=True,
-        )
-        for node_id in evidence_candidates:
-            if not append_candidate(node_id):
-                break
+        if include_evidence:
+            evidence_candidates = [
+                str(node_id)
+                for node_id in self.context.evidence_nodes
+                if str(node_id) in working_graph
+            ]
+            evidence_candidates.sort(
+                key=lambda node_id: score_lookup.get(node_id, 0.0),
+                reverse=True,
+            )
+            for node_id in evidence_candidates:
+                if not append_candidate(node_id):
+                    break
 
         for community in self.context.communities:
             if len(selected_ids) >= candidate_pool_size:
@@ -499,6 +512,155 @@ class LLMPruner:
             used_members.update(members)
 
         return validated
+
+
+IMAGE_EXTENSIONS = {".apng", ".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
+
+
+class ChunkMediaResolver:
+    def __init__(self, storage_dir: Path):
+        self.storage_dir = Path(storage_dir)
+        self.text_chunks = self._load_text_chunks(self.storage_dir / "kv_store_text_chunks.json")
+
+    def resolve_for_node(self, node_id: str, attrs: dict[str, Any]) -> dict[str, Any]:
+        source_ids = _split_source_ids(attrs.get("source_id", ""))
+        chunk_contents = [self._chunk_content(source_id) for source_id in source_ids]
+        content = "\n\n".join(part for part in chunk_contents if part)
+        entity_type = _normalize_text(attrs.get("entity_type", ""))
+
+        media_path = self._resolve_media_path(
+            self._first_attr(
+                attrs,
+                ["media_path", "img_path", "image_path", "table_img_path", "equation_img_path"],
+            )
+            or self._extract_line(content, "Image Path")
+        )
+        table_body = self._first_attr(attrs, ["table_body", "structure", "table_html"])
+        if not table_body:
+            table_body = self._extract_block(content, "Structure", ["Footnotes:", "Analysis:", "Caption:", "Equation:", "Format:"])
+
+        equation_text = ""
+        if "equation" in entity_type:
+            equation_text = self._first_attr(attrs, ["equation_text", "latex", "text"])
+        if not equation_text:
+            equation_text = self._extract_line(content, "Equation") or self._extract_block(content, "Equation", ["Format:", "Analysis:"])
+        equation_format = self._first_attr(attrs, ["equation_format", "text_format"]) or self._extract_line(content, "Format")
+        caption = self._extract_block(content, "Caption", ["Structure:", "Footnotes:", "Analysis:", "Equation:", "Format:"])
+
+        media_type = self._infer_media_type(entity_type, content, media_path, table_body, equation_text)
+        media_path_exists = bool(media_path and Path(media_path).exists())
+        return {
+            "source_chunk_ids": source_ids,
+            "source_file": str(attrs.get("file_path", "")),
+            "media_type": media_type,
+            "media_path": media_path,
+            "media_path_exists": media_path_exists,
+            "media_caption": _trim(caption, 500),
+            "table_body": self._limit_block(table_body),
+            "equation_text": _trim(equation_text, 1200),
+            "equation_format": _trim(equation_format, 80),
+            "media_available": bool(media_path_exists or table_body or equation_text),
+        }
+
+    @staticmethod
+    def _load_text_chunks(path: Path) -> dict[str, Any]:
+        if not path.exists():
+            return {}
+        try:
+            data = _load_json(path)
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _chunk_content(self, source_id: str) -> str:
+        chunk = self.text_chunks.get(source_id)
+        if isinstance(chunk, dict):
+            return str(chunk.get("content", ""))
+        if isinstance(chunk, str):
+            return chunk
+        return ""
+
+    @staticmethod
+    def _first_attr(attrs: dict[str, Any], keys: list[str]) -> str:
+        for key in keys:
+            value = str(attrs.get(key, "")).strip()
+            if value and value.lower() not in {"none", "null", "n/a"}:
+                return value
+        return ""
+
+    @staticmethod
+    def _extract_line(content: str, field_name: str) -> str:
+        if not content:
+            return ""
+        pattern = rf"(?im)^\s*{re.escape(field_name)}\s*:\s*(.*?)\s*$"
+        match = re.search(pattern, content)
+        if not match:
+            return ""
+        value = match.group(1).strip()
+        return "" if value.lower() in {"none", "null", "n/a"} else value
+
+    @staticmethod
+    def _extract_block(content: str, field_name: str, stop_markers: list[str]) -> str:
+        if not content:
+            return ""
+        start_pattern = rf"(?im)^\s*{re.escape(field_name)}\s*:\s*"
+        start_match = re.search(start_pattern, content)
+        if not start_match:
+            return ""
+        start = start_match.end()
+        stop_positions = []
+        for marker in stop_markers:
+            stop_match = re.search(rf"(?im)^\s*{re.escape(marker)}", content[start:])
+            if stop_match:
+                stop_positions.append(start + stop_match.start())
+        end = min(stop_positions) if stop_positions else len(content)
+        value = content[start:end].strip()
+        return "" if value.lower() in {"none", "null", "n/a"} else value
+
+    def _resolve_media_path(self, raw_path: str) -> str:
+        raw_path = str(raw_path or "").strip().strip('"').strip("'")
+        if not raw_path or raw_path.lower() in {"none", "null", "n/a"}:
+            return ""
+        candidate = Path(raw_path)
+        candidates = [candidate]
+        if not candidate.is_absolute():
+            candidates.extend(
+                [
+                    self.storage_dir / candidate,
+                    self.storage_dir.parent / candidate,
+                    Path(ENV.output_base_dir) / candidate,
+                    Path.cwd() / candidate,
+                ]
+            )
+        for path in candidates:
+            if path.exists():
+                return str(path.resolve())
+        return raw_path
+
+    @staticmethod
+    def _infer_media_type(
+        entity_type: str,
+        content: str,
+        media_path: str,
+        table_body: str,
+        equation_text: str,
+    ) -> str:
+        normalized_content = _normalize_text(content[:80])
+        if "table" in entity_type or normalized_content.startswith("table analysis") or table_body:
+            return "table"
+        if "equation" in entity_type or equation_text:
+            return "equation"
+        suffix = Path(media_path).suffix.lower() if media_path else ""
+        if any(token in entity_type for token in ["image", "figure", "visual"]) or suffix in IMAGE_EXTENSIONS:
+            return "image"
+        return ""
+
+    @staticmethod
+    def _limit_block(value: str, limit: int = 20000) -> str:
+        value = str(value or "").strip()
+        if len(value) <= limit:
+            return value
+        return value[: limit - 3].rstrip() + "..."
 
 
 class GraphPruningMetrics:
@@ -736,35 +898,40 @@ class GraphArtifactWriter:
     @staticmethod
     def _write_html(graph: nx.Graph, html_path: Path, metadata: dict[str, Any]) -> None:
         net = Network(height="680px", width="100%", bgcolor="#ffffff", font_color="black", notebook=False)
+        node_metadata = {
+            str(record.get("node_id")): record
+            for record in metadata.get("selected_display_nodes", [])
+            if isinstance(record, dict) and record.get("node_id")
+        }
+        node_tooltips: dict[str, str] = {}
         for node_id, attrs in graph.nodes(data=True):
-            description = str(attrs.get("description", "")).strip()
-            entity_type = str(attrs.get("entity_type", "")).strip()
+            node_id = str(node_id)
             label = str(attrs.get("entity_id", node_id))
-            title_parts = [label]
-            if entity_type:
-                title_parts.append(f"Type: {entity_type}")
-            if description:
-                title_parts.append(description)
-            title = "\n".join(title_parts)
+            record = node_metadata.get(node_id, {})
+            node_tooltips[node_id] = GraphArtifactWriter._node_title_html(node_id, attrs, record)
 
             color = "#97c2fc"
             if str(attrs.get("is_virtual_merged", "")).lower() == "true":
                 color = "#f7c873"
             elif _is_multimodal_anchor(attrs):
                 color = "#ffb0b0"
-            elif _is_chunk_node(str(node_id), attrs):
+            elif _is_chunk_node(node_id, attrs):
                 color = "#d3d3d3"
 
-            net.add_node(str(node_id), label=label, title=title, color=color)
+            net.add_node(node_id, label=label, color=color)
 
         for source, target, attrs in graph.edges(data=True):
-            title = _trim(attrs.get("description", "") or attrs.get("keywords", ""), 200)
+            title = _trim(attrs.get("description", "") or attrs.get("keywords", ""), 260)
             width = max(1.0, min(6.0, _safe_float(attrs.get("weight", 1.0))))
             net.add_edge(str(source), str(target), title=title, width=width)
 
         net.set_options(
             """
         var options = {
+          "interaction": {
+            "hover": true,
+            "tooltipDelay": 1000000
+          },
           "physics": {
             "forceAtlas2Based": {
               "gravitationalConstant": -55,
@@ -781,6 +948,317 @@ class GraphArtifactWriter:
         """
         )
         net.save_graph(str(html_path))
+        GraphArtifactWriter._inject_custom_hover_tooltips(html_path, node_tooltips)
+
+    @staticmethod
+    def _node_title_html(node_id: str, attrs: dict[str, Any], record: dict[str, Any]) -> str:
+        label = str(attrs.get("entity_id", node_id))
+        entity_type = str(attrs.get("entity_type", "")).strip()
+        description = str(attrs.get("description", "")).strip()
+        parts = [
+            '<div class="rag-tooltip-card">',
+            f'<div class="rag-tooltip-title">{GraphArtifactWriter._safe_html(label)}</div>',
+        ]
+        meta_rows = []
+        if entity_type:
+            meta_rows.append(("Type", entity_type))
+        if record.get("story_order"):
+            story = f"#{record.get('story_order')} | {record.get('story_role', '')} | {record.get('chapter_label', '')}"
+            meta_rows.append(("Story", story))
+        media_type = str(record.get("media_type") or "").strip()
+        if media_type:
+            meta_rows.append(("Media", media_type))
+        if record.get("source_file"):
+            meta_rows.append(("Source", str(record.get("source_file"))))
+        if meta_rows:
+            parts.append('<div class="rag-tooltip-meta-grid">')
+            for key, value in meta_rows:
+                parts.append(
+                    '<div class="rag-tooltip-meta-row">'
+                    f'<strong>{GraphArtifactWriter._safe_html(key)}</strong>'
+                    f'<span>{GraphArtifactWriter._safe_html(value)}</span>'
+                    '</div>'
+                )
+            parts.append('</div>')
+
+        media_html = GraphArtifactWriter._media_tooltip_html(record)
+        if media_html:
+            parts.append(media_html)
+        if description:
+            parts.append(
+                '<div class="rag-tooltip-description">'
+                f'{GraphArtifactWriter._safe_html(_trim(description, 700))}</div>'
+            )
+        parts.append('</div>')
+        return "".join(parts)
+
+    @staticmethod
+    def _media_tooltip_html(record: dict[str, Any]) -> str:
+        media_type = str(record.get("media_type") or "").lower()
+        media_path = str(record.get("media_path") or "").strip()
+        table_body = str(record.get("table_body") or "").strip()
+        equation_text = str(record.get("equation_text") or "").strip()
+        caption = str(record.get("media_caption") or "").strip()
+        parts: list[str] = []
+
+        data_uri = GraphArtifactWriter._embed_image_data_uri(media_path)
+        if data_uri:
+            alt = GraphArtifactWriter._safe_html(str(record.get("label") or media_type or "media"))
+            parts.append(
+                '<figure class="rag-tooltip-media">'
+                f'<img src="{data_uri}" alt="{alt}" />'
+                '</figure>'
+            )
+
+        if media_type == "table" and table_body:
+            parts.append(GraphArtifactWriter._format_tooltip_table(table_body))
+        if media_type == "equation" and equation_text:
+            parts.append(
+                '<div class="rag-tooltip-equation-wrap">'
+                '<div class="rag-tooltip-section-label">Equation</div>'
+                '<pre class="rag-tooltip-equation">'
+                f'{GraphArtifactWriter._safe_html(_trim(equation_text, 1200))}'
+                '</pre></div>'
+            )
+        if caption:
+            parts.append(
+                '<figcaption class="rag-tooltip-caption">'
+                f'{GraphArtifactWriter._safe_html(_trim(caption, 260))}'
+                '</figcaption>'
+            )
+        return "".join(parts)
+
+    @staticmethod
+    def _embed_image_data_uri(media_path: str) -> str:
+        media_path = str(media_path or "").strip()
+        if not media_path:
+            return ""
+        path = Path(media_path)
+        if not path.exists() or path.suffix.lower() not in IMAGE_EXTENSIONS:
+            return ""
+        try:
+            raw = path.read_bytes()
+        except Exception:
+            return ""
+        mime_type = mimetypes.guess_type(str(path))[0] or "image/jpeg"
+        encoded = base64.b64encode(raw).decode("ascii")
+        return f"data:{mime_type};base64,{encoded}"
+
+    @staticmethod
+    def _format_tooltip_table(table_body: str) -> str:
+        table_body = str(table_body or "").strip()
+        if not table_body:
+            return ""
+        if "<table" in table_body.lower():
+            clean_table = re.sub(r"(?is)<script.*?</script>", "", table_body)
+            clean_table = _trim(clean_table, 9000)
+            return (
+                '<div class="rag-tooltip-table-wrap">'
+                '<div class="rag-tooltip-section-label">Table</div>'
+                f'{clean_table}'
+                '</div>'
+            )
+        return (
+            '<div class="rag-tooltip-table-wrap">'
+            '<div class="rag-tooltip-section-label">Table</div>'
+            '<pre class="rag-tooltip-table-text">'
+            f'{GraphArtifactWriter._safe_html(_trim(table_body, 2500))}'
+            '</pre></div>'
+        )
+
+    @staticmethod
+    def _inject_custom_hover_tooltips(html_path: Path, node_tooltips: dict[str, str]) -> None:
+        try:
+            html_content = html_path.read_text(encoding="utf-8")
+        except Exception:
+            return
+        payload = json.dumps(node_tooltips, ensure_ascii=False)
+        injection = f"""
+<style>
+.vis-tooltip {{
+  display: none !important;
+}}
+.rag-hover-tooltip {{
+  position: fixed;
+  z-index: 999999;
+  display: none;
+  max-width: min(520px, calc(100vw - 32px));
+  max-height: min(620px, calc(100vh - 32px));
+  overflow: auto;
+  border: 1px solid #cfd8dc;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 18px 42px rgba(15, 23, 42, 0.24);
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  pointer-events: none;
+}}
+.rag-tooltip-card {{
+  box-sizing: border-box;
+  width: 500px;
+  max-width: 100%;
+  padding: 12px;
+  color: #17202a;
+  background: #ffffff;
+  font-size: 12px;
+  line-height: 1.42;
+}}
+.rag-tooltip-title {{
+  font-size: 14px;
+  font-weight: 750;
+  margin-bottom: 8px;
+}}
+.rag-tooltip-meta-grid {{
+  display: grid;
+  gap: 4px;
+  margin-bottom: 8px;
+}}
+.rag-tooltip-meta-row {{
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}}
+.rag-tooltip-meta-row strong {{
+  color: #111827;
+  font-weight: 700;
+}}
+.rag-tooltip-meta-row span {{
+  color: #374151;
+  overflow-wrap: anywhere;
+}}
+.rag-tooltip-description,
+.rag-tooltip-caption {{
+  margin-top: 8px;
+  color: #34495e;
+}}
+.rag-tooltip-section-label {{
+  margin: 8px 0 4px;
+  color: #111827;
+  font-weight: 750;
+  font-size: 12px;
+}}
+.rag-tooltip-media {{
+  margin: 8px 0;
+}}
+.rag-tooltip-media img {{
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f8fafc;
+}}
+.rag-tooltip-table-wrap {{
+  max-height: 280px;
+  overflow: auto;
+  margin-top: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}}
+.rag-tooltip-table-wrap .rag-tooltip-section-label {{
+  position: sticky;
+  top: 0;
+  margin: 0;
+  padding: 6px 8px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+}}
+.rag-tooltip-table-wrap table {{
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}}
+.rag-tooltip-table-wrap td,
+.rag-tooltip-table-wrap th {{
+  border: 1px solid #d1d5db;
+  padding: 4px 6px;
+  vertical-align: top;
+}}
+.rag-tooltip-equation,
+.rag-tooltip-table-text {{
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px;
+  margin: 0;
+  font-size: 11px;
+}}
+</style>
+<script>
+(function() {{
+  const RAG_NODE_TOOLTIPS = {payload};
+  function installRagHoverTooltip() {{
+    if (typeof network === 'undefined' || !network || network.__ragHoverTooltipInstalled) {{
+      if (typeof network === 'undefined' || !network) window.setTimeout(installRagHoverTooltip, 80);
+      return;
+    }}
+    network.__ragHoverTooltipInstalled = true;
+    const tooltip = document.createElement('div');
+    tooltip.className = 'rag-hover-tooltip';
+    document.body.appendChild(tooltip);
+
+    function place(event) {{
+      const margin = 16;
+      let x = event.clientX + margin;
+      let y = event.clientY + margin;
+      tooltip.style.left = '0px';
+      tooltip.style.top = '0px';
+      const rect = tooltip.getBoundingClientRect();
+      if (x + rect.width > window.innerWidth - 12) x = event.clientX - rect.width - margin;
+      if (y + rect.height > window.innerHeight - 12) y = window.innerHeight - rect.height - 12;
+      tooltip.style.left = Math.max(12, x) + 'px';
+      tooltip.style.top = Math.max(12, y) + 'px';
+    }}
+
+    function hide() {{
+      tooltip.style.display = 'none';
+      tooltip.innerHTML = '';
+    }}
+
+    network.on('hoverNode', function(params) {{
+      const content = RAG_NODE_TOOLTIPS[String(params.node)];
+      if (!content) return;
+      tooltip.innerHTML = content;
+      tooltip.style.display = 'block';
+      const event = params.event && params.event.srcEvent;
+      if (event) place(event);
+    }});
+    network.on('blurNode', hide);
+    network.on('dragStart', hide);
+    network.on('zoom', hide);
+    network.on('click', hide);
+
+    const canvas = document.querySelector('#mynetwork canvas') || document.querySelector('.vis-network canvas');
+    if (canvas) {{
+      canvas.addEventListener('mousemove', function(event) {{
+        if (tooltip.style.display === 'block') place(event);
+      }});
+      canvas.addEventListener('mouseleave', hide);
+    }}
+  }}
+  if (document.readyState === 'loading') {{
+    document.addEventListener('DOMContentLoaded', installRagHoverTooltip);
+  }} else {{
+    installRagHoverTooltip();
+  }}
+}})();
+</script>
+"""
+        marker = "</body>"
+        if marker in html_content:
+            html_content = html_content.replace(marker, injection + "\n" + marker, 1)
+        else:
+            html_content += injection
+        html_path.write_text(html_content, encoding="utf-8")
+
+    @staticmethod
+    def _safe_html(value: Any) -> str:
+        return html_lib.escape(str(value or ""), quote=True)
 
 
 class PruningBenchmarkEvaluator:
@@ -859,6 +1337,58 @@ class PruningBenchmarkEvaluator:
                 for line in kept_lines:
                     f.write(line + "\n")
 
+    def _build_semantic_summary_config(self) -> SemanticSummaryConfig:
+        provider = ENV.pruning_embedding_provider.lower()
+        if provider == "openai":
+            model = ENV.pruning_embedding_model
+            api_key = ENV.openai_api_key
+            base_url = None
+        elif provider == "ollama":
+            model = ENV.ollama_embed
+            api_key = ENV.ollama_api_key
+            base_url = ENV.ollama_base_url
+        else:
+            if ENV.openai_api_key:
+                model = ENV.pruning_embedding_model
+                api_key = ENV.openai_api_key
+                base_url = None
+            else:
+                model = ENV.ollama_embed
+                api_key = ENV.ollama_api_key
+                base_url = ENV.ollama_base_url
+        return SemanticSummaryConfig(
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            cache_file=Path(ENV.pruning_embedding_cache_file),
+            seed_ratio=ENV.pruning_semantic_seed_ratio,
+            mmr_lambda=ENV.pruning_semantic_mmr_lambda,
+            max_extra_edges=ENV.pruning_semantic_max_extra_edges,
+        )
+
+    def _selected_node_record(
+        self,
+        *,
+        node_id: str,
+        attrs: dict[str, Any],
+        media_resolver: ChunkMediaResolver,
+        story_nodes: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        node_id = str(node_id)
+        record = {
+            "node_id": node_id,
+            "label": str(attrs.get("entity_id", node_id)),
+            "entity_type": str(attrs.get("entity_type", "")),
+            "description": str(attrs.get("description", "")),
+            "source_id": str(attrs.get("source_id", "")),
+            "file_path": str(attrs.get("file_path", "")),
+            "is_virtual_merged": str(attrs.get("is_virtual_merged", "")).lower() == "true",
+            "merged_from": str(attrs.get("merged_from", "")),
+        }
+        record.update(story_nodes.get(node_id, {}))
+        record.update(media_resolver.resolve_for_node(node_id, attrs))
+        return record
+
     async def evaluate_experiment(self, pruning_experiment_id: str) -> dict[str, Any]:
         if pruning_experiment_id not in PRUNING_EXPERIMENTS:
             raise ValueError(f"Unknown pruning experiment: {pruning_experiment_id}")
@@ -868,9 +1398,14 @@ class PruningBenchmarkEvaluator:
 
         try:
             context = self.context_builder.load_context(exp_def.base_experiment_id)
-            candidate_rows, ordered_candidate_ids = CandidatePoolBuilder(context).build(exp_def.candidate_pool_size)
+            include_evidence_in_pool = exp_def.pruning_method != "global_narrative_steiner_summary"
+            candidate_rows, ordered_candidate_ids = CandidatePoolBuilder(context).build(
+                exp_def.candidate_pool_size,
+                include_evidence=include_evidence_in_pool,
+            )
 
             edge_allowlist: set[tuple[str, str]] | None = None
+            story_nodes: dict[str, dict[str, Any]] = {}
             if exp_def.pruning_method == "baseline":
                 selected_ids, debug_info = PruningMethodSuite.baseline(context.graph, exp_def.top_k)
                 merge_groups: list[dict[str, Any]] = []
@@ -888,35 +1423,7 @@ class PruningBenchmarkEvaluator:
                 merge_groups = []
                 llm_response = None
             elif exp_def.pruning_method == "embedding_semantic_summary":
-                provider = ENV.pruning_embedding_provider.lower()
-                if provider == "openai":
-                    model = ENV.pruning_embedding_model
-                    api_key = ENV.openai_api_key
-                    base_url = None
-                elif provider == "ollama":
-                    model = ENV.ollama_embed
-                    api_key = ENV.ollama_api_key
-                    base_url = ENV.ollama_base_url
-                else:
-                    if ENV.openai_api_key:
-                        model = ENV.pruning_embedding_model
-                        api_key = ENV.openai_api_key
-                        base_url = None
-                    else:
-                        model = ENV.ollama_embed
-                        api_key = ENV.ollama_api_key
-                        base_url = ENV.ollama_base_url
-                summarizer = EmbeddingSemanticSummarizer(
-                    SemanticSummaryConfig(
-                        model=model,
-                        api_key=api_key,
-                        base_url=base_url,
-                        cache_file=Path(ENV.pruning_embedding_cache_file),
-                        seed_ratio=ENV.pruning_semantic_seed_ratio,
-                        mmr_lambda=ENV.pruning_semantic_mmr_lambda,
-                        max_extra_edges=ENV.pruning_semantic_max_extra_edges,
-                    )
-                )
+                summarizer = EmbeddingSemanticSummarizer(self._build_semantic_summary_config())
                 semantic_result = await summarizer.summarize(
                     graph=context.graph,
                     candidate_rows=candidate_rows,
@@ -926,6 +1433,19 @@ class PruningBenchmarkEvaluator:
                 selected_ids = semantic_result.selected_node_ids
                 edge_allowlist = semantic_result.edge_allowlist
                 debug_info = semantic_result.debug_info
+                merge_groups = []
+                llm_response = None
+            elif exp_def.pruning_method == "global_narrative_steiner_summary":
+                summarizer = GlobalNarrativeSteinerSummarizer(self._build_semantic_summary_config())
+                narrative_result = await summarizer.summarize(
+                    graph=context.graph,
+                    candidate_rows=candidate_rows,
+                    top_k=exp_def.top_k,
+                )
+                selected_ids = narrative_result.selected_node_ids
+                edge_allowlist = narrative_result.edge_allowlist
+                debug_info = narrative_result.debug_info
+                story_nodes = narrative_result.story_nodes
                 merge_groups = []
                 llm_response = None
             elif exp_def.pruning_method == "llm_strict_topk":
@@ -984,18 +1504,19 @@ class PruningBenchmarkEvaluator:
                 connectivity=connectivity,
             )
 
+            media_resolver = ChunkMediaResolver(
+                Path(ENV.output_base_dir) / exp_def.base_experiment_id / "rag_storage"
+            )
             selected_node_records = []
             for node_id in display_graph.nodes():
                 attrs = display_graph.nodes[node_id]
                 selected_node_records.append(
-                    {
-                        "node_id": str(node_id),
-                        "label": str(attrs.get("entity_id", node_id)),
-                        "entity_type": str(attrs.get("entity_type", "")),
-                        "description": str(attrs.get("description", "")),
-                        "is_virtual_merged": str(attrs.get("is_virtual_merged", "")).lower() == "true",
-                        "merged_from": str(attrs.get("merged_from", "")),
-                    }
+                    self._selected_node_record(
+                        node_id=str(node_id),
+                        attrs=attrs,
+                        media_resolver=media_resolver,
+                        story_nodes=story_nodes,
+                    )
                 )
 
             metadata = {

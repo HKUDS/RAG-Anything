@@ -493,10 +493,17 @@ class WorkbenchDashboard:
             selected_nodes = metadata.get("selected_display_nodes", [])
             if selected_nodes:
                 nodes_df = pd.DataFrame(selected_nodes)
+                nodes_df = self._sort_pruning_nodes(nodes_df)
                 preferred_cols = [
+                    "story_order",
+                    "story_role",
+                    "chapter_label",
                     "label",
                     "entity_type",
+                    "media_type",
+                    "media_available",
                     "description",
+                    "source_file",
                     "is_virtual_merged",
                     "merged_from",
                     "node_id",
@@ -504,6 +511,16 @@ class WorkbenchDashboard:
                 visible_cols = [c for c in preferred_cols if c in nodes_df.columns]
                 st.markdown("**Selected Nodes**")
                 st.dataframe(nodes_df[visible_cols].astype(str), use_container_width=True, hide_index=True)
+
+                node_records = nodes_df.to_dict("records")
+                node_options = list(range(len(node_records)))
+                selected_node_index = st.selectbox(
+                    "Node Metadata",
+                    node_options,
+                    format_func=lambda idx: self._format_pruning_node_option(node_records[idx]),
+                    key=f"pruning_node_meta_{selected_pruning_exp}",
+                )
+                self._render_pruning_node_detail(node_records[selected_node_index])
 
             merge_groups = metadata.get("merge_groups", [])
             if merge_groups:
@@ -526,6 +543,115 @@ class WorkbenchDashboard:
             components.html(html_content, height=760, scrolling=True)
         else:
             st.info("Interactive pruning graph artifact not found.")
+
+    @staticmethod
+    def _sort_pruning_nodes(nodes_df: pd.DataFrame) -> pd.DataFrame:
+        nodes_df = nodes_df.copy()
+        if "story_order" in nodes_df.columns:
+            nodes_df["_story_order_num"] = pd.to_numeric(nodes_df["story_order"], errors="coerce").fillna(999999)
+            sort_cols = ["_story_order_num"]
+            if "label" in nodes_df.columns:
+                sort_cols.append("label")
+            nodes_df = nodes_df.sort_values(sort_cols).drop(columns=["_story_order_num"])
+        elif "label" in nodes_df.columns:
+            nodes_df = nodes_df.sort_values("label")
+        return nodes_df
+
+    @staticmethod
+    def _format_pruning_node_option(record: dict[str, Any]) -> str:
+        label = str(record.get("label") or record.get("node_id") or "node")
+        entity_type = str(record.get("entity_type") or "entity")
+        order = record.get("story_order")
+        media_type = str(record.get("media_type") or "")
+        try:
+            prefix = f"#{int(float(order))} "
+        except Exception:
+            prefix = ""
+        suffix = f" | {media_type}" if media_type else ""
+        return f"{prefix}{label} [{entity_type}]{suffix}"
+
+    def _render_pruning_node_detail(self, record: dict[str, Any]) -> None:
+        st.markdown("**Node Detail**")
+        left, right = st.columns([0.58, 0.42])
+        with left:
+            detail_fields = [
+                "label",
+                "entity_type",
+                "story_role",
+                "chapter_label",
+                "why_selected",
+                "source_file",
+                "source_id",
+                "media_type",
+                "media_path",
+            ]
+            details = {
+                key: record.get(key, "")
+                for key in detail_fields
+                if str(record.get(key, "")).strip()
+            }
+            if details:
+                st.json(details, expanded=False)
+            description = str(record.get("description") or "").strip()
+            if description:
+                with st.expander("Description", expanded=False):
+                    st.markdown(description)
+        with right:
+            self._render_pruning_node_media(record)
+
+    def _render_pruning_node_media(self, record: dict[str, Any]) -> None:
+        media_type = str(record.get("media_type") or "").lower()
+        media_path = self._resolve_existing_path(record.get("media_path", ""))
+        caption = str(record.get("media_caption") or record.get("label") or "").strip()
+        table_body = str(record.get("table_body") or "").strip()
+        equation_text = str(record.get("equation_text") or "").strip()
+
+        if media_path and media_path.suffix.lower() in {".apng", ".avif", ".bmp", ".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}:
+            try:
+                st.image(str(media_path), caption=caption or None, use_container_width=True)
+            except TypeError:
+                st.image(str(media_path), caption=caption or None, use_column_width=True)
+        elif media_path:
+            st.caption(str(media_path))
+
+        if media_type == "table" and table_body:
+            st.markdown("**Table**")
+            self._render_table_body(table_body)
+        elif media_type == "equation" and equation_text:
+            st.markdown("**Equation**")
+            try:
+                st.latex(equation_text)
+            except Exception:
+                st.code(equation_text)
+        elif equation_text:
+            st.markdown("**Equation**")
+            st.code(equation_text)
+
+    @staticmethod
+    def _render_table_body(table_body: str) -> None:
+        if "<table" in table_body.lower():
+            st.markdown(table_body, unsafe_allow_html=True)
+            return
+        lines = [line.strip() for line in table_body.splitlines() if line.strip()]
+        markdown_table = len(lines) >= 2 and all("|" in line for line in lines[:2])
+        if markdown_table:
+            st.markdown(table_body)
+        else:
+            st.code(table_body[:8000], language="html" if "<" in table_body and ">" in table_body else "text")
+
+    @staticmethod
+    def _resolve_existing_path(value: Any) -> Path | None:
+        raw = str(value or "").strip().strip('"').strip("'")
+        if not raw or raw.lower() in {"none", "null", "n/a"}:
+            return None
+        path = Path(raw)
+        candidates = [path]
+        if not path.is_absolute():
+            candidates.extend([Path.cwd() / path, Path(ENV.output_base_dir) / path])
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        return None
 
     def _render_manual_qa(self, selected_exp: str | None, query_mode: str) -> None:
         st.subheader("Manual QA Playground")
