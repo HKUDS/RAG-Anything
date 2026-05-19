@@ -462,9 +462,9 @@ class PipelineQAEvaluator:
                     detail_rows.append(row)
         finally:
             try:
-                query_engine.close()
+                await query_engine.aclose()
             except Exception:
-                pass
+                query_engine.close()
 
         summary = self._compute_summary(experiment_id, exp_def, query_mode, detail_rows)
         self.summary_writer.append(summary)

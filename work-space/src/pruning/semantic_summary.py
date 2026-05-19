@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import inspect
 import json
@@ -36,6 +37,13 @@ def _safe_float(value: Any) -> float:
         return float(value)
     except Exception:
         return 0.0
+
+
+def _trim(text: str, limit: int) -> str:
+    text = " ".join(str(text or "").split())
+    if len(text) <= limit:
+        return text
+    return text[: limit - 3].rstrip() + "..."
 
 
 def _split_source_ids(value: Any) -> list[str]:
@@ -105,6 +113,8 @@ class SemanticSummaryConfig:
     seed_ratio: float = 0.6
     mmr_lambda: float = 0.75
     max_extra_edges: int = 12
+    embed_batch_size: int = 24
+    embed_max_retries: int = 3
 
 
 class EmbeddingCache:
@@ -151,20 +161,35 @@ class EmbeddingProvider:
         if missing_indices:
             from lightrag.llm.openai import openai_embed
 
-            missing_texts = [texts[idx] for idx in missing_indices]
-            response = openai_embed.func(
-                missing_texts,
-                model=self.config.model,
-                api_key=self.config.api_key,
-                base_url=self.config.base_url,
-            )
-            if inspect.isawaitable(response):
-                response = await response
-            vectors = [list(map(float, vector)) for vector in response]
-            for idx, vector in zip(missing_indices, vectors):
-                cached[idx] = vector
-                self.cache.put(self.config.model, texts[idx], vector)
-            self.cache.save()
+            batch_size = max(1, self.config.embed_batch_size)
+            for start in range(0, len(missing_indices), batch_size):
+                batch_indices = missing_indices[start : start + batch_size]
+                batch_texts = [texts[idx] for idx in batch_indices]
+                last_exc: Exception | None = None
+                for attempt in range(1, self.config.embed_max_retries + 1):
+                    try:
+                        response = openai_embed.func(
+                            batch_texts,
+                            model=self.config.model,
+                            api_key=self.config.api_key,
+                            base_url=self.config.base_url,
+                        )
+                        if inspect.isawaitable(response):
+                            response = await response
+                        vectors = [list(map(float, vector)) for vector in response]
+                        for idx, vector in zip(batch_indices, vectors):
+                            cached[idx] = vector
+                            self.cache.put(self.config.model, texts[idx], vector)
+                        self.cache.save()
+                        last_exc = None
+                        break
+                    except Exception as exc:
+                        last_exc = exc
+                        if attempt >= self.config.embed_max_retries:
+                            raise
+                        await asyncio.sleep(min(30, 2**attempt))
+                if last_exc is not None:
+                    raise last_exc
         return [vec or [] for vec in cached]
 
 
@@ -173,7 +198,7 @@ class NodeTextBuilder:
     def build(attrs: dict[str, Any], node_id: str) -> str:
         label = str(attrs.get("entity_id", node_id)).strip()
         entity_type = str(attrs.get("entity_type", "")).strip()
-        description = str(attrs.get("description", "")).strip()
+        description = _trim(attrs.get("description", ""), 420)
         source_ids = _split_source_ids(attrs.get("source_id", ""))
         multimodal = "yes" if _is_multimodal_anchor(attrs) else "no"
         return (
@@ -189,8 +214,8 @@ class NodeTextBuilder:
         attrs = graph.get_edge_data(source, target) or {}
         source_label = str(graph.nodes[source].get("entity_id", source))
         target_label = str(graph.nodes[target].get("entity_id", target))
-        keywords = str(attrs.get("keywords", "")).strip()
-        description = str(attrs.get("description", "")).strip()
+        keywords = _trim(attrs.get("keywords", ""), 160)
+        description = _trim(attrs.get("description", ""), 320)
         return (
             f"source: {source_label}\n"
             f"target: {target_label}\n"

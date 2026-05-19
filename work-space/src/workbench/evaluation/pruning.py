@@ -287,7 +287,7 @@ class CandidatePoolBuilder:
         working_graph.remove_nodes_from(
             [node_id for node_id, attrs in graph.nodes(data=True) if _is_chunk_node(node_id, attrs)]
         )
-        if working_graph.number_of_nodes() == 0:
+        if working_graph.number_of_nodes() == 0 or candidate_pool_size <= 0:
             return [], []
 
         degrees = dict(working_graph.degree())
@@ -347,35 +347,49 @@ class CandidatePoolBuilder:
             )
 
         rows.sort(key=lambda item: item["importance_score"], reverse=True)
+        score_lookup = {row["node_id"]: row["importance_score"] for row in rows}
 
         selected_ids: list[str] = []
         selected_set: set[str] = set()
 
-        for node_id in sorted(self.context.evidence_nodes):
-            if node_id in working_graph and node_id not in selected_set:
-                selected_ids.append(node_id)
-                selected_set.add(node_id)
+        def append_candidate(node_id: str) -> bool:
+            if len(selected_ids) >= candidate_pool_size:
+                return False
+            node_id = str(node_id)
+            if node_id not in working_graph or node_id in selected_set:
+                return True
+            selected_ids.append(node_id)
+            selected_set.add(node_id)
+            return True
+
+        evidence_candidates = [
+            str(node_id)
+            for node_id in self.context.evidence_nodes
+            if str(node_id) in working_graph
+        ]
+        evidence_candidates.sort(
+            key=lambda node_id: score_lookup.get(node_id, 0.0),
+            reverse=True,
+        )
+        for node_id in evidence_candidates:
+            if not append_candidate(node_id):
+                break
 
         for community in self.context.communities:
+            if len(selected_ids) >= candidate_pool_size:
+                break
             community_candidates = [node_id for node_id in community if node_id in working_graph]
             community_candidates.sort(
-                key=lambda node_id: next(
-                    (row["importance_score"] for row in rows if row["node_id"] == node_id),
-                    0.0,
-                ),
+                key=lambda node_id: score_lookup.get(str(node_id), 0.0),
                 reverse=True,
             )
             for node_id in community_candidates[:2]:
-                if node_id not in selected_set:
-                    selected_ids.append(node_id)
-                    selected_set.add(node_id)
+                if not append_candidate(node_id):
+                    break
 
         for row in rows:
-            if len(selected_ids) >= candidate_pool_size:
+            if not append_candidate(row["node_id"]):
                 break
-            if row["node_id"] not in selected_set:
-                selected_ids.append(row["node_id"])
-                selected_set.add(row["node_id"])
 
         candidate_rows = [row for row in rows if row["node_id"] in selected_set]
         candidate_rows.sort(key=lambda item: item["importance_score"], reverse=True)

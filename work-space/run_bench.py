@@ -19,13 +19,23 @@ async def main():
         action="store_true",
         help="Clear benchmark_outputs/<exp>/rag_storage and parser_output before the run.",
     )
+    parser.add_argument(
+        "--fresh-report-exp",
+        action="store_true",
+        help="Remove existing pipeline report rows for --exp before appending new rows.",
+    )
     args = parser.parse_args()
     configure_workbench_logging("run_bench", args.exp or "all")
 
     runner = PipelineBenchmarkRunner()
+    if args.fresh_report_exp and not args.exp:
+        raise SystemExit("--fresh-report-exp requires --exp so completed experiments are not touched accidentally.")
+
     if args.exp:
         if args.exp not in PIPELINE_EXPERIMENTS:
             raise SystemExit(f"Unknown pipeline experiment '{args.exp}'. Available: {list(PIPELINE_EXPERIMENTS.keys())}")
+        if args.fresh_report_exp:
+            runner.clear_report_rows(args.exp)
         await runner.run(PIPELINE_EXPERIMENTS[args.exp], fresh_run=args.fresh_run)
         return
 

@@ -317,7 +317,10 @@ class RetrievalEvaluator:
                     self.detail_writer.append(row)
                     detail_rows.append(row)
         finally:
-            query_engine.close()
+            try:
+                await query_engine.aclose()
+            except Exception:
+                query_engine.close()
 
         summary = self._compute_summary(exp_def, detail_rows)
         self.summary_writer.append(summary)

@@ -46,8 +46,16 @@ class OpenAIPruningClient:
             base_url=None,
             timeout=300,
         )
+        cleaned = _strip_json_fence(response)
         try:
-            return json.loads(_strip_json_fence(response))
+            return json.loads(cleaned)
+        except json.JSONDecodeError:
+            try:
+                return json.loads(cleaned, strict=False)
+            except Exception as exc:
+                logger.error("OpenAI pruning JSON parse failed: %s", exc)
+                logger.error("Raw response: %s", response)
+                raise
         except Exception as exc:
             logger.error("OpenAI pruning JSON parse failed: %s", exc)
             logger.error("Raw response: %s", response)

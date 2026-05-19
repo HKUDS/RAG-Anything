@@ -84,6 +84,27 @@ class PipelineBenchmarkRunner:
             shutil.rmtree(path, ignore_errors=True)
             logger.info("Cleared: %s", path)
 
+    def clear_report_rows(self, experiment_id: str) -> int:
+        removed = self.report_writer.remove_where(Experiment_ID=experiment_id)
+        if removed:
+            logger.info("Removed %d existing report rows for %s", removed, experiment_id)
+        return removed
+
+    @staticmethod
+    async def _finalize_rag(rag: RAGAnything | None):
+        if rag is None:
+            return
+        try:
+            await rag.finalize_storages()
+        except Exception as exc:
+            logger.warning("Failed to finalize RAGAnything storages cleanly: %s", exc)
+        try:
+            from lightrag.kg.shared_storage import finalize_share_data
+
+            finalize_share_data()
+        except Exception as exc:
+            logger.debug("Failed to finalize LightRAG shared data: %s", exc)
+
     @staticmethod
     def _filter_files_for_parser(files, parser_name: str):
         parser_name = (parser_name or "mineru").lower()
@@ -226,16 +247,14 @@ class PipelineBenchmarkRunner:
         input_path = Path(exp_def.input_dir_override or ENV.input_dir)
         if not input_path.exists():
             logger.warning("Input directory does not exist: %s", input_path)
-            if hasattr(rag, 'close'):
-                rag.close()
+            await self._finalize_rag(rag)
             self._restore_prompts()
             return
         files = [f for f in input_path.glob("*.*") if f.is_file()]
         files = self._filter_files_for_parser(files, parser_name)
         if not files:
             logger.warning("No supported input files for parser '%s' in %s", parser_name, input_path)
-            if hasattr(rag, 'close'):
-                rag.close()
+            await self._finalize_rag(rag)
             self._restore_prompts()
             return
 
@@ -253,8 +272,7 @@ class PipelineBenchmarkRunner:
 
         if not runnable_files:
             logger.info("Nothing new to process for %s", exp_def.id)
-            if hasattr(rag, 'close'):
-                rag.close()
+            await self._finalize_rag(rag)
             self._restore_prompts()
             return
 
@@ -332,6 +350,16 @@ class PipelineBenchmarkRunner:
                     f"entities/chunk={entities_per_chunk:.2f} | "
                     f"relations/entity={relations_per_entity:.2f}"
                 )
+                if (
+                    exp_def.entity_relation_backend != "llm"
+                    and stats_after["chunks"] > 0
+                    and stats_after["entities"] == 0
+                ):
+                    raise RuntimeError(
+                        "NER extraction produced zero entities after insertion; "
+                        "treating this as a failed/no-op graph build instead of Success. "
+                        "Use --fresh-run for this experiment and run NER experiments in separate processes."
+                    )
             except Exception as exc:
                 logger.error("Pipeline experiment failed for %s: %s", file_path.name, exc)
                 status = "Failed"
@@ -381,6 +409,5 @@ class PipelineBenchmarkRunner:
             }
             manifest.save(manifest_data)
 
-        if hasattr(rag, 'close'):
-            rag.close()
+        await self._finalize_rag(rag)
         self._restore_prompts()

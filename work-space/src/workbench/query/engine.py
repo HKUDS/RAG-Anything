@@ -125,6 +125,19 @@ class RAGQueryEngine:
             "raw_result": raw_result,
         }
 
+    async def aclose(self) -> None:
+        try:
+            if self.rag is not None and hasattr(self.rag, "finalize_storages"):
+                await self.rag.finalize_storages()
+        except Exception as exc:
+            logger.warning("Failed to finalize RAGQueryEngine for %s: %s", self.experiment_id, exc)
+        try:
+            from lightrag.kg.shared_storage import finalize_share_data
+
+            finalize_share_data()
+        except Exception as exc:
+            logger.debug("Failed to finalize LightRAG shared data for %s: %s", self.experiment_id, exc)
+
     def close(self) -> None:
         try:
             if self.rag is not None and hasattr(self.rag, "close"):
