@@ -53,6 +53,16 @@ except ImportError:
     # faster-whisper not installed; audio processing unavailable.
     pass
 
+# Optional: video modal processor (requires scenedetect + moviepy + faster-whisper + opencv).
+try:
+    from .modalprocessors_video import (
+        VideoModalProcessor as VideoModalProcessor,
+        is_video_file as is_video_file,
+    )
+except ImportError:
+    # Video dependencies not installed; video processing unavailable.
+    pass
+
 # Optional: multilingual prompt manager.
 try:
     from .prompt_manager import (
@@ -112,6 +122,14 @@ if "AudioModalProcessor" in globals():
         [
             "AudioModalProcessor",
             "is_audio_file",
+        ]
+    )
+
+if "VideoModalProcessor" in globals():
+    __all__.extend(
+        [
+            "VideoModalProcessor",
+            "is_video_file",
         ]
     )
 

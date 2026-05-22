@@ -41,6 +41,7 @@ markdown = [
     "pygments>=2.10.0",
 ]
 audio = ["faster-whisper>=1.0.0"]
+video = ["scenedetect[opencv]>=0.6.0", "moviepy>=2.0.0", "faster-whisper>=1.0.0", "opencv-python>=4.8.0"]
 all = [
     "Pillow>=10.0.0",
     "reportlab>=4.0.0",
@@ -50,6 +51,9 @@ all = [
     "weasyprint>=60.0",
     "pygments>=2.10.0",
     "faster-whisper>=1.0.0",
+    "scenedetect[opencv]>=0.6.0",
+    "moviepy>=2.0.0",
+    "opencv-python>=4.8.0",
 ]
 
 [project.urls]
