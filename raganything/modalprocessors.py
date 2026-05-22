@@ -755,13 +755,21 @@ class BaseModalProcessor:
         chunks = {chunk_id: chunk_data}
 
         # Extract entities and relationships
-        chunk_results = await extract_entities(
-            chunks=chunks,
-            global_config=self.global_config,
-            pipeline_status=pipeline_status,
-            pipeline_status_lock=pipeline_status_lock,
-            llm_response_cache=self.hashing_kv,
-        )
+        # Wrap in try/except to handle hashing_kv errors gracefully
+        try:
+            chunk_results = await extract_entities(
+                chunks=chunks,
+                global_config=self.global_config,
+                pipeline_status=pipeline_status,
+                pipeline_status_lock=pipeline_status_lock,
+                llm_response_cache=self.hashing_kv,
+            )
+        except Exception as e:
+            logger.warning(
+                f"hashing_kv error during entity extraction for chunk {chunk_id}: {e}. "
+                "Skipping entity extraction for this chunk."
+            )
+            chunk_results = []
 
         # Add "belongs_to" relationships for all extracted entities
         processed_chunk_results = []
