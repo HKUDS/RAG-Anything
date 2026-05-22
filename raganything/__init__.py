@@ -43,6 +43,16 @@ except ModuleNotFoundError:
 except ImportError:
     pass
 
+# Optional: audio modal processor (requires faster-whisper).
+try:
+    from .modalprocessors_audio import (
+        AudioModalProcessor as AudioModalProcessor,
+        is_audio_file as is_audio_file,
+    )
+except ImportError:
+    # faster-whisper not installed; audio processing unavailable.
+    pass
+
 # Optional: multilingual prompt manager.
 try:
     from .prompt_manager import (
@@ -94,6 +104,14 @@ if "ProcessingCallback" in globals():
             "MetricsCallback",
             "CallbackManager",
             "ProcessingEvent",
+        ]
+    )
+
+if "AudioModalProcessor" in globals():
+    __all__.extend(
+        [
+            "AudioModalProcessor",
+            "is_audio_file",
         ]
     )
 
