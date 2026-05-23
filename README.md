@@ -249,6 +249,27 @@ The hybrid retrieval system combines vector similarity search with graph travers
 
 ---
 
+## 🚀 Quickstart
+
+Install and run a document pipeline in under a minute:
+
+```bash
+pip install raganything
+python -m raganything --input ./docs --output ./output
+```
+
+Or use it programmatically:
+
+```python
+from raganything import RAGAnything
+
+pipeline = RAGAnything()
+result = pipeline.process("document.pdf")
+print(result.markdown)
+```
+
+---
+
 ## 🚀 Quick Start
 
 *Initialize Your AI Journey*
