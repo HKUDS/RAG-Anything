@@ -4,7 +4,7 @@ This document describes the batch processing feature for RAG-Anything, which all
 
 ## Overview
 
-The batch processing feature allows you to process multiple documents concurrently, significantly improving throughput for large document collections. It provides parallel processing, progress tracking, error handling, and flexible configuration options.
+The batch processing feature allows you to process multiple documents concurrently, significan'tly improving throughput for large document collections. It provides parallel processing, progress tracking, error handling, and flexible configuration options.
 
 ## Key Features
 
@@ -347,4 +347,4 @@ def process_with_retry(file_paths, max_retries=3):
 
 ## Conclusion
 
-The batch processing feature significantly improves RAG-Anything's throughput for large document collections. It provides flexible configuration options, comprehensive error handling, and seamless integration with the existing RAG-Anything pipeline.
+The batch processing feature significan'tly improves RAG-Anything's throughput for large document collections. It provides flexible configuration options, comprehensive error handling, and seamless integration with the existing RAG-Anything pipeline.

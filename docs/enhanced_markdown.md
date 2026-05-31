@@ -322,7 +322,7 @@ result = rag.process_documents_batch(
 ### Memory Usage
 - **WeasyPrint**: ~50-100MB per conversion
 - **Pandoc**: ~100-200MB per conversion
-- **Images**: Large images increase memory usage significantly
+- **Images**: Large images increase memory usage significan'tly
 
 ### Optimization Tips
 1. **Resize large images** before embedding

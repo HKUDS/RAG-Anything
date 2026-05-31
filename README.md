@@ -221,7 +221,7 @@ The multi-modal knowledge graph construction module transforms document content 
 
 **Core Functions:**
 
-- **🔍 Multi-Modal Entity Extraction**: Transforms significant multimodal elements into structured knowledge graph entities. The process includes semantic annotations and metadata preservation.
+- **🔍 Multi-Modal Entity Extraction**: Transforms significan't multimodal elements into structured knowledge graph entities. The process includes semantic annotations and metadata preservation.
 
 - **🔗 Cross-Modal Relationship Mapping**: Establishes semantic connections and dependencies between textual entities and multimodal components. This is achieved through automated relationship inference algorithms.
 

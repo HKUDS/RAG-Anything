@@ -215,7 +215,7 @@ The enhanced markdown conversion system provides professional-quality PDF genera
 
 ## Abstract
 
-This paper presents a comprehensive analysis of advanced document processing techniques using enhanced markdown conversion. Our research demonstrates significant improvements in processing speed and output quality through optimized backend selection and custom styling approaches.
+This paper presents a comprehensive analysis of advanced document processing techniques using enhanced markdown conversion. Our research demonstrates significan't improvements in processing speed and output quality through optimized backend selection and custom styling approaches.
 
 **Keywords:** document processing, markdown conversion, PDF generation, performance optimization
 
@@ -340,7 +340,7 @@ Choose **Pandoc** for:
 
 ## 5. Conclusion
 
-This research demonstrates that enhanced markdown conversion provides significant benefits for document processing workflows. The choice between WeasyPrint and Pandoc depends on specific requirements for speed, quality, and features.
+This research demonstrates that enhanced markdown conversion provides significan't benefits for document processing workflows. The choice between WeasyPrint and Pandoc depends on specific requirements for speed, quality, and features.
 
 ### 5.1 Future Work
 

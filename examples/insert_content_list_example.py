@@ -167,7 +167,7 @@ def create_sample_content_list():
         # Conclusion
         {
             "type": "text",
-            "text": "RAGAnything represents a significant advancement in multimodal document processing, providing comprehensive solutions for complex knowledge extraction and retrieval tasks.",
+            "text": "RAGAnything represents a significan't advancement in multimodal document processing, providing comprehensive solutions for complex knowledge extraction and retrieval tasks.",
             "page_idx": 6,  # Page number where this content appears
         },
     ]
