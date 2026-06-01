@@ -46,17 +46,18 @@ from raganything.modalprocessors import (
     ContextConfig,
 )
 
-# Optional processors: only available when their extra dependencies are installed
+# Optional processors. The modules themselves import cleanly (heavy deps are
+# loaded lazily), so we gate registration on the *runtime* availability of the
+# extra dependencies via the ``*_deps_available`` helpers below.
 # (audio -> faster-whisper; video -> scenedetect + moviepy + opencv + faster-whisper).
-try:
-    from raganything.modalprocessors_audio import AudioModalProcessor
-except ImportError:
-    AudioModalProcessor = None
-
-try:
-    from raganything.modalprocessors_video import VideoModalProcessor
-except ImportError:
-    VideoModalProcessor = None
+from raganything.modalprocessors_audio import (
+    AudioModalProcessor,
+    audio_deps_available,
+)
+from raganything.modalprocessors_video import (
+    VideoModalProcessor,
+    video_deps_available,
+)
 
 
 @dataclass
@@ -248,7 +249,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             )
 
         if self.config.enable_audio_processing:
-            if AudioModalProcessor is None:
+            if not audio_deps_available():
                 self.logger.warning(
                     "enable_audio_processing=True but audio dependencies are missing. "
                     "Install them with: pip install raganything[audio]. "
@@ -262,7 +263,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 )
 
         if self.config.enable_video_processing:
-            if VideoModalProcessor is None:
+            if not video_deps_available():
                 self.logger.warning(
                     "enable_video_processing=True but video dependencies are missing. "
                     "Install them with: pip install raganything[video]. "
@@ -280,6 +281,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                     ),
                     max_scenes=get_env_value("VIDEO_MAX_SCENES", 50, int),
                     scene_threshold=get_env_value("VIDEO_SCENE_THRESHOLD", 27.0, float),
+                    max_windows=get_env_value("VIDEO_MAX_WINDOWS", 100, int),
+                    # Reuse the audio processor's whisper model when audio is enabled
+                    audio_processor=self.modal_processors.get("audio"),
                 )
 
         # Always include generic processor as fallback

@@ -8,12 +8,16 @@ Supports:
 - Speech-to-text transcription with timestamps
 - Meeting recordings, phone calls, podcasts, lectures
 - Multiple languages (auto-detect or specify)
+- Long recordings are split into multiple token-bounded chunks (see
+  ``generate_chunk_sections``)
 
 Dependencies:
     pip install raganything[audio]
     # or: pip install faster-whisper
 """
 
+import asyncio
+import importlib.util
 import json
 import logging
 import os
@@ -33,6 +37,11 @@ AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".wma", ".aac", ".o
 def is_audio_file(file_path: str) -> bool:
     """Check if a file is a supported audio format."""
     return Path(file_path).suffix.lower() in AUDIO_EXTENSIONS
+
+
+def audio_deps_available() -> bool:
+    """Return True if the optional audio dependencies are importable."""
+    return importlib.util.find_spec("faster_whisper") is not None
 
 
 class AudioModalProcessor(BaseModalProcessor):
@@ -69,7 +78,7 @@ class AudioModalProcessor(BaseModalProcessor):
         whisper_device: str = "auto",
         whisper_compute_type: str = "auto",
         language: str = None,
-        segment_min_length: int = 30,
+        segment_min_length: int = 0,
     ):
         """Initialize audio processor.
 
@@ -82,7 +91,10 @@ class AudioModalProcessor(BaseModalProcessor):
             whisper_device: Device for inference ("auto", "cpu", "cuda")
             whisper_compute_type: Compute type ("auto", "float16", "int8")
             language: Language code (e.g., "zh", "en"). None for auto-detect.
-            segment_min_length: Minimum segment length in characters to keep
+            segment_min_length: Minimum segment length in characters to keep.
+                Defaults to 0 (keep every non-empty segment); raising it drops
+                short utterances such as "Yes." or "Revenue grew 23%.", so only
+                increase it when you explicitly want to filter noise.
         """
         super().__init__(lightrag, modal_caption_func, context_extractor)
 
@@ -119,8 +131,23 @@ class AudioModalProcessor(BaseModalProcessor):
             )
         return self._whisper_model
 
+    @staticmethod
+    def _resolve_audio_path(modal_content) -> str:
+        """Extract the audio path from dict/JSON/string modal content."""
+        if isinstance(modal_content, str):
+            try:
+                content_data = json.loads(modal_content)
+            except json.JSONDecodeError:
+                return modal_content
+        else:
+            content_data = modal_content
+        return content_data.get("audio_path") or content_data.get("img_path") or ""
+
     def transcribe(self, audio_path: str) -> List[Dict[str, Any]]:
         """Transcribe audio file to timestamped segments.
+
+        Note: this is a blocking call; async callers should wrap it with
+        ``asyncio.to_thread`` so it does not block the event loop.
 
         Args:
             audio_path: Path to the audio file
@@ -176,6 +203,35 @@ class AudioModalProcessor(BaseModalProcessor):
             lines.append(f"[{start_str}-{end_str}] {seg['text']}")
         return "\n".join(lines)
 
+    def _group_segments_by_tokens(
+        self, segments: List[Dict[str, Any]]
+    ) -> List[List[Dict[str, Any]]]:
+        """Group ordered segments into windows bounded by the chunk token budget.
+
+        Segments are never split mid-utterance, so timestamp alignment is kept.
+        A single oversized segment becomes its own window.
+        """
+        if not segments:
+            return []
+
+        budget = self._chunk_token_budget()
+        windows: List[List[Dict[str, Any]]] = []
+        current: List[Dict[str, Any]] = []
+        current_tokens = 0
+
+        for seg in segments:
+            seg_tokens = self._count_tokens(seg["text"])
+            if current and current_tokens + seg_tokens > budget:
+                windows.append(current)
+                current = []
+                current_tokens = 0
+            current.append(seg)
+            current_tokens += seg_tokens
+
+        if current:
+            windows.append(current)
+        return windows
+
     async def generate_description_only(
         self,
         modal_content,
@@ -183,42 +239,28 @@ class AudioModalProcessor(BaseModalProcessor):
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
     ) -> Tuple[str, Dict[str, Any]]:
-        """Generate audio transcription and entity info.
+        """Generate the full audio transcription and entity info (single description).
 
-        Args:
-            modal_content: Audio content dict with 'audio_path' key
-            content_type: Type of modal content ("audio")
-            item_info: Item information for context extraction
-            entity_name: Optional predefined entity name
+        Returns the whole recording as one description. For long recordings the
+        batch pipeline uses :meth:`generate_chunk_sections` instead, which splits
+        the transcription into multiple token-bounded chunks.
 
         Returns:
             Tuple of (transcription_text, entity_info)
         """
         try:
-            # Parse audio content
-            if isinstance(modal_content, str):
-                try:
-                    content_data = json.loads(modal_content)
-                except json.JSONDecodeError:
-                    content_data = {"audio_path": modal_content}
-            else:
-                content_data = modal_content
-
-            audio_path = content_data.get("audio_path") or content_data.get("img_path")
+            audio_path = self._resolve_audio_path(modal_content)
             if not audio_path:
                 raise ValueError(
                     f"No audio path provided in modal_content: {modal_content}"
                 )
 
-            # Transcribe
-            segments = self.transcribe(audio_path)
+            segments = await asyncio.to_thread(self.transcribe, audio_path)
             if not segments:
                 raise RuntimeError(f"No speech detected in audio: {audio_path}")
 
-            # Format transcription
             transcription = self._segments_to_text(segments)
 
-            # Generate entity info
             filename = Path(audio_path).stem
             duration = segments[-1]["end"] if segments else 0
             entity_info = {
@@ -245,6 +287,104 @@ class AudioModalProcessor(BaseModalProcessor):
             }
             return str(modal_content), fallback_entity
 
+    @staticmethod
+    def _section_entity_name(
+        entity_name: str, filename: str, part: int, total: int
+    ) -> str:
+        """Build a unique entity name per section."""
+        base = entity_name if entity_name else f"audio_{filename}"
+        return base if total == 1 else f"{base}_part{part}"
+
+    async def generate_chunk_sections(
+        self,
+        modal_content,
+        content_type: str,
+        item_info: Dict[str, Any] = None,
+        entity_name: str = None,
+    ) -> List[Dict[str, Any]]:
+        """Transcribe the audio and split it into one or more token-bounded sections.
+
+        Short recordings yield a single section (equivalent to the legacy single
+        chunk). Long recordings are split into multiple ordered sections so the
+        transcription is not stored as one oversized chunk.
+        """
+        try:
+            audio_path = self._resolve_audio_path(modal_content)
+            if not audio_path:
+                raise ValueError(
+                    f"No audio path provided in modal_content: {modal_content}"
+                )
+
+            segments = await asyncio.to_thread(self.transcribe, audio_path)
+            if not segments:
+                raise RuntimeError(f"No speech detected in audio: {audio_path}")
+
+            filename = Path(audio_path).stem
+            windows = self._group_segments_by_tokens(segments)
+            total = len(windows)
+
+            sections: List[Dict[str, Any]] = []
+            for k, window in enumerate(windows, start=1):
+                text = self._segments_to_text(window)
+                start = window[0]["start"]
+                end = window[-1]["end"]
+                name = self._section_entity_name(entity_name, filename, k, total)
+                part_label = "" if total == 1 else f" part {k}/{total}"
+                entity_info = {
+                    "entity_name": name,
+                    "entity_type": "audio",
+                    "summary": (
+                        f"Audio recording{part_label} "
+                        f"({self._format_timestamp(start)}-{self._format_timestamp(end)}). "
+                        f"Transcription: {window[0]['text'][:100]}..."
+                    ),
+                }
+                window_meta = (
+                    None
+                    if total == 1
+                    else {"start": start, "end": end, "part": k, "total": total}
+                )
+                sections.append(
+                    {
+                        "description": text,
+                        "entity_info": entity_info,
+                        "window_meta": window_meta,
+                    }
+                )
+
+            return sections
+
+        except Exception as e:
+            logger.error(f"Error generating audio sections: {e}")
+            fallback_entity = {
+                "entity_name": entity_name
+                if entity_name
+                else f"audio_{compute_mdhash_id(str(modal_content))}",
+                "entity_type": "audio",
+                "summary": f"Audio content: {str(modal_content)[:100]}",
+            }
+            return [
+                {
+                    "description": str(modal_content),
+                    "entity_info": fallback_entity,
+                    "window_meta": None,
+                }
+            ]
+
+    @staticmethod
+    def _build_audio_chunk(audio_path: str, section: Dict[str, Any]) -> str:
+        """Format a single audio section into chunk text."""
+        meta = section.get("window_meta")
+        header = "[Audio Content]"
+        if meta:
+            header += f" — part {meta['part']}/{meta['total']}"
+        return (
+            f"{header}\n"
+            f"Source: {audio_path}\n"
+            f"Entity: {section['entity_info']['entity_name']}\n"
+            f"Transcription:\n{section['description']}"
+        )
+
     async def process_multimodal_content(
         self,
         modal_content,
@@ -255,57 +395,52 @@ class AudioModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process audio content: transcribe and insert into knowledge graph.
 
-        Args:
-            modal_content: Audio content dict with 'audio_path' key
-            content_type: Type of modal content ("audio")
-            file_path: Source file path for attribution
-            entity_name: Optional entity name
-            item_info: Item info for context
-            batch_mode: Whether in batch processing mode
-            doc_id: Document ID
-            chunk_order_index: Chunk ordering index
+        Long recordings produce multiple ordered chunks; each section is stored
+        with a sequential ``chunk_order_index`` starting at the supplied value.
 
         Returns:
-            Tuple of (chunk_text, entity_info)
+            Tuple of (primary_summary, primary_entity_info, all_chunk_results)
         """
         try:
-            # Generate transcription and entity info
-            transcription, entity_info = await self.generate_description_only(
+            sections = await self.generate_chunk_sections(
                 modal_content, content_type, item_info, entity_name
             )
+            audio_path = self._resolve_audio_path(modal_content)
 
-            # Parse audio path for chunk formatting
-            if isinstance(modal_content, str):
-                try:
-                    content_data = json.loads(modal_content)
-                except json.JSONDecodeError:
-                    content_data = {"audio_path": modal_content}
-            else:
-                content_data = modal_content
+            all_chunk_results: List[Any] = []
+            section_chunk_ids: List[str] = []
+            primary_summary = None
+            primary_entity = None
 
-            audio_path = content_data.get("audio_path") or content_data.get(
-                "img_path", ""
-            )
+            for offset, section in enumerate(sections):
+                modal_chunk = self._build_audio_chunk(audio_path, section)
+                (
+                    summary,
+                    entity_ret,
+                    chunk_results,
+                ) = await self._create_entity_and_chunk(
+                    modal_chunk,
+                    section["entity_info"],
+                    file_path,
+                    batch_mode,
+                    doc_id,
+                    chunk_order_index + offset,
+                )
+                all_chunk_results.extend(chunk_results)
+                if entity_ret.get("chunk_id"):
+                    section_chunk_ids.append(entity_ret["chunk_id"])
+                if primary_summary is None:
+                    primary_summary = summary
+                    primary_entity = entity_ret
 
-            # Build audio chunk text
-            modal_chunk = (
-                f"[Audio Content]\n"
-                f"Source: {audio_path}\n"
-                f"Entity: {entity_info['entity_name']}\n"
-                f"Transcription:\n{transcription}"
-            )
+            # Expose every section's chunk id so the caller can register them all
+            if primary_entity is not None:
+                primary_entity["chunk_ids"] = section_chunk_ids
 
-            return await self._create_entity_and_chunk(
-                modal_chunk,
-                entity_info,
-                file_path,
-                batch_mode,
-                doc_id,
-                chunk_order_index,
-            )
+            return primary_summary, primary_entity, all_chunk_results
 
         except Exception as e:
             logger.error(f"Error processing audio content: {e}")
@@ -316,4 +451,4 @@ class AudioModalProcessor(BaseModalProcessor):
                 "entity_type": "audio",
                 "summary": f"Audio content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []

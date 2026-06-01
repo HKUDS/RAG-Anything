@@ -8,6 +8,9 @@ Processes video files (MP4, MOV, WebM, AVI, MKV) with dual-channel analysis:
 Results are merged by timestamp, producing rich text descriptions like:
     [0:00-0:30] 画面：展示Q3营收图表 | 语音：本季度同比增长23%...
 
+Long videos are split into multiple ordered chunks ("windows") so that no scene
+or audio is silently dropped (see ``generate_chunk_sections``).
+
 Supports:
 - Meeting recordings (screen share + voice)
 - Lectures/tutorials (slides + narration)
@@ -20,6 +23,9 @@ Dependencies:
     # or: pip install scenedetect[opencv] moviepy faster-whisper opencv-python
 """
 
+import asyncio
+import base64
+import importlib.util
 import json
 import logging
 import os
@@ -54,6 +60,14 @@ def _load_cv2():
 def is_video_file(file_path: str) -> bool:
     """Check if a file is a supported video format."""
     return Path(file_path).suffix.lower() in VIDEO_EXTENSIONS
+
+
+def video_deps_available() -> bool:
+    """Return True if all optional video dependencies are importable."""
+    return all(
+        importlib.util.find_spec(mod) is not None
+        for mod in ("cv2", "scenedetect", "moviepy", "faster_whisper")
+    )
 
 
 class VideoModalProcessor(BaseModalProcessor):
@@ -97,6 +111,8 @@ class VideoModalProcessor(BaseModalProcessor):
         min_scene_duration: float = 5.0,
         max_scenes: int = 50,
         scene_threshold: float = 27.0,
+        max_windows: int = 100,
+        audio_processor: "AudioModalProcessor" = None,
     ):
         """Initialize video processor.
 
@@ -109,8 +125,13 @@ class VideoModalProcessor(BaseModalProcessor):
             whisper_compute_type: Compute type ("auto", "float16", "int8")
             language: Language code for ASR (None for auto-detect)
             min_scene_duration: Minimum scene duration in seconds to keep
-            max_scenes: Maximum number of scenes to process
+            max_scenes: Maximum scenes per window (controls chunk size, not a hard
+                cap on the whole video — extra scenes spill into further windows)
             scene_threshold: ContentDetector threshold (lower = more sensitive)
+            max_windows: Safety cap on the number of chunks produced for one video;
+                if exceeded, scenes are redistributed into this many windows.
+            audio_processor: Optional shared AudioModalProcessor to reuse a single
+                whisper model when both audio and video processing are enabled.
         """
         super().__init__(lightrag, modal_caption_func, context_extractor)
 
@@ -123,13 +144,14 @@ class VideoModalProcessor(BaseModalProcessor):
         self.min_scene_duration = min_scene_duration
         self.max_scenes = max_scenes
         self.scene_threshold = scene_threshold
+        self.max_windows = max_windows
 
-        # Lazy-loaded audio processor (shares whisper model config)
-        self._audio_processor = None
+        # Reuse a shared audio processor when provided, otherwise lazily create one.
+        self._audio_processor = audio_processor
 
     @property
     def audio_processor(self) -> AudioModalProcessor:
-        """Get or create audio processor for transcription."""
+        """Get or create audio processor for transcription (shares whisper model)."""
         if self._audio_processor is None:
             self._audio_processor = AudioModalProcessor(
                 lightrag=self.lightrag,
@@ -138,12 +160,28 @@ class VideoModalProcessor(BaseModalProcessor):
                 whisper_device=self.whisper_device,
                 whisper_compute_type=self.whisper_compute_type,
                 language=self.language,
-                segment_min_length=10,
+                segment_min_length=0,
             )
         return self._audio_processor
 
+    @staticmethod
+    def _resolve_video_path(modal_content) -> str:
+        """Extract the video path from dict/JSON/string modal content."""
+        if isinstance(modal_content, str):
+            try:
+                content_data = json.loads(modal_content)
+            except json.JSONDecodeError:
+                return modal_content
+        else:
+            content_data = modal_content
+        return content_data.get("video_path") or content_data.get("img_path") or ""
+
     def _detect_scenes(self, video_path: str) -> List[Tuple[float, float]]:
         """Detect scene boundaries using SceneDetect.
+
+        Returns ALL scenes (no hard cap); window planning bounds the per-chunk
+        scene count later. This is a blocking call; async callers wrap it with
+        ``asyncio.to_thread``.
 
         Args:
             video_path: Path to video file
@@ -184,11 +222,14 @@ class VideoModalProcessor(BaseModalProcessor):
                 total_duration = total_frames / fps
                 scenes = [(0, total_duration)]
 
-        # Limit number of scenes
-        return scenes[: self.max_scenes]
+        return scenes
 
     def _extract_frame_at(self, video_path: str, timestamp: float) -> Optional[str]:
         """Extract a single frame at the given timestamp.
+
+        Note: ``CAP_PROP_POS_FRAMES`` seeking snaps to the nearest keyframe for
+        many codecs, so the captured frame may be slightly off ``timestamp``.
+        This is an acceptable approximation for scene-level description.
 
         Args:
             video_path: Path to video file
@@ -212,11 +253,9 @@ class VideoModalProcessor(BaseModalProcessor):
         if not ret:
             return None
 
-        # Save to temp file
-        frame_path = os.path.join(
-            tempfile.gettempdir(),
-            f"raganything_vframe_{os.getpid()}_{timestamp:.1f}.jpg",
-        )
+        # Unique temp name so concurrent extractions never collide
+        fd, frame_path = tempfile.mkstemp(suffix=".jpg", prefix="raganything_vframe_")
+        os.close(fd)
         cv2.imwrite(frame_path, frame)
         return frame_path
 
@@ -238,21 +277,23 @@ class VideoModalProcessor(BaseModalProcessor):
                 "or: pip install moviepy"
             )
 
-        audio_path = os.path.join(
-            tempfile.gettempdir(),
-            f"raganything_vaudio_{os.getpid()}.wav",
-        )
+        # Unique temp name so concurrent video processing never overwrites it
+        fd, audio_path = tempfile.mkstemp(suffix=".wav", prefix="raganything_vaudio_")
+        os.close(fd)
 
         try:
             clip = VideoFileClip(video_path)
             if clip.audio is None:
                 clip.close()
+                os.remove(audio_path)
                 return None
             clip.audio.write_audiofile(audio_path, logger=None)
             clip.close()
             return audio_path
         except Exception as e:
             logger.warning(f"Failed to extract audio from {video_path}: {e}")
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
             return None
 
     def _format_timestamp(self, seconds: float) -> str:
@@ -281,49 +322,77 @@ class VideoModalProcessor(BaseModalProcessor):
     async def _describe_scenes(
         self, video_path: str, scenes: List[Tuple[float, float]]
     ) -> List[Dict[str, Any]]:
-        """Generate VLM descriptions for each scene.
+        """Generate VLM descriptions for each scene with bounded concurrency.
 
         Args:
             video_path: Path to video file
             scenes: List of (start, end) tuples
 
         Returns:
-            List of scene dicts with start, end, visual description
+            List of scene dicts with start, end, visual description (ordered)
         """
-        results = []
-        for start, end in scenes:
-            # Extract frame from middle of scene
-            mid_time = (start + end) / 2
-            frame_path = self._extract_frame_at(video_path, mid_time)
+        concurrency = max(1, getattr(self.lightrag, "max_parallel_insert", 2))
+        semaphore = asyncio.Semaphore(concurrency)
 
-            visual_desc = ""
-            if frame_path:
-                try:
-                    # Encode frame to base64 for VLM
-                    import base64
+        async def describe_one(start: float, end: float) -> Dict[str, Any]:
+            async with semaphore:
+                mid_time = (start + end) / 2
+                frame_path = await asyncio.to_thread(
+                    self._extract_frame_at, video_path, mid_time
+                )
 
-                    with open(frame_path, "rb") as f:
-                        image_base64 = base64.b64encode(f.read()).decode("utf-8")
+                visual_desc = ""
+                if frame_path:
+                    try:
+                        with open(frame_path, "rb") as f:
+                            image_base64 = base64.b64encode(f.read()).decode("utf-8")
 
-                    prompt = (
-                        f"Describe this video frame in detail. "
-                        f"This is from a video at approximately "
-                        f"{self._format_timestamp(mid_time)}. "
-                        f"Include: what is shown, any text/UI visible, "
-                        f"people/objects present, and the overall context."
-                    )
-                    visual_desc = await self.modal_caption_func(
-                        prompt, image_data=image_base64
-                    )
-                except Exception as e:
-                    logger.warning(f"Failed to describe frame at {mid_time:.1f}s: {e}")
-                finally:
-                    if os.path.exists(frame_path):
-                        os.remove(frame_path)
+                        prompt = (
+                            f"Describe this video frame in detail. "
+                            f"This is from a video at approximately "
+                            f"{self._format_timestamp(mid_time)}. "
+                            f"Include: what is shown, any text/UI visible, "
+                            f"people/objects present, and the overall context."
+                        )
+                        visual_desc = await self.modal_caption_func(
+                            prompt, image_data=image_base64
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to describe frame at {mid_time:.1f}s: {e}"
+                        )
+                    finally:
+                        if os.path.exists(frame_path):
+                            os.remove(frame_path)
 
-            results.append({"start": start, "end": end, "visual": visual_desc})
+                return {"start": start, "end": end, "visual": visual_desc}
 
-        return results
+        results = await asyncio.gather(
+            *(describe_one(start, end) for start, end in scenes),
+            return_exceptions=True,
+        )
+
+        scene_segments = []
+        for result in results:
+            if isinstance(result, Exception):
+                logger.warning(f"Scene description task failed: {result}")
+                continue
+            scene_segments.append(result)
+        return scene_segments
+
+    async def _transcribe_audio_track(self, video_path: str) -> List[Dict[str, Any]]:
+        """Extract and transcribe the audio track once (off the event loop)."""
+        audio_path = await asyncio.to_thread(self._extract_audio_track, video_path)
+        if not audio_path:
+            return []
+        try:
+            return await asyncio.to_thread(self.audio_processor.transcribe, audio_path)
+        except Exception as e:
+            logger.warning(f"Audio transcription failed: {e}")
+            return []
+        finally:
+            if os.path.exists(audio_path):
+                os.remove(audio_path)
 
     def _merge_channels(
         self,
@@ -361,6 +430,57 @@ class VideoModalProcessor(BaseModalProcessor):
 
         return "\n\n".join(lines)
 
+    def _plan_windows(
+        self, visual_segments: List[Dict[str, Any]]
+    ) -> List[List[Dict[str, Any]]]:
+        """Group ordered scene descriptions into windows.
+
+        A window is bounded by both ``max_scenes`` (scene count) and the chunk
+        token budget. If the number of windows would exceed ``max_windows``, the
+        scenes are redistributed evenly into ``max_windows`` groups so the chunk
+        count stays bounded without dropping any scene.
+        """
+        if not visual_segments:
+            return []
+
+        budget = self._chunk_token_budget()
+        windows: List[List[Dict[str, Any]]] = []
+        current: List[Dict[str, Any]] = []
+        current_tokens = 0
+
+        for seg in visual_segments:
+            seg_tokens = self._count_tokens(seg.get("visual", "") or "")
+            too_many = len(current) >= self.max_scenes
+            too_big = bool(current) and current_tokens + seg_tokens > budget
+            if current and (too_many or too_big):
+                windows.append(current)
+                current = []
+                current_tokens = 0
+            current.append(seg)
+            current_tokens += seg_tokens
+
+        if current:
+            windows.append(current)
+
+        if self.max_windows and len(windows) > self.max_windows:
+            logger.warning(
+                f"Video produced {len(windows)} windows, exceeding max_windows="
+                f"{self.max_windows}; redistributing {len(visual_segments)} scenes "
+                f"into {self.max_windows} windows."
+            )
+            windows = self._redistribute(visual_segments, self.max_windows)
+
+        return windows
+
+    @staticmethod
+    def _redistribute(
+        items: List[Dict[str, Any]], groups: int
+    ) -> List[List[Dict[str, Any]]]:
+        """Split items into at most ``groups`` near-equal, order-preserving groups."""
+        n = len(items)
+        size = (n + groups - 1) // groups  # ceil
+        return [items[i : i + size] for i in range(0, n, size)]
+
     async def generate_description_only(
         self,
         modal_content,
@@ -368,64 +488,35 @@ class VideoModalProcessor(BaseModalProcessor):
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
     ) -> Tuple[str, Dict[str, Any]]:
-        """Generate video description using dual-channel analysis.
+        """Generate a single merged description for the whole video.
 
-        Args:
-            modal_content: Video content dict with 'video_path' key
-            content_type: Type of modal content ("video")
-            item_info: Item information for context
-            entity_name: Optional predefined entity name
+        For long videos the batch pipeline uses :meth:`generate_chunk_sections`
+        instead, which splits the analysis into multiple ordered chunks.
 
         Returns:
             Tuple of (merged_description, entity_info)
         """
         try:
-            # Parse video content
-            if isinstance(modal_content, str):
-                try:
-                    content_data = json.loads(modal_content)
-                except json.JSONDecodeError:
-                    content_data = {"video_path": modal_content}
-            else:
-                content_data = modal_content
-
-            video_path = content_data.get("video_path") or content_data.get("img_path")
+            video_path = self._resolve_video_path(modal_content)
             if not video_path:
                 raise ValueError(
                     f"No video path provided in modal_content: {modal_content}"
                 )
-
             if not Path(video_path).exists():
                 raise FileNotFoundError(f"Video file not found: {video_path}")
 
             logger.info(f"Processing video: {video_path}")
 
-            # Step 1: Detect scenes
-            scenes = self._detect_scenes(video_path)
+            scenes = await asyncio.to_thread(self._detect_scenes, video_path)
             logger.info(f"Detected {len(scenes)} scenes")
 
-            # Step 2: Visual channel - describe each scene
             visual_segments = await self._describe_scenes(video_path, scenes)
+            audio_segments = await self._transcribe_audio_track(video_path)
 
-            # Step 3: Audio channel - extract and transcribe
-            audio_segments = []
-            audio_path = self._extract_audio_track(video_path)
-            if audio_path:
-                try:
-                    audio_segments = self.audio_processor.transcribe(audio_path)
-                except Exception as e:
-                    logger.warning(f"Audio transcription failed: {e}")
-                finally:
-                    if os.path.exists(audio_path):
-                        os.remove(audio_path)
-
-            # Step 4: Merge by timestamp
             merged_description = self._merge_channels(visual_segments, audio_segments)
-
             if not merged_description:
                 merged_description = f"Video file: {Path(video_path).name}"
 
-            # Generate entity info
             filename = Path(video_path).stem
             total_duration = scenes[-1][1] if scenes else 0
             entity_info = {
@@ -451,6 +542,134 @@ class VideoModalProcessor(BaseModalProcessor):
             }
             return str(modal_content), fallback_entity
 
+    @staticmethod
+    def _section_entity_name(
+        entity_name: str, filename: str, part: int, total: int
+    ) -> str:
+        """Build a unique entity name per section."""
+        base = entity_name if entity_name else f"video_{filename}"
+        return base if total == 1 else f"{base}_part{part}"
+
+    async def generate_chunk_sections(
+        self,
+        modal_content,
+        content_type: str,
+        item_info: Dict[str, Any] = None,
+        entity_name: str = None,
+    ) -> List[Dict[str, Any]]:
+        """Analyze the video and split it into one or more ordered sections.
+
+        Scene detection and audio transcription run once for the whole video;
+        scenes are then grouped into windows (bounded by ``max_scenes`` and the
+        token budget). Audio that extends past the last scene is appended to the
+        final window as an audio-only row so nothing is dropped.
+        """
+        try:
+            video_path = self._resolve_video_path(modal_content)
+            if not video_path:
+                raise ValueError(
+                    f"No video path provided in modal_content: {modal_content}"
+                )
+            if not Path(video_path).exists():
+                raise FileNotFoundError(f"Video file not found: {video_path}")
+
+            logger.info(f"Processing video: {video_path}")
+
+            scenes = await asyncio.to_thread(self._detect_scenes, video_path)
+            if not scenes:
+                raise RuntimeError(f"No scenes detected in video: {video_path}")
+            logger.info(f"Detected {len(scenes)} scenes")
+
+            visual_segments = await self._describe_scenes(video_path, scenes)
+            audio_segments = await self._transcribe_audio_track(video_path)
+
+            # Capture audio beyond the last visual scene as a trailing audio-only row
+            if visual_segments and audio_segments:
+                last_end = visual_segments[-1]["end"]
+                tail = [a for a in audio_segments if a["start"] >= last_end]
+                if tail:
+                    visual_segments.append(
+                        {"start": last_end, "end": tail[-1]["end"], "visual": ""}
+                    )
+
+            windows = self._plan_windows(visual_segments)
+            total = len(windows)
+            filename = Path(video_path).stem
+
+            sections: List[Dict[str, Any]] = []
+            for k, window in enumerate(windows, start=1):
+                win_start = window[0]["start"]
+                win_end = window[-1]["end"]
+                text = self._merge_channels(window, audio_segments)
+                if not text:
+                    text = (
+                        f"Video file: {Path(video_path).name} "
+                        f"({self._format_timestamp(win_start)}-"
+                        f"{self._format_timestamp(win_end)})"
+                    )
+                name = self._section_entity_name(entity_name, filename, k, total)
+                part_label = "" if total == 1 else f" part {k}/{total}"
+                entity_info = {
+                    "entity_name": name,
+                    "entity_type": "video",
+                    "summary": (
+                        f"Video{part_label} "
+                        f"({self._format_timestamp(win_start)}-"
+                        f"{self._format_timestamp(win_end)}, {len(window)} scenes). "
+                        f"{text[:150]}..."
+                    ),
+                }
+                window_meta = (
+                    None
+                    if total == 1
+                    else {
+                        "start": win_start,
+                        "end": win_end,
+                        "part": k,
+                        "total": total,
+                    }
+                )
+                sections.append(
+                    {
+                        "description": text,
+                        "entity_info": entity_info,
+                        "window_meta": window_meta,
+                    }
+                )
+
+            return sections
+
+        except Exception as e:
+            logger.error(f"Error generating video sections: {e}")
+            fallback_entity = {
+                "entity_name": entity_name
+                if entity_name
+                else f"video_{compute_mdhash_id(str(modal_content))}",
+                "entity_type": "video",
+                "summary": f"Video content: {str(modal_content)[:100]}",
+            }
+            return [
+                {
+                    "description": str(modal_content),
+                    "entity_info": fallback_entity,
+                    "window_meta": None,
+                }
+            ]
+
+    @staticmethod
+    def _build_video_chunk(video_path: str, section: Dict[str, Any]) -> str:
+        """Format a single video section into chunk text."""
+        meta = section.get("window_meta")
+        header = "[Video Content]"
+        if meta:
+            header += f" — part {meta['part']}/{meta['total']}"
+        return (
+            f"{header}\n"
+            f"Source: {video_path}\n"
+            f"Entity: {section['entity_info']['entity_name']}\n"
+            f"Analysis:\n{section['description']}"
+        )
+
     async def process_multimodal_content(
         self,
         modal_content,
@@ -461,57 +680,52 @@ class VideoModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process video content: analyze and insert into knowledge graph.
 
-        Args:
-            modal_content: Video content dict with 'video_path' key
-            content_type: Type of modal content ("video")
-            file_path: Source file path for attribution
-            entity_name: Optional entity name
-            item_info: Item info for context
-            batch_mode: Whether in batch processing mode
-            doc_id: Document ID
-            chunk_order_index: Chunk ordering index
+        Long videos produce multiple ordered chunks; each section is stored with a
+        sequential ``chunk_order_index`` starting at the supplied value.
 
         Returns:
-            Tuple of (chunk_text, entity_info)
+            Tuple of (primary_summary, primary_entity_info, all_chunk_results)
         """
         try:
-            # Generate description using dual-channel analysis
-            description, entity_info = await self.generate_description_only(
+            sections = await self.generate_chunk_sections(
                 modal_content, content_type, item_info, entity_name
             )
+            video_path = self._resolve_video_path(modal_content)
 
-            # Parse video path
-            if isinstance(modal_content, str):
-                try:
-                    content_data = json.loads(modal_content)
-                except json.JSONDecodeError:
-                    content_data = {"video_path": modal_content}
-            else:
-                content_data = modal_content
+            all_chunk_results: List[Any] = []
+            section_chunk_ids: List[str] = []
+            primary_summary = None
+            primary_entity = None
 
-            video_path = content_data.get("video_path") or content_data.get(
-                "img_path", ""
-            )
+            for offset, section in enumerate(sections):
+                modal_chunk = self._build_video_chunk(video_path, section)
+                (
+                    summary,
+                    entity_ret,
+                    chunk_results,
+                ) = await self._create_entity_and_chunk(
+                    modal_chunk,
+                    section["entity_info"],
+                    file_path,
+                    batch_mode,
+                    doc_id,
+                    chunk_order_index + offset,
+                )
+                all_chunk_results.extend(chunk_results)
+                if entity_ret.get("chunk_id"):
+                    section_chunk_ids.append(entity_ret["chunk_id"])
+                if primary_summary is None:
+                    primary_summary = summary
+                    primary_entity = entity_ret
 
-            # Build video chunk text
-            modal_chunk = (
-                f"[Video Content]\n"
-                f"Source: {video_path}\n"
-                f"Entity: {entity_info['entity_name']}\n"
-                f"Analysis:\n{description}"
-            )
+            # Expose every section's chunk id so the caller can register them all
+            if primary_entity is not None:
+                primary_entity["chunk_ids"] = section_chunk_ids
 
-            return await self._create_entity_and_chunk(
-                modal_chunk,
-                entity_info,
-                file_path,
-                batch_mode,
-                doc_id,
-                chunk_order_index,
-            )
+            return primary_summary, primary_entity, all_chunk_results
 
         except Exception as e:
             logger.error(f"Error processing video content: {e}")
@@ -522,4 +736,4 @@ class VideoModalProcessor(BaseModalProcessor):
                 "entity_type": "video",
                 "summary": f"Video content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []

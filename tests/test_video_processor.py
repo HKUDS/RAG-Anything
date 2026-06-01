@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from raganything.modalprocessors_video import VideoModalProcessor, is_video_file
+from raganything.modalprocessors_video import (
+    VideoModalProcessor,
+    is_video_file,
+    video_deps_available,
+)
 
 
 @dataclass
@@ -26,6 +30,8 @@ class _FakeLightRAG:
     llm_model_func: object = None
     llm_response_cache: object = None
     tokenizer: object = None
+    chunk_token_size: int = 1200
+    max_parallel_insert: int = 2
 
 
 class TestIsVideoFile:
@@ -247,3 +253,129 @@ class TestGenerateDescriptionOnly:
         assert "Demo of product" in result
         assert entity_info["entity_type"] == "video"
         assert "video_test" in entity_info["entity_name"]
+
+
+class TestPlanWindows:
+    """Test scene -> window grouping and redistribution."""
+
+    def _processor(self, max_scenes=50, max_windows=100, chunk_token_size=100000):
+        lightrag = _FakeLightRAG(chunk_token_size=chunk_token_size)
+        return VideoModalProcessor(
+            lightrag=lightrag,
+            modal_caption_func=AsyncMock(),
+            max_scenes=max_scenes,
+            max_windows=max_windows,
+        )
+
+    def _scenes(self, n):
+        return [
+            {"start": i * 10, "end": i * 10 + 10, "visual": f"scene {i}"}
+            for i in range(n)
+        ]
+
+    def test_empty(self):
+        assert self._processor()._plan_windows([]) == []
+
+    def test_single_window_when_under_max_scenes(self):
+        processor = self._processor(max_scenes=50)
+        windows = processor._plan_windows(self._scenes(5))
+        assert len(windows) == 1
+
+    def test_splits_by_max_scenes(self):
+        processor = self._processor(max_scenes=2)
+        windows = processor._plan_windows(self._scenes(5))
+        # 5 scenes / 2 per window -> 3 windows (2, 2, 1), no scene dropped
+        assert len(windows) == 3
+        assert sum(len(w) for w in windows) == 5
+
+    def test_max_windows_redistributes(self):
+        processor = self._processor(max_scenes=1, max_windows=2)
+        windows = processor._plan_windows(self._scenes(6))
+        # max_scenes=1 would give 6 windows, but max_windows caps to 2 groups
+        assert len(windows) == 2
+        assert sum(len(w) for w in windows) == 6  # all scenes preserved
+
+    def test_redistribute_preserves_order(self):
+        items = [{"i": i} for i in range(7)]
+        groups = VideoModalProcessor._redistribute(items, 3)
+        assert sum(len(g) for g in groups) == 7
+        flat = [x["i"] for g in groups for x in g]
+        assert flat == list(range(7))
+
+
+@pytest.mark.asyncio
+class TestVideoChunkSections:
+    """Test the 1->N generate_chunk_sections for video."""
+
+    def _processor(self, max_scenes=1):
+        return VideoModalProcessor(
+            lightrag=_FakeLightRAG(),
+            modal_caption_func=AsyncMock(return_value="desc"),
+            max_scenes=max_scenes,
+        )
+
+    async def test_multiple_windows(self, tmp_path):
+        processor = self._processor(max_scenes=1)
+        processor._detect_scenes = MagicMock(
+            return_value=[(0, 30), (30, 60), (60, 90)]
+        )
+        processor._describe_scenes = AsyncMock(
+            return_value=[
+                {"start": 0, "end": 30, "visual": "Scene A"},
+                {"start": 30, "end": 60, "visual": "Scene B"},
+                {"start": 60, "end": 90, "visual": "Scene C"},
+            ]
+        )
+        processor._transcribe_audio_track = AsyncMock(return_value=[])
+
+        video_file = tmp_path / "clip.mp4"
+        video_file.write_bytes(b"")
+
+        sections = await processor.generate_chunk_sections(
+            {"video_path": str(video_file)}, "video"
+        )
+        assert len(sections) == 3
+        assert [s["window_meta"]["part"] for s in sections] == [1, 2, 3]
+        names = [s["entity_info"]["entity_name"] for s in sections]
+        assert names == ["video_clip_part1", "video_clip_part2", "video_clip_part3"]
+        joined = "\n".join(s["description"] for s in sections)
+        for label in ("Scene A", "Scene B", "Scene C"):
+            assert label in joined
+
+    async def test_tail_audio_beyond_last_scene_is_kept(self, tmp_path):
+        processor = self._processor(max_scenes=50)
+        processor._detect_scenes = MagicMock(return_value=[(0, 30)])
+        processor._describe_scenes = AsyncMock(
+            return_value=[{"start": 0, "end": 30, "visual": "Only scene"}]
+        )
+        # Audio that starts after the last scene end (30s)
+        processor._transcribe_audio_track = AsyncMock(
+            return_value=[{"start": 35, "end": 45, "text": "trailing speech"}]
+        )
+
+        video_file = tmp_path / "clip.mp4"
+        video_file.write_bytes(b"")
+
+        sections = await processor.generate_chunk_sections(
+            {"video_path": str(video_file)}, "video"
+        )
+        joined = "\n".join(s["description"] for s in sections)
+        assert "trailing speech" in joined  # tail audio not dropped
+
+
+class TestVideoDepsAvailable:
+    """Test optional-dependency detection."""
+
+    def test_returns_false_when_any_missing(self, monkeypatch):
+        monkeypatch.setattr(
+            "raganything.modalprocessors_video.importlib.util.find_spec",
+            lambda name: None if name == "moviepy" else object(),
+        )
+        assert video_deps_available() is False
+
+    def test_returns_true_when_all_present(self, monkeypatch):
+        monkeypatch.setattr(
+            "raganything.modalprocessors_video.importlib.util.find_spec",
+            lambda name: object(),
+        )
+        assert video_deps_available() is True

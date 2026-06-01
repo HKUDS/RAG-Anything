@@ -5,7 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from raganything.modalprocessors_audio import AudioModalProcessor, is_audio_file
+from raganything.modalprocessors_audio import (
+    AudioModalProcessor,
+    audio_deps_available,
+    is_audio_file,
+)
 
 
 @dataclass
@@ -26,6 +30,7 @@ class _FakeLightRAG:
     llm_model_func: object = None
     llm_response_cache: object = None
     tokenizer: object = None
+    chunk_token_size: int = 1200
 
 
 class TestIsAudioFile:
@@ -202,3 +207,95 @@ class TestGenerateDescriptionOnly:
             "audio",
         )
         assert "[0:00-0:05] Hello" in result
+
+
+class TestGroupSegmentsByTokens:
+    """Test token-bounded grouping of transcription segments."""
+
+    def _processor(self, chunk_token_size=1200):
+        lightrag = _FakeLightRAG(chunk_token_size=chunk_token_size)
+        return AudioModalProcessor(lightrag=lightrag, modal_caption_func=AsyncMock())
+
+    def test_empty(self):
+        assert self._processor()._group_segments_by_tokens([]) == []
+
+    def test_single_window_under_budget(self):
+        processor = self._processor(chunk_token_size=1000)
+        segs = [
+            {"start": 0, "end": 5, "text": "short one"},
+            {"start": 5, "end": 10, "text": "short two"},
+        ]
+        windows = processor._group_segments_by_tokens(segs)
+        assert len(windows) == 1
+        assert len(windows[0]) == 2
+
+    def test_splits_when_over_budget(self):
+        # No tokenizer -> ~len/4 tokens; ~200 chars => ~50 tokens each.
+        processor = self._processor(chunk_token_size=50)
+        long_text = "word " * 40  # 200 chars
+        segs = [{"start": i, "end": i + 1, "text": long_text} for i in range(4)]
+        windows = processor._group_segments_by_tokens(segs)
+        assert len(windows) == 4  # each segment lands in its own window
+
+    def test_oversized_single_segment_is_its_own_window(self):
+        processor = self._processor(chunk_token_size=10)
+        segs = [{"start": 0, "end": 5, "text": "x" * 400}]
+        windows = processor._group_segments_by_tokens(segs)
+        assert len(windows) == 1
+
+
+@pytest.mark.asyncio
+class TestAudioChunkSections:
+    """Test the 1->N generate_chunk_sections for audio."""
+
+    async def test_short_audio_single_section(self):
+        processor = AudioModalProcessor(
+            lightrag=_FakeLightRAG(), modal_caption_func=AsyncMock()
+        )
+        processor.transcribe = MagicMock(
+            return_value=[{"start": 0, "end": 5, "text": "Hello world"}]
+        )
+        sections = await processor.generate_chunk_sections({"audio_path": "a.mp3"}, "audio")
+        assert len(sections) == 1
+        assert sections[0]["window_meta"] is None
+        assert sections[0]["entity_info"]["entity_name"] == "audio_a"
+
+    async def test_long_audio_multiple_sections(self):
+        processor = AudioModalProcessor(
+            lightrag=_FakeLightRAG(chunk_token_size=50),
+            modal_caption_func=AsyncMock(),
+        )
+        long_text = "word " * 40
+        processor.transcribe = MagicMock(
+            return_value=[
+                {"start": i * 10, "end": i * 10 + 9, "text": long_text}
+                for i in range(3)
+            ]
+        )
+        sections = await processor.generate_chunk_sections(
+            {"audio_path": "meeting.mp3"}, "audio"
+        )
+        assert len(sections) == 3
+        # Ordered part metadata + unique entity names
+        assert [s["window_meta"]["part"] for s in sections] == [1, 2, 3]
+        assert all(s["window_meta"]["total"] == 3 for s in sections)
+        names = [s["entity_info"]["entity_name"] for s in sections]
+        assert names == ["audio_meeting_part1", "audio_meeting_part2", "audio_meeting_part3"]
+
+
+class TestAudioDepsAvailable:
+    """Test optional-dependency detection."""
+
+    def test_returns_false_when_missing(self, monkeypatch):
+        monkeypatch.setattr(
+            "raganything.modalprocessors_audio.importlib.util.find_spec",
+            lambda name: None,
+        )
+        assert audio_deps_available() is False
+
+    def test_returns_true_when_present(self, monkeypatch):
+        monkeypatch.setattr(
+            "raganything.modalprocessors_audio.importlib.util.find_spec",
+            lambda name: object(),
+        )
+        assert audio_deps_available() is True
