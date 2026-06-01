@@ -1178,6 +1178,28 @@ class ProcessorMixin:
                     enhanced_caption=description,
                 )
 
+            elif content_type == "audio":
+                audio_path = original_item.get(
+                    "audio_path", original_item.get("img_path", "")
+                )
+
+                return (
+                    f"[Audio Content]\n"
+                    f"Source: {audio_path}\n"
+                    f"Transcription:\n{description}"
+                )
+
+            elif content_type == "video":
+                video_path = original_item.get(
+                    "video_path", original_item.get("img_path", "")
+                )
+
+                return (
+                    f"[Video Content]\n"
+                    f"Source: {video_path}\n"
+                    f"Analysis:\n{description}"
+                )
+
             else:  # generic or unknown types
                 content = str(original_item.get("content", original_item))
 
