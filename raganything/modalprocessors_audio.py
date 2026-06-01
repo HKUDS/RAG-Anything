@@ -222,9 +222,7 @@ class AudioModalProcessor(BaseModalProcessor):
             filename = Path(audio_path).stem
             duration = segments[-1]["end"] if segments else 0
             entity_info = {
-                "entity_name": entity_name
-                if entity_name
-                else f"audio_{filename}",
+                "entity_name": entity_name if entity_name else f"audio_{filename}",
                 "entity_type": "audio",
                 "summary": (
                     f"Audio recording ({self._format_timestamp(duration)} duration). "

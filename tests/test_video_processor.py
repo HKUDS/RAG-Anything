@@ -1,20 +1,31 @@
 """Tests for the VideoModalProcessor."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from dataclasses import dataclass
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from raganything.modalprocessors_video import is_video_file
+from raganything.modalprocessors_video import VideoModalProcessor, is_video_file
 
-try:
-    import cv2
-    import faster_whisper
 
-    HAS_VIDEO_DEPS = True
-except ImportError:
-    HAS_VIDEO_DEPS = False
+@dataclass
+class _FakeLightRAG:
+    """Minimal dataclass stand-in for a LightRAG instance.
 
-from raganything.modalprocessors_video import VideoModalProcessor
+    ``BaseModalProcessor.__init__`` calls ``dataclasses.asdict`` on the lightrag
+    object, which requires a real dataclass instance (a plain ``MagicMock``
+    raises ``TypeError``). Only attribute access is exercised by these tests.
+    """
+
+    text_chunks: object = None
+    chunks_vdb: object = None
+    entities_vdb: object = None
+    relationships_vdb: object = None
+    chunk_entity_relation_graph: object = None
+    embedding_func: object = None
+    llm_model_func: object = None
+    llm_response_cache: object = None
+    tokenizer: object = None
 
 
 class TestIsVideoFile:
@@ -42,8 +53,7 @@ class TestVideoModalProcessorInit:
     """Test VideoModalProcessor initialization."""
 
     def test_default_init(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         caption_func = AsyncMock()
 
         processor = VideoModalProcessor(
@@ -56,8 +66,7 @@ class TestVideoModalProcessorInit:
         assert processor.scene_threshold == 27.0
 
     def test_custom_config(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         caption_func = AsyncMock()
 
         processor = VideoModalProcessor(
@@ -78,8 +87,7 @@ class TestTimestampFormatting:
     """Test timestamp formatting."""
 
     def setup_method(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         self.processor = VideoModalProcessor(
             lightrag=lightrag,
             modal_caption_func=AsyncMock(),
@@ -102,8 +110,7 @@ class TestGetTranscriptInRange:
     """Test transcript time-range filtering."""
 
     def setup_method(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         self.processor = VideoModalProcessor(
             lightrag=lightrag,
             modal_caption_func=AsyncMock(),
@@ -140,8 +147,7 @@ class TestMergeChannels:
     """Test visual + audio channel merging."""
 
     def setup_method(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         self.processor = VideoModalProcessor(
             lightrag=lightrag,
             modal_caption_func=AsyncMock(),
@@ -197,8 +203,7 @@ class TestGenerateDescriptionOnly:
     """Test the generate_description_only method."""
 
     async def test_missing_file(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         processor = VideoModalProcessor(
             lightrag=lightrag,
             modal_caption_func=AsyncMock(),
@@ -210,9 +215,8 @@ class TestGenerateDescriptionOnly:
         )
         assert entity_info["entity_type"] == "video"
 
-    async def test_with_mocked_pipeline(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+    async def test_with_mocked_pipeline(self, tmp_path):
+        lightrag = _FakeLightRAG()
         caption_func = AsyncMock(return_value="A person presenting slides")
         processor = VideoModalProcessor(
             lightrag=lightrag,
@@ -229,8 +233,13 @@ class TestGenerateDescriptionOnly:
         )
         processor._extract_audio_track = MagicMock(return_value=None)
 
+        # generate_description_only checks the path exists before running the
+        # (mocked) pipeline, so point it at a real, empty file.
+        video_file = tmp_path / "test.mp4"
+        video_file.write_bytes(b"")
+
         result, entity_info = await processor.generate_description_only(
-            {"video_path": "/tmp/test.mp4"},
+            {"video_path": str(video_file)},
             "video",
         )
 

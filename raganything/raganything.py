@@ -279,9 +279,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                         "VIDEO_MIN_SCENE_DURATION", 5.0, float
                     ),
                     max_scenes=get_env_value("VIDEO_MAX_SCENES", 50, int),
-                    scene_threshold=get_env_value(
-                        "VIDEO_SCENE_THRESHOLD", 27.0, float
-                    ),
+                    scene_threshold=get_env_value("VIDEO_SCENE_THRESHOLD", 27.0, float),
                 )
 
         # Always include generic processor as fallback

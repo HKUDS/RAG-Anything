@@ -1,21 +1,31 @@
 """Tests for the AudioModalProcessor."""
 
+from dataclasses import dataclass
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from raganything.modalprocessors_audio import is_audio_file
+from raganything.modalprocessors_audio import AudioModalProcessor, is_audio_file
 
-# AudioModalProcessor requires faster-whisper for full functionality,
-# but we can test it with mocked whisper model
-try:
-    import faster_whisper  # noqa: F401
 
-    HAS_FASTER_WHISPER = True
-except ImportError:
-    HAS_FASTER_WHISPER = False
+@dataclass
+class _FakeLightRAG:
+    """Minimal dataclass stand-in for a LightRAG instance.
 
-from raganything.modalprocessors_audio import AudioModalProcessor
+    ``BaseModalProcessor.__init__`` calls ``dataclasses.asdict`` on the lightrag
+    object, which requires a real dataclass instance (a plain ``MagicMock``
+    raises ``TypeError``). Only attribute access is exercised by these tests.
+    """
+
+    text_chunks: object = None
+    chunks_vdb: object = None
+    entities_vdb: object = None
+    relationships_vdb: object = None
+    chunk_entity_relation_graph: object = None
+    embedding_func: object = None
+    llm_model_func: object = None
+    llm_response_cache: object = None
+    tokenizer: object = None
 
 
 class TestIsAudioFile:
@@ -43,8 +53,7 @@ class TestAudioModalProcessorInit:
     """Test AudioModalProcessor initialization."""
 
     def test_default_init(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         caption_func = AsyncMock()
 
         processor = AudioModalProcessor(
@@ -56,8 +65,7 @@ class TestAudioModalProcessorInit:
         assert processor.language is None
 
     def test_custom_model(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         caption_func = AsyncMock()
 
         processor = AudioModalProcessor(
@@ -73,8 +81,7 @@ class TestAudioModalProcessorInit:
         monkeypatch.setenv("WHISPER_MODEL", "medium")
         monkeypatch.setenv("WHISPER_LANGUAGE", "en")
 
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         caption_func = AsyncMock()
 
         processor = AudioModalProcessor(
@@ -89,8 +96,7 @@ class TestFormatTimestamp:
     """Test timestamp formatting."""
 
     def setup_method(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         self.processor = AudioModalProcessor(
             lightrag=lightrag,
             modal_caption_func=AsyncMock(),
@@ -113,8 +119,7 @@ class TestSegmentsToText:
     """Test segment formatting."""
 
     def setup_method(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         self.processor = AudioModalProcessor(
             lightrag=lightrag,
             modal_caption_func=AsyncMock(),
@@ -144,8 +149,7 @@ class TestGenerateDescriptionOnly:
     """Test the generate_description_only method."""
 
     async def test_file_not_found(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         processor = AudioModalProcessor(
             lightrag=lightrag,
             modal_caption_func=AsyncMock(),
@@ -159,8 +163,7 @@ class TestGenerateDescriptionOnly:
         assert entity_info["entity_type"] == "audio"
 
     async def test_with_dict_content(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         processor = AudioModalProcessor(
             lightrag=lightrag,
             modal_caption_func=AsyncMock(),
@@ -184,8 +187,7 @@ class TestGenerateDescriptionOnly:
         assert "audio_test" in entity_info["entity_name"]
 
     async def test_with_string_content(self):
-        lightrag = MagicMock()
-        lightrag.tokenizer = None
+        lightrag = _FakeLightRAG()
         processor = AudioModalProcessor(
             lightrag=lightrag,
             modal_caption_func=AsyncMock(),

@@ -1195,9 +1195,7 @@ class ProcessorMixin:
                 )
 
                 return (
-                    f"[Video Content]\n"
-                    f"Source: {video_path}\n"
-                    f"Analysis:\n{description}"
+                    f"[Video Content]\nSource: {video_path}\nAnalysis:\n{description}"
                 )
 
             else:  # generic or unknown types
