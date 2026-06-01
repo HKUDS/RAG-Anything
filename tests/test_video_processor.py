@@ -316,9 +316,7 @@ class TestVideoChunkSections:
 
     async def test_multiple_windows(self, tmp_path):
         processor = self._processor(max_scenes=1)
-        processor._detect_scenes = MagicMock(
-            return_value=[(0, 30), (30, 60), (60, 90)]
-        )
+        processor._detect_scenes = MagicMock(return_value=[(0, 30), (30, 60), (60, 90)])
         processor._describe_scenes = AsyncMock(
             return_value=[
                 {"start": 0, "end": 30, "visual": "Scene A"},

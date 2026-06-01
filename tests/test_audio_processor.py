@@ -255,7 +255,9 @@ class TestAudioChunkSections:
         processor.transcribe = MagicMock(
             return_value=[{"start": 0, "end": 5, "text": "Hello world"}]
         )
-        sections = await processor.generate_chunk_sections({"audio_path": "a.mp3"}, "audio")
+        sections = await processor.generate_chunk_sections(
+            {"audio_path": "a.mp3"}, "audio"
+        )
         assert len(sections) == 1
         assert sections[0]["window_meta"] is None
         assert sections[0]["entity_info"]["entity_name"] == "audio_a"
@@ -280,7 +282,11 @@ class TestAudioChunkSections:
         assert [s["window_meta"]["part"] for s in sections] == [1, 2, 3]
         assert all(s["window_meta"]["total"] == 3 for s in sections)
         names = [s["entity_info"]["entity_name"] for s in sections]
-        assert names == ["audio_meeting_part1", "audio_meeting_part2", "audio_meeting_part3"]
+        assert names == [
+            "audio_meeting_part1",
+            "audio_meeting_part2",
+            "audio_meeting_part3",
+        ]
 
 
 class TestAudioDepsAvailable:
