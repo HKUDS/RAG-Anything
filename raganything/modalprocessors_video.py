@@ -37,6 +37,7 @@ from lightrag.utils import compute_mdhash_id
 
 from .modalprocessors import BaseModalProcessor
 from .modalprocessors_audio import AudioModalProcessor
+from .prompt import PROMPTS
 
 logger = logging.getLogger(__name__)
 
@@ -352,10 +353,14 @@ class VideoModalProcessor(BaseModalProcessor):
                             f"This is from a video at approximately "
                             f"{self._format_timestamp(mid_time)}. "
                             f"Include: what is shown, any text/UI visible, "
-                            f"people/objects present, and the overall context."
+                            f"people/objects present, and the overall context. "
+                            f"If the frame is a solid color or otherwise minimal, "
+                            f"still describe what is visible (e.g. the dominant color)."
                         )
                         visual_desc = await self.modal_caption_func(
-                            prompt, image_data=image_base64
+                            prompt,
+                            image_data=image_base64,
+                            system_prompt=PROMPTS["IMAGE_ANALYSIS_SYSTEM"],
                         )
                     except Exception as e:
                         logger.warning(

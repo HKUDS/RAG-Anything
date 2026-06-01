@@ -361,6 +361,33 @@ class TestVideoChunkSections:
         assert "trailing speech" in joined  # tail audio not dropped
 
 
+@pytest.mark.asyncio
+class TestDescribeScenesSystemPrompt:
+    """Frame description must pass a system prompt (matches ImageModalProcessor)."""
+
+    async def test_passes_system_prompt_and_image_data(self, tmp_path):
+        from raganything.prompt import PROMPTS
+
+        cap = AsyncMock(return_value="a solid red frame")
+        proc = VideoModalProcessor(lightrag=_FakeLightRAG(), modal_caption_func=cap)
+
+        # Stub frame extraction to a real (tiny) file so base64 encoding works
+        # without OpenCV; _describe_scenes calls it via asyncio.to_thread.
+        frame = tmp_path / "frame.jpg"
+        frame.write_bytes(b"\xff\xd8\xff\xd9")
+        proc._extract_frame_at = MagicMock(return_value=str(frame))
+
+        out = await proc._describe_scenes("/v.mp4", [(0, 10)])
+        assert out == [{"start": 0, "end": 10, "visual": "a solid red frame"}]
+
+        assert cap.await_count == 1
+        kwargs = cap.call_args.kwargs
+        assert kwargs.get("system_prompt") == PROMPTS["IMAGE_ANALYSIS_SYSTEM"]
+        assert kwargs.get("image_data")  # base64 of the frame was passed
+        # temp frame is cleaned up afterwards
+        assert not frame.exists()
+
+
 class TestVideoDepsAvailable:
     """Test optional-dependency detection."""
 
