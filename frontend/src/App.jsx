@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
-import { Upload, Database, MessageSquare, Settings, Activity, Zap, Cpu, Hash, Layers, Plus, Bot } from 'lucide-react'
+import { Upload, Database, MessageSquare, Settings, Activity, Zap, Cpu, Hash, Layers, Plus, Bot, Trash2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import UploadPage from './pages/UploadPage'
 import KnowledgePage from './pages/KnowledgePage'
@@ -28,6 +28,8 @@ export default function App() {
   const [activeKB, setActiveKB] = useState('default')
   const [showKBCreator, setShowKBCreator] = useState(false)
   const [newKBName, setNewKBName] = useState('')
+  const [showKBDeleteConfirm, setShowKBDeleteConfirm] = useState(null)
+  const [deletingKB, setDeletingKB] = useState(false)
 
   const loadKBs = () => {
     api.listKBs().then(r => {
@@ -52,6 +54,20 @@ export default function App() {
     setNewKBName('')
     setShowKBCreator(false)
     loadKBs()
+  }
+
+  const deleteKB = async (name) => {
+    setDeletingKB(true)
+    try {
+      await api.deleteKB(name)
+      setShowKBDeleteConfirm(null)
+      loadKBs()
+      showToast(`知识库 "${name}" 已删除`, 'success')
+    } catch (e) {
+      showToast('删除失败: ' + e.message, 'error')
+    } finally {
+      setDeletingKB(false)
+    }
   }
 
   const showToast = (msg, type = 'info') => {
@@ -92,9 +108,16 @@ export default function App() {
         <div className="px-3 pb-2 border-t border-slate-700/50 pt-3 mt-auto">
           <div className="flex items-center justify-between mb-2">
             <span className="text-[10px] text-slate-500 uppercase tracking-wider flex items-center gap-1"><Layers size={10}/>知识库</span>
-            <button className="text-slate-500 hover:text-neon-400" onClick={() => setShowKBCreator(!showKBCreator)} title="新建知识库">
-              <Plus size={14}/>
-            </button>
+            <div className="flex items-center gap-1">
+              <button className="text-slate-500 hover:text-neon-400" onClick={() => setShowKBCreator(!showKBCreator)} title="新建知识库">
+                <Plus size={14}/>
+              </button>
+              {activeKB !== 'default' && (
+                <button className="text-slate-500 hover:text-red-400" onClick={() => setShowKBDeleteConfirm(activeKB)} title="删除知识库">
+                  <Trash2 size={13}/>
+                </button>
+              )}
+            </div>
           </div>
           <select className="input-field text-xs py-1.5 w-full" value={activeKB}
             onChange={e => switchKB(e.target.value)}>
@@ -106,6 +129,24 @@ export default function App() {
                 onChange={e => setNewKBName(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && createKB()} />
               <button className="btn-primary text-xs py-1 px-2" onClick={createKB}>创建</button>
+            </div>
+          )}
+          {/* KB Delete Confirmation */}
+          {showKBDeleteConfirm && (
+            <div className="mt-2 p-2 rounded-lg bg-red-500/10 border border-red-500/20">
+              <p className="text-xs text-slate-300 mb-1">删除知识库 "<span className="text-red-400">{showKBDeleteConfirm}</span>"？</p>
+              <p className="text-[10px] text-amber-400 mb-2">将清除所有文档、实体和向量数据，不可恢复</p>
+              <div className="flex gap-1">
+                <button className="flex-1 py-1 rounded text-[10px] bg-red-500/20 text-red-400 hover:bg-red-500/30 disabled:opacity-50"
+                  disabled={deletingKB}
+                  onClick={() => deleteKB(showKBDeleteConfirm)}>
+                  {deletingKB ? '删除中…' : '确认删除'}
+                </button>
+                <button className="flex-1 py-1 rounded text-[10px] bg-slate-700 text-slate-400 hover:bg-slate-600"
+                  onClick={() => setShowKBDeleteConfirm(null)}>
+                  取消
+                </button>
+              </div>
             </div>
           )}
         </div>
