@@ -141,7 +141,7 @@ export default function AgentChatPage() {
 
   // SSE streaming
   const handleSSEEvent = (msgId, event) => {
-    const { type, content, id: resultId, elapsed } = event
+    const { type, content, id: resultId, elapsed, images } = event
     switch (type) {
       case 'thinking':
         if (content) {
@@ -157,7 +157,7 @@ export default function AgentChatPage() {
         break
       case 'done':
         setMessages(prev => prev.map(m =>
-          m.id === msgId ? { ...m, done: true, thinkingDone: true, elapsed } : m
+          m.id === msgId ? { ...m, done: true, thinkingDone: true, elapsed, images: images || [] } : m
         ))
         setTimeout(() => setExpandedThinking(prev => ({ ...prev, [msgId]: false })), 2000)
         setLoading(false)
@@ -189,9 +189,11 @@ export default function AgentChatPage() {
     setExpandedThinking(prev => ({ ...prev, [msgId]: true }))
 
     try {
+      let headers = { 'Content-Type': 'application/json' }
+      try { const t = JSON.parse(localStorage.getItem('raganything_auth') || '{}').token; if (t) headers['Authorization'] = `Bearer ${t}` } catch {}
       const res = await fetch(`/api/agents/${agentId}/query/stream`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({ query, thread_id: activeThreadId, mode }),
         signal: controller.signal,
       })
@@ -412,6 +414,24 @@ export default function AgentChatPage() {
                       <ReactMarkdown components={markdownComponents}>{m.content}</ReactMarkdown>
                       {showTypingCursor && <span className="inline-block w-1.5 h-4 bg-neon-400 ml-0.5 animate-pulse align-middle" />}
                     </div>
+                    {/* 引用图片 */}
+                    {m.images && m.images.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-slate-700/50">
+                        <p className="text-[10px] text-slate-500 mb-2">📷 引用的图片 ({m.images.length})</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          {m.images.map((img, i) => (
+                            <a key={i} href={`/api/files/image?path=${encodeURIComponent(img)}`} target="_blank" rel="noopener" className="block">
+                              <img
+                                src={`/api/files/image?path=${encodeURIComponent(img)}`}
+                                alt={`引用图片 ${i + 1}`}
+                                className="w-full h-32 object-cover rounded-lg border border-slate-700 hover:border-neon-500/50 transition-colors"
+                                loading="lazy"
+                              />
+                            </a>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {m.elapsed && <p className="text-[10px] text-slate-600 mt-1.5 font-mono">{m.elapsed}s</p>}
                   </div>
                 </div>

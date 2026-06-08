@@ -62,7 +62,49 @@
       "template_id": "",
       "created_at": "2026-06-05T11:57:07.072673",
       "updated_at": "2026-06-05T11:57:07.072673"
+    },
+    {
+      "id": "807a86f7",
+      "name": "6.7",
+      "icon": "🤖",
+      "description": "",
+      "welcome_message": "你好！我是6.7，有什么可以帮你的？",
+      "kb_name": "default",
+      "llm_model": "qwen-plus",
+      "temperature": 0.7,
+      "max_response_tokens": 4096,
+      "query_mode": "hybrid",
+      "retrieval_top_k": 40,
+      "chunk_top_k": 20,
+      "enable_rerank": false,
+      "include_references": true,
+      "system_prompt": "",
+      "use_default_prompt": true,
+      "template_id": "",
+      "created_at": "2026-06-08T10:20:30.663810",
+      "updated_at": "2026-06-08T10:20:30.663810"
+    },
+    {
+      "id": "1b25f9ba",
+      "name": "1",
+      "icon": "🤖",
+      "description": "1",
+      "welcome_message": "你好！我是1，有什么可以帮你的？",
+      "kb_name": "default",
+      "llm_model": "qwen-plus",
+      "temperature": 0.8,
+      "max_response_tokens": 4096,
+      "query_mode": "hybrid",
+      "retrieval_top_k": 40,
+      "chunk_top_k": 20,
+      "enable_rerank": false,
+      "include_references": true,
+      "system_prompt": "",
+      "use_default_prompt": true,
+      "template_id": "",
+      "created_at": "2026-06-08T10:27:39.751627",
+      "updated_at": "2026-06-08T10:27:39.751627"
     }
   ],
-  "updated_at": "2026-06-05T15:47:33.835574"
+  "updated_at": "2026-06-08T10:27:39.751627"
 }

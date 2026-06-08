@@ -4,6 +4,21 @@ let currentKB = 'default'
 export function setCurrentKB(name) { currentKB = name }
 export function getCurrentKB() { return currentKB }
 
+// 从 localStorage 读取 token
+function getToken() {
+  try {
+    const saved = localStorage.getItem('raganything_auth')
+    return saved ? JSON.parse(saved).token : ''
+  } catch { return '' }
+}
+
+function authHeaders(extra = {}) {
+  const token = getToken()
+  const h = { ...extra }
+  if (token) h['Authorization'] = `Bearer ${token}`
+  return h
+}
+
 function kbUrl(path) {
   const sep = path.includes('?') ? '&' : '?'
   return `${path}${sep}kb=${currentKB}`
@@ -11,8 +26,22 @@ function kbUrl(path) {
 
 async function request(url, options = {}) {
   const res = await fetch(`${API_BASE}${kbUrl(url)}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
     ...options,
+    headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }))
+    throw new Error(err.detail || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+async function fetchJson(url, options = {}) {
+  const res = await fetch(`${API_BASE}${url}`, {
+    headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
+    ...options,
+    headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -23,22 +52,32 @@ async function request(url, options = {}) {
 
 export const api = {
   // KB Management
-  listKBs: () => fetch(`${API_BASE}/kb/list`).then(r => r.json()),
-  createKB: (name, label) => fetch(`${API_BASE}/kb/create?kb_name=${name}&label=${encodeURIComponent(label)}`, { method: 'POST' }).then(r => r.json()),
-  switchKB: (name) => { currentKB = name; return fetch(`${API_BASE}/kb/switch?name=${name}`, { method: 'PUT' }).then(r => r.json()) },
-  deleteKB: (name) => fetch(`${API_BASE}/kb/${name}`, { method: 'DELETE' }).then(r => r.json()),
+  listKBs: () => fetchJson('/kb/list'),
+  createKB: (name, label) => fetchJson(`/kb/create?kb_name=${name}&label=${encodeURIComponent(label)}`, { method: 'POST' }),
+  switchKB: (name) => { currentKB = name; return fetchJson(`/kb/switch?name=${name}`, { method: 'PUT' }) },
+  deleteKB: (name) => fetchJson(`/kb/${name}`, { method: 'DELETE' }),
 
-  // Upload (supports optional chunking_strategy)
+  // Upload (FormData - no Content-Type so browser sets multipart boundary)
   uploadFile: (file, chunking_strategy = '') => {
     const fd = new FormData(); fd.append('file', file)
     const strategyParam = chunking_strategy ? `&chunking_strategy=${chunking_strategy}` : ''
-    return fetch(`${API_BASE}/upload?kb=${currentKB}${strategyParam}`, { method: 'POST', body: fd }).then(r => r.json())
+    return fetch(`${API_BASE}/upload?kb=${currentKB}${strategyParam}`, {
+      method: 'POST', body: fd, headers: authHeaders()
+    }).then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.detail || r.statusText) })
+      return r.json()
+    })
   },
   uploadFiles: (files, chunking_strategy = '') => {
     const fd = new FormData()
     files.forEach(f => fd.append('files', f))
     const strategyParam = chunking_strategy ? `&chunking_strategy=${chunking_strategy}` : ''
-    return fetch(`${API_BASE}/upload/batch?kb=${currentKB}${strategyParam}`, { method: 'POST', body: fd }).then(r => r.json())
+    return fetch(`${API_BASE}/upload/batch?kb=${currentKB}${strategyParam}`, {
+      method: 'POST', body: fd, headers: authHeaders()
+    }).then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.detail || r.statusText) })
+      return r.json()
+    })
   },
   uploadFolder: (path, chunking_strategy = '') => {
     const strategyParam = chunking_strategy ? `&chunking_strategy=${chunking_strategy}` : ''
@@ -75,15 +114,15 @@ export const api = {
   health: () => request('/health'),
 
   // Agents
-  listAgents: () => fetch(`${API_BASE}/agents`).then(r => r.json()),
-  getAgentTemplates: () => fetch(`${API_BASE}/agents/templates`).then(r => r.json()),
-  createAgent: (data) => fetch(`${API_BASE}/agents`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()),
-  updateAgent: (id, data) => fetch(`${API_BASE}/agents/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) }).then(r => r.json()),
-  deleteAgent: (id) => fetch(`${API_BASE}/agents/${id}`, { method: 'DELETE' }).then(r => r.json()),
+  listAgents: () => fetchJson('/agents'),
+  getAgentTemplates: () => fetchJson('/agents/templates'),
+  createAgent: (data) => fetchJson('/agents', { method: 'POST', body: JSON.stringify(data) }),
+  updateAgent: (id, data) => fetchJson(`/agents/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteAgent: (id) => fetchJson(`/agents/${id}`, { method: 'DELETE' }),
 
   // Agent Conversations
-  listConversations: (agentId) => fetch(`${API_BASE}/agents/${agentId}/conversations`).then(r => r.json()),
-  createConversation: (agentId, title) => fetch(`${API_BASE}/agents/${agentId}/conversations?title=${encodeURIComponent(title)}`, { method: 'POST' }).then(r => r.json()),
-  updateConversation: (agentId, threadId, title) => fetch(`${API_BASE}/agents/${agentId}/conversations/${threadId}?title=${encodeURIComponent(title)}`, { method: 'PUT' }).then(r => r.json()),
-  deleteConversation: (agentId, threadId) => fetch(`${API_BASE}/agents/${agentId}/conversations/${threadId}`, { method: 'DELETE' }).then(r => r.json()),
+  listConversations: (agentId) => fetchJson(`/agents/${agentId}/conversations`),
+  createConversation: (agentId, title) => fetchJson(`/agents/${agentId}/conversations?title=${encodeURIComponent(title)}`, { method: 'POST' }),
+  updateConversation: (agentId, threadId, title) => fetchJson(`/agents/${agentId}/conversations/${threadId}?title=${encodeURIComponent(title)}`, { method: 'PUT' }),
+  deleteConversation: (agentId, threadId) => fetchJson(`/agents/${agentId}/conversations/${threadId}`, { method: 'DELETE' }),
 }

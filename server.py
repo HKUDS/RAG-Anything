@@ -27,7 +27,8 @@ load_dotenv(dotenv_path=".env", override=False)
 import pypdfium2 as pdfium
 from PIL import Image
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query as QueryParam, WebSocket, WebSocketDisconnect, Request, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query as QueryParam, WebSocket, WebSocketDisconnect, Request, BackgroundTasks, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -55,6 +56,20 @@ from agent_manager import (
     init_agent_manager,
     get_agent_manager,
 )
+from auth import (
+    init_db,
+    get_user_by_username,
+    get_user_by_id,
+    create_user,
+    verify_password,
+    create_token,
+    decode_token,
+    list_users,
+    update_user,
+    delete_user,
+)
+
+security = HTTPBearer()
 
 # ── 配置 ──────────────────────────────────────────
 API_KEY = os.getenv("LLM_BINDING_API_KEY")
@@ -80,6 +95,65 @@ ws_clients: list[WebSocket] = []
 KB_META_FILE = Path("./rag_storage_kb_meta.json")
 QUERY_HISTORY_FILE = Path("./query_history.json")
 server_logger = logging.getLogger("rag_server")
+
+# ── 认证模型 ──────────────────────────────────────
+class AuthRegisterRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+
+class AuthLoginRequest(BaseModel):
+    username: str
+    password: str
+
+class AdminUpdateUserRequest(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
+    password: Optional[str] = None
+    is_admin: Optional[bool] = None
+    is_active: Optional[bool] = None
+
+# ── 认证依赖 ──────────────────────────────────────
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """JWT Token 验证，返回当前用户"""
+    try:
+        payload = decode_token(credentials.credentials)
+    except Exception:
+        raise HTTPException(401, "Token 格式无效")
+    if payload is None:
+        raise HTTPException(401, "Token 无效或已过期")
+    user = await get_user_by_id(payload["user_id"])
+    if not user:
+        raise HTTPException(401, "用户不存在")
+    if not user.get("is_active"):
+        raise HTTPException(401, "账号已被禁用")
+    return user
+
+async def get_admin_user(current_user: dict = Depends(get_current_user)):
+    """管理员权限检查"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(403, "需要管理员权限")
+    return current_user
+
+# ── 图片路径提取 ──────────────────────────────────
+import re as _re
+
+def extract_image_paths(text: str) -> list[str]:
+    """从检索上下文中提取图片路径"""
+    if not text:
+        return []
+    pattern = _re.compile(
+        r"Image Path:\s*([^\r\n]*?\.(?:jpg|jpeg|png|gif|bmp|webp|tiff|tif))",
+        _re.IGNORECASE,
+    )
+    seen = set()
+    paths = []
+    for m in pattern.finditer(text):
+        p = m.group(1).strip()
+        if p not in seen:
+            seen.add(p)
+            paths.append(p)
+    return paths
 
 # ── 查询历史持久化 ──────────────────────────────────
 def load_query_history():
@@ -273,6 +347,8 @@ class BatchDeleteRequest(BaseModel):
 # ── 生命周期 ───────────────────────────────────────
 @app.on_event("startup")
 async def startup():
+    # 初始化认证数据库
+    await init_db()
     # 加载所有知识库元数据
     meta = load_kb_meta()
     # 加载查询历史
@@ -471,9 +547,116 @@ async def _process_uploaded_file(task_id: str, file_path: str, filename: str, kb
         processing_tasks[task_id]["error"] = str(e)
         await add_event("upload_error", file=filename, task_id=task_id, error=str(e))
 
+# ════════════════════════════════════════════════════════
+# 图片文件服务
+# ════════════════════════════════════════════════════════
+
+@app.get("/api/files/image")
+async def serve_image(path: str = QueryParam(...)):
+    """服务图片文件 — 仅允许项目目录内的图片"""
+    abs_path = Path(path).resolve()
+    cwd = Path.cwd()
+    # 安全检查：只允许项目目录内的文件
+    try:
+        abs_path.relative_to(cwd)
+    except ValueError:
+        raise HTTPException(403, "不允许访问项目目录外的文件")
+    if not abs_path.exists():
+        raise HTTPException(404, "图片文件不存在")
+    if abs_path.suffix.lower() not in (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"):
+        raise HTTPException(400, "不支持的文件类型")
+    return FileResponse(str(abs_path))
+
+
+# ════════════════════════════════════════════════════════
+# 认证路由
+# ════════════════════════════════════════════════════════
+
+@app.post("/api/auth/register")
+async def auth_register(req: AuthRegisterRequest):
+    """用户注册"""
+    try:
+        user = await create_user(req.username, req.email, req.password)
+        return {"status": "ok", "user": user}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/auth/login")
+async def auth_login(req: AuthLoginRequest):
+    """用户登录，返回 JWT Token"""
+    user = await get_user_by_username(req.username)
+    if not user:
+        raise HTTPException(401, "用户名或密码错误")
+    if not user.get("is_active"):
+        raise HTTPException(403, "账号已被禁用")
+    if not verify_password(req.password, user["password_hash"]):
+        raise HTTPException(401, "用户名或密码错误")
+    token = create_token(user["id"], user["username"], bool(user["is_admin"]))
+    return {
+        "status": "ok",
+        "token": token,
+        "user": {k: v for k, v in user.items() if k != "password_hash"},
+    }
+
+
+@app.get("/api/auth/me")
+async def auth_me(current_user: dict = Depends(get_current_user)):
+    """获取当前登录用户信息"""
+    return {"status": "ok", "user": current_user}
+
+
+@app.post("/api/auth/logout")
+async def auth_logout(current_user: dict = Depends(get_current_user)):
+    """登出（客户端清除 token 即可，服务端预留黑名单扩展点）"""
+    return {"status": "ok", "message": "已登出"}
+
+
+# ════════════════════════════════════════════════════════
+# 管理员路由
+# ════════════════════════════════════════════════════════
+
+@app.get("/api/admin/users")
+async def admin_list_users(admin: dict = Depends(get_admin_user)):
+    """列出所有用户"""
+    users = await list_users()
+    return {"status": "ok", "users": users}
+
+
+@app.put("/api/admin/users/{user_id}")
+async def admin_update_user(user_id: int, req: AdminUpdateUserRequest, admin: dict = Depends(get_admin_user)):
+    """修改用户信息"""
+    if user_id == admin["id"] and req.is_admin is False:
+        raise HTTPException(400, "不能取消自己的管理员权限")
+    data = req.model_dump(exclude_none=True)
+    try:
+        user = await update_user(user_id, data)
+        if not user:
+            raise HTTPException(404, "用户不存在")
+        return {"status": "ok", "user": user}
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(user_id: int, admin: dict = Depends(get_admin_user)):
+    """删除用户"""
+    if user_id == admin["id"]:
+        raise HTTPException(400, "不能删除自己")
+    ok = await delete_user(user_id)
+    if not ok:
+        raise HTTPException(404, "用户不存在")
+    return {"status": "deleted", "user_id": user_id}
+
+
+# ════════════════════════════════════════════════════════
+# 业务路由（需认证）
+# ════════════════════════════════════════════════════════
+
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...), background_tasks: BackgroundTasks = None,
-                       kb: str = "default", chunking_strategy: str = ""):
+                       kb: str = "default", chunking_strategy: str = "",
+                       current_user: dict = Depends(get_current_user)):
     """上传单个文件 - 立即返回，后台异步处理"""
     task_id = str(uuid.uuid4())[:8]
     upload_dir = Path("./uploads")
@@ -497,7 +680,8 @@ async def upload_file(file: UploadFile = File(...), background_tasks: Background
 
 @app.post("/api/upload/batch")
 async def upload_files(files: list[UploadFile] = File(...), background_tasks: BackgroundTasks = None,
-                       kb: str = "default", chunking_strategy: str = ""):
+                       kb: str = "default", chunking_strategy: str = "",
+                       current_user: dict = Depends(get_current_user)):
     """批量上传文件 - 接收多个文件，逐个后台处理"""
     if not files:
         raise HTTPException(400, "请至少选择一个文件")
@@ -527,7 +711,8 @@ async def upload_files(files: list[UploadFile] = File(...), background_tasks: Ba
 
 @app.post("/api/upload/folder")
 async def upload_folder(folder_path: str = QueryParam(...), kb: str = "default",
-                         chunking_strategy: str = ""):
+                         chunking_strategy: str = "",
+                         current_user: dict = Depends(get_current_user)):
     """批量处理文件夹"""
     if not os.path.isdir(folder_path):
         raise HTTPException(400, "文件夹不存在")
@@ -560,7 +745,7 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = "default",
 
 @app.post("/api/upload/content")
 async def upload_content(req: PasteContentRequest, kb: str = "default",
-                          chunking_strategy: str = ""):
+                          chunking_strategy: str = "", current_user: dict = Depends(get_current_user)):
     """直接粘贴内容入库"""
     instance = await get_kb(kb)
     content_list = [{"type": "text", "text": req.content, "page_idx": 0}]
@@ -583,7 +768,7 @@ async def upload_content(req: PasteContentRequest, kb: str = "default",
 
 # ── 📊 知识库管理 ───────────────────────────────────
 @app.get("/api/knowledge/documents")
-async def list_documents(kb: str = "default"):
+async def list_documents(kb: str = "default", current_user: dict = Depends(get_current_user)):
     """列出所有文档及其状态（含处理中的任务）"""
     try:
         status_path = Path(kb_dir(kb)) / "kv_store_doc_status.json"
@@ -628,7 +813,7 @@ async def list_documents(kb: str = "default"):
 
 
 @app.get("/api/knowledge/stats")
-async def knowledge_stats(kb: str = "default"):
+async def knowledge_stats(kb: str = "default", current_user: dict = Depends(get_current_user)):
     """知识库总体统计"""
     stats = {"documents": 0, "entities": 0, "relations": 0, "chunks": 0}
     base = Path(kb_dir(kb))
@@ -661,7 +846,7 @@ async def knowledge_stats(kb: str = "default"):
 
 
 @app.get("/api/knowledge/entities")
-async def list_entities(request: Request, limit: int = 50, kb: str = "default"):
+async def list_entities(request: Request, limit: int = 50, kb: str = "default", current_user: dict = Depends(get_current_user)):
     """列出知识图谱实体"""
     p = Path(kb_dir(kb)) / "kv_store_full_entities.json"
     if not p.exists():
@@ -719,7 +904,7 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 @app.get("/api/knowledge/graph")
-async def graph_data(kb: str = "default"):
+async def graph_data(kb: str = "default", current_user: dict = Depends(get_current_user)):
     """返回知识图谱数据(前端可视化用)"""
     ep = Path(kb_dir(kb)) / "kv_store_full_entities.json"
     rp = Path(kb_dir(kb)) / "kv_store_full_relations.json"
@@ -766,7 +951,7 @@ async def graph_data(kb: str = "default"):
 
 
 @app.delete("/api/knowledge/documents/{doc_id}")
-async def delete_document(doc_id: str, kb: str = "default"):
+async def delete_document(doc_id: str, kb: str = "default", current_user: dict = Depends(get_current_user)):
     """删除文档 - 使用 LightRAG 的 adelete_by_doc_id 彻底清理所有关联数据"""
     instance = await get_kb(kb)
     if not instance.lightrag:
@@ -817,7 +1002,7 @@ async def delete_document(doc_id: str, kb: str = "default"):
 
 
 @app.post("/api/knowledge/documents/batch-delete")
-async def batch_delete_documents(req: BatchDeleteRequest, kb: str = "default"):
+async def batch_delete_documents(req: BatchDeleteRequest, kb: str = "default", current_user: dict = Depends(get_current_user)):
     """批量删除文档 - 一次请求删除多个文档"""
     instance = await get_kb(kb)
     if not instance.lightrag:
@@ -876,7 +1061,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = "default"):
 
 
 @app.post("/api/upload/url")
-async def upload_from_url(url: str = QueryParam(...)):
+async def upload_from_url(url: str = QueryParam(...), current_user: dict = Depends(get_current_user)):
     """从 URL 下载文档并入库"""
     if not url.startswith("http"):
         raise HTTPException(400, "无效 URL")
@@ -967,7 +1152,7 @@ class AgentUpdateRequest(BaseModel):
 
 
 @app.get("/api/agents")
-async def list_agents():
+async def list_agents(current_user: dict = Depends(get_current_user)):
     """列出所有智能体"""
     mgr = get_agent_manager()
     agents = mgr.list_agents()
@@ -978,7 +1163,7 @@ async def list_agents():
 
 
 @app.get("/api/agents/templates")
-async def get_agent_templates():
+async def get_agent_templates(current_user: dict = Depends(get_current_user)):
     """获取智能体模板"""
     try:
         templates_file = Path("agent_templates.json")
@@ -991,7 +1176,7 @@ async def get_agent_templates():
 
 
 @app.post("/api/agents")
-async def create_agent(req: AgentCreateRequest):
+async def create_agent(req: AgentCreateRequest, current_user: dict = Depends(get_current_user)):
     """创建新智能体"""
     mgr = get_agent_manager()
     config = AgentConfig(
@@ -1012,7 +1197,7 @@ async def create_agent(req: AgentCreateRequest):
 
 
 @app.put("/api/agents/{agent_id}")
-async def update_agent(agent_id: str, req: AgentUpdateRequest):
+async def update_agent(agent_id: str, req: AgentUpdateRequest, current_user: dict = Depends(get_current_user)):
     """更新智能体配置"""
     mgr = get_agent_manager()
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
@@ -1023,7 +1208,7 @@ async def update_agent(agent_id: str, req: AgentUpdateRequest):
 
 
 @app.delete("/api/agents/{agent_id}")
-async def delete_agent(agent_id: str):
+async def delete_agent(agent_id: str, current_user: dict = Depends(get_current_user)):
     """删除智能体"""
     mgr = get_agent_manager()
     if not mgr.delete_agent(agent_id):
@@ -1034,7 +1219,7 @@ async def delete_agent(agent_id: str):
 # ── 💬 对话线程管理 ─────────────────────────────────────
 
 @app.get("/api/agents/{agent_id}/conversations")
-async def list_conversations(agent_id: str):
+async def list_conversations(agent_id: str, current_user: dict = Depends(get_current_user)):
     """列出智能体的所有对话线程"""
     mgr = get_agent_manager()
     if not mgr.get_agent(agent_id):
@@ -1047,7 +1232,7 @@ async def list_conversations(agent_id: str):
 
 
 @app.post("/api/agents/{agent_id}/conversations")
-async def create_conversation(agent_id: str, title: str = "新对话"):
+async def create_conversation(agent_id: str, title: str = "新对话", current_user: dict = Depends(get_current_user)):
     """创建新对话线程"""
     mgr = get_agent_manager()
     if not mgr.get_agent(agent_id):
@@ -1057,7 +1242,7 @@ async def create_conversation(agent_id: str, title: str = "新对话"):
 
 
 @app.put("/api/agents/{agent_id}/conversations/{thread_id}")
-async def update_conversation(agent_id: str, thread_id: str, title: str = None):
+async def update_conversation(agent_id: str, thread_id: str, title: str = None, current_user: dict = Depends(get_current_user)):
     """更新对话线程（重命名）"""
     mgr = get_agent_manager()
     thread = mgr.update_conversation(agent_id, thread_id, {"title": title})
@@ -1067,7 +1252,7 @@ async def update_conversation(agent_id: str, thread_id: str, title: str = None):
 
 
 @app.delete("/api/agents/{agent_id}/conversations/{thread_id}")
-async def delete_conversation(agent_id: str, thread_id: str):
+async def delete_conversation(agent_id: str, thread_id: str, current_user: dict = Depends(get_current_user)):
     """删除对话线程"""
     mgr = get_agent_manager()
     if not mgr.delete_conversation(agent_id, thread_id):
@@ -1086,7 +1271,7 @@ class AgentQueryRequest(BaseModel):
 
 # 🔍 智能体流式查询（SSE）
 @app.post("/api/agents/{agent_id}/query/stream")
-async def agent_query_stream(agent_id: str, req: AgentQueryRequest):
+async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user: dict = Depends(get_current_user)):
     """智能体流式查询：使用智能体配置执行查询"""
     global query_history
     mgr = get_agent_manager()
@@ -1143,7 +1328,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest):
                 await asyncio.sleep(0.06)
 
             ctx = ctx_task.result()
-            yield f"data: {json.dumps({'type': 'thinking', 'content': f'📋 检索到 {len(ctx)} 字符上下文'}, ensure_ascii=False)}\n\n"
+            agent_images = extract_image_paths(ctx)
+            yield f"data: {json.dumps({'type': 'thinking', 'content': f'📋 检索到 {len(ctx)} 字符上下文' + (f'，{len(agent_images)} 张图片' if agent_images else '')}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
             # Step 2: 构造 prompt 并使用智能体配置的模型
@@ -1192,6 +1378,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest):
                 "query": req.query,
                 "mode": query_mode,
                 "answer": full_answer,
+                "images": agent_images,
                 "time": datetime.now().isoformat(),
                 "elapsed": elapsed,
                 "kb": agent.kb_name,
@@ -1203,7 +1390,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest):
                 query_history = query_history[:100]
             save_query_history()
 
-            yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': agent_images}, ensure_ascii=False)}\n\n"
 
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
@@ -1226,7 +1413,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest):
 QUERY_SYSTEM_PROMPT = """基于检索内容回答。引用检索内容中的具体事实和数据。检索内容没有的信息不要编造。"""
 
 @app.post("/api/query")
-async def query_rag(req: QueryRequest, kb: str = "default"):
+async def query_rag(req: QueryRequest, kb: str = "default", current_user: dict = Depends(get_current_user)):
     """执行查询 - 手动构造 prompt 确保 LLM 使用检索内容"""
     global query_history
     try:
@@ -1240,7 +1427,10 @@ async def query_rag(req: QueryRequest, kb: str = "default"):
                                      max_entity_tokens=3000, max_relation_tokens=2000,
                                      max_total_tokens=16000)
 
-        # Step 2: 手动构造 prompt，强制 LLM 使用检索内容
+        # Step 2: 提取检索上下文中的图片
+        image_paths = extract_image_paths(ctx)
+
+        # Step 3: 手动构造 prompt，强制 LLM 使用检索内容
         final_prompt = f"""以下是知识库中检索到的相关内容。你必须严格基于这些内容回答问题，不得使用你自己的知识。
 
 ## 检索内容
@@ -1255,7 +1445,7 @@ async def query_rag(req: QueryRequest, kb: str = "default"):
 - 如果检索内容中没有答案，回答"知识库中未找到相关信息"
 - 不要编造或补充检索内容中没有的信息"""
 
-        # Step 3: 直接调用 LLM
+        # Step 4: 直接调用 LLM
         llm_response = await instance.llm_model_func(
             final_prompt,
             system_prompt="你是知识库检索助手。只使用提供的检索内容回答。",
@@ -1270,6 +1460,7 @@ async def query_rag(req: QueryRequest, kb: str = "default"):
             "query": req.query,
             "mode": req.mode,
             "answer": result,
+            "images": image_paths,
             "time": datetime.now().isoformat(),
             "elapsed": elapsed,
             "kb": kb,
@@ -1284,13 +1475,13 @@ async def query_rag(req: QueryRequest, kb: str = "default"):
 
 
 @app.get("/api/query/history")
-async def get_query_history(limit: int = 20):
+async def get_query_history(limit: int = 20, current_user: dict = Depends(get_current_user)):
     """查询历史"""
     return {"history": query_history[:limit]}
 
 
 @app.delete("/api/query/history")
-async def clear_query_history(kb: str = "default"):
+async def clear_query_history(kb: str = "default", current_user: dict = Depends(get_current_user)):
     """清空查询历史"""
     global query_history
     count = len(query_history)
@@ -1337,7 +1528,7 @@ def _is_thinking_msg(msg: str) -> bool:
 
 # ── 🔍 流式查询（SSE）─────────────────────────────────
 @app.post("/api/query/stream")
-async def query_rag_stream(req: QueryRequest, kb: str = "default"):
+async def query_rag_stream(req: QueryRequest, kb: str = "default", current_user: dict = Depends(get_current_user)):
     """
     流式查询：通过 Server-Sent Events 实时推送思考过程和回答
     事件类型：
@@ -1385,7 +1576,8 @@ async def query_rag_stream(req: QueryRequest, kb: str = "default"):
                 await asyncio.sleep(0.06)
 
             ctx = ctx_task.result()
-            yield f"data: {json.dumps({'type': 'thinking', 'content': f'📋 检索到 {len(ctx)} 字符上下文'}, ensure_ascii=False)}\n\n"
+            stream_images = extract_image_paths(ctx)
+            yield f"data: {json.dumps({'type': 'thinking', 'content': f'📋 检索到 {len(ctx)} 字符上下文' + (f'，{len(stream_images)} 张图片' if stream_images else '')}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
             # Step 2: 构造 prompt 并流式调用 LLM
@@ -1417,7 +1609,7 @@ async def query_rag_stream(req: QueryRequest, kb: str = "default"):
             query_history.insert(0, record)
             if len(query_history) > 100: query_history = query_history[:100]
             save_query_history()
-            yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'images': stream_images}, ensure_ascii=False)}\n\n"
 
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
@@ -1488,7 +1680,7 @@ def _translate_thinking_msg(msg: str) -> str:
 
 # ── ⚙️ 系统设置 ─────────────────────────────────────
 @app.get("/api/settings")
-async def get_settings():
+async def get_settings(current_user: dict = Depends(get_current_user)):
     """获取当前配置"""
     return {
         "parser": os.getenv("PARSER", "docling"),
@@ -1514,7 +1706,7 @@ async def get_settings():
 
 
 @app.put("/api/settings")
-async def update_settings(settings: SettingsUpdate):
+async def update_settings(settings: SettingsUpdate, current_user: dict = Depends(get_current_user)):
     """更新配置(runtime)"""
     global rag
     changes = {}
@@ -1553,7 +1745,7 @@ async def update_settings(settings: SettingsUpdate):
 
 # ── 📈 监控面板 ─────────────────────────────────────
 @app.get("/api/monitor/status")
-async def monitor_status():
+async def monitor_status(current_user: dict = Depends(get_current_user)):
     """获取当前处理状态"""
     return {
         "tasks": list(processing_tasks.values()),
@@ -1563,7 +1755,7 @@ async def monitor_status():
 
 
 @app.get("/api/monitor/stats")
-async def monitor_stats():
+async def monitor_stats(current_user: dict = Depends(get_current_user)):
     """LLM 调用统计"""
     cache_path = Path(WORKING_DIR) / "kv_store_llm_response_cache.json"
     if not cache_path.exists():
@@ -1579,18 +1771,18 @@ async def monitor_stats():
 
 
 @app.get("/api/monitor/logs")
-async def monitor_logs(limit: int = 50):
+async def monitor_logs(limit: int = 50, current_user: dict = Depends(get_current_user)):
     """获取最近事件日志"""
     return {"events": processing_events[-limit:]}
 
 
 @app.get("/api/health")
-async def health():
+async def health(current_user: dict = Depends(get_current_user)):
     return {"status": "ok", "active_kb": active_kb}
 
 # ── 🗂️ 多知识库管理 ─────────────────────────────────
 @app.get("/api/kb/list")
-async def list_kbs():
+async def list_kbs(current_user: dict = Depends(get_current_user)):
     meta = load_kb_meta()
     kbs = []
     for name, info in meta.items():
@@ -1603,7 +1795,7 @@ async def list_kbs():
     return {"knowledge_bases": kbs, "active": active_kb}
 
 @app.post("/api/kb/create")
-async def create_kb(kb_name: str = QueryParam(...), label: str = QueryParam("")):
+async def create_kb(kb_name: str = QueryParam(...), current_user: dict = Depends(get_current_user), label: str = QueryParam("")):
     meta = load_kb_meta()
     if kb_name in meta:
         raise HTTPException(400, f"知识库 '{kb_name}' 已存在")
@@ -1615,7 +1807,7 @@ async def create_kb(kb_name: str = QueryParam(...), label: str = QueryParam(""))
     return {"status": "created", "name": kb_name, "label": label}
 
 @app.put("/api/kb/switch")
-async def switch_kb(name: str = QueryParam(...)):
+async def switch_kb(name: str = QueryParam(...), current_user: dict = Depends(get_current_user)):
     global active_kb
     meta = load_kb_meta()
     if name not in meta:
@@ -1624,7 +1816,7 @@ async def switch_kb(name: str = QueryParam(...)):
     return {"status": "switched", "active": name}
 
 @app.delete("/api/kb/{name}")
-async def delete_kb(name: str):
+async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
     global active_kb
     if name == "default":
         raise HTTPException(400, "不能删除默认知识库")

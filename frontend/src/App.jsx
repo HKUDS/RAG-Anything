@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
-import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
-import { Upload, Database, MessageSquare, Settings, Activity, Zap, Cpu, Hash, Layers, Plus, Bot, Trash2 } from 'lucide-react'
+import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { Upload, Database, MessageSquare, Settings, Activity, Zap, Cpu, Hash, Layers, Plus, Bot, Trash2, Shield, LogOut, User } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useAuth } from './context/AuthContext'
+import ProtectedRoute from './components/ProtectedRoute'
 import UploadPage from './pages/UploadPage'
 import KnowledgePage from './pages/KnowledgePage'
 import QueryPage from './pages/QueryPage'
@@ -9,6 +11,9 @@ import SettingsPage from './pages/SettingsPage'
 import MonitorPage from './pages/MonitorPage'
 import AgentsPage from './pages/AgentsPage'
 import AgentChatPage from './pages/AgentChatPage'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import AdminUsersPage from './pages/AdminUsersPage'
 import { api, setCurrentKB, getCurrentKB } from './utils/api'
 
 const NAV = [
@@ -22,6 +27,8 @@ const NAV = [
 
 export default function App() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { token, user, isAdmin, logout, loading: authLoading } = useAuth()
   const [stats, setStats] = useState({ documents: 0, entities: 0, relations: 0 })
   const [toast, setToast] = useState(null)
   const [kbs, setKBs] = useState([])
@@ -31,15 +38,17 @@ export default function App() {
   const [showKBDeleteConfirm, setShowKBDeleteConfirm] = useState(null)
   const [deletingKB, setDeletingKB] = useState(false)
 
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/register'
+
   const loadKBs = () => {
     api.listKBs().then(r => {
       setKBs(r.knowledge_bases || [])
       setActiveKB(r.active)
-      setCurrentKB(r.active)  // 同步 api.js 的 currentKB，否则上传会发到错误的知识库
+      setCurrentKB(r.active)
     }).catch(() => {})
     api.getStats().then(setStats).catch(() => {})
   }
-  useEffect(() => { loadKBs() }, [location.pathname])
+  useEffect(() => { if (token) loadKBs() }, [location.pathname, token])
 
   const switchKB = async (name) => {
     await api.switchKB(name)
@@ -75,6 +84,33 @@ export default function App() {
     setTimeout(() => setToast(null), 3000)
   }
 
+  const handleLogout = async () => {
+    await logout()
+    navigate('/login')
+  }
+
+  // Loading state
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen bg-slate-950">
+        <div className="text-neon-400 text-sm animate-pulse">加载中…</div>
+      </div>
+    )
+  }
+
+  // Not logged in — show auth pages only
+  if (!token) {
+    return (
+      <div className="min-h-screen bg-slate-950">
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/register" element={<RegisterPage />} />
+          <Route path="*" element={<LoginPage />} />
+        </Routes>
+      </div>
+    )
+  }
+
   return (
     <div className="flex h-screen overflow-hidden">
       {/* Sidebar */}
@@ -86,6 +122,25 @@ export default function App() {
           </h1>
           <p className="text-xs text-slate-500 mt-1 font-mono">v1.4.0</p>
         </div>
+
+        {/* User Info */}
+        <div className="px-3 py-2 border-b border-slate-700/50">
+          <div className="flex items-center gap-2 text-xs">
+            <div className="w-6 h-6 rounded-full bg-neon-500/20 flex items-center justify-center">
+              <User size={12} className="text-neon-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-slate-300 truncate">{user?.username}</p>
+              <p className="text-[10px] text-slate-500">
+                {isAdmin ? <span className="text-amber-400">管理员</span> : '用户'}
+              </p>
+            </div>
+            <button onClick={handleLogout} className="text-slate-500 hover:text-red-400" title="登出">
+              <LogOut size={14} />
+            </button>
+          </div>
+        </div>
+
         <nav className="p-3 space-y-1">
           {NAV.map(({ to, icon: Icon, label }) => (
             <NavLink
@@ -103,7 +158,24 @@ export default function App() {
               {label}
             </NavLink>
           ))}
+          {/* Admin Nav */}
+          {isAdmin && (
+            <NavLink
+              to="/admin/users"
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isActive
+                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`
+              }
+            >
+              <Shield size={18} />
+              用户管理
+            </NavLink>
+          )}
         </nav>
+
         {/* KB Selector */}
         <div className="px-3 pb-2 border-t border-slate-700/50 pt-3 mt-auto">
           <div className="flex items-center justify-between mb-2">
@@ -131,7 +203,6 @@ export default function App() {
               <button className="btn-primary text-xs py-1 px-2" onClick={createKB}>创建</button>
             </div>
           )}
-          {/* KB Delete Confirmation */}
           {showKBDeleteConfirm && (
             <div className="mt-2 p-2 rounded-lg bg-red-500/10 border border-red-500/20">
               <p className="text-xs text-slate-300 mb-1">删除知识库 "<span className="text-red-400">{showKBDeleteConfirm}</span>"？</p>
@@ -150,6 +221,7 @@ export default function App() {
             </div>
           )}
         </div>
+
         <div className="p-4 border-t border-slate-700/50 space-y-2">
           <div className="flex items-center justify-between text-xs text-slate-500">
             <span className="flex items-center gap-1.5"><Zap size={12} className="text-neon-400"/>文档</span>
@@ -178,14 +250,17 @@ export default function App() {
               transition={{ duration: 0.2 }}
             >
               <Routes>
-                <Route path="/" element={<AgentsPage />} />
-                <Route path="/agents" element={<AgentsPage />} />
-                <Route path="/agents/:id" element={<AgentChatPage />} />
-                <Route path="/upload" element={<UploadPage onToast={showToast} />} />
-                <Route path="/knowledge" element={<KnowledgePage />} />
-                <Route path="/query" element={<QueryPage />} />
-                <Route path="/settings" element={<SettingsPage onToast={showToast} />} />
-                <Route path="/monitor" element={<MonitorPage />} />
+                {/* Public routes (no auth needed after login) */}
+                <Route path="/" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
+                <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
+                <Route path="/agents/:id" element={<ProtectedRoute><AgentChatPage /></ProtectedRoute>} />
+                <Route path="/upload" element={<ProtectedRoute><UploadPage onToast={showToast} /></ProtectedRoute>} />
+                <Route path="/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
+                <Route path="/query" element={<ProtectedRoute><QueryPage /></ProtectedRoute>} />
+                <Route path="/settings" element={<ProtectedRoute><SettingsPage onToast={showToast} /></ProtectedRoute>} />
+                <Route path="/monitor" element={<ProtectedRoute><MonitorPage /></ProtectedRoute>} />
+                {/* Admin routes */}
+                <Route path="/admin/users" element={<ProtectedRoute adminOnly><AdminUsersPage /></ProtectedRoute>} />
               </Routes>
             </motion.div>
           </AnimatePresence>
