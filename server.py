@@ -135,7 +135,7 @@ async def get_admin_user(current_user: dict = Depends(get_current_user)):
         raise HTTPException(403, "需要管理员权限")
     return current_user
 
-async def verify_kb_access(kb: str = Query("default"), current_user: dict = Depends(get_current_user)):
+async def verify_kb_access(kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
     """验证当前用户是否有权访问指定知识库，返回 kb 名称"""
     meta = load_kb_meta()
     if kb not in meta:
