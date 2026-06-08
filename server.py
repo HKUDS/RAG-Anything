@@ -1467,29 +1467,35 @@ async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access)):
                                      max_entity_tokens=3000, max_relation_tokens=2000,
                                      max_total_tokens=16000)
 
-        # Step 2: 收集所有图片路径
-        all_kb_images = []
-        try:
-            import json as _json
-            _chunk_file = Path(kb_dir(kb)) / 'kv_store_text_chunks.json'
-            if _chunk_file.exists():
-                _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
-                _seen = set()
-                for _cid, _chunk in _all.items():
-                    for _p in extract_image_paths(_chunk.get('content', '')):
-                        if _p not in _seen:
-                            _seen.add(_p)
-                            all_kb_images.append(_p)
-        except Exception:
-            pass
+        # Step 2: 从检索上下文提取相关图片（对齐流式端点），只有语义相关的图片
+        ctx_images = extract_image_paths(ctx)
+        if not ctx_images:
+            # 兜底：上下文无图片时扫描全库（旧文档兼容）
+            try:
+                import json as _json
+                _chunk_file = Path(kb_dir(kb)) / 'kv_store_text_chunks.json'
+                if _chunk_file.exists():
+                    _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
+                    _seen = set()
+                    for _cid, _chunk in _all.items():
+                        for _p in extract_image_paths(_chunk.get('content', '')):
+                            if _p not in _seen:
+                                _seen.add(_p)
+                                ctx_images.append(_p)
+            except Exception:
+                pass
 
-        # Step 3: 注入图片路径到上下文，VLM看图回答
-        img_list = '\n'.join(f'[img{i}] {p}' for i, p in enumerate(all_kb_images))
-        enhanced_ctx = ctx + '\n\n## 可用图片\n' + img_list
+        # Step 3: 只发送 top-10 相关图片给 VLM，控制延迟和 token 消耗
+        vlm_images = ctx_images[:10]
+        img_list = '\n'.join(f'[img{i}] {p}' for i, p in enumerate(vlm_images))
+        if vlm_images:
+            enhanced_ctx = ctx + '\n\n## 可用图片\n' + img_list
+        else:
+            enhanced_ctx = ctx
 
-        # Step 4: 先用VLM增强回答
+        # Step 4: 先用VLM增强回答（仅当有相关图片时）
         result = None
-        if all_kb_images and hasattr(instance, 'vision_model_func') and instance.vision_model_func:
+        if vlm_images and hasattr(instance, 'vision_model_func') and instance.vision_model_func:
             try:
                 result = await instance.aquery_vlm_enhanced(
                     req.query, mode=req.mode,
@@ -1528,10 +1534,10 @@ async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access)):
             import re as _re
             refs = _re.findall(r'\[img(\d+)\]', result)
             for idx in set(int(r) for r in refs):
-                if 0 <= idx < len(all_kb_images):
-                    referenced.append(all_kb_images[idx])
-        # VLM没引用则取前5张
-        image_paths = referenced[:8] if referenced else all_kb_images[:5]
+                if 0 <= idx < len(vlm_images):
+                    referenced.append(vlm_images[idx])
+        # VLM未引用时使用ctx图片（已语义过滤，天然相关）
+        image_paths = referenced[:8] if referenced else ctx_images[:5]
 
         elapsed = round(time.time() - start, 2)
         record = {
