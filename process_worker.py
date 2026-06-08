@@ -119,6 +119,31 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
             history_messages=history_messages or [], api_key=API_KEY, base_url=BASE_URL, **kw,
         )
 
+    VISION_MODEL = os.getenv("VISION_MODEL", "qwen-vl-plus")
+
+    async def vision_func(prompt, system_prompt=None, history_messages=None, image_data=None, messages=None, **kw):
+        """VLM 视觉模型函数（async）"""
+        if messages is not None:
+            return await openai_complete_if_cache(
+                VISION_MODEL, "", system_prompt=None, history_messages=[],
+                messages=messages, api_key=API_KEY, base_url=BASE_URL, **kw,
+            )
+        elif image_data is not None:
+            msgs = [
+                {"role": "user", "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}},
+                ]},
+            ]
+            if system_prompt:
+                msgs.insert(0, {"role": "system", "content": system_prompt})
+            return await openai_complete_if_cache(
+                VISION_MODEL, "", system_prompt=None, history_messages=[],
+                messages=msgs, api_key=API_KEY, base_url=BASE_URL, **kw,
+            )
+        else:
+            return llm_func(prompt, system_prompt, history_messages or [], **kw)
+
     embedding_func = EmbeddingFunc(
         embedding_dim=EMB_DIM, max_token_size=8192,
         func=partial(openai_embed.func, model=EMB_MODEL, api_key=API_KEY, base_url=BASE_URL),
@@ -155,6 +180,7 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
         enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "false").lower() == "true",
     )
     return RAGAnything(config=config, llm_model_func=llm_func,
+                       vision_model_func=vision_func,
                        embedding_func=embedding_func, lightrag_kwargs=lightrag_kwargs)
 
 

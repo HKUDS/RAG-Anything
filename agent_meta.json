@@ -85,14 +85,14 @@
       "updated_at": "2026-06-08T10:20:30.663810"
     },
     {
-      "id": "1b25f9ba",
+      "id": "0fec8b9c",
       "name": "1",
       "icon": "🤖",
       "description": "1",
       "welcome_message": "你好！我是1，有什么可以帮你的？",
-      "kb_name": "default",
+      "kb_name": "123",
       "llm_model": "qwen-plus",
-      "temperature": 0.8,
+      "temperature": 0.7,
       "max_response_tokens": 4096,
       "query_mode": "hybrid",
       "retrieval_top_k": 40,
@@ -102,9 +102,9 @@
       "system_prompt": "",
       "use_default_prompt": true,
       "template_id": "",
-      "created_at": "2026-06-08T10:27:39.751627",
-      "updated_at": "2026-06-08T10:27:39.751627"
+      "created_at": "2026-06-08T15:23:07.613207",
+      "updated_at": "2026-06-08T17:02:32.117770"
     }
   ],
-  "updated_at": "2026-06-08T10:27:39.751627"
+  "updated_at": "2026-06-08T17:02:32.117770"
 }

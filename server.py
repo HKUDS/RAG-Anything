@@ -135,6 +135,21 @@ async def get_admin_user(current_user: dict = Depends(get_current_user)):
         raise HTTPException(403, "需要管理员权限")
     return current_user
 
+async def verify_kb_access(kb: str = Query("default"), current_user: dict = Depends(get_current_user)):
+    """验证当前用户是否有权访问指定知识库，返回 kb 名称"""
+    meta = load_kb_meta()
+    if kb not in meta:
+        raise HTTPException(404, f"知识库 '{kb}' 不存在")
+    kb_info = meta[kb]
+    owner_id = kb_info.get("owner_id")
+    # 无 owner 的旧数据仅管理员可访问
+    if owner_id is None:
+        if not current_user.get("is_admin"):
+            raise HTTPException(403, "无权访问该知识库（旧数据）")
+    elif owner_id != current_user["id"] and not current_user.get("is_admin"):
+        raise HTTPException(403, "无权访问该知识库")
+    return kb
+
 # ── 图片路径提取 ──────────────────────────────────
 import re as _re
 
@@ -351,6 +366,16 @@ async def startup():
     await init_db()
     # 加载所有知识库元数据
     meta = load_kb_meta()
+    # 迁移旧知识库：无 owner_id 的 KB 全部归管理员（user_id=1）
+    changed = False
+    for kb_name, kb_info in meta.items():
+        if "owner_id" not in kb_info:
+            kb_info["owner_id"] = 1
+            kb_info["owner_username"] = "admin"
+            changed = True
+    if changed:
+        save_kb_meta(meta)
+        print(f"[KB-MIGRATE] 已将 {sum(1 for v in meta.values() if v.get('owner_id') == 1)} 个知识库分配给管理员", flush=True)
     # 加载查询历史
     load_query_history()
     # 初始化智能体管理器
@@ -500,11 +525,12 @@ async def _process_uploaded_file(task_id: str, file_path: str, filename: str, kb
         stdout_task = asyncio.ensure_future(_read_stream(proc.stdout))
         stderr_task = asyncio.ensure_future(_read_stream(proc.stderr))
         try:
-            await asyncio.wait_for(proc.wait(), timeout=300)  # 5分钟超时
+            timeout_sec = int(os.getenv("PROCESS_TIMEOUT", "3600"))  # 默认60分钟
+            await asyncio.wait_for(proc.wait(), timeout=timeout_sec)
         except asyncio.TimeoutError:
             proc.kill()
             await proc.wait()
-            raise RuntimeError("子进程处理超时（5分钟），PDF 可能过大或格式不兼容")
+            raise RuntimeError(f"子进程处理超时（{timeout_sec // 60}分钟），文档过大或图片过多，可设置环境变量 PROCESS_TIMEOUT 调整")
         await stdout_task
         await stderr_task
 
@@ -655,8 +681,7 @@ async def admin_delete_user(user_id: int, admin: dict = Depends(get_admin_user))
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...), background_tasks: BackgroundTasks = None,
-                       kb: str = "default", chunking_strategy: str = "",
-                       current_user: dict = Depends(get_current_user)):
+                       kb: str = Depends(verify_kb_access), chunking_strategy: str = ""):
     """上传单个文件 - 立即返回，后台异步处理"""
     task_id = str(uuid.uuid4())[:8]
     upload_dir = Path("./uploads")
@@ -680,8 +705,7 @@ async def upload_file(file: UploadFile = File(...), background_tasks: Background
 
 @app.post("/api/upload/batch")
 async def upload_files(files: list[UploadFile] = File(...), background_tasks: BackgroundTasks = None,
-                       kb: str = "default", chunking_strategy: str = "",
-                       current_user: dict = Depends(get_current_user)):
+                       kb: str = Depends(verify_kb_access), chunking_strategy: str = ""):
     """批量上传文件 - 接收多个文件，逐个后台处理"""
     if not files:
         raise HTTPException(400, "请至少选择一个文件")
@@ -710,9 +734,8 @@ async def upload_files(files: list[UploadFile] = File(...), background_tasks: Ba
 
 
 @app.post("/api/upload/folder")
-async def upload_folder(folder_path: str = QueryParam(...), kb: str = "default",
-                         chunking_strategy: str = "",
-                         current_user: dict = Depends(get_current_user)):
+async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(verify_kb_access),
+                         chunking_strategy: str = ""):
     """批量处理文件夹"""
     if not os.path.isdir(folder_path):
         raise HTTPException(400, "文件夹不存在")
@@ -744,8 +767,8 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = "default",
 
 
 @app.post("/api/upload/content")
-async def upload_content(req: PasteContentRequest, kb: str = "default",
-                          chunking_strategy: str = "", current_user: dict = Depends(get_current_user)):
+async def upload_content(req: PasteContentRequest, kb: str = Depends(verify_kb_access),
+                          chunking_strategy: str = ""):
     """直接粘贴内容入库"""
     instance = await get_kb(kb)
     content_list = [{"type": "text", "text": req.content, "page_idx": 0}]
@@ -768,7 +791,7 @@ async def upload_content(req: PasteContentRequest, kb: str = "default",
 
 # ── 📊 知识库管理 ───────────────────────────────────
 @app.get("/api/knowledge/documents")
-async def list_documents(kb: str = "default", current_user: dict = Depends(get_current_user)):
+async def list_documents(kb: str = Depends(verify_kb_access)):
     """列出所有文档及其状态（含处理中的任务）"""
     try:
         status_path = Path(kb_dir(kb)) / "kv_store_doc_status.json"
@@ -813,7 +836,7 @@ async def list_documents(kb: str = "default", current_user: dict = Depends(get_c
 
 
 @app.get("/api/knowledge/stats")
-async def knowledge_stats(kb: str = "default", current_user: dict = Depends(get_current_user)):
+async def knowledge_stats(kb: str = Depends(verify_kb_access)):
     """知识库总体统计"""
     stats = {"documents": 0, "entities": 0, "relations": 0, "chunks": 0}
     base = Path(kb_dir(kb))
@@ -846,7 +869,7 @@ async def knowledge_stats(kb: str = "default", current_user: dict = Depends(get_
 
 
 @app.get("/api/knowledge/entities")
-async def list_entities(request: Request, limit: int = 50, kb: str = "default", current_user: dict = Depends(get_current_user)):
+async def list_entities(request: Request, limit: int = 50, kb: str = Depends(verify_kb_access)):
     """列出知识图谱实体"""
     p = Path(kb_dir(kb)) / "kv_store_full_entities.json"
     if not p.exists():
@@ -904,7 +927,7 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 @app.get("/api/knowledge/graph")
-async def graph_data(kb: str = "default", current_user: dict = Depends(get_current_user)):
+async def graph_data(kb: str = Depends(verify_kb_access)):
     """返回知识图谱数据(前端可视化用)"""
     ep = Path(kb_dir(kb)) / "kv_store_full_entities.json"
     rp = Path(kb_dir(kb)) / "kv_store_full_relations.json"
@@ -951,7 +974,7 @@ async def graph_data(kb: str = "default", current_user: dict = Depends(get_curre
 
 
 @app.delete("/api/knowledge/documents/{doc_id}")
-async def delete_document(doc_id: str, kb: str = "default", current_user: dict = Depends(get_current_user)):
+async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access)):
     """删除文档 - 使用 LightRAG 的 adelete_by_doc_id 彻底清理所有关联数据"""
     instance = await get_kb(kb)
     if not instance.lightrag:
@@ -1002,7 +1025,7 @@ async def delete_document(doc_id: str, kb: str = "default", current_user: dict =
 
 
 @app.post("/api/knowledge/documents/batch-delete")
-async def batch_delete_documents(req: BatchDeleteRequest, kb: str = "default", current_user: dict = Depends(get_current_user)):
+async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(verify_kb_access)):
     """批量删除文档 - 一次请求删除多个文档"""
     instance = await get_kb(kb)
     if not instance.lightrag:
@@ -1178,6 +1201,8 @@ async def get_agent_templates(current_user: dict = Depends(get_current_user)):
 @app.post("/api/agents")
 async def create_agent(req: AgentCreateRequest, current_user: dict = Depends(get_current_user)):
     """创建新智能体"""
+    # 验证 KB 访问权限
+    await verify_kb_access(kb=req.kb_name, current_user=current_user)
     mgr = get_agent_manager()
     config = AgentConfig(
         name=req.name,
@@ -1279,6 +1304,9 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
     if not agent:
         raise HTTPException(404, "智能体不存在")
 
+    # 验证 KB 访问权限
+    await verify_kb_access(kb=agent.kb_name, current_user=current_user)
+
     instance = await get_kb(agent.kb_name)
     query_mode = req.mode or agent.query_mode
 
@@ -1328,7 +1356,19 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 await asyncio.sleep(0.06)
 
             ctx = ctx_task.result()
+            # 从检索上下文提取图片，没有则扫全库
             agent_images = extract_image_paths(ctx)
+            if not agent_images:
+                try:
+                    import json as _json
+                    _chunk_file = Path(kb_dir(agent.kb_name)) / 'kv_store_text_chunks.json'
+                    if _chunk_file.exists():
+                        _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
+                        _all_text = '\n'.join(v.get('content', '') for v in _all.values() if isinstance(v, dict))
+                        agent_images = extract_image_paths(_all_text)
+                except Exception:
+                    pass
+            agent_images = agent_images[:5]
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'📋 检索到 {len(ctx)} 字符上下文' + (f'，{len(agent_images)} 张图片' if agent_images else '')}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
@@ -1413,7 +1453,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
 QUERY_SYSTEM_PROMPT = """基于检索内容回答。引用检索内容中的具体事实和数据。检索内容没有的信息不要编造。"""
 
 @app.post("/api/query")
-async def query_rag(req: QueryRequest, kb: str = "default", current_user: dict = Depends(get_current_user)):
+async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access)):
     """执行查询 - 手动构造 prompt 确保 LLM 使用检索内容"""
     global query_history
     try:
@@ -1427,11 +1467,40 @@ async def query_rag(req: QueryRequest, kb: str = "default", current_user: dict =
                                      max_entity_tokens=3000, max_relation_tokens=2000,
                                      max_total_tokens=16000)
 
-        # Step 2: 提取检索上下文中的图片
-        image_paths = extract_image_paths(ctx)
+        # Step 2: 收集所有图片路径
+        all_kb_images = []
+        try:
+            import json as _json
+            _chunk_file = Path(kb_dir(kb)) / 'kv_store_text_chunks.json'
+            if _chunk_file.exists():
+                _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
+                _seen = set()
+                for _cid, _chunk in _all.items():
+                    for _p in extract_image_paths(_chunk.get('content', '')):
+                        if _p not in _seen:
+                            _seen.add(_p)
+                            all_kb_images.append(_p)
+        except Exception:
+            pass
 
-        # Step 3: 手动构造 prompt，强制 LLM 使用检索内容
-        final_prompt = f"""以下是知识库中检索到的相关内容。你必须严格基于这些内容回答问题，不得使用你自己的知识。
+        # Step 3: 注入图片路径到上下文，VLM看图回答
+        img_list = '\n'.join(f'[img{i}] {p}' for i, p in enumerate(all_kb_images))
+        enhanced_ctx = ctx + '\n\n## 可用图片\n' + img_list
+
+        # Step 4: 先用VLM增强回答
+        result = None
+        if all_kb_images and hasattr(instance, 'vision_model_func') and instance.vision_model_func:
+            try:
+                result = await instance.aquery_vlm_enhanced(
+                    req.query, mode=req.mode,
+                    system_prompt='请基于检索内容和图片来综合回答。在回答中引用相关图片时，使用 [img序号] 标记。'
+                )
+            except Exception:
+                pass
+
+        # Step 5: 回退到纯文本 LLM
+        if result is None:
+            final_prompt = f"""以下是知识库中检索到的相关内容。你必须严格基于这些内容回答问题，不得使用你自己的知识。
 
 ## 检索内容
 {ctx}
@@ -1445,15 +1514,25 @@ async def query_rag(req: QueryRequest, kb: str = "default", current_user: dict =
 - 如果检索内容中没有答案，回答"知识库中未找到相关信息"
 - 不要编造或补充检索内容中没有的信息"""
 
-        # Step 4: 直接调用 LLM
-        llm_response = await instance.llm_model_func(
-            final_prompt,
-            system_prompt="你是知识库检索助手。只使用提供的检索内容回答。",
-            max_tokens=int(os.getenv("MAX_TOKENS", "4096")),
-            temperature=0,
-        )
+            llm_response = await instance.llm_model_func(
+                final_prompt,
+                system_prompt="你是知识库检索助手。只使用提供的检索内容回答。",
+                max_tokens=int(os.getenv("MAX_TOKENS", "4096")),
+                temperature=0,
+            )
+            result = llm_response if isinstance(llm_response, str) else str(llm_response)
 
-        result = llm_response if isinstance(llm_response, str) else str(llm_response)
+        # 从VLM回答中提取实际引用的图片
+        referenced = []
+        if result:
+            import re as _re
+            refs = _re.findall(r'\[img(\d+)\]', result)
+            for idx in set(int(r) for r in refs):
+                if 0 <= idx < len(all_kb_images):
+                    referenced.append(all_kb_images[idx])
+        # VLM没引用则取前5张
+        image_paths = referenced[:8] if referenced else all_kb_images[:5]
+
         elapsed = round(time.time() - start, 2)
         record = {
             "id": str(uuid.uuid4())[:8],
@@ -1481,7 +1560,7 @@ async def get_query_history(limit: int = 20, current_user: dict = Depends(get_cu
 
 
 @app.delete("/api/query/history")
-async def clear_query_history(kb: str = "default", current_user: dict = Depends(get_current_user)):
+async def clear_query_history(kb: str = Depends(verify_kb_access)):
     """清空查询历史"""
     global query_history
     count = len(query_history)
@@ -1528,7 +1607,7 @@ def _is_thinking_msg(msg: str) -> bool:
 
 # ── 🔍 流式查询（SSE）─────────────────────────────────
 @app.post("/api/query/stream")
-async def query_rag_stream(req: QueryRequest, kb: str = "default", current_user: dict = Depends(get_current_user)):
+async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access)):
     """
     流式查询：通过 Server-Sent Events 实时推送思考过程和回答
     事件类型：
@@ -1576,7 +1655,19 @@ async def query_rag_stream(req: QueryRequest, kb: str = "default", current_user:
                 await asyncio.sleep(0.06)
 
             ctx = ctx_task.result()
+            # 从检索上下文提取图片，没有则扫全库
             stream_images = extract_image_paths(ctx)
+            if not stream_images:
+                try:
+                    import json as _json
+                    _chunk_file = Path(kb_dir(kb)) / 'kv_store_text_chunks.json'
+                    if _chunk_file.exists():
+                        _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
+                        _all_text = '\n'.join(v.get('content', '') for v in _all.values() if isinstance(v, dict))
+                        stream_images = extract_image_paths(_all_text)
+                except Exception:
+                    pass
+            stream_images = stream_images[:5]
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'📋 检索到 {len(ctx)} 字符上下文' + (f'，{len(stream_images)} 张图片' if stream_images else '')}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
@@ -1786,10 +1877,16 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
     meta = load_kb_meta()
     kbs = []
     for name, info in meta.items():
+        # 数据隔离：普通用户只看自己的 KB，管理员看全部
+        owner_id = info.get("owner_id")
+        if owner_id is not None and owner_id != current_user["id"] and not current_user.get("is_admin"):
+            continue
         kbs.append({
             "name": name,
             "label": info.get("name", name),
             "created": info.get("created", ""),
+            "owner_id": owner_id,
+            "owner_username": info.get("owner_username", ""),
             "active": name == active_kb,
         })
     return {"knowledge_bases": kbs, "active": active_kb}
@@ -1800,7 +1897,11 @@ async def create_kb(kb_name: str = QueryParam(...), current_user: dict = Depends
     if kb_name in meta:
         raise HTTPException(400, f"知识库 '{kb_name}' 已存在")
     label = label or kb_name
-    meta[kb_name] = {"name": label, "created": datetime.now().isoformat()}
+    meta[kb_name] = {
+        "name": label, "created": datetime.now().isoformat(),
+        "owner_id": current_user["id"],
+        "owner_username": current_user["username"],
+    }
     save_kb_meta(meta)
     # 预加载
     await get_kb(kb_name)
@@ -1812,6 +1913,11 @@ async def switch_kb(name: str = QueryParam(...), current_user: dict = Depends(ge
     meta = load_kb_meta()
     if name not in meta:
         raise HTTPException(404, f"知识库 '{name}' 不存在")
+    # 权限检查（管理员可切换任意 KB）
+    kb_info = meta[name]
+    owner_id = kb_info.get("owner_id")
+    if owner_id is not None and owner_id != current_user["id"] and not current_user.get("is_admin"):
+        raise HTTPException(403, "无权访问该知识库")
     active_kb = name
     return {"status": "switched", "active": name}
 
@@ -1823,6 +1929,11 @@ async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
     meta = load_kb_meta()
     if name not in meta:
         raise HTTPException(404, f"知识库 '{name}' 不存在")
+    # 权限检查（仅 KB 所有者和管理员可删除）
+    kb_info = meta[name]
+    owner_id = kb_info.get("owner_id")
+    if owner_id is not None and owner_id != current_user["id"] and not current_user.get("is_admin"):
+        raise HTTPException(403, "无权删除该知识库")
     # 清理实例和文件
     if name in kb_instances:
         await kb_instances[name].finalize_storages()
