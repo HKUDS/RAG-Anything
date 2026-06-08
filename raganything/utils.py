@@ -351,7 +351,7 @@ async def insert_text_content(
 async def insert_text_content_with_multimodal_content(
     lightrag,
     input: str | list[str],
-    multimodal_content: list[dict[str, any]] | None = None,
+    multimodal_content: list[dict[str, Any]] | None = None,
     split_by_character: str | None = None,
     split_by_character_only: bool = False,
     ids: str | list[str] | None = None,

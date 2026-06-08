@@ -78,3 +78,15 @@ memory-bank/
 .claude/
 .cursor/
 CLAUDE.md
+
+# Custom additions — user data & generated files
+uploads/
+query_history.json
+rag_storage_kb_meta.json
+agent_conversations/
+my_docs/
+node_modules/
+*.output
+~$*
+uv.lock
+package-lock.json

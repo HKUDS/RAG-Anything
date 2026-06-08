@@ -101,7 +101,7 @@ class QueryMixin:
 
     async def aquery(
         self, query: str, mode: str = "mix", system_prompt: str | None = None, **kwargs
-    ) -> str:
+    ):
         """
         Pure text query - directly calls LightRAG's query functionality
 
@@ -113,9 +113,10 @@ class QueryMixin:
                 - vlm_enhanced: bool, default True when vision_model_func is available.
                   If True, will parse image paths in retrieved context and replace them
                   with base64 encoded images for VLM processing.
+                - stream: bool, if True returns AsyncIterator[str] for token-by-token streaming.
 
         Returns:
-            str: Query result
+            str or AsyncIterator[str]: Query result (or token stream if stream=True)
         """
         if self.lightrag is None:
             raise ValueError(
@@ -124,6 +125,7 @@ class QueryMixin:
 
         # Check if VLM enhanced query should be used
         vlm_enhanced = kwargs.pop("vlm_enhanced", None)
+        stream = kwargs.pop("stream", False)
 
         # Auto-determine VLM enhanced based on availability
         if vlm_enhanced is None:
@@ -131,6 +133,14 @@ class QueryMixin:
                 hasattr(self, "vision_model_func")
                 and self.vision_model_func is not None
             )
+
+        # VLM enhanced is not compatible with streaming
+        if stream and vlm_enhanced:
+            self.logger.warning(
+                "Streaming mode requested with VLM enhancement — "
+                "VLM enhancement is incompatible with streaming and will be disabled"
+            )
+            vlm_enhanced = False
 
         # Use VLM enhanced query if enabled and available
         if (
@@ -169,6 +179,26 @@ class QueryMixin:
             result = await self.lightrag.aquery(
                 query, param=query_param, system_prompt=system_prompt
             )
+
+            # For streaming, return the async generator directly
+            if stream:
+                if result is None:
+                    raise RuntimeError(
+                        "Streaming query returned empty result. "
+                        "The model may not support streaming. "
+                        "Try switching to hybrid or naive mode."
+                    )
+                # LightRAG sometimes returns a plain string instead of an async generator
+                if isinstance(result, str):
+                    self.logger.warning(
+                        "Streaming query returned string instead of generator, "
+                        "falling back to non-streaming"
+                    )
+                    # Fall through to normal completion path below
+                else:
+                    self.logger.info("Streaming query started")
+                    return result
+
         except Exception as exc:
             if callback_manager is not None:
                 callback_manager.dispatch(

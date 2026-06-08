@@ -16,6 +16,22 @@ except ImportError:
     # Older versions without the custom parser registry: keep base import working.
     pass
 
+# Optional: chunking strategies.
+try:
+    from .chunking import (
+        recursive_chunking as recursive_chunking,
+        sentence_chunking as sentence_chunking,
+        structure_chunking as structure_chunking,
+        make_semantic_chunking as make_semantic_chunking,
+        make_agentic_chunking as make_agentic_chunking,
+        build_chunking_func as build_chunking_func,
+        STRATEGY_META as STRATEGY_META,
+    )
+except ModuleNotFoundError:
+    pass
+except ImportError:
+    pass
+
 # Optional: resilience utilities (may not exist in all installations).
 try:
     from .resilience import (
@@ -105,6 +121,19 @@ if "set_prompt_language" in globals():
             "reset_prompts",
             "register_prompt_language",
             "get_available_languages",
+        ]
+    )
+
+if "recursive_chunking" in globals():
+    __all__.extend(
+        [
+            "recursive_chunking",
+            "sentence_chunking",
+            "structure_chunking",
+            "make_semantic_chunking",
+            "make_agentic_chunking",
+            "build_chunking_func",
+            "STRATEGY_META",
         ]
     )
 

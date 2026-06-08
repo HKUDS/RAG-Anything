@@ -233,6 +233,17 @@ class Parser:
                 # Prepare subprocess parameters to hide console window on Windows
                 # Try LibreOffice commands in order of preference
                 commands_to_try = ["libreoffice", "soffice"]
+                # Windows: LibreOffice is NOT added to PATH by default, add explicit paths
+                if _IS_WINDOWS:
+                    # Insert explicit paths at the front so they are tried first.
+                    # Iterate in reverse so that the 64-bit entry ends up before the
+                    # 32-bit entry after repeated insert(0, …).
+                    for lo_path in reversed([
+                        r"C:\Program Files\LibreOffice\program\soffice.exe",
+                        r"C:\Program Files (x86)\LibreOffice\program\soffice.exe",
+                    ]):
+                        if os.path.exists(lo_path):
+                            commands_to_try.insert(0, lo_path)
 
                 conversion_successful = False
                 last_cmd = commands_to_try[-1]
@@ -1935,6 +1946,15 @@ class DoclingParser(Parser):
 
             if doc_path.suffix.lower() not in self.OFFICE_FORMATS:
                 raise ValueError(f"Unsupported office format: {doc_path.suffix}")
+
+            # .doc (old binary format) not supported by Docling natively,
+            # use LibreOffice to convert to PDF first
+            if doc_path.suffix.lower() == ".doc":
+                self.logger.info(f"Legacy .doc format detected, converting via LibreOffice")
+                pdf_path = self.convert_office_to_pdf(doc_path, output_dir)
+                return self.parse_pdf(
+                    pdf_path=pdf_path, output_dir=output_dir, lang=lang, **kwargs
+                )
 
             name_without_suff = doc_path.stem
 
