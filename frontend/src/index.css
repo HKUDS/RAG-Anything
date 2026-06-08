@@ -1,0 +1,30 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { @apply border-slate-800; }
+  body { @apply bg-ink-900 text-slate-200; }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-slate-700 rounded-full; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-slate-600; }
+}
+
+@layer components {
+  .glass { @apply bg-ink-800/60 backdrop-blur-xl border border-slate-700/50 rounded-xl; }
+  .glass-hover { @apply glass hover:border-neon-500/30 hover:bg-ink-700/60 transition-all duration-300; }
+  .btn-primary { @apply bg-neon-500 hover:bg-neon-600 text-white font-medium px-5 py-2.5 rounded-lg transition-all duration-200 disabled:opacity-40; }
+  .btn-ghost { @apply hover:bg-slate-800 text-slate-400 hover:text-white px-4 py-2 rounded-lg transition-all duration-200; }
+  .input-field { @apply w-full bg-ink-700 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-200 placeholder-slate-500 focus:outline-none focus:border-neon-500 focus:ring-1 focus:ring-neon-500/30 transition-all; }
+  .badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
+  .badge-success { @apply badge bg-emerald-500/10 text-emerald-400 border border-emerald-500/20; }
+  .badge-warning { @apply badge bg-amber-500/10 text-amber-400 border border-amber-500/20; }
+  .badge-error { @apply badge bg-red-500/10 text-red-400 border border-red-500/20; }
+  .badge-info { @apply badge bg-neon-500/10 text-neon-400 border border-neon-500/20; }
+  .tag { @apply inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium; }
+  .tag-purple { @apply tag bg-purple-500/10 text-purple-400 border border-purple-500/20; }
+  .tag-blue { @apply tag bg-blue-500/10 text-blue-400 border border-blue-500/20; }
+  .tag-green { @apply tag bg-emerald-500/10 text-emerald-400 border border-emerald-500/20; }
+  .tag-amber { @apply tag bg-amber-500/10 text-amber-400 border border-amber-500/20; }
+}

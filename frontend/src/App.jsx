@@ -1,0 +1,166 @@
+import { useState, useEffect } from 'react'
+import { Routes, Route, NavLink, useLocation } from 'react-router-dom'
+import { Upload, Database, MessageSquare, Settings, Activity, Zap, Cpu, Hash, Layers, Plus, Bot } from 'lucide-react'
+import { motion, AnimatePresence } from 'framer-motion'
+import UploadPage from './pages/UploadPage'
+import KnowledgePage from './pages/KnowledgePage'
+import QueryPage from './pages/QueryPage'
+import SettingsPage from './pages/SettingsPage'
+import MonitorPage from './pages/MonitorPage'
+import AgentsPage from './pages/AgentsPage'
+import AgentChatPage from './pages/AgentChatPage'
+import { api, setCurrentKB, getCurrentKB } from './utils/api'
+
+const NAV = [
+  { to: '/agents', icon: Bot, label: '智能体' },
+  { to: '/knowledge', icon: Database, label: '知识库' },
+  { to: '/upload', icon: Upload, label: '上传' },
+  { to: '/query', icon: MessageSquare, label: '查询' },
+  { to: '/settings', icon: Settings, label: '设置' },
+  { to: '/monitor', icon: Activity, label: '监控' },
+]
+
+export default function App() {
+  const location = useLocation()
+  const [stats, setStats] = useState({ documents: 0, entities: 0, relations: 0 })
+  const [toast, setToast] = useState(null)
+  const [kbs, setKBs] = useState([])
+  const [activeKB, setActiveKB] = useState('default')
+  const [showKBCreator, setShowKBCreator] = useState(false)
+  const [newKBName, setNewKBName] = useState('')
+
+  const loadKBs = () => {
+    api.listKBs().then(r => {
+      setKBs(r.knowledge_bases || [])
+      setActiveKB(r.active)
+      setCurrentKB(r.active)  // 同步 api.js 的 currentKB，否则上传会发到错误的知识库
+    }).catch(() => {})
+    api.getStats().then(setStats).catch(() => {})
+  }
+  useEffect(() => { loadKBs() }, [location.pathname])
+
+  const switchKB = async (name) => {
+    await api.switchKB(name)
+    setCurrentKB(name)
+    setActiveKB(name)
+    loadKBs()
+  }
+
+  const createKB = async () => {
+    if (!newKBName.trim()) return
+    await api.createKB(newKBName, newKBName)
+    setNewKBName('')
+    setShowKBCreator(false)
+    loadKBs()
+  }
+
+  const showToast = (msg, type = 'info') => {
+    setToast({ msg, type })
+    setTimeout(() => setToast(null), 3000)
+  }
+
+  return (
+    <div className="flex h-screen overflow-hidden">
+      {/* Sidebar */}
+      <aside className="w-56 glass m-3 mr-0 flex flex-col shrink-0">
+        <div className="p-5 border-b border-slate-700/50">
+          <h1 className="font-display font-bold text-lg tracking-tight">
+            <span className="text-neon-400">RAG</span>
+            <span className="text-slate-300">Anything</span>
+          </h1>
+          <p className="text-xs text-slate-500 mt-1 font-mono">v1.4.0</p>
+        </div>
+        <nav className="p-3 space-y-1">
+          {NAV.map(({ to, icon: Icon, label }) => (
+            <NavLink
+              key={to}
+              to={to}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+                  isActive
+                    ? 'bg-neon-500/10 text-neon-400 border border-neon-500/20'
+                    : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                }`
+              }
+            >
+              <Icon size={18} />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+        {/* KB Selector */}
+        <div className="px-3 pb-2 border-t border-slate-700/50 pt-3 mt-auto">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-[10px] text-slate-500 uppercase tracking-wider flex items-center gap-1"><Layers size={10}/>知识库</span>
+            <button className="text-slate-500 hover:text-neon-400" onClick={() => setShowKBCreator(!showKBCreator)} title="新建知识库">
+              <Plus size={14}/>
+            </button>
+          </div>
+          <select className="input-field text-xs py-1.5 w-full" value={activeKB}
+            onChange={e => switchKB(e.target.value)}>
+            {kbs.map(kb => <option key={kb.name} value={kb.name}>{kb.label}</option>)}
+          </select>
+          {showKBCreator && (
+            <div className="mt-2 flex gap-1">
+              <input className="input-field text-xs py-1 flex-1" placeholder="知识库名称" value={newKBName}
+                onChange={e => setNewKBName(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && createKB()} />
+              <button className="btn-primary text-xs py-1 px-2" onClick={createKB}>创建</button>
+            </div>
+          )}
+        </div>
+        <div className="p-4 border-t border-slate-700/50 space-y-2">
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span className="flex items-center gap-1.5"><Zap size={12} className="text-neon-400"/>文档</span>
+            <span className="font-mono text-slate-300">{stats.documents}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span className="flex items-center gap-1.5"><Cpu size={12} className="text-emerald-400"/>实体</span>
+            <span className="font-mono text-slate-300">{stats.entities}</span>
+          </div>
+          <div className="flex items-center justify-between text-xs text-slate-500">
+            <span className="flex items-center gap-1.5"><Hash size={12} className="text-amber-400"/>关系</span>
+            <span className="font-mono text-slate-300">{stats.relations}</span>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <main className="flex-1 overflow-auto m-3 ml-0">
+        <div className="glass min-h-full p-6">
+          <AnimatePresence mode="wait">
+            <motion.div
+              key={`${location.pathname}-${activeKB}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -8 }}
+              transition={{ duration: 0.2 }}
+            >
+              <Routes>
+                <Route path="/" element={<AgentsPage />} />
+                <Route path="/agents" element={<AgentsPage />} />
+                <Route path="/agents/:id" element={<AgentChatPage />} />
+                <Route path="/upload" element={<UploadPage onToast={showToast} />} />
+                <Route path="/knowledge" element={<KnowledgePage />} />
+                <Route path="/query" element={<QueryPage />} />
+                <Route path="/settings" element={<SettingsPage onToast={showToast} />} />
+                <Route path="/monitor" element={<MonitorPage />} />
+              </Routes>
+            </motion.div>
+          </AnimatePresence>
+        </div>
+      </main>
+
+      {/* Toast */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 px-5 py-3 rounded-lg text-sm font-medium z-50 animate-fade-in ${
+          toast.type === 'error' ? 'bg-red-500/20 text-red-300 border border-red-500/30' :
+          toast.type === 'success' ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' :
+          'bg-neon-500/20 text-neon-300 border border-neon-500/30'
+        }`}>
+          {toast.msg}
+        </div>
+      )}
+    </div>
+  )
+}
