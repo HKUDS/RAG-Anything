@@ -17,6 +17,8 @@
       "include_references": true,
       "system_prompt": "根据知识库进行回答，若知识库中不存在。则回答没有",
       "use_default_prompt": true,
+      "owner_id": 1,
+      "owner_username": "admin",
       "template_id": "general",
       "created_at": "2026-06-05T09:18:11.772451",
       "updated_at": "2026-06-05T10:20:44.499996"
@@ -38,6 +40,8 @@
       "include_references": true,
       "system_prompt": "你是一位严谨的学术研究助手。回答问题时请：\n- 精确引用原文段落，标注出处\n- 使用学术语言，保持客观严谨\n- 区分事实陈述和推论分析\n- 对不确定的信息明确标注「待验证」\n- 优先使用知识库中的权威来源",
       "use_default_prompt": false,
+      "owner_id": 1,
+      "owner_username": "admin",
       "template_id": "academic",
       "created_at": "2026-06-05T10:22:43.086215",
       "updated_at": "2026-06-05T10:22:43.086215"
@@ -59,6 +63,8 @@
       "include_references": true,
       "system_prompt": "",
       "use_default_prompt": true,
+      "owner_id": 1,
+      "owner_username": "admin",
       "template_id": "",
       "created_at": "2026-06-05T11:57:07.072673",
       "updated_at": "2026-06-05T11:57:07.072673"
@@ -80,6 +86,8 @@
       "include_references": true,
       "system_prompt": "",
       "use_default_prompt": true,
+      "owner_id": 1,
+      "owner_username": "admin",
       "template_id": "",
       "created_at": "2026-06-08T10:20:30.663810",
       "updated_at": "2026-06-08T10:20:30.663810"
@@ -101,10 +109,35 @@
       "include_references": true,
       "system_prompt": "",
       "use_default_prompt": true,
+      "owner_id": 1,
+      "owner_username": "admin",
       "template_id": "",
       "created_at": "2026-06-08T15:23:07.613207",
       "updated_at": "2026-06-08T17:02:32.117770"
+    },
+    {
+      "id": "e7f0803b",
+      "name": "1",
+      "icon": "🤖",
+      "description": "1",
+      "welcome_message": "1",
+      "kb_name": "default",
+      "llm_model": "qwen-plus",
+      "temperature": 0.0,
+      "max_response_tokens": 4096,
+      "query_mode": "hybrid",
+      "retrieval_top_k": 40,
+      "chunk_top_k": 20,
+      "enable_rerank": false,
+      "include_references": true,
+      "system_prompt": "",
+      "use_default_prompt": true,
+      "owner_id": 6,
+      "owner_username": "111111",
+      "template_id": "",
+      "created_at": "2026-06-09T10:57:09.175405",
+      "updated_at": "2026-06-09T10:57:09.175405"
     }
   ],
-  "updated_at": "2026-06-08T17:02:32.117770"
+  "updated_at": "2026-06-09T10:57:09.176383"
 }

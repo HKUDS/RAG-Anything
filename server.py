@@ -142,12 +142,33 @@ async def verify_kb_access(kb: str = QueryParam("default"), current_user: dict =
         raise HTTPException(404, f"知识库 '{kb}' 不存在")
     kb_info = meta[kb]
     owner_id = kb_info.get("owner_id")
+    is_admin = current_user.get("is_admin", False)
     # 无 owner 的旧数据仅管理员可访问
     if owner_id is None:
-        if not current_user.get("is_admin"):
+        if not is_admin:
             raise HTTPException(403, "无权访问该知识库（旧数据）")
-    elif owner_id != current_user["id"] and not current_user.get("is_admin"):
-        raise HTTPException(403, "无权访问该知识库")
+    elif owner_id != current_user["id"] and not is_admin:
+        # 检查用户是否有自己的 KB，有则自动切换
+        user_kb = None
+        for name, info in meta.items():
+            if info.get("owner_id") == current_user["id"]:
+                user_kb = name
+                break
+        if user_kb:
+            # 静默切换到用户的 KB
+            return user_kb
+        # 用户还没有 KB，自动创建
+        personal_kb = current_user["username"]
+        meta[personal_kb] = {
+            "name": f"{current_user['username']}的知识库",
+            "created": datetime.now().isoformat(),
+            "owner_id": current_user["id"],
+            "owner_username": current_user["username"],
+        }
+        save_kb_meta(meta)
+        global active_kb
+        active_kb = personal_kb
+        return personal_kb
     return kb
 
 # ── 图片路径提取 ──────────────────────────────────
@@ -232,8 +253,8 @@ async def ws_broadcast(data: dict):
 
 _event_lock = asyncio.Lock()
 
-async def add_event(event: str, **kw):
-    e = {"time": datetime.now().isoformat(), "event": event, **kw}
+async def add_event(event: str, user_id: int = 0, **kw):
+    e = {"time": datetime.now().isoformat(), "event": event, "user_id": user_id, **kw}
     async with _event_lock:
         processing_events.append(e)
         if len(processing_events) > 200:
@@ -380,11 +401,33 @@ async def startup():
     load_query_history()
     # 初始化智能体管理器
     mgr = init_agent_manager(".")
+    # 迁移旧智能体和对话：无 owner_id 的归管理员
+    mgr.migrate_agents()
     # 确保默认智能体存在（迁移旧查询历史）
     default_agent, _ = mgr.ensure_default_agent(
         llm_model=LLM_MODEL,
         query_history=query_history,
     )
+    # 启动时扫描所有 KB，修复卡在 handling 的文档（上次运行中断遗留）
+    stuck_count = 0
+    for kb_name in meta.keys():
+        try:
+            sp = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+            if sp.exists():
+                d = json.loads(sp.read_text(encoding="utf-8"))
+                changed = False
+                for doc_id, info in d.items():
+                    if info.get("status") == "handling":
+                        info["status"] = "failed"
+                        info["error_msg"] = "服务重启，上一次处理未完成"
+                        stuck_count += 1
+                        changed = True
+                if changed:
+                    sp.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+        except Exception:
+            pass
+    if stuck_count:
+        print(f"[STARTUP-FIX] 修复了 {stuck_count} 个卡在 handling 的文档", flush=True)
     # 预加载默认知识库
     kb = await get_kb("default")
     print(f"✅ RAG-Anything 服务器已启动，智能体: {len(mgr.agents)}个, 知识库: {list(meta.keys())}")
@@ -478,14 +521,37 @@ PLAIN_TEXT_EXTS = {"txt", "md", "csv", "json", "xml", "yaml", "yml",
 # 处理锁：防止并发处理导致 LightRAG 共享 pipeline 交叉污染
 _process_lock = asyncio.Lock()
 
-async def _process_uploaded_file(task_id: str, file_path: str, filename: str, kb_name: str = "default", chunking_strategy: str = ""):
+async def _fix_stuck_doc_status(kb_name: str, filename: str):
+    """修复卡在 handling 状态的文档——子进程崩溃/超时后兜底"""
+    try:
+        status_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+        if not status_path.exists():
+            return
+        with open(status_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        changed = False
+        for doc_id, info in data.items():
+            if info.get("file_path") == filename and info.get("status") == "handling":
+                info["status"] = "failed"
+                info["error_msg"] = "处理中断：子进程异常退出或超时"
+                changed = True
+                print(f"[FIX-STUCK] 修复卡住的文档: {filename} (KB={kb_name}) handling→failed", flush=True)
+        if changed:
+            import tempfile
+            tmp = status_path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+            tmp.replace(status_path)
+    except Exception as ex:
+        print(f"[FIX-STUCK] 修复失败: {ex}", flush=True)
+
+async def _process_uploaded_file(task_id: str, file_path: str, filename: str, kb_name: str = "default", chunking_strategy: str = "", user_id: int = 0):
     """后台处理上传文件 — 通过独立子进程隔离 LightRAG 实例"""
     processing_tasks[task_id] = {
         "id": task_id, "file": filename, "status": "processing",
         "started_at": datetime.now().isoformat(), "progress": 0,
-        "kb": kb_name,
+        "kb": kb_name, "user_id": user_id,
     }
-    await add_event("upload_start", file=filename, task_id=task_id)
+    await add_event("upload_start", file=filename, task_id=task_id, user_id=user_id)
     actual_strategy = chunking_strategy or CHUNKING_STRATEGY
 
     try:
@@ -565,13 +631,15 @@ async def _process_uploaded_file(task_id: str, file_path: str, filename: str, kb
         await emit_progress(task_id, 100, "处理完成")
         processing_tasks[task_id]["status"] = "completed"
         processing_tasks[task_id]["chunking_strategy"] = actual_strategy
-        await add_event("upload_complete", file=filename, task_id=task_id, kb=kb_name)
+        await add_event("upload_complete", file=filename, task_id=task_id, kb=kb_name, user_id=user_id)
         await ws_broadcast({"type": "upload_done", "task_id": task_id, "filename": filename, "kb": kb_name})
 
     except Exception as e:
         processing_tasks[task_id]["status"] = "failed"
         processing_tasks[task_id]["error"] = str(e)
-        await add_event("upload_error", file=filename, task_id=task_id, error=str(e))
+        await add_event("upload_error", file=filename, task_id=task_id, error=str(e), user_id=user_id)
+        # 修复子进程崩溃后卡在 handling 的文档状态
+        await _fix_stuck_doc_status(kb_name, filename)
 
 # ════════════════════════════════════════════════════════
 # 图片文件服务
@@ -681,7 +749,8 @@ async def admin_delete_user(user_id: int, admin: dict = Depends(get_admin_user))
 
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...), background_tasks: BackgroundTasks = None,
-                       kb: str = Depends(verify_kb_access), chunking_strategy: str = ""):
+                       kb: str = Depends(verify_kb_access), chunking_strategy: str = "",
+                       current_user: dict = Depends(get_current_user)):
     """上传单个文件 - 立即返回，后台异步处理"""
     task_id = str(uuid.uuid4())[:8]
     upload_dir = Path("./uploads")
@@ -696,7 +765,7 @@ async def upload_file(file: UploadFile = File(...), background_tasks: Background
     if background_tasks is None:
         raise HTTPException(500, "服务器内部错误：BackgroundTasks 未注入")
     background_tasks.add_task(_process_uploaded_file, task_id, str(file_path.absolute()),
-                               file.filename, kb, chunking_strategy)
+                               file.filename, kb, chunking_strategy, current_user["id"])
     strategy_name = CHUNKING_STRATEGY_META.get(chunking_strategy or CHUNKING_STRATEGY, {}).get('name', '默认')
     return {"task_id": task_id, "filename": file.filename, "status": "queued", "kb": kb,
             "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY,
@@ -705,7 +774,8 @@ async def upload_file(file: UploadFile = File(...), background_tasks: Background
 
 @app.post("/api/upload/batch")
 async def upload_files(files: list[UploadFile] = File(...), background_tasks: BackgroundTasks = None,
-                       kb: str = Depends(verify_kb_access), chunking_strategy: str = ""):
+                       kb: str = Depends(verify_kb_access), chunking_strategy: str = "",
+                       current_user: dict = Depends(get_current_user)):
     """批量上传文件 - 接收多个文件，逐个后台处理"""
     if not files:
         raise HTTPException(400, "请至少选择一个文件")
@@ -723,7 +793,7 @@ async def upload_files(files: list[UploadFile] = File(...), background_tasks: Ba
         if background_tasks is None:
             raise HTTPException(500, "服务器内部错误：BackgroundTasks 未注入")
         background_tasks.add_task(_process_uploaded_file, task_id, str(file_path.absolute()),
-                                   file.filename, kb, chunking_strategy)
+                                   file.filename, kb, chunking_strategy, current_user["id"])
         tasks.append({"task_id": task_id, "filename": file.filename, "status": "queued"})
         print(f"[UPLOAD-BATCH] 任务={task_id} 文件={file.filename} kb={kb}", flush=True)
 
@@ -735,7 +805,7 @@ async def upload_files(files: list[UploadFile] = File(...), background_tasks: Ba
 
 @app.post("/api/upload/folder")
 async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(verify_kb_access),
-                         chunking_strategy: str = ""):
+                         chunking_strategy: str = "", current_user: dict = Depends(get_current_user)):
     """批量处理文件夹"""
     if not os.path.isdir(folder_path):
         raise HTTPException(400, "文件夹不存在")
@@ -743,7 +813,7 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
     instance = await get_kb(kb)
     processing_tasks[task_id] = {
         "id": task_id, "file": folder_path, "status": "processing",
-        "started_at": datetime.now().isoformat(), "kb": kb,
+        "started_at": datetime.now().isoformat(), "kb": kb, "user_id": current_user["id"],
     }
     # 临时切换分块策略
     original_func = None
@@ -974,7 +1044,7 @@ async def graph_data(kb: str = Depends(verify_kb_access)):
 
 
 @app.delete("/api/knowledge/documents/{doc_id}")
-async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access)):
+async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """删除文档 - 使用 LightRAG 的 adelete_by_doc_id 彻底清理所有关联数据"""
     instance = await get_kb(kb)
     if not instance.lightrag:
@@ -999,13 +1069,13 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access)):
         if doc_id in processing_tasks:
             task = processing_tasks.pop(doc_id)
             fname = task.get("file", "未知")
-            await add_event("doc_delete", file=fname, doc_id=doc_id, kb=kb, source="processing_tasks")
+            await add_event("doc_delete", file=fname, doc_id=doc_id, kb=kb, source="processing_tasks", user_id=current_user["id"])
             return {"status": "deleted", "doc_id": doc_id, "file": fname, "message": "已从处理队列中移除"}
         # 也尝试按 file_path 匹配（前端可能传文件名相关的 ID）
         for tid, task in list(processing_tasks.items()):
             if task.get("kb", "") == kb and task.get("file", "") == doc_id:
                 del processing_tasks[tid]
-                await add_event("doc_delete", file=doc_id, doc_id=tid, kb=kb, source="processing_tasks")
+                await add_event("doc_delete", file=doc_id, doc_id=tid, kb=kb, source="processing_tasks", user_id=current_user["id"])
                 return {"status": "deleted", "doc_id": tid, "file": doc_id, "message": "已从处理队列中移除"}
         raise HTTPException(404, f"文档 {doc_id} 不存在（知识库: {kb}）")
 
@@ -1014,7 +1084,7 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access)):
     # 使用 LightRAG 的正式删除方法，彻底清理所有关联数据
     result = await instance.lightrag.adelete_by_doc_id(full_id, delete_llm_cache=True)
 
-    await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb)
+    await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
 
     if result.status == "success":
         return {"status": "deleted", "doc_id": full_id, "file": file_name, "message": result.message}
@@ -1025,7 +1095,7 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access)):
 
 
 @app.post("/api/knowledge/documents/batch-delete")
-async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(verify_kb_access)):
+async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """批量删除文档 - 一次请求删除多个文档"""
     instance = await get_kb(kb)
     if not instance.lightrag:
@@ -1053,7 +1123,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
             # Try processing_tasks
             if doc_id in processing_tasks:
                 task = processing_tasks.pop(doc_id)
-                await add_event("doc_delete", file=task.get("file", "?"), doc_id=doc_id, kb=kb, source="processing_tasks")
+                await add_event("doc_delete", file=task.get("file", "?"), doc_id=doc_id, kb=kb, source="processing_tasks", user_id=current_user["id"])
                 deleted.append(doc_id)
             else:
                 not_found.append(doc_id)
@@ -1065,7 +1135,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
             if result.status in ("success", "not_found"):
                 del doc_status[full_id]
                 deleted.append(doc_id)
-                await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb)
+                await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
                 # Also clean up matching processing_tasks entry
                 for tid, task in list(processing_tasks.items()):
                     if task.get("kb", "") == kb and task.get("file", "") == file_name:
@@ -1089,7 +1159,7 @@ async def upload_from_url(url: str = QueryParam(...), current_user: dict = Depen
     if not url.startswith("http"):
         raise HTTPException(400, "无效 URL")
     task_id = str(uuid.uuid4())[:8]
-    await add_event("url_download_start", url=url, task_id=task_id)
+    await add_event("url_download_start", url=url, task_id=task_id, user_id=current_user.get("id", 0))
     try:
         async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
             resp = await client.get(url)
@@ -1130,16 +1200,16 @@ async def upload_from_url(url: str = QueryParam(...), current_user: dict = Depen
         upload_dir.mkdir(exist_ok=True)
         fp = upload_dir / fname
         fp.write_bytes(content)
-        await add_event("url_download_complete", file=fname, task_id=task_id, size=len(content))
+        await add_event("url_download_complete", file=fname, task_id=task_id, size=len(content), user_id=current_user.get("id", 0))
 
         instance = await get_kb()
         await instance.process_document_complete(str(fp.absolute()), output_dir="./output")
-        await add_event("url_process_complete", file=fname, task_id=task_id)
+        await add_event("url_process_complete", file=fname, task_id=task_id, user_id=current_user.get("id", 0))
         return {"status": "completed", "filename": fname, "size": len(content)}
     except HTTPException:
         raise
     except Exception as e:
-        await add_event("url_error", url=url, error=str(e))
+        await add_event("url_error", url=url, error=str(e), user_id=current_user.get("id", 0))
         raise HTTPException(500, str(e))
 
 
@@ -1176,9 +1246,12 @@ class AgentUpdateRequest(BaseModel):
 
 @app.get("/api/agents")
 async def list_agents(current_user: dict = Depends(get_current_user)):
-    """列出所有智能体"""
+    """列出智能体（按用户隔离，管理员看全部）"""
     mgr = get_agent_manager()
-    agents = mgr.list_agents()
+    agents = mgr.list_agents(
+        user_id=current_user["id"],
+        is_admin=current_user.get("is_admin", False),
+    )
     return {
         "agents": [a.model_dump() for a in agents],
         "total": len(agents),
@@ -1217,14 +1290,20 @@ async def create_agent(req: AgentCreateRequest, current_user: dict = Depends(get
         use_default_prompt=req.use_default_prompt,
         template_id=req.template_id,
     )
-    config = mgr.create_agent(config)
+    config = mgr.create_agent(config, owner_id=current_user["id"], owner_username=current_user["username"])
     return {"status": "ok", "agent": config.model_dump()}
 
 
 @app.put("/api/agents/{agent_id}")
 async def update_agent(agent_id: str, req: AgentUpdateRequest, current_user: dict = Depends(get_current_user)):
-    """更新智能体配置"""
+    """更新智能体配置（仅所有者或管理员）"""
     mgr = get_agent_manager()
+    agent = mgr.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(404, "智能体不存在")
+    is_admin = current_user.get("is_admin", False)
+    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权修改该智能体")
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
     agent = mgr.update_agent(agent_id, updates)
     if not agent:
@@ -1234,8 +1313,14 @@ async def update_agent(agent_id: str, req: AgentUpdateRequest, current_user: dic
 
 @app.delete("/api/agents/{agent_id}")
 async def delete_agent(agent_id: str, current_user: dict = Depends(get_current_user)):
-    """删除智能体"""
+    """删除智能体（仅所有者或管理员）"""
     mgr = get_agent_manager()
+    agent = mgr.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(404, "智能体不存在")
+    is_admin = current_user.get("is_admin", False)
+    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权删除该智能体")
     if not mgr.delete_agent(agent_id):
         raise HTTPException(404, "智能体不存在")
     return {"status": "ok"}
@@ -1245,11 +1330,19 @@ async def delete_agent(agent_id: str, current_user: dict = Depends(get_current_u
 
 @app.get("/api/agents/{agent_id}/conversations")
 async def list_conversations(agent_id: str, current_user: dict = Depends(get_current_user)):
-    """列出智能体的所有对话线程"""
+    """列出智能体的对话线程（按用户隔离，管理员看全部）"""
     mgr = get_agent_manager()
-    if not mgr.get_agent(agent_id):
+    agent = mgr.get_agent(agent_id)
+    if not agent:
         raise HTTPException(404, "智能体不存在")
-    threads = mgr.list_conversations(agent_id)
+    is_admin = current_user.get("is_admin", False)
+    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权访问该智能体")
+    threads = mgr.list_conversations(
+        agent_id,
+        user_id=current_user["id"],
+        is_admin=current_user.get("is_admin", False),
+    )
     return {
         "threads": [t.model_dump() for t in threads],
         "total": len(threads),
@@ -1258,28 +1351,52 @@ async def list_conversations(agent_id: str, current_user: dict = Depends(get_cur
 
 @app.post("/api/agents/{agent_id}/conversations")
 async def create_conversation(agent_id: str, title: str = "新对话", current_user: dict = Depends(get_current_user)):
-    """创建新对话线程"""
+    """创建新对话线程（注入所有权，需校验 Agent 所有权）"""
     mgr = get_agent_manager()
-    if not mgr.get_agent(agent_id):
+    agent = mgr.get_agent(agent_id)
+    if not agent:
         raise HTTPException(404, "智能体不存在")
-    thread = mgr.create_conversation(agent_id, title)
+    is_admin = current_user.get("is_admin", False)
+    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权使用该智能体")
+    thread = mgr.create_conversation(agent_id, title, owner_id=current_user["id"])
     return {"status": "ok", "thread": thread.model_dump()}
 
 
 @app.put("/api/agents/{agent_id}/conversations/{thread_id}")
 async def update_conversation(agent_id: str, thread_id: str, title: str = None, current_user: dict = Depends(get_current_user)):
-    """更新对话线程（重命名）"""
+    """更新对话线程（需校验 Agent 所有权 + 对话所有权）"""
     mgr = get_agent_manager()
-    thread = mgr.update_conversation(agent_id, thread_id, {"title": title})
+    agent = mgr.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(404, "智能体不存在")
+    is_admin = current_user.get("is_admin", False)
+    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权访问该智能体")
+    thread = mgr.get_conversation(agent_id, thread_id)
     if not thread:
         raise HTTPException(404, "对话线程不存在")
-    return {"status": "ok", "thread": thread.model_dump()}
+    if thread.owner_id != 0 and thread.owner_id != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权修改该对话")
+    thread = mgr.update_conversation(agent_id, thread_id, {"title": title})
+    return {"status": "ok", "thread": thread.model_dump() if thread else None}
 
 
 @app.delete("/api/agents/{agent_id}/conversations/{thread_id}")
 async def delete_conversation(agent_id: str, thread_id: str, current_user: dict = Depends(get_current_user)):
-    """删除对话线程"""
+    """删除对话线程（需校验 Agent 所有权 + 对话所有权）"""
     mgr = get_agent_manager()
+    agent = mgr.get_agent(agent_id)
+    if not agent:
+        raise HTTPException(404, "智能体不存在")
+    is_admin = current_user.get("is_admin", False)
+    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权访问该智能体")
+    thread = mgr.get_conversation(agent_id, thread_id)
+    if not thread:
+        raise HTTPException(404, "对话线程不存在")
+    if thread.owner_id != 0 and thread.owner_id != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权删除该对话")
     if not mgr.delete_conversation(agent_id, thread_id):
         raise HTTPException(404, "对话线程不存在")
     return {"status": "ok"}
@@ -1304,10 +1421,14 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
     if not agent:
         raise HTTPException(404, "智能体不存在")
 
-    # 验证 KB 访问权限
-    await verify_kb_access(kb=agent.kb_name, current_user=current_user)
+    # 验证 Agent 所有权（非所有者/管理员不可用）
+    is_admin = current_user.get("is_admin", False)
+    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权使用该智能体")
+    # 验证 KB 访问权限（可能自动切换到用户的个人 KB）
+    actual_kb = await verify_kb_access(kb=agent.kb_name, current_user=current_user)
 
-    instance = await get_kb(agent.kb_name)
+    instance = await get_kb(actual_kb)
     query_mode = req.mode or agent.query_mode
 
     # 构建 system_prompt
@@ -1318,7 +1439,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
     # 确保对话线程存在
     thread_id = req.thread_id
     if not thread_id:
-        thread = mgr.create_conversation(agent_id, title="新对话")
+        thread = mgr.create_conversation(agent_id, title="新对话", owner_id=current_user["id"])
         thread_id = thread.id
 
     async def event_stream():
@@ -1358,17 +1479,42 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
             ctx = ctx_task.result()
             # 从检索上下文提取图片，没有则扫全库
             agent_images = extract_image_paths(ctx)
+            # 检索上下文无图片时，从 KB 全量扫描并用 bigram 做相关性过滤
             if not agent_images:
                 try:
                     import json as _json
-                    _chunk_file = Path(kb_dir(agent.kb_name)) / 'kv_store_text_chunks.json'
+                    _chunk_file = Path(kb_dir(actual_kb)) / 'kv_store_text_chunks.json'
                     if _chunk_file.exists():
                         _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
-                        _all_text = '\n'.join(v.get('content', '') for v in _all.values() if isinstance(v, dict))
-                        agent_images = extract_image_paths(_all_text)
-                except Exception:
-                    pass
-            agent_images = agent_images[:5]
+                        # 查询字符二元组（中文无空格，bigram 比 split 有效）
+                        q = req.query.lower()
+                        query_grams = set()
+                        for i in range(len(q) - 1):
+                            query_grams.add(q[i:i+2])
+                        scored = []  # (path, score)
+                        for _cid, _chunk in _all.items():
+                            content = _chunk.get('content', '')
+                            paths = extract_image_paths(content)
+                            if not paths:
+                                continue
+                            content_lower = content.lower()
+                            score = sum(1 for bg in query_grams if bg in content_lower)
+                            for p in paths:
+                                scored.append((p, score))
+                        # 去重取最高分，按分数降序，取前 5
+                        best = {}
+                        for p, s in scored:
+                            if p not in best or s > best[p]:
+                                best[p] = s
+                        agent_images = [p for p, _ in sorted(best.items(), key=lambda x: -x[1]) if _ > 0][:3]
+                        if not agent_images:
+                            agent_images = list(best.keys())[:2]
+                        if agent_images:
+                            print(f"[IMG-FALLBACK] bigram匹配到 {len(agent_images)} 张相关图片 (共 {len(best)} 张)", flush=True)
+                except Exception as _fe:
+                    print(f"[IMG-FALLBACK] 全库扫描失败: {_fe}", flush=True)
+            else:
+                agent_images = agent_images[:3]
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'📋 检索到 {len(ctx)} 字符上下文' + (f'，{len(agent_images)} 张图片' if agent_images else '')}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
@@ -1421,9 +1567,11 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 "images": agent_images,
                 "time": datetime.now().isoformat(),
                 "elapsed": elapsed,
-                "kb": agent.kb_name,
+                "kb": actual_kb,
                 "agent_id": agent_id,
                 "thread_id": thread_id,
+                "user_id": current_user["id"],
+                "username": current_user["username"],
             }
             query_history.insert(0, record)
             if len(query_history) > 100:
@@ -1453,7 +1601,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
 QUERY_SYSTEM_PROMPT = """基于检索内容回答。引用检索内容中的具体事实和数据。检索内容没有的信息不要编造。"""
 
 @app.post("/api/query")
-async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access)):
+async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """执行查询 - 手动构造 prompt 确保 LLM 使用检索内容"""
     global query_history
     try:
@@ -1482,8 +1630,10 @@ async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access)):
                             if _p not in _seen:
                                 _seen.add(_p)
                                 ctx_images.append(_p)
-            except Exception:
-                pass
+                    if ctx_images:
+                        print(f"[IMG-FALLBACK] query_rag 扫描到 {len(ctx_images)} 张图片", flush=True)
+            except Exception as _fe:
+                print(f"[IMG-FALLBACK] query_rag 扫描失败: {_fe}", flush=True)
 
         # Step 3: 只发送 top-10 相关图片给 VLM，控制延迟和 token 消耗
         vlm_images = ctx_images[:10]
@@ -1537,7 +1687,7 @@ async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access)):
                 if 0 <= idx < len(vlm_images):
                     referenced.append(vlm_images[idx])
         # VLM未引用时使用ctx图片（已语义过滤，天然相关）
-        image_paths = referenced[:8] if referenced else ctx_images[:5]
+        image_paths = referenced[:3] if referenced else ctx_images[:3]
 
         elapsed = round(time.time() - start, 2)
         record = {
@@ -1549,6 +1699,8 @@ async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access)):
             "time": datetime.now().isoformat(),
             "elapsed": elapsed,
             "kb": kb,
+            "user_id": current_user["id"],
+            "username": current_user["username"],
         }
         query_history.insert(0, record)
         if len(query_history) > 100:
@@ -1561,18 +1713,28 @@ async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access)):
 
 @app.get("/api/query/history")
 async def get_query_history(limit: int = 20, current_user: dict = Depends(get_current_user)):
-    """查询历史"""
-    return {"history": query_history[:limit]}
+    """查询历史（按用户隔离，管理员看全部）"""
+    is_admin = current_user.get("is_admin", False)
+    if is_admin:
+        return {"history": query_history[:limit]}
+    filtered = [r for r in query_history if r.get("user_id") == current_user["id"]]
+    return {"history": filtered[:limit]}
 
 
 @app.delete("/api/query/history")
-async def clear_query_history(kb: str = Depends(verify_kb_access)):
-    """清空查询历史"""
+async def clear_query_history(current_user: dict = Depends(get_current_user)):
+    """清空当前用户的查询历史"""
     global query_history
-    count = len(query_history)
-    query_history.clear()
+    is_admin = current_user.get("is_admin", False)
+    if is_admin:
+        count = len(query_history)
+        query_history.clear()
+    else:
+        to_keep = [r for r in query_history if r.get("user_id") != current_user["id"]]
+        count = len(query_history) - len(to_keep)
+        query_history[:] = to_keep
     save_query_history()
-    await add_event("history_cleared", count=count, kb=kb)
+    await add_event("history_cleared", count=count, user_id=current_user["id"])
     return {"status": "cleared", "count": count}
 
 
@@ -1613,7 +1775,7 @@ def _is_thinking_msg(msg: str) -> bool:
 
 # ── 🔍 流式查询（SSE）─────────────────────────────────
 @app.post("/api/query/stream")
-async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access)):
+async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """
     流式查询：通过 Server-Sent Events 实时推送思考过程和回答
     事件类型：
@@ -1671,9 +1833,11 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
                         _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
                         _all_text = '\n'.join(v.get('content', '') for v in _all.values() if isinstance(v, dict))
                         stream_images = extract_image_paths(_all_text)
-                except Exception:
-                    pass
-            stream_images = stream_images[:5]
+                        if stream_images:
+                            print(f"[IMG-FALLBACK] query_stream 扫描到 {len(set(stream_images))} 张图片", flush=True)
+                except Exception as _fe:
+                    print(f"[IMG-FALLBACK] query_stream 扫描失败: {_fe}", flush=True)
+            stream_images = stream_images[:3]
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'📋 检索到 {len(ctx)} 字符上下文' + (f'，{len(stream_images)} 张图片' if stream_images else '')}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
@@ -1702,7 +1866,8 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
 
             elapsed = round(time.time() - start_time, 2)
             record = {"id": query_id, "query": req.query, "mode": req.mode, "answer": full_answer,
-                      "time": datetime.now().isoformat(), "elapsed": elapsed, "kb": kb}
+                      "time": datetime.now().isoformat(), "elapsed": elapsed, "kb": kb,
+                      "user_id": current_user["id"], "username": current_user["username"]}
             query_history.insert(0, record)
             if len(query_history) > 100: query_history = query_history[:100]
             save_query_history()
@@ -1843,17 +2008,26 @@ async def update_settings(settings: SettingsUpdate, current_user: dict = Depends
 # ── 📈 监控面板 ─────────────────────────────────────
 @app.get("/api/monitor/status")
 async def monitor_status(current_user: dict = Depends(get_current_user)):
-    """获取当前处理状态"""
+    """获取当前处理状态（按用户隔离，管理员看全部）"""
+    is_admin = current_user.get("is_admin", False)
+    if is_admin:
+        filtered_tasks = list(processing_tasks.values())
+        filtered_events = processing_events[-20:]
+    else:
+        filtered_tasks = [t for t in processing_tasks.values()
+                         if t.get("user_id", 0) == current_user["id"]]
+        filtered_events = [e for e in processing_events[-20:]
+                          if e.get("user_id", 0) in (0, current_user["id"])]
     return {
-        "tasks": list(processing_tasks.values()),
-        "events": processing_events[-20:],
+        "tasks": filtered_tasks,
+        "events": filtered_events,
         "cache_size": len(query_history),
     }
 
 
 @app.get("/api/monitor/stats")
 async def monitor_stats(current_user: dict = Depends(get_current_user)):
-    """LLM 调用统计"""
+    """LLM 调用统计（聚合数据，无用户隐私）"""
     cache_path = Path(WORKING_DIR) / "kv_store_llm_response_cache.json"
     if not cache_path.exists():
         return {"total_calls": 0, "cache_entries": 0}
@@ -1869,8 +2043,13 @@ async def monitor_stats(current_user: dict = Depends(get_current_user)):
 
 @app.get("/api/monitor/logs")
 async def monitor_logs(limit: int = 50, current_user: dict = Depends(get_current_user)):
-    """获取最近事件日志"""
-    return {"events": processing_events[-limit:]}
+    """获取最近事件日志（按用户隔离，管理员看全部）"""
+    is_admin = current_user.get("is_admin", False)
+    if is_admin:
+        return {"events": processing_events[-limit:]}
+    filtered = [e for e in reversed(processing_events)
+                if e.get("user_id", 0) in (0, current_user["id"])]
+    return {"events": filtered[-limit:]}
 
 
 @app.get("/api/health")
@@ -1880,12 +2059,14 @@ async def health(current_user: dict = Depends(get_current_user)):
 # ── 🗂️ 多知识库管理 ─────────────────────────────────
 @app.get("/api/kb/list")
 async def list_kbs(current_user: dict = Depends(get_current_user)):
+    global active_kb
     meta = load_kb_meta()
     kbs = []
+    is_admin = current_user.get("is_admin", False)
     for name, info in meta.items():
         # 数据隔离：普通用户只看自己的 KB，管理员看全部
         owner_id = info.get("owner_id")
-        if owner_id is not None and owner_id != current_user["id"] and not current_user.get("is_admin"):
+        if owner_id is not None and owner_id != current_user["id"] and not is_admin:
             continue
         kbs.append({
             "name": name,
@@ -1894,6 +2075,25 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
             "owner_id": owner_id,
             "owner_username": info.get("owner_username", ""),
             "active": name == active_kb,
+        })
+    # 新用户没有 KB 时自动创建个人 KB
+    if not kbs and not is_admin:
+        personal_kb = current_user["username"]
+        label = f"{current_user['username']}的知识库"
+        meta[personal_kb] = {
+            "name": label, "created": datetime.now().isoformat(),
+            "owner_id": current_user["id"],
+            "owner_username": current_user["username"],
+        }
+        save_kb_meta(meta)
+        active_kb = personal_kb
+        kbs.append({
+            "name": personal_kb,
+            "label": label,
+            "created": meta[personal_kb]["created"],
+            "owner_id": current_user["id"],
+            "owner_username": current_user["username"],
+            "active": True,
         })
     return {"knowledge_bases": kbs, "active": active_kb}
 

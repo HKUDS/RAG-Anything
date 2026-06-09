@@ -40,12 +40,13 @@ export default function App() {
 
   const isAuthPage = location.pathname === '/login' || location.pathname === '/register'
 
-  const loadKBs = () => {
-    api.listKBs().then(r => {
+  const loadKBs = async () => {
+    const r = await api.listKBs().catch(() => null)
+    if (r) {
       setKBs(r.knowledge_bases || [])
       setActiveKB(r.active)
       setCurrentKB(r.active)
-    }).catch(() => {})
+    }
     api.getStats().then(setStats).catch(() => {})
   }
   useEffect(() => { if (token) loadKBs() }, [location.pathname, token])

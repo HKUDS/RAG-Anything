@@ -58,29 +58,23 @@ async def _vlm_ocr_document(file_path: str) -> str:
             return ""
 
         all_text = []
-        async with httpx.AsyncClient(timeout=120) as client:
-            for idx, img_b64 in enumerate(images):
-                resp = await client.post(
-                    f"{BASE_URL}/chat/completions",
-                    headers={"Authorization": f"Bearer {API_KEY}"},
-                    json={
-                        "model": os.getenv("VISION_MODEL", "qwen-vl-plus"),
-                        "messages": [{
-                            "role": "user",
-                            "content": [
-                                {"type": "text", "text": "请提取图片中的所有文字，保持原有格式。"},
-                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"}},
-                            ]
-                        }],
-                        "max_tokens": 2000,
-                    },
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    text = data["choices"][0]["message"]["content"]
-                    all_text.append(text)
-                else:
-                    print(f"[WORKER] VLM OCR 第{idx+1}页失败: {resp.status_code}", flush=True)
+        VISION_MODEL = os.getenv("VISION_MODEL", "qwen-vl-plus")
+        for idx, b64 in enumerate(images):
+            msgs = [
+                {"role": "user", "content": [
+                    {"type": "text", "text": "请对这张图片进行 OCR，提取所有文字内容。只输出提取的文字，不要添加任何解释。"},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+                ]},
+            ]
+            result = await openai_complete_if_cache(
+                VISION_MODEL, "", system_prompt=None, history_messages=[],
+                messages=msgs, api_key=API_KEY, base_url=BASE_URL,
+            )
+            if result and isinstance(result, str):
+                all_text.append(result.strip())
+            else:
+                all_text.append("")
+
         return "\n\n".join(all_text)
     except Exception as e:
         print(f"[WORKER] VLM OCR 异常: {e}", flush=True)
@@ -184,6 +178,32 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
                        embedding_func=embedding_func, lightrag_kwargs=lightrag_kwargs)
 
 
+def _fix_stuck_doc(filename: str, target_dir: str, error_msg: str) -> bool:
+    """修复卡在 handling 的文档状态为 failed"""
+    sp = Path(target_dir) / "kv_store_doc_status.json"
+    if not sp.exists():
+        return False
+    try:
+        with open(sp, "r", encoding="utf-8") as f:
+            ds = json.load(f)
+        changed = False
+        for did, info in ds.items():
+            if info.get("file_path") == filename:
+                if info.get("status") != "failed":
+                    info["status"] = "failed"
+                    info["error_msg"] = error_msg
+                    changed = True
+                break
+        if changed:
+            with open(sp, "w", encoding="utf-8") as f:
+                json.dump(ds, f, ensure_ascii=False, indent=2)
+            print(f"[WORKER] 已将文档状态标记为 failed: {filename}", flush=True)
+        return changed
+    except Exception as e:
+        print(f"[WORKER] 无法更新文档状态: {e}", flush=True)
+        return False
+
+
 async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""):
     """处理单个文件并写入对应 KB 目录"""
     filename = os.path.basename(file_path)
@@ -201,114 +221,123 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
 
     safe_path = str(Path(file_path).resolve())
 
-    if ext in PLAIN_TEXT_EXTS:
-        print(f"[WORKER] 纯文本模式，直接读取", flush=True)
-        with open(file_path, "r", encoding="utf-8", errors="replace") as f:
-            text_content = f.read()
-        if text_content.strip():
-            await rag.insert_content_list(
-                [{"type": "text", "text": text_content, "page_idx": 0}],
-                file_path=filename
-            )
-    else:
-        output_dir = f"./output_{kb_name}" if kb_name != "default" else "./output"
-        docling_ok = False
-        try:
-            await rag.process_document_complete(safe_path, output_dir=output_dir)
-            docling_ok = True
-        except Exception as e:
-            err_msg = str(e)
-            print(f"[WORKER] Docling 处理失败: {err_msg[:150]}", flush=True)
-            # "Separator is not found" 错误：PDF 文本是大段连续内容，手动分行后重试
-            if "Separator is not found" in err_msg or "chunk exceed" in err_msg:
-                print(f"[WORKER] 检测到大段连续文本，尝试预处理后重试...", flush=True)
-                try:
-                    # 读取 PDF 文本内容，每隔 400 字符插入换行
-                    with open(safe_path, "rb") as f:
-                        raw = f.read()
-                    # 尝试读取已解析的文本
-                    import glob as _glob
-                    md_files = _glob.glob(f"{output_dir}/**/*.md", recursive=True)
-                    if md_files:
-                        for mf in md_files[:3]:
-                            with open(mf, "r", encoding="utf-8", errors="replace") as f:
-                                text = f.read()
-                            # 插入段落分隔符
-                            text = text.replace("。", "。\n\n").replace(". ", ".\n\n")
-                            # 长行强制换行
-                            lines = text.split("\n")
-                            new_lines = []
-                            for line in lines:
-                                if len(line) > 400:
-                                    for i in range(0, len(line), 400):
-                                        new_lines.append(line[i:i+400])
-                                else:
-                                    new_lines.append(line)
-                            with open(mf, "w", encoding="utf-8") as f:
-                                f.write("\n".join(new_lines))
-                        print(f"[WORKER] 预处理完成，重试中...", flush=True)
-                        await rag.process_document_complete(safe_path, output_dir=output_dir)
-                        docling_ok = True
-                    else:
-                        print(f"[WORKER] 未找到解析输出文件，使用 VLM OCR 兜底", flush=True)
-                except Exception as e2:
-                    print(f"[WORKER] 预处理失败: {e2}，使用 VLM OCR 兜底", flush=True)
+    try:
+        if ext in PLAIN_TEXT_EXTS:
+            print(f"[WORKER] 纯文本模式，直接读取", flush=True)
+            with open(file_path, "r", encoding="utf-8", errors="replace") as f:
+                text_content = f.read()
+            if text_content.strip():
+                await rag.insert_content_list(
+                    [{"type": "text", "text": text_content, "page_idx": 0}],
+                    file_path=filename
+                )
+        else:
+            output_dir = f"./output_{kb_name}" if kb_name != "default" else "./output"
+            docling_ok = False
+            try:
+                await rag.process_document_complete(safe_path, output_dir=output_dir)
+                docling_ok = True
+            except Exception as e:
+                err_msg = str(e)
+                print(f"[WORKER] Docling 处理失败: {err_msg[:150]}", flush=True)
+                # "Separator is not found" 错误：PDF 文本是大段连续内容，手动分行后重试
+                if "Separator is not found" in err_msg or "chunk exceed" in err_msg:
+                    print(f"[WORKER] 检测到大段连续文本，尝试预处理后重试...", flush=True)
+                    try:
+                        # 读取 PDF 文本内容，每隔 400 字符插入换行
+                        with open(safe_path, "rb") as f:
+                            raw = f.read()
+                        # 尝试读取已解析的文本
+                        import glob as _glob
+                        md_files = _glob.glob(f"{output_dir}/**/*.md", recursive=True)
+                        if md_files:
+                            for mf in md_files[:3]:
+                                with open(mf, "r", encoding="utf-8", errors="replace") as f:
+                                    text = f.read()
+                                # 插入段落分隔符
+                                text = text.replace("。", "。\n\n").replace(". ", ".\n\n")
+                                # 长行强制换行
+                                lines = text.split("\n")
+                                new_lines = []
+                                for line in lines:
+                                    if len(line) > 400:
+                                        for i in range(0, len(line), 400):
+                                            new_lines.append(line[i:i+400])
+                                    else:
+                                        new_lines.append(line)
+                                with open(mf, "w", encoding="utf-8") as f:
+                                    f.write("\n".join(new_lines))
+                            print(f"[WORKER] 预处理完成，重试中...", flush=True)
+                            await rag.process_document_complete(safe_path, output_dir=output_dir)
+                            docling_ok = True
+                        else:
+                            print(f"[WORKER] 未找到解析输出文件，使用 VLM OCR 兜底", flush=True)
+                    except Exception as e2:
+                        print(f"[WORKER] 预处理失败: {e2}，使用 VLM OCR 兜底", flush=True)
 
-        # VLM OCR 兜底（Docling 失败或产生 0 chunk 时触发）
-        if ext in ("pdf", "doc", "png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp"):
-            chunks_ok = False
-            sp = Path(target_dir) / "kv_store_doc_status.json"
-            if sp.exists():
-                with open(sp, "r", encoding="utf-8") as f:
-                    ds = json.load(f)
-                for did, info in ds.items():
-                    if info.get("file_path") == filename:
-                        if info.get("chunks_count", 0) > 0:
-                            chunks_ok = True
-                        break
-            if not docling_ok or not chunks_ok:
-                print(f"[WORKER] VLM OCR 兜底: {filename}", flush=True)
-                try:
-                    ocr_text = await _vlm_ocr_document(file_path)
-                    if ocr_text.strip():
-                        await rag.insert_content_list(
-                            [{"type": "text", "text": ocr_text, "page_idx": 0}],
-                            file_path=filename
+            # VLM OCR 兜底（Docling 失败或产生 0 chunk 时触发）
+            if ext in ("pdf", "doc", "png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp"):
+                chunks_ok = False
+                sp = Path(target_dir) / "kv_store_doc_status.json"
+                if sp.exists():
+                    with open(sp, "r", encoding="utf-8") as f:
+                        ds = json.load(f)
+                    for did, info in ds.items():
+                        if info.get("file_path") == filename:
+                            if info.get("chunks_count", 0) > 0:
+                                chunks_ok = True
+                            break
+                if not docling_ok or not chunks_ok:
+                    print(f"[WORKER] VLM OCR 兜底: {filename}", flush=True)
+                    try:
+                        ocr_text = await _vlm_ocr_document(file_path)
+                        if ocr_text.strip():
+                            await rag.insert_content_list(
+                                [{"type": "text", "text": ocr_text, "page_idx": 0}],
+                                file_path=filename
+                            )
+                            print(f"[WORKER] VLM OCR 完成: {len(ocr_text)} 字符", flush=True)
+                    except Exception as e2:
+                        print(f"[WORKER] VLM OCR 失败: {e2}", flush=True)
+                        raise
+
+        await rag.finalize_storages()
+
+        # Verify that chunks were actually created — if the merging/extraction
+        # stage failed silently, the document status will report zero chunks.
+        sp = Path(target_dir) / "kv_store_doc_status.json"
+        if sp.exists():
+            with open(sp, "r", encoding="utf-8") as f:
+                ds = json.load(f)
+            found = False
+            for did, info in ds.items():
+                if info.get("file_path") == filename:
+                    found = True
+                    if info.get("chunks_count", 0) == 0 and not info.get("status") == "failed":
+                        merge_failed = True
+                        print(
+                            f"[WORKER] ERROR: 文档处理完成但 chunks=0, "
+                            f"可能是合并(merging)/实体提取步骤失败. "
+                            f"doc_id={did} status={info.get('status')}",
+                            flush=True,
                         )
-                        print(f"[WORKER] VLM OCR 完成: {len(ocr_text)} 字符", flush=True)
-                except Exception as e2:
-                    print(f"[WORKER] VLM OCR 失败: {e2}", flush=True)
-                    raise
+                    break
+            if not found:
+                print(f"[WORKER] WARNING: 文档记录未在 doc_status 中找到: {filename}", flush=True)
 
-    await rag.finalize_storages()
+        if merge_failed:
+            print(f"[WORKER] 失败 (合并阶段错误): {filename}", flush=True)
+            sys.exit(1)
 
-    # Verify that chunks were actually created — if the merging/extraction
-    # stage failed silently, the document status will report zero chunks.
-    sp = Path(target_dir) / "kv_store_doc_status.json"
-    if sp.exists():
-        with open(sp, "r", encoding="utf-8") as f:
-            ds = json.load(f)
-        found = False
-        for did, info in ds.items():
-            if info.get("file_path") == filename:
-                found = True
-                if info.get("chunks_count", 0) == 0 and not info.get("status") == "failed":
-                    merge_failed = True
-                    print(
-                        f"[WORKER] ERROR: 文档处理完成但 chunks=0, "
-                        f"可能是合并(merging)/实体提取步骤失败. "
-                        f"doc_id={did} status={info.get('status')}",
-                        flush=True,
-                    )
-                break
-        if not found:
-            print(f"[WORKER] WARNING: 文档记录未在 doc_status 中找到: {filename}", flush=True)
+        print(f"[WORKER] 完成: {filename}", flush=True)
 
-    if merge_failed:
-        print(f"[WORKER] 失败 (合并阶段错误): {filename}", flush=True)
+    except Exception as e:
+        # 兜底：任何未捕获异常都将文档标记为失败，避免永久卡在 handling
+        import traceback
+        print(f"[WORKER] 未捕获异常: {e}", flush=True)
+        traceback.print_exc()
+        _fix_stuck_doc(filename, target_dir, f"Worker 异常退出: {str(e)[:200]}")
         sys.exit(1)
-
-    print(f"[WORKER] 完成: {filename}", flush=True)
 
 
 if __name__ == "__main__":

@@ -47,6 +47,10 @@ class AgentConfig(BaseModel):
     system_prompt: str = ""
     use_default_prompt: bool = True  # 是否叠加默认的格式化 prompt
 
+    # 数据隔离
+    owner_id: int = 0  # 0 = 旧数据/系统，其他 = 用户 ID
+    owner_username: str = ""
+
     # 元数据
     template_id: str = ""  # 从哪个模板创建的
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
@@ -57,6 +61,7 @@ class ConversationThread(BaseModel):
     """对话线程"""
     id: str = Field(default_factory=lambda: str(uuid.uuid4())[:8])
     title: str = "新对话"
+    owner_id: int = 0  # 数据隔离：对话所有权
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     messages: list[dict] = Field(default_factory=list)  # [{role, content, thinking, elapsed}]
@@ -134,24 +139,26 @@ class AgentManager:
 
     # ── 智能体 CRUD ─────────────────────────────────
 
-    def list_agents(self) -> list[AgentConfig]:
-        """列出所有智能体，按更新时间倒序"""
-        return sorted(
-            self.agents.values(),
-            key=lambda a: a.updated_at,
-            reverse=True,
-        )
+    def list_agents(self, user_id: int = None, is_admin: bool = False) -> list[AgentConfig]:
+        """列出智能体，按用户隔离（管理员看全部）"""
+        agents = self.agents.values()
+        if not is_admin and user_id is not None:
+            # 普通用户只看自己的 + owner_id=0 的系统级智能体
+            agents = [a for a in agents if a.owner_id == 0 or a.owner_id == user_id]
+        return sorted(agents, key=lambda a: a.updated_at, reverse=True)
 
     def get_agent(self, agent_id: str) -> AgentConfig | None:
         """获取单个智能体"""
         return self.agents.get(agent_id)
 
-    def create_agent(self, config: AgentConfig | dict) -> AgentConfig:
-        """创建智能体"""
+    def create_agent(self, config: AgentConfig | dict, owner_id: int = 0, owner_username: str = "") -> AgentConfig:
+        """创建智能体（注入所有权）"""
         if isinstance(config, dict):
             config = AgentConfig(**config)
         if not config.id:
             config.id = str(uuid.uuid4())[:8]
+        config.owner_id = owner_id
+        config.owner_username = owner_username
         config.created_at = config.created_at or datetime.now().isoformat()
         config.updated_at = config.created_at
         self.agents[config.id] = config
@@ -190,20 +197,24 @@ class AgentManager:
 
     # ── 对话线程管理 ────────────────────────────────
 
-    def list_conversations(self, agent_id: str) -> list[ConversationThread]:
-        """列出智能体的所有对话线程"""
+    def list_conversations(self, agent_id: str, user_id: int = None, is_admin: bool = False) -> list[ConversationThread]:
+        """列出智能体的对话线程（按用户隔离）"""
         threads = self.conversations.get(agent_id, {})
-        return sorted(threads.values(), key=lambda t: t.updated_at, reverse=True)
+        result = threads.values()
+        if not is_admin and user_id is not None:
+            result = [t for t in result if t.owner_id == 0 or t.owner_id == user_id]
+        return sorted(result, key=lambda t: t.updated_at, reverse=True)
 
     def get_conversation(self, agent_id: str, thread_id: str) -> ConversationThread | None:
         """获取单个对话线程"""
         return self.conversations.get(agent_id, {}).get(thread_id)
 
-    def create_conversation(self, agent_id: str, title: str = "新对话") -> ConversationThread:
-        """创建新对话线程"""
+    def create_conversation(self, agent_id: str, title: str = "新对话", owner_id: int = 0) -> ConversationThread:
+        """创建新对话线程（注入所有权）"""
         thread = ConversationThread(
             id=str(uuid.uuid4())[:8],
             title=title,
+            owner_id=owner_id,
         )
         if agent_id not in self.conversations:
             self.conversations[agent_id] = {}
@@ -269,7 +280,7 @@ class AgentManager:
                 system_prompt="",
                 use_default_prompt=True,
             )
-            self.create_agent(agent)
+            self.create_agent(agent, owner_id=1, owner_username="admin")
             # 迁移旧查询历史到默认智能体
             if query_history:
                 thread = self.create_conversation(agent.id, title="旧查询记录")
@@ -290,6 +301,31 @@ class AgentManager:
                 self._save_conversation(agent.id, thread)
                 return agent, thread
         return None, None
+
+    def migrate_agents(self) -> int:
+        """启动迁移：将 owner_id=0 的旧智能体归给 admin（user_id=1），对话归 admin"""
+        count = 0
+        changed = False
+        for agent in self.agents.values():
+            if agent.owner_id == 0:
+                agent.owner_id = 1
+                agent.owner_username = "admin"
+                count += 1
+                changed = True
+        # 迁移对话
+        for agent_id, threads in self.conversations.items():
+            for thread in threads.values():
+                if thread.owner_id == 0:
+                    thread.owner_id = 1
+                    changed = True
+        if changed:
+            self._save_agents()
+            # 重新持久化所有对话
+            for agent_id, threads in self.conversations.items():
+                for thread in threads.values():
+                    self._save_conversation(agent_id, thread)
+            print(f"[AGENT-MIGRATE] 已将 {count} 个智能体及其对话分配给管理员", flush=True)
+        return count
 
 
 # 全局单例
