@@ -73,13 +73,13 @@ export default function AgentChatPage() {
       }
     }).catch(() => {})
 
-    loadThreads()
+    loadThreads(true)
   }, [agentId])
 
-  const loadThreads = () => {
+  const loadThreads = (autoSelect = false) => {
     api.listConversations(agentId).then(r => {
       setThreads(r.threads || [])
-      if (r.threads?.length > 0 && !activeThreadId) {
+      if (r.threads?.length > 0 && autoSelect) {
         loadThread(r.threads[0].id)
       }
     }).catch(() => {})
@@ -118,9 +118,9 @@ export default function AgentChatPage() {
 
   const createThread = async () => {
     const res = await api.createConversation(agentId, '新对话')
-    loadThreads()
     setActiveThreadId(res.thread.id)
     setMessages([])
+    // 新建线程无需 loadThreads——线程列表在 streamQuery 的 done 事件里刷新
   }
 
   const deleteThread = async (threadId) => {
