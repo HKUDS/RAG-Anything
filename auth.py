@@ -55,10 +55,22 @@ async def init_db():
                 password_hash TEXT NOT NULL,
                 is_admin    INTEGER DEFAULT 0,
                 is_active   INTEGER DEFAULT 1,
+                failed_login_attempts INTEGER DEFAULT 0,
+                locked_until TEXT DEFAULT NULL,
                 created_at  TEXT DEFAULT (datetime('now','localtime')),
                 updated_at  TEXT DEFAULT (datetime('now','localtime'))
             )
         """)
+        await db.commit()
+        # 迁移旧表：添加暴力破解防护列
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0")
+        except Exception:
+            pass
+        try:
+            await db.execute("ALTER TABLE users ADD COLUMN locked_until TEXT DEFAULT NULL")
+        except Exception:
+            pass
         await db.commit()
 
     # 确保默认管理员存在
@@ -181,6 +193,76 @@ async def list_users() -> list[dict]:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """验证密码"""
     return pwd_context.verify(plain_password, hashed_password)
+
+
+# ── 暴力破解防护 ──────────────────────────────────
+
+MAX_FAILED_ATTEMPTS = int(os.getenv("MAX_FAILED_LOGIN_ATTEMPTS", "5"))
+LOCKOUT_DURATION_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
+
+
+async def check_account_locked(username: str) -> str | None:
+    """检查账号是否被锁定，返回错误信息或 None"""
+    import aiosqlite
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT locked_until, failed_login_attempts FROM users WHERE username = ?",
+            (username,),
+        )
+        row = await cursor.fetchone()
+        if not row:
+            return None  # 用户不存在，不暴露信息
+        locked_until = row["locked_until"]
+        if locked_until:
+            try:
+                lock_time = datetime.fromisoformat(locked_until)
+                if lock_time > datetime.utcnow():
+                    remaining = int((lock_time - datetime.utcnow()).total_seconds() / 60) + 1
+                    return f"账号已被锁定，请 {remaining} 分钟后重试"
+                else:
+                    # 锁定时间已过，自动解锁
+                    await db.execute(
+                        "UPDATE users SET locked_until = NULL, failed_login_attempts = 0 WHERE username = ?",
+                        (username,),
+                    )
+                    await db.commit()
+            except ValueError:
+                pass
+    return None
+
+
+async def record_failed_login(username: str):
+    """记录登录失败，达到阈值时锁定账号"""
+    import aiosqlite
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        db.row_factory = aiosqlite.Row
+        await db.execute(
+            "UPDATE users SET failed_login_attempts = failed_login_attempts + 1 WHERE username = ?",
+            (username,),
+        )
+        cursor = await db.execute(
+            "SELECT failed_login_attempts FROM users WHERE username = ?", (username,)
+        )
+        row = await cursor.fetchone()
+        if row and row["failed_login_attempts"] >= MAX_FAILED_ATTEMPTS:
+            lock_time = datetime.utcnow() + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+            await db.execute(
+                "UPDATE users SET locked_until = ? WHERE username = ?",
+                (lock_time.isoformat(), username),
+            )
+        await db.commit()
+
+
+async def reset_failed_logins(username: str):
+    """登录成功后重置失败计数"""
+    import aiosqlite
+    async with aiosqlite.connect(str(DB_PATH)) as db:
+        await db.execute(
+            "UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE username = ?",
+            (username,),
+        )
+        await db.commit()
 
 
 # ── JWT 工具 ──────────────────────────────────────

@@ -33,6 +33,11 @@ from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.types import ASGIApp
 import uvicorn
 import shutil
 import httpx
@@ -67,6 +72,9 @@ from auth import (
     list_users,
     update_user,
     delete_user,
+    check_account_locked,
+    record_failed_login,
+    reset_failed_logins,
 )
 
 security = HTTPBearer()
@@ -82,7 +90,37 @@ WORKING_DIR = os.getenv("WORKING_DIR", "./rag_storage")
 CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
 
 app = FastAPI(title="RAG-Anything API", version="1.3.1")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# ── Rate Limiting ──────────────────────────────────
+limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# ── CORS 白名单 ─────────────────────────────────────
+_cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173")
+_cors_origins = [o.strip() for o in _cors_origins_str.split(",") if o.strip()]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_cors_origins,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=True,
+)
+
+# ── 安全响应头 ──────────────────────────────────────
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ws: wss:"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 # ── 多知识库管理 ──────────────────────────────────
 kb_instances: dict[str, RAGAnything] = {}
@@ -667,6 +705,7 @@ async def serve_image(path: str = QueryParam(...)):
 # ════════════════════════════════════════════════════════
 
 @app.post("/api/auth/register")
+@limiter.limit("5/minute")
 async def auth_register(req: AuthRegisterRequest):
     """用户注册"""
     try:
@@ -677,15 +716,23 @@ async def auth_register(req: AuthRegisterRequest):
 
 
 @app.post("/api/auth/login")
+@limiter.limit("10/minute")
 async def auth_login(req: AuthLoginRequest):
-    """用户登录，返回 JWT Token"""
+    """用户登录，返回 JWT Token（含暴力破解防护）"""
+    # 检查账号是否被锁定
+    lock_msg = await check_account_locked(req.username)
+    if lock_msg:
+        raise HTTPException(429, lock_msg)
     user = await get_user_by_username(req.username)
     if not user:
         raise HTTPException(401, "用户名或密码错误")
     if not user.get("is_active"):
         raise HTTPException(403, "账号已被禁用")
     if not verify_password(req.password, user["password_hash"]):
+        await record_failed_login(req.username)
         raise HTTPException(401, "用户名或密码错误")
+    # 登录成功，重置失败计数
+    await reset_failed_logins(req.username)
     token = create_token(user["id"], user["username"], bool(user["is_admin"]))
     return {
         "status": "ok",
@@ -748,6 +795,7 @@ async def admin_delete_user(user_id: int, admin: dict = Depends(get_admin_user))
 # ════════════════════════════════════════════════════════
 
 @app.post("/api/upload")
+@limiter.limit("30/minute")
 async def upload_file(file: UploadFile = File(...), background_tasks: BackgroundTasks = None,
                        kb: str = Depends(verify_kb_access), chunking_strategy: str = "",
                        current_user: dict = Depends(get_current_user)):
@@ -773,6 +821,7 @@ async def upload_file(file: UploadFile = File(...), background_tasks: Background
 
 
 @app.post("/api/upload/batch")
+@limiter.limit("20/minute")
 async def upload_files(files: list[UploadFile] = File(...), background_tasks: BackgroundTasks = None,
                        kb: str = Depends(verify_kb_access), chunking_strategy: str = "",
                        current_user: dict = Depends(get_current_user)):
@@ -1601,6 +1650,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
 QUERY_SYSTEM_PROMPT = """基于检索内容回答。引用检索内容中的具体事实和数据。检索内容没有的信息不要编造。"""
 
 @app.post("/api/query")
+@limiter.limit("60/minute")
 async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """执行查询 - 手动构造 prompt 确保 LLM 使用检索内容"""
     global query_history
