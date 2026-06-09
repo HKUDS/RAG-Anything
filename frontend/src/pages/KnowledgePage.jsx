@@ -301,6 +301,9 @@ export default function KnowledgePage() {
                   <td className="py-2.5 font-mono text-slate-400">{(doc.length || 0).toLocaleString()}</td>
                   <td className="py-2.5 text-xs text-slate-500">{doc.updated?.slice(0, 16) || '-'}</td>
                   <td className="py-2.5 flex gap-1">
+                    {doc.status === 'failed' && (
+                      <button className="btn-ghost text-xs py-1 px-2 text-amber-400 hover:text-amber-300" onClick={async () => { await api.retryDocument(doc.id); setTimeout(() => loadData(), 1000); }} title="重试"><RotateCcw size={14}/></button>
+                    )}
                     <button className="btn-ghost text-xs py-1 px-2" onClick={() => setDetailDoc(doc)} title="详情"><Eye size={14}/></button>
                     <button className="btn-ghost text-xs py-1 px-2 text-red-400 hover:text-red-300" onClick={() => setDeleteConfirm(doc)} title="删除"><Trash2 size={14}/></button>
                   </td>

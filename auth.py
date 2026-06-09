@@ -18,7 +18,9 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # ── JWT 配置 ──────────────────────────────────────
 SECRET_KEY = os.getenv("JWT_SECRET", secrets.token_hex(32))
+REFRESH_SECRET_KEY = os.getenv("JWT_REFRESH_SECRET", secrets.token_hex(32))
 JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "24"))
+REFRESH_EXPIRY_DAYS = int(os.getenv("REFRESH_EXPIRY_DAYS", "7"))
 ALGORITHM = "HS256"
 
 # ── 数据库路径 ────────────────────────────────────
@@ -111,10 +113,25 @@ async def create_user(username: str, email: str, password: str, is_admin: bool =
     import aiosqlite
 
     # 验证
-    if len(password) < 6:
-        raise ValueError("密码至少需要 6 位")
+    if len(password) < 8:
+        raise ValueError("密码至少需要 8 位")
+    if len(password) > 128:
+        raise ValueError("密码不能超过 128 位")
     if len(username) < 2:
         raise ValueError("用户名至少需要 2 个字符")
+    # 密码复杂度：至少包含大写、小写、数字、特殊字符中的三类
+    import re as _re_pw
+    complexity = 0
+    if _re_pw.search(r'[A-Z]', password):
+        complexity += 1
+    if _re_pw.search(r'[a-z]', password):
+        complexity += 1
+    if _re_pw.search(r'[0-9]', password):
+        complexity += 1
+    if _re_pw.search(r'[^A-Za-z0-9]', password):
+        complexity += 1
+    if complexity < 3:
+        raise ValueError("密码需包含大写字母、小写字母、数字、特殊字符中的至少三类")
 
     password_hash = pwd_context.hash(password)
 
@@ -287,6 +304,30 @@ def decode_token(token: str) -> dict | None:
     except pyjwt.ExpiredSignatureError:
         return None
     except pyjwt.InvalidTokenError:
+        return None
+
+
+def create_refresh_token(user_id: int, username: str, is_admin: bool) -> str:
+    """签发 Refresh Token（有效期 7 天）"""
+    payload = {
+        "user_id": user_id,
+        "username": username,
+        "is_admin": is_admin,
+        "type": "refresh",
+        "exp": datetime.utcnow() + timedelta(days=REFRESH_EXPIRY_DAYS),
+        "iat": datetime.utcnow(),
+    }
+    return pyjwt.encode(payload, REFRESH_SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_refresh_token(token: str) -> dict | None:
+    """验证并解码 Refresh Token"""
+    try:
+        payload = pyjwt.decode(token, REFRESH_SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("type") != "refresh":
+            return None
+        return payload
+    except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
         return None
 
 

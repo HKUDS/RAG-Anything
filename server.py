@@ -69,6 +69,8 @@ from auth import (
     verify_password,
     create_token,
     decode_token,
+    create_refresh_token,
+    decode_refresh_token,
     list_users,
     update_user,
     delete_user,
@@ -803,10 +805,35 @@ async def auth_login(req: AuthLoginRequest):
     # 登录成功，重置失败计数
     await reset_failed_logins(req.username)
     token = create_token(user["id"], user["username"], bool(user["is_admin"]))
+    refresh_token = create_refresh_token(user["id"], user["username"], bool(user["is_admin"]))
     return {
         "status": "ok",
         "token": token,
+        "refresh_token": refresh_token,
         "user": {k: v for k, v in user.items() if k != "password_hash"},
+    }
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+@app.post("/api/auth/refresh")
+@limiter.limit("30/minute")
+async def auth_refresh(req: RefreshRequest):
+    """使用 Refresh Token 换取新的 Access Token"""
+    payload = decode_refresh_token(req.refresh_token)
+    if not payload:
+        raise HTTPException(401, "Refresh Token 无效或已过期")
+    user = await get_user_by_id(payload["user_id"])
+    if not user or not user.get("is_active"):
+        raise HTTPException(401, "用户不存在或已禁用")
+    new_token = create_token(user["id"], user["username"], bool(user["is_admin"]))
+    new_refresh = create_refresh_token(user["id"], user["username"], bool(user["is_admin"]))
+    return {
+        "status": "ok",
+        "token": new_token,
+        "refresh_token": new_refresh,
     }
 
 
@@ -1269,6 +1296,51 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
 
     return {"deleted": deleted, "not_found": not_found, "errors": errors,
             "total_deleted": len(deleted), "total_failed": len(errors)}
+
+
+@app.post("/api/knowledge/documents/{doc_id}/retry")
+async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user), background_tasks: BackgroundTasks = None):
+    """重试处理失败的文档"""
+    status_path = Path(kb_dir(kb)) / "kv_store_doc_status.json"
+    if not status_path.exists():
+        raise HTTPException(404, "文档不存在")
+    with open(status_path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    full_id = None
+    file_name = None
+    for k, v in data.items():
+        if k.startswith(doc_id):
+            full_id = k
+            file_name = v.get("file_path", "")
+            if v.get("status") != "failed":
+                raise HTTPException(400, "只能重试处理失败的文档")
+            break
+
+    if not full_id:
+        raise HTTPException(404, "文档不存在")
+
+    # 查找原始文件路径
+    upload_dir = Path("./uploads")
+    file_path = upload_dir / file_name
+    if not file_path.exists():
+        # 尝试从 doc_status 获取完整路径
+        file_path = Path(file_name) if Path(file_name).exists() else None
+    if not file_path or not file_path.exists():
+        raise HTTPException(404, f"原始文件不存在: {file_name}")
+
+    # 删除旧的失败记录，触发重新处理
+    del data[full_id]
+    with open(status_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    # 提交后台重新处理
+    task_id = str(uuid.uuid4())[:8]
+    if background_tasks is None:
+        raise HTTPException(500, "服务器内部错误")
+    background_tasks.add_task(_process_uploaded_file, task_id, str(file_path.absolute()),
+                               file_name, kb, "", current_user["id"])
+    return {"status": "queued", "task_id": task_id, "filename": file_name, "message": "文档已重新提交处理"}
 
 
 @app.post("/api/upload/url")
