@@ -2247,8 +2247,45 @@ async def monitor_logs(limit: int = 50, current_user: dict = Depends(get_current
 
 
 @app.get("/api/health")
-async def health(current_user: dict = Depends(get_current_user)):
-    return {"status": "ok", "active_kb": active_kb}
+async def health():
+    """健康检查（公开接口，用于 Docker/监控探测）"""
+    components = {"server": "ok", "active_kb": active_kb}
+
+    # 检查 KB 存储状态
+    try:
+        meta = load_kb_meta()
+        components["kb_count"] = len(meta)
+    except Exception as e:
+        components["kb_meta"] = f"error: {e}"
+
+    # 检查认证数据库
+    try:
+        import sqlite3
+        conn = sqlite3.connect("auth.db")
+        conn.execute("SELECT 1 FROM users LIMIT 1")
+        conn.close()
+        components["auth_db"] = "ok"
+    except Exception as e:
+        components["auth_db"] = f"error: {e}"
+
+    # 检查磁盘空间
+    try:
+        import shutil as _shutil
+        usage = _shutil.disk_usage(".")
+        free_gb = usage.free / (1024 ** 3)
+        components["disk_free_gb"] = round(free_gb, 1)
+        if free_gb < 1:
+            components["disk_warning"] = "low"
+    except Exception:
+        pass
+
+    # 整体状态
+    has_errors = any(v for v in components.values() if isinstance(v, str) and "error" in str(v))
+    return {
+        "status": "degraded" if has_errors else "ok",
+        "version": "1.3.1",
+        "components": components,
+    }
 
 # ── 🗂️ 多知识库管理 ─────────────────────────────────
 @app.get("/api/kb/list")

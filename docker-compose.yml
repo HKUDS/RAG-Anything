@@ -1,0 +1,66 @@
+version: "3.8"
+
+services:
+  app:
+    build: .
+    container_name: raganything-app
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - REDIS_URI=redis://redis:6379
+    volumes:
+      - ./rag_storage:/app/rag_storage
+      - ./uploads:/app/uploads
+      - ./output:/app/output
+      - ./auth.db:/app/auth.db
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: raganything-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-raganything}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-raganything}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-raganything}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-raganything}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: raganything-redis
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+
+  nginx:
+    image: nginx:alpine
+    container_name: raganything-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - frontend_dist:/usr/share/nginx/html:ro
+    depends_on:
+      - app
+
+volumes:
+  pgdata:
+  redisdata:
+  frontend_dist:

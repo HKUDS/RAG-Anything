@@ -1,0 +1,15 @@
+node_modules
+frontend/node_modules
+__pycache__
+*.pyc
+.venv
+.git
+*.db
+uploads/*
+output/*
+rag_storage/*
+rag_storage_*/*
+!rag_storage/.gitkeep
+.env.local
+*.log
+temp_docx
