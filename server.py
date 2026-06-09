@@ -1801,8 +1801,22 @@ async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access), curr
         start = time.time()
         instance = await get_kb(kb)
 
+        # 查询改写（可选，ENABLE_QUERY_REWRITE=true 开启）
+        rewritten_query = req.query
+        if os.getenv("ENABLE_QUERY_REWRITE", "false").lower() == "true":
+            try:
+                from raganything.query import rewrite_query
+                rewritten_query = await rewrite_query(
+                    req.query, instance.llm_model_func,
+                    api_key=API_KEY, base_url=BASE_URL,
+                )
+                if rewritten_query != req.query:
+                    print(f"[QUERY-REWRITE] {req.query[:60]} → {rewritten_query[:60]}", flush=True)
+            except Exception:
+                pass
+
         # Step 1: 获取检索上下文
-        ctx = await instance.aquery(req.query, mode=req.mode, vlm_enhanced=False,
+        ctx = await instance.aquery(rewritten_query, mode=req.mode, vlm_enhanced=False,
                                      only_need_context=True, enable_rerank=False,
                                      chunk_top_k=40, top_k=60,
                                      max_entity_tokens=3000, max_relation_tokens=2000,

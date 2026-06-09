@@ -896,3 +896,123 @@ class QueryMixin:
         return loop.run_until_complete(
             self.aquery_with_multimodal(query, multimodal_content, mode=mode, **kwargs)
         )
+
+
+# ═══════════════════════════════════════════════════════════
+# Rerank & Query Rewriting (独立工具函数)
+# ═══════════════════════════════════════════════════════════
+
+
+async def rerank_chunks(
+    query: str,
+    chunks: list[str],
+    llm_model_func,
+    api_key: str = "",
+    base_url: str = "",
+    top_n: int = 10,
+) -> list[tuple[int, str]]:
+    """
+    使用 LLM 对检索结果进行重排序（RankGPT 风格）。
+    将 chunks 分批发送给 LLM，让 LLM 按相关性排序。
+
+    Returns:
+        [(原始索引, chunk内容), ...] 按相关性降序
+    """
+    if not chunks or len(chunks) <= 1:
+        return [(i, c) for i, c in enumerate(chunks)]
+
+    # 分批处理（每批最多 20 个 chunk，避免超出 LLM context）
+    batch_size = 20
+    all_ranked = []
+
+    for batch_start in range(0, len(chunks), batch_size):
+        batch = chunks[batch_start : batch_start + batch_size]
+        if len(batch) <= 1:
+            all_ranked.extend((batch_start + i, c) for i, c in enumerate(batch))
+            continue
+
+        # 构建 rerank prompt
+        chunks_text = "\n\n".join(
+            f"[{i}] {c[:300]}{'...' if len(c) > 300 else ''}"
+            for i, c in enumerate(batch)
+        )
+        prompt = f"""请根据以下查询对检索到的文档片段进行相关性排序。
+只返回排序后的文档编号（逗号分隔，如 "3,0,5,1,2,4"），不要解释。
+
+查询: {query[:500]}
+
+文档片段:
+{chunks_text}
+
+请按与查询的相关性从高到低排序，只返回编号:"""
+
+        try:
+            from lightrag.llm.openai import openai_complete_if_cache
+
+            response = await openai_complete_if_cache(
+                "qwen-plus", prompt, system_prompt="你是检索排序助手。只返回排序编号。",
+                api_key=api_key, base_url=base_url, max_tokens=100, temperature=0,
+            )
+            if response and isinstance(response, str):
+                # 解析排序结果
+                import re as _re
+                nums = _re.findall(r'\d+', response)
+                ranked_indices = [int(n) for n in nums if int(n) < len(batch)]
+                # 添加未出现的编号（排在最后）
+                seen = set(ranked_indices)
+                ranked_indices.extend(i for i in range(len(batch)) if i not in seen)
+                all_ranked.extend((batch_start + idx, batch[idx]) for idx in ranked_indices)
+            else:
+                all_ranked.extend((batch_start + i, c) for i, c in enumerate(batch))
+        except Exception:
+            # Rerank 失败不影响主流程，返回原始顺序
+            all_ranked.extend((batch_start + i, c) for i, c in enumerate(batch))
+
+    return all_ranked
+
+
+async def rewrite_query(
+    query: str,
+    llm_model_func,
+    history: list[dict] = None,
+    api_key: str = "",
+    base_url: str = "",
+) -> str:
+    """
+    查询改写：使用 LLM 将自然语言查询优化为更适合检索的表述。
+    支持基于对话历史的上下文改写。
+
+    Returns:
+        改写后的查询字符串
+    """
+    history_context = ""
+    if history:
+        recent = history[-3:]  # 最近 3 轮
+        history_context = "\n".join(
+            f"用户: {h.get('content', '')[:100]}" for h in recent if h.get("role") == "user"
+        )
+
+    prompt = f"""你是查询优化助手。将用户的自然语言查询改写为更适合文档检索的表述。
+规则：
+1. 补充省略的上下文（如指代词"这个""它"替换为具体名词）
+2. 扩展缩写和专业术语
+3. 保持原意，不添加新信息
+4. 只输出改写后的查询，不要解释
+
+{"对话历史: " + history_context if history_context else ""}
+原始查询: {query}
+
+改写后的查询:"""
+
+    try:
+        from lightrag.llm.openai import openai_complete_if_cache
+
+        response = await openai_complete_if_cache(
+            "qwen-plus", prompt, system_prompt="你是查询优化助手。",
+            api_key=api_key, base_url=base_url, max_tokens=200, temperature=0.3,
+        )
+        if response and isinstance(response, str) and len(response.strip()) > 2:
+            return response.strip()
+    except Exception:
+        pass
+    return query  # 改写失败时返回原查询
