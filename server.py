@@ -122,6 +122,75 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+# ── 输入校验 + Prompt Injection 防护 ────────────────
+import re as _re_valid
+PROMPT_INJECTION_PATTERNS = [
+    r"(ignore|forget|disregard)\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|commands?)",
+    r"(you\s+are|act\s+as|pretend\s+to\s+be|roleplay\s+as)\s+(now|from\s+now\s+on)",
+    r"(system\s*(prompt|message|instruction))",
+    r"<\s*(script|iframe|object|embed|style)\b",
+    r"(javascript|onerror|onload|onclick)\s*:",
+    r"(\.\./|\.\.\\)",  # 路径遍历
+]
+PROMPT_INJECTION_REGEX = [_re_valid.compile(p, _re_valid.IGNORECASE) for p in PROMPT_INJECTION_PATTERNS]
+
+MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_MB", "500")) * 1024 * 1024
+MAX_BODY_SIZE = int(os.getenv("MAX_BODY_SIZE_MB", "10")) * 1024 * 1024
+
+class RequestSizeMiddleware(BaseHTTPMiddleware):
+    """请求大小限制中间件"""
+    async def dispatch(self, request: Request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length:
+            cl = int(content_length)
+            if request.url.path.startswith("/api/upload") and cl > MAX_UPLOAD_SIZE:
+                return JSONResponse(
+                    {"detail": f"文件超过最大限制 {os.getenv('MAX_UPLOAD_SIZE_MB','500')}MB"},
+                    status_code=413,
+                )
+            elif cl > MAX_BODY_SIZE:
+                return JSONResponse(
+                    {"detail": f"请求体超过最大限制 {os.getenv('MAX_BODY_SIZE_MB','10')}MB"},
+                    status_code=413,
+                )
+        return await call_next(request)
+
+app.add_middleware(RequestSizeMiddleware)
+
+def validate_query_input(query: str) -> str:
+    """校验查询输入，检测 Prompt Injection 攻击"""
+    if not query or not query.strip():
+        raise HTTPException(400, "查询内容不能为空")
+    if len(query) > 5000:
+        raise HTTPException(400, "查询内容超过最大长度限制")
+    for pattern in PROMPT_INJECTION_REGEX:
+        if pattern.search(query):
+            print(f"[SECURITY] Prompt Injection 拦截: pattern={pattern.pattern[:40]} query={query[:80]}", flush=True)
+            raise HTTPException(400, "请求包含不安全内容")
+    return query.strip()
+
+# ── 日志敏感信息脱敏 ────────────────────────────────
+class SensitiveLogFilter(logging.Filter):
+    """自动脱敏日志中的敏感字段"""
+    _patterns = [
+        (_re_valid.compile(r'(api[_-]?key[=:"\s]*)([a-zA-Z0-9_\-]{8,})', _re_valid.IGNORECASE), r'\1***REDACTED***'),
+        (_re_valid.compile(r'(password[=:"\s]*)([^,&\s"]+)', _re_valid.IGNORECASE), r'\1***REDACTED***'),
+        (_re_valid.compile(r'(token[=:"\s]*)([a-zA-Z0-9_\-\.]{20,})', _re_valid.IGNORECASE), r'\1***REDACTED***'),
+        (_re_valid.compile(r'(Bearer\s+)([a-zA-Z0-9_\-\.]{20,})'), r'\1***REDACTED***'),
+        (_re_valid.compile(r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'), r'***EMAIL***'),
+    ]
+    def filter(self, record):
+        if hasattr(record, 'msg') and isinstance(record.msg, str):
+            for pattern, replacement in self._patterns:
+                record.msg = pattern.sub(replacement, record.msg)
+        return True
+
+# 应用到所有 handler
+for _h in logging.getLogger().handlers + logging.getLogger("rag_server").handlers:
+    _h.addFilter(SensitiveLogFilter())
+logging.getLogger("rag_server").addFilter(SensitiveLogFilter())
+logging.getLogger("lightrag").addFilter(SensitiveLogFilter())
+
 # ── 多知识库管理 ──────────────────────────────────
 kb_instances: dict[str, RAGAnything] = {}
 active_kb: str = "default"
@@ -1464,6 +1533,7 @@ class AgentQueryRequest(BaseModel):
 @app.post("/api/agents/{agent_id}/query/stream")
 async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user: dict = Depends(get_current_user)):
     """智能体流式查询：使用智能体配置执行查询"""
+    validate_query_input(req.query)
     global query_history
     mgr = get_agent_manager()
     agent = mgr.get_agent(agent_id)
@@ -1653,6 +1723,7 @@ QUERY_SYSTEM_PROMPT = """基于检索内容回答。引用检索内容中的具�
 @limiter.limit("60/minute")
 async def query_rag(req: QueryRequest, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """执行查询 - 手动构造 prompt 确保 LLM 使用检索内容"""
+    validate_query_input(req.query)
     global query_history
     try:
         start = time.time()
@@ -1834,6 +1905,7 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
       - done: 查询完成，包含元数据
       - error: 查询出错
     """
+    validate_query_input(req.query)
     global query_history
     instance = await get_kb(kb)
 
