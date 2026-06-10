@@ -471,6 +471,7 @@ class QueryRequest(BaseModel):
     mode: str = "hybrid"
     vlm_enhanced: bool = False
     only_need_context: bool = False
+    agent_mode: Optional[str] = None  # "react" | "cot" | None（默认普通模式）
 
 class PasteContentRequest(BaseModel):
     content: str
@@ -1796,13 +1797,75 @@ QUERY_SYSTEM_PROMPT = """基于检索内容回答。引用检索内容中的具�
 @app.post("/api/query")
 @limiter.limit("60/minute")
 async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
-    """执行查询 - 手动构造 prompt 确保 LLM 使用检索内容"""
+    """执行查询 - 支持普通模式和 Agentic RAG 模式"""
     validate_query_input(req.query)
     global query_history
     try:
         start = time.time()
         instance = await get_kb(kb)
 
+        # ── Agentic RAG 模式 ──
+        agent_mode = req.agent_mode or os.getenv("AGENT_MODE", "none")
+        if agent_mode in ("react", "cot"):
+            from raganything.agentic_rag import (
+                AgenticRAG, SearchTool, CalculatorTool,
+                DatabaseQueryTool, WebSearchTool,
+            )
+            max_steps = int(os.getenv("AGENT_MAX_STEPS", "5"))
+
+            agentic = AgenticRAG(
+                llm_func=instance.llm_model_func,
+                max_steps=max_steps,
+                mode=agent_mode,
+            )
+            # 注册 SearchTool（核心工具）
+            agentic.register_tool(SearchTool(instance, query_mode=req.mode))
+            # 注册 CalculatorTool
+            agentic.register_tool(CalculatorTool())
+            # 注册 DatabaseQueryTool（预留）
+            agentic.register_tool(DatabaseQueryTool(kb_dir(kb)))
+            # 注册 WebSearchTool
+            agentic.register_tool(WebSearchTool())
+
+            agent_result = await agentic.run(req.query)
+
+            elapsed = round(time.time() - start, 2)
+            record = {
+                "id": str(uuid.uuid4())[:8],
+                "query": req.query,
+                "mode": req.mode,
+                "agent_mode": agent_mode,
+                "answer": agent_result.answer,
+                "reasoning_trace": {
+                    "steps": [
+                        {
+                            "step_number": s.step_number,
+                            "thought": s.thought,
+                            "action": s.action,
+                            "action_input": s.action_input,
+                            "observation": s.observation,
+                            "elapsed_ms": s.elapsed_ms,
+                        }
+                        for s in agent_result.trace
+                    ],
+                    "total_steps": agent_result.total_steps,
+                    "total_elapsed_ms": agent_result.total_elapsed_ms,
+                },
+                "images": [],
+                "time": datetime.now().isoformat(),
+                "elapsed": elapsed,
+                "kb": kb,
+                "user_id": current_user["id"],
+                "username": current_user["username"],
+            }
+            query_history.insert(0, record)
+            if len(query_history) > 100:
+                query_history = query_history[:100]
+            save_query_history()
+            print(f"[AGENTIC] mode={agent_mode} steps={agent_result.total_steps} elapsed={elapsed}s", flush=True)
+            return record
+
+        # ── 普通 RAG 模式（原有逻辑）──
         # 查询改写（可选，ENABLE_QUERY_REWRITE=true 开启）
         rewritten_query = req.query
         if os.getenv("ENABLE_QUERY_REWRITE", "false").lower() == "true":
