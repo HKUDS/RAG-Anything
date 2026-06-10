@@ -8,8 +8,8 @@ export default function ProtectedRoute({ children, adminOnly = false }) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-slate-950">
-        <Loader2 size={32} className="animate-spin text-neon-400" />
+      <div className="flex items-center justify-center h-screen bg-warm-100">
+        <Loader2 size={32} className="animate-spin text-coral-500" />
       </div>
     )
   }

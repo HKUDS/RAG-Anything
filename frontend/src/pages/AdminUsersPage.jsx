@@ -83,106 +83,112 @@ export default function AdminUsersPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 size={24} className="animate-spin text-neon-400" />
+        <Loader2 size={24} className="animate-spin text-coral-500" />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <Users size={20} className="text-neon-400" />
-        <div>
-          <h2 className="text-lg font-bold text-slate-200">用户管理</h2>
-          <p className="text-xs text-slate-500">共 {users.length} 个用户</p>
+    <div className="space-y-8">
+      <div className="page-header page-header-divider">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
+            <Users size={18} className="text-amber-600" />
+          </div>
+          <div>
+            <h2 className="page-title">👥 用户管理</h2>
+            <p className="page-subtitle">共 {users.length} 个用户</p>
+          </div>
         </div>
       </div>
 
       {error && (
-        <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{error}</div>
+        <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs">{error}</div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-700/50 text-left">
-              <th className="py-2 px-3 text-xs text-slate-500 font-medium">ID</th>
-              <th className="py-2 px-3 text-xs text-slate-500 font-medium">用户名</th>
-              <th className="py-2 px-3 text-xs text-slate-500 font-medium">邮箱</th>
-              <th className="py-2 px-3 text-xs text-slate-500 font-medium">角色</th>
-              <th className="py-2 px-3 text-xs text-slate-500 font-medium">状态</th>
-              <th className="py-2 px-3 text-xs text-slate-500 font-medium">创建时间</th>
-              <th className="py-2 px-3 text-xs text-slate-500 font-medium">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            {users.map(u => (
-              <tr key={u.id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
-                {editingId === u.id ? (
-                  <>
-                    <td className="py-2 px-3 text-xs text-slate-400 font-mono">{u.id}</td>
-                    <td className="py-2 px-3">
-                      <input className="input-field text-xs py-1 w-full" value={editForm.username || ''}
-                        onChange={e => setEditForm(f => ({ ...f, username: e.target.value }))} />
-                    </td>
-                    <td className="py-2 px-3">
-                      <input className="input-field text-xs py-1 w-full" value={editForm.email || ''}
-                        onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} />
-                    </td>
-                    <td className="py-2 px-3">
-                      <select className="input-field text-xs py-1" value={editForm.is_admin ? '1' : '0'}
-                        onChange={e => setEditForm(f => ({ ...f, is_admin: e.target.value === '1' }))}>
-                        <option value="0">用户</option>
-                        <option value="1">管理员</option>
-                      </select>
-                    </td>
-                    <td className="py-2 px-3">
-                      <select className="input-field text-xs py-1" value={editForm.is_active ? '1' : '0'}
-                        onChange={e => setEditForm(f => ({ ...f, is_active: e.target.value === '1' }))}>
-                        <option value="1">启用</option>
-                        <option value="0">禁用</option>
-                      </select>
-                    </td>
-                    <td className="py-2 px-3 text-xs text-slate-500">{u.created_at?.split('T')[0]}</td>
-                    <td className="py-2 px-3 flex gap-1">
-                      <button className="text-emerald-400 hover:text-emerald-300" onClick={() => saveEdit(u.id)} title="保存"><Check size={14}/></button>
-                      <button className="text-slate-500 hover:text-slate-300" onClick={cancelEdit} title="取消"><X size={14}/></button>
-                    </td>
-                  </>
-                ) : (
-                  <>
-                    <td className="py-2 px-3 text-xs text-slate-500 font-mono">{u.id}</td>
-                    <td className="py-2 px-3 text-slate-300 flex items-center gap-1.5">
-                      {u.is_admin ? <Shield size={12} className="text-amber-400" /> : <User size={12} className="text-slate-500" />}
-                      {u.username}
-                      {u.id === me?.id && <span className="text-[10px] text-neon-500 ml-1">(我)</span>}
-                    </td>
-                    <td className="py-2 px-3 text-xs text-slate-400">{u.email}</td>
-                    <td className="py-2 px-3">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${u.is_admin ? 'bg-amber-500/10 text-amber-400' : 'bg-slate-700/50 text-slate-400'}`}>
-                        {u.is_admin ? '管理员' : '用户'}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3">
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded ${u.is_active ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'}`}>
-                        {u.is_active ? '启用' : '禁用'}
-                      </span>
-                    </td>
-                    <td className="py-2 px-3 text-xs text-slate-500">{u.created_at?.split('T')[0]}</td>
-                    <td className="py-2 px-3 flex gap-1">
-                      <button className="text-slate-500 hover:text-neon-400" onClick={() => startEdit(u)} title="编辑"><Edit3 size={13}/></button>
-                      {u.id !== me?.id && (
-                        <button className="text-slate-500 hover:text-red-400" onClick={() => handleDelete(u.id)} disabled={deletingId === u.id} title="删除">
-                          {deletingId === u.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13}/>}
-                        </button>
-                      )}
-                    </td>
-                  </>
-                )}
+      <div className="card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-warm-200/60 text-left">
+                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">ID</th>
+                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">用户名</th>
+                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">邮箱</th>
+                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">角色</th>
+                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">状态</th>
+                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">创建时间</th>
+                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">操作</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {users.map(u => (
+                <tr key={u.id} className="border-b border-warm-100 hover:bg-warm-50/50 transition-colors">
+                  {editingId === u.id ? (
+                    <>
+                      <td className="py-2 px-3 text-xs text-warm-500 font-mono">{u.id}</td>
+                      <td className="py-2 px-3">
+                        <input className="input-field text-xs py-1 w-full" value={editForm.username || ''}
+                          onChange={e => setEditForm(f => ({ ...f, username: e.target.value }))} />
+                      </td>
+                      <td className="py-2 px-3">
+                        <input className="input-field text-xs py-1 w-full" value={editForm.email || ''}
+                          onChange={e => setEditForm(f => ({ ...f, email: e.target.value }))} />
+                      </td>
+                      <td className="py-2 px-3">
+                        <select className="input-field text-xs py-1" value={editForm.is_admin ? '1' : '0'}
+                          onChange={e => setEditForm(f => ({ ...f, is_admin: e.target.value === '1' }))}>
+                          <option value="0">用户</option>
+                          <option value="1">管理员</option>
+                        </select>
+                      </td>
+                      <td className="py-2 px-3">
+                        <select className="input-field text-xs py-1" value={editForm.is_active ? '1' : '0'}
+                          onChange={e => setEditForm(f => ({ ...f, is_active: e.target.value === '1' }))}>
+                          <option value="1">启用</option>
+                          <option value="0">禁用</option>
+                        </select>
+                      </td>
+                      <td className="py-2 px-3 text-xs text-warm-500">{u.created_at?.split('T')[0]}</td>
+                      <td className="py-2 px-3 flex gap-1">
+                        <button className="text-sage-500 hover:text-sage-600 transition-colors" onClick={() => saveEdit(u.id)} title="保存"><Check size={14}/></button>
+                        <button className="text-warm-500 hover:text-warm-600 transition-colors" onClick={cancelEdit} title="取消"><X size={14}/></button>
+                      </td>
+                    </>
+                  ) : (
+                    <>
+                      <td className="py-2 px-3 text-xs text-warm-500 font-mono">{u.id}</td>
+                      <td className="py-2 px-3 text-warm-700 flex items-center gap-1.5 font-medium">
+                        {u.is_admin ? <Shield size={12} className="text-amber-500" /> : <User size={12} className="text-warm-500" />}
+                        {u.username}
+                        {u.id === me?.id && <span className="text-[10px] text-coral-500 ml-1">(我)</span>}
+                      </td>
+                      <td className="py-2 px-3 text-xs text-warm-500">{u.email}</td>
+                      <td className="py-2 px-3">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-lg ${u.is_admin ? 'bg-amber-50 text-amber-600 border border-amber-200' : 'bg-warm-100 text-warm-500'}`}>
+                          {u.is_admin ? '管理员' : '用户'}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3">
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-lg ${u.is_active ? 'bg-sage-50 text-sage-600 border border-sage-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>
+                          {u.is_active ? '启用' : '禁用'}
+                        </span>
+                      </td>
+                      <td className="py-2 px-3 text-xs text-warm-500">{u.created_at?.split('T')[0]}</td>
+                      <td className="py-2 px-3 flex gap-1">
+                        <button className="text-warm-500 hover:text-coral-500 transition-colors" onClick={() => startEdit(u)} title="编辑"><Edit3 size={13}/></button>
+                        {u.id !== me?.id && (
+                          <button className="text-warm-500 hover:text-rose-500 transition-colors" onClick={() => handleDelete(u.id)} disabled={deletingId === u.id} title="删除">
+                            {deletingId === u.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13}/>}
+                          </button>
+                        )}
+                      </td>
+                    </>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   )
