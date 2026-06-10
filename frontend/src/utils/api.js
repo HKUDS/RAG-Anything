@@ -104,15 +104,15 @@ export const api = {
   getQueryHistory: (limit = 20) => request(`/query/history?limit=${limit}`),
   clearQueryHistory: () => request('/query/history', { method: 'DELETE' }),
 
-  // Settings
-  getSettings: () => request('/settings'),
-  updateSettings: (data) => request('/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  // Settings (admin only — uses fetchJson to avoid ?kb= param)
+  getSettings: () => fetchJson('/settings'),
+  updateSettings: (data) => fetchJson('/settings', { method: 'PUT', body: JSON.stringify(data) }),
 
   // Monitor
-  getStatus: () => request('/monitor/status'),
-  getLLMStats: () => request('/monitor/stats'),
-  getLogs: (limit = 50) => request(`/monitor/logs?limit=${limit}`),
-  health: () => request('/health'),
+  getStatus: () => fetchJson('/monitor/status'),
+  getLLMStats: () => fetchJson('/monitor/stats'),
+  getLogs: (limit = 50) => fetchJson(`/monitor/logs?limit=${limit}`),
+  health: () => fetchJson('/health'),
 
   // Agents
   listAgents: () => fetchJson('/agents'),

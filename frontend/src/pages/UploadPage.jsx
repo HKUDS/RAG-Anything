@@ -32,18 +32,21 @@ export default function UploadPage({ onToast }) {
     }).catch(() => {})
   }, [])
 
-  // WebSocket 连接监听进度
+  // 轮询监听进度（每 3 秒查一次 /api/monitor/status）
   useEffect(() => {
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:'
-    const ws = new WebSocket(`${proto}//${location.hostname}:8001/ws`)
-    wsRef.current = ws
-    ws.onmessage = (e) => {
-      const d = JSON.parse(e.data)
-      if (d.type === 'progress') {
-        setWsProgress(prev => ({ ...prev, [d.task_id]: d }))
-      }
+    const poll = async () => {
+      try {
+        const data = await api.getStatus()
+        if (data.tasks) {
+          const progress = {}
+          data.tasks.forEach(t => { progress[t.id] = t })
+          setWsProgress(progress)
+        }
+      } catch {} // 静默失败，用户可在监控页查看
     }
-    return () => ws.close()
+    poll()
+    const timer = setInterval(poll, 3000)
+    return () => clearInterval(timer)
   }, [])
 
   const addFile = useCallback((file) => {
@@ -233,7 +236,7 @@ export default function UploadPage({ onToast }) {
                   {f.error && <p className="text-xs text-red-400">{f.error}</p>}
                   {f.status === 'uploading' && f.taskId && wsProgress[f.taskId] && (
                     <div className="mt-1 w-32 h-1 bg-slate-700 rounded-full overflow-hidden">
-                      <div className="h-full bg-neon-500 transition-all" style={{width: `${wsProgress[f.name].progress || 0}%`}}/>
+                      <div className="h-full bg-neon-500 transition-all" style={{width: `${wsProgress[f.taskId]?.progress || 0}%`}}/>
                     </div>
                   )}
                 </div>

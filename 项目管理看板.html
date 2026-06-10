@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG-Anything 项目管理看板</title>
+<style>
+:root {
+  --bg: #f6f8fb; --surface: #fff; --text: #1a1d23; --text2: #5f6570;
+  --text3: #9499a3; --border: #e5e7eb; --border2: #f0f1f3;
+  --c-done: #10b981; --c-done-bg: #ecfdf5; --c-done-bar: #a7f3d0;
+  --c-progress: #3b82f6; --c-progress-bg: #eff6ff; --c-progress-bar: #bfd6fe;
+  --c-planned: #f59e0b; --c-planned-bg: #fffbeb; --c-planned-bar: #fde68a;
+  --c-pending: #e5e7eb;
+  --c-explore: #7c5cfc; --c-design: #f59e0b; --c-build: #3b82f6;
+  --c-ms: #f43f5e; --c-today: #ef4444;
+  --radius: 10px; --shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+[data-theme="dark"] {
+  --bg: #111827; --surface: #1f2937; --text: #f3f4f6; --text2: #9ca3af;
+  --text3: #6b7280; --border: #374151; --border2: #283040;
+  --c-done-bg: #064e3b; --c-progress-bg: #1e3a5f; --c-planned-bg: #78350f;
+  --c-pending: #374151;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1320px;margin:0 auto;padding:1rem}
+
+/* Header */
+.pg-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;flex-wrap:wrap;gap:0.5rem}
+.pg-hd h1{font-size:1.15rem;font-weight:700}
+.pg-hd .sub{font-size:0.72rem;color:var(--text3)}
+.actions{display:flex;gap:0.4rem;flex-wrap:wrap}
+
+/* Buttons */
+.btn{font-size:0.7rem;padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surface);color:var(--text2);cursor:pointer;transition:all 0.15s;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}
+.btn:hover{background:var(--border2);color:var(--text)}
+.btn.ac{background:var(--c-progress);color:#fff;border-color:var(--c-progress)}
+.btn.danger{color:var(--c-ms);border-color:var(--c-ms)}
+.btn.danger:hover{background:var(--c-ms);color:#fff}
+.btn.sm{font-size:0.62rem;padding:3px 8px}
+
+/* Stats row */
+.stats{display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap}
+.stat{flex:1;min-width:80px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:0.6rem 0.9rem;box-shadow:var(--shadow);cursor:pointer;transition:all 0.15s}
+.stat:hover{transform:translateY(-1px);box-shadow:0 2px 8px rgba(0,0,0,0.06)}
+.stat .n{font-size:1.4rem;font-weight:700;line-height:1}
+.stat .l{font-size:0.6rem;color:var(--text3);margin-top:2px}
+.stat.sel{border:2px solid var(--c-progress)}
+
+/* Toolbar */
+.toolbar{display:flex;gap:0.5rem;margin-bottom:0.75rem;flex-wrap:wrap;align-items:center}
+.toolbar input[type="text"]{flex:1;min-width:150px;max-width:280px;padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.72rem;background:var(--surface);color:var(--text)}
+.toolbar select{padding:6px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.7rem;background:var(--surface);color:var(--text)}
+.toolbar .sep{width:1px;height:20px;background:var(--border)}
+
+/* Week tabs */
+.week-tabs{display:flex;gap:0;margin-bottom:0.75rem;border-radius:var(--radius);overflow:hidden;border:1px solid var(--border)}
+.week-tab{flex:1;padding:8px;text-align:center;font-size:0.72rem;font-weight:600;cursor:pointer;background:var(--surface);color:var(--text2);border-right:1px solid var(--border);transition:all 0.15s}
+.week-tab:last-child{border-right:none}
+.week-tab:hover{background:var(--border2)}
+.week-tab.act{background:var(--c-progress);color:#fff}
+.week-tab .wk-label{font-size:0.62rem;font-weight:400;opacity:0.8}
+
+/* Table */
+.tbl-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow-x:auto}
+.tbl{width:100%;border-collapse:collapse;min-width:900px;table-layout:fixed}
+.tbl th{padding:8px 4px;font-size:0.65rem;font-weight:600;color:var(--text2);border-bottom:2px solid var(--border);text-align:center;position:sticky;top:0;background:var(--surface);z-index:2}
+.tbl th:first-child{padding-left:12px;text-align:left;width:240px}
+.tbl th.day-col{width:calc((100% - 240px) / 5)}
+.tbl th.today-col{background:rgba(239,68,68,0.06);color:var(--c-today)}
+.tbl th.today-col::after{content:'▼';display:block;font-size:0.5rem;margin-top:1px}
+.tbl td{padding:0;border-bottom:1px solid var(--border2);height:36px}
+
+/* Module header */
+.mod-row td{padding:0}
+.mod-bar{display:flex;align-items:center;padding:7px 12px;font-size:0.7rem;font-weight:700;gap:6px;cursor:pointer;user-select:none}
+.mod-bar .arrow{font-size:0.6rem;transition:transform 0.2s;width:12px;text-align:center}
+.mod-bar.collapsed .arrow{transform:rotate(-90deg)}
+.mod-bar .dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.mod-bar .cnt{font-size:0.6rem;font-weight:400;color:var(--text3);margin-left:auto}
+.mod-c1 .mod-bar{border-left:4px solid #7c5cfc;background:#f7f5ff}
+.mod-c2 .mod-bar{border-left:4px solid #3b82f6;background:#f5f8ff}
+.mod-c3 .mod-bar{border-left:4px solid #f59e0b;background:#fffdf5}
+.mod-c4 .mod-bar{border-left:4px solid #10b981;background:#f4fbf8}
+[data-theme="dark"] .mod-c1 .mod-bar{background:#1e1b4b}
+[data-theme="dark"] .mod-c2 .mod-bar{background:#172554}
+[data-theme="dark"] .mod-c3 .mod-bar{background:#451a03}
+[data-theme="dark"] .mod-c4 .mod-bar{background:#052e16}
+
+/* Task cells */
+.task-name{padding:4px 12px;font-size:0.68rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.task-name .status-dot{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.task-name .status-dot.s-done{background:var(--c-done)}
+.task-name .status-dot.s-progress{background:var(--c-progress)}
+.task-name .status-dot.s-planned{background:var(--c-planned)}
+.task-name .status-dot.s-pending{background:var(--c-pending)}
+.task-name:hover{color:var(--c-progress);cursor:pointer}
+
+.day-cell{text-align:center;cursor:pointer;transition:background 0.1s;position:relative}
+.day-cell:hover{background:rgba(59,130,246,0.06)}
+.day-cell.done{background:var(--c-done-bg)}
+.day-cell.done:hover{background:rgba(16,185,129,0.12)}
+.day-cell.today-col{background:rgba(239,68,68,0.03)}
+.day-cell.past{opacity:0.5}
+.day-cell .check{font-size:0.75rem;color:var(--c-done);font-weight:700}
+
+/* Progress bar */
+.prog-wrap{height:3px;background:var(--border);border-radius:2px;overflow:hidden;margin-top:2px}
+.prog-bar{height:100%;border-radius:2px;transition:width 0.3s}
+.prog-bar.done{background:var(--c-done)}
+.prog-bar.progress{background:var(--c-progress)}
+
+/* Modal */
+.modal-overlay{display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.4);z-index:100;justify-content:center;align-items:center}
+.modal-overlay.show{display:flex}
+.modal{background:var(--surface);border-radius:var(--radius);box-shadow:0 20px 60px rgba(0,0,0,0.15);max-width:500px;width:90%;max-height:80vh;overflow-y:auto;padding:1.2rem}
+.modal h3{font-size:0.95rem;margin-bottom:0.75rem}
+.modal label{font-size:0.68rem;color:var(--text2);display:block;margin-bottom:3px}
+.modal input,.modal textarea,.modal select{width:100%;padding:7px 10px;border:1px solid var(--border);border-radius:6px;font-size:0.72rem;margin-bottom:0.6rem;background:var(--surface);color:var(--text)}
+.modal textarea{min-height:80px;resize:vertical}
+.modal .btn-row{display:flex;gap:0.5rem;justify-content:flex-end;margin-top:0.5rem}
+
+/* Toast */
+.toast{position:fixed;bottom:20px;right:20px;background:#1e293b;color:#fff;padding:10px 18px;border-radius:8px;font-size:0.72rem;z-index:200;opacity:0;transition:opacity 0.3s;pointer-events:none}
+.toast.show{opacity:1}
+
+/* Responsive */
+@media(max-width:900px){.tbl-wrap{overflow-x:auto}.task-name{font-size:0.62rem}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- Header -->
+<div class="pg-hd">
+  <div>
+    <h1>📋 RAG-Anything 项目管理看板</h1>
+    <p class="sub">点击日期格标记任务完成 · 右键添加备注 · 数据自动保存到浏览器</p>
+  </div>
+  <div class="actions">
+    <button class="btn" onclick="openAddTaskModal()" title="Ctrl+N">➕ 添加任务</button>
+    <button class="btn" id="bulkBtn" onclick="toggleBulkMode()">☑️ 批量操作</button>
+    <button class="btn" onclick="exportData()">📥 导出JSON</button>
+    <button class="btn" onclick="exportMarkdown()">📝 导出报告</button>
+    <button class="btn" onclick="importData()">📤 导入</button>
+    <button class="btn" onclick="undoLast()" id="undoBtn" disabled>↩ 撤销</button>
+    <button class="btn" onclick="toggleTheme()">🌓</button>
+    <button class="btn danger" onclick="resetAll()">🔄 重置</button>
+  </div>
+</div>
+
+<!-- Stats -->
+<div class="stats" id="statsRow"></div>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <input type="text" id="searchInput" placeholder="🔍 搜索任务名称..." oninput="render()">
+  <select id="filterModule" onchange="render()">
+    <option value="">全部模块</option>
+  </select>
+  <select id="filterStatus" onchange="render()">
+    <option value="">全部状态</option>
+    <option value="done">✅ 已完成</option>
+    <option value="progress">🔄 进行中</option>
+    <option value="planned">🎯 计划中</option>
+    <option value="pending">⬜ 未开始</option>
+  </select>
+  <span class="sep"></span>
+  <span style="font-size:0.65rem;color:var(--text3)" id="saveIndicator">💾 已自动保存</span>
+  <span class="sep"></span>
+  <span style="display:flex;align-items:center;gap:6px;font-size:0.65rem;color:var(--text2)" id="weekSummary"></span>
+  <span class="sep"></span>
+  <span style="font-size:0.62rem;color:var(--text3)">⌨ 1-4周 | Ctrl+Z撤销 | Ctrl+N添加 | Esc关闭</span>
+</div>
+
+<!-- Bulk Action Bar -->
+<div id="bulkBar" style="display:none;background:var(--c-progress-bg);border:1px solid var(--c-progress);border-radius:8px;padding:8px 12px;margin-bottom:0.75rem;align-items:center;gap:8px;">
+  <span style="font-size:0.7rem;font-weight:600;color:var(--c-progress)">☑️ 批量模式 — 点击任务行选择</span>
+  <span style="font-size:0.65rem;color:var(--text2)" id="bulkCount">已选 0 个</span>
+  <button class="btn sm ac" onclick="bulkComplete()">✅ 标记为本周完成</button>
+  <button class="btn sm" onclick="toggleBulkMode()">退出批量模式</button>
+</div>
+
+<!-- Week Tabs -->
+<div class="week-tabs" id="weekTabs"></div>
+
+<!-- Main Table -->
+<div class="tbl-wrap">
+<table class="tbl">
+<thead><tr><th>任务名称</th><th class="day-col">周一</th><th class="day-col">周二</th><th class="day-col">周三</th><th class="day-col">周四</th><th class="day-col">周五</th></tr></thead>
+<tbody id="tableBody"></tbody>
+</table>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal" id="modalContent"></div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+</div>
+
+<script>
+// ═══════════════════ DATA ═══════════════════
+const WEEKS = [
+  {id:1, label:'第 1 周', date:'6.9 — 6.15', status:'done', days:['6.9 周一','6.10 周二','6.11 周三','6.12 周四','6.13 周五']},
+  {id:2, label:'第 2 周', date:'6.23 — 6.29', status:'current', days:['6.23 周一','6.24 周二','6.25 周三','6.26 周四','6.27 周五']},
+  {id:3, label:'第 3 周', date:'6.30 — 7.06', status:'future', days:['6.30 周一','7.01 周二','7.02 周三','7.03 周四','7.04 周五']},
+  {id:4, label:'第 4 周', date:'7.07 — 7.13', status:'future', days:['7.07 周一','7.08 周二','7.09 周三','7.10 周四','7.11 周五']},
+];
+
+const MODULES = [
+  {id:'core', name:'一、知识库核心能力', cls:'mod-c1', tasks:[
+    {id:'t1', name:'多模态文档解析引擎 — 6种分块策略 + VLM OCR', desc:'支持20种文件格式，MinerU 2.0 + PaddleOCR + Whisper', deps:[], week:1, day:1, status:'done'},
+    {id:'t2', name:'知识库数据隔离 — 多知识库 + 文档级权限控制', desc:'verify_kb_access 鉴权中间件，知识库级资源隔离', deps:[], week:1, day:1, status:'done'},
+    {id:'t3', name:'图像语义预过滤 — 非必要图像自动剔除', desc:'减少无效图片干扰向量检索精度', deps:[], week:1, day:3, status:'done'},
+    {id:'t4', name:'文档解析管线升级 — Docling / Marker 高精度解析', desc:'PDF/表格/扫描件精度提升 40%+，双引擎策略', deps:['t1'], week:4, day:3, status:'planned'},
+    {id:'t5', name:'Agentic RAG 智能体引擎 — 多步推理 + 工具调用', desc:'ReAct/CoT推理模式，max_steps=5，Calculator+WebSearch+DB工具', deps:[], week:2, day:1, status:'progress'},
+  ]},
+  {id:'search', name:'二、智能检索与召回', cls:'mod-c2', tasks:[
+    {id:'t6', name:'Rerank 重排序 — Cross-encoder 精排接入', desc:'top_n=10, batch=32, P95延迟<200ms', deps:[], week:2, day:1, status:'done'},
+    {id:'t7', name:'查询改写 — HyDE 假设文档 + Multi-Query 多路召回', desc:'HyDE n=3, Multi-Query n=3, temperature=0.7/0.8', deps:[], week:2, day:2, status:'progress'},
+    {id:'t8', name:'混合检索 — BM25 + 向量 + 图谱 RRF 三路融合', desc:'BM25(k1=1.5,b=0.75)+Cosine(HNSW)+Graph, RRF k=60', deps:['t6'], week:3, day:1, status:'planned'},
+    {id:'t9', name:'GraphRAG 知识图谱增强检索', desc:'实体抽取阈值0.6，关系深度2，1-2跳邻居遍历', deps:[], week:3, day:2, status:'planned'},
+    {id:'t10', name:'多轮对话上下文管理 — 滑动窗口 + 摘要压缩', desc:'context_window=10轮, token_budget=2000, 压缩比≥60%', deps:[], week:3, day:4, status:'planned'},
+  ]},
+  {id:'security', name:'三、安全防护体系', cls:'mod-c3', tasks:[
+    {id:'t11', name:'用户认证 — JWT + bcrypt + RBAC 角色权限', desc:'HS256, work_factor=12, 双Token机制(24h+7d)', deps:[], week:1, day:1, status:'done'},
+    {id:'t12', name:'API 限流 — 令牌桶 + 滑动窗口双策略', desc:'slowapi, 全局100/min, burst=200, 登录10/min独立限流', deps:['t11'], week:2, day:2, status:'done'},
+    {id:'t13', name:'Web 安全 — CORS 白名单 + XSS + SQL注入防护', desc:'CORS_ORIGINS环境变量, bleach清洗, SQLAlchemy参数化', deps:[], week:2, day:2, status:'done'},
+    {id:'t14', name:'文件上传安全 — 类型白名单 + 魔数校验 + 大小限制', desc:'python-magic魔数校验, MIME白名单, MAX_UPLOAD_SIZE_MB=500', deps:[], week:2, day:3, status:'done'},
+    {id:'t15', name:'密钥管理 — 环境变量脱敏 + .env 安全策略', desc:'secrets.token_hex(32)自动生成, mask_sensitive_data日志脱敏', deps:[], week:3, day:1, status:'planned'},
+    {id:'t16', name:'依赖安全扫描 — npm audit + pip audit + CVE 告警', desc:'CI集成自动扫描, 高危阻断合并', deps:[], week:3, day:2, status:'planned'},
+    {id:'t17', name:'审计日志 — 全操作追踪 + SQLite 存储 + 查询接口', desc:'操作人+IP+时间+资源+动作+结果, 保留1年', deps:[], week:4, day:2, status:'planned'},
+  ]},
+  {id:'platform', name:'四、平台基础能力', cls:'mod-c4', tasks:[
+    {id:'t18', name:'SPA 前端应用 — React 18 + Vite 5 + Tailwind 10页面', desc:'React 18.3.1, Vite 5.4.2, Tailwind 3.4.10, 含D3+Recharts可视化', deps:[], week:1, day:1, status:'done'},
+    {id:'t19', name:'FastAPI 后端 — 42 REST端点 + WebSocket 实时通信', desc:'Uvicorn workers=4, 流式SSE, 自动OpenAPI 3.0文档', deps:[], week:1, day:1, status:'done'},
+    {id:'t20', name:'多智能体管理 — agent_manager + 5预置模板', desc:'通用/学术/代码/精确/创意 5种模板, 子进程Worker隔离', deps:[], week:1, day:2, status:'done'},
+    {id:'t21', name:'Docker 容器化部署 — 多阶段构建 + docker-compose', desc:'4服务编排(app+pg+redis+nginx), HEALTHCHECK, 镜像~450MB', deps:['t18','t19'], week:2, day:3, status:'done'},
+    {id:'t22', name:'后端模块化重构 — server.py 拆分为 5 个 Router', desc:'auth/knowledge/agent/upload/query 模块独立, 每模块<400行', deps:['t19'], week:2, day:4, status:'progress'},
+    {id:'t23', name:'核心测试覆盖 — pytest auth + agent + chunking', desc:'覆盖率>60%, 含压力测试和边界用例', deps:['t19'], week:3, day:3, status:'planned'},
+    {id:'t24', name:'前端状态管理升级 — Zustand + i18n 国际化', desc:'Zustand替代Context, 中英文切换, 动态语言包加载', deps:['t18'], week:4, day:1, status:'planned'},
+    {id:'t25', name:'OAuth / SSO 企业统一认证 — OIDC + Keycloak + 飞书', desc:'OIDC协议, 支持Keycloak/LDAP/OAuth 2.0', deps:['t11'], week:3, day:5, status:'planned'},
+    {id:'t26', name:'可视化工作流编排 — DAG 拖拽画布 + 节点配置', desc:'React Flow实现, 20+算子模板, 自由/网格布局, 周期调度', deps:[], week:3, day:4, status:'planned'},
+    {id:'t27', name:'性能优化 — 大规模压测 + 生产环境调优', desc:'目标≥50QPS(非AI), P95<200ms, 内存<16GB(标准部署)', deps:[], week:4, day:4, status:'planned'},
+    {id:'t28', name:'项目管理看板集成到前端 — /admin/pm 页面', desc:'独立HTML→React组件, Zustand Store, 后端API, WebSocket协作', deps:['t24'], week:4, day:5, status:'planned'},
+  ]},
+  {id:'future', name:'五、远期规划（待定）', cls:'mod-c1', tasks:[
+    {id:'f1', name:'数据集模块 — Clickhouse/Hive 存储管理', desc:'表结构预览/数据下载/SQL查询/数据血缘/操作记录', deps:[], week:0, day:0, status:'pending'},
+    {id:'f2', name:'多数据库接入扩展 — Oracle/SQL Server/TiDB/MongoDB', desc:'统一 BaseDBConnector 接口, 按需扩展驱动', deps:[], week:0, day:0, status:'pending'},
+    {id:'f3', name:'知识质量检测 — 错别字+语句完整+敏感词', desc:'pycorrector + HanLP + AC自动机本地敏感词库', deps:[], week:0, day:0, status:'pending'},
+    {id:'f4', name:'非结构化数据打标应用', desc:'预置AI应用(ASR/图片理解/标签/情感/观点/水军) + 自定义应用', deps:[], week:0, day:0, status:'pending'},
+    {id:'f5', name:'更多数据源接入 — 腾讯/钉钉/金山云文档 + 微信素材库', desc:'按甲方实际使用的协作工具优先级接入', deps:[], week:0, day:0, status:'pending'},
+    {id:'f6', name:'DAG工作流完整版 — 41种节点 + cron周期调度', desc:'MVP版(第3周)只含5-8种节点+手动执行, 完整版延后', deps:['t26'], week:0, day:0, status:'pending'},
+  ]},
+];
+
+// ═══════════════════ STATE ═══════════════════
+const STORAGE_KEY = 'raganything_pm_data';
+let appData = loadData();
+let currentWeek = 2; // Default to Week 2 (current)
+let undoStack = [];
+let collapsedModules = new Set();
+
+function getDefaultData() {
+  const data = { completions: {}, notes: {} };
+  MODULES.forEach(m => m.tasks.forEach(t => t.completions = []));
+  MODULES.forEach(m => m.tasks.forEach(t => {
+    if (t.status === 'done') {
+      // Auto-mark Week 1 tasks as completed on their planned days
+      if (t.week === 1) {
+        data.completions[t.id] = data.completions[t.id] || [];
+        if (!data.completions[t.id].includes(`1-${t.day}`)) {
+          data.completions[t.id].push(`1-${t.day}`);
+        }
+      }
+    }
+  }));
+  return data;
+}
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch(e) {}
+  return getDefaultData();
+}
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+  document.getElementById('saveIndicator').textContent = '💾 已自动保存 ' + new Date().toLocaleTimeString();
+}
+
+// ═══════════════════ RENDER ═══════════════════
+function getTaskCompletion(taskId) {
+  return appData.completions[taskId] || [];
+}
+
+function isCompleted(taskId, weekId, dayIdx) {
+  return getTaskCompletion(taskId).includes(`${weekId}-${dayIdx}`);
+}
+
+function toggleCompletion(taskId, weekId, dayIdx) {
+  const key = `${weekId}-${dayIdx}`;
+  const completions = appData.completions[taskId] || [];
+  appData.completions[taskId] = completions;
+
+  if (completions.includes(key)) {
+    completions.splice(completions.indexOf(key), 1);
+  } else {
+    completions.push(key);
+  }
+  undoStack.push({taskId, weekId, dayIdx, key, action: completions.includes(key) ? 'add' : 'remove'});
+  if (undoStack.length > 50) undoStack.shift();
+  document.getElementById('undoBtn').disabled = false;
+  saveData();
+  render();
+}
+
+function undoLast() {
+  if (!undoStack.length) return;
+  const last = undoStack.pop();
+  const completions = appData.completions[last.taskId] || [];
+  if (last.action === 'add') {
+    completions.splice(completions.indexOf(last.key), 1);
+  } else {
+    completions.push(last.key);
+  }
+  if (!undoStack.length) document.getElementById('undoBtn').disabled = true;
+  saveData();
+  render();
+  showToast('已撤销: ' + last.key);
+}
+
+function getTaskNote(taskId) {
+  return appData.notes[taskId] || '';
+}
+
+function setTaskNote(taskId, note) {
+  appData.notes[taskId] = note;
+  saveData();
+}
+
+function getEffectiveStatus(task, weekId, dayIdx) {
+  // Check if completed on this or earlier day
+  for (let w = 1; w <= weekId; w++) {
+    const maxDay = (w === weekId) ? dayIdx : 5;
+    for (let d = 1; d <= maxDay; d++) {
+      if (isCompleted(task.id, w, d)) return 'done';
+    }
+  }
+  // Check progress from original status
+  if (task.status === 'done') return 'done';
+  if (task.status === 'progress') return 'progress';
+  if (task.status === 'planned') return 'planned';
+  return 'pending';
+}
+
+function render() {
+  const search = (document.getElementById('searchInput').value || '').toLowerCase();
+  const filterMod = document.getElementById('filterModule').value;
+  const filterStat = document.getElementById('filterStatus').value;
+
+  // Stats
+  let totalDone = 0, totalProgress = 0, totalPlanned = 0, totalPending = 0;
+  MODULES.forEach(m => m.tasks.forEach(t => {
+    const comps = getTaskCompletion(t.id);
+    if (comps.length > 0) totalDone++;
+    else if (t.status === 'progress') totalProgress++;
+    else if (t.status === 'planned') totalPlanned++;
+    else if (t.status === 'done') totalDone++;
+    else totalPending++;
+  }));
+  const total = totalDone + totalProgress + totalPlanned + totalPending;
+
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat" onclick="setFilter('status','done')"><div class="n" style="color:var(--c-done)">${totalDone}</div><div class="l">✅ 已完成</div></div>
+    <div class="stat" onclick="setFilter('status','progress')"><div class="n" style="color:var(--c-progress)">${totalProgress}</div><div class="l">🔄 进行中</div></div>
+    <div class="stat" onclick="setFilter('status','planned')"><div class="n" style="color:var(--c-planned)">${totalPlanned}</div><div class="l">🎯 计划中</div></div>
+    <div class="stat" onclick="setFilter('status','pending')"><div class="n" style="color:var(--text3)">${totalPending}</div><div class="l">⬜ 未开始</div></div>
+    <div class="stat"><div class="n">${total}</div><div class="l">📊 总任务</div>
+      <div class="prog-wrap"><div class="prog-bar done" style="width:${total?(totalDone/total*100):0}%"></div></div></div>
+  `;
+
+  // Module filter options
+  const modSel = document.getElementById('filterModule');
+  if (modSel.options.length <= 1) {
+    MODULES.forEach(m => { const o = document.createElement('option'); o.value = m.id; o.textContent = m.name; modSel.appendChild(o); });
+  }
+
+  // Week tabs
+  document.getElementById('weekTabs').innerHTML = WEEKS.map(w => `
+    <div class="week-tab ${w.id===currentWeek?'act':''}" onclick="switchWeek(${w.id})">
+      ${w.label}<br><span class="wk-label">${w.date}</span>
+    </div>
+  `).join('');
+
+  // Build table
+  let html = '';
+  MODULES.forEach(mod => {
+    const visibleTasks = mod.tasks.filter(t => {
+      if (search && !t.name.toLowerCase().includes(search) && !t.desc.toLowerCase().includes(search)) return false;
+      if (filterMod && mod.id !== filterMod) return false;
+      if (filterStat) {
+        const comps = getTaskCompletion(t.id);
+        const mine = comps.length > 0 ? 'done' : t.status;
+        if (mine !== filterStat) return false;
+      }
+      // 远期任务(week=0)在所有周显示
+      if (t.week === 0 && currentWeek >= 1) return true;
+      return true;
+    });
+    if (!visibleTasks.length && (search || filterMod || filterStat)) return;
+
+    const isCollapsed = collapsedModules.has(mod.id);
+    const modDone = visibleTasks.filter(t => getTaskCompletion(t.id).length > 0 || t.status === 'done').length;
+    html += `<tr class="mod-row ${mod.cls}"><td colspan="6">
+      <div class="mod-bar ${isCollapsed?'collapsed':''}" onclick="toggleModule('${mod.id}')">
+        <span class="arrow">▼</span><span class="dot"></span>${mod.name}
+        <span class="cnt">${modDone}/${visibleTasks.length} 完成</span>
+      </div></td></tr>`;
+
+    if (isCollapsed) return;
+
+    visibleTasks.forEach(t => {
+      const comps = getTaskCompletion(t.id);
+      const effectiveStatus = comps.length > 0 ? 'done' : t.status;
+      const statusCls = effectiveStatus === 'done' ? 's-done' : effectiveStatus === 'progress' ? 's-progress' : effectiveStatus === 'planned' ? 's-planned' : 's-pending';
+      const note = getTaskNote(t.id);
+      const hasNote = note ? ' 📝' : '';
+      const isSelected = bulkMode && selectedTasks.has(t.id);
+      const isCustom = t.custom;
+      html += `<tr class="task-row" data-task="${t.id}" data-mod="${mod.id}" style="${isSelected?'outline:2px solid var(--c-progress);outline-offset:-2px;background:var(--c-progress-bg)':''}">
+        <td class="task-name" onclick="${bulkMode?`toggleTaskSelect('${t.id}')`:`openTaskDetail('${t.id}')`}" title="${t.desc}${isCustom?' [自定义任务-右键删除]':''}">
+          ${bulkMode?`<input type="checkbox" ${isSelected?'checked':''} style="pointer-events:none;margin-right:4px">`:''}
+          <span class="status-dot ${statusCls}"></span>${t.name}${hasNote}${isCustom?' 🏷️':' '}
+          ${isCustom?`<button class="btn sm danger" style="margin-left:auto;font-size:0.55rem;padding:1px 5px" onclick="event.stopPropagation();deleteCustomTask('${t.id}')">✕</button>`:''}
+        </td>`;
+      for (let d = 1; d <= 5; d++) {
+        const done = isCompleted(t.id, currentWeek, d);
+        const isFuture = t.week === 0; // 远期任务无具体日期
+        const isPast = !isFuture && (currentWeek === 1 || (currentWeek === 2 && d <= 3));
+        const ms = MILESTONES.find(m => m.week === currentWeek && m.day === d);
+        if (isFuture) {
+          html += `<td class="day-cell" style="cursor:default;opacity:0.3" title="远期规划，暂无排期">—</td>`;
+        } else {
+          html += `<td class="day-cell ${done?'done':''} ${isPast&&!done?'past':''}"
+            onclick="toggleCompletion('${t.id}',${currentWeek},${d})"
+            oncontextmenu="event.preventDefault();openNoteModal('${t.id}')"
+            title="点击标记完成 · 右键添加备注${ms?' · 🏁 '+ms.label:''}">${done?'✅':''}${ms?'<span style="font-size:0.55rem;color:var(--c-ms);font-weight:700">🏁</span>':''}</td>`;
+        }
+      }
+      html += '</tr>';
+    });
+  });
+
+  document.getElementById('tableBody').innerHTML = html;
+  document.getElementById('undoBtn').disabled = !undoStack.length;
+  // Update bulk count
+  const bulkCnt = document.getElementById('bulkCount');
+  if (bulkCnt) bulkCnt.textContent = `已选 ${selectedTasks.size} 个`;
+  // Update week summary
+  const ws = getWeekSummary(currentWeek);
+  const wsEl = document.getElementById('weekSummary');
+  if (wsEl) wsEl.innerHTML = `${WEEKS[currentWeek-1].label} 完成: ${ws.done}/${ws.total} (${ws.pct}%)<div class="prog-wrap" style="margin-top:4px;width:100px"><div class="prog-bar done" style="width:${ws.pct}%"></div></div>`;
+}
+
+function switchWeek(wid) { currentWeek = wid; render(); }
+function toggleModule(mid) { collapsedModules.has(mid) ? collapsedModules.delete(mid) : collapsedModules.add(mid); render(); }
+
+function setFilter(type, val) {
+  if (type === 'status') document.getElementById('filterStatus').value = val;
+  render();
+}
+
+// ═══════════════════ MODALS ═══════════════════
+function openTaskDetail(taskId) {
+  const task = findTask(taskId);
+  if (!task) return;
+  const comps = getTaskCompletion(taskId);
+  const note = getTaskNote(taskId);
+  const depNames = (task.deps||[]).map(did => { const dt = findTask(did); return dt ? dt.name : did; });
+
+  document.getElementById('modalContent').innerHTML = `
+    <h3>${task.name}</h3>
+    <label>描述</label><p style="font-size:0.72rem;color:var(--text2);margin-bottom:0.6rem">${task.desc}</p>
+    <label>状态</label><p style="font-size:0.72rem">${task.status==='done'?'✅ 已完成':task.status==='progress'?'🔄 进行中':task.status==='planned'?'🎯 计划中':'⬜ 未开始'}</p>
+    ${comps.length ? `<label>完成记录</label><p style="font-size:0.68rem;color:var(--text2)">${comps.map(c=>{const[p,w,d]=c.split('-');const wk=WEEKS[w-1];return wk?wk.days[d-1]:c;}).join(', ')}</p>` : ''}
+    ${depNames.length ? `<label>依赖任务</label><p style="font-size:0.68rem;color:var(--text3)">${depNames.join('<br>')}</p>` : ''}
+    <label>备注</label>
+    <textarea id="noteText" placeholder="添加备注...">${note}</textarea>
+    <div class="btn-row">
+      <button class="btn" onclick="closeModal()">关闭</button>
+      <button class="btn ac" onclick="saveNote('${taskId}')">💾 保存备注</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function openNoteModal(taskId) {
+  openTaskDetail(taskId);
+}
+
+function saveNote(taskId) {
+  const text = document.getElementById('noteText').value;
+  setTaskNote(taskId, text);
+  closeModal();
+  render();
+  showToast('备注已保存');
+}
+
+function closeModal() {
+  document.getElementById('modalOverlay').classList.remove('show');
+}
+
+function findTask(id) {
+  for (const m of MODULES) for (const t of m.tasks) if (t.id === id) return t;
+  return null;
+}
+
+// ═══════════════════ ACTIONS ═══════════════════
+function exportData() {
+  const exportObj = {
+    exportTime: new Date().toISOString(),
+    completions: appData.completions,
+    notes: appData.notes,
+    version: '1.0'
+  };
+  const blob = new Blob([JSON.stringify(exportObj, null, 2)], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `rag-pm-export-${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(url);
+  showToast('数据已导出');
+}
+
+function importData() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  input.onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      try {
+        const imported = JSON.parse(ev.target.result);
+        if (imported.completions && imported.notes) {
+          if (confirm(`导入数据包含 ${Object.keys(imported.completions).length} 个任务的完成记录。确认导入？`)) {
+            appData = imported;
+            saveData();
+            render();
+            showToast('数据已导入');
+          }
+        } else {
+          showToast('无效的导入文件格式');
+        }
+      } catch(e) { showToast('文件解析失败'); }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+function resetAll() {
+  if (confirm('确定要重置所有数据？此操作不可撤销！')) {
+    appData = getDefaultData();
+    undoStack = [];
+    saveData();
+    render();
+    showToast('已重置为默认状态');
+  }
+}
+
+function toggleTheme() {
+  const html = document.documentElement;
+  const current = html.getAttribute('data-theme');
+  html.setAttribute('data-theme', current === 'dark' ? '' : 'dark');
+  localStorage.setItem('raganything_pm_theme', current === 'dark' ? 'light' : 'dark');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2000);
+}
+
+// ═══════════════════ KEYBOARD SHORTCUTS ═══════════════════
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+  if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoLast(); }
+  if (e.key === 'Escape') closeModal();
+  if (e.key === '1') switchWeek(1);
+  if (e.key === '2') switchWeek(2);
+  if (e.key === '3') switchWeek(3);
+  if (e.key === '4') switchWeek(4);
+  if (e.key === 'f' && e.ctrlKey) { e.preventDefault(); document.getElementById('searchInput').focus(); }
+  if (e.key === 'n' && e.ctrlKey) { e.preventDefault(); openAddTaskModal(); }
+});
+
+// ═══════════════════ EXTENDED: Week Summary ═══════════════════
+function getWeekSummary(weekId) {
+  let done = 0, total = 0;
+  MODULES.forEach(m => m.tasks.forEach(t => {
+    total++;
+    for (let d = 1; d <= 5; d++) if (isCompleted(t.id, weekId, d)) { done++; break; }
+  }));
+  return {done, total, pct: total ? Math.round(done/total*100) : 0};
+}
+
+// ═══════════════════ EXTENDED: Bulk Complete ═══════════════════
+let bulkMode = false;
+let selectedTasks = new Set();
+
+function toggleBulkMode() {
+  bulkMode = !bulkMode;
+  selectedTasks.clear();
+  document.getElementById('bulkBar').style.display = bulkMode ? 'flex' : 'none';
+  document.getElementById('bulkBtn').classList.toggle('ac', bulkMode);
+  render();
+}
+
+function toggleTaskSelect(taskId) {
+  if (!bulkMode) return;
+  selectedTasks.has(taskId) ? selectedTasks.delete(taskId) : selectedTasks.add(taskId);
+  render();
+}
+
+function bulkComplete() {
+  if (!selectedTasks.size) return;
+  const weekId = currentWeek;
+  const today = new Date().getDay(); // 0=Sun, 1=Mon...
+  const dayIdx = today >= 1 && today <= 5 ? today : 1;
+  selectedTasks.forEach(tid => {
+    const key = `${weekId}-${dayIdx}`;
+    const completions = appData.completions[tid] || [];
+    appData.completions[tid] = completions;
+    if (!completions.includes(key)) completions.push(key);
+  });
+  undoStack.push({action:'bulk', tasks:[...selectedTasks], weekId, dayIdx});
+  if (undoStack.length > 50) undoStack.shift();
+  document.getElementById('undoBtn').disabled = false;
+  selectedTasks.clear();
+  saveData();
+  render();
+  showToast(`批量完成 ${selectedTasks.size} 个任务`);
+}
+
+// ═══════════════════ EXTENDED: Add Custom Task ═══════════════════
+function openAddTaskModal() {
+  document.getElementById('modalContent').innerHTML = `
+    <h3>➕ 添加自定义任务</h3>
+    <label>任务名称 *</label><input type="text" id="newTaskName" placeholder="输入任务名称">
+    <label>描述</label><textarea id="newTaskDesc" placeholder="任务描述（可选）"></textarea>
+    <label>所属模块</label><select id="newTaskMod">${MODULES.map(m=>`<option value="${m.id}">${m.name}</option>`).join('')}</select>
+    <label>计划完成周</label><select id="newTaskWeek">${WEEKS.map(w=>`<option value="${w.id}" ${w.id===currentWeek?'selected':''}>${w.label} (${w.date})</option>`).join('')}</select>
+    <label>计划完成日</label><select id="newTaskDay">${['周一','周二','周三','周四','周五'].map((d,i)=>`<option value="${i+1}">${d}</option>`).join('')}</select>
+    <label>状态</label><select id="newTaskStatus"><option value="planned">🎯 计划中</option><option value="progress">🔄 进行中</option><option value="done">✅ 已完成</option></select>
+    <div class="btn-row">
+      <button class="btn" onclick="closeModal()">取消</button>
+      <button class="btn ac" onclick="addCustomTask()">✅ 添加任务</button>
+    </div>
+  `;
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function addCustomTask() {
+  const name = document.getElementById('newTaskName').value.trim();
+  if (!name) { showToast('请输入任务名称'); return; }
+  const modId = document.getElementById('newTaskMod').value;
+  const week = parseInt(document.getElementById('newTaskWeek').value);
+  const day = parseInt(document.getElementById('newTaskDay').value);
+  const status = document.getElementById('newTaskStatus').value;
+  const desc = document.getElementById('newTaskDesc').value.trim();
+  const mod = MODULES.find(m => m.id === modId);
+  const newTask = {
+    id: 'custom_' + Date.now(),
+    name, desc,
+    deps: [], week, day, status,
+    custom: true,
+  };
+  if (!mod) return;
+  mod.tasks.push(newTask);
+  if (status === 'done') {
+    appData.completions[newTask.id] = [`${week}-${day}`];
+  }
+  saveData();
+  closeModal();
+  render();
+  showToast('✅ 自定义任务已添加: ' + name);
+}
+
+function deleteCustomTask(taskId) {
+  if (!confirm('确定删除此自定义任务？')) return;
+  MODULES.forEach(m => {
+    const idx = m.tasks.findIndex(t => t.id === taskId);
+    if (idx >= 0 && m.tasks[idx].custom) m.tasks.splice(idx, 1);
+  });
+  delete appData.completions[taskId];
+  delete appData.notes[taskId];
+  saveData();
+  render();
+  showToast('已删除');
+}
+
+// ═══════════════════ EXTENDED: Milestone Markers ═══════════════════
+const MILESTONES = [
+  { week: 2, day: 5, label: 'M1 · v1.0 MVP 发布' },
+  { week: 3, day: 5, label: 'M2 · 混合检索上线' },
+  { week: 4, day: 5, label: 'M3 · v2.0 企业版' },
+];
+
+// ═══════════════════ EXTENDED: Export as Markdown ═══════════════════
+function exportMarkdown() {
+  let md = `# RAG-Anything 项目进度报告\n\n> 导出时间: ${new Date().toLocaleString()}\n\n`;
+  MODULES.forEach(mod => {
+    md += `## ${mod.name}\n\n| 任务 | 状态 | 完成日期 | 备注 |\n|------|------|---------|------|\n`;
+    mod.tasks.forEach(t => {
+      const comps = getTaskCompletion(t.id);
+      const statusStr = comps.length > 0 ? '✅ 已完成' : t.status === 'done' ? '✅ 已完成' : t.status === 'progress' ? '🔄 进行中' : '🎯 计划中';
+      const dateStr = comps.length ? comps.map(c => { const [,w,d] = c.split('-'); return `W${w} ${['一','二','三','四','五'][d-1]}`; }).join(', ') : '-';
+      const note = getTaskNote(t.id) || '-';
+      md += `| ${t.name} | ${statusStr} | ${dateStr} | ${note} |\n`;
+    });
+    md += '\n';
+  });
+  md += `---\n*由 RAG-Anything 项目管理看板自动生成*\n`;
+  const blob = new Blob([md], {type: 'text/markdown'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `rag-progress-${new Date().toISOString().slice(0,10)}.md`;
+  a.click(); URL.revokeObjectURL(url);
+  showToast('Markdown 报告已导出');
+}
+
+// ═══════════════════ INIT ═══════════════════
+document.addEventListener('DOMContentLoaded', () => {
+  const saved = localStorage.getItem('raganything_pm_theme');
+  if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  if (!localStorage.getItem(STORAGE_KEY)) { appData = getDefaultData(); saveData(); }
+  render();
+  // Auto-save every 30 seconds
+  setInterval(() => { saveData(); }, 30000);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RAG-Anything 功能交付路线图</title>
+<style>
+  :root {
+    --bg: #f8f9fb;
+    --surface: #ffffff;
+    --text: #1a1d23;
+    --text2: #5f6570;
+    --text3: #9499a3;
+    --border: #eaecf0;
+    --border2: #f0f1f3;
+    --shadow: 0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03);
+    --shadow-lg: 0 4px 16px rgba(0,0,0,0.06), 0 2px 4px rgba(0,0,0,0.04);
+
+    --c-core:  #7c5cfc; --c-core-bg: #f7f5ff; --c-core-bar: #c9bfff;
+    --c-search: #3b82f6; --c-search-bg:#f5f8ff; --c-search-bar:#bfd6fe;
+    --c-sec:    #f59e0b; --c-sec-bg:   #fffdf5; --c-sec-bar:   #fde68a;
+    --c-infra:  #10b981; --c-infra-bg:  #f4fbf8; --c-infra-bar:  #a7f3d0;
+    --c-done:   #10b981; --c-done-bg:   #f4fbf8; --c-done-bar:   #a7f3d0;
+    --c-today:  #ef4444;
+    --c-ms:     #f43f5e;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+    padding:1.5rem;min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1040px;margin:0 auto}
+
+  /* PAGE HEADER */
+  .pg-hd{margin-bottom:1.25rem}
+  .pg-hd h1{font-size:1.2rem;font-weight:700;letter-spacing:-0.01em;margin-bottom:2px}
+  .pg-hd .sub{font-size:0.75rem;color:var(--text3)}
+
+  /* STAT CARDS */
+  .cards{display:flex;gap:0.6rem;margin-bottom:1rem;flex-wrap:wrap}
+  .card{
+    flex:1;min-width:100px;background:var(--surface);border:1px solid var(--border);
+    border-radius:10px;padding:0.75rem 1rem;box-shadow:var(--shadow);
+  }
+  .card .n{font-size:1.5rem;font-weight:700;letter-spacing:-0.02em;line-height:1}
+  .card .l{font-size:0.65rem;color:var(--text3);margin-top:3px}
+  .card.do .n{color:var(--c-done)}
+  .card.co .n{color:var(--c-core)}
+  .card.se .n{color:var(--c-search)}
+  .card.sa .n{color:var(--c-sec)}
+  .card.in .n{color:var(--c-infra)}
+  .card.do{border-left:3px solid var(--c-done)}
+
+  /* CHART CARD */
+  .chart-card{
+    background:var(--surface);border:1px solid var(--border);border-radius:12px;
+    box-shadow:var(--shadow-lg);overflow:hidden;
+  }
+
+  /* LEGEND */
+  .leg{display:flex;align-items:center;gap:1rem;padding:0.6rem 1rem;border-bottom:1px solid var(--border2);font-size:0.68rem;color:var(--text2);flex-wrap:wrap}
+  .leg-d{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+  .leg-d.co{background:var(--c-core)}
+  .leg-d.se{background:var(--c-search)}
+  .leg-d.sa{background:var(--c-sec)}
+  .leg-d.in{background:var(--c-infra)}
+  .leg-d.o{background:var(--c-done)}
+  .leg-item{display:flex;align-items:center;gap:5px}
+  .leg-sep{width:1px;height:14px;background:var(--border)}
+
+  /* TABLE */
+  .tbl{width:100%;border-collapse:collapse;table-layout:fixed}
+  .tbl th,.tbl td{padding:0}
+  .col-task{width:270px}
+  .col-w{width:25%}
+
+  .tbl thead th{
+    padding:10px 0;font-size:0.75rem;font-weight:600;color:var(--text);
+    border-bottom:2px solid var(--border);text-align:center;
+    position:relative;
+  }
+  .tbl thead th:first-child{text-align:left;padding-left:14px;font-size:0.68rem;color:var(--text3)}
+  .tbl thead th .wk-num{font-size:0.78rem;display:block}
+  .tbl thead th .wk-date{font-size:0.6rem;font-weight:400;color:var(--text3);display:block;margin-top:1px}
+  .tbl thead th.wk-done{color:var(--c-done)}
+  .tbl thead th.wk-done .wk-date{color:var(--c-done);opacity:0.7}
+
+  /* Today indicator */
+  .today-hd{position:absolute;top:0;bottom:0;width:2px;background:var(--c-today);left:25%;z-index:5}
+  .today-tag{position:absolute;top:-1px;left:50%;transform:translateX(-50%);font-size:0.55rem;font-weight:700;color:var(--c-today);background:var(--surface);padding:1px 5px;white-space:nowrap}
+
+  /* SECTION ROW */
+  .sec-row td{padding:0}
+  .sec-bar{
+    display:flex;align-items:center;padding:8px 14px;border-bottom:1px solid var(--border);
+    font-size:0.72rem;font-weight:700;gap:7px;
+  }
+  .sec-bar.co{border-left:4px solid var(--c-core);background:var(--c-core-bg)}
+  .sec-bar.se{border-left:4px solid var(--c-search);background:var(--c-search-bg)}
+  .sec-bar.sa{border-left:4px solid var(--c-sec);background:var(--c-sec-bg)}
+  .sec-bar.in{border-left:4px solid var(--c-infra);background:var(--c-infra-bg)}
+  .sec-dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+  .sec-bar.co .sec-dot{background:var(--c-core)}
+  .sec-bar.se .sec-dot{background:var(--c-search)}
+  .sec-bar.sa .sec-dot{background:var(--c-sec)}
+  .sec-bar.in .sec-dot{background:var(--c-infra)}
+  .sec-count{font-size:0.62rem;font-weight:400;color:var(--text3);margin-left:auto}
+
+  /* TASK ROW */
+  .task-row td{border-bottom:1px solid var(--border2)}
+  .task-row{transition:background 0.12s}
+  .task-row:hover td{background:#fafbfc}
+
+  .task-lbl{
+    padding:8px 14px;display:flex;align-items:center;gap:7px;overflow:hidden;
+  }
+  .task-dot{width:7px;height:7px;border-radius:2px;flex-shrink:0}
+  .task-dot.co{background:var(--c-core)}
+  .task-dot.se{background:var(--c-search)}
+  .task-dot.sa{background:var(--c-sec)}
+  .task-dot.in{background:var(--c-infra)}
+  .task-dot.o{background:var(--c-done);opacity:0.55}
+  .task-name{font-size:0.71rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .task-row.done .task-name{color:var(--text3)}
+  .task-check{
+    width:16px;height:16px;border-radius:50%;background:var(--c-done);flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;font-weight:700
+  }
+
+  /* GANTT CELLS */
+  .g-cell{
+    height:34px;position:relative;border-left:1px solid var(--border2);
+  }
+  .g-cell.wk-done{background:rgba(16,185,129,0.025)}
+  .g-cell.wk-now{background:rgba(59,130,246,0.02)}
+  .g-cell.wk-next{background:rgba(245,158,11,0.015)}
+  .g-cell.wk-later{background:rgba(124,92,252,0.012)}
+
+  /* Bar */
+  .bar-wrap{
+    position:absolute;top:6px;bottom:6px;left:2px;right:2px;border-radius:4px;
+    overflow:hidden;cursor:pointer;transition:transform 0.1s, box-shadow 0.1s;
+  }
+  .bar-wrap:hover{transform:scaleY(1.15);box-shadow:0 1px 4px rgba(0,0,0,0.12);z-index:10}
+  .bar-wrap .bg{position:absolute;top:0;bottom:0;left:0;right:0;border-radius:4px}
+  .bar-wrap .pg{position:absolute;top:0;bottom:0;right:0;border-radius:0 4px 4px 0;transition:width 0.3s}
+  .bar-wrap.co .bg{background:var(--c-core-bar)}
+  .bar-wrap.co .pg{background:var(--c-core);opacity:0.45}
+  .bar-wrap.se .bg{background:var(--c-search-bar)}
+  .bar-wrap.se .pg{background:var(--c-search);opacity:0.45}
+  .bar-wrap.sa .bg{background:var(--c-sec-bar)}
+  .bar-wrap.sa .pg{background:var(--c-sec);opacity:0.45}
+  .bar-wrap.in .bg{background:var(--c-infra-bar)}
+  .bar-wrap.in .pg{background:var(--c-infra);opacity:0.45}
+  .bar-wrap.o .bg{background:var(--c-done-bar)}
+
+  /* Tooltip */
+  .bar-wrap .tt{
+    display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);
+    background:#1e293b;color:#f1f5f9;font-size:0.67rem;line-height:1.5;
+    padding:8px 12px;border-radius:8px;white-space:nowrap;z-index:100;
+    box-shadow:0 10px 25px rgba(0,0,0,0.2);pointer-events:none;
+  }
+  .bar-wrap .tt::after{
+    content:'';position:absolute;top:100%;left:50%;transform:translateX(-50%);
+    border-left:5px solid transparent;border-right:5px solid transparent;border-top:5px solid #1e293b;
+  }
+  .bar-wrap:hover .tt{display:block}
+  .tt .tt-title{font-weight:700;margin-bottom:2px}
+  .tt .tt-meta{font-size:0.6rem;color:#94a3b8}
+
+  /* Milestone */
+  .ms-cell{height:32px;position:relative;border-left:1px solid var(--border2);text-align:center}
+  .ms-marker{
+    position:absolute;top:4px;left:50%;transform:translateX(-50%);
+    display:flex;flex-direction:column;align-items:center;gap:2px;
+  }
+  .ms-marker .dia{
+    width:0;height:0;border-left:5px solid transparent;
+    border-right:5px solid transparent;border-bottom:8px solid var(--c-ms);
+  }
+  .ms-marker .ms-tag{font-size:0.58rem;font-weight:700;color:var(--c-ms);white-space:nowrap}
+  .ms-row td{border-top:2px solid var(--border);background:#fafbfc}
+
+  /* FOOTER */
+  .ft{margin-top:0.75rem;font-size:0.65rem;color:var(--text3);display:flex;gap:1.2rem;flex-wrap:wrap;align-items:center}
+  .ft b{color:var(--text)}
+
+  @media(max-width:900px){
+    .col-task{width:180px}
+    .task-name{font-size:0.65rem}
+    .sec-bar{font-size:0.68rem;padding:8px 10px}
+    .cards{gap:0.4rem}
+    .card{padding:0.5rem 0.7rem}
+    .card .n{font-size:1.2rem}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ═══════ HEADER ═══════ -->
+<div class="pg-hd">
+  <h1>RAG-Anything 功能交付路线图</h1>
+  <p class="sub">按功能模块视角 · 4周交付计划 · 2026年6月9日起</p>
+</div>
+
+<!-- ═══════ STATS ═══════ -->
+<div class="cards">
+  <div class="card do"><div class="n">7</div><div class="l">✅ 已交付功能</div></div>
+  <div class="card co"><div class="n">5</div><div class="l">📦 知识库核心</div></div>
+  <div class="card se"><div class="n">5</div><div class="l">🔍 智能检索</div></div>
+  <div class="card sa"><div class="n">7</div><div class="l">🛡️ 安全防护</div></div>
+  <div class="card in"><div class="n">7</div><div class="l">⚙️ 平台基础</div></div>
+</div>
+
+<!-- ═══════ CHART ═══════ -->
+<div class="chart-card">
+
+<!-- Legend -->
+<div class="leg">
+  <span style="font-weight:600;margin-right:0.25rem">功能模块</span>
+  <div class="leg-item"><div class="leg-d co"></div>知识库核心</div>
+  <div class="leg-item"><div class="leg-d se"></div>智能检索与召回</div>
+  <div class="leg-item"><div class="leg-d sa"></div>安全防护</div>
+  <div class="leg-item"><div class="leg-d in"></div>平台基础</div>
+  <span class="leg-sep"></span>
+  <div class="leg-item"><div class="leg-d o"></div>已交付</div>
+  <span class="leg-sep"></span>
+  <div class="leg-item"><span style="color:var(--c-ms);font-size:0.8rem">◆</span> 里程碑</div>
+</div>
+
+<!-- Table -->
+<table class="tbl">
+<thead>
+  <tr>
+    <th class="col-task">功能名称</th>
+    <th class="col-w wk-done"><span class="wk-num">第 1 周</span><span class="wk-date">已完成</span></th>
+    <th class="col-w"><span class="wk-num">第 2 周</span><span class="wk-date">6.23 — 6.29</span></th>
+    <th class="col-w"><span class="wk-num">第 3 周</span><span class="wk-date">6.30 — 7.06</span></th>
+    <th class="col-w"><span class="wk-num">第 4 周</span><span class="wk-date">7.07 — 7.13</span></th>
+  </tr>
+</thead>
+<tbody>
+
+<!-- ═══════ 一、知识库核心 ═══════ -->
+<tr class="sec-row">
+  <td colspan="5">
+    <div class="sec-bar co">
+      <span class="sec-dot"></span>一、知识库核心能力
+      <span class="sec-count">5 项功能</span>
+    </div>
+  </td>
+</tr>
+
+<tr class="task-row done">
+  <td class="task-lbl"><span class="task-check">✓</span><span class="task-name">多模态文档解析引擎 — 6种分块策略 + VLM OCR</span></td>
+  <td class="g-cell wk-done"><div class="bar-wrap o"><div class="bg"></div><div class="tt"><div class="tt-title">文档解析引擎</div><div class="tt-meta">W1 已交付 · recursive/sentence/structure/semantic/agentic + 图片OCR</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row done">
+  <td class="task-lbl"><span class="task-check">✓</span><span class="task-name">知识库数据隔离 — 多知识库 + 文档级权限控制</span></td>
+  <td class="g-cell wk-done"><div class="bar-wrap o"><div class="bg"></div><div class="tt"><div class="tt-title">KB 数据隔离</div><div class="tt-meta">W1 已交付 · verify_kb_access</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row done">
+  <td class="task-lbl"><span class="task-check">✓</span><span class="task-name">图像语义预过滤 — 非必要图像自动剔除</span></td>
+  <td class="g-cell wk-done"><div class="bar-wrap o"><div class="bg"></div><div class="tt"><div class="tt-title">图像预过滤</div><div class="tt-meta">W1 已交付</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot co"></span><span class="task-name">文档解析管线升级 — Docling / Marker 高精度解析</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"><div class="bar-wrap co"><div class="bg"></div><div class="pg" style="width:100%"></div><div class="tt"><div class="tt-title">文档解析升级</div><div class="tt-meta">W4 · PDF/表格/扫描件精度提升 40%+</div></div></div></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot co"></span><span class="task-name">Agentic RAG 智能体引擎 — 多步推理 + 工具调用</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap co"><div class="bg"></div><div class="pg" style="width:80%"></div><div class="tt"><div class="tt-title">Agentic RAG 引擎</div><div class="tt-meta">W2 — W3 · 自主规划检索路径</div></div></div></td>
+  <td class="g-cell"><div class="bar-wrap co"><div class="bg"></div><div class="pg" style="width:100%"></div></div></td>
+  <td class="g-cell"></td>
+</tr>
+
+<!-- ═══════ 二、智能检索与召回 ═══════ -->
+<tr class="sec-row">
+  <td colspan="5">
+    <div class="sec-bar se">
+      <span class="sec-dot"></span>二、智能检索与召回
+      <span class="sec-count">5 项功能</span>
+    </div>
+  </td>
+</tr>
+
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot se"></span><span class="task-name">Rerank 重排序 — Cross-encoder 精排接入</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap se"><div class="bg"></div><div class="pg" style="width:40%"></div><div class="tt"><div class="tt-title">Rerank 重排序</div><div class="tt-meta">W2 · Recall@5 +30~50%</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot se"></span><span class="task-name">查询改写 — HyDE 假设文档 + Multi-Query 多路召回</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap se"><div class="bg"></div><div class="pg" style="width:90%"></div><div class="tt"><div class="tt-title">查询改写</div><div class="tt-meta">W2 · 召回率+20~40%</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot se"></span><span class="task-name">混合检索 — BM25 + 向量 + 图谱 RRF 三路融合</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"><div class="bar-wrap se"><div class="bg"></div><div class="pg" style="width:100%"></div><div class="tt"><div class="tt-title">混合检索 RRF</div><div class="tt-meta">W3 — W4 · Hit Rate +50%</div></div></div></td>
+  <td class="g-cell"><div class="bar-wrap se"><div class="bg"></div><div class="pg" style="width:100%"></div></div></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot se"></span><span class="task-name">GraphRAG 知识图谱增强检索</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap se"><div class="bg"></div><div class="pg" style="width:85%"></div><div class="tt"><div class="tt-title">GraphRAG</div><div class="tt-meta">W2 — W3 · 实体关系图谱 + Taxonomy</div></div></div></td>
+  <td class="g-cell"><div class="bar-wrap se"><div class="bg"></div><div class="pg" style="width:100%"></div></div></td>
+  <td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot se"></span><span class="task-name">多轮对话上下文管理 — 滑动窗口 + 摘要压缩</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"><div class="bar-wrap se"><div class="bg"></div><div class="pg" style="width:100%"></div><div class="tt"><div class="tt-title">对话上下文管理</div><div class="tt-meta">W3 · Token 节省 60%+</div></div></div></td>
+  <td class="g-cell"></td>
+</tr>
+
+<!-- ═══════ 三、安全防护 ═══════ -->
+<tr class="sec-row">
+  <td colspan="5">
+    <div class="sec-bar sa">
+      <span class="sec-dot"></span>三、安全防护体系
+      <span class="sec-count">7 项功能</span>
+    </div>
+  </td>
+</tr>
+
+<tr class="task-row done">
+  <td class="task-lbl"><span class="task-check">✓</span><span class="task-name">用户认证 — JWT + bcrypt + RBAC 角色权限</span></td>
+  <td class="g-cell wk-done"><div class="bar-wrap o"><div class="bg"></div><div class="tt"><div class="tt-title">JWT + RBAC</div><div class="tt-meta">W1 已交付</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot sa"></span><span class="task-name">API 限流 — 令牌桶 + 滑动窗口双策略</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap sa"><div class="bg"></div><div class="pg" style="width:40%"></div><div class="tt"><div class="tt-title">API 限流</div><div class="tt-meta">W2 · 单IP + 单用户双维度</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot sa"></span><span class="task-name">Web 安全 — CORS 白名单 + XSS + SQL注入防护</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap sa"><div class="bg"></div><div class="pg" style="width:30%"></div><div class="tt"><div class="tt-title">Web 安全防护</div><div class="tt-meta">W2 · OWASP Top 10</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot sa"></span><span class="task-name">文件上传安全 — 类型白名单 + 大小限制 + 病毒扫描</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap sa"><div class="bg"></div><div class="pg" style="width:20%"></div><div class="tt"><div class="tt-title">文件上传安全</div><div class="tt-meta">W2 · 魔数校验 + 白名单</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot sa"></span><span class="task-name">密钥管理 — 环境变量脱敏 + .env 安全策略</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"><div class="bar-wrap sa"><div class="bg"></div><div class="pg" style="width:100%"></div><div class="tt"><div class="tt-title">密钥管理</div><div class="tt-meta">W3 · 敏感信息自动脱敏</div></div></div></td>
+  <td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot sa"></span><span class="task-name">依赖安全扫描 — npm audit + pip audit + CVE 告警</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"><div class="bar-wrap sa"><div class="bg"></div><div class="pg" style="width:100%"></div><div class="tt"><div class="tt-title">依赖安全扫描</div><div class="tt-meta">W3 · CI 集成自动扫描</div></div></div></td>
+  <td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot sa"></span><span class="task-name">审计日志 — 全操作追踪 + SQLite 存储 + 查询接口</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"><div class="bar-wrap sa"><div class="bg"></div><div class="pg" style="width:100%"></div><div class="tt"><div class="tt-title">审计日志系统</div><div class="tt-meta">W4 · 操作人+时间+资源+动作</div></div></div></td>
+</tr>
+
+<!-- ═══════ 四、平台基础 ═══════ -->
+<tr class="sec-row">
+  <td colspan="5">
+    <div class="sec-bar in">
+      <span class="sec-dot"></span>四、平台基础能力
+      <span class="sec-count">7 项功能 + 3 项已交付</span>
+    </div>
+  </td>
+</tr>
+
+<tr class="task-row done">
+  <td class="task-lbl"><span class="task-check">✓</span><span class="task-name">SPA 前端应用 — React 18 + Vite 5 + Tailwind 10页面</span></td>
+  <td class="g-cell wk-done"><div class="bar-wrap o"><div class="bg"></div><div class="tt"><div class="tt-title">SPA 前端</div><div class="tt-meta">W1 已交付 · 10页面 + AuthContext</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row done">
+  <td class="task-lbl"><span class="task-check">✓</span><span class="task-name">FastAPI 后端 — 30+ REST 端点 + WebSocket 实时通信</span></td>
+  <td class="g-cell wk-done"><div class="bar-wrap o"><div class="bg"></div><div class="tt"><div class="tt-title">FastAPI 后端</div><div class="tt-meta">W1 已交付 · 30+端点 + JWT中间件</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row done">
+  <td class="task-lbl"><span class="task-check">✓</span><span class="task-name">多智能体管理 — agent_manager + 子进程 Worker</span></td>
+  <td class="g-cell wk-done"><div class="bar-wrap o"><div class="bg"></div><div class="tt"><div class="tt-title">多智能体管理</div><div class="tt-meta">W1 已交付 · 生命周期 + 隔离执行</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot in"></span><span class="task-name">Docker 容器化部署 — 多阶段构建 + docker-compose 一键启动</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:50%"></div><div class="tt"><div class="tt-title">Docker 部署</div><div class="tt-meta">W2 · 部署 30min → 2min</div></div></div></td>
+  <td class="g-cell"></td><td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot in"></span><span class="task-name">后端模块化重构 — server.py 拆分为 5 个 Router</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:100%"></div><div class="tt"><div class="tt-title">模块化重构</div><div class="tt-meta">W2 — W3 · 每个Router < 400行</div></div></div></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:100%"></div></div></td>
+  <td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot in"></span><span class="task-name">核心测试覆盖 — pytest auth + agent + chunking > 60%</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:95%"></div><div class="tt"><div class="tt-title">核心测试</div><div class="tt-meta">W2 — W3 · 覆盖率 > 60%</div></div></div></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:100%"></div></div></td>
+  <td class="g-cell"></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot in"></span><span class="task-name">前端状态管理升级 — Zustand + i18n 国际化</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:100%"></div><div class="tt"><div class="tt-title">前端升级</div><div class="tt-meta">W4 · Zustand + 中英双语</div></div></div></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot in"></span><span class="task-name">OAuth / SSO 企业统一认证 — OIDC + Keycloak + 飞书</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:100%"></div><div class="tt"><div class="tt-title">SSO 企业认证</div><div class="tt-meta">W3 — W4 · OIDC协议</div></div></div></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:100%"></div></div></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot in"></span><span class="task-name">性能优化 — 大规模压测 + 生产环境调优</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:100%"></div><div class="tt"><div class="tt-title">性能优化 + 压测</div><div class="tt-meta">W4 · QPS 目标 + 资源占用</div></div></div></td>
+</tr>
+<tr class="task-row">
+  <td class="task-lbl"><span class="task-dot in"></span><span class="task-name">可视化工作流编排 — DAG 拖拽画布 + 节点配置</span></td>
+  <td class="g-cell wk-done"></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:80%"></div><div class="tt"><div class="tt-title">工作流编排</div><div class="tt-meta">W2 — W3 · 拖拽式DAG引擎</div></div></div></td>
+  <td class="g-cell"><div class="bar-wrap in"><div class="bg"></div><div class="pg" style="width:100%"></div></div></td>
+  <td class="g-cell"></td>
+</tr>
+
+<!-- ═══════ MILESTONES ═══════ -->
+<tr class="ms-row">
+  <td style="padding:10px 14px;font-size:0.7rem;font-weight:700;color:var(--c-ms)">
+    <span style="display:inline-flex;align-items:center;gap:6px">
+      <span style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:8px solid var(--c-ms)"></span>
+      里程碑
+    </span>
+  </td>
+  <td class="ms-cell"></td>
+  <td class="ms-cell">
+    <div class="ms-marker"><span class="dia"></span><span class="ms-tag">M1 · v1.0 MVP 发布</span></div>
+  </td>
+  <td class="ms-cell">
+    <div class="ms-marker"><span class="dia"></span><span class="ms-tag">M2 · 混合检索 + 安全体系</span></div>
+  </td>
+  <td class="ms-cell">
+    <div class="ms-marker"><span class="dia"></span><span class="ms-tag">M3 · v2.0 企业版启动</span></div>
+  </td>
+</tr>
+
+</tbody>
+</table>
+</div><!-- chart-card -->
+
+<!-- Footer -->
+<div class="ft">
+  <b>24 项功能</b>
+  <span>·</span>
+  <span>📦 核心 → 🔍 检索 → 🛡️ 安全 → ⚙️ 平台</span>
+  <span>·</span>
+  <span>M1 v1.0 MVP (W2末)</span>
+  <span>·</span>
+  <span>M2 混合检索+安全 (W3末)</span>
+  <span>·</span>
+  <span>M3 v2.0 企业版 (W4末)</span>
+</div>
+
+</div><!-- wrap -->
+</body>
+</html>
