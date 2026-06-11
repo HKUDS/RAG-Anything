@@ -345,6 +345,8 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                             lightrag_instance=self.lightrag,
                         )
                         self.logger.info("Hybrid search engine initialized for RRF fusion retrieval")
+                        # Build BM25 index from existing LightRAG chunks
+                        await self.hybrid_search_engine.ensure_bm25_index()
 
                     return {"success": True}
 
@@ -421,6 +423,8 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                         lightrag_instance=self.lightrag,
                     )
                     self.logger.info("Hybrid search engine initialized for RRF fusion retrieval")
+                    # Build BM25 index from existing LightRAG chunks
+                    await self.hybrid_search_engine.ensure_bm25_index()
 
                 self.logger.info(
                     "LightRAG, parse cache, multimodal status cache, and multimodal processors initialized"

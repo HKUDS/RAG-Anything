@@ -484,7 +484,7 @@ class HybridSearchEngine:
         self._bm25_top_k = int(os.getenv("BM25_TOP_K", "50"))
         self._graph_top_k = int(os.getenv("GRAPH_TOP_K", "30"))
 
-        self._channel_timeout = float(os.getenv("RRF_CHANNEL_TIMEOUT", "0.15"))
+        self._channel_timeout = float(os.getenv("RRF_CHANNEL_TIMEOUT", "10.0"))
 
         self._logger = lightrag_logger
 
@@ -492,6 +492,43 @@ class HybridSearchEngine:
         """Set/update the LightRAG instance reference."""
         self._lightrag = lightrag_instance
         self._graph.set_lightrag(lightrag_instance)
+
+    async def ensure_bm25_index(self):
+        """Build BM25 index from existing LightRAG chunks if not already built.
+
+        Called after initialization to ensure the BM25 index covers all
+        existing documents in the knowledge base.
+        """
+        if self._bm25.is_ready:
+            return
+
+        if self._lightrag is None:
+            self._logger.warning("No LightRAG instance, skipping BM25 index build")
+            return
+
+        try:
+            import json
+            from pathlib import Path
+
+            # Read chunks from LightRAG's text_chunks KV store JSON
+            chunk_file = Path(self._lightrag.working_dir) / "kv_store_text_chunks.json"
+            if not chunk_file.exists():
+                self._logger.info(f"No existing chunks file at {chunk_file}")
+                return
+
+            data = json.loads(chunk_file.read_text(encoding="utf-8"))
+            if not data:
+                return
+
+            chunk_list = [
+                {"chunk_id": cid, "content": c.get("content", "")}
+                for cid, c in data.items()
+            ]
+            if chunk_list:
+                await self._bm25.rebuild_index_async(chunk_list)
+                self._logger.info(f"BM25 index built from {len(chunk_list)} existing chunks")
+        except Exception as exc:
+            self._logger.warning(f"Failed to build BM25 index from existing chunks: {exc}")
 
     # ------------------------------------------------------------------
     # Channel Searches
