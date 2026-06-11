@@ -2292,6 +2292,11 @@ class ProcessorMixin:
                 split_by_character_only=split_by_character_only,
                 ids=doc_id,
             )
+            # Persist LightRAG storages to disk (text_chunks, entities, etc.)
+            try:
+                await self.lightrag._insert_done()
+            except Exception:
+                pass
             await self._upsert_doc_status(
                 doc_id,
                 file_ref,
