@@ -765,6 +765,39 @@ class ProcessorMixin:
             # Mark multimodal content as processed even after fallback
             await self._mark_multimodal_processing_complete(doc_id)
 
+    async def _process_multimodal_content_background(
+        self,
+        multimodal_items: List[Dict[str, Any]],
+        file_ref: str,
+        doc_id: str,
+    ):
+        """Background task: process multimodal content without blocking document insertion.
+
+        Runs VLM/LLM calls asynchronously, marks completion when done.
+        Failures are logged but don't affect the document's 'processed' status.
+        """
+        try:
+            self.logger.info(
+                f"Background multimodal processing started: {len(multimodal_items)} items for doc {doc_id}"
+            )
+            await self._process_multimodal_content(
+                multimodal_items, file_ref, doc_id
+            )
+            self.logger.info(
+                f"Background multimodal processing completed for doc {doc_id}"
+            )
+        except Exception as exc:
+            self.logger.error(
+                f"Background multimodal processing failed for doc {doc_id}: {exc}"
+            )
+        finally:
+            try:
+                await self._mark_multimodal_processing_complete(doc_id)
+            except Exception as exc:
+                self.logger.error(
+                    f"Failed to mark multimodal complete for doc {doc_id}: {exc}"
+                )
+
     async def _process_multimodal_content_individual(
         self, multimodal_items: List[Dict[str, Any]], file_path: str, doc_id: str
     ):
@@ -2277,12 +2310,28 @@ class ProcessorMixin:
             # file_ref was resolved before insertion so doc_status can be initialized early
             pass
 
-        # Step 3: Process multimodal content (using specialized processors)
+        # Step 3: Process multimodal content in background (non-blocking)
+        # VLM/LLM calls for image captions & table analysis can take minutes;
+        # run them as a background task so text chunks are searchable immediately.
         if multimodal_items:
-            await self._process_multimodal_content(multimodal_items, file_ref, doc_id)
+            import asyncio as _asyncio
+            try:
+                loop = _asyncio.get_running_loop()
+                loop.create_task(
+                    self._process_multimodal_content_background(
+                        multimodal_items, file_ref, doc_id
+                    )
+                )
+                self.logger.info(
+                    f"Scheduled {len(multimodal_items)} multimodal items for background processing"
+                )
+            except RuntimeError:
+                # No event loop available — fall back to sync
+                await self._process_multimodal_content(
+                    multimodal_items, file_ref, doc_id
+                )
+                await self._mark_multimodal_processing_complete(doc_id)
         else:
-            # If no multimodal content, mark multimodal processing as complete
-            # This ensures the document status properly reflects completion of all processing
             await self._mark_multimodal_processing_complete(doc_id)
             self.logger.debug(
                 f"No multimodal content found in document {doc_id}, marked multimodal processing as complete"
