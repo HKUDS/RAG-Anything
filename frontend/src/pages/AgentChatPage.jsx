@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../utils/api'
 
 const MODES = [
+  { key: 'rrf', icon: Brain, label: '融合' },
   { key: 'hybrid', icon: Layers, label: '智能' },
   { key: 'local', icon: Zap, label: '精确' },
   { key: 'global', icon: Brain, label: '全局' },

@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown'
 import { api, getCurrentKB } from '../utils/api'
 
 const MODES = [
+  { key: 'rrf', icon: Brain, label: '融合', desc: 'BM25+向量+图谱三路融合' },
   { key: 'hybrid', icon: Layers, label: '智能', desc: '图谱+向量混合，推荐' },
   { key: 'local', icon: Search, label: '精确', desc: '实体关系精准查找' },
   { key: 'global', icon: Globe, label: '全局', desc: '文档整体摘要理解' },

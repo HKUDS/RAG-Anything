@@ -7,7 +7,7 @@ import {
 import { api } from '../utils/api'
 import { motion, AnimatePresence } from 'framer-motion'
 
-const MODE_LABELS = { hybrid: '混合', local: '精确', global: '全局', naive: '快速' }
+const MODE_LABELS = { rrf: '融合', hybrid: '混合', local: '精确', global: '全局', naive: '快速' }
 
 export default function AgentsPage() {
   const navigate = useNavigate()
@@ -260,6 +260,7 @@ export default function AgentsPage() {
                   <label className="text-xs text-warm-500 mb-1 block">默认查询模式</label>
                   <select className="input-field" value={form.query_mode}
                     onChange={e => setForm({ ...form, query_mode: e.target.value })}>
+                    <option value="rrf">融合检索 RRF</option>
                     <option value="hybrid">混合检索（推荐）</option>
                     <option value="local">精确检索</option>
                     <option value="global">全局检索</option>
