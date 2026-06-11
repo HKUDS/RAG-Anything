@@ -236,13 +236,17 @@ class QueryMixin:
 
         Uses HybridSearchEngine for retrieval, then formats context and generates
         answer via the configured LLM model function.
+
+        When only_need_context=True, returns raw context without LLM generation.
         """
         hybrid_engine = getattr(self, "hybrid_search_engine", None)
+        only_need_context = kwargs.pop("only_need_context", False)
+
         if hybrid_engine is None:
             self.logger.warning(
                 "HybridSearchEngine not initialized — falling back to LightRAG hybrid mode"
             )
-            query_param = QueryParam(mode="hybrid", **kwargs)
+            query_param = QueryParam(mode="hybrid", only_need_context=only_need_context, **kwargs)
             return await self.lightrag.aquery(
                 query, param=query_param, system_prompt=system_prompt
             )
@@ -265,7 +269,7 @@ class QueryMixin:
                 return "No relevant documents found for your query."
 
             self.logger.info(
-                f"RRF retrieved {len(chunks)} chunks from {len(set(c.sources for c in chunks))} channels"
+                f"RRF retrieved {len(chunks)} chunks"
             )
 
             # Stage 2: Build context from retrieved chunks
@@ -277,6 +281,20 @@ class QueryMixin:
                 )
             context = "\n\n".join(context_parts)
 
+            # If only_need_context, return raw context without LLM generation
+            if only_need_context:
+                self.logger.info("RRF query completed (context-only mode)")
+                if callback_manager is not None:
+                    duration = time.time() - query_start_time
+                    callback_manager.dispatch(
+                        "on_query_complete",
+                        query=query,
+                        mode="rrf",
+                        duration_seconds=duration,
+                        result_length=len(context),
+                    )
+                return context
+
             # Stage 3: Generate answer via LLM
             prompt = (
                 f"Based on the following retrieved documents, answer the user's question.\n\n"
@@ -286,9 +304,20 @@ class QueryMixin:
                 f"If the documents do not contain sufficient information, say so clearly."
             )
 
+            if self.llm_model_func is None:
+                self.logger.error("llm_model_func is None, returning context only")
+                return context
+
             answer = await self.llm_model_func(
                 prompt, system_prompt=system_prompt
             )
+
+            # Guard against None return from LLM
+            if answer is None:
+                self.logger.warning("LLM returned None, falling back to context only")
+                return context
+            if not isinstance(answer, str):
+                answer = str(answer)
 
             self.logger.info("RRF query completed")
             if callback_manager is not None:
@@ -298,10 +327,10 @@ class QueryMixin:
                     query=query,
                     mode="rrf",
                     duration_seconds=duration,
-                    result_length=len(answer) if isinstance(answer, str) else 0,
+                    result_length=len(answer),
                 )
 
-            return answer if isinstance(answer, str) else str(answer)
+            return answer
 
         except Exception as exc:
             self.logger.error(f"RRF query failed: {exc}")
@@ -311,7 +340,7 @@ class QueryMixin:
                 )
             # Fallback to LightRAG hybrid mode
             self.logger.warning("Falling back to LightRAG hybrid mode")
-            query_param = QueryParam(mode="hybrid", **kwargs)
+            query_param = QueryParam(mode="hybrid", only_need_context=only_need_context, **kwargs)
             return await self.lightrag.aquery(
                 query, param=query_param, system_prompt=system_prompt
             )
