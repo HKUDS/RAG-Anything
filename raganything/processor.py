@@ -2325,6 +2325,12 @@ class ProcessorMixin:
                 self.logger.info(
                     f"Scheduled {len(multimodal_items)} multimodal items for background processing"
                 )
+                # Mark document as processed immediately — text is ready for search
+                await self._upsert_doc_status(
+                    doc_id, file_ref,
+                    status=DocStatus.PROCESSED,
+                    error_msg="",
+                )
             except RuntimeError:
                 # No event loop available — fall back to sync
                 await self._process_multimodal_content(
