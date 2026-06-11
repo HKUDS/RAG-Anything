@@ -107,7 +107,7 @@ class QueryMixin:
 
         Args:
             query: Query text
-            mode: Query mode ("local", "global", "hybrid", "naive", "mix", "bypass")
+            mode: Query mode ("local", "global", "hybrid", "naive", "mix", "bypass", "rrf")
             system_prompt: Optional system prompt to include.
             **kwargs: Other query parameters, will be passed to QueryParam
                 - vlm_enhanced: bool, default True when vision_model_func is available.
@@ -121,6 +121,12 @@ class QueryMixin:
         if self.lightrag is None:
             raise ValueError(
                 "No LightRAG instance available. Please process documents first or provide a pre-initialized LightRAG instance."
+            )
+
+        # RRF hybrid search mode — three-channel parallel retrieval with RRF fusion
+        if mode == "rrf":
+            return await self._aquery_rrf(
+                query, system_prompt=system_prompt, **kwargs
             )
 
         # Check if VLM enhanced query should be used
@@ -222,6 +228,94 @@ class QueryMixin:
             )
         return result
 
+    async def _aquery_rrf(
+        self, query: str, system_prompt: str | None = None, **kwargs
+    ) -> str:
+        """
+        RRF hybrid search query — three-channel parallel retrieval + RRF fusion.
+
+        Uses HybridSearchEngine for retrieval, then formats context and generates
+        answer via the configured LLM model function.
+        """
+        hybrid_engine = getattr(self, "hybrid_search_engine", None)
+        if hybrid_engine is None:
+            self.logger.warning(
+                "HybridSearchEngine not initialized — falling back to LightRAG hybrid mode"
+            )
+            query_param = QueryParam(mode="hybrid", **kwargs)
+            return await self.lightrag.aquery(
+                query, param=query_param, system_prompt=system_prompt
+            )
+
+        callback_manager = getattr(self, "callback_manager", None)
+        query_start_time = time.time()
+
+        if callback_manager is not None:
+            callback_manager.dispatch("on_query_start", query=query, mode="rrf")
+
+        self.logger.info(f"Executing RRF hybrid query: {query[:100]}...")
+
+        try:
+            # Stage 1: Retrieve chunks via RRF fusion
+            top_k = kwargs.get("top_k", 100)
+            chunks = await hybrid_engine.search(query, top_k=top_k)
+
+            if not chunks:
+                self.logger.warning("RRF search returned no chunks")
+                return "No relevant documents found for your query."
+
+            self.logger.info(
+                f"RRF retrieved {len(chunks)} chunks from {len(set(c.sources for c in chunks))} channels"
+            )
+
+            # Stage 2: Build context from retrieved chunks
+            context_parts = []
+            for i, chunk in enumerate(chunks[:15]):  # top-15 for context window
+                sources_str = ",".join(chunk.sources) if chunk.sources else "unknown"
+                context_parts.append(
+                    f"[Doc {i + 1}] (sources: {sources_str})\n{chunk.content}"
+                )
+            context = "\n\n".join(context_parts)
+
+            # Stage 3: Generate answer via LLM
+            prompt = (
+                f"Based on the following retrieved documents, answer the user's question.\n\n"
+                f"Retrieved Documents:\n{context}\n\n"
+                f"User Question: {query}\n\n"
+                f"Please provide a comprehensive answer based only on the provided documents. "
+                f"If the documents do not contain sufficient information, say so clearly."
+            )
+
+            answer = await self.llm_model_func(
+                prompt, system_prompt=system_prompt
+            )
+
+            self.logger.info("RRF query completed")
+            if callback_manager is not None:
+                duration = time.time() - query_start_time
+                callback_manager.dispatch(
+                    "on_query_complete",
+                    query=query,
+                    mode="rrf",
+                    duration_seconds=duration,
+                    result_length=len(answer) if isinstance(answer, str) else 0,
+                )
+
+            return answer if isinstance(answer, str) else str(answer)
+
+        except Exception as exc:
+            self.logger.error(f"RRF query failed: {exc}")
+            if callback_manager is not None:
+                callback_manager.dispatch(
+                    "on_query_error", query=query, mode="rrf", error=exc
+                )
+            # Fallback to LightRAG hybrid mode
+            self.logger.warning("Falling back to LightRAG hybrid mode")
+            query_param = QueryParam(mode="hybrid", **kwargs)
+            return await self.lightrag.aquery(
+                query, param=query_param, system_prompt=system_prompt
+            )
+
     async def aquery_with_multimodal(
         self,
         query: str,
@@ -238,7 +332,7 @@ class QueryMixin:
             multimodal_content: List of multimodal content, each element contains:
                 - type: Content type ("image", "table", "equation", etc.)
                 - Other fields depend on type (e.g., img_path, table_data, latex, etc.)
-            mode: Query mode ("local", "global", "hybrid", "naive", "mix", "bypass")
+            mode: Query mode ("local", "global", "hybrid", "naive", "mix", "bypass", "rrf")
             system_prompt: Optional system prompt to include in the query
             **kwargs: Other query parameters, will be passed to QueryParam
 
@@ -859,7 +953,7 @@ class QueryMixin:
 
         Args:
             query: Query text
-            mode: Query mode ("local", "global", "hybrid", "naive", "mix", "bypass")
+            mode: Query mode ("local", "global", "hybrid", "naive", "mix", "bypass", "rrf")
             **kwargs: Other query parameters, will be passed to QueryParam
                 - vlm_enhanced: bool, default True when vision_model_func is available.
                   If True, will parse image paths in retrieved context and replace them
@@ -886,7 +980,7 @@ class QueryMixin:
             multimodal_content: List of multimodal content, each element contains:
                 - type: Content type ("image", "table", "equation", etc.)
                 - Other fields depend on type (e.g., img_path, table_data, latex, etc.)
-            mode: Query mode ("local", "global", "hybrid", "naive", "mix", "bypass")
+            mode: Query mode ("local", "global", "hybrid", "naive", "mix", "bypass", "rrf")
             **kwargs: Other query parameters, will be passed to QueryParam
 
         Returns:

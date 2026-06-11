@@ -3,6 +3,10 @@ huggingface_hub
 lightrag-hku
 # MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
 mineru[core]
+# RRF Hybrid Search: BM25 keyword index + Chinese tokenization
+rank-bm25
+jieba
+
 # Progress bars for batch processing
 tqdm
 # Note: Optional dependencies are now defined in setup.py extras_require:

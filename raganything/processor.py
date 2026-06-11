@@ -32,6 +32,47 @@ from lightrag.utils import compute_mdhash_id
 class ProcessorMixin:
     """ProcessorMixin class containing document processing functionality for RAGAnything"""
 
+    # Batch debounce: coalesce multiple index rebuilds within 500ms
+    _bm25_rebuild_timer: Any = None
+    _bm25_pending_chunks: List[Dict[str, Any]] = []
+
+    def _schedule_bm25_index_update(self, new_chunks: List[Dict[str, Any]] = None):
+        """Schedule a BM25 index rebuild with 500ms debounce.
+
+        Multiple rapid insertions are coalesced into a single rebuild.
+        """
+        import asyncio as _asyncio
+
+        hybrid_engine = getattr(self, "hybrid_search_engine", None)
+        if hybrid_engine is None:
+            return
+
+        # Accumulate pending chunks
+        if new_chunks:
+            self._bm25_pending_chunks.extend(new_chunks)
+
+        # Cancel existing timer (debounce)
+        if self._bm25_rebuild_timer is not None:
+            self._bm25_rebuild_timer.cancel()
+
+        # Schedule a single rebuild after 500ms
+        async def _do_rebuild():
+            await _asyncio.sleep(0.5)
+            engine = getattr(self, "hybrid_search_engine", None)
+            if engine is None:
+                return
+            pending = list(self._bm25_pending_chunks)
+            self._bm25_pending_chunks = []
+            if pending:
+                await engine.update_bm25_index(pending)
+            self._bm25_rebuild_timer = None
+
+        try:
+            loop = _asyncio.get_running_loop()
+            self._bm25_rebuild_timer = loop.create_task(_do_rebuild())
+        except RuntimeError:
+            pass  # No event loop available, skip
+
     def _get_file_reference(self, file_path: str) -> str:
         """
         Get file reference based on use_full_path configuration.
@@ -2248,6 +2289,10 @@ class ProcessorMixin:
             )
 
         self.logger.info(f"Content list insertion complete for: {file_path}")
+
+        # Trigger BM25 index update for RRF hybrid search
+        self._schedule_bm25_index_update()
+
         if callback_manager is not None:
             duration = time.time() - doc_start_time
             callback_manager.dispatch(

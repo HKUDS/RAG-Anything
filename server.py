@@ -2237,6 +2237,18 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
             ".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif", ".webp",
             ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt", ".md",
         ],
+        "rrf": {
+            "rrf_k": int(os.getenv("RRF_K", "60")),
+            "bm25_top_k": int(os.getenv("BM25_TOP_K", "50")),
+            "vector_top_k": int(os.getenv("VECTOR_TOP_K", "100")),
+            "graph_top_k": int(os.getenv("GRAPH_TOP_K", "30")),
+            "graph_depth": int(os.getenv("GRAPH_DEPTH", "2")),
+            "bm25_k1": float(os.getenv("BM25_K1", "1.5")),
+            "bm25_b": float(os.getenv("BM25_B", "0.75")),
+            "bm25_tokenizer": os.getenv("BM25_TOKENIZER", "jieba"),
+            "rrf_channel_timeout": float(os.getenv("RRF_CHANNEL_TIMEOUT", "0.15")),
+            "enabled_channels": os.getenv("RRF_ENABLED_CHANNELS", "bm25,vector,graph"),
+        },
     }
 
 

@@ -35,6 +35,7 @@ from raganything.batch import BatchMixin
 from raganything.utils import get_processor_supports
 from raganything.parser import MineruParser, SUPPORTED_PARSERS, get_parser
 from raganything.callbacks import CallbackManager
+from raganything.hybrid_search import HybridSearchEngine, BM25IndexManager, GraphRetriever
 
 # Import specialized processors
 from raganything.modalprocessors import (
@@ -101,6 +102,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         default_factory=CallbackManager, init=False, repr=False
     )
     """Processing callbacks manager (optional hooks for observability and metrics)."""
+
+    hybrid_search_engine: Optional[Any] = field(default=None, init=False)
+    """Hybrid search engine for RRF three-channel fusion retrieval."""
 
     _parser_installation_checked: bool = field(default=False, init=False)
     """Flag to track if parser installation has been checked."""
@@ -335,6 +339,13 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                     if not self.modal_processors:
                         self._initialize_processors()
 
+                    # Initialize hybrid search engine for RRF fusion retrieval
+                    if self.hybrid_search_engine is None:
+                        self.hybrid_search_engine = HybridSearchEngine(
+                            lightrag_instance=self.lightrag,
+                        )
+                        self.logger.info("Hybrid search engine initialized for RRF fusion retrieval")
+
                     return {"success": True}
 
                 except Exception as e:
@@ -403,6 +414,13 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
 
                 # Initialize processors after LightRAG is ready
                 self._initialize_processors()
+
+                # Initialize hybrid search engine for RRF fusion retrieval
+                if self.hybrid_search_engine is None:
+                    self.hybrid_search_engine = HybridSearchEngine(
+                        lightrag_instance=self.lightrag,
+                    )
+                    self.logger.info("Hybrid search engine initialized for RRF fusion retrieval")
 
                 self.logger.info(
                     "LightRAG, parse cache, multimodal status cache, and multimodal processors initialized"
