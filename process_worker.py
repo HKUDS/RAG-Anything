@@ -19,6 +19,7 @@ from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
 from raganything.chunking import build_chunking_func, STRATEGY_META
+from raganything.processor import get_pending_background_tasks
 
 API_KEY = os.getenv("LLM_BINDING_API_KEY")
 BASE_URL = os.getenv("LLM_BINDING_HOST")
@@ -204,6 +205,43 @@ def _fix_stuck_doc(filename: str, target_dir: str, error_msg: str) -> bool:
         return False
 
 
+# Maximum seconds to wait for background multimodal tasks before giving up.
+# Configurable via BG_TASK_MAX_WAIT env var; default 1800 s (30 minutes).
+_BG_TASK_MAX_WAIT = int(os.getenv("BG_TASK_MAX_WAIT", "1800"))
+
+
+async def _await_pending_background_tasks() -> None:
+    """Wait for all registered background tasks to finish before subprocess exit."""
+    pending = get_pending_background_tasks()
+    if not pending:
+        return
+
+    print(
+        f"[WORKER] 等待 {len(pending)} 个后台多模态任务完成 "
+        f"(最长 {_BG_TASK_MAX_WAIT}s)...",
+        flush=True,
+    )
+    try:
+        done, still_pending = await asyncio.wait(
+            pending, timeout=_BG_TASK_MAX_WAIT
+        )
+        if still_pending:
+            print(
+                f"[WORKER] ⚠ 超时: {len(still_pending)} 个后台任务未在 "
+                f"{_BG_TASK_MAX_WAIT}s 内完成，强制退出",
+                flush=True,
+            )
+            for t in still_pending:
+                t.cancel()
+        else:
+            print(
+                f"[WORKER] 所有 {len(done)} 个后台任务已完成",
+                flush=True,
+            )
+    except Exception as exc:
+        print(f"[WORKER] 等待后台任务时出错: {exc}", flush=True)
+
+
 async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""):
     """处理单个文件并写入对应 KB 目录"""
     filename = os.path.basename(file_path)
@@ -330,6 +368,11 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
             sys.exit(1)
 
         print(f"[WORKER] 完成: {filename}", flush=True)
+
+        # Wait for background multimodal tasks before exiting.
+        # If the subprocess exits too early, async tasks (VLM image captions,
+        # table analysis) are killed mid-flight and data is lost.
+        await _await_pending_background_tasks()
 
     except Exception as e:
         # 兜底：任何未捕获异常都将文档标记为失败，避免永久卡在 handling

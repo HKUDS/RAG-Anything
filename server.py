@@ -1237,7 +1237,24 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
     if result.status == "success":
         return {"status": "deleted", "doc_id": full_id, "file": file_name, "message": result.message}
     elif result.status == "not_found":
-        raise HTTPException(404, f"文档 {file_name} 数据未找到")
+        # Data may be partially missing (e.g. multimodal processing was
+        # killed mid-flight).  Still remove the doc_status entry so the
+        # user isn't stuck with an undeletable ghost document.
+        try:
+            del doc_status[full_id]
+            import tempfile
+            tmp = status_path.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(doc_status, f, ensure_ascii=False, indent=2)
+            tmp.replace(status_path)
+            return {
+                "status": "deleted",
+                "doc_id": full_id,
+                "file": file_name,
+                "message": "文档记录已清理（部分数据不完整）",
+            }
+        except Exception:
+            raise HTTPException(404, f"文档 {file_name} 数据未找到")
     else:
         raise HTTPException(500, result.message)
 

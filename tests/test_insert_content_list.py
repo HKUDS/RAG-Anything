@@ -213,4 +213,11 @@ def test_insert_content_list_keeps_status_for_multimodal_only_content():
         "doc-content-list",
         DocStatus.HANDLING,
     )
-    assert processor.events[2] == ("multimodal", "doc-content-list", "source.pdf")
+    # When an event loop is available, multimodal processing is scheduled as a
+    # background task and doc_status transitions to PROCESSED immediately so
+    # text chunks are searchable without waiting for VLM/LLM calls.
+    assert processor.events[2] == (
+        "doc_status",
+        "doc-content-list",
+        DocStatus.PROCESSED,
+    )

@@ -478,9 +478,27 @@ class BaseModalProcessor:
         chunk_order_index: int = 0,
     ) -> Tuple[str, Dict[str, Any]]:
         """Create entity and text chunk"""
+        # Truncate chunk content exceeding the embedding model's input limit.
+        # NOTE: LightRAG uses o200k_base (gpt-4o-mini) tokenizer which counts
+        # ~2× fewer tokens for Chinese text than the actual qwen embedding API.
+        # Using a character-based limit avoids this mismatch.
+        # 8000 chars keeps qwen well under its 8192-token ceiling even for
+        # all-Chinese content (~1 char/token worst case).
+        _MAX_CHUNK_CHARS = 8000
+        tokens = len(self.tokenizer.encode(str(modal_chunk)))
+        if len(str(modal_chunk)) > _MAX_CHUNK_CHARS:
+            modal_chunk = (
+                str(modal_chunk)[:_MAX_CHUNK_CHARS]
+                + "\n\n[内容已截断，超出嵌入模型长度限制]"
+            )
+            tokens = len(self.tokenizer.encode(modal_chunk))
+            logger.warning(
+                f"Truncated multimodal chunk: "
+                f"{len(str(modal_chunk))} chars, {tokens} tokens"
+            )
+
         # Create chunk
         chunk_id = compute_mdhash_id(str(modal_chunk), prefix="chunk-")
-        tokens = len(self.tokenizer.encode(modal_chunk))
 
         # Use provided doc_id or generate one from chunk_id for backward compatibility
         actual_doc_id = doc_id if doc_id else chunk_id
@@ -847,6 +865,50 @@ class ImageModalProcessor(BaseModalProcessor):
         """
         super().__init__(lightrag, modal_caption_func, context_extractor)
 
+    # Minimum image dimension in pixels; any side smaller → skip VLM call.
+    _MIN_IMAGE_DIM = 14
+    # Maximum aspect ratio (w/h or h/w); beyond this → likely a line/separator.
+    _MAX_ASPECT_RATIO = 50
+    # Fewer unique colors → solid/decorative fill, not meaningful content.
+    _MIN_UNIQUE_COLORS = 5
+
+    def _check_image_skippable(self, image_path: "Path") -> tuple:
+        """Return (reason, label) if the image should skip the VLM, else None.
+
+        Checks (cheapest first): file size → dimensions → aspect ratio → colors.
+        """
+        import os as _os
+        try:
+            file_size = _os.path.getsize(str(image_path))
+            if file_size < 100:
+                return (f"file_too_small_{file_size}B", "Decorative placeholder")
+        except OSError:
+            return ("unreadable_file", "Unreadable file")
+
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(str(image_path)) as img:
+                w, h = img.size
+                if w < self._MIN_IMAGE_DIM or h < self._MIN_IMAGE_DIM:
+                    return (f"too_small_{w}x{h}px", "Decorative element")
+                ratio = max(w / max(h, 1), h / max(w, 1))
+                if ratio > self._MAX_ASPECT_RATIO:
+                    return (f"extreme_aspect_{w}x{h}px", "Separator line")
+                try:
+                    rgb = img.convert("RGB") if img.mode not in ("RGB", "RGBA") else img
+                    colors = rgb.getcolors(maxcolors=self._MIN_UNIQUE_COLORS)
+                    if colors is not None and len(colors) < self._MIN_UNIQUE_COLORS:
+                        return (
+                            f"near_solid_{len(colors)}_colors",
+                            "Solid decorative fill",
+                        )
+                except Exception:
+                    pass  # color check is best-effort
+        except Exception:
+            pass  # if PIL can't open it, let the normal path handle the error
+
+        return None  # not skippable — proceed to VLM
+
     def _encode_image_to_base64(self, image_path: str) -> str:
         """Encode image to base64"""
         try:
@@ -906,6 +968,35 @@ class ImageModalProcessor(BaseModalProcessor):
             image_path_obj = Path(image_path)
             if not image_path_obj.exists():
                 raise FileNotFoundError(f"Image file not found: {image_path}")
+
+            # Pre-filter: skip tiny/decorative images (<14px any side) before
+            # wasting a VLM API call.  Docx parsers often emit separator lines,
+            # bullets, and other rendering artifacts as standalone images.
+            skip_result = self._check_image_skippable(image_path_obj)
+            if skip_result:
+                skip_reason, fallback_label = skip_result
+                logger.info(
+                    f"Skipping VLM for image {image_path}: {skip_reason}"
+                )
+                caption_text = (
+                    captions[0] if isinstance(captions, list) and captions
+                    else str(captions) if captions else ""
+                )
+                fallback_entity = {
+                    "entity_name": (
+                        f"{caption_text} (image)" if caption_text
+                        else f"decorative_{image_path_obj.stem} (image)"
+                    ),
+                    "entity_type": "image",
+                    "summary": (
+                        fallback_label
+                        + (f": {caption_text}" if caption_text else "")
+                    ),
+                }
+                return (
+                    caption_text or f"[{fallback_label}]",
+                    fallback_entity,
+                )
 
             # Extract context for current item
             context = ""
