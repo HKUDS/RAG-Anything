@@ -569,7 +569,7 @@ class SearchTool(Tool):
         """
         Args:
             rag_instance: RAGAnything 实例（提供 aquery 方法）
-            query_mode: 检索模式 "hybrid" | "local" | "global" | "naive"
+            query_mode: 检索模式 "rrf" | "hybrid" | "local" | "global" | "naive"
         """
         self.rag = rag_instance
         self.query_mode = query_mode
