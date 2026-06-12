@@ -282,7 +282,11 @@ class AgentResponse:
     # 每个 citation: {"source_title": str, "page": int, "excerpt": str, "url": str}
     related_video_segments: list[dict] = field(default_factory=list)
     # 每个 segment: {"video_name": str, "start_ts": float, "end_ts": float, "score": float}
+    related_images: list[dict] = field(default_factory=list)
+    # 每个 image: {"data_url": str, "caption": str, "page": int, "relevance": float}
     lineage_tree: Optional[dict] = None  # 知识谱系树
+    trace: list = field(default_factory=list)
+    # 推理轨迹: [{"step": int, "thought": str, "action": str, "observation": str, "elapsed_ms": float}, ...]
     confidence: float = 0.0
     processing_time_ms: float = 0.0
     needs_human_review: bool = False

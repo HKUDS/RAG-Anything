@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Send, User, Bot, Code2, MessageSquare, Wrench,
-  AlertTriangle, ChevronDown, Play, Copy, Check, Trash2, Loader2
+  AlertTriangle, ChevronDown, Play, Copy, Check, Trash2, Loader2,
+  Brain, Search, ChevronRight
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -38,6 +39,71 @@ const markdownComponents = {
   table: ({ children }) => <div className="my-2 overflow-x-auto"><table className="min-w-full text-xs border-collapse">{children}</table></div>,
 }
 
+// Thinking step collapsible card
+function ThinkingStep({ step, isLast }) {
+  const [expanded, setExpanded] = useState(false)
+  const isAction = step.action && step.action !== 'FINISH'
+  const actionLabel = isAction
+    ? (step.action === 'search' ? '检索知识库' : step.action === 'calculator' ? '计算' : step.action)
+    : (step.action === 'FINISH' ? '完成推理' : '思考中')
+
+  if (step.step === 0) {
+    // Generic status message
+    return (
+      <div className="flex items-center gap-1.5 text-2xs text-warm-400">
+        <Loader2 size={10} className="animate-spin text-coral-400" />
+        <span>{step.content || step.thought}</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className={`rounded-lg border text-xs overflow-hidden ${
+      isAction ? 'border-sky-200 bg-sky-50/50' : 'border-warm-200 bg-warm-50/50'
+    }`}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-warm-100/50 transition-colors text-left"
+      >
+        <ChevronRight size={10} className={`text-warm-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        {isAction ? (
+          <Search size={11} className="text-sky-500 shrink-0" />
+        ) : (
+          <Brain size={11} className="text-coral-500 shrink-0" />
+        )}
+        <span className="font-medium text-warm-600">
+          步骤 {step.step}: {actionLabel}
+        </span>
+        {step.elapsed_ms > 0 && (
+          <span className="ml-auto text-2xs text-warm-400">{(step.elapsed_ms / 1000).toFixed(1)}s</span>
+        )}
+      </button>
+      {expanded && (
+        <div className="px-2.5 pb-2 space-y-1.5 border-t border-warm-100 pt-1.5">
+          {step.thought && (
+            <div>
+              <p className="text-2xs text-warm-400 mb-0.5">思考</p>
+              <p className="text-warm-600 leading-relaxed">{step.thought.length > 300 ? step.thought.slice(0, 300) + '...' : step.thought}</p>
+            </div>
+          )}
+          {step.action && (
+            <div>
+              <p className="text-2xs text-warm-400 mb-0.5">行动</p>
+              <code className="text-2xs px-1.5 py-0.5 rounded bg-white text-sky-600 font-mono">{step.action}</code>
+            </div>
+          )}
+          {step.observation_preview && (
+            <div>
+              <p className="text-2xs text-warm-400 mb-0.5">观察</p>
+              <p className="text-warm-500 italic leading-relaxed">{step.observation_preview}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function ManufacturingAgentPage() {
   const [activeTab, setActiveTab] = useState('qa')
   const [loading, setLoading] = useState(false)
@@ -46,6 +112,20 @@ export default function ManufacturingAgentPage() {
   const [qaMessages, setQaMessages] = useState([])
   const [qaInput, setQaInput] = useState('')
   const qaEndRef = useRef(null)
+
+  // KB selector
+  const [mfgKb, setMfgKb] = useState(() => localStorage.getItem('mfg_kb') || 'default')
+  const [kbList, setKbList] = useState([])
+  useEffect(() => { api.get('/manufacturing/kb-list').then(r => {
+  let names = []
+  if (Array.isArray(r)) {
+    names = r.map(k => k.name || k.label).filter(Boolean)
+  } else if (r && typeof r === 'object') {
+    names = (r.knowledge_bases || []).map(k => k.name).filter(Boolean)
+  }
+  if (!names.length) names = ['default']
+  setKbList(names)
+}).catch(e => console.error('KB list error:', e)) }, [])
 
   // Code parser state
   const [codeInput, setCodeInput] = useState('')
@@ -63,25 +143,77 @@ export default function ManufacturingAgentPage() {
   useEffect(() => { qaEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [qaMessages])
   useEffect(() => { diagEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [diagMessages])
 
-  // === QA ===
-  const handleQASend = async () => {
-    if (!qaInput.trim() || loading) return
-    const query = qaInput.trim()
+  // === QA (streaming with AgenticRAG trace) ===
+  const handleQASend = async (presetQuery) => {
+    const query = (presetQuery || qaInput).trim()
+    if (!query || loading) return
     setQaInput('')
+    const msgId = Date.now()
     setQaMessages(prev => [...prev, { role: 'user', content: query }])
+    setQaMessages(prev => [...prev, { role: 'assistant', content: '', _streaming: true, _id: msgId, _thinking: [] }])
     setLoading(true)
     try {
-      const res = await api.post('/manufacturing/qa', { query })
-      const data = res?.data || res
-      setQaMessages(prev => [...prev, {
-        role: 'assistant',
-        content: data.answer || '未获取到回答',
-        citations: data.citations,
-        confidence: data.confidence,
-        time: data.processing_time_ms,
-      }])
+      const token = (() => { try { return JSON.parse(localStorage.getItem('raganything_auth') || '{}').token || '' } catch { return '' } })()
+      const res = await fetch(`/api/manufacturing/qa/stream?kb=${mfgKb}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ query }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: res.statusText }))
+        throw new Error(err.detail || `HTTP ${res.status}`)
+      }
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          try {
+            const evt = JSON.parse(line.slice(6))
+            if (evt.type === 'thinking' && evt.step) {
+              // AgenticRAG reasoning step
+              setQaMessages(prev => prev.map(m =>
+                m._id === msgId ? { ...m, _thinking: [...m._thinking, evt] } : m
+              ))
+            } else if (evt.type === 'thinking' && !evt.step) {
+              // Generic thinking message (e.g. "开始多步推理...")
+              setQaMessages(prev => prev.map(m =>
+                m._id === msgId ? { ...m, _thinking: [...m._thinking, { ...evt, step: 0 }] } : m
+              ))
+            } else if (evt.type === 'token') {
+              setQaMessages(prev => prev.map(m =>
+                m._id === msgId ? { ...m, content: m.content + evt.content } : m
+              ))
+            } else if (evt.type === 'images') {
+              setQaMessages(prev => prev.map(m =>
+                m._id === msgId ? { ...m, _images: evt.images } : m
+              ))
+            } else if (evt.type === 'done') {
+              setQaMessages(prev => prev.map(m =>
+                m._id === msgId ? {
+                  ...m, _streaming: false, _id: undefined,
+                  time: evt.elapsed * 1000,
+                  confidence: evt.confidence,
+                } : m
+              ))
+            } else if (evt.type === 'error') {
+              setQaMessages(prev => prev.map(m =>
+                m._id === msgId ? { ...m, content: m.content || evt.content, _streaming: false, _id: undefined } : m
+              ))
+            }
+          } catch {}
+        }
+      }
     } catch (e) {
-      setQaMessages(prev => [...prev, { role: 'assistant', content: '问答请求失败，请检查后端服务。' }])
+      setQaMessages(prev => prev.map(m =>
+        m._id === msgId ? { ...m, content: m.content || `请求失败: ${e.message}`, _streaming: false, _id: undefined } : m
+      ))
     } finally { setLoading(false) }
   }
 
@@ -91,7 +223,7 @@ export default function ManufacturingAgentPage() {
     setLoading(true)
     setCodeResult(null)
     try {
-      const res = await api.post('/manufacturing/code/parse', { query: codeInput, language: codeLang })
+      const res = await api.post(`/manufacturing/code/parse?kb=${mfgKb}`, { query: codeInput, language: codeLang })
       setCodeResult(res?.data || res)
     } catch (e) {
       setCodeResult({ error: '解析请求失败' })
@@ -99,14 +231,14 @@ export default function ManufacturingAgentPage() {
   }
 
   // === Fault Diagnosis ===
-  const startDiagnosis = async () => {
-    if (!diagInput.trim() || loading) return
-    const desc = diagInput.trim()
+  const startDiagnosis = async (presetDesc) => {
+    const desc = (presetDesc || diagInput).trim()
+    if (!desc || loading) return
     setDiagInput('')
     setDiagMessages([{ role: 'user', content: desc }])
     setLoading(true)
     try {
-      const res = await api.post('/manufacturing/fault-diagnosis', { query: desc })
+      const res = await api.post(`/manufacturing/fault-diagnosis?kb=${mfgKb}`, { query: desc })
       const data = res?.data || res
       setDiagSession(data.session_id)
       setDiagMessages(prev => [...prev, {
@@ -125,7 +257,7 @@ export default function ManufacturingAgentPage() {
     setDiagMessages(prev => [...prev, { role: 'user', content: answer }])
     setLoading(true)
     try {
-      const res = await api.post('/manufacturing/fault-diagnosis/continue', {
+      const res = await api.post(`/manufacturing/fault-diagnosis/continue?kb=${mfgKb}`, {
         session_id: diagSession,
         query: answer,
       })
@@ -171,6 +303,11 @@ export default function ManufacturingAgentPage() {
           </h1>
           <p className="text-sm text-warm-500 mt-1">智能问答 · 代码解析 · 故障诊断</p>
         </div>
+        <select value={mfgKb} onChange={e => { setMfgKb(e.target.value); localStorage.setItem('mfg_kb', e.target.value) }}
+          className="px-3 py-1.5 rounded-lg border border-warm-200 text-sm bg-white text-warm-700 cursor-pointer">
+          {kbList.length === 0 && <option value="default">KB: default</option>}
+          {kbList.map(k => <option key={k} value={k}>KB: {k}</option>)}
+        </select>
       </div>
 
       {/* Tabs */}
@@ -198,7 +335,7 @@ export default function ManufacturingAgentPage() {
                   <p className="text-sm">输入你的制造领域问题，智能体将基于知识库回答</p>
                   <div className="flex flex-wrap justify-center gap-2 mt-4">
                     {['数控铣削的切削参数如何选择？', 'PLC 程序梯形图设计原则', '如何检测加工中心的定位精度？'].map(q => (
-                      <button key={q} onClick={() => { setQaInput(q); /* trigger send after state update */ setTimeout(() => handleQASend(), 50) }}
+                      <button key={q} onClick={() => handleQASend(q)}
                         className="px-3 py-1.5 rounded-full text-xs bg-warm-100 text-warm-600 hover:bg-coral-50 hover:text-coral-600 transition-colors">
                         {q}
                       </button>
@@ -222,22 +359,35 @@ export default function ManufacturingAgentPage() {
                       <p className="text-sm">{msg.content}</p>
                     ) : (
                       <div className="text-sm text-warm-700">
-                        <ReactMarkdown components={markdownComponents}>{msg.content}</ReactMarkdown>
-                        {msg.citations?.length > 0 && (
-                          <div className="mt-2 pt-2 border-t border-warm-200">
-                            <p className="text-2xs text-warm-500 mb-1">来源引用：</p>
-                            {msg.citations.slice(0, 3).map((c, j) => (
-                              <div key={j} className="text-2xs text-warm-500 flex items-center gap-1">
-                                <span className="font-medium text-coral-500">[{j + 1}]</span>
-                                {c.source_title}{c.page ? ` p.${c.page}` : ''}
+                        {/* Thinking steps (AgenticRAG trace) */}
+                        {msg._thinking && msg._thinking.length > 0 && (
+                          <div className="mb-3 space-y-1.5">
+                            {msg._thinking.map((step, si) => (
+                              <ThinkingStep key={si} step={step} isLast={si === msg._thinking.length - 1 && !msg._streaming} />
+                            ))}
+                          </div>
+                        )}
+                        <ReactMarkdown components={markdownComponents}>{msg.content || (msg._streaming ? '▊' : '')}</ReactMarkdown>
+                        {msg._streaming && (
+                          <span className="inline-block w-1.5 h-4 bg-coral-400 animate-pulse rounded-sm ml-0.5 align-middle" />
+                        )}
+                        {/* Matched images */}
+                        {msg._images && msg._images.length > 0 && (
+                          <div className="mt-3 space-y-2">
+                            {msg._images.map((img, ii) => (
+                              <div key={ii} className="rounded-lg overflow-hidden border border-warm-200">
+                                <img src={img.data_url} alt={img.caption} className="w-full max-h-48 object-contain bg-warm-50" />
+                                <p className="text-2xs text-warm-500 px-2 py-1">{img.caption} (页 {img.page})</p>
                               </div>
                             ))}
                           </div>
                         )}
-                        {msg.confidence !== undefined && (
-                          <div className="mt-2 flex items-center gap-3 text-2xs text-warm-400">
-                            <span>置信度 {(msg.confidence * 100).toFixed(0)}%</span>
-                            {msg.time && <span>{msg.time.toFixed(0)}ms</span>}
+                        {msg.time && (
+                          <div className="mt-2 text-2xs text-warm-400 flex items-center gap-3">
+                            <span>{msg.time.toFixed(0)}ms</span>
+                            {msg.confidence !== undefined && (
+                              <span className="text-coral-500">置信度 {(msg.confidence * 100).toFixed(0)}%</span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -286,6 +436,13 @@ export default function ManufacturingAgentPage() {
         {activeTab === 'code' && (
           <motion.div key="code" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="flex-1 min-h-0 overflow-y-auto">
+            {!codeResult && (
+              <div className="text-center py-8 text-warm-400">
+                <Code2 size={32} className="mx-auto mb-2 opacity-30" />
+                <p className="text-sm">粘贴 G 代码或 PLC 程序进行分析</p>
+                <p className="text-xs text-warm-400 mt-1">支持 G 代码语法高亮、指令解释与风险检测</p>
+              </div>
+            )}
             <GCodeEditor onParseResult={(data) => setCodeResult(data)} />
             {/* IO Signals (PLC) */}
             {codeResult?.io_signals && (
@@ -323,7 +480,7 @@ export default function ManufacturingAgentPage() {
                   <p className="text-sm">描述设备故障现象，智能体将进行交互式诊断</p>
                   <div className="flex flex-wrap justify-center gap-2 mt-4">
                     {['加工精度超差，误差约0.05mm', '主轴运转时有异常振动', 'PLC 输出信号无响应'].map(q => (
-                      <button key={q} onClick={() => { setDiagInput(q); setTimeout(() => startDiagnosis(), 50) }}
+                      <button key={q} onClick={() => startDiagnosis(q)}
                         className="px-3 py-1.5 rounded-full text-xs bg-warm-100 text-warm-600 hover:bg-coral-50 hover:text-coral-600 transition-colors">
                         {q}
                       </button>

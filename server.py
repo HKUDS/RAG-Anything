@@ -44,6 +44,7 @@ import httpx
 
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc, logger as lightrag_logger
+from lightrag import QueryParam as LightRAGQueryParam
 from raganything import RAGAnything, RAGAnythingConfig
 from raganything.chunking import (
     recursive_chunking,
@@ -1017,8 +1018,11 @@ async def list_documents(kb: str = Depends(verify_kb_access)):
         status_path = Path(kb_dir(kb)) / "kv_store_doc_status.json"
         data = {}
         if status_path.exists():
-            with open(status_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            try:
+                data = json.loads(status_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                lightrag_logger.warning(f"doc_status JSON 损坏，返回空列表: {status_path}")
+                data = {}
         docs = []
         seen_files = set()
         for doc_id, info in data.items():
@@ -1058,33 +1062,61 @@ async def list_documents(kb: str = Depends(verify_kb_access)):
 @app.get("/api/knowledge/stats")
 async def knowledge_stats(kb: str = Depends(verify_kb_access)):
     """知识库总体统计"""
+
+    def _safe_load_json(path: Path) -> dict:
+        """安全加载 JSON，文件损坏时返回空 dict 并记录警告。"""
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as exc:
+            lightrag_logger.warning(f"JSON 文件损坏: {path} — {exc}")
+            # 尝试修复：读取原始文本，移除尾部多余的内容后重新解析
+            try:
+                raw = path.read_text(encoding="utf-8")
+                # 找到最后一个合法 JSON 对象的结束位置
+                depth = 0
+                last_valid = 0
+                for i, ch in enumerate(raw):
+                    if ch == '{':
+                        depth += 1
+                    elif ch == '}':
+                        depth -= 1
+                        if depth == 0:
+                            last_valid = i + 1
+                if last_valid > 0:
+                    fixed = raw[:last_valid]
+                    # 验证修复后的 JSON
+                    data = json.loads(fixed)
+                    lightrag_logger.info(f"JSON 修复成功: {path} (截取 {last_valid}/{len(raw)} 字符)")
+                    # 写回修复后的内容
+                    path.write_text(fixed, encoding="utf-8")
+                    return data
+            except Exception:
+                pass
+            return {}
+
     stats = {"documents": 0, "entities": 0, "relations": 0, "chunks": 0}
     base = Path(kb_dir(kb))
 
     # 实体总数（聚合 count）
     ep = base / "kv_store_full_entities.json"
     if ep.exists():
-        with open(ep, "r", encoding="utf-8") as fh:
-            for v in json.load(fh).values():
-                stats["entities"] += v.get("count", len(v.get("entity_names", [])))
+        for v in _safe_load_json(ep).values():
+            stats["entities"] += v.get("count", len(v.get("entity_names", [])))
 
     # 关系总数
     rp = base / "kv_store_full_relations.json"
     if rp.exists():
-        with open(rp, "r", encoding="utf-8") as fh:
-            for v in json.load(fh).values():
-                stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
+        for v in _safe_load_json(rp).values():
+            stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
 
     # chunk 总数
     cp = base / "vdb_chunks.json"
     if cp.exists():
-        with open(cp, "r", encoding="utf-8") as fh:
-            stats["chunks"] = len(json.load(fh))
+        stats["chunks"] = len(_safe_load_json(cp))
 
     dp = base / "kv_store_doc_status.json"
     if dp.exists():
-        with open(dp, "r", encoding="utf-8") as fh:
-            stats["documents"] = len(json.load(fh))
+        stats["documents"] = len(_safe_load_json(dp))
     return stats
 
 
@@ -2681,73 +2713,151 @@ class MfgDiagnosisContinue(BaseModel):
     query: str
 
 
-def _get_mfg_agent_components():
-    """延迟初始化制造智能体组件。注入真实 RAG 实例和 LLM 配置。"""
+async def _get_mfg_agent_components(kb: str = "default"):
+    """延迟初始化制造智能体组件（仅故障诊断）。"""
     m = _get_manufacturing()
-    if "qa_engine" not in m:
-        from raganything.manufacturing.agent.qa_engine import QAEngine
+    cache_key = f"diag_{kb}"
+    if cache_key not in m:
         from raganything.manufacturing.agent.fault_diagnosis import FaultDiagnosisEngine
         from raganything.manufacturing.knowledge_pipeline.fault_case_library import FaultCaseLibrary
         import logging
         _logger = logging.getLogger("manufacturing")
 
-        # LLM 配置检测
-        if not API_KEY or not BASE_URL:
-            _logger.error("LLM 配置缺失: LLM_BINDING_API_KEY 或 LLM_BINDING_HOST 未设置")
-            _logger.error("制造智能体 QA/诊断功能将不可用")
+        fault_lib = FaultCaseLibrary(storage_path="./data/manufacturing_kb/fault_cases")
 
-        class ServerLLMAdapter:
-            def generate(self, prompt: str) -> str:
+        class MfgLLMAdapter:
+            async def generate(self, prompt: str) -> str:
                 if not API_KEY or not BASE_URL:
-                    raise RuntimeError("LLM 服务未配置，请设置 LLM_BINDING_API_KEY 和 LLM_BINDING_HOST")
-                return openai_complete_if_cache(
+                    raise RuntimeError("LLM 服务未配置")
+                result = await openai_complete_if_cache(
                     LLM_MODEL, prompt,
-                    system_prompt="你是智能制造教学专家，基于参考资料回答问题。",
+                    system_prompt="你是智能制造教学专家。",
                     api_key=API_KEY, base_url=BASE_URL,
                 )
+                if result is None:
+                    raise RuntimeError("LLM 返回为空")
+                return result if isinstance(result, str) else str(result)
 
-        # 注入真实 RAG 实例 (复用已有 create_rag 工厂)
-        try:
-            rag = create_rag()
-        except Exception as e:
-            _logger.warning(f"无法创建 RAG 实例，QA 将使用无检索模式: {e}")
-            rag = None
+        m[cache_key] = {
+            "fault_diagnosis": FaultDiagnosisEngine(case_library=fault_lib, llm_client=MfgLLMAdapter()),
+        }
 
-        # 注入真实 FaultCaseLibrary (持久化到 data 目录)
-        fault_lib = FaultCaseLibrary(
-            storage_path="./data/manufacturing_kb/fault_cases"
+    return m[cache_key]
+
+
+MFG_SYSTEM_PROMPT = "你是智能制造教学专家。基于检索内容回答，引用具体事实和数据。检索内容没有的信息不要编造。"
+
+
+async def _get_mfg_qa_engine(kb: str = "default") -> "QAEngine":
+    """延迟初始化制造智能体 QA 引擎（每个 KB 独立实例）。"""
+    from raganything.manufacturing.agent.qa_engine import QAEngine
+
+    m = _get_manufacturing()
+    cache_key = f"qa_{kb}"
+    if cache_key not in m:
+        instance = await get_kb(kb)
+
+        async def _llm_func(prompt, system_prompt=None, history_messages=None, **kw):
+            if "max_tokens" not in kw:
+                kw["max_tokens"] = int(os.getenv("MAX_TOKENS", "8192"))
+            return openai_complete_if_cache(
+                LLM_MODEL, prompt, system_prompt=system_prompt,
+                history_messages=history_messages or [],
+                api_key=API_KEY, base_url=BASE_URL, **kw,
+            )
+
+        m[cache_key] = QAEngine(
+            rag_client=instance,
+            llm_client=_llm_func,
+            query_mode="rrf",
+            max_steps=3,
         )
-
-        m["qa_engine"] = QAEngine(
-            rag_client=rag,
-            llm_client=ServerLLMAdapter(),
-        )
-        m["fault_diagnosis"] = FaultDiagnosisEngine(
-            case_library=fault_lib,
-            llm_client=ServerLLMAdapter(),
-        )
-
-    return m
+    return m[cache_key]
 
 
 @app.post("/api/manufacturing/qa")
-async def mfg_qa(body: MfgAgentQuery):
-    """智能制造文本问答。"""
-    m = _get_mfg_agent_components()
-    response = m["qa_engine"].answer(body.query, body.context)
+async def mfg_qa(body: MfgAgentQuery, kb: str = QueryParam("default")):
+    """智能制造文本问答 — AgenticRAG 多步推理。"""
+    engine = await _get_mfg_qa_engine(kb)
+    response = await engine.answer(body.query, context=body.context)
     return {
         "query": response.query,
         "answer": response.answer,
         "citations": response.citations,
+        "related_images": response.related_images,
         "confidence": response.confidence,
         "processing_time_ms": response.processing_time_ms,
+        "needs_human_review": response.needs_human_review,
+        "trace": response.trace,
     }
 
 
+@app.post("/api/manufacturing/qa/stream")
+async def mfg_qa_stream(body: MfgAgentQuery, kb: str = QueryParam("default")):
+    """智能制造文本问答 — AgenticRAG 多步推理流式 SSE。"""
+    if not API_KEY or not BASE_URL:
+        raise HTTPException(503, "LLM 服务未配置")
+
+    async def event_stream():
+        import time as _time
+        start_time = _time.time()
+        query_id = str(uuid.uuid4())[:8]
+
+        try:
+            engine = await _get_mfg_qa_engine(kb)
+
+            # Run AgenticRAG (non-streaming for now — trace yields thinking events)
+            response = await engine.answer(body.query, context=body.context)
+
+            # Emit thinking steps from trace
+            if response.trace:
+                yield f"data: {json.dumps({'type': 'thinking', 'content': '开始多步推理...'}, ensure_ascii=False)}\n\n"
+                for step in response.trace:
+                    thought_preview = (step.get('thought', '') or '')[:200]
+                    action = step.get('action', '')
+                    observation_preview = (step.get('observation', '') or '')[:150]
+                    step_info = {
+                        "type": "thinking",
+                        "step": step.get("step", 0),
+                        "thought": thought_preview,
+                        "action": action,
+                        "observation_preview": observation_preview,
+                        "elapsed_ms": step.get("elapsed_ms", 0),
+                    }
+                    yield f"data: {json.dumps(step_info, ensure_ascii=False)}\n\n"
+
+            # Emit final answer as token chunks
+            answer = response.answer or ""
+            chunk_size = 50
+            for i in range(0, len(answer), chunk_size):
+                chunk = answer[i:i + chunk_size]
+                yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+
+            # Emit images if any matched
+            if response.related_images:
+                yield f"data: {json.dumps({'type': 'images', 'images': response.related_images}, ensure_ascii=False)}\n\n"
+
+            elapsed = round(_time.time() - start_time, 2)
+            yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'confidence': response.confidence}, ensure_ascii=False)}\n\n"
+
+        except Exception as exc:
+            yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/api/manufacturing/fault-diagnosis")
-async def mfg_diagnosis_start(body: MfgDiagnosisStart):
+async def mfg_diagnosis_start(body: MfgDiagnosisStart, kb: str = QueryParam("default")):
     """故障诊断 — 开始新会话。"""
-    m = _get_mfg_agent_components()
+    m = await _get_mfg_agent_components(kb=kb)
     import uuid
     sid = str(uuid.uuid4())[:8]
     result = m["fault_diagnosis"].start_diagnosis(sid, body.query)
@@ -2755,14 +2865,29 @@ async def mfg_diagnosis_start(body: MfgDiagnosisStart):
 
 
 @app.post("/api/manufacturing/fault-diagnosis/continue")
-async def mfg_diagnosis_continue(body: MfgDiagnosisContinue):
+async def mfg_diagnosis_continue(body: MfgDiagnosisContinue, kb: str = QueryParam("default")):
     """故障诊断 — 继续会话。"""
-    m = _get_mfg_agent_components()
+    m = await _get_mfg_agent_components(kb=kb)
     result = m["fault_diagnosis"].continue_diagnosis(body.session_id, body.query)
     return result
 
 
 # ── 健康检查 ──
+
+@app.get("/api/manufacturing/kb-list")
+async def mfg_kb_list(current_user: dict = Depends(get_current_user)):
+    """制造智能体可用 KB 列表（跨用户，所有 KB 均可检索）。"""
+    meta = load_kb_meta()
+    kbs = []
+    for name, info in meta.items():
+        kbs.append({
+            "name": name,
+            "label": info.get("name", name),
+            "created": info.get("created", ""),
+            "owner_username": info.get("owner_username", ""),
+        })
+    return {"knowledge_bases": kbs}
+
 
 @app.get("/api/manufacturing/health")
 async def mfg_health():

@@ -102,10 +102,21 @@ class AgenticRAG:
         llm_func: Callable,
         max_steps: int = 5,
         mode: str = "react",
+        system_prompt_override: Optional[str] = None,
     ):
+        """
+        Args:
+            llm_func: 异步 LLM 调用函数
+            max_steps: 最大推理步数
+            mode: 推理模式 "react" | "cot"
+            system_prompt_override: 覆盖默认的 AI 助手角色身份 prompt。
+                用于注入领域专家身份（如"智能制造教学专家"）。
+                工具描述和推理格式指令保持不变。
+        """
         self.llm_func = llm_func
         self.max_steps = max_steps
         self.mode = mode
+        self.system_prompt_override = system_prompt_override
         self.tools: dict[str, Tool] = {}
 
     def register_tool(self, tool: Tool) -> None:
@@ -144,7 +155,13 @@ class AgenticRAG:
 
         tool_names = ", ".join(t.name for t in self.tools.values()) if self.tools else "无"
 
-        system_prompt = f"""你是一个具备多步推理能力的 AI 助手。你可以使用工具来获取信息，然后逐步推理得出最终答案。
+        role_identity = (
+            self.system_prompt_override
+            if self.system_prompt_override
+            else "你是一个具备多步推理能力的 AI 助手。你可以使用工具来获取信息，然后逐步推理得出最终答案。"
+        )
+
+        system_prompt = f"""{role_identity}
 
 ## 可用工具
 {tool_descriptions}
@@ -176,7 +193,13 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
 
     def _build_cot_prompt(self, query: str) -> tuple[str, str]:
         """构建 CoT (Chain-of-Thought) prompt"""
-        system_prompt = """你是一个具备逐步推理能力的 AI 助手。
+        role_identity = (
+            self.system_prompt_override
+            if self.system_prompt_override
+            else "你是一个具备逐步推理能力的 AI 助手。"
+        )
+
+        system_prompt = f"""{role_identity}
 
 ## 推理格式
 请按以下格式逐步思考并回答：
