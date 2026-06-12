@@ -1,0 +1,125 @@
+# ============================================================================
+# 智能制造专业智能体 — 配置文件
+# ============================================================================
+
+# --- 赛项配置 ---
+competitions:
+  name: "第六届全国智能制造应用技术技能大赛"
+  edition: 6
+  tracks:
+    - id: "machining"
+      name: "机械加工"
+      topics: ["数控铣削", "数控车削", "精密测量"]
+    - id: "electrical"
+      name: "电气控制"
+      topics: ["PLC 编程", "电气装调", "传感器应用"]
+    - id: "robot"
+      name: "工业机器人"
+      topics: ["机器人编程", "轨迹规划", "视觉引导"]
+    - id: "digital_design"
+      name: "数字化设计与制造"
+      topics: ["CAD/CAM", "增材制造", "逆向工程"]
+    - id: "integration"
+      name: "智能制造系统集成"
+      topics: ["MES 系统", "产线集成", "数字孪生"]
+
+# --- 知识库路径 ---
+knowledge_base:
+  root_path: "./data/manufacturing_kb"
+  exam_path: "./data/manufacturing_kb/exams"
+  scoring_path: "./data/manufacturing_kb/scoring"
+  process_library_path: "./data/manufacturing_kb/processes"
+  fault_cases_path: "./data/manufacturing_kb/fault_cases"
+  textbooks_path: "./data/manufacturing_kb/textbooks"
+  videos_path: "./data/manufacturing_kb/videos"
+  code_samples_path: "./data/manufacturing_kb/code_samples"
+  vector_store_path: "./data/manufacturing_kb/vectors"
+
+# --- 知识图谱配置 ---
+knowledge_graph:
+  storage_backend: "lightrag"  # 复用 RAG-Anything 图存储
+  max_tag_depth: 4
+  relationship_types:
+    - "requires"       # 前置依赖
+    - "advances_to"    # 后续进阶
+    - "related_to"     # 关联知识
+    - "evaluates"      # 评分关联
+    - "applies_in"     # 应用场景
+
+# --- 能力标签体系 ---
+capability_tags:
+  root_categories:
+    - id: "mechanical"
+      name: "机械加工能力"
+    - id: "electrical_ctrl"
+      name: "电气控制能力"
+    - id: "robotics"
+      name: "工业机器人能力"
+    - id: "digital_manufacturing"
+      name: "数字化制造能力"
+    - id: "system_integration"
+      name: "系统集成能力"
+    - id: "quality_mgmt"
+      name: "质量管理能力"
+    - id: "safety"
+      name: "安全生产能力"
+
+# --- LLM 参数 ---
+llm:
+  provider: "anthropic"
+  model: "claude-sonnet-4-6"
+  max_tokens: 4096
+  temperature: 0.3  # 低温度保证回答准确性
+  system_prompt_file: "./prompts/manufacturing_agent_system.txt"
+
+# --- 检索参数 ---
+retrieval:
+  top_k: 10
+  similarity_threshold: 0.7
+  hybrid_search: true  # 向量 + BM25 混合检索
+  rerank_enabled: true
+  video_frame_window: 3  # 视频片段定位的帧窗口大小
+
+# --- 智能体行为 ---
+agent:
+  qa:
+    citation_required: true
+    max_citation_count: 5
+    fallback_message: "当前知识库未覆盖该问题，建议联系专业教师获取帮助。"
+  fault_diagnosis:
+    max_dialog_rounds: 5
+    confidence_threshold: 0.6  # 低于此阈值的诊断标注"建议人工确认"
+  code_parser:
+    supported_languages: ["gcode", "plc_instruction_list", "ladder_diagram"]
+  video_locator:
+    default_preview_frames: 3
+    min_segment_duration: 5  # 秒
+
+# --- 天工讲堂平台对接 ---
+tiangong_platform:
+  api_base_url: "https://api.tiangong.example.com/v1"
+  auth:
+    type: "oauth2"
+    sso_enabled: true
+  data_isolation: "per_institution"
+  dashboard:
+    enabled: true
+    metrics:
+      - "kb_size"
+      - "query_count"
+      - "top_queries"
+      - "user_activity"
+
+# --- 运维配置 ---
+operations:
+  monitoring:
+    availability_target: 99.5  # 月度
+    p95_response_ms: 2000
+    alert_channels: ["email", "webhook"]
+  backup:
+    schedule: "0 2 * * *"  # 每天凌晨 2 点
+    retention_days: 90
+  sla:
+    p0_response_minutes: 30
+    p0_recovery_hours: 2
+    monthly_report_enabled: true

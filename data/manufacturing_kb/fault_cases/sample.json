@@ -1,0 +1,59 @@
+[
+  {
+    "title": "数控铣床加工精度超差",
+    "equipment_type": "数控铣床",
+    "fault_category": "机械",
+    "phenomenon": "加工零件尺寸偏差超过0.05mm，误差方向为正偏差，表面粗糙度增大",
+    "root_cause": "刀具刃口磨损导致切削力增大，引起主轴径向跳动",
+    "troubleshooting_steps": [
+      "使用放大镜检查刀具刃口状态",
+      "测量主轴径向跳动量（千分表）",
+      "更换新刀具后试切对比",
+      "如仍有偏差，检查主轴轴承预紧力"
+    ],
+    "preventive_measures": [
+      "定期检查刀具磨损状态",
+      "建立刀具寿命管理台账",
+      "每200小时检测主轴跳动"
+    ],
+    "severity": "high"
+  },
+  {
+    "title": "PLC 输出模块无响应",
+    "equipment_type": "PLC 控制系统",
+    "fault_category": "电气",
+    "phenomenon": "PLC 输出指示灯亮但执行器不动作，万用表测量输出端无电压",
+    "root_cause": "输出继电器触点氧化导致接触不良，24V电源模块输出不稳定",
+    "troubleshooting_steps": [
+      "测量输出模块公共端24V电压",
+      "检查输出继电器触点电阻",
+      "更换同型号输出继电器",
+      "检查PLC程序输出地址是否正确"
+    ],
+    "preventive_measures": [
+      "定期清洁电气柜内部",
+      "每月检测电源模块输出稳定性",
+      "备用继电器库存管理"
+    ],
+    "severity": "medium"
+  },
+  {
+    "title": "加工中心主轴异响",
+    "equipment_type": "加工中心",
+    "fault_category": "机械",
+    "phenomenon": "主轴在3000rpm以上时出现周期性异响，声音随转速升高而增大，空载时仍有",
+    "root_cause": "主轴轴承润滑脂老化干涸，滚道表面出现点蚀",
+    "troubleshooting_steps": [
+      "使用听诊器确定异响来源位置",
+      "检查主轴润滑系统油脂量",
+      "拆解主轴检查轴承滚道表面",
+      "更换轴承并重新加注规定型号润滑脂"
+    ],
+    "preventive_measures": [
+      "严格执行主轴润滑周期表",
+      "定期进行振动频谱分析",
+      "控制切削参数在主轴额定负载内"
+    ],
+    "severity": "critical"
+  }
+]

@@ -458,6 +458,7 @@ def create_rag(parser: str = None, working_dir: str = None, chunking_strategy: s
         enable_image_processing=os.getenv("ENABLE_IMAGE_PROCESSING", "false").lower() == "true",
         enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "false").lower() == "true",
         enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "false").lower() == "true",
+        enable_video_processing=os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
     )
 
     return RAGAnything(config=config, llm_model_func=llm_func,
@@ -490,6 +491,7 @@ class BatchDeleteRequest(BaseModel):
     enable_image: Optional[bool] = None
     enable_table: Optional[bool] = None
     enable_equation: Optional[bool] = None
+    enable_video: Optional[bool] = None
 
 
 # ── 生命周期 ───────────────────────────────────────
@@ -2248,6 +2250,7 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         "enable_image": os.getenv("ENABLE_IMAGE_PROCESSING", "false").lower() == "true",
         "enable_table": os.getenv("ENABLE_TABLE_PROCESSING", "false").lower() == "true",
         "enable_equation": os.getenv("ENABLE_EQUATION_PROCESSING", "false").lower() == "true",
+        "enable_video": os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
         "working_dir": WORKING_DIR,
         "parser_output_dir": os.getenv("OUTPUT_DIR", "./output"),
         "supported_extensions": [
@@ -2300,6 +2303,9 @@ async def update_settings(settings: SettingsUpdate, current_user: dict = Depends
     if settings.enable_equation is not None:
         os.environ["ENABLE_EQUATION_PROCESSING"] = str(settings.enable_equation).lower()
         changes["enable_equation"] = settings.enable_equation
+    if settings.enable_video is not None:
+        os.environ["ENABLE_VIDEO_PROCESSING"] = str(settings.enable_video).lower()
+        changes["enable_video"] = settings.enable_video
     # 部分配置需要重建 RAG 实例才能生效
     if settings.parser is not None:
         rag = create_rag()
@@ -2492,6 +2498,261 @@ async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
     if active_kb == name:
         active_kb = "default"
     return {"status": "deleted", "name": name}
+
+
+# ── 智能制造专业智能体 API ──────────────────────────
+
+# Lazy-init manufacturing modules (避免启动时阻塞)
+_manufacturing_components = {}
+
+def _get_manufacturing():
+    """延迟初始化制造模块（首次 API 调用时加载）。"""
+    if not _manufacturing_components:
+        from raganything.manufacturing.knowledge_graph.graph_api import KnowledgeGraphAPI
+        from raganything.manufacturing.knowledge_graph.models import (
+            KnowledgeNode, KnowledgeEdge, CapabilityTag, TagTree,
+        )
+        from raganything.manufacturing.knowledge_pipeline.process_library import ProcessLibrary
+        from raganything.manufacturing.knowledge_pipeline.fault_case_library import FaultCaseLibrary
+        from raganything.manufacturing.agent.code_parser import CodeParser
+        from raganything.manufacturing.agent.deployment_config import DeploymentConfig
+        from raganything.manufacturing.deployment.dashboard import Dashboard
+
+        _manufacturing_components.update({
+            "graph_api": KnowledgeGraphAPI(),
+            "process_library": ProcessLibrary(),
+            "fault_case_library": FaultCaseLibrary(),
+            "code_parser": CodeParser(),
+            "deployment_config": DeploymentConfig(),
+            "dashboard": Dashboard(),
+            "TagTree": TagTree,
+            "CapabilityTag": CapabilityTag,
+            "KnowledgeNode": KnowledgeNode,
+            "KnowledgeEdge": KnowledgeEdge,
+        })
+    return _manufacturing_components
+
+
+class ManufacturingQuery(BaseModel):
+    query: str
+    language: str = "gcode"
+    top_k: int = 5
+
+
+# ── 知识图谱 ──
+
+@app.get("/api/manufacturing/knowledge-graph/summary")
+async def mfg_kg_summary():
+    """知识图谱统计摘要。"""
+    m = _get_manufacturing()
+    return m["graph_api"].get_graph_summary()
+
+
+@app.get("/api/manufacturing/knowledge-graph/nodes")
+async def mfg_kg_nodes(track: str = "", node_type: str = "", limit: int = 100, offset: int = 0):
+    """知识节点列表。"""
+    m = _get_manufacturing()
+    return m["graph_api"].get_nodes(competition_track=track, node_type=node_type, limit=limit, offset=offset)
+
+
+@app.get("/api/manufacturing/knowledge-graph/nodes/{node_id}")
+async def mfg_kg_node_detail(node_id: str):
+    """节点详情 + 关联边。"""
+    m = _get_manufacturing()
+    detail = m["graph_api"].get_node(node_id)
+    if not detail:
+        raise HTTPException(404, "节点不存在")
+    return detail
+
+
+@app.get("/api/manufacturing/knowledge-graph/nodes/{node_id}/lineage")
+async def mfg_kg_lineage(node_id: str, upstream: int = 3, downstream: int = 3):
+    """知识谱系树。"""
+    m = _get_manufacturing()
+    lineage = m["graph_api"].get_lineage(node_id, upstream_depth=upstream, downstream_depth=downstream)
+    if not lineage:
+        raise HTTPException(404, "节点不存在")
+    return lineage
+
+
+# ── 工艺库 ──
+
+@app.get("/api/manufacturing/process-library/search")
+async def mfg_process_search(q: str = "", category: str = "", limit: int = 20):
+    """企业工艺库检索。"""
+    m = _get_manufacturing()
+    results = m["process_library"].search(q, category=category, limit=limit)
+    return {"total": len(results), "results": results}
+
+
+@app.get("/api/manufacturing/process-library/categories")
+async def mfg_process_categories():
+    """工艺类别统计。"""
+    m = _get_manufacturing()
+    return m["process_library"].list_by_category()
+
+
+# ── 故障案例库 ──
+
+@app.get("/api/manufacturing/fault-cases/search")
+async def mfg_fault_search(q: str = "", top_k: int = 10):
+    """故障案例检索。"""
+    m = _get_manufacturing()
+    results = m["fault_case_library"].search(q, top_k=top_k)
+    return {"total": len(results), "results": results}
+
+
+@app.get("/api/manufacturing/fault-cases/stats")
+async def mfg_fault_stats():
+    """故障案例统计。"""
+    m = _get_manufacturing()
+    return m["fault_case_library"].get_statistics()
+
+
+# ── 代码解析 ──
+
+@app.post("/api/manufacturing/code/parse")
+async def mfg_code_parse(body: ManufacturingQuery):
+    """G 代码 / PLC 指令表解析。"""
+    m = _get_manufacturing()
+    return m["code_parser"].parse(body.query, language=body.language)
+
+
+# ── 数据看板 ──
+
+@app.get("/api/manufacturing/dashboard")
+async def mfg_dashboard():
+    """制造智能体数据看板。"""
+    m = _get_manufacturing()
+    return m["dashboard"].get_snapshot(
+        knowledge_graph_api=m.get("graph_api"),
+        process_library=m.get("process_library"),
+        fault_case_library=m.get("fault_case_library"),
+    )
+
+
+# ── 部署配置 ──
+
+@app.get("/api/manufacturing/institutions")
+async def mfg_institutions():
+    """注册机构列表。"""
+    m = _get_manufacturing()
+    return m["deployment_config"].list_institutions()
+
+
+# ── 智能体 API ──
+
+class MfgAgentQuery(BaseModel):
+    query: str
+    context: Optional[dict] = None
+
+
+class MfgDiagnosisStart(BaseModel):
+    query: str
+
+
+class MfgDiagnosisContinue(BaseModel):
+    session_id: str
+    query: str
+
+
+def _get_mfg_agent_components():
+    """延迟初始化制造智能体组件。注入真实 RAG 实例和 LLM 配置。"""
+    m = _get_manufacturing()
+    if "qa_engine" not in m:
+        from raganything.manufacturing.agent.qa_engine import QAEngine
+        from raganything.manufacturing.agent.fault_diagnosis import FaultDiagnosisEngine
+        from raganything.manufacturing.knowledge_pipeline.fault_case_library import FaultCaseLibrary
+        import logging
+        _logger = logging.getLogger("manufacturing")
+
+        # LLM 配置检测
+        if not API_KEY or not BASE_URL:
+            _logger.error("LLM 配置缺失: LLM_BINDING_API_KEY 或 LLM_BINDING_HOST 未设置")
+            _logger.error("制造智能体 QA/诊断功能将不可用")
+
+        class ServerLLMAdapter:
+            def generate(self, prompt: str) -> str:
+                if not API_KEY or not BASE_URL:
+                    raise RuntimeError("LLM 服务未配置，请设置 LLM_BINDING_API_KEY 和 LLM_BINDING_HOST")
+                return openai_complete_if_cache(
+                    LLM_MODEL, prompt,
+                    system_prompt="你是智能制造教学专家，基于参考资料回答问题。",
+                    api_key=API_KEY, base_url=BASE_URL,
+                )
+
+        # 注入真实 RAG 实例 (复用已有 create_rag 工厂)
+        try:
+            rag = create_rag()
+        except Exception as e:
+            _logger.warning(f"无法创建 RAG 实例，QA 将使用无检索模式: {e}")
+            rag = None
+
+        # 注入真实 FaultCaseLibrary (持久化到 data 目录)
+        fault_lib = FaultCaseLibrary(
+            storage_path="./data/manufacturing_kb/fault_cases"
+        )
+
+        m["qa_engine"] = QAEngine(
+            rag_client=rag,
+            llm_client=ServerLLMAdapter(),
+        )
+        m["fault_diagnosis"] = FaultDiagnosisEngine(
+            case_library=fault_lib,
+            llm_client=ServerLLMAdapter(),
+        )
+
+    return m
+
+
+@app.post("/api/manufacturing/qa")
+async def mfg_qa(body: MfgAgentQuery):
+    """智能制造文本问答。"""
+    m = _get_mfg_agent_components()
+    response = m["qa_engine"].answer(body.query, body.context)
+    return {
+        "query": response.query,
+        "answer": response.answer,
+        "citations": response.citations,
+        "confidence": response.confidence,
+        "processing_time_ms": response.processing_time_ms,
+    }
+
+
+@app.post("/api/manufacturing/fault-diagnosis")
+async def mfg_diagnosis_start(body: MfgDiagnosisStart):
+    """故障诊断 — 开始新会话。"""
+    m = _get_mfg_agent_components()
+    import uuid
+    sid = str(uuid.uuid4())[:8]
+    result = m["fault_diagnosis"].start_diagnosis(sid, body.query)
+    return result
+
+
+@app.post("/api/manufacturing/fault-diagnosis/continue")
+async def mfg_diagnosis_continue(body: MfgDiagnosisContinue):
+    """故障诊断 — 继续会话。"""
+    m = _get_mfg_agent_components()
+    result = m["fault_diagnosis"].continue_diagnosis(body.session_id, body.query)
+    return result
+
+
+# ── 健康检查 ──
+
+@app.get("/api/manufacturing/health")
+async def mfg_health():
+    """制造模块健康检查。"""
+    try:
+        m = _get_manufacturing()
+        return {
+            "status": "healthy",
+            "graph_api": m["graph_api"] is not None,
+            "process_library": m["process_library"] is not None,
+            "fault_case_library": m["fault_case_library"] is not None,
+            "code_parser": m["code_parser"] is not None,
+        }
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}
 
 
 # ── 前端静态文件 ────────────────────────────────────

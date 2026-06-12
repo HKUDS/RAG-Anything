@@ -51,6 +51,16 @@ async function fetchJson(url, options = {}) {
 }
 
 export const api = {
+  // Generic HTTP methods
+  get: (url, config = {}) => {
+    const params = config.params
+    const qs = params ? '?' + new URLSearchParams(params).toString() : ''
+    return fetchJson(`${url}${qs}`)
+  },
+  post: (url, data) => fetchJson(url, { method: 'POST', body: JSON.stringify(data) }),
+  put: (url, data) => fetchJson(url, { method: 'PUT', body: JSON.stringify(data) }),
+  delete: (url) => fetchJson(url, { method: 'DELETE' }),
+
   // KB Management
   listKBs: () => fetchJson('/kb/list'),
   createKB: (name, label) => fetchJson(`/kb/create?kb_name=${name}&label=${encodeURIComponent(label)}`, { method: 'POST' }),

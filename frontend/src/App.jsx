@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Database, MessageSquare, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown } from 'lucide-react'
+import { Database, MessageSquare, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, BarChart3, Wrench } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -13,12 +13,16 @@ import AgentChatPage from './pages/AgentChatPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import AdminUsersPage from './pages/AdminUsersPage'
+import ManufacturingDashboardPage from './pages/ManufacturingDashboardPage'
+import ManufacturingKnowledgePage from './pages/ManufacturingKnowledgePage'
+import ManufacturingAgentPage from './pages/ManufacturingAgentPage'
 import { api } from './utils/api'
 
 const NAV = [
   { to: '/agents',    icon: Bot,           label: '智能体' },
   { to: '/knowledge', icon: Database,       label: '知识库' },
   { to: '/query',     icon: MessageSquare,  label: '查询' },
+  { to: '/manufacturing', icon: Factory,    label: '制造智能体' },
   { to: '/settings',  icon: Settings,       label: '设置' },
   { to: '/monitor',   icon: Activity,       label: '监控' },
 ]
@@ -242,6 +246,9 @@ export default function App() {
                 <Route path="/settings" element={<ProtectedRoute><SettingsPage onToast={showToast} /></ProtectedRoute>} />
                 <Route path="/monitor" element={<ProtectedRoute><MonitorPage /></ProtectedRoute>} />
                 <Route path="/admin/users" element={<ProtectedRoute adminOnly><AdminUsersPage /></ProtectedRoute>} />
+                <Route path="/manufacturing" element={<ProtectedRoute><ManufacturingDashboardPage /></ProtectedRoute>} />
+                <Route path="/manufacturing/knowledge" element={<ProtectedRoute><ManufacturingKnowledgePage /></ProtectedRoute>} />
+                <Route path="/manufacturing/agent" element={<ProtectedRoute><ManufacturingAgentPage /></ProtectedRoute>} />
               </Routes>
             </motion.div>
           </AnimatePresence>
