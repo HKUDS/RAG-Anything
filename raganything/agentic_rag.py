@@ -50,6 +50,21 @@ class AgentResult:
     total_elapsed_ms: float = 0.0
 
 
+@dataclass
+class StreamEvent:
+    """run_stream() 产出的流式事件"""
+    type: str  # "thinking" | "token" | "done"
+    step: int | None = None
+    thought: str | None = None
+    action: str | None = None
+    observation: str | None = None
+    content: str | None = None
+    elapsed_ms: float = 0.0
+    # done 事件附加字段
+    total_steps: int = 0
+    answer: str = ""
+
+
 # ═══════════════════════════════════════════════════════════
 # Tool 基类
 # ═══════════════════════════════════════════════════════════
@@ -128,21 +143,141 @@ class AgenticRAG:
     # ── Public API ─────────────────────────────────
 
     async def run(self, query: str, kb_ids: Optional[list[str]] = None) -> AgentResult:
-        """执行 Agentic 查询
-
-        Args:
-            query: 用户问题
-            kb_ids: 指定知识库 ID 列表（可选，传递给 SearchTool）
-
-        Returns:
-            AgentResult 包含最终回答和推理轨迹
-        """
+        """执行 Agentic 查询（非流式，向后兼容）"""
         if self.mode == "react":
             return await self._react_loop(query)
         elif self.mode == "cot":
             return await self._cot_loop(query)
         else:
             raise ValueError(f"Unknown mode: {self.mode} (expected 'react' or 'cot')")
+
+    async def run_stream(self, query: str) -> "AsyncIterator[StreamEvent]":
+        """执行 Agentic 查询（流式）— FINISH 步 token-by-token 输出。
+
+        Returns:
+            AsyncIterator yielding StreamEvent:
+            - type="thinking": 每步推理完成时（非 FINISH 步）
+            - type="token": FINISH 步的逐 token 输出
+            - type="done": 推理完成
+        """
+        if self.mode != "react":
+            raise ValueError("run_stream() only supports mode='react'")
+
+        start_time = time.time()
+        trace: list[ReasoningStep] = []
+        system_prompt, user_prompt = self._build_react_prompt(query)
+        messages: list[dict] = []
+
+        for step_num in range(1, self.max_steps + 1):
+            step_start = time.time()
+
+            # ── 调用 LLM（非流式，需完整解析 Thought/Action）──
+            try:
+                response = await self._call_llm_with_retry(
+                    system_prompt, user_prompt, messages
+                )
+            except Exception as e:
+                yield StreamEvent(
+                    type="done",
+                    content=f"推理过程出错: {e}",
+                    total_steps=step_num,
+                    answer=f"推理过程出错: {e}",
+                )
+                return
+
+            # ── 解析输出 ──
+            thought, action, action_input = self._parse_action(response)
+
+            # ── 检查是否 FINISH ──
+            if action.upper() == "FINISH":
+                elapsed = (time.time() - step_start) * 1000
+                answer = action_input.get("answer", thought) if action_input else thought
+
+                trace.append(ReasoningStep(
+                    step_number=step_num,
+                    thought=thought,
+                    action="FINISH",
+                    action_input=action_input,
+                    observation="推理完成",
+                    elapsed_ms=elapsed,
+                ))
+
+                # ── FINISH 步：用已生成的完整 answer 逐字流式输出 ──
+                # 不发起第二次 LLM 调用，直接用第一次调用已生成的回答
+                # 保证精度=单次完整 LLM 调用，速度=无额外调用开销
+                for ch in answer:
+                    yield StreamEvent(type="token", content=ch, step=step_num)
+                    await asyncio.sleep(0)  # 让出事件循环，不阻塞
+
+                yield StreamEvent(
+                    type="done",
+                    total_steps=step_num,
+                    answer=answer,
+                    elapsed_ms=(time.time() - start_time) * 1000,
+                )
+                return
+
+            # ── 非 FINISH 步：执行工具 ──
+            observation = await self._execute_tool_with_timeout(
+                action, action_input or {}
+            )
+            elapsed = (time.time() - step_start) * 1000
+            trace.append(ReasoningStep(
+                step_number=step_num,
+                thought=thought,
+                action=action if action else None,
+                action_input=action_input,
+                observation=observation,
+                elapsed_ms=elapsed,
+            ))
+
+            # ── 产出 thinking 事件 ──
+            yield StreamEvent(
+                type="thinking",
+                step=step_num,
+                thought=thought,
+                action=action,
+                observation=observation,
+                elapsed_ms=elapsed,
+            )
+
+            # ── 拼接历史消息 ──
+            remaining = self.max_steps - step_num
+            messages.append({"role": "assistant", "content": response})
+            messages.append({"role": "user", "content": (
+                f"[Step {step_num}/{self.max_steps}] Observation: {observation}\n\n"
+                f"还剩 {remaining} 步。"
+                f"{'这是最后一次机会，必须 FINISH。' if remaining == 0 else ''}\n"
+                f"请继续推理。从 Thought 开始:"
+            )})
+
+            # ── 达到最大步数 ──
+            if step_num >= self.max_steps:
+                try:
+                    final_response = await self._call_llm_with_retry(
+                        system_prompt,
+                        f"已达到最大步数限制({self.max_steps}步)。请基于已收集的信息给出最终回答。\n\n用户问题: {query}",
+                        [],
+                    )
+                    full = final_response.strip() if isinstance(final_response, str) else str(final_response)
+                except Exception:
+                    full = "推理达到最大步数限制，无法生成最终回答。"
+                yield StreamEvent(type="token", content=full)
+                yield StreamEvent(
+                    type="done",
+                    total_steps=step_num,
+                    answer=full,
+                    elapsed_ms=(time.time() - start_time) * 1000,
+                )
+                return
+
+        # Should not reach
+        yield StreamEvent(
+            type="done",
+            answer="推理达到最大步数限制。",
+            total_steps=self.max_steps,
+            elapsed_ms=(time.time() - start_time) * 1000,
+        )
 
     # ── ReAct Prompt 构建 ────────────────────────────
 

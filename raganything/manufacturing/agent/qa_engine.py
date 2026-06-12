@@ -48,10 +48,10 @@ def _encode_image_data_url(image_path: str) -> str | None:
 
 # 制造领域专用 ReAct system prompt
 MFG_SYSTEM_PROMPT = (
-    "你是一位智能制造领域的教学专家，具备多步推理能力。"
-    "你可以使用工具来获取知识库中的工艺参数、故障案例、赛题标准等信息，然后逐步推理得出最终答案。"
-    "回答必须基于工具返回的实际文档内容，不要编造制造参数和工艺信息。"
-    "每个关键陈述需要标注来源编号，如 [来源 1]。"
+    "你是智能制造教学专家，擅长设备操作、PLC编程、数控加工、故障诊断。"
+    "用 search 工具检索知识库获取准确信息。"
+    "回答要求：基于检索到的实际文档内容，引用具体参数和数据，标注来源编号 [来源 N]。"
+    "没有检索到的信息不要编造，直接说未找到。"
 )
 
 
@@ -103,26 +103,31 @@ class QAEngine:
         llm_adapter = self._llm_adapter
 
         async def llm_func(prompt, system_prompt=None, history_messages=None, **kw):
-            # AgenticRAG 传入的是 ReAct 格式的消息列表
+            # Forward stream/temperature/max_tokens etc. to underlying adapter
+            extra_kw = {k: v for k, v in kw.items() if k not in ("prompt", "system_prompt", "history_messages")}
+
             if history_messages:
                 conversation = (
                     [{"role": "system", "content": system_prompt}] if system_prompt else []
                 ) + history_messages + [{"role": "user", "content": prompt}]
 
-                # 拼接为单个 prompt 调用兼容的 adapter
                 full_prompt = "\n\n".join(
                     f"[{m['role']}]: {m['content']}" for m in conversation
                 )
-                result = llm_adapter(full_prompt)
+                result = llm_adapter(full_prompt, **extra_kw)
                 if inspect.isawaitable(result):
                     result = await result
+                # 流式调用返回 async generator，直接透传
+                if hasattr(result, '__aiter__'):
+                    return result
                 return result if isinstance(result, str) else str(result)
 
-            # 简单调用
             full = f"System: {system_prompt}\n\nUser: {prompt}" if system_prompt else prompt
-            result = llm_adapter(full)
+            result = llm_adapter(full, **extra_kw)
             if inspect.isawaitable(result):
                 result = await result
+            if hasattr(result, '__aiter__'):
+                return result
             return result if isinstance(result, str) else str(result)
 
         self._agentic_rag = AgenticRAG(
@@ -175,91 +180,206 @@ class QAEngine:
             "请传入 Anthropic SDK、OpenAI SDK、或实现了 generate(prompt) -> str 的对象"
         )
 
-    async def answer(self, query: str,
-                     context: Optional[dict] = None) -> AgentResponse:
-        """执行文本问答（异步）— AgenticRAG 多步推理。
+    async def _direct_retrieve(self, query: str, timeout: float = 10.0) -> str:
+        """Tier 1 直接 RRF 检索，返回上下文字符串。"""
+        if self.rag_client is None or not hasattr(self.rag_client, 'aquery'):
+            return ""
+        try:
+            return await asyncio.wait_for(
+                self.rag_client.aquery(query, mode="rrf", only_need_context=True, top_k=self.top_k),
+                timeout=timeout,
+            ) or ""
+        except asyncio.TimeoutError:
+            logger.warning(f"直接检索超时 ({timeout}s)")
+            return ""
+        except Exception as e:
+            logger.warning(f"直接检索失败: {e}")
+            return ""
 
-        Args:
-            query: 用户问题
-            context: 上下文限定（如赛项 track、知识库范围）
-
-        Returns:
-            AgentResponse with answer, citations, related_images, trace, confidence
-        """
-        start_time = time.time()
-        context = context or {}
-
-        # Step 1: AgenticRAG 多步推理
-        if self._agentic_rag is not None:
-            try:
-                agent_result = await self._agentic_rag.run(query)
-                answer_text = agent_result.answer
-                # 转换推理轨迹
-                trace = [
-                    {
-                        "step": s.step_number,
-                        "thought": s.thought,
-                        "action": s.action,
-                        "observation": s.observation,
-                        "elapsed_ms": s.elapsed_ms,
-                    }
-                    for s in agent_result.trace
-                ]
-                total_steps = agent_result.total_steps
-            except Exception as e:
-                logger.error(f"AgenticRAG 推理失败: {e}")
-                return AgentResponse(
-                    query=query,
-                    answer=f"推理过程出错: {e}",
-                    citations=[],
-                    confidence=0.0,
-                    processing_time_ms=round((time.time() - start_time) * 1000, 2),
-                )
-        else:
-            # 降级：无 LLM 时返回提示
-            return AgentResponse(
-                query=query,
-                answer="LLM 服务未配置，无法执行推理。",
-                citations=[],
-                confidence=0.0,
-                processing_time_ms=round((time.time() - start_time) * 1000, 2),
-                needs_human_review=True,
-            )
-
-        # Step 2: 后处理 — 三级图片匹配
-        # 从 trace 的 observation 中收集检索到的文档上下文
-        retrieved_contexts = []
-        for s in (agent_result.trace if agent_result else []):
-            if s.observation and s.action == "search":
-                retrieved_contexts.append(s.observation)
-
-        # 构造伪 docs 列表用于图片匹配和引用提取
-        docs_for_postprocess = [
-            {"content": ctx, "score": 0.8} for ctx in retrieved_contexts
-        ]
-        # 也加入最终回答用于图片匹配
+    def _post_process(self, query: str, answer_text: str, retrieved_texts: list[str],
+                      start_time: float, trace: list[dict] | None = None) -> AgentResponse:
+        """后处理：图片匹配 + 引用溯源 + 置信度。"""
+        docs = [{"content": t, "score": 0.8} for t in retrieved_texts]
         if answer_text:
-            docs_for_postprocess.insert(0, {"content": answer_text, "score": 0.9})
+            docs.insert(0, {"content": answer_text, "score": 0.9})
 
-        relevant_images = self._match_relevant_images(query, docs_for_postprocess)
-
-        # Step 3: 引用溯源
-        citations = self.source_tracer.extract_citations(answer_text, docs_for_postprocess)
-
-        # Step 4: 置信度评估
-        confidence = self._estimate_confidence(docs_for_postprocess)
-
-        processing_time = (time.time() - start_time) * 1000
+        images = self._match_relevant_images(query, docs)
+        citations = self.source_tracer.extract_citations(answer_text, docs)
+        confidence = self._estimate_confidence(docs)
+        ms = round((time.time() - start_time) * 1000, 2)
 
         return AgentResponse(
-            query=query,
-            answer=answer_text,
-            citations=citations,
-            related_images=relevant_images,
-            trace=trace if 'trace' in dir() else [],
-            confidence=confidence,
-            processing_time_ms=round(processing_time, 2),
+            query=query, answer=answer_text, citations=citations,
+            related_images=images, trace=trace or [],
+            confidence=confidence, processing_time_ms=ms,
         )
+
+    async def answer(self, query: str,
+                     context: Optional[dict] = None) -> AgentResponse:
+        """两级问答 — Tier 1 直接检索 → Tier 2 AgenticRAG 兜底。"""
+        start_time = time.time()
+
+        if self._llm_adapter is None:
+            return AgentResponse(query=query, answer="LLM 服务未配置。",
+                                 citations=[], confidence=0.0, processing_time_ms=0)
+
+        # ═══ Tier 1: 直接 RRF 检索 ═══
+        ctx = await self._direct_retrieve(query)
+
+        if len(ctx) >= 200:
+            # 上下文充分 → 直接 prompt+LLM（与通用智能体一致）
+            prompt = (
+                f"你是智能制造教学专家。基于以下检索内容回答用户问题。\n\n"
+                f"## 检索内容\n{ctx}\n\n"
+                f"## 问题\n{query}\n\n"
+                f"## 要求\n"
+                f"从检索内容提取事实和数据。有数字必须引用 [来源 1]。"
+                f"没有就说未找到。不编造。用 markdown 格式回答。"
+            )
+            result = self._llm_adapter(prompt)
+            if inspect.isawaitable(result):
+                result = await result
+            answer_text = result if isinstance(result, str) else str(result)
+            return self._post_process(query, answer_text, [ctx], start_time)
+
+        if len(ctx) < 50:
+            # 无有效内容 → 直接走 AgenticRAG
+            return await self._agentic_answer(query, start_time)
+
+        # 50-200 字符 → 生成后评估
+        prompt = (
+            f"你是智能制造教学专家。基于以下检索内容回答。\n\n"
+            f"## 检索内容\n{ctx}\n\n## 问题\n{query}\n\n"
+            f"从检索内容提取事实。不编造。用 markdown 格式。"
+        )
+        result = self._llm_adapter(prompt)
+        if inspect.isawaitable(result):
+            result = await result
+        answer_text = result if isinstance(result, str) else str(result)
+
+        response = self._post_process(query, answer_text, [ctx], start_time)
+        if response.confidence < 0.3:
+            logger.info(f"Tier 1 置信度过低 ({response.confidence:.2f})，回退 AgenticRAG")
+            return await self._agentic_answer(query, start_time)
+        return response
+
+    async def _agentic_answer(self, query: str, start_time: float) -> AgentResponse:
+        """Tier 2: AgenticRAG 多步推理兜底。"""
+        if self._agentic_rag is None:
+            return AgentResponse(query=query, answer="推理引擎未配置。",
+                                 citations=[], confidence=0.0, processing_time_ms=0)
+
+        try:
+            agent_result = await self._agentic_rag.run(query)
+        except Exception as e:
+            logger.error(f"AgenticRAG 失败: {e}")
+            return AgentResponse(query=query, answer=f"推理出错: {e}",
+                                 citations=[], confidence=0.0,
+                                 processing_time_ms=round((time.time() - start_time) * 1000, 2))
+
+        trace = [{"step": s.step_number, "thought": s.thought,
+                  "action": s.action, "observation": s.observation,
+                  "elapsed_ms": s.elapsed_ms} for s in agent_result.trace]
+        contexts = [s.observation for s in agent_result.trace
+                    if s.observation and s.action == "search"]
+        return self._post_process(query, agent_result.answer, contexts, start_time, trace)
+
+    async def answer_stream(self, query: str) -> "AsyncIterator[dict]":
+        """两级流式问答 — Tier 1 直接检索+流式LLM → Tier 2 AgenticRAG 兜底。
+
+        Yields:
+            {"type": "thinking", "step": N, ...}  — 仅 AgenticRAG 路径
+            {"type": "token", "content": "<token>"}
+            {"type": "done", "images": [...], "citations": [...], "confidence": ...}
+        """
+        start_time = time.time()
+
+        if self._llm_adapter is None:
+            yield {"type": "done", "content": "LLM 服务未配置。", "images": [], "citations": [], "confidence": 0.0}
+            return
+
+        # ═══ Tier 1: 直接 RRF 检索 ═══
+        ctx = await self._direct_retrieve(query)
+        yield {"type": "thinking", "step": 0, "thought": f"检索到 {len(ctx)} 字符上下文", "action": "retrieve"}
+
+        if len(ctx) < 50 and self._agentic_rag is not None:
+            # 无有效内容 → 走 AgenticRAG 流式
+            full_answer = ""
+            trace_steps = []
+            retrieved_contexts = []
+            try:
+                async for event in self._agentic_rag.run_stream(query):
+                    if event.type == "thinking":
+                        sd = {"step": event.step or 0, "thought": event.thought or "",
+                              "action": event.action or "", "observation": event.observation or "",
+                              "elapsed_ms": event.elapsed_ms}
+                        trace_steps.append(sd)
+                        if event.action == "search" and event.observation:
+                            retrieved_contexts.append(event.observation)
+                        yield {"type": "thinking", **sd}
+                    elif event.type == "token":
+                        full_answer += (event.content or "")
+                        yield {"type": "token", "content": event.content or ""}
+                    elif event.type == "done":
+                        if event.answer and len(event.answer) > len(full_answer):
+                            full_answer = event.answer
+                        break
+            except Exception as e:
+                logger.error(f"AgenticRAG stream 失败: {e}")
+                yield {"type": "done", "content": str(e), "images": [], "citations": [], "confidence": 0.0}
+                return
+
+            docs = [{"content": c, "score": 0.8} for c in retrieved_contexts]
+            if full_answer:
+                docs.insert(0, {"content": full_answer, "score": 0.9})
+            yield {
+                "type": "done",
+                "answer": full_answer,
+                "images": self._match_relevant_images(query, docs),
+                "citations": self.source_tracer.extract_citations(full_answer, docs),
+                "confidence": self._estimate_confidence(docs),
+                "elapsed_ms": round((time.time() - start_time) * 1000, 2),
+                "trace": trace_steps,
+            }
+            return
+
+        # ═══ Tier 1 快速路径：直接 LLM stream ═══
+        prompt = (
+            f"你是智能制造教学专家。基于以下检索内容回答。\n\n"
+            f"## 检索内容\n{ctx}\n\n## 问题\n{query}\n\n"
+            f"从检索内容提取事实和数据。有数字必须引用 [来源 1]。"
+            f"没有就说未找到。不编造。用 markdown 格式。"
+        )
+        full_answer = ""
+        try:
+            result = self._llm_adapter(prompt, stream=True)
+            if inspect.isawaitable(result):
+                result = await result
+            if hasattr(result, '__aiter__'):
+                async for token in result:
+                    full_answer += token
+                    yield {"type": "token", "content": token}
+            elif isinstance(result, str):
+                full_answer = result
+                yield {"type": "token", "content": result}
+            else:
+                full_answer = str(result) if result else ""
+                yield {"type": "token", "content": full_answer}
+        except Exception as e:
+            logger.error(f"Tier 1 LLM stream 失败: {e}")
+            full_answer = ctx[:500]
+
+        docs = [{"content": ctx, "score": 0.8}]
+        if full_answer:
+            docs.insert(0, {"content": full_answer, "score": 0.9})
+        yield {
+            "type": "done",
+            "answer": full_answer,
+            "images": self._match_relevant_images(query, docs),
+            "citations": self.source_tracer.extract_citations(full_answer, docs),
+            "confidence": self._estimate_confidence(docs),
+            "elapsed_ms": round((time.time() - start_time) * 1000, 2),
+        }
 
     # ------------------------------------------------------------------
     # 三级图片匹配策略（保持不变）
@@ -404,10 +524,24 @@ class QAEngine:
         return []
 
     def _estimate_confidence(self, docs: list[dict]) -> float:
-        """基于检索结果质量估算回答置信度。"""
+        """基于检索上下文质量估算置信度。
+
+        信号: 上下文长度(信息量) + 来源数量(覆盖面) + 答案长度(完整性)
+        """
         if not docs:
             return 0.0
-        scores = [d.get("score", d.get("relevance", 0.5)) for d in docs]
-        avg_score = sum(scores) / len(scores)
-        count_bonus = min(len(docs) / max(self.top_k, 1), 1.0) * 0.2
-        return min(avg_score + count_bonus, 1.0)
+
+        total_chars = sum(len(d.get("content", "")) for d in docs)
+        # 来源去重（从 content 中提取文档来源标记）
+        sources = set()
+        for d in docs:
+            import re as _re
+            for m in _re.findall(r'\[Doc \d+\]|sources:\s*(\w+)', d.get("content", "")):
+                sources.add(m)
+
+        # 上下文长度分数: 0-2000+ chars → 0.0-1.0
+        length_score = min(total_chars / 2000.0, 1.0)
+        # 来源丰富度: 1-5+
+        source_score = min(len(sources) / 3.0, 1.0) if sources else 0.3
+        # 加权综合
+        return round(length_score * 0.6 + source_score * 0.4, 2)

@@ -7,19 +7,15 @@
 ## Requirements
 
 ### Requirement: QA 引擎使用 AgenticRAG 多步推理
-QAEngine SHALL 内部持有 AgenticRAG 实例，通过 `AgenticRAG.run(query)` 执行多步推理，替代当前的单步 RRF 检索+LLM 生成。
+QAEngine SHALL 采用两级策略：Tier 1 直接 RRF 检索+LLM 生成（快速路径），仅在检索不充分（< 50 字符或置信度 < 0.3）时回退到 AgenticRAG 多步推理。
 
-#### Scenario: ReAct 多步推理
-- **WHEN** 用户通过 `/api/manufacturing/qa` 发起问答
-- **THEN** QAEngine SHALL 调用 AgenticRAG 的 ReAct 循环，Agent 自主决定检索次数和参数，并在推理完成后返回最终答案
+#### Scenario: 仅低质量检索触发 AgenticRAG
+- **WHEN** 直接 RRF 检索返回 < 50 字符或置信度 < 0.3
+- **THEN** QAEngine SHALL 启动 AgenticRAG 多步推理作为兜底
 
-#### Scenario: CoT 推理模式
-- **WHEN** AgenticRAG 配置为 `mode="cot"`
-- **THEN** QAEngine SHALL 使用 Chain-of-Thought 模式逐步推理，输出思考步骤后汇总最终回答
-
-#### Scenario: 推理步骤限制
-- **WHEN** Agent 推理超过 `max_steps` 步仍未 FINISH
-- **THEN** 系统 SHALL 基于已收集的观察综合生成最终回答，不回退到单步模式
+#### Scenario: 充分检索跳过 AgenticRAG
+- **WHEN** 直接 RRF 检索返回 ≥ 200 字符充分上下文
+- **THEN** QAEngine SHALL 不启动 AgenticRAG，直接构造 prompt 生成回答
 
 ### Requirement: 制造领域专用 System Prompt
 AgenticRAG 的 ReAct system prompt SHALL 支持制造领域定制，将通用 AI 助手身份替换为"智能制造教学专家"。
@@ -63,7 +59,7 @@ AgentResponse SHALL 包含 `trace` 字段，记录每一步推理的 thought、a
 
 #### Scenario: 流式输出推理过程
 - **WHEN** 用户通过 `/api/manufacturing/qa/stream` 发起流式问答
-- **THEN** 系统 SHALL 以 SSE 格式逐步输出 `{"type":"thinking","step":N,"content":"..."}` 的思考过程，最后输出 `{"type":"answer","content":"..."}` 的最终回答
+- **THEN** 系统 SHALL 在 ReAct 循环每步完成后即时发送 `{"type":"thinking","step":N,"thought":"...","action":"..."}` 事件，在 FINISH 步逐 token 发送 `{"type":"token","content":"..."}` 事件，流式体验与通用智能体一致
 
 ### Requirement: SearchTool 默认使用 RRF 检索模式
 制造 QA 的 SearchTool SHALL 默认使用 `mode="rrf"` 进行检索，同时允许通过配置切换到其他模式。

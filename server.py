@@ -2575,8 +2575,12 @@ def _get_manufacturing():
         from raganything.manufacturing.agent.deployment_config import DeploymentConfig
         from raganything.manufacturing.deployment.dashboard import Dashboard
 
+        # 延迟引入 LightRAGGraphStore 避免循环导入
+        from raganything.manufacturing.knowledge_graph.graph_api import LightRAGGraphStore
+        graph_store = LightRAGGraphStore(working_dir=WORKING_DIR)
+
         _manufacturing_components.update({
-            "graph_api": KnowledgeGraphAPI(),
+            "graph_api": KnowledgeGraphAPI(graph_storage=graph_store),
             "process_library": ProcessLibrary(),
             "fault_case_library": FaultCaseLibrary(),
             "code_parser": CodeParser(),
@@ -2760,7 +2764,7 @@ async def _get_mfg_qa_engine(kb: str = "default") -> "QAEngine":
         async def _llm_func(prompt, system_prompt=None, history_messages=None, **kw):
             if "max_tokens" not in kw:
                 kw["max_tokens"] = int(os.getenv("MAX_TOKENS", "8192"))
-            return openai_complete_if_cache(
+            return await openai_complete_if_cache(
                 LLM_MODEL, prompt, system_prompt=system_prompt,
                 history_messages=history_messages or [],
                 api_key=API_KEY, base_url=BASE_URL, **kw,
@@ -2776,10 +2780,20 @@ async def _get_mfg_qa_engine(kb: str = "default") -> "QAEngine":
 
 
 @app.post("/api/manufacturing/qa")
-async def mfg_qa(body: MfgAgentQuery, kb: str = QueryParam("default")):
+async def mfg_qa(body: MfgAgentQuery, kb: str = QueryParam("default"),
+                 current_user: dict = Depends(get_current_user)):
     """智能制造文本问答 — AgenticRAG 多步推理。"""
     engine = await _get_mfg_qa_engine(kb)
     response = await engine.answer(body.query, context=body.context)
+    # 记录查询日志
+    m = _get_manufacturing()
+    m["dashboard"].log_query(
+        user_id=str(current_user["id"]),
+        institution_id="default",
+        query=body.query,
+        query_type="qa",
+        response_ms=response.processing_time_ms,
+    )
     return {
         "query": response.query,
         "answer": response.answer,
@@ -2793,8 +2807,9 @@ async def mfg_qa(body: MfgAgentQuery, kb: str = QueryParam("default")):
 
 
 @app.post("/api/manufacturing/qa/stream")
-async def mfg_qa_stream(body: MfgAgentQuery, kb: str = QueryParam("default")):
-    """智能制造文本问答 — AgenticRAG 多步推理流式 SSE。"""
+async def mfg_qa_stream(body: MfgAgentQuery, kb: str = QueryParam("default"),
+                        current_user: dict = Depends(get_current_user)):
+    """智能制造文本问答 — AgenticRAG 真流式 SSE（与通用智能体一致）。"""
     if not API_KEY or not BASE_URL:
         raise HTTPException(503, "LLM 服务未配置")
 
@@ -2806,39 +2821,55 @@ async def mfg_qa_stream(body: MfgAgentQuery, kb: str = QueryParam("default")):
         try:
             engine = await _get_mfg_qa_engine(kb)
 
-            # Run AgenticRAG (non-streaming for now — trace yields thinking events)
-            response = await engine.answer(body.query, context=body.context)
+            async for event in engine.answer_stream(body.query):
+                event_type = event.get("type", "")
 
-            # Emit thinking steps from trace
-            if response.trace:
-                yield f"data: {json.dumps({'type': 'thinking', 'content': '开始多步推理...'}, ensure_ascii=False)}\n\n"
-                for step in response.trace:
-                    thought_preview = (step.get('thought', '') or '')[:200]
-                    action = step.get('action', '')
-                    observation_preview = (step.get('observation', '') or '')[:150]
-                    step_info = {
-                        "type": "thinking",
-                        "step": step.get("step", 0),
-                        "thought": thought_preview,
-                        "action": action,
-                        "observation_preview": observation_preview,
-                        "elapsed_ms": step.get("elapsed_ms", 0),
+                if event_type == "thinking":
+                    thought_preview = (event.get("thought", "") or "")[:200]
+                    obs_preview = (event.get("observation", "") or "")[:150]
+                    thinking_data = {
+                        'type': 'thinking',
+                        'step': event.get('step', 0),
+                        'thought': thought_preview,
+                        'action': event.get('action', ''),
+                        'observation_preview': obs_preview,
+                        'elapsed_ms': event.get('elapsed_ms', 0),
                     }
-                    yield f"data: {json.dumps(step_info, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps(thinking_data, ensure_ascii=False)}\n\n"
 
-            # Emit final answer as token chunks
-            answer = response.answer or ""
-            chunk_size = 50
-            for i in range(0, len(answer), chunk_size):
-                chunk = answer[i:i + chunk_size]
-                yield f"data: {json.dumps({'type': 'token', 'content': chunk}, ensure_ascii=False)}\n\n"
+                elif event_type == "token":
+                    token_data = {'type': 'token', 'content': event.get('content', '')}
+                    yield f"data: {json.dumps(token_data, ensure_ascii=False)}\n\n"
 
-            # Emit images if any matched
-            if response.related_images:
-                yield f"data: {json.dumps({'type': 'images', 'images': response.related_images}, ensure_ascii=False)}\n\n"
+                elif event_type == "done":
+                    # 记录查询日志
+                    try:
+                        m = _get_manufacturing()
+                        response_ms = event.get("elapsed_ms", (_time.time() - start_time) * 1000)
+                        m["dashboard"].log_query(
+                            user_id=str(current_user["id"]),
+                            institution_id="default",
+                            query=body.query,
+                            query_type="qa",
+                            response_ms=response_ms,
+                        )
+                    except Exception:
+                        pass
 
-            elapsed = round(_time.time() - start_time, 2)
-            yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'confidence': response.confidence}, ensure_ascii=False)}\n\n"
+                    if event.get("images"):
+                        img_data = {'type': 'images', 'images': event['images']}
+                        yield f"data: {json.dumps(img_data, ensure_ascii=False)}\n\n"
+
+                    elapsed = event.get("elapsed_ms", (_time.time() - start_time) * 1000) / 1000
+                    done_data = {
+                        'type': 'done',
+                        'id': query_id,
+                        'elapsed': round(elapsed, 2),
+                        'confidence': event.get('confidence', 0),
+                        'citations_count': len(event.get('citations', [])),
+                        'images_count': len(event.get('images', [])),
+                    }
+                    yield f"data: {json.dumps(done_data, ensure_ascii=False)}\n\n"
 
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"

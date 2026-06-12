@@ -9,7 +9,9 @@
 支持与 RAG-Anything 图存储层对接。
 """
 
+import json
 import logging
+from pathlib import Path
 from typing import Optional
 
 from .models import (
@@ -317,3 +319,68 @@ class InMemoryGraphStore:
                     else e.relation_type) == relation_type
             ]
         return result
+
+
+class LightRAGGraphStore:
+    """从 LightRAG 实际存储读取的图存储后端。"""
+
+    def __init__(self, working_dir: str = "./rag_storage"):
+        self._working_dir = Path(working_dir)
+
+    def _read_kv_json(self, filename: str) -> dict:
+        path = self._working_dir / filename
+        if path.exists():
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except Exception:
+                pass
+        return {}
+
+    def list_nodes(self, track=None, node_type=None) -> list:
+        """从 LightRAG entities 和 graph 节点读取。"""
+        import json as _json
+        # 从 full_entities 获取实体名称计数
+        full_entities = self._read_kv_json("kv_store_full_entities.json")
+        # 从 graph pickle 邻接表估算（如果可用）
+        nodes = []
+        seen = set()
+        for doc_id, data in full_entities.items():
+            entity_names = data.get("entity_names", [])
+            for name in entity_names:
+                if name not in seen:
+                    seen.add(name)
+                    node_type = data.get("entity_type", "unknown")
+        # 返回 KnowledgNode 兼容列表用于计数
+        return [type('_Node', (), {
+            'id': str(i), 'name': n, 'node_type': 'entity',
+            'description': '', 'competition_track': '',
+            'difficulty_level': 1, 'estimated_hours': 0,
+            'metadata': {},
+        })() for i, n in enumerate(seen)]
+
+    def list_edges(self, source_id=None, relation_type=None) -> list:
+        """从 LightRAG full_relations 获取关系计数。"""
+        full_relations = self._read_kv_json("kv_store_full_relations.json")
+        edges = []
+        for doc_id, data in full_relations.items():
+            pairs = data.get("relation_pairs", data.get("relations", []))
+            for p in pairs:
+                edges.append(type('_Edge', (), {
+                    'id': '', 'source_id': str(p[0]) if isinstance(p, (list, tuple)) else '',
+                    'target_id': str(p[1]) if isinstance(p, (list, tuple)) and len(p) > 1 else '',
+                    'relation_type': RelationType.RELATED_TO,
+                    'weight': 1.0, 'description': '',
+                })())
+        return edges
+
+    def get_node(self, node_id: str):
+        return None
+
+    def get_edges(self, node_id: str) -> list:
+        return self.list_edges()
+
+    def save_node(self, node) -> None: pass
+    def delete_node(self, node_id: str) -> bool: return False
+    def save_edge(self, edge) -> None: pass
+    def delete_edge(self, edge_id: str) -> bool: return False
+    def delete_edges(self, node_id: str) -> None: pass

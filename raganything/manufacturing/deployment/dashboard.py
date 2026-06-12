@@ -20,6 +20,7 @@ class Dashboard:
         self.storage_path.mkdir(parents=True, exist_ok=True)
         self._query_log: list[dict] = []
         self._start_date = datetime.now()
+        self._load_query_log()
 
     # --- 数据收集 ---
 
@@ -33,8 +34,45 @@ class Dashboard:
             "query": query,
             "query_type": query_type,
             "response_ms": response_ms,
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": datetime.now(),
         })
+        self._save_query_log()
+
+    def _load_query_log(self) -> None:
+        """从磁盘加载查询日志。"""
+        log_path = self.storage_path / "query_log.json"
+        if log_path.exists():
+            try:
+                raw = json.loads(log_path.read_text(encoding="utf-8"))
+                # 将 timestamp 字符串转回 datetime 用于后续计算
+                for entry in raw:
+                    if isinstance(entry.get("timestamp"), str):
+                        try:
+                            entry["timestamp"] = datetime.fromisoformat(entry["timestamp"])
+                        except ValueError:
+                            entry["timestamp"] = datetime.now()
+                self._query_log = raw
+                logger.info(f"Loaded {len(self._query_log)} query log entries")
+            except Exception as e:
+                logger.warning(f"Failed to load query log: {e}")
+
+    def _save_query_log(self) -> None:
+        """持久化查询日志到磁盘。"""
+        log_path = self.storage_path / "query_log.json"
+        try:
+            # 序列化 datetime 为 ISO 字符串
+            serializable = []
+            for entry in self._query_log[-1000:]:
+                item = dict(entry)
+                if isinstance(item.get("timestamp"), datetime):
+                    item["timestamp"] = item["timestamp"].isoformat()
+                serializable.append(item)
+            log_path.write_text(
+                json.dumps(serializable, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as e:
+            logger.warning(f"Failed to save query log: {e}")
 
     def get_snapshot(self,
                      knowledge_graph_api=None,
