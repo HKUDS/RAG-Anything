@@ -585,6 +585,15 @@ class ProcessorMixin:
                     output_dir=output_dir,
                     **kwargs,
                 )
+            elif ext in [".mp4", ".avi", ".mov", ".mkv", ".webm"]:
+                # Video files: create a simple content list for multimodal processing
+                self.logger.info(
+                    f"Detected video file: {file_path}, routing to video processor..."
+                )
+                content_list = [{
+                    "type": "video",
+                    "video_path": str(file_path),
+                }]
             else:
                 # For other or unknown formats, use generic parser
                 self.logger.info(
@@ -773,11 +782,21 @@ class ProcessorMixin:
 
         except Exception as e:
             self.logger.error(f"Error in multimodal processing: {e}")
-            # Fallback to individual processing if batch processing fails
-            self.logger.warning("Falling back to individual multimodal processing")
-            await self._process_multimodal_content_individual(
-                multimodal_items, file_path, doc_id
-            )
+            # Step 1: Retry in smaller batches (4 per batch) before individual fallback
+            try:
+                self.logger.warning("Retrying multimodal processing in small batches (4/batch)")
+                batch_size = 4
+                for batch_start in range(0, len(multimodal_items), batch_size):
+                    batch_items = multimodal_items[batch_start:batch_start + batch_size]
+                    await self._process_multimodal_content_batch_type_aware(
+                        batch_items, file_path, doc_id
+                    )
+            except Exception as e2:
+                self.logger.error(f"Batch retry also failed: {e2}")
+                self.logger.warning("Falling back to individual multimodal processing")
+                await self._process_multimodal_content_individual(
+                    multimodal_items, file_path, doc_id
+                )
 
             # Mark multimodal content as processed even after fallback
             await self._mark_multimodal_processing_complete(doc_id)
@@ -1293,6 +1312,21 @@ class ProcessorMixin:
                 return PROMPTS["equation_chunk"].format(
                     equation_text=equation_text,
                     equation_format=equation_format,
+                    enhanced_caption=description,
+                )
+
+            elif content_type == "video":
+                video_path = original_item.get("video_path", "")
+                duration = original_item.get("duration", 0)
+                frame_count = original_item.get("frame_count", "unknown")
+
+                return PROMPTS["video_chunk"].format(
+                    video_path=video_path,
+                    duration=str(duration),
+                    frame_count=str(frame_count),
+                    transcript_summary=description[:200] + "..."
+                    if len(description) > 200
+                    else description,
                     enhanced_caption=description,
                 )
 

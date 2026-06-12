@@ -42,11 +42,24 @@ export default function ManufacturingDashboardPage() {
 
   useEffect(() => { loadAll() }, [loadAll])
 
-  // Auto-refresh every 5s
+  // Smart auto-refresh: active=5s, idle=15s, hidden=stopped
   useEffect(() => {
     if (!autoRefresh) return
-    const interval = setInterval(() => loadAll(false), 5000)
-    return () => clearInterval(interval)
+    let interval
+    const getDelay = () => (document.visibilityState === 'visible' ? 5000 : 15000)
+    const schedule = () => {
+      clearInterval(interval)
+      if (document.visibilityState === 'hidden') return  // stop when hidden
+      loadAll(false)
+      interval = setInterval(() => {
+        if (document.visibilityState === 'hidden') { clearInterval(interval); return }
+        loadAll(false)
+      }, getDelay())
+    }
+    schedule()
+    const onVisibility = () => { if (document.visibilityState === 'visible') schedule() }
+    document.addEventListener('visibilitychange', onVisibility)
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility) }
   }, [autoRefresh, loadAll])
 
   if (loading) {

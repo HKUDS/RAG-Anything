@@ -1819,6 +1819,21 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
     """执行查询 - 支持普通模式和 Agentic RAG 模式"""
     validate_query_input(req.query)
     global query_history
+
+    # Query cache (skip for agentic mode or explicit refresh)
+    refresh = request.query_params.get("refresh", "").lower() == "true"
+    agent_mode = req.agent_mode or os.getenv("AGENT_MODE", "none")
+    if not refresh and agent_mode == "none":
+        try:
+            from raganything.query_cache import get_query_cache
+            cache = get_query_cache()
+            cached = cache.get(req.query)
+            if cached:
+                cached["cache_hit"] = True
+                return JSONResponse(content=cached, headers={"X-Cache": "HIT"})
+        except Exception:
+            pass
+
     try:
         start = time.time()
         instance = await get_kb(kb)
@@ -1900,8 +1915,9 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 pass
 
         # Step 1: 获取检索上下文
+        enable_rerank = os.getenv("RERANK_ENABLED", "false").lower() == "true"
         ctx = await instance.aquery(rewritten_query, mode=req.mode, vlm_enhanced=False,
-                                     only_need_context=True, enable_rerank=False,
+                                     only_need_context=True, enable_rerank=enable_rerank,
                                      chunk_top_k=40, top_k=60,
                                      max_entity_tokens=3000, max_relation_tokens=2000,
                                      max_total_tokens=16000)
@@ -1997,7 +2013,16 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
         if len(query_history) > 100:
             query_history = query_history[:100]
         save_query_history()
-        return record
+
+        # Save to query cache
+        if not refresh and agent_mode == "none":
+            try:
+                from raganything.query_cache import get_query_cache
+                get_query_cache().set(req.query, record)
+            except Exception:
+                pass
+
+        return JSONResponse(content=record, headers={"X-Cache": "MISS"})
     except Exception as e:
         raise HTTPException(500, str(e))
 
