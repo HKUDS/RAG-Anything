@@ -1547,6 +1547,7 @@ class AgentCreateRequest(BaseModel):
     llm_model: str = "qwen-plus"
     temperature: float = 0.0
     query_mode: str = "hybrid"
+    agent_mode: str = "none"  # "none" | "react" | "cot"
     system_prompt: str = ""
     use_default_prompt: bool = True
     welcome_message: str = ""
@@ -1562,6 +1563,7 @@ class AgentUpdateRequest(BaseModel):
     temperature: Optional[float] = None
     max_response_tokens: Optional[int] = None
     query_mode: Optional[str] = None
+    agent_mode: Optional[str] = None  # "none" | "react" | "cot"
     retrieval_top_k: Optional[int] = None
     system_prompt: Optional[str] = None
     use_default_prompt: Optional[bool] = None
@@ -1610,6 +1612,7 @@ async def create_agent(req: AgentCreateRequest, current_user: dict = Depends(get
         llm_model=req.llm_model,
         temperature=req.temperature,
         query_mode=req.query_mode,
+        agent_mode=req.agent_mode,
         system_prompt=req.system_prompt,
         use_default_prompt=req.use_default_prompt,
         template_id=req.template_id,
@@ -1732,6 +1735,7 @@ class AgentQueryRequest(BaseModel):
     query: str
     thread_id: str = ""  # 关联的对话线程 ID
     mode: str = ""  # 空则使用智能体默认模式
+    agent_mode: Optional[str] = None  # 空则使用智能体默认的 agent_mode
     vlm_enhanced: bool = False
 
 
@@ -1754,7 +1758,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
     actual_kb = await verify_kb_access(kb=agent.kb_name, current_user=current_user)
 
     instance = await get_kb(actual_kb)
+    # 检索模式（agentic 路径优先 rrf 轻量模式，可被请求级覆盖；普通路径沿用 agent 配置）
     query_mode = req.mode or agent.query_mode
+    # 推理模式：请求级覆盖 > 智能体配置 > 默认 none
+    agent_mode = req.agent_mode or getattr(agent, 'agent_mode', 'none')
+    # AgenticRAG 专用检索模式：优先请求级，否则默认 rrf（更快）
+    agentic_query_mode = req.mode or "rrf"
 
     # 构建 system_prompt
     system_prompt = agent.system_prompt
@@ -1779,6 +1788,142 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
             yield f"data: {json.dumps({'type': 'agent_info', 'agent': agent.name, 'icon': agent.icon, 'thread_id': thread_id}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'🔍 开始查询: {req.query[:80]}...'}, ensure_ascii=False)}\n\n"
 
+            # ═══ AgenticRAG 推理路径（ReAct / CoT） ═══
+            if agent_mode in ("react", "cot"):
+                start_time = time.time()
+                from raganything.agentic_rag import AgenticRAG, SearchTool
+
+                agentic = AgenticRAG(
+                    llm_func=instance.llm_model_func,
+                    max_steps=int(os.getenv("AGENT_MAX_STEPS", "5")),
+                    mode=agent_mode,
+                )
+                agentic.register_tool(SearchTool(instance, query_mode=agentic_query_mode))
+
+                full_answer = ""
+                trace_steps = []
+
+                if agent_mode == "react":
+                    # ReAct 流式路径
+                    async for event in agentic.run_stream(req.query):
+                        if event.type == "thinking":
+                            sd = {
+                                "step": event.step or 0,
+                                "thought": event.thought or "",
+                                "action": event.action or "",
+                                "observation": event.observation or "",
+                                "elapsed_ms": event.elapsed_ms,
+                            }
+                            trace_steps.append(sd)
+                            yield f"data: {json.dumps({'type': 'thinking', **sd}, ensure_ascii=False)}\n\n"
+                        elif event.type == "token":
+                            full_answer += (event.content or "")
+                            yield f"data: {json.dumps({'type': 'token', 'content': event.content or ''}, ensure_ascii=False)}\n\n"
+                        elif event.type == "done":
+                            if event.answer and len(event.answer) > len(full_answer):
+                                full_answer = event.answer
+                            break
+                else:
+                    # CoT 路径：先 RRF 检索获取上下文，再注入 CoT 推理
+                    cot_context = ""
+                    try:
+                        cot_context = await instance.aquery(
+                            req.query, mode="rrf", only_need_context=True,
+                            top_k=30, max_total_tokens=8000,
+                        ) or ""
+                    except Exception:
+                        pass
+                    agent_result = await agentic.run_with_context(req.query, cot_context)
+                    full_answer = agent_result.answer
+                    for s in agent_result.trace:
+                        trace_steps.append({
+                            "step": s.step_number,
+                            "thought": s.thought,
+                            "elapsed_ms": s.elapsed_ms,
+                        })
+                        yield f"data: {json.dumps({'type': 'thinking', 'step': s.step_number, 'thought': s.thought, 'elapsed_ms': s.elapsed_ms}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
+
+                elapsed = round(time.time() - start_time, 2)
+                print(f"[AGENT-STREAM] mode={agent_mode} steps={len(trace_steps)} elapsed={elapsed}s", flush=True)
+
+                # ── 图片匹配（复用普通模式的 bigram 扫描逻辑）──
+                # 从 ReAct search observation 和 CoT 检索上下文中提取图片路径
+                all_retrieved_text = ""
+                for ts in trace_steps:
+                    if ts.get("observation"):
+                        all_retrieved_text += ts["observation"] + "\n"
+                if agent_mode == "cot" and cot_context:
+                    all_retrieved_text += cot_context + "\n"
+                all_retrieved_text += " " + req.query
+                all_retrieved_text += " " + full_answer
+
+                agent_images = extract_image_paths(all_retrieved_text)
+                if not agent_images:
+                    try:
+                        import json as _json
+                        _chunk_file = Path(kb_dir(actual_kb)) / 'kv_store_text_chunks.json'
+                        if _chunk_file.exists():
+                            _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
+                            q = req.query.lower()
+                            query_grams = set()
+                            for i in range(len(q) - 1):
+                                query_grams.add(q[i:i+2])
+                            scored = []
+                            for _cid, _chunk in _all.items():
+                                content = _chunk.get('content', '')
+                                paths = extract_image_paths(content)
+                                if not paths:
+                                    continue
+                                content_lower = content.lower()
+                                score = sum(1 for bg in query_grams if bg in content_lower)
+                                for p in paths:
+                                    scored.append((p, score))
+                            best = {}
+                            for p, s in scored:
+                                if p not in best or s > best[p]:
+                                    best[p] = s
+                            agent_images = [p for p, _ in sorted(best.items(), key=lambda x: -x[1]) if _ > 0][:3]
+                            if not agent_images:
+                                agent_images = list(best.keys())[:2]
+                            if agent_images:
+                                print(f"[AGENT-IMG] bigram匹配到 {len(agent_images)} 张相关图片 (共 {len(best)} 张)", flush=True)
+                    except Exception as _fe:
+                        print(f"[AGENT-IMG] 全库扫描失败: {_fe}", flush=True)
+                else:
+                    agent_images = agent_images[:3]
+
+                # 保存到对话线程
+                mgr.add_message(agent_id, thread_id, {
+                    "role": "user", "content": req.query,
+                    "time": datetime.now().isoformat(),
+                })
+                mgr.add_message(agent_id, thread_id, {
+                    "role": "assistant", "content": full_answer,
+                    "elapsed": elapsed, "mode": query_mode,
+                    "agent_mode": agent_mode, "trace": trace_steps,
+                    "time": datetime.now().isoformat(),
+                })
+
+                # 记录全局查询历史
+                record = {
+                    "id": query_id, "query": req.query, "mode": query_mode,
+                    "agent_mode": agent_mode, "answer": full_answer,
+                    "reasoning_trace": {"steps": trace_steps, "total_steps": len(trace_steps)},
+                    "images": agent_images, "time": datetime.now().isoformat(),
+                    "elapsed": elapsed, "kb": actual_kb,
+                    "agent_id": agent_id, "thread_id": thread_id,
+                    "user_id": current_user["id"], "username": current_user["username"],
+                }
+                query_history.insert(0, record)
+                if len(query_history) > 100:
+                    query_history = query_history[:100]
+                save_query_history()
+
+                yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': agent_images}, ensure_ascii=False)}\n\n"
+                return
+
+            # ═══ 普通 RAG 流式路径（agent_mode=none） ═══
             start_time = time.time()
 
             # Step 1: 获取检索上下文

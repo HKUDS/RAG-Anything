@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Bot, Trash2, Edit3, X, MessageSquare, Database,
-  Cpu, Search, Sparkles, ChevronDown
+  Cpu, Search, Sparkles, ChevronDown, Brain, Layers
 } from 'lucide-react'
 import { api } from '../utils/api'
 import { motion, AnimatePresence } from 'framer-motion'
 
 const MODE_LABELS = { rrf: '融合', hybrid: '混合', local: '精确', global: '全局', naive: '快速' }
+const AGENT_MODE_LABELS = { none: '普通', react: 'ReAct', cot: 'CoT' }
+const AGENT_MODE_ICONS = { none: MessageSquare, react: Brain, cot: Layers }
 
 export default function AgentsPage() {
   const navigate = useNavigate()
@@ -24,7 +26,7 @@ export default function AgentsPage() {
   function getDefaultForm() {
     return {
       name: '', icon: '🤖', description: '', kb_name: 'default', llm_model: 'qwen-plus',
-      temperature: 0.0, query_mode: 'hybrid',
+      temperature: 0.0, query_mode: 'hybrid', agent_mode: 'none',
       system_prompt: '', use_default_prompt: true, welcome_message: '', template_id: '',
     }
   }
@@ -46,7 +48,7 @@ export default function AgentsPage() {
     setForm({
       name: agent.name, icon: agent.icon || '🤖', description: agent.description || '',
       kb_name: agent.kb_name, llm_model: agent.llm_model, temperature: agent.temperature || 0,
-      query_mode: agent.query_mode,
+      query_mode: agent.query_mode, agent_mode: agent.agent_mode || 'none',
       system_prompt: agent.system_prompt || '', use_default_prompt: agent.use_default_prompt !== false,
       welcome_message: agent.welcome_message || '', template_id: agent.template_id || '',
     })
@@ -62,6 +64,7 @@ export default function AgentsPage() {
       llm_model: tpl.llm_model || 'qwen-plus',
       temperature: tpl.temperature ?? 0,
       query_mode: tpl.query_mode || 'hybrid',
+      agent_mode: tpl.agent_mode || 'none',
       system_prompt: tpl.system_prompt || '',
       use_default_prompt: tpl.use_default_prompt !== false,
       welcome_message: tpl.welcome_message || '',
@@ -148,6 +151,9 @@ export default function AgentsPage() {
               </span>
               <span className="tag tag-amber">
                 <Search size={10} /> {MODE_LABELS[agent.query_mode] || agent.query_mode}
+              </span>
+              <span className="tag tag-teal">
+                {'🧠'} {AGENT_MODE_LABELS[agent.agent_mode] || '普通'}
               </span>
             </div>
 
@@ -265,6 +271,17 @@ export default function AgentsPage() {
                     <option value="local">精确检索</option>
                     <option value="global">全局检索</option>
                     <option value="naive">快速检索</option>
+                  </select>
+                </div>
+
+                {/* Reasoning Mode */}
+                <div>
+                  <label className="text-xs text-warm-500 mb-1 block">推理模式</label>
+                  <select className="input-field" value={form.agent_mode}
+                    onChange={e => setForm({ ...form, agent_mode: e.target.value })}>
+                    <option value="none">无（直接回答）</option>
+                    <option value="react">ReAct 多步推理</option>
+                    <option value="cot">CoT 逐步思考</option>
                   </select>
                 </div>
 

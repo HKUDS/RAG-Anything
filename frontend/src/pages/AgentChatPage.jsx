@@ -17,6 +17,12 @@ const MODES = [
   { key: 'naive', icon: MessageSquare, label: '快速' },
 ]
 
+const REASONING_MODES = [
+  { key: 'none', icon: Zap, label: '普通' },
+  { key: 'react', icon: Brain, label: 'ReAct' },
+  { key: 'cot', icon: Layers, label: 'CoT' },
+]
+
 // Warm theme markdown components
 const markdownComponents = {
   h2: ({ children, ...props }) => <h2 className="text-base font-semibold text-warm-800 mt-5 mb-2 pb-1.5 border-b border-warm-200" {...props}>{children}</h2>,
@@ -59,6 +65,7 @@ export default function AgentChatPage() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [mode, setMode] = useState('')
+  const [agentMode, setAgentMode] = useState('none')
   const [loading, setLoading] = useState(false)
   const [expandedThinking, setExpandedThinking] = useState({})
   const [renamingThread, setRenamingThread] = useState(null)
@@ -70,6 +77,7 @@ export default function AgentChatPage() {
       if (a) {
         setAgent(a)
         setMode(a.query_mode || 'hybrid')
+        setAgentMode(a.agent_mode || 'none')
       }
     }).catch(() => {})
     loadThreads(true)
@@ -128,7 +136,19 @@ export default function AgentChatPage() {
     const { type, content, id: resultId, elapsed, images } = event
     switch (type) {
       case 'thinking':
-        if (content) {
+        // 结构化 thinking（ReAct/CoT: {step, thought, action, observation}）
+        if (event.thought) {
+          setMessages(prev => prev.map(m =>
+            m.id === msgId ? { ...m, thinking: [...(m.thinking || []), {
+              step: event.step,
+              thought: event.thought,
+              action: event.action || '',
+              observation: event.observation || '',
+              elapsed_ms: event.elapsed_ms || 0,
+            }]} : m
+          ))
+        } else if (content) {
+          // 普通模式 thinking 字符串
           setMessages(prev => prev.map(m =>
             m.id === msgId ? { ...m, thinking: [...(m.thinking || []), content] } : m
           ))
@@ -175,7 +195,7 @@ export default function AgentChatPage() {
       try { const t = JSON.parse(localStorage.getItem('raganything_auth') || '{}').token; if (t) headers['Authorization'] = `Bearer ${t}` } catch {}
       const res = await fetch(`/api/agents/${agentId}/query/stream`, {
         method: 'POST', headers,
-        body: JSON.stringify({ query, thread_id: activeThreadId, mode }),
+        body: JSON.stringify({ query, thread_id: activeThreadId, mode, agent_mode: agentMode }),
         signal: controller.signal,
       })
 
@@ -207,7 +227,7 @@ export default function AgentChatPage() {
       setLoading(false)
       abortRef.current = null
     }
-  }, [agentId, activeThreadId, mode])
+  }, [agentId, activeThreadId, mode, agentMode])
 
   const send = async () => {
     if (!input.trim() || loading) return
@@ -322,19 +342,39 @@ export default function AgentChatPage() {
             <h2 className="font-display text-sm font-semibold text-warm-800 truncate">{agent.name}</h2>
             <p className="text-[10px] text-warm-500 truncate">{agent.welcome_message || agent.description}</p>
           </div>
-          <div className="flex gap-1">
-            {MODES.map(({ key, icon: Icon, label }) => (
-              <button key={key}
-                onClick={() => setMode(key)}
-                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-all ${
-                  mode === key
-                    ? 'bg-coral-50 text-coral-600 border border-coral-200'
-                    : 'text-warm-500 hover:text-warm-600'
-                }`}
-              >
-                <Icon size={11} /> {label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            {/* 检索模式 */}
+            <div className="flex gap-1">
+              {MODES.map(({ key, icon: Icon, label }) => (
+                <button key={key}
+                  onClick={() => setMode(key)}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-all ${
+                    mode === key
+                      ? 'bg-coral-50 text-coral-600 border border-coral-200'
+                      : 'text-warm-500 hover:text-warm-600'
+                  }`}
+                >
+                  <Icon size={11} /> {label}
+                </button>
+              ))}
+            </div>
+            {/* 分隔符 */}
+            <div className="w-px h-5 bg-warm-300" />
+            {/* 推理模式 */}
+            <div className="flex gap-1">
+              {REASONING_MODES.map(({ key, icon: Icon, label }) => (
+                <button key={key}
+                  onClick={() => setAgentMode(key)}
+                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-all ${
+                    agentMode === key
+                      ? 'bg-sage-50 text-sage-600 border border-sage-200'
+                      : 'text-warm-500 hover:text-warm-600'
+                  }`}
+                >
+                  <Icon size={11} /> {label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -359,7 +399,8 @@ export default function AgentChatPage() {
               )
             }
             const hasThinking = m.thinking?.length > 0
-            const isExpanded = expandedThinking[m.id] !== false
+            // 推理进行中时强制展开，完成后允许折叠
+            const isExpanded = !m.thinkingDone || expandedThinking[m.id] !== false
             const showTypingCursor = !m.done && m.content?.length > 0
             return (
               <div key={i} className="flex gap-3">
@@ -377,11 +418,35 @@ export default function AgentChatPage() {
                         <span className="text-[9px] text-warm-500 ml-1">{m.thinking.length} 步</span>
                       </button>
                       {isExpanded && (
-                        <div className="border-t border-warm-200/50 px-3 py-2 space-y-0.5 max-h-40 overflow-y-auto">
+                        <div className="border-t border-warm-200/50 px-3 py-2 space-y-2 max-h-96 overflow-y-auto">
                           {m.thinking.map((step, j) => (
-                            <div key={j} className="text-[10px] text-warm-500 font-mono flex items-start gap-1.5">
-                              <span className="text-warm-400 shrink-0 mt-0.5">▸</span><span>{step}</span>
-                            </div>
+                            typeof step === 'object' ? (
+                              <div key={j} className="text-[10px] space-y-0.5">
+                                <div className="flex items-start gap-1.5">
+                                  <span className="shrink-0 mt-0.5">🧠</span>
+                                  <span className="text-warm-600">{step.thought}</span>
+                                </div>
+                                {step.action && (
+                                  <div className="flex items-start gap-1.5 ml-1">
+                                    <span className="shrink-0 mt-0.5">🔧</span>
+                                    <span className="text-sky-500 font-medium">{step.action}</span>
+                                  </div>
+                                )}
+                                {step.observation && (
+                                  <div className="flex items-start gap-1.5 ml-1">
+                                    <span className="shrink-0 mt-0.5">📋</span>
+                                    <span className="text-sage-500 whitespace-pre-wrap break-all">{step.observation}</span>
+                                  </div>
+                                )}
+                                {step.elapsed_ms > 0 && (
+                                  <div className="text-[9px] text-warm-400 ml-4.5">{(step.elapsed_ms / 1000).toFixed(2)}s</div>
+                                )}
+                              </div>
+                            ) : (
+                              <div key={j} className="text-[10px] text-warm-500 font-mono flex items-start gap-1.5">
+                                <span className="text-warm-400 shrink-0 mt-0.5">▸</span><span>{step}</span>
+                              </div>
+                            )
                           ))}
                         </div>
                       )}

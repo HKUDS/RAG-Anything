@@ -233,6 +233,7 @@
   .tag-green  { @apply tag bg-sage-50 text-sage-600 border border-sage-200/60; }
   .tag-amber  { @apply tag bg-amber-50 text-amber-600 border border-amber-200/60; }
   .tag-coral  { @apply tag bg-coral-50 text-coral-600 border border-coral-200/60; }
+  .tag-teal   { @apply tag bg-sky-50 text-sky-600 border border-sky-200/60; }
 
   /* ========== Table ========== */
   .table-container {
@@ -330,6 +331,7 @@ body.dark {
 .dark .tag-green  { @apply bg-sage-900/20 text-sage-400 border-sage-800/30; }
 .dark .tag-amber  { @apply bg-amber-900/20 text-amber-400 border-amber-800/30; }
 .dark .tag-coral  { @apply bg-coral-900/20 text-coral-400 border-coral-800/30; }
+.dark .tag-teal   { @apply bg-sky-900/20 text-sky-400 border-sky-800/30; }
 
 .dark .table-base thead th {
   @apply bg-warm-800/30 text-warm-400 border-warm-700/40;

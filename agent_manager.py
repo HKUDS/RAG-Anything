@@ -38,6 +38,7 @@ class AgentConfig(BaseModel):
 
     # 检索配置
     query_mode: str = "hybrid"  # hybrid/local/global/naive
+    agent_mode: str = "none"  # none/react/cot — 推理模式
     retrieval_top_k: int = 40
     chunk_top_k: int = 20
     enable_rerank: bool = False

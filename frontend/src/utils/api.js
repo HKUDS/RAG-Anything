@@ -115,8 +115,8 @@ export const api = {
   retryDocument: (id) => request(`/knowledge/documents/${id}/retry`, { method: 'POST' }),
 
   // Query
-  query: (query, mode = 'hybrid', vlm = false) => request('/query', {
-    method: 'POST', body: JSON.stringify({ query, mode, vlm_enhanced: vlm }),
+  query: (query, mode = 'hybrid', vlm = false, agentMode = null) => request('/query', {
+    method: 'POST', body: JSON.stringify({ query, mode, vlm_enhanced: vlm, ...(agentMode ? { agent_mode: agentMode } : {}) }),
   }),
   getQueryHistory: (limit = 20) => request(`/query/history?limit=${limit}`),
   clearQueryHistory: () => request('/query/history', { method: 'DELETE' }),

@@ -151,6 +151,21 @@ class AgenticRAG:
         else:
             raise ValueError(f"Unknown mode: {self.mode} (expected 'react' or 'cot')")
 
+    async def run_with_context(self, query: str, context: str) -> AgentResult:
+        """执行带预检索上下文的 CoT 推理。
+
+        用于 CoT 模式：先由调用方（如 server.py）执行 RRF 检索获取上下文，
+        再传入此方法进行基于检索内容的逐步推理。
+
+        Args:
+            query: 用户问题
+            context: RRF 检索返回的上下文字符串
+        """
+        if self.mode != "cot":
+            # 非 CoT 模式降级为普通 run
+            return await self.run(query)
+        return await self._cot_loop(query, context=context)
+
     async def run_stream(self, query: str) -> "AsyncIterator[StreamEvent]":
         """执行 Agentic 查询（流式）— FINISH 步 token-by-token 输出。
 
@@ -174,7 +189,8 @@ class AgenticRAG:
             # ── 调用 LLM（非流式，需完整解析 Thought/Action）──
             try:
                 response = await self._call_llm_with_retry(
-                    system_prompt, user_prompt, messages
+                    system_prompt, user_prompt, messages,
+                    is_final_step=False,  # 非 FINISH 步用小 token 预算
                 )
             except Exception as e:
                 yield StreamEvent(
@@ -192,6 +208,17 @@ class AgenticRAG:
             if action.upper() == "FINISH":
                 elapsed = (time.time() - step_start) * 1000
                 answer = action_input.get("answer", thought) if action_input else thought
+                # 若 2048 token 不足以产出答案（JSON 截断），补一次大 token 调用
+                if not action_input or not action_input.get("answer"):
+                    try:
+                        response_full = await self._call_llm_with_retry(
+                            system_prompt, user_prompt, messages,
+                            is_final_step=True,
+                        )
+                        _, _, ai_full = self._parse_action(response_full)
+                        answer = (ai_full.get("answer", thought) if ai_full else thought)
+                    except Exception:
+                        pass
 
                 trace.append(ReasoningStep(
                     step_number=step_num,
@@ -310,14 +337,15 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
 
 ## 规则
 1. 每一步只能调用一个工具。
-2. 如果用户的问题需要知识库中的信息，第一步必须先调用 search 检索。
+2. **第一步必须调用 search 检索知识库。** 不得在检索前 FINISH 或反问用户。即使问题看似模糊，也要先用问题原文 search 一次。
 3. 每次收到 Observation 后，先判断：已有信息是否足以回答用户问题？如果是，立即 FINISH。
 4. search 最多使用 2 次。第 2 次 search 后，无论结果如何必须 FINISH。
 5. 如果 Observation 中的内容与之前重复，说明已无新信息，立即 FINISH。
 6. Action 必须是以下之一: {tool_names}, FINISH
-7. 如果确实无法回答，Action 设为 FINISH，Action Input: {{"answer": "抱歉，当前无法回答此问题"}}
-8. FINISH 的 Action Input 必须是完整的最终回答，不能是计划或说明。
-9. 你必须用中文思考和回答。
+7. 只有在至少检索 1 次且仍然无法回答时，才能 FINISH 并说明"抱歉，知识库中未找到相关信息，建议补充更多背景描述"。
+8. **FINISH 的回答必须严格基于检索到的 Observation 内容。** 每条事实都要能追溯到 Observation 中出现的原文。不得添加 Observation 中没有的信息，不得使用你自己的知识补充或编造。如果 Observation 中列出了6个模块，就只列出那6个，不要增减。
+9. FINISH 的 Action Input 必须是完整的最终回答，不能是计划或说明。
+10. 你必须用中文思考和回答。
 """
 
         user_prompt = f"## 用户问题\n{query}\n\n现在请开始推理。从 Thought 开始:"
@@ -326,8 +354,13 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
 
     # ── CoT Prompt 构建 ──────────────────────────────
 
-    def _build_cot_prompt(self, query: str) -> tuple[str, str]:
-        """构建 CoT (Chain-of-Thought) prompt"""
+    def _build_cot_prompt(self, query: str, context: str = "") -> tuple[str, str]:
+        """构建 CoT (Chain-of-Thought) prompt。
+
+        Args:
+            query: 用户问题
+            context: 可选的检索上下文。提供时注入 prompt 确保推理基于 KB 内容。
+        """
         role_identity = (
             self.system_prompt_override
             if self.system_prompt_override
@@ -339,17 +372,28 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
 ## 推理格式
 请按以下格式逐步思考并回答：
 
-思考步骤1: <第一步分析>
-思考步骤2: <第二步分析>
+思考步骤1: <第一步分析，引用检索内容中的具体事实>
+思考步骤2: <第二步分析，引用检索内容中的具体事实>
 ...
-最终回答: <综合各步骤后的完整答案>
+最终回答: <综合各步骤后的完整答案，标注来源>
 
 ## 规则
-1. 每一步分析都需要引用具体的检索内容
-2. 如果信息不足，在最终回答中明确说明
-3. 最终回答必须基于前面的推理步骤
+1. 每一步分析必须引用检索内容中的具体事实和数据，不得使用你自己的知识
+2. **最终回答中的每条事实都必须能追溯到检索内容的原文。** 不得添加检索内容中没有的信息，不得使用你自己的知识补充或编造
+3. 如果检索内容不足以回答问题，在最终回答中明确说明缺少什么信息
+4. 最终回答必须基于前面的推理步骤和检索内容
+5. 用中文思考和回答
 """
-        user_prompt = f"## 用户问题\n{query}\n\n请开始逐步推理。"
+        if context:
+            user_prompt = (
+                f"## 检索内容\n{context}\n\n"
+                f"## 用户问题\n{query}\n\n"
+                f"请基于上述检索内容逐步推理。每一步都引用检索中的具体事实。"
+                f"不要编造检索内容中没有的信息。如果检索内容中列出了 N 个条目，就只列出那 N 个，不要增减。"
+                f"如果检索内容不足以回答问题，请明确说明。"
+            )
+        else:
+            user_prompt = f"## 用户问题\n{query}\n\n请开始逐步推理。"
         return system_prompt, user_prompt
 
     # ── 输出解析 ────────────────────────────────────
@@ -453,10 +497,11 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
         for step_num in range(1, self.max_steps + 1):
             step_start = time.time()
 
-            # ── 调用 LLM ──
+            # ── 调用 LLM（非 FINISH 步用 1024 tokens 节省开销）──
             try:
                 response = await self._call_llm_with_retry(
-                    system_prompt, user_prompt, messages
+                    system_prompt, user_prompt, messages,
+                    is_final_step=False,  # loop 中先小 token 预算调用
                 )
             except Exception as e:
                 # LLM 调用失败，返回已收集信息
@@ -473,6 +518,18 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
             # ── 检查是否 FINISH ──
             if action.upper() == "FINISH":
                 answer = action_input.get("answer", thought) if action_input else thought
+                # 若 2048 token 仍不足以产出答案（JSON 截断），补一次大 token 调用
+                if not action_input or not action_input.get("answer"):
+                    try:
+                        response_full = await self._call_llm_with_retry(
+                            system_prompt, user_prompt, messages,
+                            is_final_step=True,
+                        )
+                        _, _, ai_full = self._parse_action(response_full)
+                        if ai_full and ai_full.get("answer"):
+                            answer = ai_full["answer"]
+                    except Exception:
+                        pass
                 trace.append(ReasoningStep(
                     step_number=step_num,
                     thought=thought,
@@ -535,21 +592,24 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
         )
 
     async def _call_llm_with_retry(
-        self, system_prompt: str, user_prompt: str, messages: list[dict]
+        self, system_prompt: str, user_prompt: str, messages: list[dict],
+        is_final_step: bool = False,
     ) -> str:
-        """调用 LLM，带单次重试"""
-        conversation = [
-            {"role": "system", "content": system_prompt},
-            *messages,
-            {"role": "user", "content": user_prompt},
-        ]
+        """调用 LLM，带单次重试。
+
+        Args:
+            is_final_step: 是否为 FINISH 步。非 FINISH 步只需产出
+                Thought+Action+JSON（~100-200 tokens），使用 max_tokens=1024
+                以减少不必要的 token 预算开销。
+        """
+        max_tokens = 4096 if is_final_step else 2048
 
         try:
             response = await self.llm_func(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
                 history_messages=messages,
-                max_tokens=4096,
+                max_tokens=max_tokens,
                 temperature=0.0,
             )
             if isinstance(response, str) and response.strip():
@@ -557,13 +617,12 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
         except Exception:
             pass
 
-        # Retry once
-        await asyncio.sleep(1)
+        # Retry once (no sleep — immediate retry for transient failures)
         response = await self.llm_func(
             prompt=user_prompt,
             system_prompt=system_prompt,
             history_messages=messages,
-            max_tokens=4096,
+            max_tokens=max_tokens,
             temperature=0.0,
         )
         return response.strip() if isinstance(response, str) else str(response)
@@ -618,19 +677,24 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
 
     # ── CoT Loop ────────────────────────────────────
 
-    async def _cot_loop(self, query: str) -> AgentResult:
-        """CoT 推理 — 逐步思考后汇总回答"""
+    async def _cot_loop(self, query: str, context: str = "") -> AgentResult:
+        """CoT 推理 — 逐步思考后汇总回答。
+
+        Args:
+            query: 用户问题
+            context: 可选的检索上下文。提供时注入 prompt，确保推理基于 KB 内容。
+        """
         trace: list[ReasoningStep] = []
         start_time = time.time()
 
-        system_prompt, user_prompt = self._build_cot_prompt(query)
+        system_prompt, user_prompt = self._build_cot_prompt(query, context=context)
 
         try:
             response = await self.llm_func(
                 prompt=user_prompt,
                 system_prompt=system_prompt,
                 history_messages=[],
-                max_tokens=4096,
+                max_tokens=2048,
                 temperature=0.0,
             )
             response = response.strip() if isinstance(response, str) else str(response)
@@ -723,11 +787,12 @@ class SearchTool(Tool):
         "required": ["query"],
     }
 
-    def __init__(self, rag_instance=None, query_mode: str = "hybrid"):
+    def __init__(self, rag_instance=None, query_mode: str = "rrf"):
         """
         Args:
             rag_instance: RAGAnything 实例（提供 aquery 方法）
             query_mode: 检索模式 "rrf" | "hybrid" | "local" | "global" | "naive"
+                       默认 "rrf"（三通道融合，比 hybrid 更省 entity/relation 开销）
         """
         self.rag = rag_instance
         self.query_mode = query_mode
@@ -746,11 +811,11 @@ class SearchTool(Tool):
                 mode=self.query_mode,
                 only_need_context=True,
                 enable_rerank=False,
-                chunk_top_k=40,
-                top_k=60,
-                max_entity_tokens=3000,
-                max_relation_tokens=2000,
-                max_total_tokens=16000,
+                chunk_top_k=20,
+                top_k=30,
+                max_entity_tokens=2000,
+                max_relation_tokens=1000,
+                max_total_tokens=8000,
             )
             if not result or not result.strip():
                 return "知识库中未找到相关信息"
