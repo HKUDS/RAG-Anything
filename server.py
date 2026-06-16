@@ -943,9 +943,8 @@ async def upload_file_for_workflow(file: UploadFile = File(...), current_user: d
 
 @app.get("/api/workflows/models")
 async def list_available_models(current_user: dict = Depends(get_current_user)):
-    """返回系统配置的可用 LLM 模型列表"""
+    """返回系统配置的可用模型列表（来自 .env 配置）"""
     models = []
-    # 从 .env 配置中收集模型（LLM + Embedding）
     llm_model = os.getenv("LLM_MODEL", "")
     vision_model = os.getenv("VISION_MODEL", "")
     embed_model = os.getenv("EMBEDDING_MODEL", "")
@@ -957,31 +956,10 @@ async def list_available_models(current_user: dict = Depends(get_current_user)):
             [x.strip() for x in f"{extra_llm},{extra_embed}".split(",") if x.strip()]:
         if m and m not in seen:
             seen.add(m)
-            models.append({"id": m, "name": m, "source": "env_config"})
-
-    # 尝试从 API 查询可用模型列表（异步、非阻塞）
-    if API_KEY and BASE_URL:
-        try:
-            import urllib.request, urllib.error, json as _json
-            loop = asyncio.get_event_loop()
-            def _fetch():
-                req = urllib.request.Request(
-                    f"{BASE_URL.rstrip('/')}/models",
-                    headers={"Authorization": f"Bearer {API_KEY}"},
-                )
-                with urllib.request.urlopen(req, timeout=5) as resp:
-                    return _json.loads(resp.read())
-            data = await loop.run_in_executor(None, _fetch)
-            for m in data.get("data", []):
-                mid = m.get("id", "")
-                if mid and mid not in seen:
-                    seen.add(mid)
-                    models.append({"id": mid, "name": mid, "source": "api"})
-        except Exception:
-            pass
+            models.append({"id": m, "name": m, "source": "env"})
 
     if not models:
-        models.append({"id": llm_model or "qwen-plus", "name": llm_model or "qwen-plus", "source": "fallback"})
+        models.append({"id": "qwen-plus", "name": "qwen-plus (默认)", "source": "fallback"})
     return {"models": models}
 
 

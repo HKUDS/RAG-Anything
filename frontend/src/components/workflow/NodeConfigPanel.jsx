@@ -31,12 +31,11 @@ function ModelSelect({ value, onChange }) {
         <option value="">默认（服务器配置）</option>
         {models.map((m) => (
           <option key={m.id} value={m.id}>
-            {m.name}{m.source === 'api' ? ' (API)' : m.source === 'env_config' ? ' (已配置)' : ''}
+            {m.name}{m.source === 'fallback' ? '' : ''}
           </option>
         ))}
       </select>
-      {loading && <p className="text-2xs text-warm-400 mt-1">加载模型列表...</p>}
-      {!loading && models.length === 0 && <p className="text-2xs text-amber-500 mt-1">未能获取模型列表，将使用服务器默认模型</p>}
+      {loading && <p className="text-2xs text-warm-400 mt-1">加载中...</p>}
     </div>
   )
 }
