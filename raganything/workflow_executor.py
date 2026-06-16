@@ -52,6 +52,30 @@ class NodeExecutor:
 
 
 # ──────────────────────────────────────────────
+# 辅助函数
+# ──────────────────────────────────────────────
+
+def _extract_text(inputs: dict, *keys: str) -> str:
+    """从上游节点输出中提取文本，按优先级依次尝试多个字段"""
+    for key in keys:
+        val = inputs.get(key, "")
+        if isinstance(val, list):
+            val = "\n".join(str(v) for v in val)
+        if val and str(val).strip():
+            return str(val)
+    # 兜底：拼接所有字段值
+    parts = []
+    for k, v in inputs.items():
+        if k in ("duration_ms", "count", "dims", "format", "error", "file_type", "size_bytes"):
+            continue
+        if isinstance(v, list):
+            parts.extend(str(x) for x in v)
+        elif isinstance(v, str) and v.strip():
+            parts.append(v)
+    return "\n".join(parts) if parts else ""
+
+
+# ──────────────────────────────────────────────
 # 6 种节点执行器（现已连接真实 RAG 组件）
 # ──────────────────────────────────────────────
 
@@ -114,10 +138,7 @@ class TextSplitterExecutor(NodeExecutor):
     node_type = "text_splitter"
 
     async def execute(self, config: dict, inputs: dict, ctx: ExecutionContext) -> dict:
-        raw = inputs.get("content", "")
-        if isinstance(raw, list):
-            raw = "\n".join(str(c) for c in raw)
-        text = str(raw)
+        text = _extract_text(inputs, "content", "chunks")
         if not text.strip():
             return {"chunks": [], "count": 0, "error": "上游节点没有提供文本内容"}
 
@@ -139,11 +160,9 @@ class EmbeddingExecutor(NodeExecutor):
     node_type = "embedding"
 
     async def execute(self, config: dict, inputs: dict, ctx: ExecutionContext) -> dict:
-        model = config.get("model", ctx.embed_model or "text-embedding-3-small")
-        text = inputs.get("content", "")
-        if isinstance(text, list):
-            text = " ".join(str(t) for t in text)
-        if isinstance(text, str) and not text.strip():
+        model = config.get("model") or ctx.embed_model or "text-embedding-3-small"
+        text = _extract_text(inputs, "content", "chunks", "results")
+        if not text.strip():
             return {"vector": [], "error": "上游节点没有提供文本"}
 
         if ctx.openai_embed_func:
@@ -167,9 +186,7 @@ class RetrieverExecutor(NodeExecutor):
     async def execute(self, config: dict, inputs: dict, ctx: ExecutionContext) -> dict:
         top_k = int(config.get("top_k", 10))
         mode = config.get("mode", "hybrid")
-        query = inputs.get("content", "")
-        if isinstance(query, list):
-            query = " ".join(str(q) for q in query[:3])
+        query = _extract_text(inputs, "content", "chunks", "results")
 
         if not ctx.kb_instance or not hasattr(ctx.kb_instance, 'lightrag') or not ctx.kb_instance.lightrag:
             return {"results": [], "error": "知识库未初始化，请先上传文档到知识库"}
@@ -190,13 +207,11 @@ class LLMAnswerExecutor(NodeExecutor):
     node_type = "llm_answer"
 
     async def execute(self, config: dict, inputs: dict, ctx: ExecutionContext) -> dict:
-        model = config.get("model") or ctx.llm_model or "gpt-4o"
+        model = config.get("model") or ctx.llm_model or ""
         temperature = float(config.get("temperature", 0.1))
         system_prompt = config.get("system_prompt", "")
-        context = inputs.get("content", "") or inputs.get("results", "") or inputs.get("chunks", "")
-        if isinstance(context, list):
-            context = "\n".join(str(c) for c in context)
-        if isinstance(context, str) and not context.strip():
+        context = _extract_text(inputs, "content", "results", "chunks", "answer")
+        if not context.strip():
             context = "（无上下文）"
 
         user_prompt = f"基于以下上下文回答问题：\n\n{str(context)[:8000]}"
@@ -223,7 +238,7 @@ class OutputExecutor(NodeExecutor):
 
     async def execute(self, config: dict, inputs: dict, ctx: ExecutionContext) -> dict:
         fmt = config.get("format", "markdown")
-        content = inputs.get("answer", "") or inputs.get("content", "") or inputs.get("results", "") or inputs.get("chunks", "")
+        content = _extract_text(inputs, "answer", "formatted", "content", "results", "chunks")
         if isinstance(content, list):
             content = "\n".join(f"- {c}" for c in content)
         if fmt == "markdown":
