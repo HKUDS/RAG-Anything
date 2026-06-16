@@ -1,13 +1,27 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import {
+  ReactFlowProvider,
+  useNodesState,
+  useEdgesState,
+  useReactFlow,
+  addEdge,
+  MarkerType,
+} from '@xyflow/react'
 import WorkflowCanvas from '../components/workflow/WorkflowCanvas'
 import NodePalette from '../components/workflow/NodePalette'
 import WorkflowToolbar from '../components/workflow/WorkflowToolbar'
 import NodeConfigPanel from '../components/workflow/NodeConfigPanel'
-import { getNodeType } from '../components/workflow/nodeTypes'
 import { useAuth } from '../context/AuthContext'
 
 const API = '/api/workflows'
+
+const defaultEdgeOptions = {
+  type: 'smoothstep',
+  animated: true,
+  style: { stroke: '#94a3b8', strokeWidth: 2 },
+  markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8', width: 16, height: 16 },
+}
 
 function getToken() {
   try {
@@ -21,11 +35,12 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
 }
 
-export default function WorkflowPage() {
+function WorkflowPageInner() {
   const { token } = useAuth()
-  const canvasRef = useRef(null)
-  const [nodes, setNodes] = useState([])
-  const [edges, setEdges] = useState([])
+  const [nodes, setNodes, onNodesChange] = useNodesState([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  const { fitView, zoomIn, zoomOut } = useReactFlow()
+
   const [selectedNode, setSelectedNode] = useState(null)
   const [workflowName, setWorkflowName] = useState('未命名工作流')
   const [workflowId, setWorkflowId] = useState(null)
@@ -33,15 +48,35 @@ export default function WorkflowPage() {
   const [showLoadDialog, setShowLoadDialog] = useState(false)
   const [workflowList, setWorkflowList] = useState([])
   const [toast, setToast] = useState(null)
+  const [layoutKey, setLayoutKey] = useState(0)
+
+  // Toast with cleanup
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 2500)
+    return () => clearTimeout(timer)
+  }, [toast])
 
   const showToast = (msg, type = 'info') => {
     setToast({ msg, type })
-    setTimeout(() => setToast(null), 2500)
   }
+
+  // Connect callback
+  const onConnect = useCallback(
+    (connection) => setEdges((eds) => addEdge({ ...connection, ...defaultEdgeOptions }, eds)),
+    [setEdges]
+  )
+
+  // Drop from palette
+  const onDropNode = useCallback(
+    (newNode) => setNodes((nds) => [...nds, newNode]),
+    [setNodes]
+  )
 
   // Save
   const handleSave = async () => {
     if (!token) { showToast('请先登录', 'error'); return }
+    if (nodes.length === 0) { showToast('工作流为空，请先添加节点', 'error'); return }
     setSaving(true)
     try {
       const payload = { name: workflowName, nodes, edges }
@@ -109,31 +144,27 @@ export default function WorkflowPage() {
     setSelectedNode(null)
     setWorkflowName('未命名工作流')
     setWorkflowId(null)
+    setLayoutKey(k => k + 1)
   }
 
-  // Node click → config panel
-  const handleNodeClick = useCallback((node) => {
-    setSelectedNode(node)
-  }, [])
+  // Node click
+  const handleNodeClick = useCallback((node) => setSelectedNode(node), [])
 
   // Node config update
   const handleNodeUpdate = useCallback((nodeId, newData) => {
     setNodes((nds) => nds.map((n) => (n.id === nodeId ? { ...n, data: newData } : n)))
     setSelectedNode((prev) => (prev?.id === nodeId ? { ...prev, data: newData } : prev))
-  }, [])
+  }, [setNodes])
 
-  // Auto layout (simple top-to-bottom)
+  // Auto layout
   const handleAutoLayout = () => {
-    if (nodes.length === 0) return
-    const GAP_X = 250
-    const GAP_Y = 120
-    // Simple topological sort: input nodes first, then by edge order
-    const inDegree = {}
-    const adj = {}
+    if (nodes.length === 0) { showToast('没有节点可布局', 'error'); return }
+    const GAP_X = 250, GAP_Y = 120
+    const inDegree = {}, adj = {}
     nodes.forEach((n) => { inDegree[n.id] = 0; adj[n.id] = [] })
     edges.forEach((e) => {
       inDegree[e.target] = (inDegree[e.target] || 0) + 1
-      adj[e.source] = adj[e.source] || []
+      if (!adj[e.source]) adj[e.source] = []
       adj[e.source].push(e.target)
     })
 
@@ -150,34 +181,22 @@ export default function WorkflowPage() {
       }
     }
 
-    // Group by level
     const byLevel = {}
-    nodes.forEach((n) => {
-      const lvl = levels[n.id] ?? 0
-      byLevel[lvl] = byLevel[lvl] || []
-      byLevel[lvl].push(n)
-    })
+    nodes.forEach((n) => { const lvl = levels[n.id] ?? 0; (byLevel[lvl] ??= []).push(n) })
 
-    const newNodes = nodes.map((n) => {
+    setNodes((nds) => nds.map((n) => {
       const lvl = levels[n.id] ?? 0
-      const idx = byLevel[lvl].indexOf(n)
-      return {
-        ...n,
-        position: { x: 100 + idx * GAP_X, y: 50 + lvl * GAP_Y },
-      }
-    })
-    setNodes(newNodes)
+      const idx = byLevel[lvl].findIndex(x => x.id === n.id)
+      return { ...n, position: { x: 100 + idx * GAP_X, y: 50 + lvl * GAP_Y } }
+    }))
+    setTimeout(() => fitView({ duration: 300 }), 50)
     showToast('自动布局完成', 'success')
   }
 
-  const handleFitView = () => {
-    // ReactFlow fitView is handled internally
-    showToast('适应画布', 'info')
-  }
+  const handleFitView = () => fitView({ duration: 300 })
 
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col">
-      {/* Toolbar */}
       <WorkflowToolbar
         workflowName={workflowName}
         onNameChange={setWorkflowName}
@@ -186,20 +205,22 @@ export default function WorkflowPage() {
         onLoad={handleOpenLoad}
         onAutoLayout={handleAutoLayout}
         onFitView={handleFitView}
-        onZoomIn={() => {}}
-        onZoomOut={() => {}}
+        onZoomIn={() => zoomIn({ duration: 200 })}
+        onZoomOut={() => zoomOut({ duration: 200 })}
         saving={saving}
       />
 
-      {/* Main area: Palette + Canvas + Config */}
       <div className="flex-1 flex overflow-hidden">
         <NodePalette />
         <WorkflowCanvas
+          key={layoutKey}
           nodes={nodes}
-          setNodes={setNodes}
           edges={edges}
-          setEdges={setEdges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
           onNodeClick={handleNodeClick}
+          onDropNode={onDropNode}
         />
         <AnimatePresence>
           {selectedNode && (
@@ -224,16 +245,12 @@ export default function WorkflowPage() {
       <AnimatePresence>
         {showLoadDialog && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center"
             onClick={() => setShowLoadDialog(false)}
           >
             <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
               className="bg-white rounded-2xl shadow-warm-xl p-6 w-full max-w-md"
               onClick={(e) => e.stopPropagation()}
             >
@@ -243,38 +260,20 @@ export default function WorkflowPage() {
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto">
                   {workflowList.map((w) => (
-                    <div
-                      key={w.id}
-                      className="flex items-center justify-between p-3 rounded-xl hover:bg-warm-50 border border-warm-100"
-                    >
+                    <div key={w.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-warm-50 border border-warm-100">
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-warm-700 truncate">{w.name}</p>
                         <p className="text-2xs text-warm-400">{new Date(w.updated_at || w.created_at).toLocaleString()}</p>
                       </div>
                       <div className="flex gap-1.5 ml-3">
-                        <button
-                          onClick={() => handleLoad(w.id)}
-                          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-coral-50 text-coral-600 hover:bg-coral-100 transition-colors"
-                        >
-                          加载
-                        </button>
-                        <button
-                          onClick={() => handleDelete(w.id)}
-                          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors"
-                        >
-                          删除
-                        </button>
+                        <button onClick={() => handleLoad(w.id)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-coral-50 text-coral-600 hover:bg-coral-100 transition-colors">加载</button>
+                        <button onClick={() => handleDelete(w.id)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors">删除</button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-              <button
-                onClick={() => setShowLoadDialog(false)}
-                className="mt-4 w-full py-2 text-sm text-warm-500 hover:text-warm-700 transition-colors"
-              >
-                关闭
-              </button>
+              <button onClick={() => setShowLoadDialog(false)} className="mt-4 w-full py-2 text-sm text-warm-500 hover:text-warm-700 transition-colors">关闭</button>
             </motion.div>
           </motion.div>
         )}
@@ -284,9 +283,7 @@ export default function WorkflowPage() {
       <AnimatePresence>
         {toast && (
           <motion.div
-            initial={{ opacity: 0, y: 24 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 24 }}
+            initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 24 }}
             className={`fixed bottom-6 right-6 px-5 py-3 rounded-2xl text-sm font-medium z-50 shadow-warm-md ${
               toast.type === 'error' ? 'bg-rose-50 text-rose-600' :
               toast.type === 'success' ? 'bg-emerald-50 text-emerald-600' :
@@ -298,5 +295,13 @@ export default function WorkflowPage() {
         )}
       </AnimatePresence>
     </div>
+  )
+}
+
+export default function WorkflowPage() {
+  return (
+    <ReactFlowProvider>
+      <WorkflowPageInner />
+    </ReactFlowProvider>
   )
 }

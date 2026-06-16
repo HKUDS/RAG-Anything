@@ -109,7 +109,7 @@ export function createDefaultNode(typeId, position) {
   const def = getNodeType(typeId)
   if (!def) return null
   return {
-    id: `${typeId}-${Date.now()}`,
+    id: `${typeId}-${crypto.randomUUID().slice(0, 8)}`,
     type: 'custom',
     position: position || { x: 100, y: 100 },
     data: {

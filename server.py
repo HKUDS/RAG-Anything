@@ -929,7 +929,7 @@ async def create_workflow(request: Request, current_user: dict = Depends(get_cur
         body = await request.json()
     except Exception:
         raise HTTPException(400, "无效的请求体")
-    wf_id = str(uuid.uuid4())[:8]
+    wf_id = str(uuid.uuid4())
     now = datetime.now().isoformat()
     wf = {
         "id": wf_id,
