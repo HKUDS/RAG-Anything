@@ -91,6 +91,14 @@
   .dark .topnav-link.active {
     @apply bg-coral-900/30 text-coral-400;
   }
+
+  /* Workflow toolbar button */
+  .toolbar-btn {
+    @apply flex items-center justify-center w-8 h-8 rounded-lg
+           text-warm-500 hover:text-warm-700 hover:bg-warm-100
+           disabled:opacity-40 disabled:cursor-not-allowed
+           transition-colors;
+  }
   .dark .topnav-btn {
     @apply text-warm-400 hover:text-warm-200 hover:bg-warm-800/50;
   }

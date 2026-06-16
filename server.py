@@ -893,6 +893,86 @@ async def admin_delete_user(user_id: int, admin: dict = Depends(get_admin_user))
 
 
 # ════════════════════════════════════════════════════════
+# 工作流编排 API
+# ════════════════════════════════════════════════════════
+
+WORKFLOW_DIR = Path("./workflows")
+WORKFLOW_DIR.mkdir(exist_ok=True)
+
+
+@app.get("/api/workflows")
+async def list_workflows(current_user: dict = Depends(get_current_user)):
+    """列出所有工作流"""
+    workflows = []
+    for f in sorted(WORKFLOW_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            wf = json.loads(f.read_text(encoding="utf-8"))
+            workflows.append({"id": wf.get("id"), "name": wf.get("name"), "created_at": wf.get("created_at"), "updated_at": wf.get("updated_at")})
+        except Exception:
+            pass
+    return {"workflows": workflows}
+
+
+@app.get("/api/workflows/{workflow_id}")
+async def get_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
+    """获取单个工作流"""
+    fpath = WORKFLOW_DIR / f"{workflow_id}.json"
+    if not fpath.exists():
+        raise HTTPException(404, "工作流不存在")
+    return json.loads(fpath.read_text(encoding="utf-8"))
+
+
+@app.post("/api/workflows")
+async def create_workflow(request: Request, current_user: dict = Depends(get_current_user)):
+    """创建新工作流"""
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "无效的请求体")
+    wf_id = str(uuid.uuid4())[:8]
+    now = datetime.now().isoformat()
+    wf = {
+        "id": wf_id,
+        "name": body.get("name", "未命名工作流"),
+        "created_at": now,
+        "updated_at": now,
+        "nodes": body.get("nodes", []),
+        "edges": body.get("edges", []),
+    }
+    (WORKFLOW_DIR / f"{wf_id}.json").write_text(json.dumps(wf, ensure_ascii=False, indent=2), encoding="utf-8")
+    return wf
+
+
+@app.put("/api/workflows/{workflow_id}")
+async def update_workflow(workflow_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+    """更新工作流"""
+    fpath = WORKFLOW_DIR / f"{workflow_id}.json"
+    if not fpath.exists():
+        raise HTTPException(404, "工作流不存在")
+    try:
+        body = await request.json()
+    except Exception:
+        raise HTTPException(400, "无效的请求体")
+    existing = json.loads(fpath.read_text(encoding="utf-8"))
+    existing["name"] = body.get("name", existing["name"])
+    existing["nodes"] = body.get("nodes", existing["nodes"])
+    existing["edges"] = body.get("edges", existing["edges"])
+    existing["updated_at"] = datetime.now().isoformat()
+    fpath.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
+    return existing
+
+
+@app.delete("/api/workflows/{workflow_id}")
+async def delete_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
+    """删除工作流"""
+    fpath = WORKFLOW_DIR / f"{workflow_id}.json"
+    if not fpath.exists():
+        raise HTTPException(404, "工作流不存在")
+    fpath.unlink()
+    return {"status": "ok"}
+
+
+# ════════════════════════════════════════════════════════
 # 业务路由（需认证）
 # ════════════════════════════════════════════════════════
 
