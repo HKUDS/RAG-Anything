@@ -942,24 +942,42 @@ async def upload_file_for_workflow(file: UploadFile = File(...), current_user: d
 
 
 @app.get("/api/workflows/models")
-async def list_available_models(current_user: dict = Depends(get_current_user)):
-    """返回系统配置的可用模型列表（来自 .env 配置）"""
-    models = []
+async def list_available_models(
+    current_user: dict = Depends(get_current_user),
+    type: str = "",
+):
+    """返回系统配置的可用模型列表（来自 .env 配置），支持 ?type=llm|embed 分类"""
     llm_model = os.getenv("LLM_MODEL", "")
     vision_model = os.getenv("VISION_MODEL", "")
     embed_model = os.getenv("EMBEDDING_MODEL", "")
     extra_llm = os.getenv("LLM_AVAILABLE_MODELS", "")
     extra_embed = os.getenv("EMBEDDING_AVAILABLE_MODELS", "")
 
-    seen = set()
-    for m in [llm_model, vision_model, embed_model] + \
-            [x.strip() for x in f"{extra_llm},{extra_embed}".split(",") if x.strip()]:
-        if m and m not in seen:
-            seen.add(m)
-            models.append({"id": m, "name": m, "source": "env"})
+    def _collect(*sources: str) -> list[dict]:
+        seen = set()
+        result = []
+        for src in sources:
+            for m in src.split(","):
+                m = m.strip()
+                if m and m not in seen:
+                    seen.add(m)
+                    result.append({"id": m, "name": m, "source": "env"})
+        return result
 
-    if not models:
-        models.append({"id": "qwen-plus", "name": "qwen-plus (默认)", "source": "fallback"})
+    if type == "llm":
+        models = _collect(llm_model, vision_model, extra_llm)
+        if not models:
+            models.append({"id": "qwen-plus", "name": "qwen-plus (默认)", "source": "fallback"})
+    elif type == "embed":
+        models = _collect(embed_model, extra_embed)
+        if not models:
+            models.append({"id": "text-embedding-v4", "name": "text-embedding-v4 (默认)", "source": "fallback"})
+    else:
+        # 兼容旧调用，不分类
+        models = _collect(llm_model, vision_model, embed_model, extra_llm, extra_embed)
+        if not models:
+            models.append({"id": "qwen-plus", "name": "qwen-plus (默认)", "source": "fallback"})
+
     return {"models": models}
 
 
@@ -1059,9 +1077,13 @@ async def push_run_status(run_id: str, node_id: str | None, status: str, data: d
             pass
 
 
+class WorkflowRunRequest(BaseModel):
+    query_text: str = ""
+
+
 @app.post("/api/workflows/{workflow_id}/run")
-async def run_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
-    """执行工作流 DAG"""
+async def run_workflow(workflow_id: str, body: WorkflowRunRequest = WorkflowRunRequest(), current_user: dict = Depends(get_current_user)):
+    """执行工作流 DAG，支持运行时 query_text 注入到 retriever 节点"""
     fpath = WORKFLOW_DIR / f"{workflow_id}.json"
     if not fpath.exists():
         raise HTTPException(404, "工作流不存在")
@@ -1069,6 +1091,12 @@ async def run_workflow(workflow_id: str, current_user: dict = Depends(get_curren
     nodes = wf.get("nodes", [])
     if not nodes:
         raise HTTPException(400, "工作流没有节点")
+
+    # 运行时注入 query_text 到所有 retriever 节点
+    if body.query_text.strip():
+        for node in wf.get("nodes", []):
+            if node.get("data", {}).get("nodeType") == "retriever":
+                node["data"]["query_text"] = body.query_text.strip()
 
     # 构建执行上下文（注入真实 RAG 组件）
     default_kb = await get_kb("default")

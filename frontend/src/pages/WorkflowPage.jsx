@@ -74,6 +74,7 @@ function WorkflowPageInner() {
   const [workflowList, setWorkflowList] = useState([])
   const [toast, setToast] = useState(null)
   const [zoomLevel, setZoomLevel] = useState(100)
+  const [queryText, setQueryText] = useState('')
   const [running, setRunning] = useState(false)
   const [runs, setRuns] = useState([])
   const [currentRun, setCurrentRun] = useState(null)
@@ -262,8 +263,9 @@ function WorkflowPageInner() {
     // Reset node run statuses
     setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, runStatus: 'pending' } })))
     try {
+      const body = queryText.trim() ? JSON.stringify({ query_text: queryText.trim() }) : '{}'
       const res = await fetch(`${API}/${workflowId}/run`, {
-        method: 'POST', headers: authHeaders(),
+        method: 'POST', headers: authHeaders(), body,
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({ detail: '执行失败' }))).detail)
       const data = await res.json()
@@ -366,6 +368,8 @@ function WorkflowPageInner() {
         isDirty={isDirty.current}
         zoomLevel={zoomLevel}
         hasNodes={nodes.length > 0}
+        queryText={queryText}
+        onQueryTextChange={setQueryText}
       />
 
       <div className="flex-1 flex overflow-hidden">

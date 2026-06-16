@@ -1,9 +1,10 @@
-import { Save, FolderOpen, FilePlus, ZoomIn, ZoomOut, Maximize2, LayoutGrid, Undo2, Redo2, Play, Loader2 } from 'lucide-react'
+import { Save, FolderOpen, FilePlus, ZoomIn, ZoomOut, Maximize2, LayoutGrid, Undo2, Redo2, Play, Loader2, MessageCircle } from 'lucide-react'
 
 export default function WorkflowToolbar({
   workflowName, onNameChange, onNew, onSave, onLoad,
   onAutoLayout, onFitView, onZoomIn, onZoomOut,
   onUndo, onRedo, onRun, saving, running, isDirty, zoomLevel, hasNodes,
+  queryText, onQueryTextChange,
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-warm-200 flex-shrink-0">
@@ -47,12 +48,32 @@ export default function WorkflowToolbar({
 
       <div className="w-px h-5 bg-warm-200" />
 
+      <div className="flex-1" />
+
+      {/* Runtime query input */}
+      {hasNodes && (
+        <div className="flex items-center gap-1.5 flex-1 max-w-md">
+          <MessageCircle size={14} className="text-warm-400 flex-shrink-0" />
+          <input
+            type="text"
+            value={queryText || ''}
+            onChange={(e) => onQueryTextChange?.(e.target.value)}
+            placeholder="输入问题后运行..."
+            onKeyDown={(e) => { if (e.key === 'Enter' && !running) onRun?.() }}
+            disabled={running}
+            className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-warm-200 bg-white
+                       focus:outline-none focus:ring-2 focus:ring-coral-200 focus:border-coral-300
+                       text-warm-700 placeholder:text-warm-350 disabled:opacity-50"
+          />
+        </div>
+      )}
+
       {/* Run */}
       {hasNodes && (
         <button
           onClick={onRun}
           disabled={running}
-          title="运行工作流"
+          title="运行工作流 (Enter 快捷运行)"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
                      bg-emerald-500 text-white hover:bg-emerald-600
                      disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

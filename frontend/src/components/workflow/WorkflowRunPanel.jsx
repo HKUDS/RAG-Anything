@@ -88,8 +88,17 @@ export default function WorkflowRunPanel({ runs, currentRun, onSelectRun }) {
                     }`}>
                       {nr.status === 'done' ? '完成' : nr.status === 'error' ? '失败' : nr.status}
                     </span>
-                    {nr.data?.duration_ms && (
+                    {nr.data?.duration_ms != null && (
                       <span className="ml-2 text-warm-400">{nr.data.duration_ms}ms</span>
+                    )}
+                    {nr.data?.search_mode && (
+                      <span className={`ml-2 px-1.5 py-0.5 rounded text-2xs font-medium ${
+                        nr.data.search_mode === 'in_memory'
+                          ? 'bg-violet-100 text-violet-600'
+                          : 'bg-amber-100 text-amber-600'
+                      }`}>
+                        {nr.data.search_mode === 'in_memory' ? '内存检索' : '知识库'}
+                      </span>
                     )}
                     {nr.data?.error && (
                       <p className="text-rose-500 mt-0.5">{nr.data.error}</p>

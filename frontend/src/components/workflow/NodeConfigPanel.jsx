@@ -6,19 +6,19 @@ function getToken() {
   try { const saved = localStorage.getItem('raganything_auth'); return saved ? JSON.parse(saved).token : '' } catch { return '' }
 }
 
-function ModelSelect({ value, onChange }) {
+function ModelSelect({ value, onChange, modelType = 'llm' }) {
   const [models, setModels] = useState([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     let cancelled = false
-    fetch('/api/workflows/models', { headers: { Authorization: `Bearer ${getToken()}` } })
+    fetch(`/api/workflows/models?type=${modelType}`, { headers: { Authorization: `Bearer ${getToken()}` } })
       .then(r => r.json())
       .then(data => { if (!cancelled) setModels(data.models || []) })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [])
+  }, [modelType])
 
   return (
     <div>
@@ -123,6 +123,9 @@ export default function NodeConfigPanel({ node, onClose, onUpdate }) {
   const def = getNodeType(node.data?.nodeType)
   if (!def) return null
 
+  // 根据节点类型决定模型类别
+  const modelCategory = node.data?.nodeType === 'embedding' ? 'embed' : 'llm'
+
   const handleChange = (key, value) => {
     onUpdate?.(node.id, { ...node.data, [key]: value })
   }
@@ -156,6 +159,7 @@ export default function NodeConfigPanel({ node, onClose, onUpdate }) {
               <ModelSelect
                 value={node.data[field.key] ?? ''}
                 onChange={(v) => handleChange(field.key, v)}
+                modelType={modelCategory}
               />
             ) : field.type === 'select' ? (
               <select value={node.data[field.key] ?? field.default}

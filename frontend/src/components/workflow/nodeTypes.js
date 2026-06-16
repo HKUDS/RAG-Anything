@@ -43,11 +43,11 @@ export const NODE_TYPES = [
     borderColor: '#d8b4fe',
     inputs: 1,
     outputs: 1,
-    defaults: { model: '', dims: 1536 },
+    defaults: { model: '', dims: 1024 },
     configFields: [
       { key: 'label', label: '节点名称', type: 'text', default: '嵌入向量' },
       { key: 'model', label: '嵌入模型', type: 'model_select', default: '' },
-      { key: 'dims', label: '向量维度', type: 'number', default: 1536 },
+      { key: 'dims', label: '向量维度', type: 'number', default: 1024 },
     ],
   },
   {
@@ -59,11 +59,12 @@ export const NODE_TYPES = [
     borderColor: '#fcd34d',
     inputs: 1,
     outputs: 1,
-    defaults: { top_k: 10, mode: 'hybrid' },
+    defaults: { top_k: 10, mode: 'hybrid', query_text: '' },
     configFields: [
       { key: 'label', label: '节点名称', type: 'text', default: '检索器' },
+      { key: 'query_text', label: '检索问题（可选）', type: 'textarea', default: '' },
       { key: 'top_k', label: 'Top-K', type: 'number', default: 10 },
-      { key: 'mode', label: '检索模式', type: 'select', options: ['hybrid', 'vector', 'bm25', 'rrf'], default: 'hybrid' },
+      { key: 'mode', label: '检索模式（KB降级时使用）', type: 'select', options: ['hybrid', 'vector', 'bm25', 'rrf'], default: 'hybrid' },
     ],
   },
   {

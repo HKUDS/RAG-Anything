@@ -60,16 +60,30 @@ def _extract_text(inputs: dict, *keys: str) -> str:
     for key in keys:
         val = inputs.get(key, "")
         if isinstance(val, list):
-            val = "\n".join(str(v) for v in val)
+            # 处理检索结果 [{chunk, score}, ...] 格式
+            if val and isinstance(val[0], dict):
+                val = "\n".join(
+                    f"[相关度: {d.get('score', 'N/A')}] {d.get('chunk', str(d))}"
+                    for d in val
+                )
+            else:
+                val = "\n".join(str(v) for v in val)
         if val and str(val).strip():
             return str(val)
     # 兜底：拼接所有字段值
     parts = []
     for k, v in inputs.items():
-        if k in ("duration_ms", "count", "dims", "format", "error", "file_type", "size_bytes"):
+        if k in ("duration_ms", "count", "dims", "format", "error", "file_type", "size_bytes",
+                  "search_mode", "chunk_count", "mode", "top_k"):
             continue
         if isinstance(v, list):
-            parts.extend(str(x) for x in v)
+            if v and isinstance(v[0], dict):
+                parts.extend(
+                    f"[相关度: {d.get('score', 'N/A')}] {d.get('chunk', str(d))}"
+                    for d in v
+                )
+            else:
+                parts.extend(str(x) for x in v)
         elif isinstance(v, str) and v.strip():
             parts.append(v)
     return "\n".join(parts) if parts else ""
@@ -125,6 +139,14 @@ class DocumentInputExecutor(NodeExecutor):
                 except Exception:
                     # fallback: 读取为二进制 + decode
                     text = f"[PDF] {target.name} (需 MinerU/Docling 解析器)"
+            elif target.suffix.lower() == '.docx':
+                try:
+                    from docx import Document
+                    doc = Document(str(target))
+                    paragraphs = [p.text for p in doc.paragraphs if p.text.strip()]
+                    text = '\n'.join(paragraphs)
+                except Exception:
+                    text = f"[DOCX] {target.name}\n路径: {target.absolute()}"
             else:
                 # .docx, .xlsx 等 — 返回文件路径供后续解析器处理
                 text = f"[{target.suffix}] {target.name}\n路径: {target.absolute()}"
@@ -160,46 +182,162 @@ class EmbeddingExecutor(NodeExecutor):
     node_type = "embedding"
 
     async def execute(self, config: dict, inputs: dict, ctx: ExecutionContext) -> dict:
-        model = config.get("model") or ctx.embed_model or "text-embedding-3-small"
+        model = config.get("model") or ctx.embed_model or "text-embedding-v4"
         text = _extract_text(inputs, "content", "chunks", "results")
         if not text.strip():
             return {"vector": [], "error": "上游节点没有提供文本"}
 
         if ctx.openai_embed_func:
             try:
-                result = await ctx.openai_embed_func(
+                # 使用 .func 绕过 @wrap_embedding_func_with_attrs 装饰器，
+                # 否则会自动注入 embedding_dim=1536，与 DashScope text-embedding-v4 (1024) 冲突
+                embed_fn = getattr(ctx.openai_embed_func, 'func', ctx.openai_embed_func)
+                result = await embed_fn(
                     [str(text)[:8000]],  # 截断，避免超 token 限制
                     model=model,
                     api_key=ctx.embed_api_key,
                     base_url=ctx.embed_base_url,
                 )
-                return {"vector": result[0] if result else [], "model": model, "dims": len(result[0]) if result else 0}
+                # result 可能是 list 或 numpy 数组，不能直接用 if result 判空
+                if result is not None and len(result) > 0:
+                    vec = result[0]
+                    if hasattr(vec, 'tolist'):
+                        vec = vec.tolist()
+                    return {"vector": vec, "model": model, "dims": len(vec)}
+                return {"vector": [], "model": model, "dims": 0}
             except Exception as e:
                 return {"vector": [], "model": model, "error": f"Embedding 调用失败: {e}"}
         return {"vector": [], "model": model, "error": "Embedding 函数未配置"}
 
 
+def _cosine_similarity_top_k(query_vector: list, chunk_vectors: list, chunks: list, top_k: int) -> list[dict]:
+    """用 numpy 做余弦相似度 Top-K 检索，返回 [{chunk, score}, ...]"""
+    import numpy as np
+
+    q = np.array(query_vector, dtype=np.float32).flatten()
+    q_norm = q / (np.linalg.norm(q) + 1e-10)
+
+    c = np.array(chunk_vectors, dtype=np.float32)
+    if c.ndim == 1:
+        c = c.reshape(1, -1)
+    c_norm = c / (np.linalg.norm(c, axis=1, keepdims=True) + 1e-10)
+
+    scores = np.dot(c_norm, q_norm)
+    top_indices = np.argsort(scores)[::-1][:top_k]
+
+    results = []
+    for idx in top_indices:
+        score = float(scores[idx])
+        if score > 0 and idx < len(chunks):
+            results.append({"chunk": str(chunks[idx])[:500], "score": round(score, 4)})
+    return results
+
+
 class RetrieverExecutor(NodeExecutor):
-    """检索器 — 查询 LightRAG 知识库"""
+    """检索器 — 优先内存向量检索 (有上游 chunks)，降级 LightRAG 知识库"""
     node_type = "retriever"
 
     async def execute(self, config: dict, inputs: dict, ctx: ExecutionContext) -> dict:
         top_k = int(config.get("top_k", 10))
         mode = config.get("mode", "hybrid")
-        query = _extract_text(inputs, "content", "chunks", "results")
 
+        # query_text 手动输入优先，否则从上游提取
+        query = (config.get("query_text") or "").strip()
+        if not query:
+            query = _extract_text(inputs, "content", "chunks", "results")
+        query = str(query)[:1000]
+
+        # 检查上游是否提供了 chunks（内存检索模式）
+        chunks = inputs.get("chunks")
+        has_chunks = isinstance(chunks, list) and len(chunks) > 0
+
+        if has_chunks and ctx.openai_embed_func:
+            return await self._in_memory_search(query, chunks, top_k, config, ctx)
+
+        # 降级到 LightRAG 知识库
+        return await self._kb_search(query, top_k, mode, ctx)
+
+    async def _in_memory_search(self, query: str, chunks: list, top_k: int, config: dict, ctx: ExecutionContext) -> dict:
+        """内存向量检索：向量化 query+chunks（分批≤10），余弦相似度 Top-K"""
+        import numpy as np
+        embed_fn = getattr(ctx.openai_embed_func, 'func', ctx.openai_embed_func)
+        embed_model = config.get("model") or ctx.embed_model or "text-embedding-v4"
+
+        # 限制 chunk 数量，避免超 token
+        max_chunks = min(len(chunks), 100)
+        selected_chunks = chunks[:max_chunks]
+
+        try:
+            # 先向量化 query
+            q_result = await embed_fn(
+                [query],
+                model=embed_model,
+                api_key=ctx.embed_api_key,
+                base_url=ctx.embed_base_url,
+            )
+            if q_result is None or len(q_result) == 0:
+                return {"results": [], "query": query[:200], "search_mode": "in_memory",
+                        "error": "Query 向量化失败"}
+            query_vec = q_result[0]
+            if hasattr(query_vec, 'tolist'):
+                query_vec = query_vec.tolist()
+
+            # 分批向量化 chunks（DashScope 限制 ≤10/批）
+            BATCH = 10
+            chunk_vecs = []
+            for i in range(0, len(selected_chunks), BATCH):
+                batch = selected_chunks[i:i + BATCH]
+                c_result = await embed_fn(
+                    batch,
+                    model=embed_model,
+                    api_key=ctx.embed_api_key,
+                    base_url=ctx.embed_base_url,
+                )
+                if c_result is not None and len(c_result) > 0:
+                    for v in c_result:
+                        if hasattr(v, 'tolist'):
+                            v = v.tolist()
+                        chunk_vecs.append(v)
+
+            if not chunk_vecs:
+                return {"results": [], "query": query[:200], "search_mode": "in_memory",
+                        "error": "Chunk 向量化失败"}
+
+            search_results = _cosine_similarity_top_k(query_vec, chunk_vecs, selected_chunks, top_k)
+
+            return {
+                "results": search_results,
+                "query": query[:200],
+                "top_k": top_k,
+                "search_mode": "in_memory",
+                "chunk_count": len(chunks),
+            }
+        except Exception as e:
+            return {"results": [], "query": query[:200], "search_mode": "in_memory",
+                    "error": f"内存检索失败: {e}"}
+
+    async def _kb_search(self, query: str, top_k: int, mode: str, ctx: ExecutionContext) -> dict:
+        """LightRAG 知识库检索（降级路径）"""
         if not ctx.kb_instance or not hasattr(ctx.kb_instance, 'lightrag') or not ctx.kb_instance.lightrag:
-            return {"results": [], "error": "知识库未初始化，请先上传文档到知识库"}
+            return {"results": [], "error": "知识库未初始化，请先上传文档到知识库",
+                    "search_mode": "knowledge_base"}
 
         try:
             from lightrag import QueryParam
             result = await ctx.kb_instance.lightrag.aquery(
-                str(query)[:1000],
+                query,
                 param=QueryParam(mode=mode, top_k=top_k, only_need_context=True),
             )
-            return {"results": [result] if isinstance(result, str) else result, "query": str(query)[:200], "mode": mode, "top_k": top_k}
+            return {
+                "results": [result] if isinstance(result, str) else result,
+                "query": query[:200],
+                "mode": mode,
+                "top_k": top_k,
+                "search_mode": "knowledge_base",
+            }
         except Exception as e:
-            return {"results": [], "error": f"检索失败: {e}", "query": str(query)[:200]}
+            return {"results": [], "error": f"检索失败: {e}", "query": query[:200],
+                    "search_mode": "knowledge_base"}
 
 
 class LLMAnswerExecutor(NodeExecutor):
@@ -210,11 +348,20 @@ class LLMAnswerExecutor(NodeExecutor):
         model = config.get("model") or ctx.llm_model or ""
         temperature = float(config.get("temperature", 0.1))
         system_prompt = config.get("system_prompt", "")
+
+        # 提取问题（来自上游 retriever 的 query 字段）
+        query = inputs.get("query", "").strip()
+        # 提取上下文（检索结果）
         context = _extract_text(inputs, "content", "results", "chunks", "answer")
         if not context.strip():
-            context = "（无上下文）"
+            context = "（无可用上下文，请告知用户检查检索是否成功）"
 
-        user_prompt = f"基于以下上下文回答问题：\n\n{str(context)[:8000]}"
+        # 构建完整 prompt：问题 + 上下文
+        prompt_parts = []
+        if query:
+            prompt_parts.append(f"问题：{query}")
+        prompt_parts.append(f"基于以下上下文回答问题。如果上下文不足以回答问题，请如实说明。\n\n{str(context)[:8000]}")
+        user_prompt = "\n\n".join(prompt_parts)
 
         if ctx.openai_complete_func:
             try:
