@@ -46,7 +46,7 @@ from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc, logger as lightrag_logger
 from lightrag import QueryParam as LightRAGQueryParam
 from raganything import RAGAnything, RAGAnythingConfig
-from raganything.workflow_executor import execute_workflow, RUNS_DIR
+from raganything.workflow_executor import execute_workflow, RUNS_DIR, ExecutionContext
 from raganything.chunking import (
     recursive_chunking,
     sentence_chunking,
@@ -1021,13 +1021,29 @@ async def run_workflow(workflow_id: str, current_user: dict = Depends(get_curren
     if not nodes:
         raise HTTPException(400, "工作流没有节点")
 
+    # 构建执行上下文（注入真实 RAG 组件）
+    default_kb = await get_kb("default")
+    exec_ctx = ExecutionContext(
+        llm_model=LLM_MODEL,
+        llm_api_key=API_KEY,
+        llm_base_url=BASE_URL,
+        embed_model=EMB_MODEL,
+        embed_dim=EMB_DIM,
+        embed_api_key=API_KEY,
+        embed_base_url=BASE_URL,
+        kb_instance=default_kb,
+        upload_dir=Path("./uploads"),
+        openai_complete_func=openai_complete_if_cache,
+        openai_embed_func=openai_embed,
+    )
+
     async def status_cb(node_id, status, data=None):
-        run_id = wf.get("_current_run_id", "")
-        if run_id:
-            await push_run_status(run_id, node_id, status, data)
+        # exec_ctx._run_id_cache is set by execute_workflow() when run starts
+        if exec_ctx._run_id_cache:
+            await push_run_status(exec_ctx._run_id_cache, node_id, status, data)
 
     try:
-        result = await execute_workflow(wf, status_callback=status_cb)
+        result = await execute_workflow(wf, ctx=exec_ctx, status_callback=status_cb)
     except ValueError as e:
         raise HTTPException(400, str(e))
 
