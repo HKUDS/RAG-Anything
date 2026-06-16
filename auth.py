@@ -5,6 +5,7 @@ RAG-Anything 认证模块
 import os
 import sqlite3
 import secrets
+import uuid
 import hashlib
 import time
 from datetime import datetime, timedelta
@@ -22,6 +23,7 @@ REFRESH_SECRET_KEY = os.getenv("JWT_REFRESH_SECRET") or secrets.token_hex(32)
 JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "24"))
 REFRESH_EXPIRY_DAYS = int(os.getenv("REFRESH_EXPIRY_DAYS", "7"))
 ALGORITHM = "HS256"
+SERVER_START_ID = uuid.uuid4().hex  # 每次进程启动重新生成，嵌入 JWT 实现重启即失效
 
 # ── 数据库路径 ────────────────────────────────────
 DB_PATH = Path(os.getenv("AUTH_DB_PATH", "./auth.db"))
@@ -318,11 +320,12 @@ async def reset_failed_logins(username: str):
 # ── JWT 工具 ──────────────────────────────────────
 
 def create_token(user_id: int, username: str, is_admin: bool) -> str:
-    """签发 JWT Token"""
+    """签发 JWT Token，含 server_start_id 用于重启失效"""
     payload = {
         "user_id": user_id,
         "username": username,
         "is_admin": is_admin,
+        "sid": SERVER_START_ID,
         "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS),
         "iat": datetime.utcnow(),
     }
@@ -330,9 +333,11 @@ def create_token(user_id: int, username: str, is_admin: bool) -> str:
 
 
 def decode_token(token: str) -> dict | None:
-    """验证并解码 JWT Token，失败返回 None"""
+    """验证并解码 JWT Token，失败或 server_start_id 不匹配返回 None"""
     try:
         payload = pyjwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        if payload.get("sid") != SERVER_START_ID:
+            return None
         return payload
     except pyjwt.ExpiredSignatureError:
         return None
@@ -341,12 +346,13 @@ def decode_token(token: str) -> dict | None:
 
 
 def create_refresh_token(user_id: int, username: str, is_admin: bool) -> str:
-    """签发 Refresh Token（有效期 7 天）"""
+    """签发 Refresh Token（有效期 7 天），含 server_start_id 用于重启失效"""
     payload = {
         "user_id": user_id,
         "username": username,
         "is_admin": is_admin,
         "type": "refresh",
+        "sid": SERVER_START_ID,
         "exp": datetime.utcnow() + timedelta(days=REFRESH_EXPIRY_DAYS),
         "iat": datetime.utcnow(),
     }
@@ -354,10 +360,12 @@ def create_refresh_token(user_id: int, username: str, is_admin: bool) -> str:
 
 
 def decode_refresh_token(token: str) -> dict | None:
-    """验证并解码 Refresh Token"""
+    """验证并解码 Refresh Token，失败或 server_start_id 不匹配返回 None"""
     try:
         payload = pyjwt.decode(token, REFRESH_SECRET_KEY, algorithms=[ALGORITHM])
         if payload.get("type") != "refresh":
+            return None
+        if payload.get("sid") != SERVER_START_ID:
             return None
         return payload
     except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
