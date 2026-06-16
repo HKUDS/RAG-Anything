@@ -20,15 +20,27 @@ export default function ManufacturingDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [mfgKb, setMfgKb] = useState(() => localStorage.getItem('mfg_kb') || 'default')
+  const [kbList, setKbList] = useState([])
+  useEffect(() => { api.get('/manufacturing/kb-list').then(r => {
+  let names = []
+  if (Array.isArray(r)) {
+    names = r.map(k => k.name || k.label).filter(Boolean)
+  } else if (r && typeof r === 'object') {
+    names = (r.knowledge_bases || []).map(k => k.name).filter(Boolean)
+  }
+  if (!names.length) names = ['default']
+  setKbList(names)
+}).catch(e => console.error('KB list error:', e)) }, [])
 
   const loadAll = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
     setError(null)
     try {
       const [dashRes, kgRes, faultRes] = await Promise.all([
-        api.get('/manufacturing/dashboard').catch(() => null),
-        api.get('/manufacturing/knowledge-graph/summary').catch(() => null),
-        api.get('/manufacturing/fault-cases/stats').catch(() => null),
+        api.get(`/manufacturing/dashboard?kb=${mfgKb}`).catch(() => null),
+        api.get(`/manufacturing/knowledge-graph/summary?kb=${mfgKb}`).catch(() => null),
+        api.get(`/manufacturing/fault-cases/stats?kb=${mfgKb}`).catch(() => null),
       ])
       setDashboard(dashRes?.data || dashRes)
       setKgSummary(kgRes?.data || kgRes)
@@ -38,7 +50,7 @@ export default function ManufacturingDashboardPage() {
     } finally {
       if (showLoading) setLoading(false)
     }
-  }, [])
+  }, [mfgKb])
 
   useEffect(() => { loadAll() }, [loadAll])
 
@@ -60,7 +72,7 @@ export default function ManufacturingDashboardPage() {
     const onVisibility = () => { if (document.visibilityState === 'visible') schedule() }
     document.addEventListener('visibilitychange', onVisibility)
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility) }
-  }, [autoRefresh, loadAll])
+  }, [autoRefresh, loadAll, mfgKb])
 
   if (loading) {
     return (
@@ -72,6 +84,11 @@ export default function ManufacturingDashboardPage() {
       </div>
     )
   }
+
+  // Detect if dashboard has any real data
+  const hasData = (kgSummary?.total_nodes ?? 0) > 0
+    || (faultStats?.total_cases ?? 0) > 0
+    || (dashboard?.usage_stats?.total_queries ?? 0) > 0
 
   // Stats cards
   const statCards = [
@@ -95,6 +112,11 @@ export default function ManufacturingDashboardPage() {
           <p className="text-sm text-warm-500 mt-1">第六届全国智能制造应用技术技能大赛 — 辅助教学系统</p>
         </div>
         <div className="flex gap-2 items-center">
+          <select value={mfgKb} onChange={e => { setMfgKb(e.target.value); localStorage.setItem('mfg_kb', e.target.value) }}
+            className="px-3 py-1.5 rounded-lg border border-warm-200 text-sm bg-white text-warm-700 cursor-pointer">
+            {kbList.length === 0 && <option value="default">KB: default</option>}
+            {kbList.map(k => <option key={k} value={k}>KB: {k}</option>)}
+          </select>
           <button onClick={() => setAutoRefresh(!autoRefresh)}
             className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
               autoRefresh ? 'bg-sage-50 border-sage-200 text-sage-600' : 'bg-warm-100 border-warm-200 text-warm-500'
@@ -116,6 +138,49 @@ export default function ManufacturingDashboardPage() {
         <div className="card p-4 border-rose-200 bg-rose-50 text-sm text-rose-600 flex items-center gap-2">
           <AlertTriangle size={16} /> {error}
         </div>
+      )}
+
+      {/* Onboarding — shown when no data at all */}
+      {!loading && !error && !hasData && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+          className="card p-8 text-center space-y-6">
+          <div className="w-14 h-14 rounded-2xl bg-coral-50 flex items-center justify-center mx-auto">
+            <Factory size={28} className="text-coral-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-warm-700">欢迎使用制造智能体</h3>
+            <p className="text-sm text-warm-500 mt-1 max-w-md mx-auto">
+              知识库尚未导入数据，请按照以下步骤开始使用
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto">
+            {[
+              { step: 1, icon: Database, label: '导入知识库数据', desc: '导入赛项知识、故障案例、工艺文档等', to: '/manufacturing/knowledge', btn: '浏览知识库' },
+              { step: 2, icon: BarChart3, label: '构建知识图谱', desc: '系统自动构建知识节点与关系', to: '/manufacturing/knowledge', btn: '查看图谱' },
+              { step: 3, icon: MessageSquare, label: '开始智能问答', desc: '基于知识库进行检索增强问答', to: '/manufacturing/agent', btn: '启动智能体' },
+            ].map(item => (
+              <div key={item.step} className="p-5 rounded-xl bg-warm-50 border border-warm-100 text-left space-y-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-7 h-7 rounded-full bg-coral-100 flex items-center justify-center text-xs font-bold text-coral-500">
+                    {item.step}
+                  </div>
+                  <item.icon size={18} className="text-warm-500" />
+                </div>
+                <div>
+                  <p className="text-sm font-medium text-warm-700">{item.label}</p>
+                  <p className="text-xs text-warm-500 mt-1">{item.desc}</p>
+                </div>
+                <button onClick={() => navigate(item.to)}
+                  className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-white border border-warm-200 text-warm-600 hover:bg-coral-50 hover:border-coral-200 hover:text-coral-600 transition-colors">
+                  {item.btn} →
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-warm-400">
+            你也可以使用脚本批量导入：<code className="px-1.5 py-0.5 rounded bg-warm-100 font-mono text-warm-500">python scripts/import_exams.py</code>
+          </p>
+        </motion.div>
       )}
 
       {/* Stat Cards */}

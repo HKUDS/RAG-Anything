@@ -51,6 +51,56 @@ class RAGAnythingConfig:
     )
     """Enable equation content processing."""
 
+    enable_video_processing: bool = field(
+        default=get_env_value("ENABLE_VIDEO_PROCESSING", False, bool)
+    )
+    """Enable video content processing. Defaults to False due to heavy optional dependencies (ffmpeg, opencv, whisper)."""
+
+    video_sample_rate: float = field(
+        default=get_env_value("VIDEO_SAMPLE_RATE", 1.0, float)
+    )
+    """Frames per second to extract from video. 0.5 = one frame every 2 seconds. Lower values reduce VLM API costs."""
+
+    video_max_duration: int = field(
+        default=get_env_value("VIDEO_MAX_DURATION", 3600, int)
+    )
+    """Maximum video duration in seconds to process. Videos exceeding this are truncated. Default 3600s (1 hour)."""
+
+    video_max_frames: int = field(
+        default=get_env_value("VIDEO_MAX_FRAMES", 60, int)
+    )
+    """Hard cap on frames extracted per video. Overrides video_sample_rate if exceeded to prevent excessive API calls."""
+
+    enable_audio_transcription: bool = field(
+        default=get_env_value("ENABLE_AUDIO_TRANSCRIPTION", False, bool)
+    )
+    """Enable audio transcription via Whisper for video processing. Requires openai-whisper (~1.5GB model)."""
+
+    enable_scene_detection: bool = field(
+        default=get_env_value("ENABLE_SCENE_DETECTION", True, bool)
+    )
+    """Enable scene boundary detection for intelligent frame selection in video processing."""
+
+    max_transcript_tokens: int = field(
+        default=get_env_value("MAX_TRANSCRIPT_TOKENS", 4000, int)
+    )
+    """Maximum number of tokens for audio transcript in video chunk context."""
+
+    video_max_concurrent: int = field(
+        default=get_env_value("VIDEO_MAX_CONCURRENT", 2, int)
+    )
+    """Maximum number of concurrent video processing tasks. Video processing is resource-intensive."""
+
+    video_frame_concurrent: int = field(
+        default=get_env_value("VIDEO_FRAME_CONCURRENT", 3, int)
+    )
+    """Maximum number of concurrent frame VLM analysis calls per video. Default 3."""
+
+    enable_frame_cache: bool = field(
+        default=get_env_value("ENABLE_FRAME_CACHE", True, bool)
+    )
+    """Enable frame description cache to skip repeated VLM calls for the same video. Default true."""
+
     # Batch Processing Configuration
     # ---
     max_concurrent_files: int = field(
@@ -63,7 +113,7 @@ class RAGAnythingConfig:
             x.strip()
             for x in get_env_value(
                 "SUPPORTED_FILE_EXTENSIONS",
-                ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md",
+                ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.mp4,.avi,.mov,.mkv,.webm",
                 str,
             ).split(",")
         ]

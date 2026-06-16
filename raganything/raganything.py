@@ -46,6 +46,12 @@ from raganything.modalprocessors import (
     ContextExtractor,
     ContextConfig,
 )
+from raganything.video_processor import (
+    VideoModalProcessor,
+    FrameExtractor,
+    AudioTranscriber,
+    SceneDetector,
+)
 
 
 @dataclass
@@ -237,6 +243,36 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 lightrag=self.lightrag,
                 modal_caption_func=self.llm_model_func,
                 context_extractor=self.context_extractor,
+            )
+
+        if self.config.enable_video_processing:
+            # Video processor with optional sub-components
+            frame_extractor = FrameExtractor(
+                sample_rate=self.config.video_sample_rate,
+                max_frames=self.config.video_max_frames,
+            )
+            audio_transcriber = None
+            if self.config.enable_audio_transcription:
+                try:
+                    audio_transcriber = AudioTranscriber()
+                except Exception as e:
+                    self.logger.warning(
+                        f"Audio transcription not available: {e}. "
+                        "Video processing will continue without audio transcription."
+                    )
+            scene_detector = (
+                SceneDetector() if self.config.enable_scene_detection else None
+            )
+
+            self.modal_processors["video"] = VideoModalProcessor(
+                lightrag=self.lightrag,
+                modal_caption_func=self.vision_model_func or self.llm_model_func,
+                context_extractor=self.context_extractor,
+                frame_extractor=frame_extractor,
+                audio_transcriber=audio_transcriber,
+                scene_detector=scene_detector,
+                video_frame_concurrent=self.config.video_frame_concurrent,
+                enable_frame_cache=self.config.enable_frame_cache,
             )
 
         # Always include generic processor as fallback

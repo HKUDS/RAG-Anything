@@ -123,6 +123,20 @@ class QueryMixin:
                 "No LightRAG instance available. Please process documents first or provide a pre-initialized LightRAG instance."
             )
 
+        # Pop 'param' early — it's already resolved into mode, we don't forward it
+        query_param = kwargs.pop("param", None)
+        if query_param is not None:
+            # If caller passed a QueryParam, extract mode and other fields into kwargs
+            mode = query_param.mode if hasattr(query_param, 'mode') else mode
+            for field in ('only_need_context', 'only_need_prompt', 'stream', 'top_k',
+                          'chunk_top_k', 'max_entity_tokens', 'max_relation_tokens',
+                          'max_total_tokens', 'response_type', 'hl_keywords', 'll_keywords',
+                          'enable_rerank', 'include_references'):
+                val = getattr(query_param, field, None)
+                default = getattr(type(query_param)(), field, None)
+                if val is not None and val != default:
+                    kwargs.setdefault(field, val)
+
         # RRF hybrid search mode — three-channel parallel retrieval with RRF fusion
         if mode == "rrf":
             return await self._aquery_rrf(
@@ -272,6 +286,33 @@ class QueryMixin:
                 f"RRF retrieved {len(chunks)} chunks"
             )
 
+            # Stage 1.5: Rerank chunks (optional, enabled by RERANK_ENABLED=true)
+            enable_rerank = kwargs.pop("enable_rerank", False)
+            rerank_top_n = 15
+            if enable_rerank:
+                import os as _os
+                rerank_model = _os.getenv("RERANK_MODEL", "qwen3-rerank")
+                rerank_api_key = _os.getenv(
+                    "LLM_BINDING_API_KEY",
+                    _os.getenv("RERANK_BINDING_API_KEY", ""),
+                )
+                if rerank_api_key:
+                    chunk_texts = [c.content for c in chunks]
+                    ranked = await rerank_chunks(
+                        query, chunk_texts,
+                        api_key=rerank_api_key,
+                        model=rerank_model,
+                        top_n=rerank_top_n,
+                    )
+                    # Reorder chunks by rerank results
+                    idx_map = {idx: chunks[idx] for idx, _ in ranked}
+                    chunks = [idx_map[i] for i in range(len(ranked)) if i in idx_map]
+                    self.logger.info(
+                        f"Reranked {len(chunks)} chunks -> top {rerank_top_n}"
+                    )
+                else:
+                    self.logger.warning("Rerank enabled but no API key found")
+
             # Stage 2: Build context from retrieved chunks
             context_parts = []
             for i, chunk in enumerate(chunks[:15]):  # top-15 for context window
@@ -280,6 +321,15 @@ class QueryMixin:
                     f"[Doc {i + 1}] (sources: {sources_str})\n{chunk.content}"
                 )
             context = "\n\n".join(context_parts)
+
+            # Debug: log top-3 retrieved chunks for context traceability
+            for i, chunk in enumerate(chunks[:3]):
+                preview = chunk.content[:100].replace("\n", " ")
+                self.logger.info(
+                    f"RRF top-{i+1}: [{','.join(chunk.sources)}] "
+                    f"id={chunk.chunk_id[:24]}... score={chunk.score:.4f} "
+                    f"preview={preview}..."
+                )
 
             # If only_need_context, return raw context without LLM generation
             if only_need_context:
@@ -1029,14 +1079,16 @@ class QueryMixin:
 async def rerank_chunks(
     query: str,
     chunks: list[str],
-    llm_model_func,
     api_key: str = "",
-    base_url: str = "",
     top_n: int = 10,
+    model: str = "qwen3-rerank",
+    base_url: str = "https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/text-rerank",
 ) -> list[tuple[int, str]]:
     """
-    使用 LLM 对检索结果进行重排序（RankGPT 风格）。
-    将 chunks 分批发送给 LLM，让 LLM 按相关性排序。
+    使用 DashScope Rerank API 对检索结果进行精排。
+
+    默认使用 qwen3-rerank 模型，通过阿里云 DashScope 原生 rerank API。
+    失败时返回原始顺序，不影响主流程。
 
     Returns:
         [(原始索引, chunk内容), ...] 按相关性降序
@@ -1044,54 +1096,54 @@ async def rerank_chunks(
     if not chunks or len(chunks) <= 1:
         return [(i, c) for i, c in enumerate(chunks)]
 
-    # 分批处理（每批最多 20 个 chunk，避免超出 LLM context）
-    batch_size = 20
-    all_ranked = []
+    import aiohttp
 
-    for batch_start in range(0, len(chunks), batch_size):
-        batch = chunks[batch_start : batch_start + batch_size]
-        if len(batch) <= 1:
-            all_ranked.extend((batch_start + i, c) for i, c in enumerate(batch))
-            continue
+    payload = {
+        "model": model,
+        "input": {
+            "query": query,
+            "documents": [c[:500] for c in chunks],  # 截断避免超长
+        },
+        "parameters": {"top_n": min(top_n, len(chunks)), "return_documents": False},
+    }
 
-        # 构建 rerank prompt
-        chunks_text = "\n\n".join(
-            f"[{i}] {c[:300]}{'...' if len(c) > 300 else ''}"
-            for i, c in enumerate(batch)
-        )
-        prompt = f"""请根据以下查询对检索到的文档片段进行相关性排序。
-只返回排序后的文档编号（逗号分隔，如 "3,0,5,1,2,4"），不要解释。
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                base_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status != 200:
+                    text = await resp.text()
+                    raise RuntimeError(f"Rerank API error {resp.status}: {text[:200]}")
 
-查询: {query[:500]}
+                data = await resp.json()
+                results = data.get("output", {}).get("results", [])
 
-文档片段:
-{chunks_text}
+                # results = [{"index": 2, "relevance_score": 0.77}, ...]
+                ranked = []
+                seen = set()
+                for item in sorted(results, key=lambda x: x.get("relevance_score", 0), reverse=True):
+                    idx = item["index"]
+                    if idx < len(chunks) and idx not in seen:
+                        ranked.append((idx, chunks[idx]))
+                        seen.add(idx)
 
-请按与查询的相关性从高到低排序，只返回编号:"""
+                # 追加未被 rerank 返回的 chunk（排最后）
+                for i, c in enumerate(chunks):
+                    if i not in seen:
+                        ranked.append((i, c))
 
-        try:
-            from lightrag.llm.openai import openai_complete_if_cache
-
-            response = await openai_complete_if_cache(
-                "qwen-plus", prompt, system_prompt="你是检索排序助手。只返回排序编号。",
-                api_key=api_key, base_url=base_url, max_tokens=100, temperature=0,
-            )
-            if response and isinstance(response, str):
-                # 解析排序结果
-                import re as _re
-                nums = _re.findall(r'\d+', response)
-                ranked_indices = [int(n) for n in nums if int(n) < len(batch)]
-                # 添加未出现的编号（排在最后）
-                seen = set(ranked_indices)
-                ranked_indices.extend(i for i in range(len(batch)) if i not in seen)
-                all_ranked.extend((batch_start + idx, batch[idx]) for idx in ranked_indices)
-            else:
-                all_ranked.extend((batch_start + i, c) for i, c in enumerate(batch))
-        except Exception:
-            # Rerank 失败不影响主流程，返回原始顺序
-            all_ranked.extend((batch_start + i, c) for i, c in enumerate(batch))
-
-    return all_ranked
+                return ranked[:top_n]
+    except Exception as e:
+        import logging
+        logging.getLogger("raganything").warning(f"Rerank failed, using original order: {e}")
+        return [(i, c) for i, c in enumerate(chunks)][:top_n]
 
 
 async def rewrite_query(

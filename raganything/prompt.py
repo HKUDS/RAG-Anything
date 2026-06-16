@@ -80,6 +80,11 @@ PROMPTS["EQUATION_ANALYSIS_SYSTEM"] = (
 PROMPTS["GENERIC_ANALYSIS_SYSTEM"] = (
     "You are an expert content analyst specializing in {content_type} content."
 )
+PROMPTS["VIDEO_ANALYSIS_SYSTEM"] = (
+    "You are an expert video analyst. Provide comprehensive analysis synthesizing visual frames, "
+    "audio transcripts, temporal structure, and video metadata. Focus on key events, topics, "
+    "speakers, visual changes, and the overall narrative arc of the video content."
+)
 
 # Image analysis prompt template
 PROMPTS[
@@ -330,6 +335,83 @@ Content: {content}
 
 Focus on extracting meaningful information that would be useful for knowledge retrieval and understanding the content's role in the broader context."""
 
+# Video analysis prompt template
+PROMPTS[
+    "video_prompt"
+] = """Please analyze this video content comprehensively, synthesizing visual frames, audio transcript, and temporal structure. Provide a JSON response with the following structure:
+
+{{
+    "detailed_description": "A comprehensive analysis of the video including:
+    - Overall topic and purpose of the video
+    - Key events and their temporal sequence
+    - Visual content: main scenes, people, objects, text, diagrams shown
+    - Audio content: main topics discussed, key statements, speaker tone
+    - How visual and audio elements complement each other
+    - Important transitions or turning points
+    - Summary of the complete narrative or information presented
+    Always use specific names, timestamps, and concrete details.",
+    "entity_info": {{
+        "entity_name": "{entity_name}",
+        "entity_type": "video",
+        "summary": "concise summary of the video's overall content and significance (max 100 words)"
+    }}
+}}
+
+Video details:
+- Video Path: {video_path}
+- Duration: {duration}s
+- Frames Extracted: {frame_count}
+
+Frame Descriptions:
+{frame_descriptions}
+
+Audio Transcript:
+{transcript}
+
+Context from surrounding document:
+{context}
+
+Synthesize all available information (frames, transcript, metadata) into a unified analysis."""
+
+# Video analysis prompt with context support
+PROMPTS[
+    "video_prompt_with_context"
+] = """Please analyze this video content considering both its internal content and the surrounding document context. Provide a JSON response with the following structure:
+
+{{
+    "detailed_description": "A comprehensive analysis of the video including:
+    - Overall topic and purpose of the video
+    - Key events and their temporal sequence
+    - Visual content: main scenes, people, objects, text, diagrams shown
+    - Audio content: main topics discussed, key statements, speaker tone
+    - How visual and audio elements complement each other
+    - Important transitions or turning points
+    - How the video relates to the surrounding document context
+    - Summary of the complete narrative or information presented
+    Always use specific names, timestamps, and concrete details.",
+    "entity_info": {{
+        "entity_name": "{entity_name}",
+        "entity_type": "video",
+        "summary": "concise summary of the video's content, significance, and role in the broader document (max 100 words)"
+    }}
+}}
+
+Context from surrounding document:
+{context}
+
+Video details:
+- Video Path: {video_path}
+- Duration: {duration}s
+- Frames Extracted: {frame_count}
+
+Frame Descriptions:
+{frame_descriptions}
+
+Audio Transcript:
+{transcript}
+
+Synthesize all available information (frames, transcript, metadata, context) into a unified analysis."""
+
 # Modal chunk templates
 PROMPTS["image_chunk"] = """
 Image Content Analysis:
@@ -359,6 +441,15 @@ PROMPTS["generic_chunk"] = """{content_type} Content Analysis:
 Content: {content}
 
 Analysis: {enhanced_caption}"""
+
+PROMPTS["video_chunk"] = """Video Content Analysis:
+- Video Path: {video_path}
+- Duration: {duration}s
+- Estimated Frames: {frame_count}
+
+Transcript Preview: {transcript_summary}
+
+Comprehensive Video Analysis: {enhanced_caption}"""
 
 # Query-related prompts
 PROMPTS["QUERY_IMAGE_DESCRIPTION"] = (

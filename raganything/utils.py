@@ -205,6 +205,9 @@ def separate_content(
                     "_neighbor_text",
                     extract_neighbor_text_from_content_list(content_list, index),
                 )
+            elif content_type == "video":
+                # Preserve video-specific metadata (path, timestamp)
+                multimodal_item.setdefault("_content_list_index", index)
             multimodal_items.append(multimodal_item)
 
     # Merge all text content
@@ -437,6 +440,8 @@ def get_processor_for_type(modal_processors: Dict[str, Any], content_type: str):
         return modal_processors.get("table")
     elif content_type == "equation":
         return modal_processors.get("equation")
+    elif content_type == "video":
+        return modal_processors.get("video") or modal_processors.get("generic")
     else:
         # For other types, use generic processor
         return modal_processors.get("generic")
@@ -467,6 +472,14 @@ def get_processor_supports(proc_type: str) -> List[str]:
             "General content analysis",
             "Structured processing",
             "Entity extraction",
+        ],
+        "video": [
+            "Video content analysis",
+            "Frame extraction and analysis",
+            "Audio transcription",
+            "Scene detection",
+            "Temporal structure understanding",
+            "Video entity extraction",
         ],
     }
     return supports_map.get(proc_type, ["Basic processing"])

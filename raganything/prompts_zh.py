@@ -25,6 +25,11 @@ PROMPTS_ZH["TABLE_ANALYSIS_SYSTEM"] = (
 )
 PROMPTS_ZH["EQUATION_ANALYSIS_SYSTEM"] = "你是一位数学专家。请提供详细的数学分析。"
 PROMPTS_ZH["GENERIC_ANALYSIS_SYSTEM"] = "你是一位专注于{content_type}内容的专业分析师。"
+PROMPTS_ZH["VIDEO_ANALYSIS_SYSTEM"] = (
+    "你是一位专业的视频分析师。请提供综合分析，综合视觉帧、"
+    "音频转录、时间结构和视频元数据。重点关注关键事件、主题、"
+    "发言人、视觉变化以及视频内容的整体叙事线索。"
+)
 
 # Image analysis prompt template
 PROMPTS_ZH["vision_prompt"] = """请详细分析这张图片，并以以下JSON结构提供回答：
@@ -267,6 +272,83 @@ PROMPTS_ZH[
 
 请专注于提取对知识检索有用的信息，并理解内容在更广泛上下文中的作用。"""
 
+# Video analysis prompt template
+PROMPTS_ZH[
+    "video_prompt"
+] = """请综合分析此视频内容，综合视觉帧、音频转录和时间结构。请以以下JSON格式提供回答：
+
+{{
+    "detailed_description": "视频的全面分析，包括：
+    - 视频的整体主题和目的
+    - 关键事件及其时间顺序
+    - 视觉内容：主要场景、人物、物体、文本、图表
+    - 音频内容：讨论的主要话题、关键陈述、发言人语气
+    - 视觉和音频元素如何相互补充
+    - 重要的转折点或过渡
+    - 完整叙述或所呈现信息的总结
+    始终使用具体的名称、时间戳和细节。",
+    "entity_info": {{
+        "entity_name": "{entity_name}",
+        "entity_type": "video",
+        "summary": "视频整体内容和重要性的简明摘要（不超过100字）"
+    }}
+}}
+
+视频详情：
+- 视频路径：{video_path}
+- 时长：{duration}秒
+- 提取帧数：{frame_count}
+
+帧描述：
+{frame_descriptions}
+
+音频转录：
+{transcript}
+
+周围文档上下文：
+{context}
+
+请综合所有可用信息（帧、转录、元数据）形成统一分析。"""
+
+# Video analysis prompt with context support
+PROMPTS_ZH[
+    "video_prompt_with_context"
+] = """请结合其内部内容和周围文档上下文分析此视频。请以以下JSON格式提供回答：
+
+{{
+    "detailed_description": "视频的全面分析，包括：
+    - 视频的整体主题和目的
+    - 关键事件及其时间顺序
+    - 视觉内容：主要场景、人物、物体、文本、图表
+    - 音频内容：讨论的主要话题、关键陈述、发言人语气
+    - 视觉和音频元素如何相互补充
+    - 重要的转折点或过渡
+    - 视频如何与周围文档上下文相关联
+    - 完整叙述或所呈现信息的总结
+    始终使用具体的名称、时间戳和细节。",
+    "entity_info": {{
+        "entity_name": "{entity_name}",
+        "entity_type": "video",
+        "summary": "视频内容、重要性及在更广泛文档中的作用的简明摘要（不超过100字）"
+    }}
+}}
+
+周围文档上下文：
+{context}
+
+视频详情：
+- 视频路径：{video_path}
+- 时长：{duration}秒
+- 提取帧数：{frame_count}
+
+帧描述：
+{frame_descriptions}
+
+音频转录：
+{transcript}
+
+请综合所有可用信息（帧、转录、元数据、上下文）形成统一分析。"""
+
 # Modal chunk templates
 PROMPTS_ZH["image_chunk"] = """
 图片内容分析：
@@ -296,6 +378,15 @@ PROMPTS_ZH["generic_chunk"] = """{content_type}内容分析：
 内容：{content}
 
 分析：{enhanced_caption}"""
+
+PROMPTS_ZH["video_chunk"] = """视频内容分析：
+- 视频路径：{video_path}
+- 时长：{duration}秒
+- 估计帧数：{frame_count}
+
+转录预览：{transcript_summary}
+
+综合视频分析：{enhanced_caption}"""
 
 # Query-related prompts
 PROMPTS_ZH["QUERY_IMAGE_DESCRIPTION"] = (

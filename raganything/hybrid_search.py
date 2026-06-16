@@ -168,8 +168,6 @@ class BM25IndexManager:
 
         results = []
         for rank, idx in enumerate(ranked_indices):
-            if scores[idx] <= 0:
-                continue
             chunk = self._chunks[idx]
             results.append(
                 ScoredChunk(
@@ -222,7 +220,7 @@ class GraphRetriever:
     # Entity Matching
     # ------------------------------------------------------------------
 
-    def _match_entities(self, query: str) -> List[Dict[str, Any]]:
+    async def _match_entities(self, query: str) -> List[Dict[str, Any]]:
         """Extract entity names from query text and match in LightRAG's graph.
 
         Returns:
@@ -241,9 +239,12 @@ class GraphRetriever:
             matched = []
             query_lower = query.lower()
 
-            for node, data in graph.nodes(data=True):
-                entity_name = data.get("entity_name", node)
-                if not isinstance(entity_name, str):
+            # NetworkXStorage methods are all async
+            all_nodes = await graph.get_all_nodes()
+            for node_data in all_nodes:
+                node_id = node_data.get("entity_id", node_data.get("entity_name", ""))
+                entity_name = node_data.get("entity_name", node_id)
+                if not isinstance(entity_name, str) or not entity_name:
                     continue
                 # Simple substring match (fuzzy matching can be added later)
                 if entity_name.lower() in query_lower or any(
@@ -251,12 +252,13 @@ class GraphRetriever:
                     for token in query_lower.split()
                     if len(token) >= 2
                 ):
+                    degree = await graph.node_degree(node_id)
                     matched.append(
                         {
                             "name": entity_name,
-                            "node_id": node,
-                            "degree": graph.degree(node),
-                            "entity_type": data.get("entity_type", "unknown"),
+                            "node_id": node_id,
+                            "degree": degree,
+                            "entity_type": node_data.get("entity_type", "unknown"),
                         }
                     )
 
@@ -272,7 +274,7 @@ class GraphRetriever:
     # Neighbor Traversal
     # ------------------------------------------------------------------
 
-    def _traverse_neighbors(
+    async def _traverse_neighbors(
         self, matched_entities: List[Dict[str, Any]], depth: int | None = None
     ) -> Dict[str, float]:
         """Traverse graph neighbors from matched entities, returning weighted chunk IDs.
@@ -293,7 +295,7 @@ class GraphRetriever:
 
         for entity in matched_entities:
             node_id = entity["node_id"]
-            # BFS traversal
+            # BFS traversal using NetworkXStorage API
             visited = {node_id}
             frontier = [node_id]
             for d in range(depth + 1):
@@ -301,18 +303,21 @@ class GraphRetriever:
                 weight = 1.0 / (d + 1)  # distance decay
                 for node in frontier:
                     # Collect chunks from this entity node
-                    node_data = graph.nodes.get(node, {})
+                    node_data = await graph.get_node(node) or {}
                     entity_chunks = node_data.get("chunk_ids", [])
                     if isinstance(entity_chunks, list):
                         for cid in entity_chunks:
                             chunk_scores[cid] = max(
                                 chunk_scores.get(cid, 0.0), weight
                             )
-                    # Explore neighbors
-                    for neighbor in graph.neighbors(node):
-                        if neighbor not in visited:
-                            visited.add(neighbor)
-                            next_frontier.append(neighbor)
+                    # Explore neighbors via get_node_edges
+                    edges = await graph.get_node_edges(node)
+                    if edges:
+                        for src, tgt in edges:
+                            neighbor = tgt if src == node else src
+                            if neighbor not in visited:
+                                visited.add(neighbor)
+                                next_frontier.append(neighbor)
                 frontier = next_frontier
                 if not frontier:
                     break
@@ -323,7 +328,7 @@ class GraphRetriever:
     # Search
     # ------------------------------------------------------------------
 
-    def search(self, query: str, top_k: int | None = None) -> List[ScoredChunk]:
+    async def search(self, query: str, top_k: int | None = None) -> List[ScoredChunk]:
         """Execute full graph retrieval: match entities → traverse → rank chunks.
 
         Args:
@@ -337,11 +342,11 @@ class GraphRetriever:
         if self._lightrag is None:
             return []
 
-        matched = self._match_entities(query)
+        matched = await self._match_entities(query)
         if not matched:
             return []
 
-        chunk_scores = self._traverse_neighbors(matched)
+        chunk_scores = await self._traverse_neighbors(matched)
 
         if not chunk_scores:
             return []
@@ -353,13 +358,13 @@ class GraphRetriever:
 
         results = []
         for rank, (chunk_id, weight) in enumerate(sorted_chunks):
-            # Try to get chunk content from LightRAG storage
+            # Get chunk content from LightRAG storage (async KV API)
             content = ""
             try:
                 if hasattr(self._lightrag, "text_chunks"):
-                    content = self._lightrag.text_chunks.get(chunk_id, "")
-                if not content and hasattr(self._lightrag, "chunks"):
-                    content = self._lightrag.chunks.get(chunk_id, "")
+                    chunk_data = await self._lightrag.text_chunks.get_by_id(chunk_id)
+                    if chunk_data:
+                        content = chunk_data.get("content", "")
             except Exception:
                 pass
 
@@ -378,7 +383,7 @@ class GraphRetriever:
     # Visualization Data
     # ------------------------------------------------------------------
 
-    def get_subgraph(
+    async def get_subgraph(
         self, entity_ids: List[str] | None = None, query: str | None = None
     ) -> Dict[str, Any]:
         """Return subgraph data for D3 force-directed visualization.
@@ -398,7 +403,7 @@ class GraphRetriever:
         if entity_ids:
             seed_nodes = set(entity_ids)
         elif query:
-            matched = self._match_entities(query)
+            matched = await self._match_entities(query)
             seed_nodes = {e["node_id"] for e in matched}
         else:
             seed_nodes = set()
@@ -409,12 +414,16 @@ class GraphRetriever:
         # Collect subgraph: seed nodes + 1-hop neighbors
         sub_nodes = set(seed_nodes)
         for node in list(seed_nodes):
-            for neighbor in graph.neighbors(node):
-                sub_nodes.add(neighbor)
+            # Use get_node_edges to find neighbors
+            edges_list = await graph.get_node_edges(node)
+            if edges_list:
+                for src, tgt in edges_list:
+                    neighbor = tgt if src == node else src
+                    sub_nodes.add(neighbor)
 
         nodes = []
         for node in sub_nodes:
-            data = graph.nodes.get(node, {})
+            data = await graph.get_node(node) or {}
             nodes.append(
                 {
                     "id": node,
@@ -426,15 +435,20 @@ class GraphRetriever:
             )
 
         edges = []
-        for u, v, data in graph.edges(data=True):
-            if u in sub_nodes and v in sub_nodes:
-                edges.append(
-                    {
-                        "source": u,
-                        "target": v,
-                        "relation": data.get("relation", data.get("description", "")),
-                    }
-                )
+        # Use get_all_edges() -> list[dict]
+        all_edges = await graph.get_all_edges()
+        if all_edges:
+            for edge_data in all_edges:
+                u = edge_data.get("src_id", edge_data.get("source", ""))
+                v = edge_data.get("tgt_id", edge_data.get("target", ""))
+                if u in sub_nodes and v in sub_nodes:
+                    edges.append(
+                        {
+                            "source": u,
+                            "target": v,
+                            "relation": edge_data.get("relation", edge_data.get("description", "")),
+                        }
+                    )
 
         return {"nodes": nodes, "edges": edges}
 
@@ -557,7 +571,7 @@ class HybridSearchEngine:
             # Use LightRAG's query with only_need_context to get raw chunks
             from lightrag import QueryParam
 
-            param = QueryParam(mode="local", only_need_context=True, top_k=top_k)
+            param = QueryParam(mode="naive", only_need_context=True, top_k=top_k)
             result = await self._lightrag.aquery(query, param=param)
 
             if not result or not isinstance(result, str):
@@ -580,16 +594,10 @@ class HybridSearchEngine:
             return []
 
     async def _graph_search(self, query: str, top_k: int) -> List[ScoredChunk]:
-        """Knowledge graph search (sync, run in executor)."""
+        """Knowledge graph search (async)."""
         if "graph" not in self._enabled_channels:
             return []
-        loop = asyncio.get_running_loop()
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return await loop.run_in_executor(
-                pool, self._graph.search, query, top_k
-            )
+        return await self._graph.search(query, top_k)
 
     # ------------------------------------------------------------------
     # RRF Fusion
@@ -792,8 +800,8 @@ class HybridSearchEngine:
     # Graph Visualization Delegate
     # ------------------------------------------------------------------
 
-    def get_subgraph(
+    async def get_subgraph(
         self, entity_ids: List[str] | None = None, query: str | None = None
     ) -> Dict[str, Any]:
         """Get subgraph data for visualization."""
-        return self._graph.get_subgraph(entity_ids=entity_ids, query=query)
+        return await self._graph.get_subgraph(entity_ids=entity_ids, query=query)

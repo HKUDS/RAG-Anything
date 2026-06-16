@@ -96,6 +96,8 @@ def auto_parser(filename: str) -> str:
         return "docling"
     if ext in ("png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp"):
         return "mineru"
+    if ext in ("mp4", "avi", "mov", "mkv", "webm"):
+        return "video"
     return os.getenv("PARSER", "docling")
 
 
@@ -173,6 +175,7 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
         enable_image_processing=os.getenv("ENABLE_IMAGE_PROCESSING", "false").lower() == "true",
         enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "false").lower() == "true",
         enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "false").lower() == "true",
+        enable_video_processing=os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
     )
     return RAGAnything(config=config, llm_model_func=llm_func,
                        vision_model_func=vision_func,

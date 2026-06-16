@@ -246,7 +246,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                 onChange={(e) => Array.from(e.target.files).forEach(addFile)} />
               <Upload size={36} className="mx-auto mb-3 text-warm-500" />
               <p className="text-warm-700 font-medium text-sm">拖拽文件到此处，或点击选择</p>
-              <p className="text-warm-500 text-xs mt-1">PDF · Word · PPT · Excel · 图片 · 文本</p>
+              <p className="text-warm-500 text-xs mt-1">PDF · Word · PPT · Excel · 图片 · 文本 · 视频</p>
             </div>
 
             {/* Chunking Strategy */}

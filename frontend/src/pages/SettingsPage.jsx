@@ -160,6 +160,7 @@ export default function SettingsPage({ onToast }) {
           { key: 'enable_image', label: '🖼️ 图片分析', desc: '使用 VLM 分析文档中的图片' },
           { key: 'enable_table', label: '📊 表格处理', desc: '提取并理解表格数据' },
           { key: 'enable_equation', label: '📐 公式解析', desc: '数学公式 LaTeX 转换' },
+          { key: 'enable_video', label: '🎬 视频处理', desc: '提取视频帧并转录音频（需要 ffmpeg）' },
         ].map(({ key, label, desc }) => (
           <div key={key} className="flex items-center justify-between py-2">
             <div>
