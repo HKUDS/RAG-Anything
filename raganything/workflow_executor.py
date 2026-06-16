@@ -190,7 +190,7 @@ class LLMAnswerExecutor(NodeExecutor):
     node_type = "llm_answer"
 
     async def execute(self, config: dict, inputs: dict, ctx: ExecutionContext) -> dict:
-        model = config.get("model", ctx.llm_model or "gpt-4o")
+        model = config.get("model") or ctx.llm_model or "gpt-4o"
         temperature = float(config.get("temperature", 0.1))
         system_prompt = config.get("system_prompt", "")
         context = inputs.get("content", "") or inputs.get("results", "") or inputs.get("chunks", "")
