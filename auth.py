@@ -17,8 +17,8 @@ from passlib.context import CryptContext
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # ── JWT 配置 ──────────────────────────────────────
-SECRET_KEY = os.getenv("JWT_SECRET", secrets.token_hex(32))
-REFRESH_SECRET_KEY = os.getenv("JWT_REFRESH_SECRET", secrets.token_hex(32))
+SECRET_KEY = os.getenv("JWT_SECRET") or secrets.token_hex(32)
+REFRESH_SECRET_KEY = os.getenv("JWT_REFRESH_SECRET") or secrets.token_hex(32)
 JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "24"))
 REFRESH_EXPIRY_DAYS = int(os.getenv("REFRESH_EXPIRY_DAYS", "7"))
 ALGORITHM = "HS256"
@@ -42,7 +42,7 @@ def _get_conn() -> sqlite3.Connection:
 
 
 async def init_db():
-    """初始化数据库：创建 users 表 + 默认管理员"""
+    """初始化数据库：创建 users 表 + settings 表 + 默认管理员 + 持久化密钥"""
     import aiosqlite
 
     async with aiosqlite.connect(str(DB_PATH)) as db:
@@ -63,6 +63,13 @@ async def init_db():
                 updated_at  TEXT DEFAULT (datetime('now','localtime'))
             )
         """)
+        # settings 表：持久化 JWT 密钥等配置（key-value 结构）
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS settings (
+                key   TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            )
+        """)
         await db.commit()
         # 迁移旧表：添加暴力破解防护列
         try:
@@ -74,6 +81,32 @@ async def init_db():
         except Exception:
             pass
         await db.commit()
+
+        # 加载或持久化 JWT 密钥（环境变量优先，否则读/写数据库）
+        global SECRET_KEY, REFRESH_SECRET_KEY
+        if not os.getenv("JWT_SECRET"):
+            row = await (await db.execute("SELECT value FROM settings WHERE key = 'jwt_secret'")).fetchone()
+            if row:
+                SECRET_KEY = row[0]
+                print("[AUTH] JWT 密钥已从数据库加载")
+            else:
+                await db.execute("INSERT INTO settings (key, value) VALUES ('jwt_secret', ?)", (SECRET_KEY,))
+                await db.commit()
+                print("[AUTH] JWT 密钥已生成并持久化到数据库")
+        else:
+            print("[AUTH] JWT 密钥从环境变量加载")
+
+        if not os.getenv("JWT_REFRESH_SECRET"):
+            row = await (await db.execute("SELECT value FROM settings WHERE key = 'jwt_refresh_secret'")).fetchone()
+            if row:
+                REFRESH_SECRET_KEY = row[0]
+                print("[AUTH] Refresh 密钥已从数据库加载")
+            else:
+                await db.execute("INSERT INTO settings (key, value) VALUES ('jwt_refresh_secret', ?)", (REFRESH_SECRET_KEY,))
+                await db.commit()
+                print("[AUTH] Refresh 密钥已生成并持久化到数据库")
+        else:
+            print("[AUTH] Refresh 密钥从环境变量加载")
 
     # 确保默认管理员存在
     admin = await get_user_by_username(DEFAULT_ADMIN_USERNAME)
