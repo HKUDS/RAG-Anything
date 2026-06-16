@@ -6,6 +6,41 @@ function getToken() {
   try { const saved = localStorage.getItem('raganything_auth'); return saved ? JSON.parse(saved).token : '' } catch { return '' }
 }
 
+function ModelSelect({ value, onChange }) {
+  const [models, setModels] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    fetch('/api/workflows/models', { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then(r => r.json())
+      .then(data => { if (!cancelled) setModels(data.models || []) })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  return (
+    <div>
+      <select
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full text-xs px-3 py-2 rounded-lg border border-warm-200 bg-white
+                   focus:outline-none focus:ring-2 focus:ring-coral-200 focus:border-coral-300 text-warm-700"
+      >
+        <option value="">默认（服务器配置）</option>
+        {models.map((m) => (
+          <option key={m.id} value={m.id}>
+            {m.name}{m.source === 'api' ? ' (API)' : m.source === 'env_config' ? ' (已配置)' : ''}
+          </option>
+        ))}
+      </select>
+      {loading && <p className="text-2xs text-warm-400 mt-1">加载模型列表...</p>}
+      {!loading && models.length === 0 && <p className="text-2xs text-amber-500 mt-1">未能获取模型列表，将使用服务器默认模型</p>}
+    </div>
+  )
+}
+
 function FilePicker({ value, onChange, filterType }) {
   const [files, setFiles] = useState([])
   const [loading, setLoading] = useState(false)
@@ -117,6 +152,11 @@ export default function NodeConfigPanel({ node, onClose, onUpdate }) {
                 value={node.data[field.key] ?? ''}
                 onChange={(v) => handleChange(field.key, v)}
                 filterType={field.filterKey ? node.data[field.filterKey] : '.pdf'}
+              />
+            ) : field.type === 'model_select' ? (
+              <ModelSelect
+                value={node.data[field.key] ?? ''}
+                onChange={(v) => handleChange(field.key, v)}
               />
             ) : field.type === 'select' ? (
               <select value={node.data[field.key] ?? field.default}

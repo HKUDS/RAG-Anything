@@ -78,7 +78,7 @@ export const NODE_TYPES = [
     defaults: { model: '', temperature: 0.1, system_prompt: '' },
     configFields: [
       { key: 'label', label: '节点名称', type: 'text', default: 'LLM 回答' },
-      { key: 'model', label: '模型（留空使用服务器配置）', type: 'text', default: '' },
+      { key: 'model', label: '模型', type: 'model_select', default: '' },
       { key: 'temperature', label: '温度', type: 'number', default: 0.1, min: 0, max: 2, step: 0.1 },
       { key: 'system_prompt', label: '系统提示词', type: 'textarea', default: '' },
     ],
