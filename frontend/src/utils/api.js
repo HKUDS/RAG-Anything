@@ -12,6 +12,11 @@ function getToken() {
   } catch { return '' }
 }
 
+function handleAuthError() {
+  localStorage.removeItem('raganything_auth')
+  window.dispatchEvent(new CustomEvent('raganything:auth-expired'))
+}
+
 function authHeaders(extra = {}) {
   const token = getToken()
   const h = { ...extra }
@@ -30,6 +35,7 @@ async function request(url, options = {}) {
     ...options,
     headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
   })
+  if (res.status === 401) { handleAuthError(); throw new Error('登录已过期，请重新登录') }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || `HTTP ${res.status}`)
@@ -43,6 +49,7 @@ async function fetchJson(url, options = {}) {
     ...options,
     headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
   })
+  if (res.status === 401) { handleAuthError(); throw new Error('登录已过期，请重新登录') }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
     throw new Error(err.detail || `HTTP ${res.status}`)

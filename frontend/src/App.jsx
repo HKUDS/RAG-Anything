@@ -134,6 +134,17 @@ export default function App() {
     navigate('/login')
   }
 
+  // 监听全局认证过期事件（api.js 401 触发）
+  useEffect(() => {
+    const handler = () => {
+      // clearAuth 已在 api.js 中通过 removeItem 处理
+      // 这里更新 React 状态并跳转登录页
+      window.location.reload() // 硬刷新确保所有状态清除
+    }
+    window.addEventListener('raganything:auth-expired', handler)
+    return () => window.removeEventListener('raganything:auth-expired', handler)
+  }, [])
+
   // ---- Loading ----
   if (authLoading) {
     return (

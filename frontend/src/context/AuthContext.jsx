@@ -9,24 +9,62 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // 从 localStorage 恢复登录状态
+  // 从 localStorage 恢复登录状态，并验证 token 有效性
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(AUTH_KEY)
-      if (saved) {
-        const data = JSON.parse(saved)
-        setToken(data.token)
-        setUser(data.user)
+    let cancelled = false
+    const init = async () => {
+      try {
+        const saved = localStorage.getItem(AUTH_KEY)
+        if (saved) {
+          const data = JSON.parse(saved)
+          // 先尝试用 access token 验证
+          let valid = false
+          try {
+            const res = await fetch('/api/auth/me', {
+              headers: { 'Authorization': `Bearer ${data.token}` },
+            })
+            if (res.ok) {
+              const me = await res.json()
+              if (!cancelled) { setToken(data.token); setUser(me.user) }
+              valid = true
+            }
+          } catch (_) {}
+
+          // access token 失效 → 尝试用 refresh token 刷新
+          if (!valid && data.refreshToken) {
+            try {
+              const refreshRes = await fetch('/api/auth/refresh', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ refresh_token: data.refreshToken }),
+              })
+              if (refreshRes.ok) {
+                const refreshed = await refreshRes.json()
+                if (!cancelled) {
+                  setToken(refreshed.token)
+                  setUser(refreshed.user)
+                  localStorage.setItem(AUTH_KEY, JSON.stringify({
+                    token: refreshed.token,
+                    refreshToken: refreshed.refresh_token,
+                    user: refreshed.user,
+                  }))
+                }
+              }
+            } catch (_) {}
+          }
+        }
+      } catch {} finally {
+        if (!cancelled) setLoading(false)
       }
-    } catch {} finally {
-      setLoading(false)
     }
+    init()
+    return () => { cancelled = true }
   }, [])
 
-  const saveAuth = useCallback((t, u) => {
+  const saveAuth = useCallback((t, rt, u) => {
     setToken(t)
     setUser(u)
-    localStorage.setItem(AUTH_KEY, JSON.stringify({ token: t, user: u }))
+    localStorage.setItem(AUTH_KEY, JSON.stringify({ token: t, refreshToken: rt, user: u }))
   }, [])
 
   const clearAuth = useCallback(() => {
@@ -46,7 +84,7 @@ export function AuthProvider({ children }) {
       throw new Error(err.detail || '登录失败')
     }
     const data = await res.json()
-    saveAuth(data.token, data.user)
+    saveAuth(data.token, data.refresh_token, data.user)
     return data
   }, [saveAuth])
 
