@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ReactFlowProvider,
@@ -35,11 +35,35 @@ function authHeaders() {
   return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' }
 }
 
+function ConfirmDialog({ title, message, onConfirm, onCancel }) {
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center"
+      onClick={onCancel}
+    >
+      <motion.div
+        initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+        className="bg-white rounded-2xl shadow-warm-xl p-6 w-full max-w-sm"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 className="text-base font-semibold text-warm-800 mb-2">{title}</h3>
+        <p className="text-sm text-warm-500 mb-5">{message}</p>
+        <div className="flex gap-3 justify-end">
+          <button onClick={onCancel} className="px-4 py-2 text-sm font-medium rounded-xl bg-warm-100 text-warm-600 hover:bg-warm-200 transition-colors">取消</button>
+          <button onClick={onConfirm} className="px-4 py-2 text-sm font-medium rounded-xl bg-coral-500 text-white hover:bg-coral-600 transition-colors">确认</button>
+        </div>
+      </motion.div>
+    </motion.div>
+  )
+}
+
 function WorkflowPageInner() {
   const { token } = useAuth()
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
-  const { fitView, zoomIn, zoomOut } = useReactFlow()
+  const { fitView, zoomIn, zoomOut, getZoom, undo, redo } = useReactFlow()
+  const isDirty = useRef(false)
 
   const [selectedNode, setSelectedNode] = useState(null)
   const [workflowName, setWorkflowName] = useState('未命名工作流')
@@ -48,7 +72,14 @@ function WorkflowPageInner() {
   const [showLoadDialog, setShowLoadDialog] = useState(false)
   const [workflowList, setWorkflowList] = useState([])
   const [toast, setToast] = useState(null)
-  const [layoutKey, setLayoutKey] = useState(0)
+  const [zoomLevel, setZoomLevel] = useState(100)
+
+  // Confirm dialogs
+  const [confirm, setConfirm] = useState(null)
+
+  // Mark dirty on changes
+  const markDirty = useCallback(() => { isDirty.current = true }, [])
+  const markClean = useCallback(() => { isDirty.current = false }, [])
 
   // Toast with cleanup
   useEffect(() => {
@@ -57,20 +88,69 @@ function WorkflowPageInner() {
     return () => clearTimeout(timer)
   }, [toast])
 
-  const showToast = (msg, type = 'info') => {
-    setToast({ msg, type })
-  }
+  const showToast = (msg, type = 'info') => setToast({ msg, type })
 
-  // Connect callback
+  // Zoom tracking
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const z = getZoom()
+      if (z) setZoomLevel(Math.round(z * 100))
+    }, 200)
+    return () => clearInterval(interval)
+  }, [getZoom])
+
+  // beforeunload
+  useEffect(() => {
+    const handler = (e) => {
+      if (isDirty.current) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e) => {
+      // Ctrl+S → save
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault()
+        handleSave()
+      }
+      // Escape → close panel
+      if (e.key === 'Escape') {
+        if (selectedNode) { setSelectedNode(null); return }
+        if (confirm) { setConfirm(null); return }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [selectedNode, confirm, nodes, edges, workflowName, workflowId])
+
+  // Track undo/redo via ReactFlow changes
+  const wrappedOnNodesChange = useCallback((changes) => {
+    onNodesChange(changes)
+    markDirty()
+  }, [onNodesChange, markDirty])
+
+  const wrappedOnEdgesChange = useCallback((changes) => {
+    onEdgesChange(changes)
+    markDirty()
+  }, [onEdgesChange, markDirty])
+
   const onConnect = useCallback(
-    (connection) => setEdges((eds) => addEdge({ ...connection, ...defaultEdgeOptions }, eds)),
-    [setEdges]
+    (connection) => {
+      setEdges((eds) => addEdge({ ...connection, ...defaultEdgeOptions }, eds))
+      markDirty()
+    },
+    [setEdges, markDirty]
   )
 
-  // Drop from palette
   const onDropNode = useCallback(
-    (newNode) => setNodes((nds) => [...nds, newNode]),
-    [setNodes]
+    (newNode) => { setNodes((nds) => [...nds, newNode]); markDirty() },
+    [setNodes, markDirty]
   )
 
   // Save
@@ -86,11 +166,32 @@ function WorkflowPageInner() {
       if (!res.ok) throw new Error((await res.json().catch(() => ({ detail: '保存失败' }))).detail)
       const data = await res.json()
       if (!workflowId) setWorkflowId(data.id)
-      showToast('已保存', 'success')
+      markClean()
+      showToast(`"${workflowName}" 已保存`, 'success')
     } catch (e) {
       showToast(e.message || '保存失败', 'error')
     } finally {
       setSaving(false)
+    }
+  }
+
+  // New (with confirm)
+  const handleNew = () => {
+    if (isDirty.current && nodes.length > 0) {
+      setConfirm({
+        title: '新建工作流',
+        message: '当前工作流有未保存的修改，确定放弃并新建？',
+        action: () => {
+          setNodes([]); setEdges([]); setSelectedNode(null)
+          setWorkflowName('未命名工作流'); setWorkflowId(null)
+          markClean()
+          setConfirm(null)
+        },
+      })
+    } else {
+      setNodes([]); setEdges([]); setSelectedNode(null)
+      setWorkflowName('未命名工作流'); setWorkflowId(null)
+      markClean()
     }
   }
 
@@ -109,52 +210,54 @@ function WorkflowPageInner() {
   }
 
   const handleLoad = async (id) => {
-    try {
-      const res = await fetch(`${API}/${id}`, { headers: authHeaders() })
-      if (!res.ok) throw new Error('加载失败')
-      const data = await res.json()
-      setWorkflowId(data.id)
-      setWorkflowName(data.name)
-      setNodes(data.nodes || [])
-      setEdges(data.edges || [])
-      setSelectedNode(null)
-      setShowLoadDialog(false)
-      showToast('已加载', 'success')
-    } catch (e) {
-      showToast('加载工作流失败', 'error')
+    const doLoad = async () => {
+      try {
+        const res = await fetch(`${API}/${id}`, { headers: authHeaders() })
+        if (!res.ok) throw new Error('加载失败')
+        const data = await res.json()
+        setWorkflowId(data.id); setWorkflowName(data.name)
+        setNodes(data.nodes || []); setEdges(data.edges || [])
+        setSelectedNode(null); setShowLoadDialog(false)
+        markClean()
+        showToast(`"${data.name}" 已加载`, 'success')
+      } catch (e) {
+        showToast('加载工作流失败', 'error')
+      }
+    }
+    if (isDirty.current && nodes.length > 0) {
+      setConfirm({ title: '加载工作流', message: '当前工作流有未保存的修改，确定放弃并加载？', action: async () => { setConfirm(null); await doLoad() } })
+    } else {
+      await doLoad()
     }
   }
 
-  const handleDelete = async (id) => {
-    try {
-      const res = await fetch(`${API}/${id}`, { method: 'DELETE', headers: authHeaders() })
-      if (!res.ok) throw new Error('删除失败')
-      setWorkflowList((l) => l.filter((w) => w.id !== id))
-      if (workflowId === id) { handleNew() }
-      showToast('已删除', 'success')
-    } catch (e) {
-      showToast('删除失败', 'error')
-    }
-  }
-
-  // New
-  const handleNew = () => {
-    setNodes([])
-    setEdges([])
-    setSelectedNode(null)
-    setWorkflowName('未命名工作流')
-    setWorkflowId(null)
-    setLayoutKey(k => k + 1)
+  const handleDelete = async (id, name) => {
+    setConfirm({
+      title: '删除工作流',
+      message: `确定删除 "${name || '未命名'}" 吗？此操作不可撤销。`,
+      action: async () => {
+        try {
+          const res = await fetch(`${API}/${id}`, { method: 'DELETE', headers: authHeaders() })
+          if (!res.ok) throw new Error('删除失败')
+          setWorkflowList((l) => l.filter((w) => w.id !== id))
+          if (workflowId === id) {
+            setNodes([]); setEdges([]); setWorkflowName('未命名工作流'); setWorkflowId(null); markClean()
+          }
+          showToast('已删除', 'success')
+        } catch (e) { showToast('删除失败', 'error') }
+        setConfirm(null)
+      },
+    })
   }
 
   // Node click
   const handleNodeClick = useCallback((node) => setSelectedNode(node), [])
 
-  // Node config update
   const handleNodeUpdate = useCallback((nodeId, newData) => {
     setNodes((nds) => nds.map((n) => (n.id === nodeId ? { ...n, data: newData } : n)))
     setSelectedNode((prev) => (prev?.id === nodeId ? { ...prev, data: newData } : prev))
-  }, [setNodes])
+    markDirty()
+  }, [setNodes, markDirty])
 
   // Auto layout
   const handleAutoLayout = () => {
@@ -167,7 +270,6 @@ function WorkflowPageInner() {
       if (!adj[e.source]) adj[e.source] = []
       adj[e.source].push(e.target)
     })
-
     const levels = {}
     const queue = nodes.filter((n) => inDegree[n.id] === 0).map((n) => n.id)
     queue.forEach((id) => (levels[id] = 0))
@@ -180,15 +282,14 @@ function WorkflowPageInner() {
         if (inDegree[next] === 0) queue.push(next)
       }
     }
-
     const byLevel = {}
     nodes.forEach((n) => { const lvl = levels[n.id] ?? 0; (byLevel[lvl] ??= []).push(n) })
-
     setNodes((nds) => nds.map((n) => {
       const lvl = levels[n.id] ?? 0
       const idx = byLevel[lvl].findIndex(x => x.id === n.id)
       return { ...n, position: { x: 100 + idx * GAP_X, y: 50 + lvl * GAP_Y } }
     }))
+    markDirty()
     setTimeout(() => fitView({ duration: 300 }), 50)
     showToast('自动布局完成', 'success')
   }
@@ -199,7 +300,7 @@ function WorkflowPageInner() {
     <div className="h-[calc(100vh-3.5rem)] flex flex-col">
       <WorkflowToolbar
         workflowName={workflowName}
-        onNameChange={setWorkflowName}
+        onNameChange={(v) => { setWorkflowName(v); markDirty() }}
         onNew={handleNew}
         onSave={handleSave}
         onLoad={handleOpenLoad}
@@ -207,28 +308,32 @@ function WorkflowPageInner() {
         onFitView={handleFitView}
         onZoomIn={() => zoomIn({ duration: 200 })}
         onZoomOut={() => zoomOut({ duration: 200 })}
+        onUndo={undo}
+        onRedo={redo}
         saving={saving}
+        isDirty={isDirty.current}
+        zoomLevel={zoomLevel}
       />
 
       <div className="flex-1 flex overflow-hidden">
         <NodePalette />
         <WorkflowCanvas
-          key={layoutKey}
           nodes={nodes}
           edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
+          onNodesChange={wrappedOnNodesChange}
+          onEdgesChange={wrappedOnEdgesChange}
           onConnect={onConnect}
           onNodeClick={handleNodeClick}
           onDropNode={onDropNode}
+          onPaneClick={() => setSelectedNode(null)}
         />
         <AnimatePresence>
           {selectedNode && (
             <motion.div
-              initial={{ x: 300, opacity: 0 }}
+              initial={{ x: 260, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
-              exit={{ x: 300, opacity: 0 }}
-              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              exit={{ x: 260, opacity: 0 }}
+              transition={{ duration: 0.2, ease: 'easeOut' }}
               className="flex-shrink-0"
             >
               <NodeConfigPanel
@@ -267,7 +372,7 @@ function WorkflowPageInner() {
                       </div>
                       <div className="flex gap-1.5 ml-3">
                         <button onClick={() => handleLoad(w.id)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-coral-50 text-coral-600 hover:bg-coral-100 transition-colors">加载</button>
-                        <button onClick={() => handleDelete(w.id)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors">删除</button>
+                        <button onClick={() => handleDelete(w.id, w.name)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors">删除</button>
                       </div>
                     </div>
                   ))}
@@ -276,6 +381,18 @@ function WorkflowPageInner() {
               <button onClick={() => setShowLoadDialog(false)} className="mt-4 w-full py-2 text-sm text-warm-500 hover:text-warm-700 transition-colors">关闭</button>
             </motion.div>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Confirm dialog */}
+      <AnimatePresence>
+        {confirm && (
+          <ConfirmDialog
+            title={confirm.title}
+            message={confirm.message}
+            onConfirm={confirm.action}
+            onCancel={() => setConfirm(null)}
+          />
         )}
       </AnimatePresence>
 

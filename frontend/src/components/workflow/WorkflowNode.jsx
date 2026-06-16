@@ -2,13 +2,20 @@ import { memo } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { ICON_MAP, getNodeType } from './nodeTypes'
 
+const handleStyle = {
+  width: 12,
+  height: 12,
+  border: '2px solid #fff',
+  transition: 'all 0.2s ease',
+}
+
 export default memo(function WorkflowNode({ data, selected }) {
   const def = getNodeType(data.nodeType)
   const Icon = def ? ICON_MAP[def.icon] : null
 
   return (
     <div
-      className="relative"
+      className="relative workflow-node"
       style={{
         padding: '1px',
         borderRadius: 12,
@@ -25,7 +32,8 @@ export default memo(function WorkflowNode({ data, selected }) {
           <Handle
             type="target"
             position={Position.Left}
-            style={{ width: 9, height: 9, background: def?.color, border: '2px solid #fff' }}
+            className="workflow-handle"
+            style={{ ...handleStyle, background: def?.color || '#94a3b8' }}
           />
         )}
 
@@ -33,7 +41,7 @@ export default memo(function WorkflowNode({ data, selected }) {
         {Icon && (
           <div
             className="flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0"
-            style={{ background: `${def.color}18`, color: def.color }}
+            style={{ background: `${def?.color}18`, color: def?.color }}
           >
             <Icon size={14} />
           </div>
@@ -49,7 +57,8 @@ export default memo(function WorkflowNode({ data, selected }) {
           <Handle
             type="source"
             position={Position.Right}
-            style={{ width: 9, height: 9, background: def?.color, border: '2px solid #fff' }}
+            className="workflow-handle"
+            style={{ ...handleStyle, background: def?.color || '#94a3b8' }}
           />
         )}
       </div>

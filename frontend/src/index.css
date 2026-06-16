@@ -92,6 +92,12 @@
     @apply bg-coral-900/30 text-coral-400;
   }
 
+  .workflow-handle:hover {
+    width: 16px !important;
+    height: 16px !important;
+    box-shadow: 0 0 0 4px rgba(148, 163, 184, 0.3);
+  }
+
   /* Workflow toolbar button */
   .toolbar-btn {
     @apply flex items-center justify-center w-8 h-8 rounded-lg

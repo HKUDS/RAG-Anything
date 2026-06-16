@@ -12,7 +12,7 @@ export default function NodeConfigPanel({ node, onClose, onUpdate }) {
   }
 
   return (
-    <div className="w-72 flex-shrink-0 bg-white border-l border-warm-200 flex flex-col overflow-hidden">
+    <div className="w-64 flex-shrink-0 bg-white border-l border-warm-200 flex flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-warm-100">
         <h3 className="text-sm font-semibold text-warm-700">节点配置</h3>
