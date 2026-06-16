@@ -973,6 +973,37 @@ async def delete_workflow(workflow_id: str, current_user: dict = Depends(get_cur
     return {"status": "ok"}
 
 
+# ── 文件选择 API ──────────────────────────────────
+
+@app.get("/api/workflows/files")
+async def list_uploaded_files(file_type: str = "", current_user: dict = Depends(get_current_user)):
+    """列出 uploads/ 目录下的文件供工作流选择"""
+    upload_dir = Path("./uploads")
+    upload_dir.mkdir(exist_ok=True)
+    files = []
+    for f in sorted(upload_dir.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
+        if f.is_file():
+            if file_type and f.suffix.lower() != file_type:
+                continue
+            files.append({
+                "name": f.name,
+                "size": f.stat().st_size,
+                "suffix": f.suffix.lower(),
+                "modified": datetime.fromtimestamp(f.stat().st_mtime).isoformat(),
+            })
+    return {"files": files}
+
+
+@app.post("/api/workflows/upload")
+async def upload_file_for_workflow(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    """上传文件到 uploads/ 供工作流使用"""
+    upload_dir = Path("./uploads")
+    upload_dir.mkdir(exist_ok=True)
+    content = await file.read()
+    (upload_dir / file.filename).write_bytes(content)
+    return {"status": "ok", "filename": file.filename, "size": len(content)}
+
+
 # ── WebSocket 连接管理 ─────────────────────────────
 active_ws_connections: dict[str, list] = {}  # run_id → [ws1, ws2, ...]
 

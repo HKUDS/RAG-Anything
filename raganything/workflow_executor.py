@@ -56,29 +56,35 @@ class NodeExecutor:
 # ──────────────────────────────────────────────
 
 class DocumentInputExecutor(NodeExecutor):
-    """文档输入 — 从 uploads/ 目录读取真实文件，返回文本内容"""
+    """文档输入 — 从 uploads/ 目录读取真实文件，支持指定文件名"""
     node_type = "document_input"
 
     async def execute(self, config: dict, inputs: dict, ctx: ExecutionContext) -> dict:
         file_type = config.get("file_type", ".pdf")
+        file_name = config.get("file_name", "")
         max_size_mb = config.get("max_size_mb", 100)
         max_size = max_size_mb * 1024 * 1024
 
-        # 找匹配类型的文件
         upload_dir = ctx.upload_dir
         upload_dir.mkdir(exist_ok=True)
-        candidates = sorted(
-            [f for f in upload_dir.iterdir() if f.is_file() and f.suffix.lower() == file_type],
-            key=lambda p: p.stat().st_mtime, reverse=True,
-        ) if file_type != "全部" else sorted(
-            [f for f in upload_dir.iterdir() if f.is_file()],
-            key=lambda p: p.stat().st_mtime, reverse=True,
-        )
 
-        if not candidates:
-            return {"content": "", "file_name": "", "error": f"uploads/ 中没有 {file_type} 文件"}
+        # 指定文件 → 直接读；未指定 → 选最新匹配类型的文件
+        if file_name:
+            target = upload_dir / file_name
+            if not target.exists():
+                return {"content": "", "file_name": file_name, "error": f"文件不存在: {file_name}"}
+        else:
+            candidates = sorted(
+                [f for f in upload_dir.iterdir() if f.is_file() and f.suffix.lower() == file_type],
+                key=lambda p: p.stat().st_mtime, reverse=True,
+            ) if file_type != "全部" else sorted(
+                [f for f in upload_dir.iterdir() if f.is_file()],
+                key=lambda p: p.stat().st_mtime, reverse=True,
+            )
+            if not candidates:
+                return {"content": "", "file_name": "", "error": f"uploads/ 中没有 {file_type} 文件"}
+            target = candidates[0]
 
-        target = candidates[0]
         if target.stat().st_size > max_size:
             return {"content": "", "file_name": target.name, "error": f"文件超过 {max_size_mb}MB 限制"}
 

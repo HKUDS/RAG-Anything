@@ -10,10 +10,11 @@ export const NODE_TYPES = [
     borderColor: '#93c5fd',
     inputs: 0,
     outputs: 1,
-    defaults: { file_type: '.pdf', max_size_mb: 100 },
+    defaults: { file_type: '.pdf', max_size_mb: 100, file_name: '' },
     configFields: [
       { key: 'label', label: '节点名称', type: 'text', default: '文档输入' },
-      { key: 'file_type', label: '文件类型', type: 'select', options: ['.pdf', '.docx', '.txt', '.md', '.jpg/.png', '全部'], default: '.pdf' },
+      { key: 'file_name', label: '选择文件', type: 'file_picker', filterKey: 'file_type' },
+      { key: 'file_type', label: '文件类型筛选', type: 'select', options: ['.pdf', '.docx', '.txt', '.md', '.jpg/.png', '全部'], default: '.pdf' },
       { key: 'max_size_mb', label: '最大文件大小 (MB)', type: 'number', default: 100 },
     ],
   },
