@@ -46,6 +46,7 @@ from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc, logger as lightrag_logger
 from lightrag import QueryParam as LightRAGQueryParam
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.workflow_executor import execute_workflow, RUNS_DIR
 from raganything.chunking import (
     recursive_chunking,
     sentence_chunking,
@@ -970,6 +971,94 @@ async def delete_workflow(workflow_id: str, current_user: dict = Depends(get_cur
         raise HTTPException(404, "工作流不存在")
     fpath.unlink()
     return {"status": "ok"}
+
+
+# ── WebSocket 连接管理 ─────────────────────────────
+active_ws_connections: dict[str, list] = {}  # run_id → [ws1, ws2, ...]
+
+
+@app.websocket("/ws/workflow-run/{run_id}")
+async def websocket_workflow_run(ws: WebSocket, run_id: str):
+    """WebSocket: 推送工作流执行状态"""
+    await ws.accept()
+    if run_id not in active_ws_connections:
+        active_ws_connections[run_id] = []
+    active_ws_connections[run_id].append(ws)
+    try:
+        while True:
+            await ws.receive_text()  # 保持连接，忽略客户端消息
+    except WebSocketDisconnect:
+        pass
+    finally:
+        active_ws_connections[run_id].remove(ws)
+        if not active_ws_connections[run_id]:
+            del active_ws_connections[run_id]
+
+
+async def push_run_status(run_id: str, node_id: str | None, status: str, data: dict | None = None):
+    """向所有订阅者推送执行状态"""
+    msg = {"type": "node_status" if node_id else "run_complete",
+           "run_id": run_id, "status": status}
+    if node_id:
+        msg["node_id"] = node_id
+    if data:
+        msg["data"] = data
+    for ws in active_ws_connections.get(run_id, []):
+        try:
+            await ws.send_json(msg)
+        except Exception:
+            pass
+
+
+@app.post("/api/workflows/{workflow_id}/run")
+async def run_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
+    """执行工作流 DAG"""
+    fpath = WORKFLOW_DIR / f"{workflow_id}.json"
+    if not fpath.exists():
+        raise HTTPException(404, "工作流不存在")
+    wf = json.loads(fpath.read_text(encoding="utf-8"))
+    nodes = wf.get("nodes", [])
+    if not nodes:
+        raise HTTPException(400, "工作流没有节点")
+
+    async def status_cb(node_id, status, data=None):
+        run_id = wf.get("_current_run_id", "")
+        if run_id:
+            await push_run_status(run_id, node_id, status, data)
+
+    try:
+        result = await execute_workflow(wf, status_callback=status_cb)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return result
+
+
+@app.get("/api/workflows/{workflow_id}/runs")
+async def list_workflow_runs(workflow_id: str, current_user: dict = Depends(get_current_user)):
+    """列出工作流的所有运行记录"""
+    runs = []
+    for f in sorted(RUNS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            r = json.loads(f.read_text(encoding="utf-8"))
+            if r.get("workflow_id") == workflow_id:
+                runs.append({
+                    "run_id": r["run_id"], "status": r["status"],
+                    "started_at": r.get("started_at"), "completed_at": r.get("completed_at"),
+                    "workflow_name": r.get("workflow_name"),
+                })
+        except Exception:
+            pass
+    return {"runs": runs}
+
+
+@app.get("/api/workflows/{workflow_id}/runs/{run_id}")
+async def get_workflow_run(workflow_id: str, run_id: str, current_user: dict = Depends(get_current_user)):
+    """获取单次运行详情"""
+    fpath = RUNS_DIR / f"{run_id}.json"
+    if not fpath.exists():
+        raise HTTPException(404, "运行记录不存在")
+    return json.loads(fpath.read_text(encoding="utf-8"))
 
 
 # ════════════════════════════════════════════════════════

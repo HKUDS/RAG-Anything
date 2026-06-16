@@ -1,9 +1,9 @@
-import { Save, FolderOpen, FilePlus, ZoomIn, ZoomOut, Maximize2, LayoutGrid, Undo2, Redo2 } from 'lucide-react'
+import { Save, FolderOpen, FilePlus, ZoomIn, ZoomOut, Maximize2, LayoutGrid, Undo2, Redo2, Play, Loader2 } from 'lucide-react'
 
 export default function WorkflowToolbar({
   workflowName, onNameChange, onNew, onSave, onLoad,
   onAutoLayout, onFitView, onZoomIn, onZoomOut,
-  onUndo, onRedo, saving, isDirty, zoomLevel,
+  onUndo, onRedo, onRun, saving, running, isDirty, zoomLevel, hasNodes,
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-warm-200 flex-shrink-0">
@@ -46,6 +46,21 @@ export default function WorkflowToolbar({
       </button>
 
       <div className="w-px h-5 bg-warm-200" />
+
+      {/* Run */}
+      {hasNodes && (
+        <button
+          onClick={onRun}
+          disabled={running}
+          title="运行工作流"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
+                     bg-emerald-500 text-white hover:bg-emerald-600
+                     disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {running ? <Loader2 size={14} className="animate-spin" /> : <Play size={14} className="ml-0.5" />}
+          {running ? '运行中' : '运行'}
+        </button>
+      )}
 
       {/* Layout & View */}
       <button onClick={onAutoLayout} title="自动布局" className="toolbar-btn">

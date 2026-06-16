@@ -12,6 +12,7 @@ import WorkflowCanvas from '../components/workflow/WorkflowCanvas'
 import NodePalette from '../components/workflow/NodePalette'
 import WorkflowToolbar from '../components/workflow/WorkflowToolbar'
 import NodeConfigPanel from '../components/workflow/NodeConfigPanel'
+import WorkflowRunPanel from '../components/workflow/WorkflowRunPanel'
 import { useAuth } from '../context/AuthContext'
 
 const API = '/api/workflows'
@@ -73,6 +74,9 @@ function WorkflowPageInner() {
   const [workflowList, setWorkflowList] = useState([])
   const [toast, setToast] = useState(null)
   const [zoomLevel, setZoomLevel] = useState(100)
+  const [running, setRunning] = useState(false)
+  const [runs, setRuns] = useState([])
+  const [currentRun, setCurrentRun] = useState(null)
 
   // Confirm dialogs
   const [confirm, setConfirm] = useState(null)
@@ -250,6 +254,52 @@ function WorkflowPageInner() {
     })
   }
 
+  // ── Run workflow ──────────────────────────────
+  const handleRun = async () => {
+    if (!workflowId) { showToast('请先保存工作流再运行', 'error'); return }
+    setRunning(true)
+    setCurrentRun(null)
+    // Reset node run statuses
+    setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, runStatus: 'pending' } })))
+    try {
+      const res = await fetch(`${API}/${workflowId}/run`, {
+        method: 'POST', headers: authHeaders(),
+      })
+      if (!res.ok) throw new Error((await res.json().catch(() => ({ detail: '执行失败' }))).detail)
+      const data = await res.json()
+      setCurrentRun(data)
+      setRuns((prev) => [data.run_id, ...prev])
+      // Apply final node statuses
+      data.node_results?.forEach((nr) => {
+        setNodes((nds) => nds.map((n) =>
+          n.id === nr.node_id ? { ...n, data: { ...n.data, runStatus: nr.status === 'done' ? 'done' : 'error' } } : n
+        ))
+      })
+      showToast(data.status === 'completed' ? '执行完成' : '执行失败', data.status === 'completed' ? 'success' : 'error')
+    } catch (e) {
+      showToast(e.message || '执行失败', 'error')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const handleSelectRun = async (runId) => {
+    if (!workflowId) return
+    try {
+      const res = await fetch(`${API}/${workflowId}/runs/${runId}`, { headers: authHeaders() })
+      if (res.ok) {
+        const data = await res.json()
+        setCurrentRun(data)
+        // Apply historical node statuses
+        data.node_results?.forEach((nr) => {
+          setNodes((nds) => nds.map((n) =>
+            n.id === nr.node_id ? { ...n, data: { ...n.data, runStatus: nr.status === 'done' ? 'done' : 'error' } } : n
+          ))
+        })
+      }
+    } catch {}
+  }
+
   // Node click
   const handleNodeClick = useCallback((node) => setSelectedNode(node), [])
 
@@ -310,9 +360,12 @@ function WorkflowPageInner() {
         onZoomOut={() => zoomOut({ duration: 200 })}
         onUndo={undo}
         onRedo={redo}
+        onRun={handleRun}
         saving={saving}
+        running={running}
         isDirty={isDirty.current}
         zoomLevel={zoomLevel}
+        hasNodes={nodes.length > 0}
       />
 
       <div className="flex-1 flex overflow-hidden">
@@ -345,6 +398,13 @@ function WorkflowPageInner() {
           )}
         </AnimatePresence>
       </div>
+
+      {/* Output panel */}
+      <WorkflowRunPanel
+        runs={runs}
+        currentRun={currentRun}
+        onSelectRun={handleSelectRun}
+      />
 
       {/* Load dialog */}
       <AnimatePresence>
