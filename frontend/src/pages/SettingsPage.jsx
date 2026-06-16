@@ -48,7 +48,26 @@ export default function SettingsPage({ onToast }) {
           <option value="docling">Docling（推荐）</option>
           <option value="mineru">MinerU</option>
           <option value="paddleocr">PaddleOCR</option>
+          <option value="marker">Marker</option>
         </select>
+      </div>
+
+      {/* Entity Extraction */}
+      <div className="card p-5 space-y-3">
+        <h3 className="flex items-center gap-2 text-sm font-medium text-warm-700"><Sliders size={16}/>实体抽取</h3>
+        <div>
+          <label className="text-xs text-warm-500">实体类型白名单（逗号分隔，留空=默认）</label>
+          <input className="input-field text-sm mt-1" type="text"
+            placeholder="如：Part,Process,Material"
+            value={local.entity_types || ''}
+            onChange={e => { setLocal({ ...local, entity_types: e.target.value }); save({ entity_types: e.target.value }) }} />
+        </div>
+        <div>
+          <label className="text-xs text-warm-500">最小连通度（0=不过滤, 1=移除孤立实体）</label>
+          <input className="input-field text-sm mt-1" type="number" min="0" max="10"
+            value={local.entity_extraction_min_degree ?? 0}
+            onChange={e => { const v = parseInt(e.target.value) || 0; setLocal({ ...local, entity_extraction_min_degree: v }); save({ entity_extraction_min_degree: v }) }} />
+        </div>
       </div>
 
       {/* Models */}

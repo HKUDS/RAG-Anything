@@ -1,0 +1,478 @@
+"""
+Standalone GraphRAG module — knowledge graph retrieval with entity-path tracing.
+
+Provides :class:`GraphRetriever` for entity matching, neighbor traversal, and
+subgraph visualization, and :class:`GraphRAGConfig` for centralized
+configuration.  The retriever can be used directly (``mode="graph"`` query) or
+as the graph channel inside :class:`HybridSearchEngine` for RRF fusion.
+"""
+
+from __future__ import annotations
+
+import os
+import base64
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple, Union
+
+from lightrag.utils import logger as lightrag_logger
+from lightrag.utils import get_env_value
+
+# ScoredChunk is imported lazily inside methods to break the circular import
+# between graph_rag ↔ hybrid_search (graph_rag needs ScoredChunk, hybrid_search
+# needs GraphRetriever).
+
+
+# ═══════════════════════════════════════════════════════════
+# Configuration
+# ═══════════════════════════════════════════════════════════
+
+
+@dataclass
+class GraphRAGConfig:
+    """Centralized configuration for graph-based retrieval.
+
+    All fields can be overridden via environment variables.  Uses
+    ``default_factory`` so env vars are read at instance creation time
+    (not class definition time), allowing tests and runtime overrides.
+    """
+
+    graph_depth: int = field(
+        default_factory=lambda: get_env_value("GRAPH_DEPTH", 2, int)
+    )
+    """Neighbor traversal depth (default 2). Controls 1-N hop BFS expansion."""
+
+    graph_top_k: int = field(
+        default_factory=lambda: get_env_value("GRAPH_TOP_K", 30, int)
+    )
+    """Max candidates returned by graph-only queries."""
+
+    graph_min_score: float = field(
+        default_factory=lambda: get_env_value("GRAPH_MIN_SCORE", 0.0, float)
+    )
+    """Minimum distance-decay weight for a chunk to be included (0 = no filter)."""
+
+
+# ═══════════════════════════════════════════════════════════
+# Graph Retriever
+# ═══════════════════════════════════════════════════════════
+
+
+class GraphRetriever:
+    """Knowledge graph retrieval using LightRAG's entity graph.
+
+    Entity matching → BFS neighbor traversal → chunk ranking with
+    distance-decay weighting.  Also provides subgraph data for
+    D3 force-directed visualization.
+
+    Env vars:
+        GRAPH_DEPTH: neighbor traversal depth (default 2)
+        GRAPH_TOP_K: max candidates returned (default 30)
+        GRAPH_MIN_SCORE: minimum weight threshold (default 0.0)
+    """
+
+    def __init__(self, lightrag_instance=None, config: GraphRAGConfig | None = None):
+        self._lightrag = lightrag_instance
+        cfg = config or GraphRAGConfig()
+        self._depth: int = cfg.graph_depth
+        self._top_k: int = cfg.graph_top_k
+        self._min_score: float = cfg.graph_min_score
+
+    @property
+    def config_snapshot(self) -> Dict[str, Any]:
+        """Return a snapshot of current configuration for API exposure."""
+        return {
+            "graph_depth": self._depth,
+            "graph_top_k": self._top_k,
+            "graph_min_score": self._graph_min_score,
+        }
+
+    def set_lightrag(self, lightrag_instance):
+        """Set or update the LightRAG reference."""
+        self._lightrag = lightrag_instance
+
+    # ------------------------------------------------------------------
+    # Entity Matching
+    # ------------------------------------------------------------------
+
+    async def _match_entities(self, query: str) -> List[Dict[str, Any]]:
+        """Extract entity names from query text and match in LightRAG's graph.
+
+        Returns:
+            List of matched entity dicts: {name, node_id, degree, entity_type}
+        """
+        if self._lightrag is None:
+            return []
+
+        try:
+            graph = getattr(self._lightrag, "chunk_entity_relation_graph", None)
+            if graph is None:
+                return []
+
+            matched = []
+            query_lower = query.lower()
+
+            all_nodes = await graph.get_all_nodes()
+            for node_data in all_nodes:
+                node_id = node_data.get("entity_id", node_data.get("entity_name", ""))
+                entity_name = node_data.get("entity_name", node_id)
+                if not isinstance(entity_name, str) or not entity_name:
+                    continue
+                if entity_name.lower() in query_lower or any(
+                    token.lower() in entity_name.lower()
+                    for token in query_lower.split()
+                    if len(token) >= 2
+                ):
+                    degree = await graph.node_degree(node_id)
+                    matched.append(
+                        {
+                            "name": entity_name,
+                            "node_id": node_id,
+                            "degree": degree,
+                            "entity_type": node_data.get("entity_type", "unknown"),
+                        }
+                    )
+
+            matched.sort(key=lambda e: e["degree"], reverse=True)
+            return matched
+
+        except Exception as exc:
+            lightrag_logger.warning(f"Graph entity matching failed: {exc}")
+            return []
+
+    # ------------------------------------------------------------------
+    # Neighbor Traversal
+    # ------------------------------------------------------------------
+
+    async def _traverse_neighbors(
+        self, matched_entities: List[Dict[str, Any]], depth: int | None = None
+    ) -> Tuple[Dict[str, float], Dict[str, List[Tuple[str, str, int]]]]:
+        """BFS traversal returning chunk scores and entity→chunk paths.
+
+        Args:
+            matched_entities: Entities matched from the query
+            depth: Traversal depth (default: self._depth)
+
+        Returns:
+            (chunk_scores, entity_paths) where:
+              chunk_scores: {chunk_id: weight}
+              entity_paths: {chunk_id: [(entity_name, relation, hop_depth), ...]}
+        """
+        depth = depth or self._depth
+        graph = getattr(self._lightrag, "chunk_entity_relation_graph", None)
+        if graph is None or not matched_entities:
+            return {}, {}
+
+        chunk_scores: Dict[str, float] = {}
+        entity_paths: Dict[str, List[Tuple[str, str, int]]] = {}
+
+        for entity in matched_entities:
+            node_id = entity["node_id"]
+            entity_name = entity["name"]
+            visited = {node_id}
+            frontier = [node_id]
+            # Track path: {neighbor_id: (entity_name, edge_relation, hop_depth)}
+            path_tracker: Dict[str, Tuple[str, str, int]] = {}
+
+            for d in range(depth + 1):
+                next_frontier = []
+                weight = 1.0 / (d + 1)
+                for node in frontier:
+                    node_data = await graph.get_node(node) or {}
+                    entity_chunks = node_data.get("chunk_ids", [])
+                    if isinstance(entity_chunks, list):
+                        for cid in entity_chunks:
+                            chunk_scores[cid] = max(
+                                chunk_scores.get(cid, 0.0), weight
+                            )
+                            # Record path: which entity → via what relation → at what depth
+                            if cid not in entity_paths:
+                                entity_paths[cid] = []
+                            path_info = path_tracker.get(node)
+                            if path_info:
+                                entity_paths[cid].append(
+                                    (entity_name, path_info[1], d)
+                                )
+                            else:
+                                # Direct entity node
+                                entity_paths[cid].append(
+                                    (entity_name, "direct", 0)
+                                )
+
+                    edges = await graph.get_node_edges(node)
+                    if edges:
+                        for src, tgt in edges:
+                            neighbor = tgt if src == node else src
+                            if neighbor not in visited:
+                                visited.add(neighbor)
+                                next_frontier.append(neighbor)
+                                # Determine relation type
+                                edge_data = {}
+                                try:
+                                    # Try to get edge metadata if available
+                                    edge_info = await graph.get_edge(src, tgt)
+                                    if edge_info:
+                                        edge_data = edge_info
+                                except Exception:
+                                    pass
+                                rel = edge_data.get(
+                                    "relation",
+                                    edge_data.get("description", "related_to"),
+                                )
+                                path_tracker[neighbor] = (entity_name, rel, d + 1)
+
+                frontier = next_frontier
+                if not frontier:
+                    break
+
+        # Filter by minimum score
+        if self._min_score > 0:
+            chunk_scores = {
+                cid: s for cid, s in chunk_scores.items() if s >= self._min_score
+            }
+
+        return chunk_scores, entity_paths
+
+    # ------------------------------------------------------------------
+    # Search (graph-only query)
+    # ------------------------------------------------------------------
+
+    async def search(
+        self, query: str, top_k: int | None = None
+    ) -> List[Any]:
+        """Execute full graph retrieval: match entities → traverse → rank chunks.
+
+        Args:
+            query: Search query
+            top_k: Max results (default: GRAPH_TOP_K env var)
+
+        Returns:
+            List of ScoredChunk with graph sources
+        """
+        from raganything.hybrid_search import ScoredChunk  # lazy — circular import
+
+        top_k = top_k or self._top_k
+        if self._lightrag is None:
+            return []
+
+        matched = await self._match_entities(query)
+        if not matched:
+            return []
+
+        chunk_scores, _ = await self._traverse_neighbors(matched)
+
+        if not chunk_scores:
+            return []
+
+        sorted_chunks = sorted(
+            chunk_scores.items(), key=lambda x: x[1], reverse=True
+        )[:top_k]
+
+        results = []
+        for rank, (chunk_id, weight) in enumerate(sorted_chunks):
+            content = ""
+            try:
+                if hasattr(self._lightrag, "text_chunks"):
+                    chunk_data = await self._lightrag.text_chunks.get_by_id(chunk_id)
+                    if chunk_data:
+                        content = chunk_data.get("content", "")
+            except Exception:
+                pass
+
+            results.append(
+                ScoredChunk(
+                    chunk_id=str(chunk_id),
+                    content=content if isinstance(content, str) else str(content),
+                    score=weight,
+                    sources=["graph"],
+                    graph_rank=rank + 1,
+                )
+            )
+        return results
+
+    # ------------------------------------------------------------------
+    # Search with entity paths (for graph-only query mode)
+    # ------------------------------------------------------------------
+
+    async def search_with_paths(
+        self, query: str, top_k: int | None = None
+    ) -> Dict[str, Any]:
+        """Graph retrieval with entity-path tracing for explainable results.
+
+        Returns:
+            {
+                "matched_entities": [...],
+                "results": [
+                    {"chunk": ScoredChunk, "paths": [(entity, relation, depth), ...]},
+                    ...
+                ],
+                "graph_stats": {"total_entities": N, "matched_count": M, ...}
+            }
+        """
+        from raganything.hybrid_search import ScoredChunk  # lazy — circular import
+
+        top_k = top_k or self._top_k
+        empty_result = {
+            "matched_entities": [],
+            "results": [],
+            "graph_stats": {"total_entities": 0, "matched_count": 0, "traversal_depth": self._depth},
+        }
+
+        if self._lightrag is None:
+            return empty_result
+
+        matched = await self._match_entities(query)
+        if not matched:
+            empty_result["graph_stats"]["total_entities"] = 0
+            return empty_result
+
+        chunk_scores, entity_paths = await self._traverse_neighbors(matched)
+
+        # Graph stats
+        try:
+            graph = getattr(self._lightrag, "chunk_entity_relation_graph", None)
+            all_nodes = await graph.get_all_nodes() if graph else []
+            total_entities = len(all_nodes)
+        except Exception:
+            total_entities = 0
+
+        if not chunk_scores:
+            return {
+                "matched_entities": [
+                    {"name": e["name"], "type": e["entity_type"], "degree": e["degree"]}
+                    for e in matched
+                ],
+                "results": [],
+                "graph_stats": {
+                    "total_entities": total_entities,
+                    "matched_count": len(matched),
+                    "traversal_depth": self._depth,
+                    "note": "No chunks reachable from matched entities",
+                },
+            }
+
+        sorted_chunks = sorted(
+            chunk_scores.items(), key=lambda x: x[1], reverse=True
+        )[:top_k]
+
+        results = []
+        for rank, (chunk_id, weight) in enumerate(sorted_chunks):
+            content = ""
+            try:
+                if hasattr(self._lightrag, "text_chunks"):
+                    chunk_data = await self._lightrag.text_chunks.get_by_id(chunk_id)
+                    if chunk_data:
+                        content = chunk_data.get("content", "")
+            except Exception:
+                pass
+
+            paths = entity_paths.get(chunk_id, [])
+            # Deduplicate paths: keep unique (entity, relation) per chunk
+            seen = set()
+            unique_paths = []
+            for p in paths:
+                key = (p[0], p[1])
+                if key not in seen:
+                    seen.add(key)
+                    unique_paths.append(p)
+
+            results.append(
+                {
+                    "chunk": ScoredChunk(
+                        chunk_id=str(chunk_id),
+                        content=content if isinstance(content, str) else str(content),
+                        score=weight,
+                        sources=["graph"],
+                        graph_rank=rank + 1,
+                    ),
+                    "paths": [
+                        {"entity": p[0], "relation": p[1], "depth": p[2]}
+                        for p in unique_paths
+                    ],
+                }
+            )
+
+        return {
+            "matched_entities": [
+                {"name": e["name"], "type": e["entity_type"], "degree": e["degree"]}
+                for e in matched
+            ],
+            "results": results,
+            "graph_stats": {
+                "total_entities": total_entities,
+                "matched_count": len(matched),
+                "traversal_depth": self._depth,
+            },
+        }
+
+    # ------------------------------------------------------------------
+    # Visualization Data
+    # ------------------------------------------------------------------
+
+    async def get_subgraph(
+        self, entity_ids: List[str] | None = None, query: str | None = None
+    ) -> Dict[str, Any]:
+        """Return subgraph data for D3 force-directed visualization.
+
+        Args:
+            entity_ids: Specific entity node IDs to include
+            query: If provided, auto-match entities from query text
+
+        Returns:
+            {"nodes": [...], "edges": [...]}
+        """
+        graph = getattr(self._lightrag, "chunk_entity_relation_graph", None)
+        if graph is None:
+            return {"nodes": [], "edges": []}
+
+        if entity_ids:
+            seed_nodes = set(entity_ids)
+        elif query:
+            matched = await self._match_entities(query)
+            seed_nodes = {e["node_id"] for e in matched}
+        else:
+            seed_nodes = set()
+
+        if not seed_nodes:
+            return {"nodes": [], "edges": []}
+
+        sub_nodes = set(seed_nodes)
+        for node in list(seed_nodes):
+            edges_list = await graph.get_node_edges(node)
+            if edges_list:
+                for src, tgt in edges_list:
+                    neighbor = tgt if src == node else src
+                    sub_nodes.add(neighbor)
+
+        nodes = []
+        for node in sub_nodes:
+            data = await graph.get_node(node) or {}
+            nodes.append(
+                {
+                    "id": node,
+                    "name": data.get("entity_name", node),
+                    "type": data.get("entity_type", "unknown"),
+                    "chunk_count": len(data.get("chunk_ids", [])),
+                    "is_seed": node in seed_nodes,
+                }
+            )
+
+        edges = []
+        all_edges = await graph.get_all_edges()
+        if all_edges:
+            for edge_data in all_edges:
+                u = edge_data.get("src_id", edge_data.get("source", ""))
+                v = edge_data.get("tgt_id", edge_data.get("target", ""))
+                if u in sub_nodes and v in sub_nodes:
+                    edges.append(
+                        {
+                            "source": u,
+                            "target": v,
+                            "relation": edge_data.get(
+                                "relation",
+                                edge_data.get("description", ""),
+                            ),
+                        }
+                    )
+
+        return {"nodes": nodes, "edges": edges}

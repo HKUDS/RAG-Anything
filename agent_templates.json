@@ -53,6 +53,19 @@
       "welcome_message": "你好！我是精确检索器，会快速找到最相关的信息，不绕弯子。"
     },
     {
+      "id": "graph",
+      "name": "🕸️ 图谱实体推理",
+      "description": "基于知识图谱实体关系追溯，可溯源推理，适合制造/工程/合规场景",
+      "icon": "🕸️",
+      "llm_model": "qwen-plus",
+      "temperature": 0.0,
+      "query_mode": "graph",
+      "retrieval_top_k": 30,
+      "system_prompt": "你是一个知识图谱推理助手。回答问题时请：\n- 追溯实体之间的关系路径（如 A→[has_parameter]→B→[value]→C）\n- 标注每个信息的来源实体和关系类型\n- 区分直接关系（1跳）和间接关系（2跳+）\n- 如果图谱中未找到相关实体，明确告知而非猜测\n- 优先使用结构化格式呈现关系链",
+      "use_default_prompt": false,
+      "welcome_message": "你好！我是图谱实体推理助手，可以追溯知识库中实体之间的关联关系。请问你想了解哪些实体之间的关联？"
+    },
+    {
       "id": "creative",
       "name": "🧠 创意头脑风暴",
       "description": "鼓励联想和发散思维，适合创意类任务",

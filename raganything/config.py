@@ -27,7 +27,24 @@ class RAGAnythingConfig:
     """Default output directory for parsed content."""
 
     parser: str = field(default=get_env_value("PARSER", "mineru", str))
-    """Parser selection: 'mineru', 'docling', or 'paddleocr'."""
+    """Parser selection: 'mineru', 'docling', 'paddleocr', or 'marker'."""
+
+    # Entity Extraction Configuration
+    # ---
+    entity_types: str = field(default=get_env_value("ENTITY_TYPES", "", str))
+    """Comma-separated list of entity types for LightRAG extraction.
+    When empty (default), LightRAG uses its built-in default entity types
+    (Person, Organization, Location, Event, Concept, Method, Content, Data,
+    Artifact, NaturalObject). When set (e.g. "Part,Process,Material"), only
+    the specified types are extracted. Maps to LightRAG's
+    ``addon_params.entity_types``."""
+
+    entity_extraction_min_degree: int = field(
+        default=get_env_value("ENTITY_EXTRACTION_MIN_DEGREE", 0, int)
+    )
+    """Minimum graph degree for entities to be retained. Entities with degree
+    below this threshold are removed after extraction. Default 0 means no
+    filtering. Set to 1 to remove completely isolated entities (no relations)."""
 
     display_content_stats: bool = field(
         default=get_env_value("DISPLAY_CONTENT_STATS", True, bool)

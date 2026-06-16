@@ -92,6 +92,8 @@ def kb_dir(name: str) -> str:
 
 def auto_parser(filename: str) -> str:
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if ext in ("epub",):
+        return "marker"
     if ext in ("pdf", "docx", "pptx", "xlsx", "doc", "ppt", "xls", "txt", "md"):
         return "docling"
     if ext in ("png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp"):

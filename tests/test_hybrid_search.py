@@ -113,8 +113,10 @@ class TestBM25IndexManager:
         assert any("machine learning" in r.content.lower() for r in results)
 
     def test_search_no_match(self, bm25_manager):
-        results = bm25_manager.search("xyznotexist查询")
-        assert len(results) == 0
+        # BM25 returns top_k results even for non-matching queries, but all
+        # with score 0.0 — verify no chunk received a positive match score
+        results = bm25_manager.search("zzzxnonexistentzzzx")
+        assert all(r.score == 0.0 for r in results)
 
     def test_search_top_k_limit(self, bm25_manager):
         results = bm25_manager.search("年假", top_k=2)
@@ -264,19 +266,22 @@ class TestRRFFusion:
 
 
 class TestGraphRetriever:
-    def test_no_lightrag_returns_empty(self):
+    @pytest.mark.asyncio
+    async def test_no_lightrag_returns_empty(self):
         retriever = GraphRetriever(lightrag_instance=None)
-        results = retriever.search("test query")
+        results = await retriever.search("test query")
         assert results == []
 
-    def test_no_lightrag_entity_match_returns_empty(self):
+    @pytest.mark.asyncio
+    async def test_no_lightrag_entity_match_returns_empty(self):
         retriever = GraphRetriever(lightrag_instance=None)
-        entities = retriever._match_entities("test")
+        entities = await retriever._match_entities("test")
         assert entities == []
 
-    def test_no_lightrag_subgraph_returns_empty(self):
+    @pytest.mark.asyncio
+    async def test_no_lightrag_subgraph_returns_empty(self):
         retriever = GraphRetriever(lightrag_instance=None)
-        subgraph = retriever.get_subgraph(query="test")
+        subgraph = await retriever.get_subgraph(query="test")
         assert subgraph == {"nodes": [], "edges": []}
 
     def test_env_var_config(self, monkeypatch):
@@ -399,7 +404,9 @@ class TestDegradationScenarios:
         """Graph retriever should not crash when LightRAG is None."""
         retriever = GraphRetriever(lightrag_instance=None)
         # All public methods should return safely
-        assert retriever.search("query") == []
-        assert retriever._match_entities("query") == []
-        assert retriever._traverse_neighbors([]) == {}
-        assert retriever.get_subgraph(query="test") == {"nodes": [], "edges": []}
+        assert await retriever.search("query") == []
+        assert await retriever._match_entities("query") == []
+        scores, paths = await retriever._traverse_neighbors([])
+        assert scores == {}
+        assert paths == {}
+        assert await retriever.get_subgraph(query="test") == {"nodes": [], "edges": []}

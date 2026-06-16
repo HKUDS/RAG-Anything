@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Send, User, Bot, Clock, Plus, Trash2, Edit3, X, ChevronLeft,
   ChevronDown, ChevronRight, Brain, Zap, MessageSquare, ArrowLeft,
-  Settings2, Layers, Cpu, Database, Check
+  Settings2, Layers, Cpu, Database, Check, GitGraph
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -11,6 +11,7 @@ import { api } from '../utils/api'
 
 const MODES = [
   { key: 'rrf', icon: Brain, label: '融合' },
+  { key: 'graph', icon: GitGraph, label: '图谱' },
   { key: 'hybrid', icon: Layers, label: '智能' },
   { key: 'local', icon: Zap, label: '精确' },
   { key: 'global', icon: Brain, label: '全局' },

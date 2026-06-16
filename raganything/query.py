@@ -143,6 +143,12 @@ class QueryMixin:
                 query, system_prompt=system_prompt, **kwargs
             )
 
+        # Graph-only mode — entity matching + neighbor traversal with path tracing
+        if mode == "graph":
+            return await self._aquery_graph(
+                query, system_prompt=system_prompt, **kwargs
+            )
+
         # Check if VLM enhanced query should be used
         vlm_enhanced = kwargs.pop("vlm_enhanced", None)
         stream = kwargs.pop("stream", False)
@@ -394,6 +400,112 @@ class QueryMixin:
             return await self.lightrag.aquery(
                 query, param=query_param, system_prompt=system_prompt
             )
+
+    async def _aquery_graph(
+        self, query: str, system_prompt: str | None = None, **kwargs
+    ) -> str:
+        """Graph-only query — entity matching + neighbor traversal with paths.
+
+        Uses :class:`GraphRetriever` directly for explainable entity-centric
+        retrieval.  Results include matched entity names, traversal paths, and
+        graph statistics alongside retrieved chunks.
+
+        When ``only_need_context=True``, returns raw context without LLM generation.
+        """
+        hybrid_engine = getattr(self, "hybrid_search_engine", None)
+        only_need_context = kwargs.pop("only_need_context", False)
+
+        if hybrid_engine is None:
+            return "Graph query unavailable — no knowledge graph initialized."
+
+        # Access GraphRetriever through HybridSearchEngine
+        graph_retriever = hybrid_engine.graph_retriever
+        if graph_retriever is None or graph_retriever._lightrag is None:
+            return "Graph query unavailable — knowledge graph is empty."
+
+        top_k = kwargs.get("top_k", None)
+        result = await graph_retriever.search_with_paths(query, top_k=top_k)
+
+        matched = result.get("matched_entities", [])
+        results = result.get("results", [])
+        stats = result.get("graph_stats", {})
+
+        # Handle edge case: entities matched but no reachable chunks
+        if not results:
+            if matched:
+                entities_str = ", ".join(
+                    f"{e['name']}({e['type']})" for e in matched[:10]
+                )
+                return (
+                    f"Matched {len(matched)} entity(s) in the knowledge graph: "
+                    f"{entities_str}\n"
+                    f"No document chunks reachable from these entities via "
+                    f"{stats.get('traversal_depth', '?')}-hop traversal."
+                )
+            return "No matching entities found in the knowledge graph."
+
+        # Build context with path annotations
+        context_parts = []
+        for i, item in enumerate(results[:15]):
+            chunk = item["chunk"]
+            paths = item.get("paths", [])
+            paths_str = ""
+            if paths:
+                path_lines = []
+                for p in paths[:5]:
+                    hop_label = f"hop-{p['depth']}" if p["depth"] > 0 else "direct"
+                    path_lines.append(
+                        f"  ├ {p['entity']} →[{p['relation']}] ({hop_label})"
+                    )
+                paths_str = "\n".join(path_lines)
+            chunk_text = chunk.content[:800] if chunk.content else "(empty)"
+            context_parts.append(
+                f"[Doc {i + 1}] score={chunk.score:.3f}\n"
+                f"Entity paths:\n{paths_str}\n"
+                f"Content: {chunk_text}"
+            )
+
+        context = "\n\n".join(context_parts)
+
+        # Entity match summary
+        entity_list = ", ".join(
+            f"{e['name']}({e['type']}, deg={e['degree']})" for e in matched[:10]
+        )
+
+        if only_need_context:
+            return (
+                f"=== Graph Query Results ===\n"
+                f"Total entities: {stats.get('total_entities', '?')}\n"
+                f"Matched: {len(matched)} ({entity_list})\n"
+                f"Traversal depth: {stats.get('traversal_depth', '?')}\n"
+                f"\n{context}"
+            )
+
+        # Stage 3: Generate answer via LLM
+        if self.llm_model_func is None:
+            return context
+
+        prompt = (
+            f"You are answering a question using knowledge graph traversal results.\n\n"
+            f"Graph Stats: {stats.get('total_entities', '?')} total entities, "
+            f"{len(matched)} matched ({entity_list}).\n"
+            f"Traversal depth: {stats.get('traversal_depth', '?')} hops.\n\n"
+            f"Retrieved Documents (with entity relation paths):\n{context}\n\n"
+            f"User Question: {query}\n\n"
+            f"Please answer based on the retrieved documents. "
+            f"Reference entity relations in your answer when relevant."
+        )
+
+        answer = await self.llm_model_func(
+            prompt, system_prompt=system_prompt
+        )
+
+        if answer is None:
+            return context
+        if not isinstance(answer, str):
+            answer = str(answer)
+
+        return answer
 
     async def aquery_with_multimodal(
         self,

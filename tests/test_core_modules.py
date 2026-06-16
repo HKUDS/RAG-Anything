@@ -65,7 +65,8 @@ class TestRAGAnythingConfig:
 
         config = RAGAnythingConfig()
         assert config.parse_method == "auto"
-        assert config.parser == "mineru"
+        assert config.entity_types == ""
+        assert config.entity_extraction_min_degree == 0
         assert config.enable_image_processing is True
         assert config.enable_table_processing is True
         assert config.enable_equation_processing is True

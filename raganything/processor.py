@@ -1171,6 +1171,13 @@ class ProcessorMixin:
             enhanced_chunk_results, file_path, doc_id
         )
 
+        # Stage 6.5: Connectivity filtering (remove low-degree entities)
+        removed_count = await self._filter_low_degree_entities(doc_id)
+        if removed_count > 0:
+            self.logger.info(
+                "Removed %d low-degree entities from knowledge graph", removed_count
+            )
+
         # Stage 7: Update doc_status with integrated chunks_list
         await self._update_doc_status_with_chunks_type_aware(doc_id, chunk_ids)
 
@@ -1675,6 +1682,117 @@ class ProcessorMixin:
         )
 
         await self.lightrag._insert_done()
+
+    async def _filter_low_degree_entities(self, doc_id: str | None = None) -> int:
+        """Remove entity nodes whose graph degree is below the configured threshold.
+
+        This is a post-extraction quality filter. After all entities and
+        relations have been merged into ``chunk_entity_relation_graph``,
+        isolated entities (degree < ``entity_extraction_min_degree``) are
+        removed from the graph, ``entities_vdb``, and ``full_entities``.
+        Their associated text chunks are **not** deleted — only the entity
+        nodes themselves.
+
+        Args:
+            doc_id: Optional document ID. When provided, only that document's
+                    entities are scanned in ``full_entities`` cleanup.
+
+        Returns:
+            Number of entities removed.
+        """
+        min_degree = self.config.entity_extraction_min_degree
+        if min_degree <= 0:
+            return 0
+
+        graph = self.lightrag.chunk_entity_relation_graph
+        if graph is None:
+            return 0
+
+        try:
+            all_nodes = await graph.get_all_nodes()
+        except Exception as e:
+            self.logger.warning(
+                "Failed to enumerate graph nodes for connectivity filter: %s", e
+            )
+            return 0
+
+        to_remove = []
+        for node_data in all_nodes:
+            node_id = node_data.get("entity_id") or node_data.get("entity_name", "")
+            if not node_id:
+                continue
+            try:
+                degree = await graph.node_degree(node_id)
+            except Exception:
+                degree = 0
+            if degree < min_degree:
+                to_remove.append(node_id)
+
+        if not to_remove:
+            return 0
+
+        self.logger.info(
+            "Connectivity filter: removing %d entities with degree < %d",
+            len(to_remove),
+            min_degree,
+        )
+
+        # Remove from chunk_entity_relation_graph
+        for node_id in to_remove:
+            try:
+                await graph.delete_node(node_id)
+            except Exception as e:
+                self.logger.debug(
+                    "Failed to remove entity node %s from graph: %s", node_id, e
+                )
+
+        # Remove from entities_vdb (vector index)
+        if hasattr(self.lightrag, "entities_vdb") and self.lightrag.entities_vdb:
+            try:
+                # entities_vdb.delete_entity(entity_id) or delete([entity_ids])
+                for node_id in to_remove:
+                    try:
+                        await self.lightrag.entities_vdb.delete_entity(node_id)
+                    except Exception:
+                        pass
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to clean entities_vdb for filtered entities: %s", e
+                )
+
+        # Remove from full_entities (persistent entity store by doc)
+        if (
+            doc_id
+            and hasattr(self.lightrag, "full_entities")
+            and self.lightrag.full_entities
+        ):
+            try:
+                doc_data = await self.lightrag.full_entities.get_by_id(doc_id)
+                if doc_data:
+                    doc_entities = doc_data.get("entities", [])
+                    if doc_entities:
+                        remove_set = set(to_remove)
+                        filtered = [
+                            e
+                            for e in doc_entities
+                            if e.get("entity_name") not in remove_set
+                        ]
+                        if len(filtered) != len(doc_entities):
+                            doc_data["entities"] = filtered
+                            await self.lightrag.full_entities.upsert(
+                                {doc_id: doc_data}
+                            )
+                            self.logger.debug(
+                                "Cleaned %d filtered entities from full_entities doc %s",
+                                len(doc_entities) - len(filtered),
+                                doc_id,
+                            )
+            except Exception as e:
+                self.logger.warning(
+                    "Failed to clean full_entities for filtered entities: %s", e
+                )
+
+        return len(to_remove)
 
     async def _update_doc_status_with_chunks_type_aware(
         self, doc_id: str, chunk_ids: List[str]

@@ -416,6 +416,18 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             # Merge user-provided lightrag_kwargs, which can override defaults
             lightrag_params.update(self.lightrag_kwargs)
 
+            # Inject entity type whitelist into LightRAG's addon_params (entity extraction quality)
+            if self.config.entity_types:
+                entity_types_list = [
+                    t.strip() for t in self.config.entity_types.split(",") if t.strip()
+                ]
+                if entity_types_list:
+                    addon = lightrag_params.setdefault("addon_params", {})
+                    addon["entity_types"] = entity_types_list
+                    self.logger.info(
+                        "Entity type whitelist configured: %s", entity_types_list
+                    )
+
             # Log the parameters being used for initialization (excluding sensitive data)
             log_params = {
                 k: v

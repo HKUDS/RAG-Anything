@@ -485,6 +485,8 @@ class SettingsUpdate(BaseModel):
     llm_model: Optional[str] = None
     chunk_size: Optional[int] = None
     chunking_strategy: Optional[str] = None
+    entity_types: Optional[str] = None
+    entity_extraction_min_degree: Optional[int] = None
 
 class BatchDeleteRequest(BaseModel):
     doc_ids: list[str]
@@ -560,6 +562,9 @@ async def shutdown():
 def auto_parser(filename: str) -> str:
     """根据文件扩展名自动选择最佳解析器"""
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    # EPUB: Marker 是唯一原生支持 EPUB 的解析器
+    if ext in ("epub",):
+        return "marker"
     # PDF: 先用 Docling，扫描件再考虑 MinerU（MinerU API 不稳定）
     if ext in ("pdf",):
         return "docling"
@@ -2702,6 +2707,8 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
     """获取当前配置"""
     return {
         "parser": os.getenv("PARSER", "docling"),
+        "entity_types": os.getenv("ENTITY_TYPES", ""),
+        "entity_extraction_min_degree": int(os.getenv("ENTITY_EXTRACTION_MIN_DEGREE", "0")),
         "llm_model": LLM_MODEL,
         "vision_model": VISION_MODEL,
         "embedding_model": EMB_MODEL,
@@ -2770,8 +2777,18 @@ async def update_settings(settings: SettingsUpdate, current_user: dict = Depends
     if settings.enable_video is not None:
         os.environ["ENABLE_VIDEO_PROCESSING"] = str(settings.enable_video).lower()
         changes["enable_video"] = settings.enable_video
+    if settings.entity_types is not None:
+        os.environ["ENTITY_TYPES"] = settings.entity_types
+        changes["entity_types"] = settings.entity_types
+    if settings.entity_extraction_min_degree is not None:
+        os.environ["ENTITY_EXTRACTION_MIN_DEGREE"] = str(settings.entity_extraction_min_degree)
+        changes["entity_extraction_min_degree"] = settings.entity_extraction_min_degree
     # 部分配置需要重建 RAG 实例才能生效
-    if settings.parser is not None:
+    need_rebuild = (
+        settings.parser is not None
+        or settings.entity_types is not None
+    )
+    if need_rebuild:
         rag = create_rag()
         await rag._ensure_lightrag_initialized()
     return {"status": "ok", "changes": changes, "note": "model/config changes may require restart"}
