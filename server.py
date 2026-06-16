@@ -945,13 +945,16 @@ async def upload_file_for_workflow(file: UploadFile = File(...), current_user: d
 async def list_available_models(current_user: dict = Depends(get_current_user)):
     """返回系统配置的可用 LLM 模型列表"""
     models = []
-    # 从 .env 配置中收集模型
+    # 从 .env 配置中收集模型（LLM + Embedding）
     llm_model = os.getenv("LLM_MODEL", "")
     vision_model = os.getenv("VISION_MODEL", "")
-    extra = os.getenv("LLM_AVAILABLE_MODELS", "")
+    embed_model = os.getenv("EMBEDDING_MODEL", "")
+    extra_llm = os.getenv("LLM_AVAILABLE_MODELS", "")
+    extra_embed = os.getenv("EMBEDDING_AVAILABLE_MODELS", "")
 
     seen = set()
-    for m in [llm_model, vision_model] + [x.strip() for x in extra.split(",") if x.strip()]:
+    for m in [llm_model, vision_model, embed_model] + \
+            [x.strip() for x in f"{extra_llm},{extra_embed}".split(",") if x.strip()]:
         if m and m not in seen:
             seen.add(m)
             models.append({"id": m, "name": m, "source": "env_config"})

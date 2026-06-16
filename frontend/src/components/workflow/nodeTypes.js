@@ -43,10 +43,10 @@ export const NODE_TYPES = [
     borderColor: '#d8b4fe',
     inputs: 1,
     outputs: 1,
-    defaults: { model: 'text-embedding-3-small', dims: 1536 },
+    defaults: { model: '', dims: 1536 },
     configFields: [
       { key: 'label', label: '节点名称', type: 'text', default: '嵌入向量' },
-      { key: 'model', label: '嵌入模型', type: 'text', default: 'text-embedding-3-small' },
+      { key: 'model', label: '嵌入模型', type: 'model_select', default: '' },
       { key: 'dims', label: '向量维度', type: 'number', default: 1536 },
     ],
   },
