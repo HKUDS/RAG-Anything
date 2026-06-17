@@ -624,11 +624,11 @@ class QueryMixin:
                     # Keep at most 5 entity names to avoid clutter
                     display_entities = matched_entities[:5]
                     entity_annotation = (
-                        f"关联实体： {', '.join(display_entities)}] "
+                        f"（涉及实体：{', '.join(display_entities)}）"
                     )
                 context_parts.append(
                     f"[来源 {i + 1}] ({doc_label}, sources: {sources_str})\n"
-                    f"{entity_annotation}{chunk.content}"
+                    f"{chunk.content}{entity_annotation}"
                 )
             context = "\n\n".join(context_parts)
 
@@ -646,17 +646,16 @@ class QueryMixin:
                     f"id={chunk.chunk_id[:24]}... score={chunk.score:.4f} "
                     f"preview={preview}..."
                 )
-            # Debug: show entity annotations in top-5 context (with matched entity names)
+            # Debug: show entity annotations in top-5 context
             for i in range(min(5, len(context_parts))):
                 part = context_parts[i]
-                if "关联实体：" in part:
-                    # Extract the entity names for logging
-                    m = re.search(r'\关联实体： ([^\]]+)\]', part)
+                if "（涉及实体：" in part:
+                    m = re.search(r'（涉及实体：([^）]+)）', part)
                     names = m.group(1) if m else "?"
                     self.logger.info(
-                        f"RRF doc-{i+1} 关联实体： {names}]"
+                        f"RRF doc-{i+1} 涉及实体: {names}"
                     )
-            if not any("关联实体：" in p for p in context_parts):
+            if not any("（涉及实体：" in p for p in context_parts):
                 self.logger.info("RRF entity-annotation: NONE in top-15 context")
 
             # If only_need_context, return raw context without LLM generation
