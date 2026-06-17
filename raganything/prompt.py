@@ -490,3 +490,21 @@ INLINE_QUOTE_INSTRUCTION = (
     "4. 每个要点只引用 1-2 处关键原文，保持回答简洁流畅。\n"
     "5. 检索内容中无相关信息时说\"未找到\"，不要编造。"
 )
+
+# Mandatory citation and answer format instruction — replaces INLINE_QUOTE_INSTRUCTION
+# for queries with enforce_citation enabled (default).
+#
+# Design principles:
+# 1. Short (~250 chars) to minimize context-window cost
+# 2. Natural language — avoid rigid three-section template for simple answers
+# 3. Entity-relation citation only required when relation paths appear in context
+ANSWER_FORMAT_INSTRUCTION = (
+    "## 回答要求（必须遵守）\n"
+    "1. 每个事实性陈述后标注 `[来源 N]`，N 对应检索文档中的来源编号。\n"
+    "2. 引用原文用引号嵌入并逐字复制（≥20字），格式：`\"原文...\"`[来源 1]。\n"
+    "3. 若检索内容有文档名，句末标注来源；无文档名则只引原文，不可编造。\n"
+    "4. 回答末尾附加 `【引用来源】` 块，列出所有引用的来源编号、文档名和原文摘录。\n"
+    "5. 若检索内容含实体关系（`→[关系]→`），在相关陈述中引用，"
+    "并在 `【引用来源】` 后附加 `【关联实体】` 块；无则省略。\n"
+    "6. 每个要点限引 1-2 处原文，无相关信息时说\"未找到\"，不编造。"
+)

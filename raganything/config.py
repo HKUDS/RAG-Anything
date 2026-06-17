@@ -130,6 +130,16 @@ class RAGAnythingConfig:
     )
     """Enable frame description cache to skip repeated VLM calls for the same video. Default true."""
 
+    enforce_citation: bool = field(
+        default=get_env_value("RAG_ENFORCE_CITATION", True, bool)
+    )
+    """Enforce mandatory source citations in all query answers.
+    When True (default), uses ANSWER_FORMAT_INSTRUCTION which requires every
+    factual statement to carry a [来源 N] marker, a 【引用来源】 block, and
+    【关联实体】 block (when entity relations are available).
+    When False, falls back to the lighter INLINE_QUOTE_INSTRUCTION.
+    Maps to environment variable RAG_ENFORCE_CITATION."""
+
     # Batch Processing Configuration
     # ---
     max_concurrent_files: int = field(

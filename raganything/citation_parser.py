@@ -41,6 +41,30 @@ CITATION_ENTRY_SIMPLE = re.compile(
     r"\|\s*原文[：:]\s*(.+)"
 )
 
+# ── Entity relation citation patterns ──────────────────────────
+
+# Entity relation block header: 【关联实体】
+ENTITY_RELATION_BLOCK_HEADER = re.compile(r"【关联实体】")
+
+# Entity relation line with type annotations:
+#   - 实体A（类型A）→[关系]→ 实体B（类型B）
+#   - 实体A（类型A）←[关系]← 实体B（类型B）
+ENTITY_RELATION_PATTERN = re.compile(
+    r"[-•]\s*"
+    r"(.+?)（(.+?)）\s*"
+    r"([→←])\s*\[(.+?)\]\s*[→←]\s*"
+    r"(.+?)（(.+?)）"
+)
+
+# Entity relation line without type annotations (simpler format):
+#   - 实体A →[关系]→ 实体B
+ENTITY_RELATION_SIMPLE = re.compile(
+    r"[-•]\s*"
+    r"(.+?)\s*"
+    r"([→←])\s*\[(.+?)\]\s*[→←]\s*"
+    r"(.+)"
+)
+
 
 def has_citations(text: str) -> bool:
     """检测文本中是否包含引用标记。
@@ -71,6 +95,84 @@ def extract_citation_indices(text: str) -> List[int]:
     for m in CITATION_PATTERN_EN.finditer(text):
         indices.add(int(m.group(1)))
     return sorted(indices)
+
+
+def parse_entity_relations(text: str) -> List[Dict[str, any]]:
+    """Parse the 【关联实体】 block from LLM answers to extract entity relations.
+
+    Supports formats:
+        - 实体A（类型A）→[关系]→ 实体B（类型B）
+        - 实体A（类型A）←[关系]← 实体B（类型B）
+        - 实体A →[关系]→ 实体B（without type annotations）
+
+    Args:
+        text: Full LLM answer text potentially containing 【关联实体】 block.
+
+    Returns:
+        List of entity relation dicts, each with:
+        - entity_a: str, source entity name
+        - entity_type_a: str or None, source entity type
+        - relation: str, relationship name
+        - entity_b: str, target entity name
+        - entity_type_b: str or None, target entity type
+        - direction: str, "forward" (→→) or "backward" (←←)
+    """
+    relations = []
+
+    if not text:
+        return relations
+
+    # Locate the 【关联实体】 block
+    block_match = ENTITY_RELATION_BLOCK_HEADER.search(text)
+    if not block_match:
+        return relations
+
+    block_text = text[block_match.end():]
+    # Stop at next section marker if any
+    next_section = re.search(r'\n(?:【|\[来源|##)', block_text)
+    if next_section:
+        block_text = block_text[:next_section.start()]
+
+    # Strategy 1: Full format with type annotations
+    typed_matches = list(ENTITY_RELATION_PATTERN.finditer(block_text))
+    typed_indices = set()
+    for m in typed_matches:
+        typed_indices.add(m.start())
+        a_name = m.group(1).strip()
+        a_type = m.group(2).strip()
+        dir_symbol = m.group(3)
+        rel_name = m.group(4).strip()
+        b_name = m.group(5).strip()
+        b_type = m.group(6).strip()
+        relations.append({
+            "entity_a": a_name,
+            "entity_type_a": a_type,
+            "relation": rel_name,
+            "entity_b": b_name,
+            "entity_type_b": b_type,
+            "direction": "forward" if dir_symbol == "→" else "backward",
+        })
+
+    # Strategy 2: Simple format (no type annotations) — only for lines
+    # that weren't already matched by the typed pattern (avoids duplicates
+    # and handles mixed-format blocks correctly).
+    for m in ENTITY_RELATION_SIMPLE.finditer(block_text):
+        if m.start() in typed_indices:
+            continue  # Already captured by typed pattern
+        a_name = m.group(1).strip()
+        dir_symbol = m.group(2)
+        rel_name = m.group(3).strip()
+        b_name = m.group(4).strip()
+        relations.append({
+            "entity_a": a_name,
+            "entity_type_a": None,
+            "relation": rel_name,
+            "entity_b": b_name,
+            "entity_type_b": None,
+            "direction": "forward" if dir_symbol == "→" else "backward",
+        })
+
+    return relations
 
 
 def parse_citation_block(text: str) -> List[Dict[str, any]]:
@@ -125,28 +227,35 @@ def extract_citations(
     answer: str,
     source_docs: Optional[List[Dict]] = None,
     chunk_texts: Optional[Dict[int, str]] = None,
-) -> List[Dict]:
-    """从 LLM 回答中提取结构化引用列表。
+    include_entity_relations: bool = True,
+) -> Dict[str, List[Dict]]:
+    """从 LLM 回答中提取结构化引用列表和关联实体。
 
     解析策略（按优先级）：
     1. 优先解析【引用来源】块（LLM 主动提供的结构化引用）
     2. 提取内联 [来源 N] 标记，从 source_docs 或 chunk_texts 补充信息
     3. 如果以上都没有，返回提取到的索引编号
+    4. 同时解析【关联实体】块（若存在）
 
     Args:
         answer: LLM 生成的回答文本
         source_docs: 检索到的源文档列表（可选），用于补充引用信息
         chunk_texts: chunk序号 → chunk文本的映射（可选），用于自动提取摘录
+        include_entity_relations: 是否解析【关联实体】块
 
     Returns:
-        引用列表，每项包含:
-        - index: int, 来源编号
-        - document_name: str, 源文档名称
-        - excerpt: str, 原文摘录
-        - file_path: str | None, 源文件路径
+        dict with:
+        - sources: 引用列表，每项包含 index, document_name, excerpt, file_path
+        - entity_relations: 关联实体列表，每项包含 entity_a, entity_type_a, relation,
+          entity_b, entity_type_b, direction
     """
+    result: Dict[str, List[Dict]] = {
+        "sources": [],
+        "entity_relations": [],
+    }
+
     if not answer:
-        return []
+        return result
 
     # Strategy 1: Parse citation block
     block_citations = parse_citation_block(answer)
@@ -159,48 +268,54 @@ def extract_citations(
                     cit["file_path"] = source_docs[idx].get("file_path")
                 else:
                     cit["file_path"] = None
-        return block_citations
+        result["sources"] = block_citations
+    else:
+        # Strategy 2: Extract inline [来源 N] markers, build from source_docs
+        indices = extract_citation_indices(answer)
+        sources = []
+        seen = set()
 
-    # Strategy 2: Extract inline [来源 N] markers, build from source_docs
-    indices = extract_citation_indices(answer)
-    citations = []
-    seen = set()
+        for ref_idx in indices:
+            if ref_idx in seen:
+                continue
+            seen.add(ref_idx)
 
-    for ref_idx in indices:
-        if ref_idx in seen:
-            continue
-        seen.add(ref_idx)
+            doc_idx = ref_idx - 1
+            citation = {
+                "index": ref_idx,
+                "document_name": None,
+                "excerpt": None,
+                "file_path": None,
+            }
 
-        doc_idx = ref_idx - 1
-        citation = {
-            "index": ref_idx,
-            "document_name": None,
-            "excerpt": None,
-            "file_path": None,
-        }
+            if source_docs and 0 <= doc_idx < len(source_docs):
+                doc = source_docs[doc_idx]
+                citation["document_name"] = doc.get(
+                    "document_name",
+                    doc.get("title", doc.get("source", f"来源 {ref_idx}")),
+                )
+                citation["file_path"] = doc.get("file_path")
+                # Use chunk content as excerpt
+                excerpt = doc.get("content", doc.get("text", ""))
+                if excerpt:
+                    citation["excerpt"] = excerpt[:200]
 
-        if source_docs and 0 <= doc_idx < len(source_docs):
-            doc = source_docs[doc_idx]
-            citation["document_name"] = doc.get(
-                "document_name",
-                doc.get("title", doc.get("source", f"来源 {ref_idx}")),
-            )
-            citation["file_path"] = doc.get("file_path")
-            # Use chunk content as excerpt
-            excerpt = doc.get("content", doc.get("text", ""))
-            if excerpt:
-                citation["excerpt"] = excerpt[:200]
+            elif chunk_texts and ref_idx in chunk_texts:
+                citation["excerpt"] = chunk_texts[ref_idx][:200]
+                citation["document_name"] = f"来源 {ref_idx}"
 
-        elif chunk_texts and ref_idx in chunk_texts:
-            citation["excerpt"] = chunk_texts[ref_idx][:200]
-            citation["document_name"] = f"来源 {ref_idx}"
+            else:
+                citation["document_name"] = f"来源 {ref_idx}"
 
-        else:
-            citation["document_name"] = f"来源 {ref_idx}"
+            sources.append(citation)
 
-        citations.append(citation)
+        result["sources"] = sources
 
-    return citations
+    # Parse entity relations block
+    if include_entity_relations:
+        result["entity_relations"] = parse_entity_relations(answer)
+
+    return result
 
 
 # Backward compatibility alias matching the manufacturing module's API

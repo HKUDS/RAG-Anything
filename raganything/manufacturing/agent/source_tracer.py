@@ -41,8 +41,9 @@ class SourceTracer:
         Returns:
             引用列表 [{"source_title", "page", "excerpt", "reliability", "url"}, ...]
         """
-        # Use shared citation parser
-        citations = _base_extract_citations(answer, source_docs=source_docs)
+        # Use shared citation parser (new format returns dict with sources + entity_relations)
+        parsed = _base_extract_citations(answer, source_docs=source_docs)
+        citations = parsed["sources"] if isinstance(parsed, dict) else parsed
 
         # Enrich with manufacturing-specific fields
         result = []

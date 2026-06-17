@@ -20,7 +20,8 @@ from typing import Dict, List, Any, Optional
 from pathlib import Path
 from lightrag import QueryParam
 from lightrag.utils import always_get_an_event_loop
-from raganything.prompt import PROMPTS, INLINE_QUOTE_INSTRUCTION
+from raganything.prompt import PROMPTS, INLINE_QUOTE_INSTRUCTION, ANSWER_FORMAT_INSTRUCTION
+from raganything.citation_parser import has_citations
 from raganything.utils import (
     get_processor_for_type,
     encode_image_to_base64,
@@ -359,6 +360,79 @@ class QueryMixin:
 
         return f"multimodal_query:{cache_hash}"
 
+    async def _ensure_citations(
+        self,
+        answer: str,
+        query: str,
+        context: str,
+        system_prompt: str | None = None,
+    ) -> str:
+        """Post-process: detect missing citations and optionally trigger follow-up.
+
+        When ``enforce_citation`` is enabled and the answer lacks ``[来源 N]`` markers,
+        logs a warning and attempts a lightweight follow-up to append citations.
+        On failure, appends a visible note to the answer so the user is aware.
+
+        Args:
+            answer: The LLM-generated answer text.
+            query: The original user query.
+            context: The retrieved document context (used only for source doc names).
+            system_prompt: Optional system prompt for the follow-up request.
+
+        Returns:
+            The original answer, supplemented answer, or answer with a warning note.
+        """
+        if not self.config.enforce_citation:
+            return answer
+
+        if has_citations(answer):
+            return answer
+
+        self.logger.warning(
+            "Answer missing [来源 N] citation markers (enforce_citation=True)."
+        )
+
+        if self.llm_model_func is None:
+            return (
+                answer
+                + "\n\n---\n⚠️ 此回答缺少来源引用，请核实检索结果。"
+            )
+
+        try:
+            # Lightweight follow-up: only ask to append citation block,
+            # don't resend full context — saves tokens and latency.
+            supplement_prompt = (
+                "以下回答缺少来源引用标记。请在**不改变原有回答内容**的前提下，"
+                "仅在末尾追加一个 `【引用来源】` 块。\n\n"
+                f"## 原始问题\n{query}\n\n"
+                f"## 原始回答\n{answer}\n\n"
+                "## 要求\n"
+                "只输出 `【引用来源】` 块，列出引用的来源编号、文档名和原文摘录。"
+                "不要重复输出原始回答。"
+            )
+            supplement = await self.llm_model_func(
+                supplement_prompt, system_prompt=system_prompt
+            )
+            if supplement and isinstance(supplement, str):
+                # Merge: original answer + citation block
+                merged = answer.rstrip() + "\n\n" + supplement.strip()
+                if has_citations(merged):
+                    self.logger.info("Citation supplementation successful.")
+                    return merged
+
+            # Supplementation failed — append visible note
+            self.logger.warning("Citation supplementation did not produce valid citations.")
+            return (
+                answer
+                + "\n\n---\n⚠️ 此回答缺少来源引用，请核实检索结果。"
+            )
+        except Exception as exc:
+            self.logger.error(f"Citation supplementation failed: {exc}")
+            return (
+                answer
+                + "\n\n---\n⚠️ 此回答缺少来源引用，请核实检索结果。"
+            )
+
     async def aquery(
         self, query: str, mode: str = "mix", system_prompt: str | None = None, **kwargs
     ):
@@ -690,13 +764,17 @@ class QueryMixin:
                 return context
 
             # Stage 3: Generate answer via LLM
+            citation_instruction = (
+                ANSWER_FORMAT_INSTRUCTION if self.config.enforce_citation
+                else INLINE_QUOTE_INSTRUCTION
+            )
             prompt = (
                 f"Based on the following retrieved documents, answer the user's question.\n\n"
                 f"Retrieved Documents:\n{context}\n\n"
                 f"User Question: {query}\n\n"
                 f"Please provide a comprehensive answer based only on the provided documents. "
                 f"If the documents do not contain sufficient information, say so clearly.\n\n"
-                f"{INLINE_QUOTE_INSTRUCTION}"
+                f"{citation_instruction}"
             )
 
             if self.llm_model_func is None:
@@ -713,6 +791,9 @@ class QueryMixin:
                 return context
             if not isinstance(answer, str):
                 answer = str(answer)
+
+            # Post-process: ensure citations are present (if enforce_citation enabled)
+            answer = await self._ensure_citations(answer, query, context, system_prompt)
 
             self.logger.info("RRF query completed")
             if callback_manager is not None:
@@ -879,6 +960,10 @@ class QueryMixin:
         if self.llm_model_func is None:
             return context
 
+        citation_instruction = (
+            ANSWER_FORMAT_INSTRUCTION if self.config.enforce_citation
+            else INLINE_QUOTE_INSTRUCTION
+        )
         prompt = (
             f"You are answering a question using knowledge graph traversal results.\n\n"
             f"Graph Stats: {stats.get('total_entities', '?')} total entities, "
@@ -888,7 +973,7 @@ class QueryMixin:
             f"User Question: {query}\n\n"
             f"Please answer based on the retrieved documents. "
             f"Reference entity relations in your answer when relevant.\n\n"
-            f"{INLINE_QUOTE_INSTRUCTION}"
+            f"{citation_instruction}"
         )
 
         answer = await self.llm_model_func(
@@ -899,6 +984,9 @@ class QueryMixin:
             return context
         if not isinstance(answer, str):
             answer = str(answer)
+
+        # Post-process: ensure citations are present (if enforce_citation enabled)
+        answer = await self._ensure_citations(answer, query, context, system_prompt)
 
         return answer
 
