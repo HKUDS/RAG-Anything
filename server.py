@@ -360,6 +360,35 @@ async def get_kb(name: str = None) -> RAGAnything:
     return kb_instances[name]
 
 
+def _build_citation_block(ctx: str, answer: str) -> str:
+    """从检索上下文中提取来源→文档名映射，构建【引用来源】块。
+
+    解析上下文中 `[来源 N] (文档名, ...)` 格式的行，
+    构建结构化的引用来源汇总块。如果上下文中无法提取或
+    回答中已包含块，返回空字符串。
+    """
+    import re as _re
+    source_map: dict[int, str] = {}
+    for m in _re.finditer(
+        r'\[来源\s*(\d+)\]\s*\(([^,)]+)',
+        ctx
+    ):
+        idx = int(m.group(1))
+        doc = m.group(2).strip()
+        if idx not in source_map:
+            source_map[idx] = doc
+
+    if not source_map or '【引用来源】' in answer:
+        return ""
+
+    lines = ["\n【引用来源】"]
+    for idx in sorted(source_map.keys()):
+        doc = source_map[idx]
+        lines.append(f"[来源 {idx}] 源文档：{doc}")
+
+    return "\n".join(lines)
+
+
 async def _get_kb_doc_list(kb: str) -> str:
     """获取知识库中可用文档的名称列表，用于提示词中的来源标注。
 
@@ -2611,6 +2640,11 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 from raganything.citation_parser import has_citations
                 if not has_citations(result):
                     print(f"[CITATION] 警告：回答缺少 [来源 N] 引用标记", flush=True)
+                # Code-level fallback: append 【引用来源】 block if missing
+                _cit_block = _build_citation_block(ctx, result)
+                if _cit_block:
+                    result = result.rstrip() + _cit_block
+                    print(f"[CITATION] 自动追加【引用来源】块（LLM遗漏）", flush=True)
 
         # 保存对话消息到会话（多轮上下文记忆）
         if active_thread_id and conversation_manager and result:
@@ -2911,6 +2945,13 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
                 async for token in llm_response:
                     full_answer += token
                     yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
+
+            # Citation fallback: append 【引用来源】 block if LLM omitted it
+            if instance.config.enforce_citation and full_answer:
+                _cit_block = _build_citation_block(ctx, full_answer)
+                if _cit_block:
+                    full_answer += _cit_block
+                    yield f"data: {json.dumps({'type': 'token', 'content': _cit_block}, ensure_ascii=False)}\n\n"
 
             elapsed = round(time.time() - start_time, 2)
             record = {"id": query_id, "query": req.query, "mode": req.mode, "answer": full_answer,
