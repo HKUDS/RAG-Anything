@@ -46,6 +46,7 @@ from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc, logger as lightrag_logger
 from lightrag import QueryParam as LightRAGQueryParam
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.prompt import ANSWER_FORMAT_INSTRUCTION, INLINE_QUOTE_INSTRUCTION
 from raganything.query import ConversationManager
 from raganything.workflow_executor import execute_workflow, RUNS_DIR, ExecutionContext
 from raganything.chunking import (
@@ -2578,23 +2579,18 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 if conversation_context else ""
             )
             doc_list = await _get_kb_doc_list(kb)
+            # Select citation instruction based on config
+            _citation_inst = (
+                ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
+                else INLINE_QUOTE_INSTRUCTION
+            )
             final_prompt = (
                 f"以下是知识库中检索到的相关内容。你必须严格基于这些内容回答问题，不得使用你自己的知识。\n\n"
                 f"{conv_part}"
                 f"{doc_list}\n\n"
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
-                f"## 回答要求\n"
-                f"- 从检索内容中提取具体事实和数据来回答\n"
-                f"- 结合对话历史理解上下文（如有），解析指代词\n"
-                f"- 有具体数字必须引用\n"
-                f"- 如果检索内容中没有答案，回答\"知识库中未找到相关信息\"\n"
-                f"- 不要编造或补充检索内容中没有的信息\n"
-                f"- 如果检索内容包含多个名称相似的实体（如关联实体标注），必须严格区分各实体的属性值，不得混淆\n"
-                f"- 引用检索内容时，用引号直接嵌入原文：\"原文摘录...\"\n"
-                f"- 原文摘录必须逐字复制（至少20字），不可概括或改写\n"
-                f"- 如果检索内容中有文档名，句末标注（来源：文档名）；如果没有文档名，只引原文，不要自己编造来源\n"
-                f"- 示例：\"面向管理员，提供系统级别数据管理和权限管理\"（来源：毕业论文.pdf）"
+                f"{_citation_inst}"
             )
 
             llm_response = await instance.llm_model_func(
@@ -2604,6 +2600,12 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 temperature=0,
             )
             result = llm_response if isinstance(llm_response, str) else str(llm_response)
+
+            # Citation enforcement: log warning if answer lacks [来源 N] markers
+            if instance.config.enforce_citation and result:
+                from raganything.citation_parser import has_citations
+                if not has_citations(result):
+                    print(f"[CITATION] 警告：回答缺少 [来源 N] 引用标记", flush=True)
 
         # 保存对话消息到会话（多轮上下文记忆）
         if active_thread_id and conversation_manager and result:
@@ -2872,16 +2874,17 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
                 if stream_conv_context else ""
             )
             stream_doc_list = await _get_kb_doc_list(kb)
+            _citation_inst = (
+                ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
+                else INLINE_QUOTE_INSTRUCTION
+            )
             final_prompt = (
                 f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n"
                 f"{stream_conv_part}"
                 f"{stream_doc_list}\n\n"
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
-                f"## 要求\n"
-                f"从检索内容提取事实和数据。结合对话历史理解上下文。有数字必须引用。没有就说未找到。不编造。如果检索内容包含多个名称相似的实体，必须严格区分各实体对应的属性值（如关联实体标注），不得混淆。\n\n"
-                f"引用检索内容时，用引号直接嵌入原文：\"原文...\"。原文摘录必须逐字复制（至少20字）。"
-                f"若有文档名在句末标注（来源：文档名）；若无文档名，只引原文，不要自己编造来源。"
+                f"{_citation_inst}"
             )
 
             llm_response = await instance.llm_model_func(
