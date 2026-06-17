@@ -55,8 +55,8 @@ class ProcessorMixin:
 
     # Chunk → document source info cache for citation tracing
     # Maps chunk_id → {"file_path": str, "document_name": str}
-    _chunk_source_cache: Dict[str, Dict[str, str]] = {}
-    _chunk_source_cache_built: bool = False
+    # NOTE: Initialized as instance attributes in _ensure_chunk_source_cache()
+    # to prevent class-level state leaking across KB instances.
 
     def _schedule_bm25_index_update(self, new_chunks: List[Dict[str, Any]] = None):
         """Schedule a BM25 index rebuild with 500ms debounce.
@@ -123,6 +123,9 @@ class ProcessorMixin:
             file_path: The source file path
             chunk_ids: List of chunk IDs belonging to this document
         """
+        # Instance-level initialization (not class-level — avoids cross-instance leakage)
+        if not hasattr(self, '_chunk_source_cache'):
+            self._chunk_source_cache = {}
         document_name = self._get_file_reference(file_path)
         for chunk_id in chunk_ids:
             self._chunk_source_cache[chunk_id] = {
@@ -135,15 +138,23 @@ class ProcessorMixin:
 
         This is a fallback for chunks that were processed before the cache was
         introduced, or for chunks added by LightRAG's internal mechanisms.
+
+        Uses instance-level state (not class-level) to ensure each KB instance
+        builds its own cache independently.
         """
+        # Instance-level initialization (not class-level — avoids cross-instance leakage)
+        if not hasattr(self, '_chunk_source_cache'):
+            self._chunk_source_cache: Dict[str, Dict[str, str]] = {}
+        if not hasattr(self, '_chunk_source_cache_built'):
+            self._chunk_source_cache_built: bool = False
+
         if self._chunk_source_cache_built:
             return
 
+        success = False
         try:
             # Access all doc_status records via the kv store's internal _data
-            # We use get_by_ids with all known keys when available
             doc_status_store = self.lightrag.doc_status
-            # JsonKVStorage stores data in _data dict — we access it safely
             if hasattr(doc_status_store, '_data'):
                 async with doc_status_store._storage_lock:
                     all_data = dict(doc_status_store._data)
@@ -161,10 +172,13 @@ class ProcessorMixin:
                                 "file_path": file_path,
                                 "document_name": document_name,
                             }
+            success = True
         except Exception:
             pass  # Non-critical; source tracing degrades gracefully
 
-        self._chunk_source_cache_built = True
+        # Only mark as built on success — retry next time on failure
+        if success:
+            self._chunk_source_cache_built = True
 
     def get_doc_source_info(self, chunk_id: str) -> Dict[str, Any]:
         """Get source document info for a single chunk.
@@ -175,7 +189,8 @@ class ProcessorMixin:
         Returns:
             Dict with file_path, document_name, or None values if not found
         """
-        cached = self._chunk_source_cache.get(chunk_id)
+        cache = getattr(self, '_chunk_source_cache', {})
+        cached = cache.get(chunk_id)
         if cached:
             return {**cached}
         return {"file_path": None, "document_name": None}
@@ -189,7 +204,9 @@ class ProcessorMixin:
         Returns:
             Dict with file_path, document_name, or None values if not found
         """
-        if chunk_id not in self._chunk_source_cache and not self._chunk_source_cache_built:
+        cache = getattr(self, '_chunk_source_cache', {})
+        built = getattr(self, '_chunk_source_cache_built', False)
+        if chunk_id not in cache and not built:
             await self._ensure_chunk_source_cache()
         return self.get_doc_source_info(chunk_id)
 
@@ -221,7 +238,8 @@ class ProcessorMixin:
         Returns:
             Dict mapping chunk_id → {file_path, document_name}
         """
-        if not self._chunk_source_cache_built:
+        built = getattr(self, '_chunk_source_cache_built', False)
+        if not built:
             await self._ensure_chunk_source_cache()
         return self.batch_get_doc_source_info(chunk_ids)
 

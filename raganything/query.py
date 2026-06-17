@@ -399,15 +399,20 @@ class QueryMixin:
             )
 
         try:
-            # Lightweight follow-up: only ask to append citation block,
-            # don't resend full context — saves tokens and latency.
+            # Lightweight follow-up: include partial context so LLM can extract
+            # actual document names and excerpts (was hallucinating without it).
+            # Truncate context to ~2000 chars to keep token cost low.
+            context_snippet = context[:2000] if context else ""
             supplement_prompt = (
                 "以下回答缺少来源引用标记。请在**不改变原有回答内容**的前提下，"
-                "仅在末尾追加一个 `【引用来源】` 块。\n\n"
+                "仅在末尾追加一个参考文献块。\n\n"
                 f"## 原始问题\n{query}\n\n"
+                f"## 检索内容（节选）\n{context_snippet}\n\n"
                 f"## 原始回答\n{answer}\n\n"
                 "## 要求\n"
-                "只输出 `【引用来源】` 块，列出引用的来源编号、文档名和原文摘录。"
+                "只输出 `📚 参考来源` 块，每行格式：\n"
+                "`[来源 文档名] — \"原文摘录...\"`\n"
+                "从检索内容中提取真实的 [来源 文档名] 和原文，严禁编造。"
                 "不要重复输出原始回答。"
             )
             supplement = await self.llm_model_func(
@@ -690,19 +695,22 @@ class QueryMixin:
                 chunk.file_path = chunk.file_path or info.get("file_path")
                 chunk.document_name = chunk.document_name or info.get("document_name")
 
+            # Track doc names to deduplicate same-document chunks
+            doc_name_counts: dict[str, int] = {}
             context_parts = []
-            for i, chunk in enumerate(chunks[:15]):  # top-15 for context window
-                sources_str = ",".join(chunk.sources) if chunk.sources else "unknown"
-                doc_label = f"文档：{chunk.document_name}" if chunk.document_name else ""
+            for chunk in chunks[:15]:  # top-15 for context window
+                doc_name = chunk.document_name or f"未知文档-{chunk.chunk_id[:8]}"
+                # Deduplicate: append number suffix if same doc name appears multiple times
+                count = doc_name_counts.get(doc_name, 0)
+                doc_name_counts[doc_name] = count + 1
+                source_label = doc_name if count == 0 else f"{doc_name} (片段{count + 1})"
                 # Annotate chunks with relevant entity names using word-boundary matching
-                entity_annotation = ""
                 matched_relevant = []   # entities with relevant types (模块/功能/组件/系统)
                 matched_other = []      # other entities (fallback)
                 chunk_lower = chunk.content.lower()
                 for entity_name in all_entity_names:
                     ename_lower = entity_name.lower()
                     # Use word-boundary matching to reduce false positives
-                    # (e.g. "Python" won't match "python" inside "cpython" or random text)
                     pattern = re.compile(r'(?<![a-zA-Z0-9一-鿿])' + re.escape(ename_lower) + r'(?![a-zA-Z0-9一-鿿])')
                     if pattern.search(chunk_lower):
                         etype = entity_data.get(entity_name, "")
@@ -713,14 +721,14 @@ class QueryMixin:
 
                 # Prioritize relevant-type entities, fall back to others
                 display_entities = (matched_relevant[:5] or matched_other[:5])
-                if display_entities:
-                    entity_annotation = (
-                        f"（涉及实体：{', '.join(display_entities)}）"
-                    )
                 context_parts.append(
-                    f"[来源 {i + 1}] ({doc_label}, sources: {sources_str})\n"
-                    f"{chunk.content}{entity_annotation}"
+                    f"[来源 {source_label}]\n"
+                    f"{chunk.content}"
                 )
+                if display_entities:
+                    context_parts.append(
+                        f"[关联实体（来源 {source_label}）：{', '.join(display_entities)}]"
+                    )
             context = "\n\n".join(context_parts)
 
             # Debug: show entity names related to query keywords
@@ -740,13 +748,13 @@ class QueryMixin:
             # Debug: show entity annotations in top-5 context
             for i in range(min(5, len(context_parts))):
                 part = context_parts[i]
-                if "（涉及实体：" in part:
-                    m = re.search(r'（涉及实体：([^）]+)）', part)
+                if "[关联实体" in part:
+                    m = re.search(r'\[关联实体[^\]]*\][：:](.+)', part)
                     names = m.group(1) if m else "?"
                     self.logger.info(
-                        f"RRF doc-{i+1} 涉及实体: {names}"
+                        f"RRF doc-{i+1} 关联实体: {names}"
                     )
-            if not any("（涉及实体：" in p for p in context_parts):
+            if not any("[关联实体" in p for p in context_parts):
                 self.logger.info("RRF entity-annotation: NONE in top-15 context")
 
             # If only_need_context, return raw context without LLM generation
@@ -769,11 +777,9 @@ class QueryMixin:
                 else INLINE_QUOTE_INSTRUCTION
             )
             prompt = (
-                f"Based on the following retrieved documents, answer the user's question.\n\n"
-                f"Retrieved Documents:\n{context}\n\n"
-                f"User Question: {query}\n\n"
-                f"Please provide a comprehensive answer based only on the provided documents. "
-                f"If the documents do not contain sufficient information, say so clearly.\n\n"
+                f"以下是知识库中检索到的相关内容。你必须严格基于这些内容回答问题，不得使用你自己的知识。\n\n"
+                f"## 检索内容\n{context}\n\n"
+                f"## 问题\n{query}\n\n"
                 f"{citation_instruction}"
             )
 
@@ -921,7 +927,7 @@ class QueryMixin:
             info = source_infos.get(chunk.chunk_id, {})
             chunk.file_path = chunk.file_path or info.get("file_path")
             chunk.document_name = chunk.document_name or info.get("document_name")
-            doc_label = f"文档：{chunk.document_name}" if chunk.document_name else ""
+            doc_name = chunk.document_name or f"未知文档-{chunk.chunk_id[:8]}"
 
             paths = item.get("paths", [])
             paths_str = ""
@@ -935,7 +941,7 @@ class QueryMixin:
                 paths_str = "\n".join(path_lines)
             chunk_text = chunk.content[:800] if chunk.content else "(empty)"
             context_parts.append(
-                f"[来源 {i + 1}] ({doc_label}) score={chunk.score:.3f}\n"
+                f"[来源 {doc_name}] score={chunk.score:.3f}\n"
                 f"Entity paths:\n{paths_str}\n"
                 f"Content: {chunk_text}"
             )
@@ -965,14 +971,13 @@ class QueryMixin:
             else INLINE_QUOTE_INSTRUCTION
         )
         prompt = (
-            f"You are answering a question using knowledge graph traversal results.\n\n"
-            f"Graph Stats: {stats.get('total_entities', '?')} total entities, "
-            f"{len(matched)} matched ({entity_list}).\n"
-            f"Traversal depth: {stats.get('traversal_depth', '?')} hops.\n\n"
-            f"Retrieved Documents (with entity relation paths):\n{context}\n\n"
-            f"User Question: {query}\n\n"
-            f"Please answer based on the retrieved documents. "
-            f"Reference entity relations in your answer when relevant.\n\n"
+            f"以下是知识图谱遍历检索结果。你必须严格基于这些内容回答问题，不得使用你自己的知识。\n\n"
+            f"图谱统计：共 {stats.get('total_entities', '?')} 个实体，"
+            f"匹配 {len(matched)} 个（{entity_list}）。\n"
+            f"遍历深度：{stats.get('traversal_depth', '?')} 跳。\n\n"
+            f"## 检索内容（含实体关系路径）\n{context}\n\n"
+            f"## 问题\n{query}\n\n"
+            f"请基于检索内容回答，回答中可引用相关实体关系。\n\n"
             f"{citation_instruction}"
         )
 

@@ -2,9 +2,9 @@
 通用引用解析模块 — 从 LLM 回答中提取结构化引用列表。
 
 支持格式:
-- 内联标记: [来源 N]
-- 引用来源块: 【引用来源】\n[来源 1] 源文档：xxx | 原文："..."
-- 英文变体: [Source N]
+- 内联标记: [来源 文档名]
+- 引用来源块: 📚 参考来源\n[来源 文档名] — "原文摘录..."
+- 旧格式兼容: [来源 N]
 
 该模块从 manufacturing/agent/source_tracer.py 提炼而来，
 为通用 RAG 管线提供统一的引用解析能力。
@@ -16,18 +16,18 @@ from typing import List, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-# 来源引用标记模式 — 匹配 [来源 N] 或 [来源N]
-CITATION_PATTERN = re.compile(r"\[来源\s*(\d+)\]")
+# 来源引用标记模式 — 匹配 [来源 文档名]（文档名引用）或 [来源 N]（数字兼容）
+CITATION_PATTERN = re.compile(r"\[来源\s*([^\]]+?)\]")
 
 # 英文变体 [Source N]
 CITATION_PATTERN_EN = re.compile(r"\[Source\s*(\d+)\]", re.IGNORECASE)
 
-# 引用来源块标记
-CITATION_BLOCK_HEADER = re.compile(r"【?引用来源】?")
+# 引用来源块标记 — 兼容新旧两种格式
+CITATION_BLOCK_HEADER = re.compile(r"(?:【?引用来源】?|📚\s*参考来源)")
 
 # 引用来源块中的条目解析
-# 格式: [来源 1] 源文档：xxx.pdf | 原文："..."
-# 或:   [来源 1] 源文档: xxx.pdf | 原文: "..."
+# 旧格式: [来源 1] 源文档：xxx.pdf | 原文："..."
+# 或:     [来源 1] 源文档: xxx.pdf | 原文: "..."
 CITATION_ENTRY_PATTERN = re.compile(
     r"\[来源\s*(\d+)\]\s*"
     r"源文档[：:]\s*([^|]+?)\s*"
@@ -41,14 +41,18 @@ CITATION_ENTRY_SIMPLE = re.compile(
     r"\|\s*原文[：:]\s*(.+)"
 )
 
+# New v5 format: [来源 文档名] — "原文摘录..."
+CITATION_ENTRY_V5 = re.compile(
+    r"\[来源\s*([^\]]+?)\]\s*[—\-]\s*['\"“](.+?)['\"”]"
+)
+
 # ── Entity relation citation patterns ──────────────────────────
 
-# Entity relation block header: 【关联实体】
-ENTITY_RELATION_BLOCK_HEADER = re.compile(r"【关联实体】")
+# Entity relation block header: 【关联实体】 or 关联实体
+ENTITY_RELATION_BLOCK_HEADER = re.compile(r"【?关联实体】?")
 
-# Entity relation line with type annotations:
+# Entity relation line with type annotations (old format):
 #   - 实体A（类型A）→[关系]→ 实体B（类型B）
-#   - 实体A（类型A）←[关系]← 实体B（类型B）
 ENTITY_RELATION_PATTERN = re.compile(
     r"[-•]\s*"
     r"(.+?)（(.+?)）\s*"
@@ -56,13 +60,25 @@ ENTITY_RELATION_PATTERN = re.compile(
     r"(.+?)（(.+?)）"
 )
 
-# Entity relation line without type annotations (simpler format):
+# Entity relation line without type annotations (old format):
 #   - 实体A →[关系]→ 实体B
 ENTITY_RELATION_SIMPLE = re.compile(
     r"[-•]\s*"
     r"(.+?)\s*"
     r"([→←])\s*\[(.+?)\]\s*[→←]\s*"
     r"(.+)"
+)
+
+# New v4 clean entity relation format:
+#   - 实体A → 实体B（关系类型）
+#   - 实体A — 实体B（关系类型）
+ENTITY_RELATION_CLEAN = re.compile(
+    r"[-•]\s*"
+    r"(.+?)\s*"
+    r"[→—\-]\s*"
+    r"(.+?)"
+    r"(?:\s*[（(]\s*(.+?)\s*[）)])?\s*$",
+    re.MULTILINE,
 )
 
 
@@ -73,25 +89,55 @@ def has_citations(text: str) -> bool:
         text: 待检测的文本
 
     Returns:
-        True 如果文本包含 [来源 N] 或 [Source N] 标记
+        True 如果文本包含 [来源 N]、[Source N] 标记或 📚 参考来源 块
     """
     if not text:
         return False
-    return bool(CITATION_PATTERN.search(text) or CITATION_PATTERN_EN.search(text))
+    return bool(
+        CITATION_PATTERN.search(text)
+        or CITATION_PATTERN_EN.search(text)
+        or CITATION_BLOCK_HEADER.search(text)
+    )
 
 
-def extract_citation_indices(text: str) -> List[int]:
-    """提取文本中所有引用编号（去重排序）。
+def extract_citation_names(text: str) -> List[str]:
+    """提取文本中所有引用来源名称（去重排序）。
+
+    支持两种格式：
+    - [来源 文档名] — 返回文档名
+    - [来源 N] — 返回数字字符串（旧格式兼容）
 
     Args:
-        text: 包含 [来源 N] 标记的文本
+        text: 包含 [来源 xxx] 标记的文本
+
+    Returns:
+        排序去重后的引用来源名称列表
+    """
+    names = set()
+    for m in CITATION_PATTERN.finditer(text):
+        name = m.group(1).strip()
+        if name:
+            names.add(name)
+    for m in CITATION_PATTERN_EN.finditer(text):
+        names.add(f"Source-{m.group(1)}")
+    return sorted(names)
+
+
+# Backward-compatible alias
+def extract_citation_indices(text: str) -> List[int]:
+    """提取文本中所有数字引用编号（旧格式兼容）。
+
+    Args:
+        text: 包含 [来源 N] 标记的文本（N 为数字）
 
     Returns:
         排序去重后的引用编号列表
     """
     indices = set()
     for m in CITATION_PATTERN.finditer(text):
-        indices.add(int(m.group(1)))
+        name = m.group(1).strip()
+        if name.isdigit():
+            indices.add(int(name))
     for m in CITATION_PATTERN_EN.finditer(text):
         indices.add(int(m.group(1)))
     return sorted(indices)
@@ -171,23 +217,43 @@ def parse_entity_relations(text: str) -> List[Dict[str, any]]:
             "entity_type_b": None,
             "direction": "forward" if dir_symbol == "→" else "backward",
         })
+        typed_indices.add(m.start())
+
+    # Strategy 3: New v4 clean format (no arrow brackets):
+    #   - 实体A → 实体B（关系类型）
+    #   - 实体A — 实体B（关系类型）
+    for m in ENTITY_RELATION_CLEAN.finditer(block_text):
+        if m.start() in typed_indices:
+            continue  # Already captured by previous patterns
+        a_name = m.group(1).strip()
+        b_name = m.group(2).strip()
+        rel_name = (m.group(3) or "关联").strip()
+        relations.append({
+            "entity_a": a_name,
+            "entity_type_a": None,
+            "relation": rel_name,
+            "entity_b": b_name,
+            "entity_type_b": None,
+            "direction": "forward",
+        })
 
     return relations
 
 
 def parse_citation_block(text: str) -> List[Dict[str, any]]:
-    """解析回答末尾的【引用来源】块，提取结构化引用条目。
+    """解析回答末尾的引用来源块，提取结构化引用条目。
 
     支持的格式:
-        [来源 1] 源文档：xxx.pdf | 原文："被引用的原文内容..."
-        [来源 2] 源文档：yyy.docx | 原文：被引用的原文内容...
+        新格式: [来源 文档名] — "被引用的原文内容..."
+        旧格式: [来源 1] 源文档：xxx.pdf | 原文："被引用的原文内容..."
+        旧格式: [来源 2] 源文档：yyy.docx | 原文：被引用的原文内容...
 
     Args:
-        text: 包含【引用来源】块的完整回答文本
+        text: 包含引用来源块的完整回答文本
 
     Returns:
         引用条目列表，每项包含:
-        - index: int, 来源编号
+        - index: int|str, 来源标识（数字编号或文档名）
         - document_name: str, 源文档名称
         - excerpt: str, 原文摘录
     """
@@ -200,15 +266,25 @@ def parse_citation_block(text: str) -> List[Dict[str, any]]:
 
     block_text = text[block_match.end():]
 
-    # Try full format first (with quotes)
-    for m in CITATION_ENTRY_PATTERN.finditer(block_text):
+    # Strategy 1: New v5 format — [来源 文档名] — "原文..."
+    for m in CITATION_ENTRY_V5.finditer(block_text):
+        name = m.group(1).strip()
         citations.append({
-            "index": int(m.group(1)),
-            "document_name": m.group(2).strip(),
-            "excerpt": m.group(3).strip(),
+            "index": name,
+            "document_name": name,
+            "excerpt": m.group(2).strip(),
         })
 
-    # If no full-format entries found, try simplified format
+    # Strategy 2: Try full format (with quotes) — [来源 N] 源文档：xxx | 原文："..."
+    if not citations:
+        for m in CITATION_ENTRY_PATTERN.finditer(block_text):
+            citations.append({
+                "index": int(m.group(1)),
+                "document_name": m.group(2).strip(),
+                "excerpt": m.group(3).strip(),
+            })
+
+    # Strategy 3: Try simplified format (without quotes)
     if not citations:
         for m in CITATION_ENTRY_SIMPLE.finditer(block_text):
             excerpt = m.group(3).strip()
@@ -270,12 +346,35 @@ def extract_citations(
                     cit["file_path"] = None
         result["sources"] = block_citations
     else:
-        # Strategy 2: Extract inline [来源 N] markers, build from source_docs
-        indices = extract_citation_indices(answer)
+        # Strategy 2: Extract inline citations, build from context
+        # Try new format first: [来源 文档名]
+        names = extract_citation_names(answer)
+        # Filter: only doc-name citations (non-numeric)
+        doc_names = [n for n in names if not n.isdigit()]
+        indices_only = [int(n) for n in names if n.isdigit()]
+
         sources = []
         seen = set()
 
-        for ref_idx in indices:
+        # Process doc-name citations (new format)
+        for doc_name in sorted(set(doc_names)):
+            citation = {
+                "index": doc_name,
+                "document_name": doc_name,
+                "excerpt": None,
+                "file_path": None,
+            }
+            # Try to find excerpt from chunk_texts by matching doc name
+            if chunk_texts:
+                for k, v in chunk_texts.items():
+                    if doc_name in str(k) or doc_name in (v or ""):
+                        citation["excerpt"] = v[:200] if v else None
+                        break
+            sources.append(citation)
+            seen.add(doc_name)
+
+        # Process numeric indices (old format backward compat)
+        for ref_idx in sorted(indices_only):
             if ref_idx in seen:
                 continue
             seen.add(ref_idx)
@@ -295,15 +394,12 @@ def extract_citations(
                     doc.get("title", doc.get("source", f"来源 {ref_idx}")),
                 )
                 citation["file_path"] = doc.get("file_path")
-                # Use chunk content as excerpt
                 excerpt = doc.get("content", doc.get("text", ""))
                 if excerpt:
                     citation["excerpt"] = excerpt[:200]
-
             elif chunk_texts and ref_idx in chunk_texts:
                 citation["excerpt"] = chunk_texts[ref_idx][:200]
                 citation["document_name"] = f"来源 {ref_idx}"
-
             else:
                 citation["document_name"] = f"来源 {ref_idx}"
 

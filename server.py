@@ -361,30 +361,33 @@ async def get_kb(name: str = None) -> RAGAnything:
 
 
 def _build_citation_block(ctx: str, answer: str) -> str:
-    """从检索上下文中提取来源→文档名映射，构建【引用来源】块。
+    """从检索上下文中提取文档名，构建引用来源块。
 
-    解析上下文中 `[来源 N] (文档名, ...)` 格式的行，
+    解析上下文中 `[来源 文档名]` 格式的行，
     构建结构化的引用来源汇总块。如果上下文中无法提取或
     回答中已包含块，返回空字符串。
     """
     import re as _re
-    source_map: dict[int, str] = {}
-    for m in _re.finditer(
-        r'\[来源\s*(\d+)\]\s*\(([^,)]+)',
-        ctx
-    ):
-        idx = int(m.group(1))
-        doc = m.group(2).strip()
-        if idx not in source_map:
-            source_map[idx] = doc
-
-    if not source_map or '【引用来源】' in answer:
+    if ctx is None or answer is None:
+        return ""
+    if '📚 参考来源' in answer or '【引用来源】' in answer:
         return ""
 
-    lines = ["\n【引用来源】"]
-    for idx in sorted(source_map.keys()):
-        doc = source_map[idx]
-        lines.append(f"[来源 {idx}] 源文档：{doc}")
+    # Extract unique doc names from [来源 xxx] markers
+    seen_docs: set[str] = set()
+    for m in _re.finditer(r'\[来源\s*([^\]]+?)\]', ctx):
+        name = m.group(1).strip()
+        # Skip numeric-only names (old format fallback)
+        if name and not name.isdigit():
+            seen_docs.add(name)
+
+    if not seen_docs:
+        return ""
+
+    lines = ["\n📚 参考来源"]
+    for doc in sorted(seen_docs):
+        lines.append(f"[来源 {doc}]")
+    lines.append("\n（系统自动追加：LLM 未生成引用块，此处仅列出相关文档名。）")
 
     return "\n".join(lines)
 
@@ -398,6 +401,9 @@ async def _get_kb_doc_list(kb: str) -> str:
     try:
         instance = await get_kb(kb)
         doc_names = set()
+        # Trigger lazy cache build (instance-level, no cross-instance leakage)
+        if hasattr(instance, '_ensure_chunk_source_cache'):
+            await instance._ensure_chunk_source_cache()
         # Try chunk source cache first (faster, has document_name)
         if hasattr(instance, '_chunk_source_cache') and instance._chunk_source_cache:
             for info in instance._chunk_source_cache.values():
@@ -420,11 +426,11 @@ async def _get_kb_doc_list(kb: str) -> str:
         if not doc_names:
             return ""
 
-        lines = [f"- {name}" for name in sorted(doc_names)[:10]]
+        lines = [f"- 《{name}》" for name in sorted(doc_names)[:10]]
         return (
             "## 可用文档\n"
-            "以下为知识库中的文档列表。检索内容中每个 [来源 N] 均来自其中一篇文档，"
-            "请在 `【引用来源】` 块中标注对应的文档名。\n"
+            "以下文档在检索内容中以 `[来源 文档名]` 标注。"
+            "回答时请用 `[来源 文档名]` 标注每条引用来源。\n"
             + "\n".join(lines)
         )
     except Exception:
@@ -2356,13 +2362,17 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 f"## 对话历史\n{conv_history_text}\n\n"
                 if conv_history_text else ""
             )
+            # Select citation instruction based on config (same as non-agent endpoints)
+            _cit_inst = (
+                ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
+                else INLINE_QUOTE_INSTRUCTION
+            )
             final_prompt = (
                 f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n"
                 f"{conv_part}"
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
-                f"## 要求\n"
-                f"从检索内容提取事实和数据。结合对话历史理解上下文。有数字必须引用。没有就说未找到。不编造。如果检索内容包含多个名称相似的实体，必须严格区分各实体对应的属性值（如关联实体标注），不得混淆。"
+                f"{_cit_inst}"
             )
 
             # 使用智能体配置的模型，而非 .env 全局模型
@@ -2654,11 +2664,11 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 from raganything.citation_parser import has_citations
                 if not has_citations(result):
                     print(f"[CITATION] 警告：回答缺少 [来源 N] 引用标记", flush=True)
-                # Code-level fallback: append 【引用来源】 block if missing
+                # Code-level fallback: append 📚 参考来源 block if missing
                 _cit_block = _build_citation_block(ctx, result)
                 if _cit_block:
                     result = result.rstrip() + _cit_block
-                    print(f"[CITATION] 自动追加【引用来源】块（LLM遗漏）", flush=True)
+                    print(f"[CITATION] 自动追加📚 参考来源块（LLM遗漏）", flush=True)
 
         # 保存对话消息到会话（多轮上下文记忆）
         if active_thread_id and conversation_manager and result:
@@ -2960,7 +2970,7 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
                     full_answer += token
                     yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
 
-            # Citation fallback: append 【引用来源】 block if LLM omitted it
+            # Citation fallback: append 📚 参考来源 block if LLM omitted it
             if instance.config.enforce_citation and full_answer:
                 _cit_block = _build_citation_block(ctx, full_answer)
                 if _cit_block:

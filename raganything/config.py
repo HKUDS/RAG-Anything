@@ -135,8 +135,8 @@ class RAGAnythingConfig:
     )
     """Enforce mandatory source citations in all query answers.
     When True (default), uses ANSWER_FORMAT_INSTRUCTION which requires every
-    factual statement to carry a [来源 N] marker, a 【引用来源】 block, and
-    【关联实体】 block (when entity relations are available).
+    factual statement to carry a [来源 N] marker with 《文档名》,
+    a 📚 参考来源 block, and 关联实体 summary (when entity relations exist).
     When False, falls back to the lighter INLINE_QUOTE_INSTRUCTION.
     Maps to environment variable RAG_ENFORCE_CITATION."""
 
