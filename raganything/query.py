@@ -430,19 +430,61 @@ class QueryMixin:
         results = result.get("results", [])
         stats = result.get("graph_stats", {})
 
+        # --- No entities matched: return diagnostic info ---
+        if not matched and not results:
+            # Sample available entities to help user/agent reformulate
+            sample_entities = ""
+            try:
+                graph = getattr(
+                    graph_retriever._lightrag, "chunk_entity_relation_graph", None
+                )
+                if graph:
+                    all_nodes = await graph.get_all_nodes()
+                    if all_nodes:
+                        entity_samples = []
+                        for nd in all_nodes[:50]:
+                            en = nd.get("entity_name", nd.get("entity_id", ""))
+                            et = nd.get("entity_type", "unknown")
+                            if en and isinstance(en, str):
+                                entity_samples.append(f"{en}({et})")
+                        if entity_samples:
+                            sample_entities = (
+                                f"\nAvailable entities (sample): "
+                                f"{', '.join(entity_samples[:20])}"
+                            )
+                            if len(entity_samples) > 20:
+                                sample_entities += (
+                                    f" ... and {len(entity_samples) - 20} more"
+                                )
+            except Exception:
+                pass
+
+            total = stats.get("total_entities", 0)
+            if total == 0:
+                return (
+                    "Knowledge graph is empty — no entities have been extracted "
+                    "yet. Please process documents first to build the knowledge "
+                    "graph."
+                )
+
+            return (
+                f"No entities matched query '{query}' in knowledge graph "
+                f"({total} total entities).\n"
+                f"Try using entity names that appear in your documents."
+                f"{sample_entities}"
+            )
+
         # Handle edge case: entities matched but no reachable chunks
         if not results:
-            if matched:
-                entities_str = ", ".join(
-                    f"{e['name']}({e['type']})" for e in matched[:10]
-                )
-                return (
-                    f"Matched {len(matched)} entity(s) in the knowledge graph: "
-                    f"{entities_str}\n"
-                    f"No document chunks reachable from these entities via "
-                    f"{stats.get('traversal_depth', '?')}-hop traversal."
-                )
-            return "No matching entities found in the knowledge graph."
+            entities_str = ", ".join(
+                f"{e['name']}({e['type']})" for e in matched[:10]
+            )
+            return (
+                f"Matched {len(matched)} entity(s) in the knowledge graph: "
+                f"{entities_str}\n"
+                f"No document chunks reachable from these entities via "
+                f"{stats.get('traversal_depth', '?')}-hop traversal."
+            )
 
         # Build context with path annotations
         context_parts = []
