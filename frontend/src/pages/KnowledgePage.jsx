@@ -11,6 +11,7 @@ import { api, setCurrentKB, getCurrentKB } from '../utils/api'
 const SUPPORTED = '.pdf .jpg .jpeg .png .bmp .tiff .gif .webp .doc .docx .ppt .pptx .xls .xlsx .txt .md'.split(' ')
 const STATUS = { processed: 'badge-success', processing: 'badge-warning', handling: 'badge-info', failed: 'badge-error' }
 const STATUS_CN = { processed: '已完成', processing: '处理中', handling: '入库中', failed: '失败' }
+const PHASE_CN = { parsing: '解析文档', 'entity-extraction': '抽取实体', embedding: '向量化', 'graph-building': '构建图谱', 'multimodal-tasks': '多模态处理' }
 const NODE_COLORS = ['#e8734a', '#5b9bd5', '#6b9e7a', '#d4a853', '#c9707e', '#8b5cf6', '#06b6d4', '#f97316']
 
 const COST_COLORS = {
@@ -343,7 +344,8 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
 // ====================== MAIN PAGE ======================
 export default function KnowledgePage() {
   const [kbs, setKBs] = useState([])
-  const [activeKB, setActiveKB] = useState('default')
+  const [activeKB, setActiveKB] = useState(null)
+  const [kbsLoaded, setKbsLoaded] = useState(false)
   const [docs, setDocs] = useState([])
   const [entities, setEntities] = useState([])
   const [stats, setStats] = useState({})
@@ -374,14 +376,24 @@ export default function KnowledgePage() {
   const loadKBs = useCallback(async () => {
     const r = await api.listKBs().catch(() => null)
     if (r) {
-      setKBs(r.knowledge_bases || [])
+      const kbList = r.knowledge_bases || []
+      setKBs(kbList)
       const current = getCurrentKB()
-      if (current && r.knowledge_bases?.some(kb => kb.name === current)) {
+      if (current && kbList.some(kb => kb.name === current)) {
         setActiveKB(current)
-      } else if (r.active) {
+        // currentKB 模块变量已正确，无需更新
+      } else if (r.active && kbList.some(kb => kb.name === r.active)) {
+        // 仅当服务端 active_kb 属于当前用户时才使用
         setActiveKB(r.active)
+        setCurrentKB(r.active)
+      } else if (kbList.length > 0) {
+        // 回退到用户自己的第一个 KB
+        setActiveKB(kbList[0].name)
+        setCurrentKB(kbList[0].name)
       }
+      // 如果没有可用的 active KB，保持 null，不设无效默认值
     }
+    setKbsLoaded(true)
   }, [])
 
   // Load data for selected KB
@@ -411,7 +423,12 @@ export default function KnowledgePage() {
 
   // Init
   useEffect(() => { loadKBs() }, [loadKBs])
-  useEffect(() => { loadKBData(); const t = setInterval(loadKBData, 8000); return () => clearInterval(t) }, [activeKB, loadKBData])
+  useEffect(() => {
+    if (!kbsLoaded || !activeKB) return
+    loadKBData()
+    const t = setInterval(loadKBData, 8000)
+    return () => clearInterval(t)
+  }, [activeKB, kbsLoaded, loadKBData])
 
   // Switch KB
   const switchKB = async (name) => {
@@ -440,9 +457,8 @@ export default function KnowledgePage() {
       await api.deleteKB(name)
       showToast(`知识库「${name}」已删除`, 'success')
       onDone?.()
-      loadKBs()
-      setActiveKB('default')
-      setCurrentKB('default')
+      // loadKBs() 会从服务端获取正确的 active KB，无需硬编码 'default'
+      await loadKBs()
     } catch (e) {
       showToast('删除失败: ' + e.message, 'error')
     } finally {
@@ -673,7 +689,12 @@ export default function KnowledgePage() {
                       onChange={() => toggleSelect(doc.id)} className="w-3.5 h-3.5 accent-coral-500" />
                   </td>
                   <td className="py-2.5 text-warm-700 max-w-40 truncate text-sm" title={doc.file}>{doc.file}</td>
-                  <td className="py-2.5"><span className={STATUS[doc.status] || 'badge-info'}>{STATUS_CN[doc.status] || doc.status}</span></td>
+                  <td className="py-2.5">
+                    <span className={STATUS[doc.status] || 'badge-info'}>
+                      {STATUS_CN[doc.status] || doc.status}
+                      {doc.phase && PHASE_CN[doc.phase] ? <span className="ml-1 text-[10px] opacity-70">({PHASE_CN[doc.phase]})</span> : null}
+                    </span>
+                  </td>
                   <td className="py-2.5 font-mono text-warm-500 text-sm">{doc.chunks}</td>
                   <td className="py-2.5 font-mono text-warm-500 text-sm">{(doc.length || 0).toLocaleString()}</td>
                   <td className="py-2.5 text-xs text-warm-500">{doc.updated?.slice(0, 16) || '-'}</td>

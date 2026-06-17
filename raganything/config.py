@@ -46,6 +46,18 @@ class RAGAnythingConfig:
     below this threshold are removed after extraction. Default 0 means no
     filtering. Set to 1 to remove completely isolated entities (no relations)."""
 
+    entity_extract_concurrency: int = field(
+        default=get_env_value("ENTITY_EXTRACT_CONCURRENCY", 3, int)
+    )
+    """Maximum number of concurrent entity extraction calls during LightRAG processing.
+    Higher values reduce total processing time but increase API rate limit pressure."""
+
+    embedding_batch_size: int = field(
+        default=get_env_value("EMBEDDING_BATCH_SIZE", 20, int)
+    )
+    """Number of text chunks to batch into a single embedding API call.
+    Reduces API round-trips from N to N/batch_size. Default 20."""
+
     display_content_stats: bool = field(
         default=get_env_value("DISPLAY_CONTENT_STATS", True, bool)
     )

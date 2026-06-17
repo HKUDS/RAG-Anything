@@ -1,0 +1,120 @@
+{
+  "run_id": "f32bf66f-d91c-43d9-b07a-34496d34c7b6",
+  "workflow_id": "8839145a-7818-4042-8c96-f381fd9bde3b",
+  "workflow_name": "未命名工作流",
+  "status": "completed",
+  "started_at": "2026-06-16T14:47:52.503610",
+  "completed_at": "2026-06-16T14:47:52.503610",
+  "node_results": [
+    {
+      "node_id": "document_input-c1e1d60e",
+      "status": "running",
+      "data": {},
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "document_input-c1e1d60e",
+      "status": "done",
+      "data": {
+        "content": "[模拟] 读取了 全部 文件内容（示例文本，实际文件读取待集成）",
+        "file_type": "全部",
+        "duration_ms": 0
+      },
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "text_splitter-b8317353",
+      "status": "running",
+      "data": {},
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "text_splitter-b8317353",
+      "status": "done",
+      "data": {
+        "chunks": [
+          "[模拟] 读取了 全部 文件内容（示例文本，实际文件读取待集成）"
+        ],
+        "count": 1,
+        "duration_ms": 0
+      },
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "embedding-c7336511",
+      "status": "running",
+      "data": {},
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "embedding-c7336511",
+      "status": "done",
+      "data": {
+        "model": "text-embedding-3-small",
+        "dims": 1536,
+        "vector_count": 1,
+        "note": "Vectorized with text-embedding-3-small (1536d) — production embedding pending",
+        "duration_ms": 0
+      },
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "retriever-25b1dc0c",
+      "status": "running",
+      "data": {},
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "retriever-25b1dc0c",
+      "status": "done",
+      "data": {
+        "results": [
+          "[hybrid] 检索结果 #1",
+          "[hybrid] 检索结果 #2",
+          "[hybrid] 检索结果 #3",
+          "[hybrid] 检索结果 #4",
+          "[hybrid] 检索结果 #5"
+        ],
+        "query": "",
+        "mode": "hybrid",
+        "top_k": 10,
+        "duration_ms": 0
+      },
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "llm_answer-9bf534c4",
+      "status": "running",
+      "data": {},
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "llm_answer-9bf534c4",
+      "status": "done",
+      "data": {
+        "answer": "[LLM: gpt-4o]\n基于上下文生成回答（实际 LLM 调用待集成）\n上下文摘要: [hybrid] 检索结果 #1\n[hybrid] 检索结果 #2\n[hybrid] 检索结果 #3\n[hybrid] 检索结果 #4\n[hybrid] 检索结果 #5",
+        "model": "gpt-4o",
+        "temperature": 0.1,
+        "duration_ms": 0
+      },
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "output-8081ec4f",
+      "status": "running",
+      "data": {},
+      "timestamp": "2026-06-16T14:47:52.503610"
+    },
+    {
+      "node_id": "output-8081ec4f",
+      "status": "done",
+      "data": {
+        "formatted": "## 工作流输出\n\n[LLM: gpt-4o]\n基于上下文生成回答（实际 LLM 调用待集成）\n上下文摘要: [hybrid] 检索结果 #1\n[hybrid] 检索结果 #2\n[hybrid] 检索结果 #3\n[hybrid] 检索结果 #4\n[hybrid] 检索结果 #5",
+        "format": "markdown",
+        "duration_ms": 0
+      },
+      "timestamp": "2026-06-16T14:47:52.503610"
+    }
+  ],
+  "final_output": "## 工作流输出\n\n[LLM: gpt-4o]\n基于上下文生成回答（实际 LLM 调用待集成）\n上下文摘要: [hybrid] 检索结果 #1\n[hybrid] 检索结果 #2\n[hybrid] 检索结果 #3\n[hybrid] 检索结果 #4\n[hybrid] 检索结果 #5"
+}

@@ -612,7 +612,7 @@ class QueryMixin:
             context_parts = []
             for i, chunk in enumerate(chunks[:15]):  # top-15 for context window
                 sources_str = ",".join(chunk.sources) if chunk.sources else "unknown"
-                doc_label = f"doc: {chunk.document_name}" if chunk.document_name else ""
+                doc_label = f"文档：{chunk.document_name}" if chunk.document_name else ""
                 # Annotate ALL chunks with entity names found in their content
                 entity_annotation = ""
                 matched_entities = []
@@ -824,7 +824,7 @@ class QueryMixin:
             info = source_infos.get(chunk.chunk_id, {})
             chunk.file_path = chunk.file_path or info.get("file_path")
             chunk.document_name = chunk.document_name or info.get("document_name")
-            doc_label = f"doc: {chunk.document_name}" if chunk.document_name else ""
+            doc_label = f"文档：{chunk.document_name}" if chunk.document_name else ""
 
             paths = item.get("paths", [])
             paths_str = ""

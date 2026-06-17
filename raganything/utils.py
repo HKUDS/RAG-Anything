@@ -60,6 +60,56 @@ def format_table_body(table_body: Any) -> str:
     return str(table_body)
 
 
+def simplify_table_body(table_body: Any, max_chars: int = 2000) -> str:
+    """Simplify table body for chunk storage — strip bbox noise, keep text.
+
+    For cell-dict format (MinerU/docling), extracts ``{text}`` from each cell
+    with positional index, dropping bbox/header/fillable metadata.
+    For list-of-lists, renders as compact markdown. Falls back to formatted body.
+    """
+    import json as _json
+
+    if isinstance(table_body, list) and table_body:
+        # Cell dict format (MinerU/docling): [{text, bbox, start_row_offset_idx, ...}, ...]
+        if all(isinstance(c, dict) and "text" in c for c in table_body):
+            # Group cells into rows using start_row_offset_idx
+            rows = {}
+            for cell in table_body:
+                row_idx = cell.get("start_row_offset_idx", 0)
+                col_idx = cell.get("start_col_offset_idx", 0)
+                text = cell.get("text", "").strip()
+                if row_idx not in rows:
+                    rows[row_idx] = []
+                rows[row_idx].append((col_idx, text))
+            # Sort each row by column index and format
+            lines = []
+            for row_idx in sorted(rows.keys()):
+                cells = [t for _, t in sorted(rows[row_idx])]
+                lines.append("| " + " | ".join(cells) + " |")
+            result = "\n".join(lines)
+            if len(result) > max_chars:
+                result = result[:max_chars] + "\n...（表格数据过长，已截断）"
+            return result
+
+        # List-of-lists format: render compact markdown
+        if all(isinstance(row, (list, tuple)) for row in table_body):
+            lines = []
+            for row in table_body[:50]:  # cap at 50 rows
+                lines.append(
+                    "| " + " | ".join(str(cell)[:80] for cell in row[:20]) + " |"
+                )
+            result = "\n".join(lines)
+            if len(result) > max_chars:
+                result = result[:max_chars] + "\n...（表格数据过长，已截断）"
+            return result
+
+    # Fallback: use existing formatter
+    result = format_table_body(table_body)
+    if len(result) > max_chars:
+        result = result[:max_chars] + "\n...（已截断）"
+    return result
+
+
 def get_equation_text_and_format(item: Dict[str, Any]) -> Tuple[str, str]:
     """Read equation content while preserving LaTeX aliases from content lists.
 

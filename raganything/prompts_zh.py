@@ -105,64 +105,41 @@ PROMPTS_ZH["text_prompt"] = """根据以下图片信息提供分析：
 {vision_prompt}"""
 
 # Table analysis prompt template
-PROMPTS_ZH["table_prompt"] = """请分析此表格内容，并以以下JSON结构提供回答：
+PROMPTS_ZH["table_prompt"] = """分析此表格，返回JSON：
 
 {{
-    "detailed_description": "对表格的全面分析，包括：
-    - 表格结构和组织方式
-    - 列标题及其含义
-    - 关键数据点和模式
-    - 统计洞察和趋势
-    - 数据元素之间的关系
-    - 所呈现数据的重要性
-    始终使用具体名称和数值而非笼统引用。",
+    "detailed_description": "分析表格结构、列含义、关键数据、趋势及数据间关系。使用具体数值和名称。",
     "entity_info": {{
         "entity_name": "{entity_name}",
         "entity_type": "table",
-        "summary": "表格目的和关键发现的简明摘要（不超过100字）"
+        "summary": "表格目的和关键发现（≤100字）"
     }}
 }}
 
-表格信息：
-图片路径：{table_img_path}
-标题：{table_caption}
+表格：{table_caption}
 内容：{table_body}
-脚注：{table_footnote}
-
-请专注于从表格数据中提取有意义的洞察和关系。"""
+脚注：{table_footnote}"""
 
 # Table analysis prompt with context support
 PROMPTS_ZH[
     "table_prompt_with_context"
-] = """请结合上下文分析此表格内容，并以以下JSON结构提供回答：
+] = """结合上下文分析此表格，返回JSON：
 
 {{
-    "detailed_description": "对表格的全面分析，包括：
-    - 表格结构和组织方式
-    - 列标题及其含义
-    - 关键数据点和模式
-    - 统计洞察和趋势
-    - 数据元素之间的关系
-    - 所呈现数据与周围上下文的重要性
-    - 表格如何支持或说明周围内容中的概念
-    始终使用具体名称和数值而非笼统引用。",
+    "detailed_description": "分析表格结构、列含义、关键数据、趋势，及其与上下文的关系。使用具体数值和名称。",
     "entity_info": {{
         "entity_name": "{entity_name}",
         "entity_type": "table",
-        "summary": "表格目的、关键发现及与周围内容关系的简明摘要（不超过100字）"
+        "summary": "表格目的、关键发现及上下文关系（≤100字）"
     }}
 }}
 
-周围内容上下文：
+周围上下文：
 {context}
 
-表格信息：
-图片路径：{table_img_path}
-标题：{table_caption}
+表格：{table_caption}
 内容：{table_body}
-脚注：{table_footnote}
-
-请专注于在上下文背景下从表格数据中提取有意义的洞察和关系。"""
+脚注：{table_footnote}"""
 
 # Equation analysis prompt template
 PROMPTS_ZH["equation_prompt"] = """请分析此数学公式，并以以下JSON结构提供回答：
@@ -223,54 +200,37 @@ PROMPTS_ZH[
 请专注于在更广泛的上下文中提供数学洞察和解释公式的重要性。"""
 
 # Generic content analysis prompt template
-PROMPTS_ZH["generic_prompt"] = """请分析此{content_type}内容，并以以下JSON结构提供回答：
+PROMPTS_ZH["generic_prompt"] = """分析此{content_type}内容，返回JSON：
 
 {{
-    "detailed_description": "对内容的全面分析，包括：
-    - 内容结构和组织
-    - 关键信息和元素
-    - 组件之间的关系
-    - 背景和重要性
-    - 与知识检索相关的细节
-    始终使用适合{content_type}内容的专业术语。",
+    "detailed_description": "分析内容结构、关键信息、元素关系、背景及知识检索相关细节。使用{content_type}领域专业术语。",
     "entity_info": {{
         "entity_name": "{entity_name}",
         "entity_type": "{content_type}",
-        "summary": "内容目的和要点的简明摘要（不超过100字）"
+        "summary": "内容要点摘要（≤100字）"
     }}
 }}
 
-内容：{content}
-
-请专注于提取对知识检索有用的有意义信息。"""
+内容：{content}"""
 
 # Generic content analysis prompt with context support
 PROMPTS_ZH[
     "generic_prompt_with_context"
-] = """请结合上下文分析此{content_type}内容，并以以下JSON结构提供回答：
+] = """结合上下文分析此{content_type}内容，返回JSON：
 
 {{
-    "detailed_description": "对内容的全面分析，包括：
-    - 内容结构和组织
-    - 关键信息和元素
-    - 组件之间的关系
-    - 与周围内容相关的背景和重要性
-    - 此内容如何与更广泛的讨论相联系或支持
-    - 与知识检索相关的细节
-    始终使用适合{content_type}内容的专业术语。",
+    "detailed_description": "分析内容结构、关键信息、元素关系，及其与周围上下文的关联。使用{content_type}领域专业术语。",
     "entity_info": {{
         "entity_name": "{entity_name}",
         "entity_type": "{content_type}",
-        "summary": "内容目的、要点及与周围上下文关系的简明摘要（不超过100字）"
+        "summary": "内容要点及与上下文关系摘要（≤100字）"
     }}
 }}
 
-周围内容上下文：
+周围上下文：
 {context}
 
-内容：{content}
-
-请专注于提取对知识检索有用的信息，并理解内容在更广泛上下文中的作用。"""
+内容：{content}"""
 
 # Video analysis prompt template
 PROMPTS_ZH[
@@ -361,12 +321,12 @@ PROMPTS_ZH["image_chunk"] = """
 视觉分析：{enhanced_caption}"""
 
 PROMPTS_ZH["table_chunk"] = """表格分析：
-图片路径：{table_img_path}
 标题：{table_caption}
-结构：{table_body}
 脚注：{table_footnote}
 
-分析：{enhanced_caption}"""
+分析：{enhanced_caption}
+
+原始结构（简化）：{table_body}"""
 
 PROMPTS_ZH["equation_chunk"] = """数学公式分析：
 公式：{equation_text}

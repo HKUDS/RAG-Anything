@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import jieba
 from lightrag.utils import logger as lightrag_logger
 from lightrag.utils import get_env_value
 
@@ -98,8 +99,13 @@ class GraphRetriever:
     async def _match_entities(self, query: str) -> List[Dict[str, Any]]:
         """Extract entity names from query text and match in LightRAG's graph.
 
+        Uses jieba token-overlap scoring for weighted matching:
+        - Entities with more overlapping tokens with the query score higher.
+        - Pure substring match (no token overlap) gets a base score of 0.5 as fallback.
+        - Results are sorted by token-overlap score desc, then graph degree desc.
+
         Returns:
-            List of matched entity dicts: {name, node_id, degree, entity_type}
+            List of matched entity dicts: {name, node_id, degree, entity_type, score}
         """
         if self._lightrag is None:
             return []
@@ -109,32 +115,71 @@ class GraphRetriever:
             if graph is None:
                 return []
 
-            matched = []
+            # Tokenize query with jieba for overlap scoring
             query_lower = query.lower()
+            query_tokens = set(t for t in jieba.lcut(query) if len(t) >= 1)
 
             all_nodes = await graph.get_all_nodes()
+
+            # Pre-compute entity degrees from edges (avoids N node_degree calls)
+            degree_map: dict[str, int] = {}
+            try:
+                all_edges = await graph.get_all_edges()
+                if all_edges:
+                    for edge in all_edges:
+                        src = edge.get("source", "")
+                        tgt = edge.get("target", "")
+                        if src:
+                            degree_map[src] = degree_map.get(src, 0) + 1
+                        if tgt:
+                            degree_map[tgt] = degree_map.get(tgt, 0) + 1
+            except Exception:
+                pass  # degree_map stays empty; entities get degree=0 fallback
+
+            scored = []
             for node_data in all_nodes:
                 node_id = node_data.get("entity_id", node_data.get("entity_name", ""))
                 entity_name = node_data.get("entity_name", node_id)
                 if not isinstance(entity_name, str) or not entity_name:
                     continue
-                if entity_name.lower() in query_lower or any(
-                    token.lower() in entity_name.lower()
-                    for token in query_lower.split()
-                    if len(token) >= 2
-                ):
-                    degree = await graph.node_degree(node_id)
-                    matched.append(
-                        {
-                            "name": entity_name,
-                            "node_id": node_id,
-                            "degree": degree,
-                            "entity_type": node_data.get("entity_type", "unknown"),
-                        }
-                    )
 
-            matched.sort(key=lambda e: e["degree"], reverse=True)
-            return matched
+                entity_lower = entity_name.lower()
+
+                # Token-overlap score (jieba)
+                entity_tokens = set(t for t in jieba.lcut(entity_name) if len(t) >= 1)
+                overlap = len(query_tokens & entity_tokens)
+
+                # Substring match as fallback
+                substring_match = (
+                    entity_lower in query_lower
+                    or any(
+                        token.lower() in entity_lower
+                        for token in query_lower.split()
+                        if len(token) >= 2
+                    )
+                )
+
+                if overlap > 0:
+                    score = float(overlap)
+                elif substring_match:
+                    score = 0.5  # fallback: substring but no token overlap
+                else:
+                    continue
+
+                degree = degree_map.get(node_id, 0)
+                scored.append(
+                    {
+                        "name": entity_name,
+                        "node_id": node_id,
+                        "degree": degree,
+                        "entity_type": node_data.get("entity_type", "unknown"),
+                        "score": score,
+                    }
+                )
+
+            # Sort: token-overlap score desc, then degree desc
+            scored.sort(key=lambda e: (e["score"], e["degree"]), reverse=True)
+            return scored
 
         except Exception as exc:
             lightrag_logger.warning(f"Graph entity matching failed: {exc}")
@@ -259,7 +304,7 @@ class GraphRetriever:
         if not matched:
             return []
 
-        chunk_scores, _ = await self._traverse_neighbors(matched)
+        chunk_scores, entity_paths = await self._traverse_neighbors(matched)
 
         if not chunk_scores:
             return []
@@ -279,6 +324,15 @@ class GraphRetriever:
             except Exception:
                 pass
 
+            # Extract source entity names for this chunk
+            chunk_entities = []
+            if chunk_id in entity_paths:
+                seen = set()
+                for entity_name, _relation, _depth in entity_paths[chunk_id]:
+                    if entity_name not in seen:
+                        chunk_entities.append(entity_name)
+                        seen.add(entity_name)
+
             results.append(
                 ScoredChunk(
                     chunk_id=str(chunk_id),
@@ -286,6 +340,7 @@ class GraphRetriever:
                     score=weight,
                     sources=["graph"],
                     graph_rank=rank + 1,
+                    graph_entities=chunk_entities,
                 )
             )
         return results
@@ -376,6 +431,14 @@ class GraphRetriever:
                     seen.add(key)
                     unique_paths.append(p)
 
+            # Extract unique entity names for this chunk
+            chunk_entity_names = []
+            seen_entities = set()
+            for p in unique_paths:
+                if p[0] not in seen_entities:
+                    chunk_entity_names.append(p[0])
+                    seen_entities.add(p[0])
+
             results.append(
                 {
                     "chunk": ScoredChunk(
@@ -384,6 +447,7 @@ class GraphRetriever:
                         score=weight,
                         sources=["graph"],
                         graph_rank=rank + 1,
+                        graph_entities=chunk_entity_names,
                     ),
                     "paths": [
                         {"entity": p[0], "relation": p[1], "depth": p[2]}

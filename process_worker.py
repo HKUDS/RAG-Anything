@@ -168,6 +168,8 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
     lightrag_kwargs = {
         "chunk_token_size": int(os.getenv("CHUNK_SIZE", "800")),
         "chunk_overlap_token_size": int(os.getenv("CHUNK_OVERLAP", "100")),
+        "embedding_batch_num": int(os.getenv("EMBEDDING_BATCH_SIZE", "20")),
+        "embedding_func_max_async": int(os.getenv("ENTITY_EXTRACT_CONCURRENCY", "3")),
     }
     if chosen is not None:
         lightrag_kwargs["chunking_func"] = chosen
@@ -267,6 +269,7 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
     try:
         if ext in PLAIN_TEXT_EXTS:
             print(f"[WORKER] 纯文本模式，直接读取", flush=True)
+            print(f"[PROGRESS] phase=parsing status=start file={filename}", flush=True)
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 text_content = f.read()
             if text_content.strip():
@@ -274,9 +277,11 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                     [{"type": "text", "text": text_content, "page_idx": 0}],
                     file_path=filename
                 )
+            print(f"[PROGRESS] phase=parsing status=done file={filename}", flush=True)
         else:
             output_dir = f"./output_{kb_name}" if kb_name != "default" else "./output"
             docling_ok = False
+            print(f"[PROGRESS] phase=parsing status=start file={filename}", flush=True)
             try:
                 await rag.process_document_complete(safe_path, output_dir=output_dir)
                 docling_ok = True
@@ -344,7 +349,9 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                         print(f"[WORKER] VLM OCR 失败: {e2}", flush=True)
                         raise
 
+        print(f"[PROGRESS] phase=graph-building status=start file={filename}", flush=True)
         await rag.finalize_storages()
+        print(f"[PROGRESS] phase=graph-building status=done file={filename}", flush=True)
 
         # Verify that chunks were actually created — if the merging/extraction
         # stage failed silently, the document status will report zero chunks.
@@ -377,7 +384,9 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
         # Wait for background multimodal tasks before exiting.
         # If the subprocess exits too early, async tasks (VLM image captions,
         # table analysis) are killed mid-flight and data is lost.
+        print(f"[PROGRESS] phase=multimodal-tasks status=start file={filename}", flush=True)
         await _await_pending_background_tasks()
+        print(f"[PROGRESS] phase=multimodal-tasks status=done file={filename}", flush=True)
 
     except Exception as e:
         # 兜底：任何未捕获异常都将文档标记为失败，避免永久卡在 handling

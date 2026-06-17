@@ -592,6 +592,40 @@ class BaseModalProcessor:
         )
         return cleaned.strip()
 
+    def _parse_typed_response(
+        self, response: str, entity_name: str | None, entity_type: str
+    ) -> tuple:
+        """Parse LLM/VLM response and return (description, entity_info).
+
+        Shared by all modal processor subclasses.  Includes double-suffix
+        prevention: if the LLM already returned "Foo (image)", the code will
+        not append another "(image)" suffix.
+        """
+        response_data = self._robust_json_parse(response)
+
+        description = response_data.get("detailed_description", "")
+        entity_data = response_data.get("entity_info", {})
+
+        if not description or not entity_data:
+            raise ValueError("Missing required fields in response")
+
+        if not all(
+            key in entity_data for key in ["entity_name", "entity_type", "summary"]
+        ):
+            raise ValueError("Missing required fields in entity_info")
+
+        # Prevent double suffix: if LLM already returned "Foo (image)",
+        # don't make it "Foo (image) (image)"
+        raw_name = entity_data["entity_name"]
+        suffix = f" ({entity_data['entity_type']})"
+        if not raw_name.endswith(suffix):
+            entity_data["entity_name"] = raw_name + suffix
+
+        if entity_name:
+            entity_data["entity_name"] = entity_name
+
+        return description, entity_data
+
     def _robust_json_parse(self, response: str) -> dict:
         """Robust JSON parsing with multiple fallback strategies"""
 
@@ -607,8 +641,13 @@ class BaseModalProcessor:
             result = self._try_parse_json(cleaned)
             if result:
                 return result
+            # Also try combining cleanup + quote fix (composed strategy)
+            fixed = self._progressive_quote_fix(cleaned)
+            result = self._try_parse_json(fixed)
+            if result:
+                return result
 
-        # Strategy 3: Try progressive quote fixing
+        # Strategy 3: Try progressive quote fixing (standalone)
         for json_candidate in self._extract_all_json_candidates(response):
             fixed = self._progressive_quote_fix(json_candidate)
             result = self._try_parse_json(fixed)
@@ -695,36 +734,44 @@ class BaseModalProcessor:
         # Fix unescaped backslashes in string values (more conservative)
         def fix_string_content(match):
             content = match.group(1)
-            # Only escape obvious problematic patterns
-            content = re.sub(r"\\(?=[a-zA-Z])", r"\\\\", content)  # \alpha -> \\alpha
+            # Escape backslash-letter pairs that are NOT valid JSON escapes.
+            # \n \t \r \b \f \u \/ \\ \" are valid — leave them alone.
+            # \alpha \theta \beta etc. are LaTeX/domain escapes — double them.
+            _VALID_JSON_ESCAPE = {'n', 't', 'r', 'b', 'f', 'u', '/', '\\', '"'}
+            content = re.sub(
+                r'\\([a-zA-Z])',
+                lambda m: (
+                    r'\\\\' if m.group(1) not in _VALID_JSON_ESCAPE
+                    else m.group(0)
+                ),
+                content,
+            )
             return f'"{content}"'
 
         json_str = re.sub(r'"([^"]*(?:\\.[^"]*)*)"', fix_string_content, json_str)
         return json_str
 
     def _extract_fields_with_regex(self, response: str) -> dict:
-        """Extract required fields using regex as last resort"""
+        """Extract required fields using regex as last resort.
+
+        Uses atomic character-class alternation ``(?:[^\"\\\\]|\\\\.)*``
+        instead of nested quantifiers to avoid catastrophic backtracking.
+        """
         logger.warning("Using regex fallback for JSON parsing")
 
-        # Extract detailed_description
-        desc_match = re.search(
-            r'"detailed_description":\s*"([^"]*(?:\\.[^"]*)*)"', response, re.DOTALL
-        )
-        description = desc_match.group(1) if desc_match else ""
+        # Strip thinking tags before regex extraction (consistent with _extract_all_json_candidates)
+        response = self._strip_thinking_tags(response)
 
-        # Extract entity_name
-        name_match = re.search(r'"entity_name":\s*"([^"]*(?:\\.[^"]*)*)"', response)
-        entity_name = name_match.group(1) if name_match else "unknown_entity"
+        # Safe linear-time pattern: each character matches exactly one branch
+        def _extract_field(field_name: str, text: str, default: str = "") -> str:
+            pattern = rf'"{field_name}"\s*:\s*"((?:[^"\\]|\\.)*)"'
+            match = re.search(pattern, text, re.DOTALL)
+            return match.group(1) if match else default
 
-        # Extract entity_type
-        type_match = re.search(r'"entity_type":\s*"([^"]*(?:\\.[^"]*)*)"', response)
-        entity_type = type_match.group(1) if type_match else "unknown"
-
-        # Extract summary
-        summary_match = re.search(
-            r'"summary":\s*"([^"]*(?:\\.[^"]*)*)"', response, re.DOTALL
-        )
-        summary = summary_match.group(1) if summary_match else description[:100]
+        description = _extract_field("detailed_description", response)
+        entity_name = _extract_field("entity_name", response, "unknown_entity")
+        entity_type = _extract_field("entity_type", response, "unknown")
+        summary = _extract_field("summary", response, description[:100] if description else "")
 
         return {
             "detailed_description": description,
@@ -1129,27 +1176,7 @@ class ImageModalProcessor(BaseModalProcessor):
     ) -> Tuple[str, Dict[str, Any]]:
         """Parse model response"""
         try:
-            response_data = self._robust_json_parse(response)
-
-            description = response_data.get("detailed_description", "")
-            entity_data = response_data.get("entity_info", {})
-
-            if not description or not entity_data:
-                raise ValueError("Missing required fields in response")
-
-            if not all(
-                key in entity_data for key in ["entity_name", "entity_type", "summary"]
-            ):
-                raise ValueError("Missing required fields in entity_info")
-
-            entity_data["entity_name"] = (
-                entity_data["entity_name"] + f" ({entity_data['entity_type']})"
-            )
-            if entity_name:
-                entity_data["entity_name"] = entity_name
-
-            return description, entity_data
-
+            return self._parse_typed_response(response, entity_name, "image")
         except (json.JSONDecodeError, AttributeError, ValueError) as e:
             logger.error(f"Error parsing image analysis response: {e}")
             logger.debug(f"Raw response: {response}")
@@ -1324,27 +1351,7 @@ class TableModalProcessor(BaseModalProcessor):
     ) -> Tuple[str, Dict[str, Any]]:
         """Parse table analysis response"""
         try:
-            response_data = self._robust_json_parse(response)
-
-            description = response_data.get("detailed_description", "")
-            entity_data = response_data.get("entity_info", {})
-
-            if not description or not entity_data:
-                raise ValueError("Missing required fields in response")
-
-            if not all(
-                key in entity_data for key in ["entity_name", "entity_type", "summary"]
-            ):
-                raise ValueError("Missing required fields in entity_info")
-
-            entity_data["entity_name"] = (
-                entity_data["entity_name"] + f" ({entity_data['entity_type']})"
-            )
-            if entity_name:
-                entity_data["entity_name"] = entity_name
-
-            return description, entity_data
-
+            return self._parse_typed_response(response, entity_name, "table")
         except (json.JSONDecodeError, AttributeError, ValueError) as e:
             logger.error(f"Error parsing table analysis response: {e}")
             logger.debug(f"Raw response: {response}")
@@ -1507,27 +1514,7 @@ class EquationModalProcessor(BaseModalProcessor):
     ) -> Tuple[str, Dict[str, Any]]:
         """Parse equation analysis response with robust JSON handling"""
         try:
-            response_data = self._robust_json_parse(response)
-
-            description = response_data.get("detailed_description", "")
-            entity_data = response_data.get("entity_info", {})
-
-            if not description or not entity_data:
-                raise ValueError("Missing required fields in response")
-
-            if not all(
-                key in entity_data for key in ["entity_name", "entity_type", "summary"]
-            ):
-                raise ValueError("Missing required fields in entity_info")
-
-            entity_data["entity_name"] = (
-                entity_data["entity_name"] + f" ({entity_data['entity_type']})"
-            )
-            if entity_name:
-                entity_data["entity_name"] = entity_name
-
-            return description, entity_data
-
+            return self._parse_typed_response(response, entity_name, "equation")
         except (json.JSONDecodeError, AttributeError, ValueError) as e:
             logger.error(f"Error parsing equation analysis response: {e}")
             logger.debug(f"Raw response: {response}")
@@ -1670,27 +1657,7 @@ class GenericModalProcessor(BaseModalProcessor):
     ) -> Tuple[str, Dict[str, Any]]:
         """Parse generic analysis response"""
         try:
-            response_data = self._robust_json_parse(response)
-
-            description = response_data.get("detailed_description", "")
-            entity_data = response_data.get("entity_info", {})
-
-            if not description or not entity_data:
-                raise ValueError("Missing required fields in response")
-
-            if not all(
-                key in entity_data for key in ["entity_name", "entity_type", "summary"]
-            ):
-                raise ValueError("Missing required fields in entity_info")
-
-            entity_data["entity_name"] = (
-                entity_data["entity_name"] + f" ({entity_data['entity_type']})"
-            )
-            if entity_name:
-                entity_data["entity_name"] = entity_name
-
-            return description, entity_data
-
+            return self._parse_typed_response(response, entity_name, content_type)
         except (json.JSONDecodeError, AttributeError, ValueError) as e:
             logger.error(f"Error parsing {content_type} analysis response: {e}")
             logger.debug(f"Raw response: {response}")
