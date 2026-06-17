@@ -164,64 +164,41 @@ Footnotes: {footnotes}
 # Table analysis prompt template
 PROMPTS[
     "table_prompt"
-] = """Please analyze this table content and provide a JSON response with the following structure:
+] = """Analyze this table and return JSON:
 
 {{
-    "detailed_description": "A comprehensive analysis of the table including:
-    - Table structure and organization
-    - Column headers and their meanings
-    - Key data points and patterns
-    - Statistical insights and trends
-    - Relationships between data elements
-    - Significance of the data presented
-    Always use specific names and values instead of general references.",
+    "detailed_description": "Analyze table structure, column meanings, key data, trends, and relationships. Use specific names and values.",
     "entity_info": {{
         "entity_name": "{entity_name}",
         "entity_type": "table",
-        "summary": "concise summary of the table's purpose and key findings (max 100 words)"
+        "summary": "table purpose and key findings (max 100 words)"
     }}
 }}
 
-Table Information:
-Image Path: {table_img_path}
-Caption: {table_caption}
+Table: {table_caption}
 Body: {table_body}
-Footnotes: {table_footnote}
-
-Focus on extracting meaningful insights and relationships from the tabular data."""
+Footnotes: {table_footnote}"""
 
 # Table analysis prompt with context support
 PROMPTS[
     "table_prompt_with_context"
-] = """Please analyze this table content considering the surrounding context, and provide a JSON response with the following structure:
+] = """Analyze this table considering surrounding context, return JSON:
 
 {{
-    "detailed_description": "A comprehensive analysis of the table including:
-    - Table structure and organization
-    - Column headers and their meanings
-    - Key data points and patterns
-    - Statistical insights and trends
-    - Relationships between data elements
-    - Significance of the data presented in relation to surrounding context
-    - How the table supports or illustrates concepts from the surrounding content
-    Always use specific names and values instead of general references.",
+    "detailed_description": "Analyze table structure, column meanings, key data, trends, and relationship to surrounding context. Use specific names and values.",
     "entity_info": {{
         "entity_name": "{entity_name}",
         "entity_type": "table",
-        "summary": "concise summary of the table's purpose, key findings, and relationship to surrounding content (max 100 words)"
+        "summary": "table purpose, key findings, and context relationship (max 100 words)"
     }}
 }}
 
-Context from surrounding content:
+Surrounding context:
 {context}
 
-Table Information:
-Image Path: {table_img_path}
-Caption: {table_caption}
+Table: {table_caption}
 Body: {table_body}
-Footnotes: {table_footnote}
-
-Focus on extracting meaningful insights and relationships from the tabular data in the context of the surrounding content."""
+Footnotes: {table_footnote}"""
 
 # Equation analysis prompt template
 PROMPTS[
@@ -286,54 +263,37 @@ Focus on providing mathematical insights and explaining the equation's significa
 # Generic content analysis prompt template
 PROMPTS[
     "generic_prompt"
-] = """Please analyze this {content_type} content and provide a JSON response with the following structure:
+] = """Analyze this {content_type} content and return JSON:
 
 {{
-    "detailed_description": "A comprehensive analysis of the content including:
-    - Content structure and organization
-    - Key information and elements
-    - Relationships between components
-    - Context and significance
-    - Relevant details for knowledge retrieval
-    Always use specific terminology appropriate for {content_type} content.",
+    "detailed_description": "Analyze structure, key info, relationships, context, and knowledge-retrieval-relevant details. Use {content_type}-appropriate terminology.",
     "entity_info": {{
         "entity_name": "{entity_name}",
         "entity_type": "{content_type}",
-        "summary": "concise summary of the content's purpose and key points (max 100 words)"
+        "summary": "concise summary (max 100 words)"
     }}
 }}
 
-Content: {content}
-
-Focus on extracting meaningful information that would be useful for knowledge retrieval."""
+Content: {content}"""
 
 # Generic content analysis prompt with context support
 PROMPTS[
     "generic_prompt_with_context"
-] = """Please analyze this {content_type} content considering the surrounding context, and provide a JSON response with the following structure:
+] = """Analyze this {content_type} content considering surrounding context, return JSON:
 
 {{
-    "detailed_description": "A comprehensive analysis of the content including:
-    - Content structure and organization
-    - Key information and elements
-    - Relationships between components
-    - Context and significance in relation to surrounding content
-    - How this content connects to or supports the broader discussion
-    - Relevant details for knowledge retrieval
-    Always use specific terminology appropriate for {content_type} content.",
+    "detailed_description": "Analyze structure, key info, relationships, and connection to surrounding context. Use {content_type}-appropriate terminology.",
     "entity_info": {{
         "entity_name": "{entity_name}",
         "entity_type": "{content_type}",
-        "summary": "concise summary of the content's purpose, key points, and relationship to surrounding context (max 100 words)"
+        "summary": "concise summary including context relationship (max 100 words)"
     }}
 }}
 
-Context from surrounding content:
+Surrounding context:
 {context}
 
-Content: {content}
-
-Focus on extracting meaningful information that would be useful for knowledge retrieval and understanding the content's role in the broader context."""
+Content: {content}"""
 
 # Video analysis prompt template
 PROMPTS[
@@ -424,12 +384,12 @@ Footnotes: {footnotes}
 Visual Analysis: {enhanced_caption}"""
 
 PROMPTS["table_chunk"] = """Table Analysis:
-Image Path: {table_img_path}
 Caption: {table_caption}
-Structure: {table_body}
 Footnotes: {table_footnote}
 
-Analysis: {enhanced_caption}"""
+Analysis: {enhanced_caption}
+
+Raw Structure (simplified): {table_body}"""
 
 PROMPTS["equation_chunk"] = """Mathematical Equation Analysis:
 Equation: {equation_text}
@@ -512,4 +472,21 @@ PROMPTS["CONVERSATION_CONTEXT_TEMPLATE"] = (
     "{documents}\n\n"
     "## Current Question\n"
     "{query}"
+)
+
+# Inline source quoting instruction — injected into LLM prompts to require
+# direct quoting of original retrieval content within the answer text.
+#
+# This asks the LLM to:
+# 1. Embed original text excerpts inline when citing retrieval content
+# 2. Use quotation marks to demarcate quoted text
+# 3. Copy verbatim (at least 20 chars), no paraphrasing
+INLINE_QUOTE_INSTRUCTION = (
+    "## 引用原文要求（必须严格遵守）\n"
+    "1. 回答中引用检索内容的具体事实或数据时，必须用引号直接嵌入原文摘录。"
+    "不要使用 `[来源 N]` 标记或【引用来源】列表。\n"
+    "2. 示例格式：\"根据文档描述，该系统'面向管理员，提供系统级别数据管理和权限管理'\"\n"
+    "3. 原文摘录必须从检索内容中逐字复制（至少20字），不可概括或改写。\n"
+    "4. 如果检索内容中没有相关信息，只需说明\"知识库中未找到相关信息\"。\n"
+    "5. 不要编造或补充检索内容中没有的信息。"
 )

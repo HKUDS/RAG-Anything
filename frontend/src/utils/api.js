@@ -1,6 +1,6 @@
 const API_BASE = '/api'
 
-let currentKB = 'default'
+let currentKB = ''
 export function setCurrentKB(name) { currentKB = name }
 export function getCurrentKB() { return currentKB }
 
@@ -30,6 +30,10 @@ function kbUrl(path) {
 }
 
 async function request(url, options = {}) {
+  if (!currentKB) {
+    console.warn(`[api] 跳过请求 ${url}：currentKB 未初始化`)
+    return {}
+  }
   const res = await fetch(`${API_BASE}${kbUrl(url)}`, {
     headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
     ...options,
@@ -76,6 +80,7 @@ export const api = {
 
   // Upload (FormData - no Content-Type so browser sets multipart boundary)
   uploadFile: (file, chunking_strategy = '') => {
+    if (!currentKB) { console.warn('[api] 跳过 upload：currentKB 未初始化'); return Promise.reject(new Error('知识库未就绪')) }
     const fd = new FormData(); fd.append('file', file)
     const strategyParam = chunking_strategy ? `&chunking_strategy=${chunking_strategy}` : ''
     return fetch(`${API_BASE}/upload?kb=${currentKB}${strategyParam}`, {
@@ -86,6 +91,7 @@ export const api = {
     })
   },
   uploadFiles: (files, chunking_strategy = '') => {
+    if (!currentKB) { console.warn('[api] 跳过 uploadFiles：currentKB 未初始化'); return Promise.reject(new Error('知识库未就绪')) }
     const fd = new FormData()
     files.forEach(f => fd.append('files', f))
     const strategyParam = chunking_strategy ? `&chunking_strategy=${chunking_strategy}` : ''
@@ -143,4 +149,5 @@ export const api = {
   createConversation: (agentId, title) => fetchJson(`/agents/${agentId}/conversations?title=${encodeURIComponent(title)}`, { method: 'POST' }),
   updateConversation: (agentId, threadId, title) => fetchJson(`/agents/${agentId}/conversations/${threadId}?title=${encodeURIComponent(title)}`, { method: 'PUT' }),
   deleteConversation: (agentId, threadId) => fetchJson(`/agents/${agentId}/conversations/${threadId}`, { method: 'DELETE' }),
+
 }

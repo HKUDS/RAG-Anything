@@ -13,12 +13,14 @@ import re
 import time
 import uuid
 from dataclasses import dataclass, field
+
+import jieba
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from pathlib import Path
 from lightrag import QueryParam
 from lightrag.utils import always_get_an_event_loop
-from raganything.prompt import PROMPTS
+from raganything.prompt import PROMPTS, INLINE_QUOTE_INSTRUCTION
 from raganything.utils import (
     get_processor_for_type,
     encode_image_to_base64,
@@ -453,6 +455,8 @@ class QueryMixin:
             )
 
         # Create query parameters
+        # Enable include_references by default so LightRAG returns source refs
+        kwargs.setdefault("include_references", True)
         query_param = QueryParam(mode=mode, **kwargs)
 
         self.logger.info(f"Executing text query: {query[:100]}...")
@@ -577,14 +581,62 @@ class QueryMixin:
                 else:
                     self.logger.warning("Rerank enabled but no API key found")
 
-            # Stage 2: Build context from retrieved chunks
+            # Stage 2: Build context from retrieved chunks with entity annotation
+            # Collect all entity names from the knowledge graph for cross-referencing
+            # Note: entity names are stored as graph node IDs, not in "entity_name" attr
+            all_entity_names = set()
+            try:
+                graph = getattr(hybrid_engine._lightrag, "chunk_entity_relation_graph", None)
+                if graph:
+                    all_nodes = await graph.get_all_nodes()
+                    for node in (all_nodes or []):
+                        # LightRAG stores entity name as the node ID (key "id")
+                        # The "entity_name" attr may also exist as fallback
+                        name = node.get("entity_name") or node.get("id", "")
+                        if name and isinstance(name, str) and len(name) >= 4:
+                            all_entity_names.add(name)
+            except Exception as e:
+                self.logger.warning(f"Failed to collect entity names: {e}")
+
+            # Enrich chunks with source document info for citation tracing
+            chunk_ids = [c.chunk_id for c in chunks[:15]]
+            try:
+                source_infos = await self.batch_get_doc_source_info_async(chunk_ids)
+            except Exception:
+                source_infos = {}
+            for chunk in chunks[:15]:
+                info = source_infos.get(chunk.chunk_id, {})
+                chunk.file_path = chunk.file_path or info.get("file_path")
+                chunk.document_name = chunk.document_name or info.get("document_name")
+
             context_parts = []
             for i, chunk in enumerate(chunks[:15]):  # top-15 for context window
                 sources_str = ",".join(chunk.sources) if chunk.sources else "unknown"
+                doc_label = f"doc: {chunk.document_name}" if chunk.document_name else ""
+                # Annotate ALL chunks with entity names found in their content
+                entity_annotation = ""
+                matched_entities = []
+                chunk_lower = chunk.content.lower()
+                for entity_name in all_entity_names:
+                    if entity_name.lower() in chunk_lower:
+                        matched_entities.append(entity_name)
+                if matched_entities:
+                    # Keep at most 5 entity names to avoid clutter
+                    display_entities = matched_entities[:5]
+                    entity_annotation = (
+                        f"[来源实体: {', '.join(display_entities)}] "
+                    )
                 context_parts.append(
-                    f"[Doc {i + 1}] (sources: {sources_str})\n{chunk.content}"
+                    f"[来源 {i + 1}] ({doc_label}, sources: {sources_str})\n"
+                    f"{entity_annotation}{chunk.content}"
                 )
             context = "\n\n".join(context_parts)
+
+            # Debug: show entity names related to query keywords
+            query_keywords = set(jieba.lcut(query))
+            related_entities = [e for e in all_entity_names
+                               if any(kw in e for kw in query_keywords if len(kw) >= 2)]
+            self.logger.info(f"RRF related-entities ({len(related_entities)}): {related_entities[:15]}")
 
             # Debug: log top-3 retrieved chunks for context traceability
             for i, chunk in enumerate(chunks[:3]):
@@ -594,6 +646,18 @@ class QueryMixin:
                     f"id={chunk.chunk_id[:24]}... score={chunk.score:.4f} "
                     f"preview={preview}..."
                 )
+            # Debug: show entity annotations in top-5 context (with matched entity names)
+            for i in range(min(5, len(context_parts))):
+                part = context_parts[i]
+                if "[来源实体:" in part:
+                    # Extract the entity names for logging
+                    m = re.search(r'\[来源实体: ([^\]]+)\]', part)
+                    names = m.group(1) if m else "?"
+                    self.logger.info(
+                        f"RRF doc-{i+1} [来源实体: {names}]"
+                    )
+            if not any("[来源实体:" in p for p in context_parts):
+                self.logger.info("RRF entity-annotation: NONE in top-15 context")
 
             # If only_need_context, return raw context without LLM generation
             if only_need_context:
@@ -615,7 +679,8 @@ class QueryMixin:
                 f"Retrieved Documents:\n{context}\n\n"
                 f"User Question: {query}\n\n"
                 f"Please provide a comprehensive answer based only on the provided documents. "
-                f"If the documents do not contain sufficient information, say so clearly."
+                f"If the documents do not contain sufficient information, say so clearly.\n\n"
+                f"{INLINE_QUOTE_INSTRUCTION}"
             )
 
             if self.llm_model_func is None:
@@ -745,9 +810,22 @@ class QueryMixin:
             )
 
         # Build context with path annotations
+        # Enrich chunks with source document info for citation tracing
+        chunk_ids = [item["chunk"].chunk_id for item in results[:15]]
+        try:
+            source_infos = await self.batch_get_doc_source_info_async(chunk_ids)
+        except Exception:
+            source_infos = {}
+
         context_parts = []
         for i, item in enumerate(results[:15]):
             chunk = item["chunk"]
+            # Fill source info
+            info = source_infos.get(chunk.chunk_id, {})
+            chunk.file_path = chunk.file_path or info.get("file_path")
+            chunk.document_name = chunk.document_name or info.get("document_name")
+            doc_label = f"doc: {chunk.document_name}" if chunk.document_name else ""
+
             paths = item.get("paths", [])
             paths_str = ""
             if paths:
@@ -760,7 +838,7 @@ class QueryMixin:
                 paths_str = "\n".join(path_lines)
             chunk_text = chunk.content[:800] if chunk.content else "(empty)"
             context_parts.append(
-                f"[Doc {i + 1}] score={chunk.score:.3f}\n"
+                f"[来源 {i + 1}] ({doc_label}) score={chunk.score:.3f}\n"
                 f"Entity paths:\n{paths_str}\n"
                 f"Content: {chunk_text}"
             )
@@ -793,7 +871,8 @@ class QueryMixin:
             f"Retrieved Documents (with entity relation paths):\n{context}\n\n"
             f"User Question: {query}\n\n"
             f"Please answer based on the retrieved documents. "
-            f"Reference entity relations in your answer when relevant."
+            f"Reference entity relations in your answer when relevant.\n\n"
+            f"{INLINE_QUOTE_INSTRUCTION}"
         )
 
         answer = await self.llm_model_func(

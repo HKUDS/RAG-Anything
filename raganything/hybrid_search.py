@@ -36,11 +36,18 @@ class ScoredChunk:
     bm25_rank: Optional[int] = None
     vector_rank: Optional[int] = None
     graph_rank: Optional[int] = None
+    # Source entity names from graph traversal (for entity disambiguation)
+    graph_entities: List[str] = field(default_factory=list)
+    # Source document tracing fields (for citation display)
+    file_path: Optional[str] = None
+    document_name: Optional[str] = None
+    chunk_index: Optional[int] = None
 
     def __repr__(self):
+        doc = f" doc={self.document_name}" if self.document_name else ""
         return (
             f"ScoredChunk(id={self.chunk_id[:16]}..., score={self.score:.4f}, "
-            f"sources={self.sources})"
+            f"sources={self.sources}{doc})"
         )
 
 

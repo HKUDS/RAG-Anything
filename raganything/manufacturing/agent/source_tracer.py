@@ -12,10 +12,13 @@ import re
 import logging
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from raganything.citation_parser import (
+    CITATION_PATTERN,
+    extract_citations as _base_extract_citations,
+    has_citations,
+)
 
-# 来源引用模式
-CITATION_PATTERN = re.compile(r"\[来源\s*(\d+)\]")
+logger = logging.getLogger(__name__)
 
 
 class SourceTracer:
@@ -28,6 +31,9 @@ class SourceTracer:
                           source_docs: list[dict]) -> list[dict]:
         """从 LLM 回答中提取来源引用，并关联到检索文档。
 
+        Delegates to raganything.citation_parser.extract_citations for core
+        parsing, then adds manufacturing-specific enrichment (reliability, etc).
+
         Args:
             answer: LLM 生成的回答文本
             source_docs: 检索到的源文档列表
@@ -35,14 +41,15 @@ class SourceTracer:
         Returns:
             引用列表 [{"source_title", "page", "excerpt", "reliability", "url"}, ...]
         """
-        citations = []
+        # Use shared citation parser
+        citations = _base_extract_citations(answer, source_docs=source_docs)
 
-        # 查找 [来源 N] 引用标记
-        refs = CITATION_PATTERN.findall(answer)
+        # Enrich with manufacturing-specific fields
+        result = []
         seen = set()
 
-        for ref in refs:
-            idx = int(ref) - 1
+        for cit in citations:
+            idx = cit["index"] - 1
             if idx < 0 or idx >= len(source_docs):
                 continue
 
@@ -53,18 +60,18 @@ class SourceTracer:
                 continue
             seen.add(doc_id)
 
-            citation = {
-                "source_title": doc.get("title", doc.get("source", f"来源 {ref}")),
+            enriched = {
+                "source_title": cit.get("document_name") or doc.get("title", doc.get("source", f"来源 {cit['index']}")),
                 "page": doc.get("page", doc.get("page_number")),
                 "section": doc.get("section", doc.get("section_title", "")),
-                "excerpt": (doc.get("content", doc.get("text", "")) or "")[:200],
+                "excerpt": cit.get("excerpt") or (doc.get("content", doc.get("text", "")) or "")[:200],
                 "reliability": self._assess_reliability(doc),
-                "url": doc.get("url", doc.get("file_path", "")),
+                "url": doc.get("url", doc.get("file_path", cit.get("file_path", ""))),
                 "ingested_at": doc.get("ingested_at", doc.get("created_at", "")),
             }
-            citations.append(citation)
+            result.append(enriched)
 
-        return citations
+        return result
 
     def trace_fact(self, statement: str,
                    knowledge_base: list[dict]) -> list[dict]:

@@ -268,8 +268,8 @@ async def verify_kb_access(kb: str = QueryParam("default"), current_user: dict =
                 user_kb = name
                 break
         if user_kb:
-            # 不自动强制切换——让用户在前端手动选择知识库
-            return kb
+            # 用户已有自己的 KB，静默重定向到自己的 KB，阻止跨用户数据访问
+            return user_kb
         # 用户还没有 KB，自动创建并初始化存储
         personal_kb = current_user["username"]
         meta[personal_kb] = {
@@ -452,6 +452,8 @@ def create_rag(parser: str = None, working_dir: str = None, chunking_strategy: s
         "chunk_overlap_token_size": int(os.getenv("CHUNK_OVERLAP", "100")),
         "enable_llm_cache": os.getenv("ENABLE_LLM_CACHE", "true").lower() == "true",
         "enable_llm_cache_for_entity_extract": os.getenv("ENABLE_LLM_CACHE_FOR_EXTRACT", "true").lower() == "true",
+        "embedding_batch_num": int(os.getenv("EMBEDDING_BATCH_SIZE", "20")),
+        "embedding_func_max_async": int(os.getenv("ENTITY_EXTRACT_CONCURRENCY", "3")),
     }
     if chosen_chunking_func is not None:
         lightrag_kwargs["chunking_func"] = chosen_chunking_func
@@ -728,6 +730,32 @@ async def _process_uploaded_file(task_id: str, file_path: str, filename: str, kb
                 if text:
                     worker_output_lines.append(text)
                     print(f"[WORKER:{task_id}] {text}", flush=True)
+                    # Parse structured progress lines from worker
+                    m = re.match(r"\[PROGRESS\]\s+phase=(\S+)\s+status=(\S+)(?:\s+file=(.+))?", text)
+                    if m and task_id in processing_tasks:
+                        phase = m.group(1)
+                        status = m.group(2)
+                        fname = m.group(3) or processing_tasks[task_id].get("file", "")
+                        # Map phases to progress percentages
+                        phase_map = {
+                            "parsing": (5, 25),
+                            "entity-extraction": (25, 55),
+                            "embedding": (55, 75),
+                            "graph-building": (75, 90),
+                            "multimodal-tasks": (90, 98),
+                        }
+                        if phase in phase_map:
+                            pct = phase_map[phase][1] if status == "done" else phase_map[phase][0]
+                        else:
+                            pct = processing_tasks[task_id].get("progress", 0)
+                        processing_tasks[task_id]["progress"] = pct
+                        processing_tasks[task_id]["phase"] = phase
+                        processing_tasks[task_id]["phase_status"] = status
+                        await ws_broadcast({
+                            "type": "progress", "task_id": task_id,
+                            "progress": pct, "phase": phase, "phase_status": status,
+                            "message": f"{phase}: {status}",
+                        })
 
         stdout_task = asyncio.ensure_future(_read_stream(proc.stdout))
         stderr_task = asyncio.ensure_future(_read_stream(proc.stderr))
@@ -1313,6 +1341,12 @@ async def list_documents(kb: str = Depends(verify_kb_access)):
         docs = []
         seen_files = set()
         for doc_id, info in data.items():
+            # Check if there's a matching processing task with phase info
+            doc_phase = ""
+            for tid, task in processing_tasks.items():
+                if task.get("file", "") == info.get("file_path", "") and task.get("kb", "") == kb:
+                    doc_phase = task.get("phase", "")
+                    break
             docs.append({
                 "id": doc_id[:16],
                 "full_id": doc_id,
@@ -1322,6 +1356,7 @@ async def list_documents(kb: str = Depends(verify_kb_access)):
                 "length": info.get("content_length", 0),
                 "created": info.get("created_at", ""),
                 "updated": info.get("updated_at", ""),
+                "phase": doc_phase,
             })
             seen_files.add(info.get("file_path", ""))
 
@@ -1340,6 +1375,7 @@ async def list_documents(kb: str = Depends(verify_kb_access)):
                     "length": 0,
                     "created": task.get("started_at", ""),
                     "updated": task.get("started_at", ""),
+                    "phase": task.get("phase", ""),
                 })
         return {"documents": sorted(docs, key=lambda d: d["updated"], reverse=True), "total": len(docs)}
     except Exception as e:
@@ -2240,7 +2276,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
                 f"## 要求\n"
-                f"从检索内容提取事实和数据。结合对话历史理解上下文。有数字必须引用。没有就说未找到。不编造。"
+                f"从检索内容提取事实和数据。结合对话历史理解上下文。有数字必须引用。没有就说未找到。不编造。如果检索内容包含多个名称相似的实体，必须严格区分各实体对应的属性值（如来源实体标注），不得混淆。"
             )
 
             # 使用智能体配置的模型，而非 .env 全局模型
@@ -2514,7 +2550,11 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 f"- 结合对话历史理解上下文（如有），解析指代词\n"
                 f"- 有具体数字必须引用\n"
                 f"- 如果检索内容中没有答案，回答\"知识库中未找到相关信息\"\n"
-                f"- 不要编造或补充检索内容中没有的信息"
+                f"- 不要编造或补充检索内容中没有的信息\n"
+                f"- 如果检索内容包含多个名称相似的实体（如[来源实体]标注），必须严格区分各实体的属性值，不得混淆\n"
+                f"- 引用检索内容的具体事实或数据时，用引号直接嵌入原文摘录（至少20字），不可概括或改写\n"
+                f"- 示例格式：\"该系统'面向管理员，提供系统级别数据管理和权限管理'\"\n"
+                f"- 不要使用 [来源 N] 标记或【引用来源】列表"
             )
 
             llm_response = await instance.llm_model_func(
@@ -2797,7 +2837,10 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
                 f"## 要求\n"
-                f"从检索内容提取事实和数据。结合对话历史理解上下文。有数字必须引用。没有就说未找到。不编造。"
+                f"从检索内容提取事实和数据。结合对话历史理解上下文。有数字必须引用。没有就说未找到。不编造。如果检索内容包含多个名称相似的实体，必须严格区分各实体对应的属性值（如来源实体标注），不得混淆。\n\n"
+                f"引用检索内容的具体事实或数据时，用引号直接嵌入原文摘录（至少20字），不可概括或改写。"
+                f"示例格式：'该系统\"面向管理员，提供系统级别数据管理和权限管理\"'。"
+                f"不要使用 [来源 N] 标记或【引用来源】列表。"
             )
 
             llm_response = await instance.llm_model_func(

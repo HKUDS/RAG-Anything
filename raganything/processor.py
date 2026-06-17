@@ -53,6 +53,11 @@ class ProcessorMixin:
     _bm25_rebuild_timer: Any = None
     _bm25_pending_chunks: List[Dict[str, Any]] = []
 
+    # Chunk → document source info cache for citation tracing
+    # Maps chunk_id → {"file_path": str, "document_name": str}
+    _chunk_source_cache: Dict[str, Dict[str, str]] = {}
+    _chunk_source_cache_built: bool = False
+
     def _schedule_bm25_index_update(self, new_chunks: List[Dict[str, Any]] = None):
         """Schedule a BM25 index rebuild with 500ms debounce.
 
@@ -104,6 +109,121 @@ class ProcessorMixin:
             return str(file_path)
         else:
             return os.path.basename(file_path)
+
+    def _register_chunk_sources(
+        self, doc_id: str, file_path: str, chunk_ids: List[str]
+    ):
+        """Register chunk_id → document source mappings in the cache.
+
+        Called whenever chunks are associated with a document during processing.
+        This populates the reverse index used by get_doc_source_info.
+
+        Args:
+            doc_id: The document ID
+            file_path: The source file path
+            chunk_ids: List of chunk IDs belonging to this document
+        """
+        document_name = self._get_file_reference(file_path)
+        for chunk_id in chunk_ids:
+            self._chunk_source_cache[chunk_id] = {
+                "file_path": file_path,
+                "document_name": document_name,
+            }
+
+    async def _ensure_chunk_source_cache(self):
+        """Lazily build the chunk → doc source cache from doc_status records.
+
+        This is a fallback for chunks that were processed before the cache was
+        introduced, or for chunks added by LightRAG's internal mechanisms.
+        """
+        if self._chunk_source_cache_built:
+            return
+
+        try:
+            # Access all doc_status records via the kv store's internal _data
+            # We use get_by_ids with all known keys when available
+            doc_status_store = self.lightrag.doc_status
+            # JsonKVStorage stores data in _data dict — we access it safely
+            if hasattr(doc_status_store, '_data'):
+                async with doc_status_store._storage_lock:
+                    all_data = dict(doc_status_store._data)
+            else:
+                all_data = {}
+
+            for doc_id, status in all_data.items():
+                file_path = status.get("file_path", "")
+                chunks_list = status.get("chunks_list", [])
+                if file_path and chunks_list:
+                    document_name = self._get_file_reference(file_path)
+                    for chunk_id in chunks_list:
+                        if chunk_id not in self._chunk_source_cache:
+                            self._chunk_source_cache[chunk_id] = {
+                                "file_path": file_path,
+                                "document_name": document_name,
+                            }
+        except Exception:
+            pass  # Non-critical; source tracing degrades gracefully
+
+        self._chunk_source_cache_built = True
+
+    def get_doc_source_info(self, chunk_id: str) -> Dict[str, Any]:
+        """Get source document info for a single chunk.
+
+        Args:
+            chunk_id: The chunk ID to look up
+
+        Returns:
+            Dict with file_path, document_name, or None values if not found
+        """
+        cached = self._chunk_source_cache.get(chunk_id)
+        if cached:
+            return {**cached}
+        return {"file_path": None, "document_name": None}
+
+    async def get_doc_source_info_async(self, chunk_id: str) -> Dict[str, Any]:
+        """Async version that triggers cache build if needed.
+
+        Args:
+            chunk_id: The chunk ID to look up
+
+        Returns:
+            Dict with file_path, document_name, or None values if not found
+        """
+        if chunk_id not in self._chunk_source_cache and not self._chunk_source_cache_built:
+            await self._ensure_chunk_source_cache()
+        return self.get_doc_source_info(chunk_id)
+
+    def batch_get_doc_source_info(
+        self, chunk_ids: List[str]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Get source document info for multiple chunks in a single call.
+
+        Args:
+            chunk_ids: List of chunk IDs to look up
+
+        Returns:
+            Dict mapping chunk_id → {file_path, document_name}
+            Unresolved chunk_ids are included with None values
+        """
+        result = {}
+        for cid in chunk_ids:
+            result[cid] = self.get_doc_source_info(cid)
+        return result
+
+    async def batch_get_doc_source_info_async(
+        self, chunk_ids: List[str]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Async version that triggers cache build if needed.
+
+        Args:
+            chunk_ids: List of chunk IDs to look up
+
+        Returns:
+            Dict mapping chunk_id → {file_path, document_name}
+        """
+        if not self._chunk_source_cache_built:
+            await self._ensure_chunk_source_cache()
+        return self.batch_get_doc_source_info(chunk_ids)
 
     def _generate_cache_key(
         self, file_path: Path, parse_method: str = None, **kwargs
@@ -1296,10 +1416,14 @@ class ProcessorMixin:
                 table_caption = normalize_caption_list(
                     original_item.get("table_caption", [])
                 )
-                table_body = format_table_body(get_table_body(original_item))
                 table_footnote = normalize_caption_list(
                     original_item.get("table_footnote", [])
                 )
+                # Simplify table body: strip bbox noise, keep text + position
+                from raganything.utils import simplify_table_body as _simplify_table
+
+                raw_body = get_table_body(original_item)
+                table_body = _simplify_table(raw_body)
 
                 return PROMPTS["table_chunk"].format(
                     table_img_path=table_img_path,
@@ -1356,34 +1480,44 @@ class ProcessorMixin:
     async def _store_chunks_to_lightrag_storage_type_aware(
         self, chunks: Dict[str, Any]
     ):
-        """Store chunks to storage with concurrent, resilient embedding.
+        """Store chunks to storage with batched embedding for speed.
 
-        Each chunk is embedded individually so a single over-limit chunk
-        doesn't block the rest.  Upserts run concurrently (batch of 10) to
-        keep latency low while staying well within API rate limits.
+        Chunks are grouped into batches to reduce API round-trips (configured
+        via EMBEDDING_BATCH_SIZE env var). Failed batches are retried
+        individually to ensure no data loss.
         """
         try:
             # Store in text_chunks storage (no embedding, safe to batch)
             await self.lightrag.text_chunks.upsert(chunks)
 
-            # Concurrent upsert with bounded parallelism
+            batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "20"))
+            chunk_items = list(chunks.items())
             failed_ids: list[str] = []
-            _upsert_sem = asyncio.Semaphore(10)
+            total_batches = (len(chunk_items) + batch_size - 1) // batch_size
 
-            async def _upsert_one(cid: str, cdata: dict) -> None:
-                async with _upsert_sem:
-                    try:
-                        await self.lightrag.chunks_vdb.upsert({cid: cdata})
-                    except Exception as chunk_err:
-                        failed_ids.append(cid)
-                        self.logger.warning(
-                            f"Chunk {cid[:20]}... embedding failed "
-                            f"(skipped): {chunk_err}"
-                        )
-
-            await asyncio.gather(
-                *(_upsert_one(cid, cdata) for cid, cdata in chunks.items())
-            )
+            for batch_idx in range(0, len(chunk_items), batch_size):
+                batch = dict(chunk_items[batch_idx:batch_idx + batch_size])
+                batch_num = batch_idx // batch_size + 1
+                try:
+                    await self.lightrag.chunks_vdb.upsert(batch)
+                    self.logger.debug(
+                        f"Batch {batch_num}/{total_batches}: embedded {len(batch)} chunks"
+                    )
+                except Exception as batch_err:
+                    self.logger.warning(
+                        f"Batch {batch_num}/{total_batches} failed ({batch_err}), "
+                        f"retrying individually..."
+                    )
+                    # Fallback: retry each chunk in the failed batch individually
+                    for cid, cdata in batch.items():
+                        try:
+                            await self.lightrag.chunks_vdb.upsert({cid: cdata})
+                        except Exception as chunk_err:
+                            failed_ids.append(cid)
+                            self.logger.warning(
+                                f"Chunk {cid[:20]}... embedding failed "
+                                f"(skipped): {chunk_err}"
+                            )
 
             if failed_ids:
                 self.logger.warning(
@@ -1391,8 +1525,9 @@ class ProcessorMixin:
                     f"embedding errors"
                 )
             else:
-                self.logger.debug(
-                    f"Stored {len(chunks)} multimodal chunks to storage"
+                self.logger.info(
+                    f"Stored {len(chunks)} multimodal chunks to storage "
+                    f"({total_batches} batches, batch_size={batch_size})"
                 )
 
         except Exception as e:
@@ -1447,7 +1582,7 @@ class ProcessorMixin:
             entity_data = {
                 "entity_name": entity_name,
                 "entity_type": entity_info.get("entity_type", content_type),
-                "content": entity_info.get("summary", description),
+                "content": f"{entity_name}\n{entity_info.get('summary', description)}",
                 "source_id": chunk_id,
                 "file_path": file_ref,
             }
@@ -1716,15 +1851,29 @@ class ProcessorMixin:
             )
             return 0
 
+        # Compute entity degrees from edges in one shot (avoids N node_degree calls)
+        degree_map: dict[str, int] = {}
+        try:
+            all_edges = await graph.get_all_edges()
+            if all_edges:
+                for edge in all_edges:
+                    src = edge.get("source", "")
+                    tgt = edge.get("target", "")
+                    if src:
+                        degree_map[src] = degree_map.get(src, 0) + 1
+                    if tgt:
+                        degree_map[tgt] = degree_map.get(tgt, 0) + 1
+        except Exception as e:
+            self.logger.warning(
+                "Failed to enumerate edges for degree computation: %s", e
+            )
+
         to_remove = []
         for node_data in all_nodes:
             node_id = node_data.get("entity_id") or node_data.get("entity_name", "")
             if not node_id:
                 continue
-            try:
-                degree = await graph.node_degree(node_id)
-            except Exception:
-                degree = 0
+            degree = degree_map.get(node_id, 0)
             if degree < min_degree:
                 to_remove.append(node_id)
 
@@ -1769,16 +1918,16 @@ class ProcessorMixin:
             try:
                 doc_data = await self.lightrag.full_entities.get_by_id(doc_id)
                 if doc_data:
-                    doc_entities = doc_data.get("entities", [])
+                    doc_entities = doc_data.get("entity_names", [])
                     if doc_entities:
                         remove_set = set(to_remove)
                         filtered = [
                             e
                             for e in doc_entities
-                            if e.get("entity_name") not in remove_set
+                            if e not in remove_set
                         ]
                         if len(filtered) != len(doc_entities):
-                            doc_data["entities"] = filtered
+                            doc_data["entity_names"] = filtered
                             await self.lightrag.full_entities.upsert(
                                 {doc_id: doc_data}
                             )
@@ -1801,6 +1950,11 @@ class ProcessorMixin:
         try:
             # Get current document status
             current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
+
+            # Register chunk → doc source mappings for citation tracing
+            file_path = current_doc_status.get("file_path", "") if current_doc_status else ""
+            if file_path and chunk_ids:
+                self._register_chunk_sources(doc_id, file_path, chunk_ids)
 
             if current_doc_status:
                 existing_chunks_list = current_doc_status.get("chunks_list", [])
@@ -2062,6 +2216,19 @@ class ProcessorMixin:
                     status=DocStatus.HANDLING,
                     error_msg="",
                 )
+                # Register chunk → doc source mappings for citation tracing
+                # After text insertion, LightRAG populates chunks_list in doc_status
+                try:
+                    ds = await self.lightrag.doc_status.get_by_id(doc_id)
+                    if ds and ds.get("chunks_list"):
+                        self._register_chunk_sources(
+                            doc_id,
+                            file_path,  # use full path for file_path field
+                            ds["chunks_list"],
+                        )
+                except Exception:
+                    pass  # Non-critical
+
                 if callback_manager is not None:
                     insert_duration = time.time() - insert_start
                     callback_manager.dispatch(
