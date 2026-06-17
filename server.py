@@ -46,6 +46,7 @@ from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc, logger as lightrag_logger
 from lightrag import QueryParam as LightRAGQueryParam
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.query import ConversationManager
 from raganything.workflow_executor import execute_workflow, RUNS_DIR, ExecutionContext
 from raganything.chunking import (
     recursive_chunking,
@@ -202,6 +203,7 @@ processing_tasks: dict[str, dict] = {}
 query_history: list[dict] = []
 processing_events: list[dict] = []
 ws_clients: list[WebSocket] = []
+conversation_manager: Optional[ConversationManager] = None
 
 KB_META_FILE = Path("./rag_storage_kb_meta.json")
 QUERY_HISTORY_FILE = Path("./query_history.json")
@@ -475,6 +477,10 @@ class QueryRequest(BaseModel):
     vlm_enhanced: bool = False
     only_need_context: bool = False
     agent_mode: Optional[str] = None  # "react" | "cot" | None（默认普通模式）
+    thread_id: str = ""  # 多轮对话会话 ID，空则单轮模式
+
+class ConversationCreateRequest(BaseModel):
+    title: str = "新对话"
 
 class PasteContentRequest(BaseModel):
     content: str
@@ -503,6 +509,20 @@ class BatchDeleteRequest(BaseModel):
 async def startup():
     # 初始化认证数据库
     await init_db()
+    # 初始化 ConversationManager（多轮对话上下文记忆）
+    global conversation_manager
+    conversations_file = os.getenv("CONVERSATIONS_FILE", "./conversations.json")
+    max_rounds = int(os.getenv("CONVERSATION_MAX_ROUNDS", "3"))
+    max_tokens = int(os.getenv("CONVERSATION_MAX_TOKENS", "2000"))
+    max_per_user = int(os.getenv("CONVERSATION_MAX_PER_USER", "50"))
+    conversation_manager = ConversationManager(
+        storage_path=conversations_file,
+        max_rounds=max_rounds,
+        max_tokens=max_tokens,
+        max_per_user=max_per_user,
+    )
+    await conversation_manager._load()
+    print(f"💬 ConversationManager: {conversation_manager.get_stats()}", flush=True)
     # 加载所有知识库元数据
     meta = load_kb_meta()
     # 迁移旧知识库：无 owner_id 的 KB 全部归管理员（user_id=1）
@@ -1963,6 +1983,27 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
         thread = mgr.create_conversation(agent_id, title="新对话", owner_id=current_user["id"])
         thread_id = thread.id
 
+    # ── 多轮对话上下文提取 ──
+    conv_history_text = ""
+    max_conv_rounds = int(os.getenv("CONVERSATION_MAX_ROUNDS", "3"))
+    max_conv_tokens = int(os.getenv("CONVERSATION_MAX_TOKENS", "2000"))
+    conv_thread = mgr.get_conversation(agent_id, thread_id)
+    if conv_thread and conv_thread.messages:
+        max_msgs = max_conv_rounds * 2
+        recent = conv_thread.messages[-max_msgs:]
+        lines = []
+        token_est = 0
+        for msg in reversed(recent):
+            role_label = "用户" if msg.get("role") == "user" else "助手"
+            line = f"{role_label}: {msg.get('content', '')[:500]}"
+            est = max(1, len(line) // 2)
+            if token_est + est > max_conv_tokens:
+                break
+            lines.insert(0, line)
+            token_est += est
+        if lines:
+            conv_history_text = "\n".join(lines)
+
     async def event_stream():
         global query_history
         log_queue: queue.Queue = queue.Queue()
@@ -1991,8 +2032,14 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 trace_steps = []
 
                 if agent_mode == "react":
-                    # ReAct 流式路径
-                    async for event in agentic.run_stream(req.query):
+                    # ReAct 流式路径 — 注入对话历史
+                    react_query = req.query
+                    if conv_history_text:
+                        react_query = (
+                            f"## 对话历史\n{conv_history_text}\n\n"
+                            f"## 当前问题\n{req.query}"
+                        )
+                    async for event in agentic.run_stream(react_query):
                         if event.type == "thinking":
                             sd = {
                                 "step": event.step or 0,
@@ -2020,6 +2067,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                         ) or ""
                     except Exception:
                         pass
+                    # 注入对话历史到检索上下文前方
+                    if conv_history_text and cot_context:
+                        cot_context = (
+                            f"## 对话历史\n{conv_history_text}\n\n"
+                            f"## 检索文档\n{cot_context}"
+                        )
                     agent_result = await agentic.run_with_context(req.query, cot_context)
                     full_answer = agent_result.answer
                     for s in agent_result.trace:
@@ -2177,7 +2230,18 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
 
             # Step 2: 构造 prompt 并使用智能体配置的模型
             sp = (agent.system_prompt or "") + ("\n你是知识库助手。只使用检索内容回答。" if agent.use_default_prompt else "")
-            final_prompt = f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n## 检索内容\n{ctx}\n\n## 问题\n{req.query}\n\n## 要求\n从检索内容提取事实和数据。有数字必须引用。没有就说未找到。不编造。"
+            conv_part = (
+                f"## 对话历史\n{conv_history_text}\n\n"
+                if conv_history_text else ""
+            )
+            final_prompt = (
+                f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n"
+                f"{conv_part}"
+                f"## 检索内容\n{ctx}\n\n"
+                f"## 问题\n{req.query}\n\n"
+                f"## 要求\n"
+                f"从检索内容提取事实和数据。结合对话历史理解上下文。有数字必须引用。没有就说未找到。不编造。"
+            )
 
             # 使用智能体配置的模型，而非 .env 全局模型
             use_model = agent.llm_model or LLM_MODEL
@@ -2335,6 +2399,7 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 "kb": kb,
                 "user_id": current_user["id"],
                 "username": current_user["username"],
+                "thread_id": req.thread_id,
             }
             query_history.insert(0, record)
             if len(query_history) > 100:
@@ -2344,6 +2409,32 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
             return record
 
         # ── 普通 RAG 模式（原有逻辑）──
+        # 多轮对话上下文：获取会话历史
+        conv_history_for_rewrite = []
+        conversation_context = ""
+        active_thread_id = ""
+
+        if req.thread_id and conversation_manager:
+            active_thread_id = req.thread_id
+            # 确保会话存在（不存在则自动创建）
+            thread = await conversation_manager.get_or_create_thread(
+                current_user["id"], thread_id=req.thread_id,
+                title=req.query[:50],
+            )
+            if "error" in thread:
+                active_thread_id = ""  # 会话超限则降级为单轮
+            else:
+                active_thread_id = thread["id"]
+                conv_history_for_rewrite = (
+                    await conversation_manager.get_context_for_rewrite(
+                        active_thread_id
+                    )
+                )
+                ctx_result = await conversation_manager.get_context(
+                    active_thread_id, req.query
+                )
+                conversation_context = ctx_result.history_text
+
         # 查询改写（可选，ENABLE_QUERY_REWRITE=true 开启）
         rewritten_query = req.query
         if os.getenv("ENABLE_QUERY_REWRITE", "false").lower() == "true":
@@ -2351,6 +2442,7 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 from raganything.query import rewrite_query
                 rewritten_query = await rewrite_query(
                     req.query, instance.llm_model_func,
+                    history=conv_history_for_rewrite if conv_history_for_rewrite else None,
                     api_key=API_KEY, base_url=BASE_URL,
                 )
                 if rewritten_query != req.query:
@@ -2407,19 +2499,23 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
 
         # Step 5: 回退到纯文本 LLM
         if result is None:
-            final_prompt = f"""以下是知识库中检索到的相关内容。你必须严格基于这些内容回答问题，不得使用你自己的知识。
-
-## 检索内容
-{ctx}
-
-## 问题
-{req.query}
-
-## 回答要求
-- 从检索内容中提取具体事实和数据来回答
-- 有具体数字必须引用
-- 如果检索内容中没有答案，回答"知识库中未找到相关信息"
-- 不要编造或补充检索内容中没有的信息"""
+            # 构建对话历史区（如有多轮上下文）
+            conv_part = (
+                f"## 对话历史\n{conversation_context}\n\n"
+                if conversation_context else ""
+            )
+            final_prompt = (
+                f"以下是知识库中检索到的相关内容。你必须严格基于这些内容回答问题，不得使用你自己的知识。\n\n"
+                f"{conv_part}"
+                f"## 检索内容\n{ctx}\n\n"
+                f"## 问题\n{req.query}\n\n"
+                f"## 回答要求\n"
+                f"- 从检索内容中提取具体事实和数据来回答\n"
+                f"- 结合对话历史理解上下文（如有），解析指代词\n"
+                f"- 有具体数字必须引用\n"
+                f"- 如果检索内容中没有答案，回答\"知识库中未找到相关信息\"\n"
+                f"- 不要编造或补充检索内容中没有的信息"
+            )
 
             llm_response = await instance.llm_model_func(
                 final_prompt,
@@ -2428,6 +2524,18 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 temperature=0,
             )
             result = llm_response if isinstance(llm_response, str) else str(llm_response)
+
+        # 保存对话消息到会话（多轮上下文记忆）
+        if active_thread_id and conversation_manager and result:
+            try:
+                await conversation_manager.add_message(
+                    active_thread_id, "user", req.query
+                )
+                await conversation_manager.add_message(
+                    active_thread_id, "assistant", result
+                )
+            except Exception as _conv_err:
+                print(f"[CONV] 保存消息失败: {_conv_err}", flush=True)
 
         # 从VLM回答中提取实际引用的图片
         referenced = []
@@ -2452,6 +2560,7 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
             "kb": kb,
             "user_id": current_user["id"],
             "username": current_user["username"],
+            "thread_id": active_thread_id,
         }
         query_history.insert(0, record)
         if len(query_history) > 100:
@@ -2496,6 +2605,65 @@ async def clear_query_history(current_user: dict = Depends(get_current_user)):
     save_query_history()
     await add_event("history_cleared", count=count, user_id=current_user["id"])
     return {"status": "cleared", "count": count}
+
+
+# ── 💬 多轮对话会话管理 ─────────────────────────────────
+
+@app.get("/api/conversations")
+async def list_conversations_rag(current_user: dict = Depends(get_current_user)):
+    """列出当前用户的会话列表"""
+    if conversation_manager is None:
+        return {"conversations": []}
+    threads = await conversation_manager.list_threads(current_user["id"])
+    return {
+        "conversations": [
+            {
+                "id": t.id,
+                "title": t.title,
+                "message_count": t.message_count,
+                "created_at": t.created_at,
+                "updated_at": t.updated_at,
+            }
+            for t in threads
+        ]
+    }
+
+
+@app.post("/api/conversations")
+async def create_conversation_rag(
+    req: ConversationCreateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """创建新会话"""
+    if conversation_manager is None:
+        raise HTTPException(500, "ConversationManager 未初始化")
+    thread = await conversation_manager.get_or_create_thread(
+        current_user["id"], title=req.title,
+    )
+    if "error" in thread:
+        raise HTTPException(400, thread["error"])
+    return {
+        "thread_id": thread["id"],
+        "title": thread["title"],
+        "created_at": thread["created_at"],
+    }
+
+
+@app.delete("/api/conversations/{thread_id}")
+async def delete_conversation_rag(
+    thread_id: str,
+    current_user: dict = Depends(get_current_user),
+):
+    """删除指定会话（需归属校验）"""
+    if conversation_manager is None:
+        raise HTTPException(500, "ConversationManager 未初始化")
+    # 归属校验
+    if not await conversation_manager.thread_exists(thread_id, current_user["id"]):
+        raise HTTPException(404, "会话不存在")
+    success = await conversation_manager.delete_thread(thread_id)
+    if success:
+        return {"status": "deleted", "thread_id": thread_id}
+    raise HTTPException(404, "会话不存在")
 
 
 # ── 日志捕获器（用于流式查询思考过程）────────────────
@@ -2561,6 +2729,22 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
 
             start_time = time.time()
 
+            # 多轮对话上下文
+            stream_conv_context = ""
+            stream_thread_id = ""
+            if req.thread_id and conversation_manager:
+                stream_thread_id = req.thread_id
+                thread = await conversation_manager.get_or_create_thread(
+                    current_user["id"], thread_id=req.thread_id,
+                    title=req.query[:50],
+                )
+                if "error" not in thread:
+                    stream_thread_id = thread["id"]
+                    ctx_result = await conversation_manager.get_context(
+                        stream_thread_id, req.query
+                    )
+                    stream_conv_context = ctx_result.history_text
+
             # Step 1: 获取检索上下文
             ctx_task = asyncio.ensure_future(
                 instance.aquery(req.query, mode=req.mode, vlm_enhanced=False,
@@ -2603,7 +2787,18 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
             # Step 2: 构造 prompt 并流式调用 LLM
-            final_prompt = f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n## 检索内容\n{ctx}\n\n## 问题\n{req.query}\n\n## 要求\n从检索内容提取事实和数据。有数字必须引用。没有就说未找到。不编造。"
+            stream_conv_part = (
+                f"## 对话历史\n{stream_conv_context}\n\n"
+                if stream_conv_context else ""
+            )
+            final_prompt = (
+                f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n"
+                f"{stream_conv_part}"
+                f"## 检索内容\n{ctx}\n\n"
+                f"## 问题\n{req.query}\n\n"
+                f"## 要求\n"
+                f"从检索内容提取事实和数据。结合对话历史理解上下文。有数字必须引用。没有就说未找到。不编造。"
+            )
 
             llm_response = await instance.llm_model_func(
                 final_prompt,
@@ -2628,11 +2823,23 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
             elapsed = round(time.time() - start_time, 2)
             record = {"id": query_id, "query": req.query, "mode": req.mode, "answer": full_answer,
                       "time": datetime.now().isoformat(), "elapsed": elapsed, "kb": kb,
-                      "user_id": current_user["id"], "username": current_user["username"]}
+                      "user_id": current_user["id"], "username": current_user["username"],
+                      "thread_id": stream_thread_id}
             query_history.insert(0, record)
             if len(query_history) > 100: query_history = query_history[:100]
             save_query_history()
-            yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'images': stream_images}, ensure_ascii=False)}\n\n"
+            # 保存对话消息到会话
+            if stream_thread_id and conversation_manager and full_answer:
+                try:
+                    await conversation_manager.add_message(
+                        stream_thread_id, "user", req.query
+                    )
+                    await conversation_manager.add_message(
+                        stream_thread_id, "assistant", full_answer
+                    )
+                except Exception as _conv_err:
+                    print(f"[CONV-STREAM] 保存消息失败: {_conv_err}", flush=True)
+            yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'images': stream_images, 'thread_id': stream_thread_id}, ensure_ascii=False)}\n\n"
 
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"

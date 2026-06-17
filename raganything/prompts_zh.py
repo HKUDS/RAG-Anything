@@ -434,3 +434,13 @@ PROMPTS_ZH["QUERY_GENERIC_ANALYST_SYSTEM"] = (
 PROMPTS_ZH["QUERY_ENHANCEMENT_SUFFIX"] = (
     "\n\n请基于用户查询和提供的多模态内容信息，提供全面的回答。"
 )
+
+# 对话上下文模板（多轮对话记忆）
+PROMPTS_ZH["CONVERSATION_CONTEXT_TEMPLATE"] = (
+    "## 对话历史\n"
+    "{history}\n\n"
+    "## 检索到的相关文档\n"
+    "{documents}\n\n"
+    "## 当前问题\n"
+    "{query}"
+)

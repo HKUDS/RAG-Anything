@@ -503,3 +503,13 @@ PROMPTS["QUERY_GENERIC_ANALYST_SYSTEM"] = (
 PROMPTS["QUERY_ENHANCEMENT_SUFFIX"] = (
     "\n\nPlease provide a comprehensive answer based on the user query and the provided multimodal content information."
 )
+
+# Conversation context template (for multi-turn dialogue memory)
+PROMPTS["CONVERSATION_CONTEXT_TEMPLATE"] = (
+    "## Conversation History\n"
+    "{history}\n\n"
+    "## Retrieved Documents\n"
+    "{documents}\n\n"
+    "## Current Question\n"
+    "{query}"
+)
