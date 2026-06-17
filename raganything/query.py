@@ -582,21 +582,28 @@ class QueryMixin:
                     self.logger.warning("Rerank enabled but no API key found")
 
             # Stage 2: Build context from retrieved chunks with entity annotation
-            # Collect all entity names from the knowledge graph for cross-referencing
-            # Note: entity names are stored as graph node IDs, not in "entity_name" attr
-            all_entity_names = set()
+            # Collect entity names + types from the knowledge graph, filtered
+            # by type relevance to avoid noise (framework names, generic terms, etc.)
+            RELEVANT_ENTITY_TYPES = {
+                "模块", "功能", "组件", "系统", "子系统",
+                "MODULE", "FUNCTION", "COMPONENT", "SYSTEM",
+            }
+            entity_data = {}  # name -> type
             try:
                 graph = getattr(hybrid_engine._lightrag, "chunk_entity_relation_graph", None)
                 if graph:
                     all_nodes = await graph.get_all_nodes()
                     for node in (all_nodes or []):
-                        # LightRAG stores entity name as the node ID (key "id")
-                        # The "entity_name" attr may also exist as fallback
                         name = node.get("entity_name") or node.get("id", "")
+                        etype = (node.get("entity_type") or node.get("type", "")).strip()
                         if name and isinstance(name, str) and len(name) >= 4:
-                            all_entity_names.add(name)
+                            entity_data[name] = etype
             except Exception as e:
                 self.logger.warning(f"Failed to collect entity names: {e}")
+
+            # Build entity name set for matching: include ALL entity types first,
+            # then prioritize RELEVANT_ENTITY_TYPES when displaying
+            all_entity_names = set(entity_data.keys())
 
             # Enrich chunks with source document info for citation tracing
             chunk_ids = [c.chunk_id for c in chunks[:15]]
@@ -613,16 +620,26 @@ class QueryMixin:
             for i, chunk in enumerate(chunks[:15]):  # top-15 for context window
                 sources_str = ",".join(chunk.sources) if chunk.sources else "unknown"
                 doc_label = f"文档：{chunk.document_name}" if chunk.document_name else ""
-                # Annotate ALL chunks with entity names found in their content
+                # Annotate chunks with relevant entity names using word-boundary matching
                 entity_annotation = ""
-                matched_entities = []
+                matched_relevant = []   # entities with relevant types (模块/功能/组件/系统)
+                matched_other = []      # other entities (fallback)
                 chunk_lower = chunk.content.lower()
                 for entity_name in all_entity_names:
-                    if entity_name.lower() in chunk_lower:
-                        matched_entities.append(entity_name)
-                if matched_entities:
-                    # Keep at most 5 entity names to avoid clutter
-                    display_entities = matched_entities[:5]
+                    ename_lower = entity_name.lower()
+                    # Use word-boundary matching to reduce false positives
+                    # (e.g. "Python" won't match "python" inside "cpython" or random text)
+                    pattern = re.compile(r'(?<![a-zA-Z0-9一-鿿])' + re.escape(ename_lower) + r'(?![a-zA-Z0-9一-鿿])')
+                    if pattern.search(chunk_lower):
+                        etype = entity_data.get(entity_name, "")
+                        if etype in RELEVANT_ENTITY_TYPES:
+                            matched_relevant.append(entity_name)
+                        else:
+                            matched_other.append(entity_name)
+
+                # Prioritize relevant-type entities, fall back to others
+                display_entities = (matched_relevant[:5] or matched_other[:5])
+                if display_entities:
                     entity_annotation = (
                         f"（涉及实体：{', '.join(display_entities)}）"
                     )
