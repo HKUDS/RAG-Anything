@@ -1590,6 +1590,18 @@ class ProcessorMixin:
                 content_type, original_item, description
             )
 
+            # Truncate before computing chunk_id, MUST match
+            # _convert_to_lightrag_chunks_type_aware (line ~1350).
+            # Otherwise entity source_id points to a hash of untruncated content
+            # while text_chunks_db stores the chunk under the hash of truncated
+            # content, causing every chunk lookup to return None.
+            _MAX_CHUNK_CHARS = 8000
+            if len(formatted_chunk_content) > _MAX_CHUNK_CHARS:
+                formatted_chunk_content = (
+                    formatted_chunk_content[:_MAX_CHUNK_CHARS]
+                    + "\n\n[内容已截断，超出嵌入模型长度限制]"
+                )
+
             # Generate chunk_id using the formatted content (same as in _convert_to_lightrag_chunks)
             chunk_id = compute_mdhash_id(formatted_chunk_content, prefix="chunk-")
 

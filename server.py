@@ -48,6 +48,13 @@ from lightrag import QueryParam as LightRAGQueryParam
 from raganything import RAGAnything, RAGAnythingConfig
 from raganything.prompt import ANSWER_FORMAT_INSTRUCTION, INLINE_QUOTE_INSTRUCTION
 from raganything.query import ConversationManager
+
+# Hint appended to LLM prompt when context has no text chunks (only entities/relations)
+_DEGRADED_HINT = (
+    "\n\n⚠️ 注意：本次检索未能获取到关联的文档文本内容，"
+    "以下回答仅基于实体名称和关系路径，可能不够详细。"
+    "如果信息不足，请如实说明。"
+)
 from raganything.workflow_executor import execute_workflow, RUNS_DIR, ExecutionContext
 from raganything.chunking import (
     recursive_chunking,
@@ -2367,12 +2374,17 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
                 else INLINE_QUOTE_INSTRUCTION
             )
+            # Detect degraded context
+            _has_chunks = "[来源 " in ctx and len(ctx.strip()) > 200
+            if not _has_chunks and ctx.strip():
+                print(f"[CHUNK_DEGRADED] agent_query_stream: context has no text chunks.", flush=True)
             final_prompt = (
                 f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n"
                 f"{conv_part}"
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
                 f"{_cit_inst}"
+                f"{'' if _has_chunks else _DEGRADED_HINT}"
             )
 
             # 使用智能体配置的模型，而非 .env 全局模型
@@ -2642,6 +2654,11 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
                 else INLINE_QUOTE_INSTRUCTION
             )
+            # Detect degraded context: has entity/relation data but no text chunks
+            _has_chunks = "[来源 " in ctx and len(ctx.strip()) > 200
+            if not _has_chunks and ctx.strip():
+                print(f"[CHUNK_DEGRADED] query_rag: context has no text chunks. "
+                      f"LLM answer quality may be degraded.", flush=True)
             final_prompt = (
                 f"以下是知识库中检索到的相关内容。你必须严格基于这些内容回答问题，不得使用你自己的知识。\n\n"
                 f"{conv_part}"
@@ -2649,6 +2666,7 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
                 f"{_citation_inst}"
+                f"{'' if _has_chunks else _DEGRADED_HINT}"
             )
 
             llm_response = await instance.llm_model_func(
@@ -2941,6 +2959,10 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
                 ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
                 else INLINE_QUOTE_INSTRUCTION
             )
+            # Detect degraded context
+            _has_chunks = "[来源 " in ctx and len(ctx.strip()) > 200
+            if not _has_chunks and ctx.strip():
+                print(f"[CHUNK_DEGRADED] query_rag_stream: context has no text chunks.", flush=True)
             final_prompt = (
                 f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n"
                 f"{stream_conv_part}"
@@ -2948,6 +2970,7 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
                 f"{_citation_inst}"
+                f"{'' if _has_chunks else _DEGRADED_HINT}"
             )
 
             llm_response = await instance.llm_model_func(

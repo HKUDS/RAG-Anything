@@ -21,6 +21,13 @@ from pathlib import Path
 from lightrag import QueryParam
 from lightrag.utils import always_get_an_event_loop
 from raganything.prompt import PROMPTS, INLINE_QUOTE_INSTRUCTION, ANSWER_FORMAT_INSTRUCTION
+
+# Hint appended to LLM prompt when text chunk resolution fails (chunks=0)
+DEGRADED_CONTEXT_HINT = (
+    "\n\n⚠️ 注意：本次检索未能获取到关联的文档文本内容（仅获取到实体名称和关系路径），"
+    "以下回答可能不够详细。请优先引用实体关系信息，并明确告知用户哪些信息来源自实体名而非原文。"
+    "如果信息不足以回答问题，请如实说明。"
+)
 from raganything.citation_parser import has_citations
 from raganything.utils import (
     get_processor_for_type,
@@ -776,12 +783,21 @@ class QueryMixin:
                 ANSWER_FORMAT_INSTRUCTION if self.config.enforce_citation
                 else INLINE_QUOTE_INSTRUCTION
             )
+            # Detect degraded context: has entities/relations but no text chunks
+            has_chunks = "[来源 " in context and len(context.strip()) > 200
             prompt = (
                 f"以下是知识库中检索到的相关内容。你必须严格基于这些内容回答问题，不得使用你自己的知识。\n\n"
                 f"## 检索内容\n{context}\n\n"
                 f"## 问题\n{query}\n\n"
                 f"{citation_instruction}"
+                f"{'' if has_chunks else DEGRADED_CONTEXT_HINT}"
             )
+
+            if not has_chunks and context.strip():
+                self.logger.warning(
+                    f"[RRF_DEGRADED] Context has no text chunks. "
+                    f"LLM answer quality may be degraded."
+                )
 
             if self.llm_model_func is None:
                 self.logger.error("llm_model_func is None, returning context only")
@@ -970,6 +986,8 @@ class QueryMixin:
             ANSWER_FORMAT_INSTRUCTION if self.config.enforce_citation
             else INLINE_QUOTE_INSTRUCTION
         )
+        # Detect degraded context: has entities/relations but no text chunks
+        has_chunks = "Content:" in context and len(context.strip()) > 200
         prompt = (
             f"以下是知识图谱遍历检索结果。你必须严格基于这些内容回答问题，不得使用你自己的知识。\n\n"
             f"图谱统计：共 {stats.get('total_entities', '?')} 个实体，"
@@ -979,7 +997,14 @@ class QueryMixin:
             f"## 问题\n{query}\n\n"
             f"请基于检索内容回答，回答中可引用相关实体关系。\n\n"
             f"{citation_instruction}"
+            f"{'' if has_chunks else DEGRADED_CONTEXT_HINT}"
         )
+
+        if not has_chunks and context.strip():
+            self.logger.warning(
+                f"[GRAPH_DEGRADED] Graph context has entity paths but no text chunks. "
+                f"LLM answer quality may be degraded."
+            )
 
         answer = await self.llm_model_func(
             prompt, system_prompt=system_prompt
