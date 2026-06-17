@@ -2241,6 +2241,20 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 else:
                     agent_images = agent_images[:3]
 
+                # Citation fallback for agent path: collect context from trace/COT
+                _agent_ctx = ""
+                if agent_mode == "cot":
+                    _agent_ctx = cot_context
+                else:
+                    for ts in trace_steps:
+                        if ts.get("observation"):
+                            _agent_ctx += ts["observation"] + "\n"
+                if instance.config.enforce_citation and full_answer and _agent_ctx:
+                    _cit_block = _build_citation_block(_agent_ctx, full_answer)
+                    if _cit_block:
+                        full_answer += _cit_block
+                        yield f"data: {json.dumps({'type': 'token', 'content': _cit_block}, ensure_ascii=False)}\n\n"
+
                 # 保存到对话线程
                 mgr.add_message(agent_id, thread_id, {
                     "role": "user", "content": req.query,
