@@ -358,6 +358,43 @@ async def get_kb(name: str = None) -> RAGAnything:
         print(f"[KB] 初始化知识库实例: {name} workspace={target}", flush=True)
     return kb_instances[name]
 
+
+async def _get_kb_doc_list(kb: str) -> str:
+    """获取知识库中可用文档的名称列表，用于提示词中的来源标注。
+
+    从 doc_status 和 chunk_source_cache 中提取文档名，去重后返回
+    格式化的列表字符串。
+    """
+    try:
+        instance = await get_kb(kb)
+        doc_names = set()
+        # Try chunk source cache first (faster, has document_name)
+        if hasattr(instance, '_chunk_source_cache') and instance._chunk_source_cache:
+            for info in instance._chunk_source_cache.values():
+                name = info.get('document_name', '')
+                if name and name != 'unknown':
+                    doc_names.add(name)
+        # Fallback: query doc_status
+        if not doc_names and instance.lightrag:
+            try:
+                store = instance.lightrag.doc_status
+                if hasattr(store, '_data'):
+                    async with store._storage_lock:
+                        for ds in store._data.values():
+                            fp = ds.get('file_path', '')
+                            if fp:
+                                doc_names.add(fp)
+            except Exception:
+                pass
+
+        if not doc_names:
+            return ""
+
+        lines = [f"- {name}" for name in sorted(doc_names)[:10]]
+        return "## 可用文档\n" + "\n".join(lines)
+    except Exception:
+        return ""
+
 async def ws_broadcast(data: dict):
     """向所有 WebSocket 客户端广播消息"""
     dead = []
@@ -2540,9 +2577,11 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                 f"## 对话历史\n{conversation_context}\n\n"
                 if conversation_context else ""
             )
+            doc_list = await _get_kb_doc_list(kb)
             final_prompt = (
                 f"以下是知识库中检索到的相关内容。你必须严格基于这些内容回答问题，不得使用你自己的知识。\n\n"
                 f"{conv_part}"
+                f"{doc_list}\n\n"
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
                 f"## 回答要求\n"
@@ -2832,9 +2871,11 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
                 f"## 对话历史\n{stream_conv_context}\n\n"
                 if stream_conv_context else ""
             )
+            stream_doc_list = await _get_kb_doc_list(kb)
             final_prompt = (
                 f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n"
                 f"{stream_conv_part}"
+                f"{stream_doc_list}\n\n"
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
                 f"## 要求\n"
