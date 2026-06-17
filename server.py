@@ -392,7 +392,12 @@ async def _get_kb_doc_list(kb: str) -> str:
             return ""
 
         lines = [f"- {name}" for name in sorted(doc_names)[:10]]
-        return "## 可用文档\n" + "\n".join(lines)
+        return (
+            "## 可用文档\n"
+            "以下为知识库中的文档列表。检索内容中每个 [来源 N] 均来自其中一篇文档，"
+            "请在 `【引用来源】` 块中标注对应的文档名。\n"
+            + "\n".join(lines)
+        )
     except Exception:
         return ""
 
