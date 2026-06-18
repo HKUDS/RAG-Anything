@@ -49,6 +49,9 @@ async def get_current_user(
     except Exception:
         raise HTTPException(401, "Token 格式无效")
 
+    if payload is None:
+        raise HTTPException(401, "Token 无效或已过期")
+
     user_id = payload.get("user_id")
     if not user_id:
         raise HTTPException(401, "Token 无效或已过期")
