@@ -6,7 +6,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional
 
 logger = logging.getLogger(__name__)

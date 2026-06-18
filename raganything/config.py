@@ -88,12 +88,12 @@ class RAGAnythingConfig:
     video_sample_rate: float = field(
         default=get_env_value("VIDEO_SAMPLE_RATE", 1.0, float)
     )
-    """Frames per second to extract from video. 0.5 = one frame every 2 seconds. Lower values reduce VLM API costs."""
+    """Frames per second to extract from video."""
 
     video_max_duration: int = field(
         default=get_env_value("VIDEO_MAX_DURATION", 3600, int)
     )
-    """Maximum video duration in seconds to process. Videos exceeding this are truncated. Default 3600s (1 hour)."""
+    """Maximum video duration in seconds to process."""
 
     video_max_frames: int = field(
         default=get_env_value("VIDEO_MAX_FRAMES", 60, int)
@@ -113,12 +113,12 @@ class RAGAnythingConfig:
     max_transcript_tokens: int = field(
         default=get_env_value("MAX_TRANSCRIPT_TOKENS", 4000, int)
     )
-    """Maximum number of tokens for audio transcript in video chunk context."""
+    """Maximum number of tokens for audio transcript."""
 
     video_max_concurrent: int = field(
         default=get_env_value("VIDEO_MAX_CONCURRENT", 2, int)
     )
-    """Maximum number of concurrent video processing tasks. Video processing is resource-intensive."""
+    """Maximum concurrent video processing tasks."""
 
     video_frame_concurrent: int = field(
         default=get_env_value("VIDEO_FRAME_CONCURRENT", 3, int)

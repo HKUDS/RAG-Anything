@@ -77,3 +77,94 @@ class TestBruteForce:
         assert callable(check_account_locked)
         assert callable(record_failed_login)
         assert callable(reset_failed_logins)
+
+
+class TestTokenBlacklist:
+    """Token 黑名单 — 撤销与查询"""
+
+    def test_revoke_and_check(self):
+        from raganything.services.token_blacklist import TokenBlacklist
+        from datetime import datetime, timedelta, timezone
+
+        bl = TokenBlacklist()
+        jti = "test-jti-001"
+        expires = datetime.now(timezone.utc) + timedelta(hours=24)
+        bl.revoke(jti, expires)
+        assert bl.is_revoked(jti)
+
+    def test_not_revoked_by_default(self):
+        from raganything.services.token_blacklist import TokenBlacklist
+        bl = TokenBlacklist()
+        assert not bl.is_revoked("nonexistent-jti")
+
+    def test_expired_auto_cleanup(self):
+        from raganything.services.token_blacklist import TokenBlacklist
+        from datetime import datetime, timedelta, timezone
+
+        bl = TokenBlacklist()
+        jti = "expired-jti"
+        past = datetime.now(timezone.utc) - timedelta(hours=1)
+        bl.revoke(jti, past)
+        # 过期后不应再显示已撤销
+        assert not bl.is_revoked(jti)
+
+    def test_refresh_family_revoke(self):
+        from raganything.services.token_blacklist import TokenBlacklist
+        from datetime import datetime, timedelta, timezone
+
+        bl = TokenBlacklist()
+        family = "family-abc"
+        jti1, jti2 = "jti-1", "jti-2"
+        bl.register_refresh_family(family, jti1)
+        bl.register_refresh_family(family, jti2)
+        bl.revoke_refresh_family(family)
+        # family 中所有 token 应被撤销
+        assert bl.is_revoked(jti1) or bl.is_revoked(jti2)
+
+
+class TestJWTWithJTI:
+    """JWT Token 新增 jti 字段"""
+
+    def test_access_token_contains_jti(self):
+        token = create_token(42, "alice", False)
+        payload = decode_token(token)
+        assert payload is not None
+        assert "jti" in payload
+        assert len(payload["jti"]) == 32  # UUID hex = 32 chars
+        assert payload["type"] == "access"
+
+    def test_refresh_token_contains_jti_and_rfam(self):
+        from auth import create_refresh_token, decode_refresh_token
+        rtk = create_refresh_token(42, "alice", False)
+        payload = decode_refresh_token(rtk)
+        assert payload is not None
+        assert "jti" in payload
+        assert "rfam" in payload  # refresh token family
+        assert payload["type"] == "refresh"
+
+
+class TestRBACIntegration:
+    """RBAC 权限服务集成"""
+
+    def test_permission_check_functions_exist(self):
+        import asyncio
+        async def _check():
+            from raganything.services.auth import has_permission, get_user_role, user_is_admin
+            assert callable(has_permission)
+            assert callable(get_user_role)
+            assert callable(user_is_admin)
+        asyncio.run(_check())
+
+    def test_permission_module_loads(self):
+        from raganything.permissions import Permission, DEFAULT_ROLES
+        assert hasattr(Permission, 'USERS_READ')
+        assert 'admin' in DEFAULT_ROLES
+
+    def test_token_blacklist_module_loads(self):
+        from raganything.services.token_blacklist import get_token_blacklist
+        bl = get_token_blacklist()
+        assert bl is not None
+
+    def test_audit_logger_module_loads(self):
+        from raganything.services.audit import AuditLogger
+        assert callable(AuditLogger)

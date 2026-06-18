@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
 """Diagnostic script v3: Full retrieval path test - no emoji"""
-import os, sys, json, asyncio, time
+import os
+import sys
+import json
+import asyncio
+import time
 
 # Force UTF-8 output on Windows
 sys.stdout.reconfigure(encoding='utf-8')

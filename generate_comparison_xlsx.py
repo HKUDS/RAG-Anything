@@ -3,7 +3,6 @@
 
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.utils import get_column_letter
 
 wb = openpyxl.Workbook()
 
@@ -382,5 +381,5 @@ wb.save(OUTPUT)
 print(f"OK: {OUTPUT}")
 print(f"Sheet 1: 功能对照表 ({len(DATA)} 行)")
 print(f"Sheet 2: RAG-Anything 独有能力 ({len(UNIQUE)} 项)")
-print(f"Sheet 3: 汇总统计")
+print("Sheet 3: 汇总统计")
 print(f"Sheet 4: 火山有但我们没有 ({len(GAPS)} 项)")

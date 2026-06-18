@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Database, MessageSquare, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, BarChart3, Wrench, GitBranch } from 'lucide-react'
+import { Database, MessageSquare, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, BarChart3, Wrench, GitBranch, ScrollText } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -13,6 +13,7 @@ import AgentChatPage from './pages/AgentChatPage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import AdminUsersPage from './pages/AdminUsersPage'
+import AdminAuditLogsPage from './pages/AdminAuditLogsPage'
 import ManufacturingDashboardPage from './pages/ManufacturingDashboardPage'
 import ManufacturingKnowledgePage from './pages/ManufacturingKnowledgePage'
 import ManufacturingAgentPage from './pages/ManufacturingAgentPage'
@@ -214,6 +215,17 @@ export default function App() {
                 <span className="hidden sm:inline">用户管理</span>
               </NavLink>
             )}
+            {isAdmin && (
+              <NavLink
+                to="/admin/audit-logs"
+                className={({ isActive }) =>
+                  `topnav-link ${isActive ? 'active' : ''}`
+                }
+              >
+                <ScrollText size={15} />
+                <span className="hidden sm:inline">审计日志</span>
+              </NavLink>
+            )}
           </nav>
 
           {/* Right side: Stats + User */}
@@ -259,6 +271,7 @@ export default function App() {
                 <Route path="/settings" element={<ProtectedRoute><SettingsPage onToast={showToast} /></ProtectedRoute>} />
                 <Route path="/monitor" element={<ProtectedRoute><MonitorPage /></ProtectedRoute>} />
                 <Route path="/admin/users" element={<ProtectedRoute adminOnly><AdminUsersPage /></ProtectedRoute>} />
+                <Route path="/admin/audit-logs" element={<ProtectedRoute adminOnly><AdminAuditLogsPage /></ProtectedRoute>} />
                 <Route path="/manufacturing" element={<ProtectedRoute><ManufacturingDashboardPage /></ProtectedRoute>} />
                 <Route path="/manufacturing/knowledge" element={<ProtectedRoute><ManufacturingKnowledgePage /></ProtectedRoute>} />
                 <Route path="/manufacturing/agent" element={<ProtectedRoute><ManufacturingAgentPage /></ProtectedRoute>} />

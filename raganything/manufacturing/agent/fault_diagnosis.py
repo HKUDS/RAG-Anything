@@ -9,10 +9,9 @@
 """
 
 import logging
-from typing import Optional
 
 from ..knowledge_graph.models import (
-    DiagnosisResult, FaultCase, ConfidenceLevel,
+    ConfidenceLevel,
 )
 
 logger = logging.getLogger(__name__)

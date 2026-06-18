@@ -186,6 +186,7 @@ class TestRAGAnythingIntegration:
 
         from raganything import RAGAnything, RAGAnythingConfig
         import raganything.processor as processor_module
+        import raganything.utils as utils_module
         import asyncio
 
         config = RAGAnythingConfig()
@@ -235,7 +236,7 @@ class TestRAGAnythingIntegration:
         monkeypatch.setattr(rag, "_process_multimodal_content", fake_mm)
         monkeypatch.setattr(rag, "_mark_multimodal_processing_complete", fake_mark)
         monkeypatch.setattr(
-            processor_module, "insert_text_content", fake_insert_text_content
+            utils_module, "insert_text_content", fake_insert_text_content
         )
 
         asyncio.run(

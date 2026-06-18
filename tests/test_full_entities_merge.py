@@ -3,7 +3,7 @@ from pathlib import Path
 
 
 PROCESSOR_SOURCE = (
-    Path(__file__).resolve().parent.parent / "raganything" / "processor.py"
+    Path(__file__).resolve().parent.parent / "raganything" / "processor" / "embed_processor.py"
 )
 
 
@@ -12,14 +12,14 @@ def _load_merge_logic_function_source():
     module = ast.parse(source)
 
     for node in module.body:
-        if isinstance(node, ast.ClassDef) and node.name == "ProcessorMixin":
+        if isinstance(node, ast.ClassDef) and node.name == "EmbedProcessorMixin":
             for child in node.body:
                 if (
                     isinstance(child, ast.AsyncFunctionDef)
                     and child.name == "_store_multimodal_entities_to_full_entities"
                 ):
                     return ast.get_source_segment(source, child)
-    raise AssertionError("Target function not found in processor.py")
+    raise AssertionError("Target function not found in processor/embed_processor.py")
 
 
 def _merge_full_entities(current_doc_entities, entities_to_store, now=1234567890):

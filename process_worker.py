@@ -4,10 +4,14 @@
 
 用法: python process_worker.py --file=<path> --kb=<name> [--strategy=<name>]
 """
-import argparse, asyncio, json, os, sys, io
+import argparse
+import asyncio
+import json
+import os
+import sys
+import io
 from pathlib import Path
 from functools import partial
-from datetime import datetime
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
@@ -18,7 +22,7 @@ load_dotenv(dotenv_path=".env", override=False)
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
-from raganything.chunking import build_chunking_func, STRATEGY_META
+from raganything.chunking import STRATEGY_META
 from raganything.processor import get_pending_background_tasks
 
 API_KEY = os.getenv("LLM_BINDING_API_KEY")
@@ -34,7 +38,6 @@ CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
 import base64
 import pypdfium2 as pdfium
 from PIL import Image
-import httpx
 
 async def _vlm_ocr_document(file_path: str) -> str:
     """用千问 VL 模型对 PDF/图片做 OCR"""
@@ -268,7 +271,7 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
 
     try:
         if ext in PLAIN_TEXT_EXTS:
-            print(f"[WORKER] 纯文本模式，直接读取", flush=True)
+            print("[WORKER] 纯文本模式，直接读取", flush=True)
             print(f"[PROGRESS] phase=parsing status=start file={filename}", flush=True)
             with open(file_path, "r", encoding="utf-8", errors="replace") as f:
                 text_content = f.read()
@@ -290,7 +293,7 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                 print(f"[WORKER] Docling 处理失败: {err_msg[:150]}", flush=True)
                 # "Separator is not found" 错误：PDF 文本是大段连续内容，手动分行后重试
                 if "Separator is not found" in err_msg or "chunk exceed" in err_msg:
-                    print(f"[WORKER] 检测到大段连续文本，尝试预处理后重试...", flush=True)
+                    print("[WORKER] 检测到大段连续文本，尝试预处理后重试...", flush=True)
                     try:
                         # 读取 PDF 文本内容，每隔 400 字符插入换行
                         with open(safe_path, "rb") as f:
@@ -315,11 +318,11 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                                         new_lines.append(line)
                                 with open(mf, "w", encoding="utf-8") as f:
                                     f.write("\n".join(new_lines))
-                            print(f"[WORKER] 预处理完成，重试中...", flush=True)
+                            print("[WORKER] 预处理完成，重试中...", flush=True)
                             await rag.process_document_complete(safe_path, output_dir=output_dir)
                             docling_ok = True
                         else:
-                            print(f"[WORKER] 未找到解析输出文件，使用 VLM OCR 兜底", flush=True)
+                            print("[WORKER] 未找到解析输出文件，使用 VLM OCR 兜底", flush=True)
                     except Exception as e2:
                         print(f"[WORKER] 预处理失败: {e2}，使用 VLM OCR 兜底", flush=True)
 

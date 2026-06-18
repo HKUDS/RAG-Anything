@@ -102,7 +102,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .day-cell.done{background:var(--c-done-bg)}
 .day-cell.done:hover{background:rgba(16,185,129,0.12)}
 .day-cell.today-col{background:rgba(239,68,68,0.03)}
-.day-cell.past{opacity:0.5}
+.day-cell.past{background:rgba(239,68,68,0.08);border-left:2px solid rgba(239,68,68,0.3)}
 .day-cell .check{font-size:0.75rem;color:var(--c-done);font-weight:700}
 
 /* Progress bar */
@@ -124,6 +124,17 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 /* Toast */
 .toast{position:fixed;bottom:20px;right:20px;background:#1e293b;color:#fff;padding:10px 18px;border-radius:8px;font-size:0.72rem;z-index:200;opacity:0;transition:opacity 0.3s;pointer-events:none}
 .toast.show{opacity:1}
+
+/* Click animation */
+@keyframes cellPop{0%{transform:scale(1)}50%{transform:scale(1.15)}100%{transform:scale(1)}}
+.day-cell.popping .check{animation:cellPop 0.25s ease}
+.day-cell.popping{background:rgba(59,130,246,0.15) !important}
+
+/* Empty state */
+.empty-state{padding:3rem 1rem;text-align:center;color:var(--text3)}
+.empty-state .icon{font-size:2rem;margin-bottom:0.5rem;opacity:0.6}
+.empty-state .msg{font-size:0.8rem;font-weight:500;margin-bottom:0.25rem}
+.empty-state .hint{font-size:0.65rem}
 
 /* Responsive */
 @media(max-width:900px){.tbl-wrap{overflow-x:auto}.task-name{font-size:0.62rem}}
@@ -265,18 +276,17 @@ let appData = loadData();
 let currentWeek = 2; // Default to Week 2 (current)
 let undoStack = [];
 let collapsedModules = new Set();
+let lastToggledCell = null; // For click animation {taskId, weekId, dayIdx}
 
 function getDefaultData() {
   const data = { completions: {}, notes: {} };
-  MODULES.forEach(m => m.tasks.forEach(t => t.completions = []));
+  // Auto-populate completions for all tasks with status 'done' based on their planned week+day
   MODULES.forEach(m => m.tasks.forEach(t => {
-    if (t.status === 'done') {
-      // Auto-mark Week 1 tasks as completed on their planned days
-      if (t.week === 1) {
-        data.completions[t.id] = data.completions[t.id] || [];
-        if (!data.completions[t.id].includes(`1-${t.day}`)) {
-          data.completions[t.id].push(`1-${t.day}`);
-        }
+    if (t.status === 'done' && t.week >= 1 && t.day >= 1) {
+      data.completions[t.id] = data.completions[t.id] || [];
+      const key = `${t.week}-${t.day}`;
+      if (!data.completions[t.id].includes(key)) {
+        data.completions[t.id].push(key);
       }
     }
   }));
@@ -286,14 +296,81 @@ function getDefaultData() {
 function loadData() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const data = JSON.parse(raw);
+      return normalizeData(data);
+    }
   } catch(e) {}
   return getDefaultData();
 }
 
+function normalizeData(data) {
+  // 仅在数据为空（首次使用）时，为 status='done' 的任务填充完成记录
+  // 已有数据时尊重用户手工调整，不强制覆写
+  data.completions = data.completions || {};
+  const hasExistingData = Object.keys(data.completions).length > 0;
+  if (!hasExistingData) {
+    MODULES.forEach(m => m.tasks.forEach(t => {
+      if (t.status === 'done' && t.week >= 1 && t.day >= 1) {
+        data.completions[t.id] = data.completions[t.id] || [];
+        const key = `${t.week}-${t.day}`;
+        if (!data.completions[t.id].includes(key)) {
+          data.completions[t.id].push(key);
+        }
+      }
+    }));
+  }
+  data.notes = data.notes || {};
+  return data;
+}
+
 function saveData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
-  document.getElementById('saveIndicator').textContent = '💾 已自动保存 ' + new Date().toLocaleTimeString();
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    document.getElementById('saveIndicator').textContent = '💾 已自动保存 ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    document.getElementById('saveIndicator').textContent = '⚠️ 保存失败: ' + (e.message || '存储异常');
+    console.warn('保存数据失败:', e);
+  }
+}
+
+// ═══════════════════ DATE HELPERS ═══════════════════
+function parseWeekDate(weekId, dayIdx) {
+  // Parse "6.9" style date from WEEKS data, assume current year
+  const week = WEEKS.find(w => w.id === weekId);
+  if (!week) return null;
+  const dateStr = week.date.split(' — ')[0]; // "6.9"
+  const [month, day] = dateStr.split('.').map(Number);
+  const year = new Date().getFullYear();
+  // dayIdx is 1-5 (Mon-Fri); the start date is Monday
+  return new Date(year, month - 1, day + dayIdx - 1);
+}
+
+function isDatePast(weekId, dayIdx) {
+  const d = parseWeekDate(weekId, dayIdx);
+  if (!d) return false;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  d.setHours(0, 0, 0, 0);
+  return d < today;
+}
+
+function isDateToday(weekId, dayIdx) {
+  const d = parseWeekDate(weekId, dayIdx);
+  if (!d) return false;
+  const today = new Date();
+  return d.getFullYear() === today.getFullYear() &&
+         d.getMonth() === today.getMonth() &&
+         d.getDate() === today.getDate();
+}
+
+function getTodayWeekId() {
+  for (let d = 1; d <= 5; d++) {
+    for (const w of WEEKS) {
+      if (isDateToday(w.id, d)) return w.id;
+    }
+  }
+  return -1;
 }
 
 // ═══════════════════ RENDER ═══════════════════
@@ -318,8 +395,9 @@ function toggleCompletion(taskId, weekId, dayIdx) {
   undoStack.push({taskId, weekId, dayIdx, key, action: completions.includes(key) ? 'add' : 'remove'});
   if (undoStack.length > 50) undoStack.shift();
   document.getElementById('undoBtn').disabled = false;
-  saveData();
-  render();
+  lastToggledCell = {taskId, weekId, dayIdx};
+  render();  // 先刷新 UI，确保用户立即可见变化
+  saveData(); // 再持久化，存储失败不影响 UI 响应
 }
 
 function undoLast() {
@@ -332,8 +410,8 @@ function undoLast() {
     completions.push(last.key);
   }
   if (!undoStack.length) document.getElementById('undoBtn').disabled = true;
-  saveData();
   render();
+  saveData();
   showToast('已撤销: ' + last.key);
 }
 
@@ -366,14 +444,13 @@ function render() {
   const filterMod = document.getElementById('filterModule').value;
   const filterStat = document.getElementById('filterStatus').value;
 
-  // Stats
+  // Stats — completions 是唯一的"已完成"判断依据；status 仅表示计划状态
   let totalDone = 0, totalProgress = 0, totalPlanned = 0, totalPending = 0;
   MODULES.forEach(m => m.tasks.forEach(t => {
     const comps = getTaskCompletion(t.id);
-    if (comps.length > 0) totalDone++;
+    if (comps.length > 0) { totalDone++; }
     else if (t.status === 'progress') totalProgress++;
     else if (t.status === 'planned') totalPlanned++;
-    else if (t.status === 'done') totalDone++;
     else totalPending++;
   }));
   const total = totalDone + totalProgress + totalPlanned + totalPending;
@@ -394,9 +471,10 @@ function render() {
   }
 
   // Week tabs
+  const todayWeek = getTodayWeekId();
   document.getElementById('weekTabs').innerHTML = WEEKS.map(w => `
     <div class="week-tab ${w.id===currentWeek?'act':''}" onclick="switchWeek(${w.id})">
-      ${w.label}<br><span class="wk-label">${w.date}</span>
+      ${w.label}${w.id===todayWeek?' 📍':''}<br><span class="wk-label">${w.date}</span>
     </div>
   `).join('');
 
@@ -443,24 +521,41 @@ function render() {
         </td>`;
       for (let d = 1; d <= 5; d++) {
         const done = isCompleted(t.id, currentWeek, d);
-        const isFuture = t.week === 0; // 远期任务无具体日期
-        const isPast = !isFuture && (currentWeek === 1 || (currentWeek === 2 && d <= 3));
+        const isFutureDate = t.week === 0; // 远期任务无具体日期
+        const isPast = !isFutureDate && isDatePast(currentWeek, d);
+        const isToday = !isFutureDate && isDateToday(currentWeek, d);
         const ms = MILESTONES.find(m => m.week === currentWeek && m.day === d);
-        if (isFuture) {
+        if (isFutureDate) {
           html += `<td class="day-cell" style="cursor:default;opacity:0.3" title="远期规划，暂无排期">—</td>`;
         } else {
-          html += `<td class="day-cell ${done?'done':''} ${isPast&&!done?'past':''}"
+          const isPopping = lastToggledCell && lastToggledCell.taskId === t.id && lastToggledCell.weekId === currentWeek && lastToggledCell.dayIdx === d;
+          html += `<td class="day-cell ${done?'done':''} ${isPast&&!done?'past':''} ${isToday?'today-col':''} ${isPopping?'popping':''}
             onclick="toggleCompletion('${t.id}',${currentWeek},${d})"
             oncontextmenu="event.preventDefault();openNoteModal('${t.id}')"
-            title="点击标记完成 · 右键添加备注${ms?' · 🏁 '+ms.label:''}">${done?'✅':''}${ms?'<span style="font-size:0.55rem;color:var(--c-ms);font-weight:700">🏁</span>':''}</td>`;
+            title="${isToday?'📍 今天 · ':''}点击标记完成 · 右键添加备注${ms?' · 🏁 '+ms.label:''}">${done?'✅':''}${ms?'<span style="font-size:0.55rem;color:var(--c-ms);font-weight:700">🏁</span>':''}</td>`;
         }
       }
       html += '</tr>';
     });
   });
 
+  // Show empty state if no tasks rendered
+  if (!html.trim()) {
+    html = `<tr><td colspan="6"><div class="empty-state">
+      <div class="icon">🔍</div><div class="msg">没有匹配的任务</div>
+      <div class="hint">尝试调整搜索条件或筛选器</div>
+    </div></td></tr>`;
+  }
+
   document.getElementById('tableBody').innerHTML = html;
+  lastToggledCell = null; // Clear animation trigger after render
   document.getElementById('undoBtn').disabled = !undoStack.length;
+  // Highlight today's column in header
+  const thCells = document.querySelectorAll('.tbl thead th.day-col');
+  thCells.forEach((th, idx) => {
+    const dayIdx = idx + 1;
+    th.classList.toggle('today-col', isDateToday(currentWeek, dayIdx));
+  });
   // Update bulk count
   const bulkCnt = document.getElementById('bulkCount');
   if (bulkCnt) bulkCnt.textContent = `已选 ${selectedTasks.size} 个`;
@@ -489,7 +584,7 @@ function openTaskDetail(taskId) {
   document.getElementById('modalContent').innerHTML = `
     <h3>${task.name}</h3>
     <label>描述</label><p style="font-size:0.72rem;color:var(--text2);margin-bottom:0.6rem">${task.desc}</p>
-    <label>状态</label><p style="font-size:0.72rem">${task.status==='done'?'✅ 已完成':task.status==='progress'?'🔄 进行中':task.status==='planned'?'🎯 计划中':'⬜ 未开始'}</p>
+    <label>状态</label><p style="font-size:0.72rem">${comps.length>0?'✅ 已完成':task.status==='progress'?'🔄 进行中':task.status==='planned'?'🎯 计划中':'⬜ 未开始'}</p>
     ${comps.length ? `<label>完成记录</label><p style="font-size:0.68rem;color:var(--text2)">${comps.map(c=>{const[p,w,d]=c.split('-');const wk=WEEKS[w-1];return wk?wk.days[d-1]:c;}).join(', ')}</p>` : ''}
     ${depNames.length ? `<label>依赖任务</label><p style="font-size:0.68rem;color:var(--text3)">${depNames.join('<br>')}</p>` : ''}
     <label>备注</label>
@@ -552,8 +647,8 @@ function importData() {
         if (imported.completions && imported.notes) {
           if (confirm(`导入数据包含 ${Object.keys(imported.completions).length} 个任务的完成记录。确认导入？`)) {
             appData = imported;
-            saveData();
             render();
+            saveData();
             showToast('数据已导入');
           }
         } else {
@@ -570,8 +665,8 @@ function resetAll() {
   if (confirm('确定要重置所有数据？此操作不可撤销！')) {
     appData = getDefaultData();
     undoStack = [];
-    saveData();
     render();
+    saveData();
     showToast('已重置为默认状态');
   }
 }
@@ -632,6 +727,7 @@ function toggleTaskSelect(taskId) {
 
 function bulkComplete() {
   if (!selectedTasks.size) return;
+  const count = selectedTasks.size;
   const weekId = currentWeek;
   const today = new Date().getDay(); // 0=Sun, 1=Mon...
   const dayIdx = today >= 1 && today <= 5 ? today : 1;
@@ -645,9 +741,9 @@ function bulkComplete() {
   if (undoStack.length > 50) undoStack.shift();
   document.getElementById('undoBtn').disabled = false;
   selectedTasks.clear();
-  saveData();
   render();
-  showToast(`批量完成 ${selectedTasks.size} 个任务`);
+  saveData();
+  showToast(`✅ 批量完成 ${count} 个任务`);
 }
 
 // ═══════════════════ EXTENDED: Add Custom Task ═══════════════════
@@ -688,9 +784,9 @@ function addCustomTask() {
   if (status === 'done') {
     appData.completions[newTask.id] = [`${week}-${day}`];
   }
-  saveData();
   closeModal();
   render();
+  saveData();
   showToast('✅ 自定义任务已添加: ' + name);
 }
 
@@ -702,8 +798,8 @@ function deleteCustomTask(taskId) {
   });
   delete appData.completions[taskId];
   delete appData.notes[taskId];
-  saveData();
   render();
+  saveData();
   showToast('已删除');
 }
 

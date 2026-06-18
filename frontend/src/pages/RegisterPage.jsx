@@ -32,8 +32,18 @@ export default function RegisterPage() {
       setError('请输入有效的邮箱地址')
       return
     }
-    if (password.length < 6) {
-      setError('密码至少需要 6 位')
+    if (password.length < 8) {
+      setError('密码至少需要 8 位')
+      return
+    }
+    // 检查密码复杂度：至少 3/4 类字符
+    let complexity = 0
+    if (/[A-Z]/.test(password)) complexity++
+    if (/[a-z]/.test(password)) complexity++
+    if (/[0-9]/.test(password)) complexity++
+    if (/[^A-Za-z0-9]/.test(password)) complexity++
+    if (complexity < 3) {
+      setError('密码需包含大写字母、小写字母、数字、特殊字符中的至少三类')
       return
     }
     if (password !== confirmPw) {
@@ -122,7 +132,7 @@ export default function RegisterPage() {
               <input
                 type="password"
                 className="input-field text-sm py-2.5 w-full"
-                placeholder="至少 6 位"
+                placeholder="至少 8 位，含大小写字母、数字、特殊字符中的 3 类"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
               />

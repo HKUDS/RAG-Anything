@@ -36,7 +36,7 @@ def main():
         print(f"错误: 文件不存在: {args.input}")
         sys.exit(1)
 
-    print(f"=== 故障案例导入 ===")
+    print("=== 故障案例导入 ===")
     print(f"输入文件: {input_path}")
     print(f"模式: {'预览 (dry-run)' if args.dry_run else '正式导入'}")
 
@@ -87,19 +87,19 @@ def main():
                 "error": str(e),
             })
 
-    print(f"\n导入结果:")
+    print("\n导入结果:")
     print(f"  总数: {stats['total']}")
     print(f"  已导入: {stats['imported']}")
     print(f"  已跳过: {stats['skipped']}")
 
     if stats["errors"]:
-        print(f"\n跳过详情:")
+        print("\n跳过详情:")
         for err in stats["errors"]:
             print(f"  - #{err['index']} {err.get('title', '')}: {err.get('missing_fields', err.get('error', ''))}")
 
     # 最终统计
     all_stats = library.get_statistics()
-    print(f"\n案例库状态:")
+    print("\n案例库状态:")
     print(f"  总案例: {all_stats['total_cases']}")
     print(f"  设备类型: {all_stats.get('equipment_types', {})}")
     print(f"  故障类别: {all_stats.get('fault_categories', {})}")

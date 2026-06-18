@@ -16,7 +16,7 @@ from typing import Optional
 
 from .models import (
     KnowledgeNode, KnowledgeEdge, RelationType,
-    TagTree, CapabilityTag,
+    TagTree,
 )
 
 logger = logging.getLogger(__name__)
@@ -338,7 +338,6 @@ class LightRAGGraphStore:
 
     def list_nodes(self, track=None, node_type=None) -> list:
         """从 LightRAG entities 和 graph 节点读取。"""
-        import json as _json
         # 从 full_entities 获取实体名称计数
         full_entities = self._read_kv_json("kv_store_full_entities.json")
         # 从 graph pickle 邻接表估算（如果可用）

@@ -41,7 +41,7 @@ def main():
             sys.exit(1)
         files = list(input_dir.glob("*"))
 
-    print(f"=== 工艺文档导入 ===")
+    print("=== 工艺文档导入 ===")
     print(f"文件数: {len(files)}")
     stats["total"] = len(files)
 
@@ -61,13 +61,13 @@ def main():
             stats["failed"] += 1
             print(f"  ✗ {fp.name}: {e}")
 
-    print(f"\n导入结果:")
+    print("\n导入结果:")
     print(f"  成功: {stats['imported']}")
     print(f"  失败: {stats['failed']}")
     print(f"  分类统计: {stats['categories']}")
 
     all_cats = library.list_by_category()
-    print(f"\n工艺库状态:")
+    print("\n工艺库状态:")
     for cat, count in all_cats.items():
         print(f"  {cat}: {count} 份")
 

@@ -5,7 +5,6 @@
 import logging
 from typing import Optional
 
-from ..knowledge_graph.models import KnowledgeNode, RelationType
 from ..knowledge_graph.graph_api import KnowledgeGraphAPI
 
 logger = logging.getLogger(__name__)

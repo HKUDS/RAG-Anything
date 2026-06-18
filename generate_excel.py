@@ -3,11 +3,9 @@
 
 import openpyxl
 from openpyxl.styles import (
-    Font, PatternFill, Alignment, Border, Side, NamedStyle, numbers
+    Font, PatternFill, Alignment, Border, Side
 )
 from openpyxl.formatting.rule import CellIsRule, FormulaRule
-from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.datavalidation import DataValidation
 
 wb = openpyxl.Workbook()
 ws = wb.active

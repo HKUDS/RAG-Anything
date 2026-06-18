@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """Generate 待开发功能详解 DOCX using python-docx — avoids JS quote encoding issues."""
 from docx import Document
-from docx.shared import Pt, Cm, RGBColor, Emu
+from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.oxml.ns import qn, nsdecls
+from docx.oxml.ns import nsdecls
 from docx.oxml import parse_xml
 
 def set_cell_shading(cell, color):

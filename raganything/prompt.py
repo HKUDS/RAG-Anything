@@ -1,8 +1,18 @@
+# -*- coding: utf-8 -*-
 """
-Prompt templates for multimodal content processing
+Prompt Templates for Multimodal Content Processing.
 
-Contains all prompt templates used in modal processors for analyzing
-different types of content (images, tables, equations, etc.)
+Layer: Core
+Primary Responsibility: All LLM/VLM prompt templates for modal processors —
+    image analysis, table analysis, equation analysis, generic content,
+    query formatting, citation instructions.
+Key Dependencies: none (pure string templates)
+
+Contains: PROMPTS dict with 30+ templates including:
+    vision_prompt, table_prompt, equation_prompt, generic_prompt,
+    image_chunk, table_chunk, equation_chunk, generic_chunk,
+    IMAGE_ANALYSIS_SYSTEM, TABLE_ANALYSIS_SYSTEM, EQUATION_ANALYSIS_SYSTEM,
+    query templates, citation format instructions
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from raganything.manufacturing.knowledge_graph.parser import ExamParser
 from raganything.manufacturing.knowledge_pipeline.exam_structurer import ExamStructurer
 from raganything.manufacturing.knowledge_graph.graph_api import KnowledgeGraphAPI
-from raganything.manufacturing.knowledge_graph.models import KnowledgeNode, KnowledgeEdge, RelationType
+from raganything.manufacturing.knowledge_graph.models import KnowledgeNode
 
 
 def main():
@@ -34,7 +34,7 @@ def main():
         print(f"错误: 目录不存在: {args.input}")
         sys.exit(1)
 
-    print(f"=== 赛题导入 ===")
+    print("=== 赛题导入 ===")
     print(f"输入目录: {input_dir}")
     print(f"赛项: {args.track}")
     print(f"模式: {'预览 (dry-run)' if args.dry_run else '正式导入'}")
@@ -47,11 +47,11 @@ def main():
         competition_track=args.track,
     )
 
-    print(f"\n结构化结果:")
+    print("\n结构化结果:")
     print(f"  文件: {result['total_files']} 个 (成功 {result['success']}, 失败 {result['failed']})")
     print(f"  赛题: {result['questions']} 道")
     if result["errors"]:
-        print(f"  错误:")
+        print("  错误:")
         for err in result["errors"]:
             print(f"    - {err['file']}: {err['error']}")
 
@@ -80,7 +80,7 @@ def main():
 
     # Summary
     summary = graph_api.get_graph_summary()
-    print(f"\n知识图谱状态:")
+    print("\n知识图谱状态:")
     print(f"  总节点: {summary['total_nodes']}")
     print(f"  总关系: {summary['total_edges']}")
 

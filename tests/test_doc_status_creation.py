@@ -58,10 +58,10 @@ def raganything_modules(monkeypatch):
     monkeypatch.setitem(sys.modules, "raganything", rag_pkg)
 
     base_module = _load_raganything_module("raganything.base", "raganything/base.py")
-    _load_raganything_module("raganything.parser", "raganything/parser.py")
-    utils_module = _load_raganything_module("raganything.utils", "raganything/utils.py")
+    _load_raganything_module("raganything.parser", "raganything/parser/__init__.py")
+    utils_module = _load_raganything_module("raganything.utils", "raganything/utils/__init__.py")
     processor_module = _load_raganything_module(
-        "raganything.processor", "raganything/processor.py"
+        "raganything.processor", "raganything/processor/__init__.py"
     )
 
     return types.SimpleNamespace(

@@ -41,12 +41,16 @@ export function AuthProvider({ children }) {
               if (refreshRes.ok) {
                 const refreshed = await refreshRes.json()
                 if (!cancelled) {
-                  setToken(refreshed.token)
-                  setUser(refreshed.user)
+                  setToken(refreshed.access_token)
+                  // refresh 接口不返回 user，保留原有 user（若存在）
+                  const existingUser = (() => {
+                    try { const s = localStorage.getItem(AUTH_KEY); return s ? JSON.parse(s).user : null } catch { return null }
+                  })()
+                  setUser(existingUser)
                   localStorage.setItem(AUTH_KEY, JSON.stringify({
-                    token: refreshed.token,
+                    token: refreshed.access_token,
                     refreshToken: refreshed.refresh_token,
-                    user: refreshed.user,
+                    user: existingUser,
                   }))
                 }
               }
@@ -84,8 +88,21 @@ export function AuthProvider({ children }) {
       throw new Error(err.detail || '登录失败')
     }
     const data = await res.json()
-    saveAuth(data.token, data.refresh_token, data.user)
-    return data
+
+    // 重新获取完整用户信息（含 role）
+    let fullUser = data.user
+    try {
+      const meRes = await fetch('/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${data.access_token}` },
+      })
+      if (meRes.ok) {
+        const meData = await meRes.json()
+        fullUser = meData.user
+      }
+    } catch (_) {}
+
+    saveAuth(data.access_token, data.refresh_token, fullUser)
+    return { ...data, user: fullUser }
   }, [saveAuth])
 
   const register = useCallback(async (username, email, password) => {
@@ -104,9 +121,12 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     try {
       if (token) {
+        const saved = localStorage.getItem(AUTH_KEY)
+        const refreshToken = saved ? JSON.parse(saved).refreshToken : null
         await fetch('/api/auth/logout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ refresh_token: refreshToken }),
         })
       }
     } catch {} finally {

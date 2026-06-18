@@ -8,14 +8,10 @@
 - 可靠度级别
 """
 
-import re
 import logging
-from typing import Optional
 
 from raganything.citation_parser import (
-    CITATION_PATTERN,
     extract_citations as _base_extract_citations,
-    has_citations,
 )
 
 logger = logging.getLogger(__name__)

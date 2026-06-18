@@ -2,11 +2,8 @@
 院校试点部署工具。
 """
 
-import json
 import logging
-from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

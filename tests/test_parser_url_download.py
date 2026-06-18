@@ -8,15 +8,9 @@ import pytest
 
 
 def _load_parser_class():
-    """Load Parser without importing the heavy raganything package."""
-    import importlib.util
-
-    module_path = Path(__file__).resolve().parents[1] / "raganything" / "parser.py"
-    spec = importlib.util.spec_from_file_location("_raganything_parser", module_path)
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module.Parser
+    """Load Parser from the parser sub-package."""
+    from raganything.parser.base import Parser
+    return Parser
 
 
 Parser = _load_parser_class()

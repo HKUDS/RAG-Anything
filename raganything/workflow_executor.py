@@ -1,5 +1,15 @@
+# -*- coding: utf-8 -*-
 """
-工作流执行引擎 — 拓扑排序 + 6×真实RAG节点执行器 + WebSocket 状态推送
+Workflow Execution Engine.
+
+Layer: Core
+Primary Responsibility: DAG workflow execution — topological sort, 6 node types
+    (parse/chunk/embed/graph/query/multimodal), WebSocket progress push.
+Key Dependencies: raganything (RAGAnything), raganything.services.ws_service
+
+Call chain:
+    WorkflowExecutor.execute()
+      → _topological_sort() → _execute_node() → _push_status()
 """
 import json
 import time
@@ -259,7 +269,6 @@ class RetrieverExecutor(NodeExecutor):
 
     async def _in_memory_search(self, query: str, chunks: list, top_k: int, config: dict, ctx: ExecutionContext) -> dict:
         """内存向量检索：向量化 query+chunks（分批≤10），余弦相似度 Top-K"""
-        import numpy as np
         embed_fn = getattr(ctx.openai_embed_func, 'func', ctx.openai_embed_func)
         embed_model = config.get("model") or ctx.embed_model or "text-embedding-v4"
 

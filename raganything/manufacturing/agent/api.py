@@ -10,7 +10,6 @@
 - GET  /agent/health        健康检查
 """
 
-import json
 import logging
 import time
 from typing import Optional

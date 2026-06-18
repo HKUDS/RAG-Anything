@@ -63,10 +63,10 @@ def load_project_module(module_name, path):
 
 install_import_stubs()
 utils_module = load_project_module(
-    "raganything.utils", PROJECT_ROOT / "raganything" / "utils.py"
+    "raganything.utils", PROJECT_ROOT / "raganything" / "utils" / "__init__.py"
 )
 processor_module = load_project_module(
-    "raganything.processor", PROJECT_ROOT / "raganything" / "processor.py"
+    "raganything.processor", PROJECT_ROOT / "raganything" / "processor" / "__init__.py"
 )
 
 ProcessorMixin = processor_module.ProcessorMixin

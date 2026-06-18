@@ -19,7 +19,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env", override=False)
 
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
-from lightrag.utils import EmbeddingFunc, logger
+from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
 
 # ---------- 配置 ----------

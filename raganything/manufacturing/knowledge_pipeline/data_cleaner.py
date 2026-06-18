@@ -12,10 +12,8 @@
 import hashlib
 import json
 import logging
-import re
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -177,10 +175,10 @@ class DataCleaner:
 
     def _generate_report(self, failed_items: list[dict]) -> str:
         lines = [
-            f"# 数据清洗报告",
+            "# 数据清洗报告",
             f"生成时间: {datetime.now().isoformat()}",
-            f"",
-            f"## 统计",
+            "",
+            "## 统计",
             f"- 总记录: {self.clean_stats['total']}",
             f"- 去重删除: {self.clean_stats['duplicates_removed']}",
             f"- 格式修正: {self.clean_stats['format_fixed']}",
@@ -189,7 +187,7 @@ class DataCleaner:
             f"- 字段校验失败: {self.clean_stats['fields_failed']}",
         ]
         if failed_items:
-            lines.append(f"\n## 校验失败详情")
+            lines.append("\n## 校验失败详情")
             for i, item in enumerate(failed_items[:20]):  # Top 20
                 lines.append(f"- 记录 {i+1}: 缺失字段 {item['missing_fields']}")
         return "\n".join(lines)

@@ -7,7 +7,6 @@ import logging
 from pathlib import Path
 from datetime import datetime, timedelta
 from collections import Counter
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

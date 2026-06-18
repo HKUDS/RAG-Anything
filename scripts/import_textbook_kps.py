@@ -32,7 +32,7 @@ def main():
         print(f"错误: 文件不存在: {args.csv}")
         sys.exit(1)
 
-    print(f"=== 教材知识点导入 ===")
+    print("=== 教材知识点导入 ===")
     print(f"CSV: {csv_path}")
     print(f"目标赛项: {args.track}")
 
@@ -91,13 +91,13 @@ def main():
     )
 
     coverage = aligner.get_coverage_stats(textbook_kps)
-    print(f"\n对齐结果:")
+    print("\n对齐结果:")
     print(f"  教材知识点: {coverage['total_textbook_kps']}")
     print(f"  已映射: {coverage['mapped_count']}")
     print(f"  未映射: {coverage['unmapped_count']}")
     print(f"  覆盖率: {coverage['coverage_rate']}%")
     print(f"  输出: {args.output}")
-    print(f"\n⚠️  映射关系为自动生成，建议人工确认后再正式使用。")
+    print("\n⚠️  映射关系为自动生成，建议人工确认后再正式使用。")
 
 
 if __name__ == "__main__":

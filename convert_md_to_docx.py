@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
 """Convert Markdown files to formatted DOCX documents."""
-import re, sys
+import re
 from docx import Document
-from docx.shared import Inches, Pt, Cm, RGBColor, Emu
+from docx.shared import Pt, Cm, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.enum.style import WD_STYLE_TYPE
-from docx.oxml.ns import qn, nsdecls
+from docx.oxml.ns import nsdecls
 from docx.oxml import parse_xml
 
 def set_cell_shading(cell, color):

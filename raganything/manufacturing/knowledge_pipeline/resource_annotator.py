@@ -11,7 +11,6 @@
 import logging
 from pathlib import Path
 from datetime import datetime
-from typing import Optional
 
 from ..knowledge_graph.models import (
     ResourceMetadata, ModalityType, CopyrightStatus,

@@ -8,9 +8,8 @@
 """
 
 import logging
-from typing import Optional
 
-from .models import CapabilityTag, TagTree
+from .models import TagTree
 
 logger = logging.getLogger(__name__)
 

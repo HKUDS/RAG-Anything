@@ -15,7 +15,7 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from .models import KnowledgeNode, ExamQuestion, ScoringRule
+from .models import KnowledgeNode, ExamQuestion
 
 logger = logging.getLogger(__name__)
 

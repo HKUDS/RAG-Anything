@@ -35,7 +35,7 @@ from raganything.batch import BatchMixin
 from raganything.utils import get_processor_supports
 from raganything.parser import MineruParser, SUPPORTED_PARSERS, get_parser
 from raganything.callbacks import CallbackManager
-from raganything.hybrid_search import HybridSearchEngine, BM25IndexManager, GraphRetriever
+from raganything.hybrid_search import HybridSearchEngine
 
 # Import specialized processors
 from raganything.modalprocessors import (
@@ -300,6 +300,10 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         try:
             # Check parser installation first
             if not self._parser_installation_checked:
+                self.logger.info(
+                    "Verifying parser '%s' installation (may take a few seconds)...",
+                    self.config.parser,
+                )
                 if not self.doc_parser.check_installation():
                     error_msg = (
                         f"Parser '{self.config.parser}' is not properly installed. "
@@ -436,10 +440,12 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 and k not in ["llm_model_kwargs", "vector_db_storage_cls_kwargs"]
             }
             self.logger.info(f"Initializing LightRAG with parameters: {log_params}")
+            self.logger.info("Creating LightRAG instance (this may take a moment)...")
 
             try:
                 # Create LightRAG instance with merged parameters
                 self.lightrag = LightRAG(**lightrag_params)
+                self.logger.info("LightRAG instance created, initializing storages...")
                 await self.lightrag.initialize_storages()
                 await initialize_pipeline_status()
 

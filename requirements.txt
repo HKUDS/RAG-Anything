@@ -1,4 +1,6 @@
 huggingface_hub
+# Auth: bcrypt pinned <4.1.0 — 4.1+ removed __about__ which passlib 1.7.4 requires
+bcrypt<4.1.0
 # LightRAG packages
 lightrag-hku
 # MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
