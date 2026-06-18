@@ -22,7 +22,10 @@ const BADGE_COLORS = {
 export default function ManufacturingKnowledgePage() {
   const [activeTab, setActiveTab] = useState('graph')
   const [kgNodes, setKgNodes] = useState([])
+  const [kgEdges, setKgEdges] = useState([])
   const [kgSummary, setKgSummary] = useState(null)
+  const [kgLoading, setKgLoading] = useState(false)
+  const [kgError, setKgError] = useState(null)
   const [selectedNode, setSelectedNode] = useState(null)
   const [lineage, setLineage] = useState(null)
   const [faultResults, setFaultResults] = useState([])
@@ -32,18 +35,25 @@ export default function ManufacturingKnowledgePage() {
   const [searchQ, setSearchQ] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Load KG data
+  // ---- KG Data Loading (unified) ----
   const loadGraph = useCallback(async () => {
-    setLoading(true)
+    setKgLoading(true)
+    setKgError(null)
     try {
-      const [sumRes, nodesRes] = await Promise.all([
+      const [sumRes, nodesRes, edgesRes] = await Promise.all([
         api.get('/manufacturing/knowledge-graph/summary'),
         api.get('/manufacturing/knowledge-graph/nodes', { params: { limit: 200 } }),
+        api.get('/manufacturing/knowledge-graph/edges', { params: { limit: 500 } }),
       ])
-      setKgSummary(sumRes?.data || sumRes)
-      setKgNodes((nodesRes?.data || nodesRes)?.nodes || [])
-    } catch (e) { /* quiet */ }
-    finally { setLoading(false) }
+      setKgSummary(sumRes)
+      setKgNodes(nodesRes?.nodes || [])
+      setKgEdges(edgesRes?.edges || [])
+    } catch (e) {
+      console.error('[KG] 加载知识图谱失败:', e)
+      setKgError(e.message || '加载知识图谱数据失败')
+    } finally {
+      setKgLoading(false)
+    }
   }, [])
 
   const loadFaults = useCallback(async () => {
@@ -53,10 +63,13 @@ export default function ManufacturingKnowledgePage() {
         api.get('/manufacturing/fault-cases/stats'),
         api.get('/manufacturing/fault-cases/search', { params: { q: searchQ, top_k: 50 } }),
       ])
-      setFaultStats(statsRes?.data || statsRes)
-      setFaultResults((searchRes?.data || searchRes)?.results || [])
-    } catch (e) { /* quiet */ }
-    finally { setLoading(false) }
+      setFaultStats(statsRes)
+      setFaultResults(searchRes?.results || [])
+    } catch (e) {
+      console.error('[KG] 加载故障案例失败:', e)
+    } finally {
+      setLoading(false)
+    }
   }, [searchQ])
 
   const loadProcess = useCallback(async () => {
@@ -66,10 +79,13 @@ export default function ManufacturingKnowledgePage() {
         api.get('/manufacturing/process-library/categories'),
         api.get('/manufacturing/process-library/search', { params: { q: searchQ, limit: 50 } }),
       ])
-      setProcessCats(catsRes?.data || catsRes || {})
-      setProcessResults((resultsRes?.data || resultsRes)?.results || [])
-    } catch (e) { /* quiet */ }
-    finally { setLoading(false) }
+      setProcessCats(catsRes || {})
+      setProcessResults(resultsRes?.results || [])
+    } catch (e) {
+      console.error('[KG] 加载工艺库失败:', e)
+    } finally {
+      setLoading(false)
+    }
   }, [searchQ])
 
   useEffect(() => {
@@ -91,10 +107,26 @@ export default function ManufacturingKnowledgePage() {
         api.get(`/manufacturing/knowledge-graph/nodes/${nodeId}`),
         api.get(`/manufacturing/knowledge-graph/nodes/${nodeId}/lineage`),
       ])
-      setSelectedNode((detailRes?.data || detailRes)?.node)
-      setLineage(lineageRes?.data || lineageRes)
-    } catch (e) { /* quiet */ }
+      setSelectedNode(detailRes?.node)
+      setLineage(lineageRes)
+    } catch (e) {
+      console.error('[KG] 加载节点详情失败:', e)
+    }
   }
+
+  // Handle node click from D3 graph
+  const handleGraphNodeClick = useCallback(async (node) => {
+    setSelectedNode(node)
+    if (node?.id) {
+      try {
+        const lineageRes = await api.get(`/manufacturing/knowledge-graph/nodes/${node.id}/lineage`)
+        setLineage(lineageRes)
+      } catch (e) {
+        console.error('[KG] 加载谱系失败:', e)
+        setLineage(null)
+      }
+    }
+  }, [])
 
   // Node type color
   const nodeTypeColor = (type) => {
@@ -104,6 +136,11 @@ export default function ManufacturingKnowledgePage() {
       skill_point: 'bg-sky-50 text-sky-600 border-sky-200',
     }
     return map[type] || 'bg-warm-100 text-warm-600 border-warm-200'
+  }
+
+  const nodeTypeLabel = (type) => {
+    const map = { knowledge_point: '知识点', competition_topic: '赛题', skill_point: '技能' }
+    return map[type] || type
   }
 
   return (
@@ -152,6 +189,7 @@ export default function ManufacturingKnowledgePage() {
         {activeTab === 'graph' && (
           <motion.div key="graph" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-4">
+            {/* Stats cards */}
             {kgSummary && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
@@ -168,7 +206,78 @@ export default function ManufacturingKnowledgePage() {
                 ))}
               </div>
             )}
-            <KnowledgeGraphD3 onNodeClick={(node, lineage) => { setSelectedNode(node); setLineage(lineage) }} />
+
+            {/* Graph component — receives data via props */}
+            <KnowledgeGraphD3
+              nodes={kgNodes}
+              edges={kgEdges}
+              loading={kgLoading}
+              error={kgError}
+              summary={kgSummary}
+              onRetry={loadGraph}
+              onNodeClick={handleGraphNodeClick}
+            />
+
+            {/* Node detail panel (shown when node selected from graph or list) */}
+            {selectedNode && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                className="card p-4 space-y-3 ring-1 ring-coral-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`px-2 py-0.5 rounded-md text-2xs border ${nodeTypeColor(selectedNode.node_type)}`}>
+                      {nodeTypeLabel(selectedNode.node_type)}
+                    </div>
+                    <h4 className="text-sm font-semibold text-warm-700">{selectedNode.name}</h4>
+                    {selectedNode.difficulty_level && (
+                      <span className="text-2xs text-warm-400">Lv.{selectedNode.difficulty_level}</span>
+                    )}
+                  </div>
+                  <button onClick={() => setSelectedNode(null)}
+                    className="text-warm-400 hover:text-warm-600 transition-colors">
+                    <X size={16} />
+                  </button>
+                </div>
+                <p className="text-xs text-warm-600">{selectedNode.description || '暂无描述'}</p>
+                {selectedNode.estimated_hours > 0 && (
+                  <p className="text-2xs text-warm-400">预计学时：{selectedNode.estimated_hours}h</p>
+                )}
+
+                {/* Lineage */}
+                {lineage && (
+                  <div className="grid grid-cols-3 gap-3 pt-3 border-t border-warm-100">
+                    <div className="p-2.5 rounded-lg bg-amber-50 text-xs">
+                      <p className="font-medium text-amber-700 mb-1.5">前置知识 ({lineage.prerequisite_count || 0})</p>
+                      {lineage.prerequisites?.length > 0 ? (
+                        lineage.prerequisites.map(p => (
+                          <div key={p.id} className="text-amber-800 py-0.5">• {p.name}</div>
+                        ))
+                      ) : (
+                        <p className="text-amber-400 text-2xs">无前置依赖</p>
+                      )}
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-coral-50 text-xs flex items-center justify-center">
+                      <div className="text-center">
+                        <div className={`inline-block px-2 py-0.5 rounded-md text-2xs border mb-1 ${nodeTypeColor(selectedNode.node_type)}`}>
+                          {nodeTypeLabel(selectedNode.node_type)}
+                        </div>
+                        <p className="text-coral-600 font-medium text-xs">当前节点</p>
+                      </div>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-sage-50 text-xs">
+                      <p className="font-medium text-sage-700 mb-1.5">进阶知识 ({lineage.advancement_count || 0})</p>
+                      {lineage.advancements?.length > 0 ? (
+                        lineage.advancements.map(a => (
+                          <div key={a.id} className="text-sage-800 py-0.5">• {a.name}</div>
+                        ))
+                      ) : (
+                        <p className="text-sage-400 text-2xs">无后续进阶</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
           </motion.div>
         )}
 
@@ -182,20 +291,70 @@ export default function ManufacturingKnowledgePage() {
                 <span className="text-xs text-warm-500">{kgNodes.length} 个节点</span>
               </div>
               <div className="max-h-[420px] overflow-y-auto">
-                {kgNodes.slice(0, 100).map(node => (
+                {kgNodes.length > 0 ? kgNodes.slice(0, 100).map(node => (
                   <button key={node.id} onClick={() => viewNodeDetail(node.id)}
-                    className="w-full flex items-center gap-3 px-4 py-3 hover:bg-warm-50 transition-colors border-b border-warm-50 text-left">
+                    className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-warm-50 transition-colors border-b border-warm-50 text-left ${
+                      selectedNode?.id === node.id ? 'bg-coral-50' : ''
+                    }`}>
                     <div className={`px-2 py-0.5 rounded-md text-2xs border ${nodeTypeColor(node.node_type)}`}>
-                      {node.node_type === 'knowledge_point' ? '知识点' :
-                       node.node_type === 'competition_topic' ? '赛题' : node.node_type}
+                      {nodeTypeLabel(node.node_type)}
                     </div>
                     <span className="text-sm text-warm-700 flex-1 truncate">{node.name}</span>
                     <span className="text-xs text-warm-400">Lv.{node.difficulty_level || 1}</span>
                     <ChevronRight size={14} className="text-warm-400" />
                   </button>
-                ))}
+                )) : (
+                  <p className="text-center text-sm text-warm-400 py-12">
+                    {kgLoading ? '加载中…' : '暂无节点数据'}
+                  </p>
+                )}
               </div>
             </div>
+
+            {/* Node detail (shared with graph tab) */}
+            {selectedNode && (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
+                className="card p-4 space-y-3 ring-1 ring-coral-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className={`px-2 py-0.5 rounded-md text-2xs border ${nodeTypeColor(selectedNode.node_type)}`}>
+                      {nodeTypeLabel(selectedNode.node_type)}
+                    </div>
+                    <h4 className="text-sm font-semibold text-warm-700">{selectedNode.name}</h4>
+                  </div>
+                  <button onClick={() => setSelectedNode(null)}
+                    className="text-warm-400 hover:text-warm-600 transition-colors">
+                    <X size={16} />
+                  </button>
+                </div>
+                <p className="text-xs text-warm-600">{selectedNode.description || '暂无描述'}</p>
+                {lineage && (
+                  <div className="grid grid-cols-3 gap-3 pt-3 border-t border-warm-100">
+                    <div className="p-2.5 rounded-lg bg-amber-50 text-xs">
+                      <p className="font-medium text-amber-700 mb-1.5">前置知识 ({lineage.prerequisite_count || 0})</p>
+                      {lineage.prerequisites?.length > 0 ? (
+                        lineage.prerequisites.map(p => <div key={p.id} className="text-amber-800 py-0.5">• {p.name}</div>)
+                      ) : <p className="text-amber-400 text-2xs">无前置依赖</p>}
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-coral-50 text-xs flex items-center justify-center">
+                      <div className="text-center">
+                        <div className={`inline-block px-2 py-0.5 rounded-md text-2xs border mb-1 ${nodeTypeColor(selectedNode.node_type)}`}>
+                          {nodeTypeLabel(selectedNode.node_type)}
+                        </div>
+                        <p className="text-coral-600 font-medium text-xs">当前节点</p>
+                      </div>
+                    </div>
+                    <div className="p-2.5 rounded-lg bg-sage-50 text-xs">
+                      <p className="font-medium text-sage-700 mb-1.5">进阶知识 ({lineage.advancement_count || 0})</p>
+                      {lineage.advancements?.length > 0 ? (
+                        lineage.advancements.map(a => <div key={a.id} className="text-sage-800 py-0.5">• {a.name}</div>)
+                      ) : <p className="text-sage-400 text-2xs">无后续进阶</p>}
+                    </div>
+                  </div>
+                )}
+              </motion.div>
+            )}
           </motion.div>
         )}
 
@@ -203,7 +362,6 @@ export default function ManufacturingKnowledgePage() {
         {activeTab === 'faults' && (
           <motion.div key="faults" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-4">
-            {/* Stats */}
             {faultStats && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="card p-4">
@@ -237,7 +395,6 @@ export default function ManufacturingKnowledgePage() {
               </div>
             )}
 
-            {/* Case cards */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {faultResults.map((c, i) => (
                 <motion.div key={c.id || i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
@@ -279,7 +436,7 @@ export default function ManufacturingKnowledgePage() {
                 </motion.div>
               ))}
             </div>
-            {faultResults.length === 0 && (
+            {faultResults.length === 0 && !loading && (
               <p className="text-center text-sm text-warm-400 py-12">暂无故障案例数据</p>
             )}
           </motion.div>
@@ -289,7 +446,6 @@ export default function ManufacturingKnowledgePage() {
         {activeTab === 'process' && (
           <motion.div key="process" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-4">
-            {/* Category stats */}
             {Object.keys(processCats).length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {Object.entries(processCats).map(([cat, count]) => (
@@ -300,7 +456,6 @@ export default function ManufacturingKnowledgePage() {
               </div>
             )}
 
-            {/* Process cards */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {processResults.map((p, i) => (
                 <motion.div key={p.id || i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
@@ -323,7 +478,7 @@ export default function ManufacturingKnowledgePage() {
                 </motion.div>
               ))}
             </div>
-            {processResults.length === 0 && (
+            {processResults.length === 0 && !loading && (
               <p className="text-center text-sm text-warm-400 py-12">暂无工艺文档数据</p>
             )}
           </motion.div>

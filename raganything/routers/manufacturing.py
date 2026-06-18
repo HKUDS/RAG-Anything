@@ -147,6 +147,13 @@ async def mfg_kg_nodes(track: str = "", node_type: str = "", limit: int = 100, o
     return m["graph_api"].get_nodes(competition_track=track, node_type=node_type, limit=limit, offset=offset)
 
 
+@router.get("/manufacturing/knowledge-graph/edges")
+async def mfg_kg_edges(source_id: str = "", relation_type: str = "", limit: int = 200):
+    """知识图谱边列表。"""
+    m = _get_manufacturing()
+    return m["graph_api"].get_edges(source_id=source_id, relation_type=relation_type, limit=limit)
+
+
 @router.get("/manufacturing/knowledge-graph/nodes/{node_id}")
 async def mfg_kg_node_detail(node_id: str):
     """节点详情 + 关联边。"""
