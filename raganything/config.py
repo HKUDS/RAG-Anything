@@ -39,6 +39,11 @@ class RAGAnythingConfig:
     the specified types are extracted. Maps to LightRAG's
     ``addon_params.entity_types``."""
 
+    lightrag_language: str = field(default=get_env_value("LIGHTRAG_LANGUAGE", "Chinese", str))
+    """Language for LightRAG keyword extraction and summarization.
+    Default is 'Chinese' for Chinese knowledge bases. Set to 'English' for
+    English KBs. Maps to LightRAG's ``addon_params.language``."""
+
     entity_extraction_min_degree: int = field(
         default=get_env_value("ENTITY_EXTRACTION_MIN_DEGREE", 0, int)
     )

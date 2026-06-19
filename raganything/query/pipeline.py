@@ -258,6 +258,17 @@ class QueryMixin:
                 query, system_prompt=system_prompt, **kwargs
             )
 
+        # Route context-only queries to RRF pipeline to avoid LightRAG
+        # internal query compatibility issues (embedding dimension mismatch,
+        # language-keyword mismatch, numpy array handling in kg_query).
+        if kwargs.get("only_need_context") and mode != "rrf" and mode != "graph":
+            self.logger.info(
+                f"Routing mode={mode} (only_need_context=True) to RRF pipeline"
+            )
+            return await self._aquery_rrf(
+                query, system_prompt=system_prompt, **kwargs
+            )
+
         # Check if VLM enhanced query should be used
         vlm_enhanced = kwargs.pop("vlm_enhanced", None)
         stream = kwargs.pop("stream", False)

@@ -36,6 +36,7 @@ from raganything.routers.shared import (
     save_query_history,
     verify_kb_access,
 )
+from raganything.utils.security import validate_query_input
 from raganything.dependencies import get_current_user
 
 from raganything.services.agent_manager import AgentConfig, get_agent_manager
@@ -61,6 +62,69 @@ class LogCaptureHandler(logging.Handler):
                 self.msg_queue.put(msg)
         except Exception:
             pass
+
+
+# ═══════════════════════════════════════════════════════════
+# Empty context detection
+# ═══════════════════════════════════════════════════════════
+
+def _is_empty_context(ctx: str | None) -> bool:
+    """Detect if retrieval context is effectively empty.
+
+    Returns True when:
+    - ctx is None or empty
+    - ctx is LightRAG's fail_response (contains "[no-context]" marker)
+    - ctx has no text chunk sources and is too short to be useful
+    """
+    if not ctx or not ctx.strip():
+        return True
+    if "[no-context]" in ctx:
+        return True
+    if "[来源 " not in ctx and len(ctx.strip()) <= 200:
+        return True
+    return False
+
+
+def _build_backfill_context(scored_texts: list[tuple], max_chars: int = 4800) -> tuple[str, int, int]:
+    """Build backfill context from bigram-matched chunks.
+
+    Args:
+        scored_texts: list of (chunk_id, content, score, doc_name) tuples
+        max_chars: max total characters for backfill text
+
+    Returns:
+        (backfill_text, num_chunks_used, total_chars_used)
+    """
+    if not scored_texts:
+        return "", 0, 0
+
+    # Deduplicate by chunk_id, keep highest score
+    best_by_id: dict[str, tuple[str, int]] = {}
+    for chunk_id, content, score, doc_name in scored_texts:
+        if chunk_id not in best_by_id or score > best_by_id[chunk_id][1]:
+            best_by_id[chunk_id] = (f"{doc_name or '未知文档'}\t{content}", score)
+
+    # Sort by score descending
+    sorted_entries = sorted(best_by_id.items(), key=lambda x: -x[1][1])
+
+    formatted: list[str] = []
+    total_chars = 0
+    chunk_count = 0
+
+    for chunk_id, (full_text, score) in sorted_entries:
+        doc_name, content = full_text.split("\t", 1) if "\t" in full_text else ("未知文档", full_text)
+        chunk_count += 1
+        source_label = f"{doc_name} (回填片段{chunk_count})"
+        block = f"[来源 {source_label}]\n{content}"
+        if total_chars + len(block) > max_chars and formatted:
+            # Truncate: include partial block if it's the first one, otherwise stop
+            break
+        formatted.append(block)
+        total_chars += len(block)
+        if total_chars >= max_chars:
+            break
+
+    return "\n\n".join(formatted), chunk_count, total_chars
 
 
 # ═══════════════════════════════════════════════════════════
@@ -289,6 +353,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
     is_admin = current_user.get("is_admin", False)
     if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权使用该智能体")
+    # 输入校验 — Prompt Injection 防护
+    validate_query_input(req.query, user_id=str(current_user.get("id", "anonymous")))
     # 验证 KB 访问权限（可能自动切换到用户的个人 KB）
     actual_kb = await verify_kb_access(kb=agent.kb_name, current_user=current_user)
 
@@ -395,6 +461,41 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                         ) or ""
                     except Exception:
                         pass
+                    # Detect empty context for CoT path
+                    if _is_empty_context(cot_context):
+                        lightrag_logger.info("[AGENT-STREAM] CoT: no valid context, aborting")
+                        full_answer = "抱歉，知识库中暂无与您问题相关的数据，无法回答此问题。请尝试上传相关文档或换个问题。"
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': '⚠️ 知识库中暂无相关数据'}, ensure_ascii=False)}\n\n"
+                        yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
+                        elapsed = round(time.time() - start_time, 2)
+                        mgr.add_message(agent_id, thread_id, {
+                            "role": "user", "content": req.query,
+                            "time": datetime.now().isoformat(),
+                        })
+                        mgr.add_message(agent_id, thread_id, {
+                            "role": "assistant", "content": full_answer,
+                            "elapsed": elapsed, "mode": query_mode,
+                            "agent_mode": agent_mode, "trace": [],
+                            "fallback": True,
+                            "time": datetime.now().isoformat(),
+                        })
+                        record = {
+                            "id": query_id, "query": req.query, "mode": query_mode,
+                            "agent_mode": agent_mode, "answer": full_answer,
+                            "reasoning_trace": {"steps": [], "total_steps": 0},
+                            "images": [], "time": datetime.now().isoformat(),
+                            "elapsed": elapsed, "kb": actual_kb,
+                            "agent_id": agent_id, "thread_id": thread_id,
+                            "user_id": current_user["id"], "username": current_user["username"],
+                            "fallback": True,
+                        }
+                        query_history.insert(0, record)
+                        if len(query_history) > 100:
+                            query_history = query_history[:100]
+                        save_query_history()
+                        yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': [], 'fallback': True}, ensure_ascii=False)}\n\n"
+                        lightrag_logger.removeHandler(handler)
+                        return
                     # 注入对话历史到检索上下文前方
                     if conv_history_text and cot_context:
                         cot_context = (
@@ -427,6 +528,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 all_retrieved_text += " " + full_answer
 
                 agent_images = extract_image_paths(all_retrieved_text)
+                _backfill_text_react = ""
                 if not agent_images:
                     try:
                         import json as _json
@@ -438,6 +540,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                             for i in range(len(q) - 1):
                                 query_grams.add(q[i:i+2])
                             scored = []
+                            scored_texts = []  # (chunk_id, content, score, doc_name)
                             for _cid, _chunk in _all.items():
                                 content = _chunk.get('content', '')
                                 paths = extract_image_paths(content)
@@ -447,6 +550,10 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                                 score = sum(1 for bg in query_grams if bg in content_lower)
                                 for p in paths:
                                     scored.append((p, score))
+                                # 同步收集文本内容
+                                if score > 0:
+                                    doc_name = _chunk.get('document_name', '') or _chunk.get('source', '')
+                                    scored_texts.append((_cid, content, score, doc_name))
                             best = {}
                             for p, s in scored:
                                 if p not in best or s > best[p]:
@@ -454,8 +561,15 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                             agent_images = [p for p, _ in sorted(best.items(), key=lambda x: -x[1]) if _ > 0][:3]
                             if not agent_images:
                                 agent_images = list(best.keys())[:2]
+                            # 构建回填文本
+                            _backfill_text_react, _bf_count, _bf_chars = _build_backfill_context(scored_texts)
+                            if _backfill_text_react:
+                                all_retrieved_text += "\n" + _backfill_text_react
                             if agent_images:
-                                lightrag_logger.info(f"[AGENT-IMG] bigram匹配到 {len(agent_images)} 张相关图片 (共 {len(best)} 张)")
+                                _log_msg = f"[AGENT-IMG] bigram匹配到 {len(agent_images)} 张相关图片 (共 {len(best)} 张)"
+                                if _backfill_text_react:
+                                    _log_msg += f"，+回填 {_bf_count} 文本片段 ({_bf_chars} 字符)"
+                                lightrag_logger.info(_log_msg)
                     except Exception as _fe:
                         lightrag_logger.error(f"[AGENT-IMG] 全库扫描失败: {_fe}")
                 else:
@@ -469,6 +583,9 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                     for ts in trace_steps:
                         if ts.get("observation"):
                             _agent_ctx += ts["observation"] + "\n"
+                # 注入回填文本到 citation 上下文
+                if _backfill_text_react and _agent_ctx:
+                    _agent_ctx += "\n" + _backfill_text_react
                 if instance.config.enforce_citation and full_answer and _agent_ctx:
                     _cit_block = _build_citation_block(_agent_ctx, full_answer)
                     if _cit_block:
@@ -529,9 +646,67 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 await asyncio.sleep(0.06)
 
             ctx = ctx_task.result()
-            # 从检索上下文提取图片，没有则扫全库
+
+            # ── 快速检测：真正空的上下文（fail_response / None / 空字符串）──
+            _is_truly_empty = not ctx or not ctx.strip() or "[no-context]" in ctx
+
+            if _is_truly_empty:
+                # ── 降级路径：无有效检索上下文 → 直接告知用户 ──
+                agent_images = []
+                yield f"data: {json.dumps({'type': 'thinking', 'content': '⚠️ 知识库中暂无相关数据'}, ensure_ascii=False)}\n\n"
+                full_answer = "抱歉，知识库中暂无与您问题相关的数据，无法回答此问题。请尝试上传相关文档或换个问题。"
+
+                # 保存到对话线程
+                mgr.add_message(agent_id, thread_id, {
+                    "role": "user",
+                    "content": req.query,
+                    "time": datetime.now().isoformat(),
+                })
+                mgr.add_message(agent_id, thread_id, {
+                    "role": "assistant",
+                    "content": full_answer,
+                    "elapsed": round(time.time() - start_time, 2),
+                    "mode": query_mode,
+                    "fallback": True,
+                    "time": datetime.now().isoformat(),
+                })
+
+                # 记录全局查询历史
+                record = {
+                    "id": query_id,
+                    "query": req.query,
+                    "mode": query_mode,
+                    "answer": full_answer,
+                    "images": agent_images,
+                    "time": datetime.now().isoformat(),
+                    "elapsed": round(time.time() - start_time, 2),
+                    "kb": actual_kb,
+                    "agent_id": agent_id,
+                    "thread_id": thread_id,
+                    "user_id": current_user["id"],
+                    "username": current_user["username"],
+                    "fallback": True,
+                }
+                query_history.insert(0, record)
+                if len(query_history) > 100:
+                    query_history = query_history[:100]
+                save_query_history()
+
+                yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
+                _done_data = {
+                    'type': 'done', 'id': query_id,
+                    'elapsed': round(time.time() - start_time, 2),
+                    'thread_id': thread_id, 'images': agent_images,
+                    'fallback': True,
+                }
+                yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
+                # 提前返回，不走到下方的通用 LLM 调用路径
+                lightrag_logger.removeHandler(handler)
+                return
+
+            # ── 图片提取 + bigram 回退扫描（同步收集文本）──
             agent_images = extract_image_paths(ctx)
-            # 检索上下文无图片时，从 KB 全量扫描并用 bigram 做相关性过滤
+            backfill_text = ""
             if not agent_images:
                 try:
                     import json as _json
@@ -543,36 +718,123 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                         query_grams = set()
                         for i in range(len(q) - 1):
                             query_grams.add(q[i:i+2])
-                        scored = []  # (path, score)
+                        scored_images = []  # (path, score)
+                        scored_texts = []   # (chunk_id, content, score, doc_name)
+                        # 追踪 ctx 中已有的 chunk 内容，避免重复回填
+                        _existing_content_ids = set()
                         for _cid, _chunk in _all.items():
                             content = _chunk.get('content', '')
-                            paths = extract_image_paths(content)
-                            if not paths:
+                            if not content:
                                 continue
+                            paths = extract_image_paths(content)
                             content_lower = content.lower()
                             score = sum(1 for bg in query_grams if bg in content_lower)
-                            for p in paths:
-                                scored.append((p, score))
-                        # 去重取最高分，按分数降序，取前 5
-                        best = {}
-                        for p, s in scored:
-                            if p not in best or s > best[p]:
-                                best[p] = s
-                        agent_images = [p for p, _ in sorted(best.items(), key=lambda x: -x[1]) if _ > 0][:3]
+                            # 检查此 chunk 内容是否已在原始检索上下文中
+                            _content_key = content[:80]  # 用前 80 字符做模糊去重
+                            if _content_key in ctx:
+                                _existing_content_ids.add(_cid)
+                            if paths:
+                                for p in paths:
+                                    scored_images.append((p, score))
+                                # 同步收集文本内容（仅收集有图片的 chunk，因为 bigram 扫描就是为此触发的）
+                                if score > 0:
+                                    doc_name = _chunk.get('document_name', '') or _chunk.get('source', '')
+                                    scored_texts.append((_cid, content, score, doc_name))
+                        # 去重取最高分，按分数降序，取前 5 图片
+                        best_img = {}
+                        for p, s in scored_images:
+                            if p not in best_img or s > best_img[p]:
+                                best_img[p] = s
+                        agent_images = [p for p, _ in sorted(best_img.items(), key=lambda x: -x[1]) if _ > 0][:3]
                         if not agent_images:
-                            agent_images = list(best.keys())[:2]
-                        if agent_images:
-                            lightrag_logger.info(f"[IMG-FALLBACK] bigram匹配到 {len(agent_images)} 张相关图片 (共 {len(best)} 张)")
+                            agent_images = list(best_img.keys())[:2]
+
+                        # 构建回填文本（过滤已在 ctx 中的 chunk）
+                        _fresh_texts = [(cid, c, s, dn) for cid, c, s, dn in scored_texts
+                                        if cid not in _existing_content_ids]
+                        backfill_text, _bf_count, _bf_chars = _build_backfill_context(_fresh_texts)
+                        if backfill_text:
+                            ctx = ctx + "\n\n" + backfill_text
+                            lightrag_logger.info(
+                                f"[IMG-FALLBACK] bigram匹配到 {len(agent_images)} 张相关图片"
+                                f" (共 {len(best_img)} 张)"
+                                f"，+回填 {_bf_count} 文本片段 ({_bf_chars} 字符)"
+                            )
+                        elif agent_images:
+                            lightrag_logger.info(
+                                f"[IMG-FALLBACK] bigram匹配到 {len(agent_images)} 张相关图片"
+                                f" (共 {len(best_img)} 张)"
+                            )
                 except Exception as _fe:
                     lightrag_logger.error(f"[IMG-FALLBACK] 全库扫描失败: {_fe}")
             else:
                 agent_images = agent_images[:3]
-            yield f"data: {json.dumps({'type': 'thinking', 'content': f'📋 检索到 {len(ctx)} 字符上下文' + (f'，{len(agent_images)} 张图片' if agent_images else '')}, ensure_ascii=False)}\n\n"
+
+            # ── 最终空上下文检测（使用富化后的 ctx）──
+            is_fallback = _is_empty_context(ctx)
+
+            if is_fallback:
+                # ── 回填后仍为空 → 降级告知用户 ──
+                yield f"data: {json.dumps({'type': 'thinking', 'content': '⚠️ 知识库中暂无相关数据'}, ensure_ascii=False)}\n\n"
+                full_answer = "抱歉，知识库中暂无与您问题相关的数据，无法回答此问题。请尝试上传相关文档或换个问题。"
+
+                # 保存到对话线程
+                mgr.add_message(agent_id, thread_id, {
+                    "role": "user",
+                    "content": req.query,
+                    "time": datetime.now().isoformat(),
+                })
+                mgr.add_message(agent_id, thread_id, {
+                    "role": "assistant",
+                    "content": full_answer,
+                    "elapsed": round(time.time() - start_time, 2),
+                    "mode": query_mode,
+                    "fallback": True,
+                    "time": datetime.now().isoformat(),
+                })
+
+                # 记录全局查询历史
+                record = {
+                    "id": query_id,
+                    "query": req.query,
+                    "mode": query_mode,
+                    "answer": full_answer,
+                    "images": agent_images,
+                    "time": datetime.now().isoformat(),
+                    "elapsed": round(time.time() - start_time, 2),
+                    "kb": actual_kb,
+                    "agent_id": agent_id,
+                    "thread_id": thread_id,
+                    "user_id": current_user["id"],
+                    "username": current_user["username"],
+                    "fallback": True,
+                }
+                query_history.insert(0, record)
+                if len(query_history) > 100:
+                    query_history = query_history[:100]
+                save_query_history()
+
+                yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
+                _done_data = {
+                    'type': 'done', 'id': query_id,
+                    'elapsed': round(time.time() - start_time, 2),
+                    'thread_id': thread_id, 'images': agent_images,
+                    'fallback': True,
+                }
+                yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
+                lightrag_logger.removeHandler(handler)
+                return
+
+            # ── 正常路径：使用富化后的上下文 ──
+            _ctx_think_msg = '📋 检索到 {} 字符上下文'.format(len(ctx))
+            if agent_images:
+                _ctx_think_msg += '，{} 张图片'.format(len(agent_images))
+            yield f"data: {json.dumps({'type': 'thinking', 'content': _ctx_think_msg}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
             # Step 2: 构造 prompt 并使用智能体配置的模型
             sp = (agent.system_prompt or "") + ("\n你是知识库助手。只使用检索内容回答。" if agent.use_default_prompt else "")
-            conv_part = (
+            _conv_part = (
                 f"## 对话历史\n{conv_history_text}\n\n"
                 if conv_history_text else ""
             )
@@ -581,13 +843,15 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
                 else INLINE_QUOTE_INSTRUCTION
             )
-            # Detect degraded context
-            _has_chunks = "[来源 " in ctx and len(ctx.strip()) > 200
+            # Detect degraded context (text chunks exist but may be thin)
+            # Uses enriched ctx — may include backfilled chunks.
+            # When backfill was applied, we KNOW valid text chunks exist, so bypass the length check.
+            _has_chunks = ("[来源 " in ctx and len(ctx.strip()) > 200) or bool(backfill_text)
             if not _has_chunks and ctx.strip():
                 lightrag_logger.warning("agent_query_stream: context has no text chunks.")
             final_prompt = (
                 f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n"
-                f"{conv_part}"
+                f"{_conv_part}"
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
                 f"{_cit_inst}"
@@ -627,6 +891,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 "content": full_answer,
                 "elapsed": elapsed,
                 "mode": query_mode,
+                "fallback": is_fallback,
                 "time": datetime.now().isoformat(),
             })
 
@@ -644,13 +909,20 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 "thread_id": thread_id,
                 "user_id": current_user["id"],
                 "username": current_user["username"],
+                "fallback": is_fallback,
             }
             query_history.insert(0, record)
             if len(query_history) > 100:
                 query_history = query_history[:100]
             save_query_history()
 
-            yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': agent_images}, ensure_ascii=False)}\n\n"
+            _done_data = {
+                'type': 'done', 'id': query_id, 'elapsed': elapsed,
+                'thread_id': thread_id, 'images': agent_images,
+            }
+            if is_fallback:
+                _done_data['fallback'] = True
+            yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
 
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"

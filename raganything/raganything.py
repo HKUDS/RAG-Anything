@@ -432,6 +432,13 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                         "Entity type whitelist configured: %s", entity_types_list
                     )
 
+            # Inject language into LightRAG's addon_params (keyword extraction language)
+            addon = lightrag_params.setdefault("addon_params", {})
+            language = self.config.lightrag_language
+            if language:
+                addon.setdefault("language", language)
+                self.logger.info("LightRAG language configured: %s", language)
+
             # Log the parameters being used for initialization (excluding sensitive data)
             log_params = {
                 k: v
