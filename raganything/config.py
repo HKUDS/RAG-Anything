@@ -209,7 +209,7 @@ class RAGAnythingConfig:
     """Whether to use full file path (True) or just basename (False) for file references in LightRAG."""
 
     def __post_init__(self):
-        """Post-initialization setup for backward compatibility"""
+        """Post-initialization setup for backward compatibility and bounds validation"""
         # Support legacy environment variable names for backward compatibility
         legacy_parse_method = get_env_value("MINERU_PARSE_METHOD", None, str)
         if legacy_parse_method and not get_env_value("PARSE_METHOD", None, str):
@@ -221,6 +221,27 @@ class RAGAnythingConfig:
                 DeprecationWarning,
                 stacklevel=2,
             )
+
+        # ── 安全上限校验：防止恶意/误配置导致 API 预算耗尽 ──
+        import warnings as _w
+
+        _max_entity_concurrency = 16
+        if self.entity_extract_concurrency > _max_entity_concurrency:
+            _w.warn(
+                f"ENTITY_EXTRACT_CONCURRENCY={self.entity_extract_concurrency} "
+                f"超过上限 {_max_entity_concurrency}，已钳制",
+                UserWarning, stacklevel=2,
+            )
+            self.entity_extract_concurrency = _max_entity_concurrency
+
+        _max_embed_batch = 10
+        if self.embedding_batch_size > _max_embed_batch:
+            _w.warn(
+                f"EMBEDDING_BATCH_SIZE={self.embedding_batch_size} "
+                f"超过 DashScope 上限 {_max_embed_batch}，已钳制",
+                UserWarning, stacklevel=2,
+            )
+            self.embedding_batch_size = _max_embed_batch
 
     @property
     def mineru_parse_method(self) -> str:

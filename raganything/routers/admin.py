@@ -27,7 +27,9 @@ from raganything.routers import shared  # mutable state accessed via shared. pre
 from raganything.workflow_executor import execute_workflow, RUNS_DIR, ExecutionContext
 from raganything.dependencies import (
     get_current_user,
+    require_permission,
 )
+from raganything.permissions import Permission
 
 router = APIRouter(tags=["admin"])
 
@@ -344,8 +346,9 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
 
 
 @router.put("/settings")
-async def update_settings(settings: SettingsUpdate, current_user: dict = Depends(get_current_user)):
-    """更新配置(runtime)"""
+async def update_settings(settings: SettingsUpdate,
+                          current_user: dict = Depends(require_permission(Permission.SETTINGS_WRITE))):
+    """更新配置(runtime) — 需要 settings:write 权限"""
     changes = {}
     if settings.parser is not None:
         os.environ["PARSER"] = settings.parser
@@ -361,8 +364,10 @@ async def update_settings(settings: SettingsUpdate, current_user: dict = Depends
         for name in list(shared.kb_instances.keys()):
             del shared.kb_instances[name]
     if settings.max_async is not None:
-        os.environ["MAX_ASYNC"] = str(settings.max_async)
-        changes["max_async"] = settings.max_async
+        # 硬上限：防止 API 预算被恶意耗尽
+        clamped = max(1, min(settings.max_async, 16))
+        os.environ["MAX_ASYNC"] = str(clamped)
+        changes["max_async"] = clamped
     if settings.enable_image is not None:
         os.environ["ENABLE_IMAGE_PROCESSING"] = str(settings.enable_image).lower()
         changes["enable_image"] = settings.enable_image

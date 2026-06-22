@@ -247,8 +247,16 @@ def create_rag(
         func=_embed_func,
     )
 
+    def _env_int(key: str, default: int, min_val: int = 1, max_val: int = 100) -> int:
+        """安全读取整数环境变量，防止 typo 导致启动崩溃或恶意超限值"""
+        try:
+            val = int(os.getenv(key, str(default)))
+            return max(min_val, min(val, max_val))
+        except ValueError:
+            return default
+
     # ── Chunking strategy mapping ──────────────────────────
-    chunk_token_size = int(os.getenv("CHUNK_SIZE", "800"))
+    chunk_token_size = _env_int("CHUNK_SIZE", 800, max_val=4096)
 
     def _get_embedding_func_for_chunk(texts: list[str]) -> list[list[float]]:
         return embedding_func.func(texts, model=EMB_MODEL)
@@ -270,11 +278,14 @@ def create_rag(
 
     lightrag_kwargs = {
         "chunk_token_size": chunk_token_size,
-        "chunk_overlap_token_size": int(os.getenv("CHUNK_OVERLAP", "100")),
+        "chunk_overlap_token_size": _env_int("CHUNK_OVERLAP", 100, max_val=500),
         "enable_llm_cache": os.getenv("ENABLE_LLM_CACHE", "true").lower() == "true",
         "enable_llm_cache_for_entity_extract": os.getenv("ENABLE_LLM_CACHE_FOR_EXTRACT", "true").lower() == "true",
-        "embedding_batch_num": int(os.getenv("EMBEDDING_BATCH_SIZE", "10")),
-        "embedding_func_max_async": int(os.getenv("ENTITY_EXTRACT_CONCURRENCY", "3")),
+        "embedding_batch_num": _env_int("EMBEDDING_BATCH_SIZE", 10, max_val=10),
+        "embedding_func_max_async": _env_int("ENTITY_EXTRACT_CONCURRENCY", 3, max_val=16),
+        # 显式传入 LightRAG 参数，消除 import-order 依赖
+        "llm_model_max_async": _env_int("MAX_ASYNC", 4, max_val=16),
+        "entity_extract_max_gleaning": _env_int("MAX_GLEANING", 1, max_val=2),
     }
     if chosen_chunking_func is not None:
         lightrag_kwargs["chunking_func"] = chosen_chunking_func
