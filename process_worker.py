@@ -180,9 +180,9 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
 
     config = RAGAnythingConfig(
         working_dir=wd, parser=parser,
-        enable_image_processing=os.getenv("ENABLE_IMAGE_PROCESSING", "false").lower() == "true",
-        enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "false").lower() == "true",
-        enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "false").lower() == "true",
+        enable_image_processing=os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true",
+        enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
+        enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
         enable_video_processing=os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
     )
     return RAGAnything(config=config, llm_model_func=llm_func,

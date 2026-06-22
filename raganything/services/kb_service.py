@@ -282,9 +282,9 @@ def create_rag(
     config = RAGAnythingConfig(
         working_dir=wd,
         parser=parser,
-        enable_image_processing=os.getenv("ENABLE_IMAGE_PROCESSING", "false").lower() == "true",
-        enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "false").lower() == "true",
-        enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "false").lower() == "true",
+        enable_image_processing=os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true",
+        enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
+        enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
         enable_video_processing=os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
     )
 
@@ -642,6 +642,205 @@ def infer_entity_type(name: str) -> str:
     return 'concept'
 
 
+# ── Multimodal Retroactive Processing ──────────────────────
+
+async def _reprocess_multimodal_for_kb(kb_name: str, user_id: int = 1):
+    """Reprocess multimodal content for documents that missed it.
+
+    Scans doc_status in a KB for documents where ``multimodal_processed``
+    is not ``True``, locates the original file, re-parses (hitting the
+    parse_cache when available), and processes only multimodal items
+    (images, tables, equations).  Text content is NOT re-inserted.
+
+    Args:
+        kb_name: Knowledge base name
+        user_id: User ID for audit logging
+
+    Returns:
+        dict with ``processed``, ``skipped``, ``total``, ``message``
+    """
+    from raganything.utils._content import separate_content
+    from raganything.services.ws_service import ws_broadcast, add_event
+
+    instance = await get_kb(kb_name)
+    if instance is None or instance.lightrag is None:
+        raise ValueError(f"KB '{kb_name}' 未初始化")
+
+    # Verify at least one modal processor is registered
+    active_processors = [
+        k for k, v in (instance.modal_processors or {}).items() if v is not None
+    ]
+    if not active_processors:
+        raise ValueError(
+            f"KB '{kb_name}' 未启用任何多模态处理器，请在设置页面开启后再执行回溯"
+        )
+    kb_logger.info(
+        f"[REPROCESS-MULTIMODAL] KB={kb_name} 活跃处理器: {active_processors}"
+    )
+
+    # Scan doc_status for documents needing multimodal processing
+    status_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+    if not status_path.exists():
+        return {"processed": 0, "skipped": 0, "total": 0, "message": "知识库无文档记录"}
+
+    with open(status_path, "r", encoding="utf-8") as f:
+        all_docs = json.load(f)
+
+    needs_processing: list[tuple[str, dict]] = []
+    for doc_id, info in all_docs.items():
+        if info.get("status") == "failed":
+            continue
+        if not info.get("multimodal_processed", False):
+            needs_processing.append((doc_id, dict(info)))
+
+    if not needs_processing:
+        return {
+            "processed": 0, "skipped": 0, "total": 0,
+            "message": "所有文档已完成多模态处理",
+        }
+
+    kb_logger.info(
+        f"[REPROCESS-MULTIMODAL] KB={kb_name} "
+        f"发现 {len(needs_processing)} 个文档需要回溯处理"
+    )
+
+    upload_dir = Path("./uploads")
+    processed = 0
+    skipped = 0
+    total = len(needs_processing)
+
+    await ws_broadcast({
+        "type": "reprocess_start",
+        "kb": kb_name,
+        "total": total,
+        "message": f"开始回溯处理 {total} 个文档的多模态内容",
+    })
+
+    for doc_id, info in needs_processing:
+        file_ref = info.get("file_path", "")
+        kb_logger.info(
+            f"[REPROCESS-MULTIMODAL] [{processed + skipped + 1}/{total}] "
+            f"file={file_ref} doc_id={doc_id[:16]}..."
+        )
+
+        # Locate the original file
+        original_path: Path | None = None
+        if file_ref:
+            # 1. Try uploads/<file_ref> directly (most common case)
+            candidate = upload_dir / Path(file_ref).name
+            if candidate.exists():
+                original_path = candidate
+            # 2. Exact path as stored
+            if original_path is None:
+                candidate = Path(file_ref)
+                if candidate.exists():
+                    original_path = candidate
+            # 3. Search uploads by basename
+            if original_path is None and upload_dir.exists():
+                basename = Path(file_ref).name
+                for f in upload_dir.iterdir():
+                    if f.is_file() and f.name.endswith(basename):
+                        original_path = f
+                        break
+            # 4. Fuzzy match in uploads (prefix match)
+            if original_path is None and upload_dir.exists():
+                basename = Path(file_ref).name
+                for f in upload_dir.iterdir():
+                    if f.is_file() and basename in f.name:
+                        original_path = f
+                        break
+
+        if original_path is None:
+            kb_logger.warning(
+                f"[REPROCESS-MULTIMODAL] 找不到原始文件: {file_ref}，跳过"
+            )
+            skipped += 1
+            continue
+
+        try:
+            # Try parse cache lookup first — read directly from the
+            # JSON file to handle parser/config changes between uploads.
+            content_list = None
+            kb_workspace = Path(kb_dir(kb_name))
+            cache_file = kb_workspace / "kv_store_parse_cache.json"
+            if cache_file.exists():
+                try:
+                    with open(cache_file, "r", encoding="utf-8") as _f:
+                        all_cache = json.load(_f)
+                    for entry in all_cache.values():
+                        if isinstance(entry, dict) and entry.get("doc_id") == doc_id:
+                            content_list = entry.get("content_list")
+                            kb_logger.info(
+                                f"[REPROCESS-MULTIMODAL] 缓存命中: {file_ref}"
+                            )
+                            break
+                except Exception as _e:
+                    kb_logger.warning(
+                        f"[REPROCESS-MULTIMODAL] 缓存读取失败: {_e}"
+                    )
+
+            if content_list is None:
+                # Fallback: re-parse. Use absolute path for cache key match.
+                content_list, _ = await instance.parse_document(
+                    str(original_path.resolve())
+                )
+
+            # Separate multimodal content
+            _, multimodal_items = separate_content(content_list)
+
+            if not multimodal_items:
+                kb_logger.info(
+                    f"[REPROCESS-MULTIMODAL] 文档无多模态内容，标记完成: {file_ref}"
+                )
+                await instance._mark_multimodal_processing_complete(doc_id)
+                processed += 1
+                continue
+
+            kb_logger.info(
+                f"[REPROCESS-MULTIMODAL] {file_ref}: "
+                f"{len(multimodal_items)} 个多模态条目 → 开始处理"
+            )
+
+            # Process multimodal content (VLM descriptions, entity extraction)
+            await instance._process_multimodal_content(
+                multimodal_items, str(original_path), doc_id
+            )
+
+            processed += 1
+            await ws_broadcast({
+                "type": "reprocess_progress",
+                "kb": kb_name,
+                "processed": processed,
+                "skipped": skipped,
+                "total": total,
+                "current_doc": file_ref,
+            })
+
+        except Exception as e:
+            kb_logger.error(
+                f"[REPROCESS-MULTIMODAL] 处理失败 {file_ref}: {e}"
+            )
+            skipped += 1
+
+    result = {
+        "processed": processed,
+        "skipped": skipped,
+        "total": total,
+        "message": (
+            f"回溯处理完成: {processed} 个成功"
+            + (f", {skipped} 个跳过" if skipped else "")
+        ),
+    }
+    await add_event(
+        "reprocess_multimodal_done",
+        kb=kb_name, user_id=user_id, **result,
+    )
+    await ws_broadcast({
+        "type": "reprocess_done", "kb": kb_name, **result,
+    })
+    return result
+
+
 __all__ = [
     "kb_instances",
     "active_kb",
@@ -656,6 +855,7 @@ __all__ = [
     "create_rag",
     "_fix_stuck_doc_status",
     "_process_uploaded_file",
+    "_reprocess_multimodal_for_kb",
     "_build_citation_block",
     "_get_kb_doc_list",
     "infer_entity_type",

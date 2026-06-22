@@ -318,9 +318,9 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         "chunking_strategies": shared.CHUNKING_STRATEGY_META,
         "max_async": os.getenv("MAX_ASYNC", "4"),
         "llm_max_async": os.getenv("LLM_MODEL_MAX_ASYNC", "4"),
-        "enable_image": os.getenv("ENABLE_IMAGE_PROCESSING", "false").lower() == "true",
-        "enable_table": os.getenv("ENABLE_TABLE_PROCESSING", "false").lower() == "true",
-        "enable_equation": os.getenv("ENABLE_EQUATION_PROCESSING", "false").lower() == "true",
+        "enable_image": os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true",
+        "enable_table": os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
+        "enable_equation": os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
         "enable_video": os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
         "working_dir": shared.WORKING_DIR,
         "parser_output_dir": os.getenv("OUTPUT_DIR", "./output"),
@@ -385,6 +385,10 @@ async def update_settings(settings: SettingsUpdate, current_user: dict = Depends
     need_rebuild = (
         settings.parser is not None
         or settings.entity_types is not None
+        or settings.enable_image is not None
+        or settings.enable_table is not None
+        or settings.enable_equation is not None
+        or settings.enable_video is not None
     )
     if need_rebuild:
         # Clear all cached KB instances so they pick up the new config on next access

@@ -22,6 +22,7 @@ from .shared import (
     get_current_user,
     CHUNKING_STRATEGY,
     _process_uploaded_file,
+    _reprocess_multimodal_for_kb,
     _compute_file_hash,
     _is_file_being_processed,
     _register_processing_file,
@@ -658,6 +659,60 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), curre
     background_tasks.add_task(_process_uploaded_file, task_id, str(file_path.absolute()),
                                file_name, kb, "", current_user["id"])
     return {"status": "queued", "task_id": task_id, "filename": file_name, "message": "文档已重新提交处理"}
+
+
+@router.post("/kb/{kb_name}/reprocess-multimodal")
+async def reprocess_multimodal(
+    kb_name: str,
+    background_tasks: BackgroundTasks,
+    current_user: dict = Depends(get_current_user),
+):
+    """回溯处理知识库中文档的多模态内容（图片/表格/公式）。
+
+    扫描 KB 中 ``multimodal_processed`` 不为 ``true`` 的文档，从原始文件
+    重新解析（优先走解析缓存），仅执行多模态处理——不重新插入文本。
+    """
+    # Require admin permission
+    if not current_user.get("is_admin", False):
+        raise HTTPException(403, "仅管理员可执行此操作")
+
+    try:
+        # Scan first to get count
+        import json as _json
+        from pathlib import Path as _Path
+        from raganything.services.kb_service import kb_dir
+        status_path = _Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+        total = 0
+        if status_path.exists():
+            with open(status_path, "r", encoding="utf-8") as _f:
+                all_docs = _json.load(_f)
+            total = sum(
+                1 for info in all_docs.values()
+                if info.get("status") != "failed"
+                and not info.get("multimodal_processed", False)
+            )
+
+        if total == 0:
+            return {
+                "status": "ok", "processed": 0, "skipped": 0, "total": 0,
+                "message": "所有文档已完成多模态处理",
+            }
+
+        # Schedule background processing
+        background_tasks.add_task(
+            _reprocess_multimodal_for_kb, kb_name, user_id=current_user.get("id", 1)
+        )
+        return {
+            "status": "queued", "total": total,
+            "message": f"已排队 {total} 个文档，后台处理中。通过 WebSocket 获取进度更新。",
+        }
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        lightrag_logger.error(f"[REPROCESS-API] 回溯处理失败 kb={kb_name}: {e}")
+        raise HTTPException(500, f"回溯处理失败: {e}")
+
+    return {"status": "ok", **result}
 
 
 # ── KB management handlers ─────────────────────────────
