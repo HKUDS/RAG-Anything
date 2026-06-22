@@ -674,6 +674,23 @@ class DocProcessorMixin:
                     split_by_character_only=split_by_character_only,
                     ids=doc_id,
                 )
+                # Ensure LightRAG internal pipelines flush in-memory data to disk
+                try:
+                    await self.lightrag._insert_done()
+                except Exception:
+                    pass
+                # Check whether LightRAG's pipeline marked the document as failed
+                # before overwriting the status with HANDLING.
+                ds = await self.lightrag.doc_status.get_by_id(doc_id)
+                if ds and ds.get("status") == "failed":
+                    self.logger.error(
+                        "LightRAG pipeline failed for doc %s: %s",
+                        doc_id[:16], ds.get("error_msg", "unknown error"),
+                    )
+                    raise RuntimeError(
+                        f"文档处理失败（LightRAG entity extraction）: "
+                        f"{ds.get('error_msg', 'unknown error')}"
+                    )
                 await self._upsert_doc_status(
                     doc_id,
                     file_name,
@@ -1152,6 +1169,18 @@ class DocProcessorMixin:
                 await self.lightrag._insert_done()
             except Exception:
                 pass
+            # Check whether LightRAG's pipeline marked the document as failed
+            # before overwriting the status with HANDLING.
+            ds = await self.lightrag.doc_status.get_by_id(doc_id)
+            if ds and ds.get("status") == "failed":
+                self.logger.error(
+                    "LightRAG pipeline failed for doc %s: %s",
+                    doc_id[:16], ds.get("error_msg", "unknown error"),
+                )
+                raise RuntimeError(
+                    f"文档处理失败（LightRAG entity extraction）: "
+                    f"{ds.get('error_msg', 'unknown error')}"
+                )
             await self._upsert_doc_status(
                 doc_id,
                 file_ref,

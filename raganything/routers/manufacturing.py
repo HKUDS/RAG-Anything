@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from lightrag.llm.openai import openai_complete_if_cache
 from raganything.routers import shared
 from raganything.dependencies import get_current_user
+from raganything.utils.security import validate_query_input
 
 router = APIRouter(tags=["manufacturing"])
 
@@ -134,28 +135,28 @@ async def _get_mfg_qa_engine(kb: str = "default") -> "QAEngine":
 # ── 知识图谱 ──
 
 @router.get("/manufacturing/knowledge-graph/summary")
-async def mfg_kg_summary():
+async def mfg_kg_summary(current_user: dict = Depends(get_current_user)):
     """知识图谱统计摘要。"""
     m = _get_manufacturing()
     return m["graph_api"].get_graph_summary()
 
 
 @router.get("/manufacturing/knowledge-graph/nodes")
-async def mfg_kg_nodes(track: str = "", node_type: str = "", limit: int = 100, offset: int = 0):
+async def mfg_kg_nodes(track: str = "", node_type: str = "", limit: int = 100, offset: int = 0, current_user: dict = Depends(get_current_user)):
     """知识节点列表。"""
     m = _get_manufacturing()
     return m["graph_api"].get_nodes(competition_track=track, node_type=node_type, limit=limit, offset=offset)
 
 
 @router.get("/manufacturing/knowledge-graph/edges")
-async def mfg_kg_edges(source_id: str = "", relation_type: str = "", limit: int = 200):
+async def mfg_kg_edges(source_id: str = "", relation_type: str = "", limit: int = 200, current_user: dict = Depends(get_current_user)):
     """知识图谱边列表。"""
     m = _get_manufacturing()
     return m["graph_api"].get_edges(source_id=source_id, relation_type=relation_type, limit=limit)
 
 
 @router.get("/manufacturing/knowledge-graph/nodes/{node_id}")
-async def mfg_kg_node_detail(node_id: str):
+async def mfg_kg_node_detail(node_id: str, current_user: dict = Depends(get_current_user)):
     """节点详情 + 关联边。"""
     m = _get_manufacturing()
     detail = m["graph_api"].get_node(node_id)
@@ -165,7 +166,7 @@ async def mfg_kg_node_detail(node_id: str):
 
 
 @router.get("/manufacturing/knowledge-graph/nodes/{node_id}/lineage")
-async def mfg_kg_lineage(node_id: str, upstream: int = 3, downstream: int = 3):
+async def mfg_kg_lineage(node_id: str, upstream: int = 3, downstream: int = 3, current_user: dict = Depends(get_current_user)):
     """知识谱系树。"""
     m = _get_manufacturing()
     lineage = m["graph_api"].get_lineage(node_id, upstream_depth=upstream, downstream_depth=downstream)
@@ -177,7 +178,7 @@ async def mfg_kg_lineage(node_id: str, upstream: int = 3, downstream: int = 3):
 # ── 工艺库 ──
 
 @router.get("/manufacturing/process-library/search")
-async def mfg_process_search(q: str = "", category: str = "", limit: int = 20):
+async def mfg_process_search(q: str = "", category: str = "", limit: int = 20, current_user: dict = Depends(get_current_user)):
     """企业工艺库检索。"""
     m = _get_manufacturing()
     results = m["process_library"].search(q, category=category, limit=limit)
@@ -185,7 +186,7 @@ async def mfg_process_search(q: str = "", category: str = "", limit: int = 20):
 
 
 @router.get("/manufacturing/process-library/categories")
-async def mfg_process_categories():
+async def mfg_process_categories(current_user: dict = Depends(get_current_user)):
     """工艺类别统计。"""
     m = _get_manufacturing()
     return m["process_library"].list_by_category()
@@ -194,7 +195,7 @@ async def mfg_process_categories():
 # ── 故障案例库 ──
 
 @router.get("/manufacturing/fault-cases/search")
-async def mfg_fault_search(q: str = "", top_k: int = 10):
+async def mfg_fault_search(q: str = "", top_k: int = 10, current_user: dict = Depends(get_current_user)):
     """故障案例检索。"""
     m = _get_manufacturing()
     results = m["fault_case_library"].search(q, top_k=top_k)
@@ -202,7 +203,7 @@ async def mfg_fault_search(q: str = "", top_k: int = 10):
 
 
 @router.get("/manufacturing/fault-cases/stats")
-async def mfg_fault_stats():
+async def mfg_fault_stats(current_user: dict = Depends(get_current_user)):
     """故障案例统计。"""
     m = _get_manufacturing()
     return m["fault_case_library"].get_statistics()
@@ -211,8 +212,9 @@ async def mfg_fault_stats():
 # ── 代码解析 ──
 
 @router.post("/manufacturing/code/parse")
-async def mfg_code_parse(body: ManufacturingQuery):
+async def mfg_code_parse(body: ManufacturingQuery, current_user: dict = Depends(get_current_user)):
     """G 代码 / PLC 指令表解析。"""
+    validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     m = _get_manufacturing()
     return m["code_parser"].parse(body.query, language=body.language)
 
@@ -220,7 +222,7 @@ async def mfg_code_parse(body: ManufacturingQuery):
 # ── 数据看板 ──
 
 @router.get("/manufacturing/dashboard")
-async def mfg_dashboard():
+async def mfg_dashboard(current_user: dict = Depends(get_current_user)):
     """制造智能体数据看板。"""
     m = _get_manufacturing()
     return m["dashboard"].get_snapshot(
@@ -233,7 +235,7 @@ async def mfg_dashboard():
 # ── 部署配置 ──
 
 @router.get("/manufacturing/institutions")
-async def mfg_institutions():
+async def mfg_institutions(current_user: dict = Depends(get_current_user)):
     """注册机构列表。"""
     m = _get_manufacturing()
     return m["deployment_config"].list_institutions()
@@ -245,6 +247,7 @@ async def mfg_institutions():
 async def mfg_qa(body: MfgAgentQuery, kb: str = QueryParam("default"),
                  current_user: dict = Depends(get_current_user)):
     """智能制造文本问答 — AgenticRAG 多步推理。"""
+    validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     engine = await _get_mfg_qa_engine(kb)
     response = await engine.answer(body.query, context=body.context)
     m = _get_manufacturing()
@@ -346,8 +349,9 @@ async def mfg_qa_stream(body: MfgAgentQuery, kb: str = QueryParam("default"),
 
 
 @router.post("/manufacturing/fault-diagnosis")
-async def mfg_diagnosis_start(body: MfgDiagnosisStart, kb: str = QueryParam("default")):
+async def mfg_diagnosis_start(body: MfgDiagnosisStart, kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
     """故障诊断 — 开始新会话。"""
+    validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     m = await _get_mfg_agent_components(kb=kb)
     sid = str(_uuid.uuid4())[:8]
     result = m["fault_diagnosis"].start_diagnosis(sid, body.query)
@@ -355,8 +359,9 @@ async def mfg_diagnosis_start(body: MfgDiagnosisStart, kb: str = QueryParam("def
 
 
 @router.post("/manufacturing/fault-diagnosis/continue")
-async def mfg_diagnosis_continue(body: MfgDiagnosisContinue, kb: str = QueryParam("default")):
+async def mfg_diagnosis_continue(body: MfgDiagnosisContinue, kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
     """故障诊断 — 继续会话。"""
+    validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     m = await _get_mfg_agent_components(kb=kb)
     result = m["fault_diagnosis"].continue_diagnosis(body.session_id, body.query)
     return result

@@ -50,12 +50,14 @@ def load_query_history() -> None:
 
 
 def save_query_history() -> None:
-    """Persist query history to JSON file (atomic write)."""
+    """Persist query history to JSON file atomically (tmp + replace)."""
     try:
-        QUERY_HISTORY_FILE.write_text(
+        tmp = QUERY_HISTORY_FILE.with_suffix(".tmp")
+        tmp.write_text(
             json.dumps(query_history, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        tmp.replace(QUERY_HISTORY_FILE)
     except Exception as e:
         state_logger.warning(f"Failed to save query history: {e}")
 
@@ -117,22 +119,23 @@ def get_all_tasks() -> list[dict[str, Any]]:
 
 
 def cleanup_completed_tasks():
-    """Remove completed tasks older than 1 hour from memory."""
-    from datetime import datetime, timedelta
-    cutoff = datetime.now() - timedelta(hours=1)
+    """Remove completed/failed tasks from memory.
+
+    Once a task reaches a terminal state (completed/failed) its document
+    status is persisted in kv_store_doc_status.json, so the in-memory
+    processing_tasks entry is no longer needed.
+    """
     to_remove = []
     for task_id, task in processing_tasks.items():
         if task.get("status") in ("completed", "failed"):
             try:
-                started = datetime.fromisoformat(task.get("started_at", ""))
-                if started < cutoff:
-                    to_remove.append(task_id)
+                to_remove.append(task_id)
             except (ValueError, TypeError):
                 pass
     for task_id in to_remove:
         del processing_tasks[task_id]
     if to_remove:
-        state_logger.info(f"Cleaned up {len(to_remove)} old task records")
+        state_logger.info(f"Cleaned up {len(to_remove)} completed/failed task records")
 
 
 __all__ = [

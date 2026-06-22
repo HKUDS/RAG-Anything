@@ -34,6 +34,15 @@ SERVER_START_ID = uuid.uuid4().hex  # Regenerated on each process start for rest
 # ── Database Path ──────────────────────────────────────────
 DB_PATH = Path(os.getenv("AUTH_DB_PATH", "./auth.db"))
 
+def get_db_path() -> Path:
+    """Return the current database path, respecting AUTH_DB_PATH env var.
+
+    Unlike the module-level DB_PATH constant (set at import time),
+    this function re-reads the environment variable on each call,
+    allowing tests to switch databases via AUTH_DB_PATH.
+    """
+    return Path(os.getenv("AUTH_DB_PATH", "./auth.db"))
+
 # ── Default Admin ──────────────────────────────────────────
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
 DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@raganything.local")
@@ -54,7 +63,7 @@ async def init_db():
     """Initialize database: create users + settings tables, default admin, persist keys."""
     import aiosqlite
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
         await db.execute("PRAGMA journal_mode=WAL")
         await db.execute("PRAGMA busy_timeout=5000")
@@ -117,6 +126,9 @@ async def init_db():
                 updated_at  TEXT DEFAULT (datetime('now','localtime'))
             )
         """)
+        await db.execute(
+            "CREATE INDEX IF NOT EXISTS idx_users_role_id ON users(role_id)"
+        )
         await db.execute("""
             CREATE TABLE IF NOT EXISTS settings (
                 key   TEXT PRIMARY KEY,
@@ -157,8 +169,9 @@ async def init_db():
         for col_name, col_def in _migration_columns:
             try:
                 await db.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}")
-            except Exception:
-                pass
+            except aiosqlite.OperationalError as e:
+                if "duplicate column" not in str(e).lower():
+                    raise
         await db.commit()
 
         # Migrate existing users: if role_id is NULL, assign from is_admin
@@ -182,38 +195,43 @@ async def init_db():
             )
             await db.commit()
 
-        # Load or persist JWT keys (env var takes priority)
+        # Load or persist JWT keys (env var takes priority; serialized via SQLite lock)
+        # In multi-worker deployments, the first worker persists its key; subsequent
+        # workers load the persisted key to ensure consistency across workers.
         global SECRET_KEY, REFRESH_SECRET_KEY
         if not os.getenv("JWT_SECRET"):
-            row = await (await db.execute("SELECT value FROM settings WHERE key = 'jwt_secret'")).fetchone()
+            row = await (await db.execute(
+                "SELECT value FROM settings WHERE key = 'jwt_secret'"
+            )).fetchone()
             if row:
-                SECRET_KEY = row[0]
-                print("[AUTH] JWT 密钥已从数据库加载")
+                SECRET_KEY = row[0]  # Use persisted key for cross-worker consistency
             else:
-                await db.execute("INSERT INTO settings (key, value) VALUES ('jwt_secret', ?)", (SECRET_KEY,))
+                # Persist current module-level key for other workers
+                await db.execute(
+                    "INSERT INTO settings (key, value) VALUES ('jwt_secret', ?)",
+                    (SECRET_KEY,)
+                )
                 await db.commit()
-                print("[AUTH] JWT 密钥已生成并持久化到数据库")
-        else:
-            print("[AUTH] JWT 密钥从环境变量加载")
 
         if not os.getenv("JWT_REFRESH_SECRET"):
-            row = await (await db.execute("SELECT value FROM settings WHERE key = 'jwt_refresh_secret'")).fetchone()
+            row = await (await db.execute(
+                "SELECT value FROM settings WHERE key = 'jwt_refresh_secret'"
+            )).fetchone()
             if row:
                 REFRESH_SECRET_KEY = row[0]
-                print("[AUTH] Refresh 密钥已从数据库加载")
             else:
-                await db.execute("INSERT INTO settings (key, value) VALUES ('jwt_refresh_secret', ?)", (REFRESH_SECRET_KEY,))
+                await db.execute(
+                    "INSERT INTO settings (key, value) VALUES ('jwt_refresh_secret', ?)",
+                    (REFRESH_SECRET_KEY,)
+                )
                 await db.commit()
-                print("[AUTH] Refresh 密钥已生成并持久化到数据库")
-        else:
-            print("[AUTH] Refresh 密钥从环境变量加载")
 
     # Ensure default admin exists
     admin = await get_user_by_username(DEFAULT_ADMIN_USERNAME)
     if not admin:
         await create_user(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, is_admin=True)
         # Force password change on first login for auto-created default admin
-        async with aiosqlite.connect(str(DB_PATH)) as db:
+        async with aiosqlite.connect(str(get_db_path())) as db:
             await db.execute(
                 "UPDATE users SET must_change_password = 1 WHERE username = ?",
                 (DEFAULT_ADMIN_USERNAME,),
@@ -223,7 +241,7 @@ async def init_db():
     else:
         print(f"[AUTH] 管理员账号已存在: {DEFAULT_ADMIN_USERNAME}")
 
-    print(f"[AUTH] 数据库已初始化: {DB_PATH}")
+    print(f"[AUTH] 数据库已初始化: {get_db_path()}")
 
 
 # ── User CRUD ──────────────────────────────────────────────
@@ -231,7 +249,7 @@ async def init_db():
 async def get_user_by_username(username: str) -> dict | None:
     """Query user by username."""
     import aiosqlite
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM users WHERE username = ?", (username,))
         row = await cursor.fetchone()
@@ -241,7 +259,7 @@ async def get_user_by_username(username: str) -> dict | None:
 async def get_user_by_id(user_id: int) -> dict | None:
     """Query user by ID."""
     import aiosqlite
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM users WHERE id = ?", (user_id,))
         row = await cursor.fetchone()
@@ -278,7 +296,7 @@ async def create_user(username: str, email: str, password: str, is_admin: bool =
 
     password_hash = pwd_context.hash(password)
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
         # Resolve role_id from is_admin parameter (backward-compatible)
         role_name = "admin" if is_admin else "viewer"
@@ -291,8 +309,8 @@ async def create_user(username: str, email: str, password: str, is_admin: bool =
 
         try:
             cursor = await db.execute(
-                "INSERT INTO users (username, email, password_hash, role_id, is_admin) VALUES (?, ?, ?, ?, ?)",
-                (username.strip(), email.strip(), password_hash, role_id, 1 if is_admin else 0),
+                "INSERT INTO users (username, email, password_hash, role_id) VALUES (?, ?, ?, ?)",
+                (username.strip(), email.strip(), password_hash, role_id),
             )
             await db.commit()
             user_id = cursor.lastrowid
@@ -358,7 +376,7 @@ async def update_user(user_id: int, data: dict) -> dict | None:
     set_clause = ", ".join(f"{k} = ?" for k in updates)
     values = list(updates.values()) + [user_id]
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
         try:
             await db.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
@@ -374,7 +392,7 @@ async def update_user(user_id: int, data: dict) -> dict | None:
 async def get_user_role(user_id: int) -> dict | None:
     """Get the role assigned to a user. Returns role dict or None."""
     import aiosqlite
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("""
             SELECT r.* FROM roles r
@@ -407,7 +425,7 @@ async def user_is_admin(user_id: int) -> bool:
 async def delete_user(user_id: int) -> bool:
     """Delete a user."""
     import aiosqlite
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         cursor = await db.execute("DELETE FROM users WHERE id = ?", (user_id,))
         await db.commit()
         return cursor.rowcount > 0
@@ -416,7 +434,7 @@ async def delete_user(user_id: int) -> bool:
 async def list_users() -> list[dict]:
     """List all users (admin only)."""
     import aiosqlite
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute("SELECT * FROM users ORDER BY id")
         rows = await cursor.fetchall()
@@ -439,7 +457,7 @@ LOCKOUT_DURATION_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
 async def check_account_locked(user_id: int) -> str | None:
     """Check if account is locked by user ID. Returns error message or None."""
     import aiosqlite
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
             "SELECT locked_until, failed_login_attempts FROM users WHERE id = ?",
@@ -469,7 +487,7 @@ async def check_account_locked(user_id: int) -> str | None:
 async def record_failed_login(user_id: int):
     """Record a failed login attempt. Locks account when threshold reached."""
     import aiosqlite
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
         await db.execute(
             "UPDATE users SET failed_login_attempts = failed_login_attempts + 1 WHERE id = ?",
@@ -491,7 +509,7 @@ async def record_failed_login(user_id: int):
 async def reset_failed_logins(user_id: int):
     """Reset failed login counter after successful login."""
     import aiosqlite
-    async with aiosqlite.connect(str(DB_PATH)) as db:
+    async with aiosqlite.connect(str(get_db_path())) as db:
         await db.execute(
             "UPDATE users SET failed_login_attempts = 0, locked_until = NULL WHERE id = ?",
             (user_id,),

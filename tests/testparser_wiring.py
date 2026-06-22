@@ -78,8 +78,8 @@ async def test_processor_parse_document_uses_selected_parser(monkeypatch, tmp_pa
         selected["calls"] += 1
         return FakeParser()
 
-    from raganything import parser as parser_module
-    monkeypatch.setattr(parser_module, "get_parser", fake_get_parser)
+    from raganything.processor import doc_processor as doc_proc_module
+    monkeypatch.setattr(doc_proc_module, "get_parser", fake_get_parser)
 
     class DummyProcessor(processor_module.ProcessorMixin):
         pass

@@ -510,6 +510,13 @@ class HybridSearchEngine:
 
         import re
 
+        # Reject LightRAG's fail_response — it contains the "[no-context]" sentinel
+        # and is NOT a real document chunk. Without this guard, the fail_response
+        # text "Sorry, I'm not able to provide an answer..." would be parsed as a
+        # fake chunk and fed into RRF fusion, producing garbage results.
+        if "[no-context]" in raw_context:
+            return []
+
         chunks = []
         # Split on common chunk separators
         parts = re.split(r"\n(?=\[|\{)", raw_context)

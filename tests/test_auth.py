@@ -43,7 +43,8 @@ class TestJWT:
         assert payload is not None
         assert payload["user_id"] == 42
         assert payload["username"] == "alice"
-        assert payload["is_admin"] is False
+        # is_admin is no longer in token payload — derived server-side from RBAC role
+        assert payload["role"] == "viewer"
 
     def test_invalid_token(self):
         assert decode_token("not.a.valid.token") is None
@@ -52,7 +53,8 @@ class TestJWT:
     def test_admin_token(self):
         token = create_token(1, "admin", True)
         payload = decode_token(token)
-        assert payload["is_admin"] is True
+        # is_admin is no longer in token payload — derived server-side from RBAC role
+        assert payload["role"] == "admin"
 
     def test_refresh_token(self):
         from auth import create_refresh_token, decode_refresh_token

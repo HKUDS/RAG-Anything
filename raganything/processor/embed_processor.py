@@ -44,7 +44,7 @@ class EmbedProcessorMixin:
             # Store in text_chunks storage (no embedding, safe to batch)
             await self.lightrag.text_chunks.upsert(chunks)
 
-            batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "20"))
+            batch_size = int(os.getenv("EMBEDDING_BATCH_SIZE", "10"))
             chunk_items = list(chunks.items())
             failed_ids: list[str] = []
             total_batches = (len(chunk_items) + batch_size - 1) // batch_size

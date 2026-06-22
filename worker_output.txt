@@ -1,0 +1,220 @@
+C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\jieba\_compat.py:18: UserWarning: pkg_resources is deprecated as an API. See https://setuptools.pypa.io/en/latest/pkg_resources.html. The pkg_resources package is slated for removal as early as 2025-11-30. Refrain from using this package or pin to Setuptools<81.
+  import pkg_resources
+[WORKER] ÂºÄÂßãÂ§ÑÁêÜ: file=88f1c2d6_ÊµãËØï.docx kb=test_debug3 dir=./rag_storage_test_debug3 strategy=ÈÄíÂΩíÂ≠óÁ¨¶ÂàÜÂâ≤
+INFO: RAGAnything initialized with config:
+INFO:   Working directory: ./rag_storage_test_debug3
+INFO:   Parser: docling
+INFO:   Parse method: auto
+INFO:   Multimodal processing - Image: False, Table: False, Equation: False
+INFO:   Max concurrent files: 1
+INFO: Verifying parser 'docling' installation (may take a few seconds)...
+INFO: Parser 'docling' installation verified
+INFO: LightRAG language configured: Chinese
+INFO: Initializing LightRAG with parameters: {'working_dir': './rag_storage_test_debug3', 'chunk_token_size': 800, 'chunk_overlap_token_size': 100, 'embedding_batch_num': 20, 'embedding_func_max_async': 3, 'addon_params': {'language': 'Chinese'}}
+INFO: Creating LightRAG instance (this may take a moment)...
+INFO: [] Created new empty graph file: ./rag_storage_test_debug3\graph_chunk_entity_relation.graphml
+INFO:nano-vectordb:Init {'embedding_dim': 1024, 'metric': 'cosine', 'storage_file': './rag_storage_test_debug3\\vdb_entities.json'} 0 data
+INFO:nano-vectordb:Init {'embedding_dim': 1024, 'metric': 'cosine', 'storage_file': './rag_storage_test_debug3\\vdb_relationships.json'} 0 data
+INFO:nano-vectordb:Init {'embedding_dim': 1024, 'metric': 'cosine', 'storage_file': './rag_storage_test_debug3\\vdb_chunks.json'} 0 data
+INFO: LightRAG instance created, initializing storages...
+INFO: [] Process 33936 KV load full_docs with 0 records
+INFO: [] Process 33936 KV load text_chunks with 0 records
+INFO: [] Process 33936 KV load full_entities with 0 records
+INFO: [] Process 33936 KV load full_relations with 0 records
+INFO: [] Process 33936 KV load entity_chunks with 0 records
+INFO: [] Process 33936 KV load relation_chunks with 0 records
+INFO: [] Process 33936 KV load llm_response_cache with 0 records
+INFO: [] Process 33936 doc status load doc_status with 0 records
+INFO: [] Process 33936 KV load parse_cache with 0 records
+INFO: [] Process 33936 KV load multimodal_status with 0 records
+INFO: Multimodal processors initialized with context support
+INFO: Available processors: ['generic']
+INFO: Context configuration: ContextConfig(context_window=1, context_mode='page', max_context_tokens=2000, include_headers=True, include_captions=True, filter_content_types=['text'])
+INFO: Hybrid search engine initialized for RRF fusion retrieval
+INFO: No existing chunks file at rag_storage_test_debug3\kv_store_text_chunks.json
+INFO: LightRAG, parse cache, multimodal status cache, and multimodal processors initialized
+[PROGRESS] phase=parsing status=start file=88f1c2d6_ÊµãËØï.docx
+INFO: Starting complete document processing: C:\Users\98014\RAG-Anything\uploads\88f1c2d6_≤‚ ‘.docx
+INFO: Starting document parsing: C:\Users\98014\RAG-Anything\uploads\88f1c2d6_≤‚ ‘.docx
+INFO: Using docling parser with method: auto
+INFO: Detected Office or HTML document, using parser for Office/HTML...
+INFO:docling.datamodel.document:detected formats: [<InputFormat.DOCX: 'docx'>]
+INFO:docling.document_converter:Going to convert document batch...
+INFO:docling.document_converter:Initializing pipeline for SimplePipeline with options hash 7d306d2d021deac65a97d1a5f925362a
+INFO:docling.models.factories.base_factory:Loading plugin 'docling_defaults'
+INFO:docling.models.factories:Registered picture descriptions: ['picture_description_vlm_engine', 'vlm', 'api']
+INFO:docling.pipeline.base_pipeline:Processing document 88f1c2d6_≤‚ ‘.docx
+INFO:docling.document_converter:Finished converting document 88f1c2d6_≤‚ ‘.docx in 2.58 sec.
+INFO:raganything.parser.base:Docling Python API parse completed for 88f1c2d6_≤‚ ‘.docx
+INFO: Parsing C:\Users\98014\RAG-Anything\uploads\88f1c2d6_≤‚ ‘.docx complete! Extracted 680 content blocks
+INFO: Stored parsing result in cache: 22f23323aab233633b6d977dcca3722f
+INFO: 
+Content Information:
+INFO: * Total blocks in content_list: 680
+INFO: * Content block types:
+INFO:   - text: 603
+INFO:   - table: 13
+INFO:   - image: 61
+INFO:   - equation: 3
+INFO: Content separation complete:
+INFO:   - Text content length: 31282 characters
+INFO:   - Multimodal items count: 77
+INFO:   - Multimodal type distribution: {'table': 13, 'image': 61, 'equation': 3}
+INFO: Setting content source for context-aware multimodal processing...
+INFO: Content source set with format: minerU
+INFO: Content source set for context extraction (format: minerU)
+INFO: Starting text content insertion into LightRAG...
+INFO: Processing 1 document(s)
+INFO: Extracting stage 1/1: 88f1c2d6_≤‚ ‘.docx
+INFO: Processing d-id: doc-dedb2490055d2499beb980a9e811e55f
+INFO: Embedding func: 3 new workers initialized (Timeouts: Func: 30s, Worker: 60s, Health Check: 75s)
+ERROR: Embedding func: Error in decorated function for task 1789444485568_10334.062: Error code: 400 - {'error': {'message': '<400> InternalError.Algo.InvalidParameter: Value error, batch size is invalid, it should not be larger than 10.: input.contents', 'type': 'InvalidParameter', 'param': None, 'code': 'InvalidParameter'}, 'id': 'b17b6a47-42dd-91c4-babf-07f5933d0000', 'request_id': 'b17b6a47-42dd-91c4-babf-07f5933d0000'}
+ERROR: Traceback (most recent call last):
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\lightrag\lightrag.py", line 2040, in process_document
+    await asyncio.gather(*first_stage_tasks)
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\lightrag\kg\nano_vector_db_impl.py", line 126, in upsert
+    embeddings_list = await asyncio.gather(*embedding_tasks)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\lightrag\utils.py", line 534, in __call__
+    result = await self.func(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\lightrag\utils.py", line 1064, in wait_func
+    return await future
+           ^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\lightrag\utils.py", line 768, in worker
+    result = await asyncio.wait_for(
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "D:\Python311\Python311\Lib\asyncio\tasks.py", line 479, in wait_for
+    return fut.result()
+           ^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\tenacity\asyncio\__init__.py", line 193, in async_wrapped
+    return await copy(fn, *args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\tenacity\asyncio\__init__.py", line 112, in __call__
+    do = await self.iter(retry_state=retry_state)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\tenacity\asyncio\__init__.py", line 157, in iter
+    result = await action(retry_state)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\tenacity\_utils.py", line 111, in inner
+    return call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\tenacity\__init__.py", line 393, in <lambda>
+    self._add_action_func(lambda rs: rs.outcome.result())
+                                     ^^^^^^^^^^^^^^^^^^^
+  File "D:\Python311\Python311\Lib\concurrent\futures\_base.py", line 449, in result
+    return self.__get_result()
+           ^^^^^^^^^^^^^^^^^^^
+  File "D:\Python311\Python311\Lib\concurrent\futures\_base.py", line 401, in __get_result
+    raise self._exception
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\tenacity\asyncio\__init__.py", line 116, in __call__
+    result = await fn(*args, **kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\lightrag\llm\openai.py", line 875, in openai_embed
+    response = await openai_async_client.embeddings.create(**api_params)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\openai\resources\embeddings.py", line 260, in create
+    return await self._post(
+           ^^^^^^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\openai\_base_client.py", line 1931, in post
+    return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\98014\RAG-Anything\.venv\Lib\site-packages\openai\_base_client.py", line 1716, in request
+    raise self._make_status_error_from_response(err.response) from None
+openai.BadRequestError: Error code: 400 - {'error': {'message': '<400> InternalError.Algo.InvalidParameter: Value error, batch size is invalid, it should not be larger than 10.: input.contents', 'type': 'InvalidParameter', 'param': None, 'code': 'InvalidParameter'}, 'id': 'b17b6a47-42dd-91c4-babf-07f5933d0000', 'request_id': 'b17b6a47-42dd-91c4-babf-07f5933d0000'}
+
+ERROR: Failed to extract document 1/1: 88f1c2d6_≤‚ ‘.docx
+INFO: Enqueued document processing pipeline stopped
+INFO: Text content insertion complete
+INFO: [] Writing graph with 0 nodes, 0 edges
+INFO: In memory DB persist to disk
+INFO: Starting multimodal content processing...
+INFO: Starting to process 77 multimodal content items
+WARNING: No processor found for type: table
+WARNING: No processor found for type: table
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: table
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: table
+WARNING: No processor found for type: equation
+WARNING: No processor found for type: equation
+WARNING: No processor found for type: equation
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: table
+WARNING: No processor found for type: image
+WARNING: No processor found for type: table
+WARNING: No processor found for type: image
+WARNING: No processor found for type: table
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: table
+WARNING: No processor found for type: image
+WARNING: No processor found for type: table
+WARNING: No processor found for type: table
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: table
+WARNING: No processor found for type: table
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: table
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No processor found for type: image
+WARNING: No valid multimodal descriptions generated
+INFO: Multimodal content processing complete
+INFO: Document C:\Users\98014\RAG-Anything\uploads\88f1c2d6_≤‚ ‘.docx processing complete!
+[PROGRESS] phase=graph-building status=start file=88f1c2d6_ÊµãËØï.docx
+INFO: Successfully finalized 12 storages
+INFO: Successfully finalized all RAGAnything storages
+[PROGRESS] phase=graph-building status=done file=88f1c2d6_ÊµãËØï.docx
+[WORKER] ÂÆåÊàê: 88f1c2d6_ÊµãËØï.docx
+[PROGRESS] phase=multimodal-tasks status=start file=88f1c2d6_ÊµãËØï.docx
+[PROGRESS] phase=multimodal-tasks status=done file=88f1c2d6_ÊµãËØï.docx
+INFO: Successfully finalized all RAGAnything storages

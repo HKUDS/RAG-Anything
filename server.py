@@ -5,7 +5,6 @@ RAG-Anything FastAPI 服务器
 """
 import io
 import json
-import logging
 import os
 import sys
 from pathlib import Path
@@ -16,7 +15,7 @@ from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env", override=False)
 
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, Request
 from fastapi.security import HTTPBearer
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -86,18 +85,6 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
-# ── 输入校验 + Prompt Injection 防护 ────────────────
-import re as _re_valid
-PROMPT_INJECTION_PATTERNS = [
-    r"(ignore|forget|disregard)\s+(all\s+)?(previous|prior|above|earlier)\s+(instructions?|prompts?|commands?)",
-    r"(you\s+are|act\s+as|pretend\s+to\s+be|roleplay\s+as)\s+(now|from\s+now\s+on)",
-    r"(system\s*(prompt|message|instruction))",
-    r"<\s*(script|iframe|object|embed|style)\b",
-    r"(javascript|onerror|onload|onclick)\s*:",
-    r"(\.\./|\.\.\\)",  # 路径遍历
-]
-PROMPT_INJECTION_REGEX = [_re_valid.compile(p, _re_valid.IGNORECASE) for p in PROMPT_INJECTION_PATTERNS]
-
 MAX_UPLOAD_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_MB", "500")) * 1024 * 1024
 MAX_BODY_SIZE = int(os.getenv("MAX_BODY_SIZE_MB", "10")) * 1024 * 1024
 
@@ -121,39 +108,9 @@ class RequestSizeMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(RequestSizeMiddleware)
 
-def validate_query_input(query: str) -> str:
-    """校验查询输入，检测 Prompt Injection 攻击"""
-    if not query or not query.strip():
-        raise HTTPException(400, "查询内容不能为空")
-    if len(query) > 5000:
-        raise HTTPException(400, "查询内容超过最大长度限制")
-    for pattern in PROMPT_INJECTION_REGEX:
-        if pattern.search(query):
-            server_logger.warning(f"Prompt Injection 拦截: pattern={pattern.pattern[:40]} query={query[:80]}")
-            raise HTTPException(400, "请求包含不安全内容")
-    return query.strip()
-
 # ── 日志敏感信息脱敏 ────────────────────────────────
-class SensitiveLogFilter(logging.Filter):
-    """自动脱敏日志中的敏感字段"""
-    _patterns = [
-        (_re_valid.compile(r'(api[_-]?key[=:"\s]*)([a-zA-Z0-9_\-]{8,})', _re_valid.IGNORECASE), r'\1***REDACTED***'),
-        (_re_valid.compile(r'(password[=:"\s]*)([^,&\s"]+)', _re_valid.IGNORECASE), r'\1***REDACTED***'),
-        (_re_valid.compile(r'(token[=:"\s]*)([a-zA-Z0-9_\-\.]{20,})', _re_valid.IGNORECASE), r'\1***REDACTED***'),
-        (_re_valid.compile(r'(Bearer\s+)([a-zA-Z0-9_\-\.]{20,})'), r'\1***REDACTED***'),
-        (_re_valid.compile(r'([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})'), r'***EMAIL***'),
-    ]
-    def filter(self, record):
-        if hasattr(record, 'msg') and isinstance(record.msg, str):
-            for pattern, replacement in self._patterns:
-                record.msg = pattern.sub(replacement, record.msg)
-        return True
-
-# 应用到所有 handler
-for _h in logging.getLogger().handlers + logging.getLogger("rag_server").handlers:
-    _h.addFilter(SensitiveLogFilter())
-logging.getLogger("rag_server").addFilter(SensitiveLogFilter())
-logging.getLogger("lightrag").addFilter(SensitiveLogFilter())
+from raganything.utils.security import apply_sensitive_log_filter
+apply_sensitive_log_filter()
 
 # ── 多知识库管理 ──────────────────────────────────
 # 共享状态从 services 层导入，保持模块级别名向后兼容
@@ -272,5 +229,81 @@ async def shutdown():
         try: await kb.finalize_storages()
         except: pass
 
+# ── Server Startup Guard ─────────────────────────────────────
+def _acquire_server_lock(port: int) -> None:
+    """Ensure only one server instance runs at a time.
+
+    Checks:
+    1. PID file — if it exists and the PID is alive, refuse to start.
+    2. Port — if already bound, refuse to start.
+
+    On success, writes a PID file and registers cleanup handlers.
+    """
+    import atexit
+    import signal
+    import socket
+    from datetime import datetime, timezone
+    from raganything.utils.process_lock import get_server_pid_path
+
+    pid_path = get_server_pid_path(WORKING_DIR)
+
+    # 1. Validate any existing PID file
+    if pid_path.exists():
+        try:
+            stale_pid = int(pid_path.read_text(encoding="utf-8").strip())
+        except (ValueError, OSError):
+            stale_pid = None
+        if stale_pid is not None:
+            try:
+                os.kill(stale_pid, 0)
+                server_logger.error(
+                    f"Server 已在运行 (PID {stale_pid})。"
+                    f"如果确定未运行，请删除 {pid_path}"
+                )
+                sys.exit(1)
+            except OSError:
+                server_logger.warning(
+                    f"发现过时 PID 文件 (PID {stale_pid} 已不存在)，覆盖"
+                )
+
+    # 2. Port pre-check
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        sock.bind(("0.0.0.0", port))
+    except OSError:
+        server_logger.error(
+            f"端口 {port} 已被占用，Server 可能已在运行"
+        )
+        sys.exit(1)
+    finally:
+        sock.close()
+
+    # 3. Write PID file
+    pid_path.parent.mkdir(parents=True, exist_ok=True)
+    pid_path.write_text(
+        f"{os.getpid()}\n{datetime.now(timezone.utc).isoformat()}",
+        encoding="utf-8",
+    )
+    server_logger.info(f"PID 文件已创建: {pid_path} (PID {os.getpid()})")
+
+    # 4. Cleanup handlers
+    def _cleanup_pid() -> None:
+        try:
+            if pid_path.exists():
+                pid_path.unlink()
+        except Exception:
+            pass
+
+    atexit.register(_cleanup_pid)
+
+    def _signal_handler(signum, frame):
+        _cleanup_pid()
+        sys.exit(0)
+
+    signal.signal(signal.SIGTERM, _signal_handler)
+    signal.signal(signal.SIGINT, _signal_handler)
+
+
 if __name__ == "__main__":
+    _acquire_server_lock(port=8001)
     uvicorn.run(app, host="0.0.0.0", port=8001)

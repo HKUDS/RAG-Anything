@@ -24,6 +24,7 @@ from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
 from raganything.chunking import STRATEGY_META
 from raganything.processor import get_pending_background_tasks
+from raganything.utils.process_lock import FileLock, get_file_lock_path
 
 API_KEY = os.getenv("LLM_BINDING_API_KEY")
 BASE_URL = os.getenv("LLM_BINDING_HOST")
@@ -171,7 +172,7 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
     lightrag_kwargs = {
         "chunk_token_size": int(os.getenv("CHUNK_SIZE", "800")),
         "chunk_overlap_token_size": int(os.getenv("CHUNK_OVERLAP", "100")),
-        "embedding_batch_num": int(os.getenv("EMBEDDING_BATCH_SIZE", "20")),
+        "embedding_batch_num": int(os.getenv("EMBEDDING_BATCH_SIZE", "10")),
         "embedding_func_max_async": int(os.getenv("ENTITY_EXTRACT_CONCURRENCY", "3")),
     }
     if chosen is not None:
@@ -262,6 +263,53 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
 
     strategy_name = STRATEGY_META.get(strategy, {}).get("name", strategy)
     print(f"[WORKER] 开始处理: file={filename} kb={kb_name} dir={target_dir} strategy={strategy_name}", flush=True)
+
+    # ── Duplicate worker guard (L3 + L4) ───────────────────
+    # L3: Check doc_status — is another worker already processing this file?
+    _DOC_STATUS_STALE_SEC = 300  # 5 minutes
+    sp_status = Path(target_dir) / "kv_store_doc_status.json"
+    if sp_status.exists():
+        try:
+            with open(sp_status, "r", encoding="utf-8") as f:
+                ds = json.load(f)
+            for _did, _info in ds.items():
+                if _info.get("file_path") == filename:
+                    if _info.get("status") == "processing":
+                        from datetime import datetime, timezone
+                        _updated = _info.get("updated_at", "")
+                        try:
+                            _dt = datetime.fromisoformat(str(_updated))
+                            _age = (datetime.now(timezone.utc) - _dt).total_seconds()
+                        except Exception:
+                            _age = 0
+                        if _age < _DOC_STATUS_STALE_SEC:
+                            print(
+                                f"[WORKER] 文档 {filename} 有活跃的处理器 "
+                                f"(updated {_age:.0f}s ago)，退出",
+                                flush=True,
+                            )
+                            sys.exit(3)
+                        else:
+                            print(
+                                f"[WORKER] 文档 {filename} 的 processing 状态已过期 "
+                                f"({_age:.0f}s)，继续处理",
+                                flush=True,
+                            )
+                    break
+        except Exception as exc:
+            print(f"[WORKER] 读取 doc_status 失败: {exc}，跳过检查", flush=True)
+
+    # L4: Acquire exclusive file lock
+    import hashlib
+    _fh = hashlib.sha256(os.path.basename(file_path).encode()).hexdigest()[:16]
+    lock_path = get_file_lock_path(os.getenv("WORKING_DIR", "./rag_storage"), _fh)
+    file_lock = FileLock(str(lock_path))
+    if not file_lock.acquire():
+        print(
+            f"[WORKER] 文件已被另一个 Worker 锁定: {filename} (lock: {lock_path})",
+            flush=True,
+        )
+        sys.exit(3)
 
     # 创建 RAG 实例
     rag = create_rag(working_dir=target_dir, chunking_strategy=strategy)
@@ -366,12 +414,12 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
             for did, info in ds.items():
                 if info.get("file_path") == filename:
                     found = True
-                    if info.get("chunks_count", 0) == 0 and not info.get("status") == "failed":
+                    if info.get("chunks_count", 0) == 0 or info.get("status") == "failed":
                         merge_failed = True
                         print(
-                            f"[WORKER] ERROR: 文档处理完成但 chunks=0, "
-                            f"可能是合并(merging)/实体提取步骤失败. "
-                            f"doc_id={did} status={info.get('status')}",
+                            f"[WORKER] ERROR: 文档处理失败. "
+                            f"chunks={info.get('chunks_count', 0)} status={info.get('status')}"
+                            f" doc_id={did}",
                             flush=True,
                         )
                     break
@@ -398,6 +446,10 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
         traceback.print_exc()
         _fix_stuck_doc(filename, target_dir, f"Worker 异常退出: {str(e)[:200]}")
         sys.exit(1)
+
+    finally:
+        if file_lock.is_locked():
+            file_lock.release()
 
 
 if __name__ == "__main__":

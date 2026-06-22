@@ -5,7 +5,7 @@ export function setCurrentKB(name) { currentKB = name }
 export function getCurrentKB() { return currentKB }
 
 // 从 localStorage 读取 token
-function getToken() {
+export function getToken() {
   try {
     const saved = localStorage.getItem('raganything_auth')
     return saved ? JSON.parse(saved).token : ''

@@ -2,6 +2,8 @@
 
 import json
 import os
+import re
+import secrets
 import uuid
 import shutil
 from datetime import datetime
@@ -20,8 +22,12 @@ from .shared import (
     get_current_user,
     CHUNKING_STRATEGY,
     _process_uploaded_file,
+    _compute_file_hash,
+    _is_file_being_processed,
+    _register_processing_file,
     get_kb,
     processing_tasks,
+    cleanup_completed_tasks,
     kb_dir,
     lightrag_logger,
     infer_entity_type,
@@ -30,6 +36,7 @@ from .shared import (
     save_kb_meta,
     kb_instances,
 )
+from raganything.dependencies import get_optional_user, get_current_user_from_token
 from raganything.chunking import build_chunking_func, STRATEGY_META as CHUNKING_STRATEGY_META
 
 # Module reference for writing to shared mutable state (active_kb)
@@ -60,15 +67,37 @@ class BatchDeleteRequest(BaseModel):
 async def upload_file(request: Request, file: UploadFile = File(...), background_tasks: BackgroundTasks = None,
                        kb: str = Depends(verify_kb_access), chunking_strategy: str = "",
                        current_user: dict = Depends(get_current_user)):
-    """上传单个文件 - 立即返回，后台异步处理"""
+    """Upload a single file — immediate return, background processing"""
     task_id = str(uuid.uuid4())[:8]
     upload_dir = Path("./uploads")
     upload_dir.mkdir(exist_ok=True)
-    file_path = upload_dir / file.filename
+    safe_name = os.path.basename(file.filename)
+    file_path = upload_dir / (secrets.token_hex(4) + "_" + safe_name)
     content = await file.read()
     file_path.write_bytes(content)
 
+    # Dedup check: reject if same file content is already being processed in this KB
+    file_hash = _compute_file_hash(str(file_path))
+    existing_task = _is_file_being_processed(kb, file_hash)
+    if existing_task:
+        lightrag_logger.warning(
+            f"[UPLOAD-API] 重复上传拒绝: file={file.filename} kb={kb} "
+            f"existing_task={existing_task}"
+        )
+        from raganything.services.ws_service import ws_broadcast
+        await ws_broadcast({
+            "type": "duplicate", "file": file.filename,
+            "existing_task_id": existing_task, "kb": kb,
+        })
+        raise HTTPException(
+            409,
+            f"文件正在处理中 (task_id={existing_task})",
+        )
+
     lightrag_logger.info(f"[UPLOAD-API] 收到上传请求: file={file.filename} kb={kb} strategy={chunking_strategy}")
+
+    # Register for dedup tracking BEFORE spawning the background task
+    _register_processing_file(kb, file_hash, task_id)
 
     # 后台异步处理
     if background_tasks is None:
@@ -94,12 +123,24 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
     upload_dir.mkdir(exist_ok=True)
 
     tasks = []
+    skipped: list[str] = []
     for file in files:
         task_id = str(uuid.uuid4())[:8]
         file_path = upload_dir / file.filename
         content = await file.read()
         file_path.write_bytes(content)
 
+        # Dedup check per file
+        file_hash = _compute_file_hash(str(file_path))
+        existing_task = _is_file_being_processed(kb, file_hash)
+        if existing_task:
+            lightrag_logger.warning(
+                f"[UPLOAD-BATCH] 跳过重复: file={file.filename} existing_task={existing_task}"
+            )
+            skipped.append(file.filename)
+            continue
+
+        _register_processing_file(kb, file_hash, task_id)
         if background_tasks is None:
             raise HTTPException(500, "服务器内部错误：BackgroundTasks 未注入")
         background_tasks.add_task(_process_uploaded_file, task_id, str(file_path.absolute()),
@@ -108,9 +149,13 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
         lightrag_logger.info(f"[UPLOAD-BATCH] 任务={task_id} 文件={file.filename} kb={kb}")
 
     strategy_name = CHUNKING_STRATEGY_META.get(chunking_strategy or CHUNKING_STRATEGY, {}).get('name', '默认')
-    return {"status": "queued", "tasks": tasks, "total": len(tasks), "kb": kb,
-            "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY,
-            "message": f"已接收 {len(tasks)} 个文件，使用{strategy_name}分块，后台处理中"}
+    result = {"status": "queued", "tasks": tasks, "total": len(tasks), "kb": kb,
+              "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY,
+              "message": f"已接收 {len(tasks)} 个文件，使用{strategy_name}分块，后台处理中"}
+    if skipped:
+        result["skipped"] = skipped
+        result["message"] += f"，{len(skipped)} 个跳过（重复）"
+    return result
 
 
 @router.post("/upload/folder")
@@ -231,10 +276,26 @@ async def upload_from_url(url: str = QueryParam(...), current_user: dict = Depen
 
 # ── Knowledge / Document handlers ──────────────────────
 
+# Compiled regex for stripping secrets.token_hex(4) prefix (8 hex chars + "_")
+_HASH_PREFIX_RE = re.compile(r'^[0-9a-f]{8}_(.+)$')
+
+
+def _strip_hash_prefix(filename: str) -> str:
+    """Strip 8-char hex prefix inserted by upload (e.g. '593dbd4b_test.docx' → 'test.docx').
+
+    Returns the original filename unchanged if no hash prefix is found.
+    """
+    m = _HASH_PREFIX_RE.match(filename)
+    return m.group(1) if m else filename
+
+
 @router.get("/knowledge/documents")
 async def list_documents(kb: str = Depends(verify_kb_access)):
     """列出所有文档及其状态（含处理中的任务）"""
     try:
+        # Clean up completed/failed tasks before building the response
+        cleanup_completed_tasks()
+
         status_path = Path(kb_dir(kb)) / "kv_store_doc_status.json"
         data = {}
         if status_path.exists():
@@ -243,19 +304,29 @@ async def list_documents(kb: str = Depends(verify_kb_access)):
             except json.JSONDecodeError:
                 lightrag_logger.warning(f"doc_status JSON 损坏，返回空列表: {status_path}")
                 data = {}
+
+        # Deduplicate doc_status entries by original filename: keep only the
+        # most recently updated entry per stripped filename.
+        best_doc: dict[str, tuple[str, dict]] = {}  # orig_name → (doc_id, info)
+        for doc_id, info in data.items():
+            orig = _strip_hash_prefix(info.get("file_path", ""))
+            if orig not in best_doc or info.get("updated_at", "") > best_doc[orig][1].get("updated_at", ""):
+                best_doc[orig] = (doc_id, info)
+
         docs = []
         seen_files = set()
-        for doc_id, info in data.items():
+        for orig_name, (doc_id, info) in best_doc.items():
             # Check if there's a matching processing task with phase info
             doc_phase = ""
             for tid, task in processing_tasks.items():
-                if task.get("file", "") == info.get("file_path", "") and task.get("kb", "") == kb:
+                task_file = _strip_hash_prefix(task.get("file", ""))
+                if task_file == orig_name and task.get("kb", "") == kb:
                     doc_phase = task.get("phase", "")
                     break
             docs.append({
                 "id": doc_id[:16],
                 "full_id": doc_id,
-                "file": info.get("file_path", "?"),
+                "file": _strip_hash_prefix(info.get("file_path", "?")),
                 "status": info.get("status", "?"),
                 "chunks": info.get("chunks_count", 0),
                 "length": info.get("content_length", 0),
@@ -263,14 +334,14 @@ async def list_documents(kb: str = Depends(verify_kb_access)):
                 "updated": info.get("updated_at", ""),
                 "phase": doc_phase,
             })
-            seen_files.add(info.get("file_path", ""))
+            seen_files.add(orig_name)
 
         # 合并处理中的任务（还未写入 doc_status），仅限当前 KB
         for tid, task in processing_tasks.items():
             if task.get("kb", "") != kb:
                 continue
             fn = task.get("file", "")
-            if fn and fn not in seen_files:
+            if fn and _strip_hash_prefix(fn) not in seen_files:
                 docs.append({
                     "id": tid,
                     "full_id": tid,
@@ -337,14 +408,13 @@ async def knowledge_stats(kb: str = Depends(verify_kb_access)):
         for v in _safe_load_json(rp).values():
             stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
 
-    # chunk 总数
-    cp = base / "vdb_chunks.json"
-    if cp.exists():
-        stats["chunks"] = len(_safe_load_json(cp))
-
+    # 文档总数 & 分块总数 — 从 doc_status 聚合
+    # （vdb_chunks.json 是 LightRAG NanoVectorDB 内部存储文件，其 JSON 键数不等于实际分块数）
     dp = base / "kv_store_doc_status.json"
     if dp.exists():
-        stats["documents"] = len(_safe_load_json(dp))
+        doc_data = _safe_load_json(dp)
+        stats["documents"] = len(doc_data)
+        stats["chunks"] = sum(v.get("chunks_count", 0) for v in doc_data.values())
     return stats
 
 
@@ -396,7 +466,7 @@ async def graph_data(kb: str = Depends(verify_kb_access)):
     if ep.exists():
         with open(ep, "r", encoding="utf-8") as f:
             for k, v in json.load(f).items():
-                for name in v.get("entity_names", [])[:40]:
+                for name in v.get("entity_names", []):
                     if is_valid_node(name) and name not in node_ids:
                         node_ids.add(name)
                         nodes.append({"id": name, "label": name[:25]})
@@ -405,7 +475,7 @@ async def graph_data(kb: str = Depends(verify_kb_access)):
     if rp.exists():
         with open(rp, "r", encoding="utf-8") as f:
             for k, v in json.load(f).items():
-                for src, tgt in v.get("relation_pairs", [])[:100]:
+                for src, tgt in v.get("relation_pairs", []):
                     if not is_valid_node(src) or not is_valid_node(tgt):
                         continue
                     if src not in node_ids:
@@ -416,7 +486,7 @@ async def graph_data(kb: str = Depends(verify_kb_access)):
                         nodes.append({"id": tgt, "label": tgt[:25]})
                     edges.append({"source": src, "target": tgt, "label": ""})
 
-    return {"nodes": nodes[:120], "edges": edges[:80]}
+    return {"nodes": nodes, "edges": edges}
 
 
 @router.delete("/knowledge/documents/{doc_id}")
@@ -692,8 +762,20 @@ async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
 # ── File serving ───────────────────────────────────────
 
 @router.get("/files/image")
-async def serve_image(path: str = QueryParam(...)):
-    """服务图片文件 — 仅允许项目目录内的图片"""
+async def serve_image(
+    path: str = QueryParam(...),
+    token: Optional[str] = QueryParam(None, description="认证 Token（用于 img 标签等无法设置 Header 的场景）"),
+    current_user: Optional[dict] = Depends(get_optional_user),
+):
+    """服务图片文件 — 支持 query 参数 token 或 Authorization header。
+
+    浏览器 <img> 标签无法设置 Authorization header，因此额外支持 ?token=xxx 认证。
+    """
+    if current_user is None and token:
+        current_user = await get_current_user_from_token(token=token)
+    if current_user is None:
+        raise HTTPException(401, "请提供有效的认证 Token（query 参数 ?token= 或 Authorization header）")
+
     abs_path = Path(path).resolve()
     cwd = Path.cwd()
     # 安全检查：只允许项目目录内的文件

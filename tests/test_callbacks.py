@@ -212,6 +212,9 @@ class TestRAGAnythingIntegration:
             def __init__(self):
                 self.doc_status = FakeDocStatus()
 
+            async def ainsert(self, **kwargs):
+                pass
+
         async def fake_ensure():
             rag.lightrag = FakeLightRAG()
             return {"success": True}

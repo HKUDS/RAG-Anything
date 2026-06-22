@@ -58,10 +58,10 @@ class RAGAnythingConfig:
     Higher values reduce total processing time but increase API rate limit pressure."""
 
     embedding_batch_size: int = field(
-        default=get_env_value("EMBEDDING_BATCH_SIZE", 20, int)
+        default=get_env_value("EMBEDDING_BATCH_SIZE", 10, int)
     )
     """Number of text chunks to batch into a single embedding API call.
-    Reduces API round-trips from N to N/batch_size. Default 20."""
+    Reduces API round-trips from N to N/batch_size. Default 10."""
 
     display_content_stats: bool = field(
         default=get_env_value("DISPLAY_CONTENT_STATS", True, bool)

@@ -22,7 +22,6 @@ import logging
 from datetime import datetime
 from functools import partial
 from pathlib import Path
-from typing import Optional
 
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env", override=False)
@@ -50,10 +49,48 @@ CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
 
 # ── KB State ──────────────────────────────────────────────
 kb_instances: dict[str, RAGAnything] = {}
+_kb_locks: dict[str, asyncio.Lock] = {}
 active_kb: str = "default"
 KB_META_FILE = Path("./rag_storage_kb_meta.json")
 
 kb_logger = logging.getLogger("rag_server.kb")
+
+# ── Upload Dedup Tracking ───────────────────────────────────
+# Maps (kb_name, file_hash) -> task_id for active processing tasks.
+# Entries are removed when the worker completes or fails.
+_processing_files: dict[tuple[str, str], str] = {}
+
+
+def _compute_file_hash(file_path: str) -> str:
+    """Compute a short content hash for upload deduplication.
+
+    Uses SHA256 on the **first 64 KiB** of the file for speed (uploaded
+    files may be hundreds of MB). Returns the first 16 hex chars.
+    """
+    import hashlib
+    h = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        h.update(f.read(65536))
+    return h.hexdigest()[:16]
+
+
+def _is_file_being_processed(kb_name: str, file_hash: str) -> str | None:
+    """Check if a file is currently being processed in the given KB.
+
+    Returns:
+        The existing task_id if processing, or None.
+    """
+    return _processing_files.get((kb_name, file_hash))
+
+
+def _register_processing_file(kb_name: str, file_hash: str, task_id: str) -> None:
+    """Register a file as currently being processed."""
+    _processing_files[(kb_name, file_hash)] = task_id
+
+
+def _unregister_processing_file(kb_name: str, file_hash: str) -> None:
+    """Remove a file from the processing tracker (called on completion/failure)."""
+    _processing_files.pop((kb_name, file_hash), None)
 
 
 # ── KB Metadata Persistence ────────────────────────────────
@@ -67,9 +104,10 @@ def load_kb_meta() -> dict[str, Any]:
 
 
 def save_kb_meta(meta: dict[str, Any]) -> None:
-    """Persist KB metadata to JSON file."""
-    with open(KB_META_FILE, "w", encoding="utf-8") as f:
-        json.dump(meta, f, ensure_ascii=False, indent=2)
+    """Persist KB metadata to JSON file atomically (tmp + replace)."""
+    tmp = KB_META_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp.replace(KB_META_FILE)
 
 
 def kb_dir(name: str) -> str:
@@ -89,29 +127,25 @@ async def get_kb(name: str = None) -> RAGAnything:
         RAGAnything instance for the named KB
     """
     name = name or active_kb
-    if name not in kb_instances:
-        from lightrag.kg.shared_storage import set_default_workspace
-        target = kb_dir(name)
-        set_default_workspace(target)
-        instance = create_rag(working_dir=target)
-        await instance._ensure_lightrag_initialized()
-        # Lower vector retrieval cosine threshold for broader semantic recall
-        if instance.lightrag and hasattr(instance.lightrag, 'chunks_vdb'):
-            instance.lightrag.chunks_vdb.cosine_better_than_threshold = 0.0
-        kb_instances[name] = instance
-        kb_logger.info(f"[KB] 初始化知识库实例: {name} workspace={target}")
+    # Serialize initialization per KB to prevent concurrent creation race
+    if name not in _kb_locks:
+        _kb_locks[name] = asyncio.Lock()
+    async with _kb_locks[name]:
+        if name not in kb_instances:
+            from lightrag.kg.shared_storage import set_default_workspace
+            target = kb_dir(name)
+            set_default_workspace(target)
+            instance = create_rag(working_dir=target)
+            await instance._ensure_lightrag_initialized()
+            # Lower vector retrieval cosine threshold for broader semantic recall
+            if instance.lightrag and hasattr(instance.lightrag, 'chunks_vdb'):
+                instance.lightrag.chunks_vdb.cosine_better_than_threshold = 0.0
+            kb_instances[name] = instance
+            kb_logger.info(f"[KB] 初始化知识库实例: {name} workspace={target}")
     return kb_instances[name]
 
 
 async def delete_kb(name: str) -> bool:
-    """Delete a KB instance and its storage.
-
-    Args:
-        name: KB name to delete
-
-    Returns:
-        True if deleted, False if not found
-    """
     """Delete a KB instance and its storage.
 
     Args:
@@ -199,9 +233,18 @@ def create_rag(
         else:
             return llm_func(prompt, system_prompt, history_messages, **kw)
 
+    # LightRAG's @wrap_embedding_func_with_attrs hardcodes embedding_dim=1536,
+    # but DashScope text-embedding-v3 returns 1024-dim vectors. We override the
+    # embedding_dim attribute on the partial function so LightRAG allocates
+    # vector storage at the correct (API-native) dimension.
+    _embed_func = partial(
+        openai_embed.func, model=EMB_MODEL, api_key=API_KEY, base_url=BASE_URL
+    )
+    _embed_func.embedding_dim = EMB_DIM
+
     embedding_func = EmbeddingFunc(
         embedding_dim=EMB_DIM, max_token_size=8192,
-        func=partial(openai_embed.func, model=EMB_MODEL, api_key=API_KEY, base_url=BASE_URL),
+        func=_embed_func,
     )
 
     # ── Chunking strategy mapping ──────────────────────────
@@ -230,7 +273,7 @@ def create_rag(
         "chunk_overlap_token_size": int(os.getenv("CHUNK_OVERLAP", "100")),
         "enable_llm_cache": os.getenv("ENABLE_LLM_CACHE", "true").lower() == "true",
         "enable_llm_cache_for_entity_extract": os.getenv("ENABLE_LLM_CACHE_FOR_EXTRACT", "true").lower() == "true",
-        "embedding_batch_num": int(os.getenv("EMBEDDING_BATCH_SIZE", "20")),
+        "embedding_batch_num": int(os.getenv("EMBEDDING_BATCH_SIZE", "10")),
         "embedding_func_max_async": int(os.getenv("ENTITY_EXTRACT_CONCURRENCY", "3")),
     }
     if chosen_chunking_func is not None:
@@ -284,6 +327,37 @@ async def _fix_stuck_doc_status(kb_name: str, filename: str):
 
 # ── Document Upload Processing ─────────────────────────────
 
+def _verify_document_persisted(kb_name: str, filename: str) -> None:
+    """Verify that a processed document has chunks in doc_status.
+
+    Raises RuntimeError if the document is missing from doc_status or has
+    zero chunks after worker subprocess reports success.
+    """
+    import json as _json
+    status_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+    if not status_path.exists():
+        raise RuntimeError(
+            f"文档处理异常：doc_status 文件不存在 ({status_path})"
+        )
+    try:
+        data = _json.loads(status_path.read_text(encoding="utf-8"))
+    except Exception:
+        raise RuntimeError("文档处理异常：doc_status 文件无法解析")
+
+    fname = os.path.basename(filename)
+    for doc_id, info in data.items():
+        stored = os.path.basename(info.get("file_path", ""))
+        if stored == fname:
+            chunks = info.get("chunks_count", 0)
+            status = info.get("status", "?")
+            if chunks == 0:
+                raise RuntimeError(
+                    f"文档处理异常：chunks=0, status={status} (doc_id={doc_id[:16]})"
+                )
+            return
+    raise RuntimeError(f"文档处理异常：doc_status 中未找到匹配记录 ({fname})")
+
+
 async def _process_uploaded_file(
     task_id: str, file_path: str, filename: str,
     kb_name: str = "default", chunking_strategy: str = "", user_id: int = 0,
@@ -311,6 +385,10 @@ async def _process_uploaded_file(
     }
     await add_event("upload_start", file=filename, task_id=task_id, user_id=user_id)
     actual_strategy = chunking_strategy or CHUNKING_STRATEGY
+
+    # Register for dedup tracking
+    file_hash = _compute_file_hash(file_path)
+    _register_processing_file(kb_name, file_hash, task_id)
 
     try:
         await emit_progress(task_id, 5, f"子进程处理: {filename}")
@@ -343,7 +421,7 @@ async def _process_uploaded_file(
                 text = line.decode("utf-8", errors="replace").strip()
                 if text:
                     worker_output_lines.append(text)
-                    kb_logger.debug(f"[WORKER:{task_id}] {text}")
+                    kb_logger.info(f"[WORKER:{task_id}] {text}")
                     # Parse structured progress lines from worker
                     m = re.match(
                         r"\[PROGRESS\]\s+phase=(\S+)\s+status=(\S+)(?:\s+file=(.+))?",
@@ -395,6 +473,11 @@ async def _process_uploaded_file(
         )
 
         if proc.returncode != 0:
+            # Exit code 3 = worker conflict (file already locked by another worker)
+            if proc.returncode == 3:
+                conflict_lines = [l for l in worker_output_lines if "already being processed" in l or "active processor" in l]
+                conflict_detail = conflict_lines[0] if conflict_lines else "文件正在被另一个 Worker 处理"
+                raise RuntimeError(f"处理冲突: {conflict_detail}")
             error_lines = [l for l in worker_output_lines if "ERROR" in l]
             error_detail = "; ".join(error_lines[-2:]) if error_lines else f"exit code {proc.returncode}"
             raise RuntimeError(f"子进程处理失败: {error_detail}")
@@ -404,12 +487,16 @@ async def _process_uploaded_file(
             error_detail = error_lines[0] if error_lines else "Merging stage failed"
             raise RuntimeError(f"子进程实体提取失败 (chunks=0): {error_detail}")
 
+        # Verify data was actually persisted: the worker may exit 0 even when
+        # LightRAG internally marked the document as failed.
+        _verify_document_persisted(kb_name, filename)
+
         # Clear cached instance so next query reloads from disk
         if kb_name in kb_instances:
             try:
                 await kb_instances[kb_name].finalize_storages()
-            except Exception:
-                pass
+            except Exception as e:
+                kb_logger.warning(f"[KB] finalize_storages 失败 ({kb_name}): {e}")
             del kb_instances[kb_name]
             kb_logger.info(f"[KB] 清除缓存实例: {kb_name}（子进程写入新数据）")
 
@@ -418,12 +505,14 @@ async def _process_uploaded_file(
         processing_tasks[task_id]["chunking_strategy"] = actual_strategy
         await add_event("upload_complete", file=filename, task_id=task_id, kb=kb_name, user_id=user_id)
         await ws_broadcast({"type": "upload_done", "task_id": task_id, "filename": filename, "kb": kb_name})
+        _unregister_processing_file(kb_name, file_hash)
 
     except Exception as e:
         processing_tasks[task_id]["status"] = "failed"
         processing_tasks[task_id]["error"] = str(e)
         await add_event("upload_error", file=filename, task_id=task_id, error=str(e), user_id=user_id)
         await _fix_stuck_doc_status(kb_name, filename)
+        _unregister_processing_file(kb_name, file_hash)
 
 
 WORKFLOW_DIR = Path("./workflows")

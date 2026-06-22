@@ -16,7 +16,9 @@ from typing import Set
 
 # ── DB Path ──────────────────────────────────────────────────
 
-_DB_PATH = Path("auth.db")
+import os as _os
+
+_DB_PATH = Path(_os.getenv("AUTH_DB_PATH", "auth.db"))
 
 
 def set_blacklist_db_path(db_path: str):
@@ -69,21 +71,17 @@ class TokenBlacklist:
             pass
 
     def _persist_revoke(self, jti: str, expires_at: datetime):
-        """后台线程将撤销写入 SQLite（不阻塞主请求）。"""
-        def _write():
-            try:
-                conn = self._get_conn()
-                conn.execute(
-                    "INSERT OR REPLACE INTO token_revocations (jti, expires_at) VALUES (?, ?)",
-                    (jti, expires_at.isoformat()),
-                )
-                conn.commit()
-                conn.close()
-            except Exception:
-                pass
-
-        t = threading.Thread(target=_write, daemon=True)
-        t.start()
+        """Write revocation to SQLite synchronously (ensures durability before return)."""
+        try:
+            conn = self._get_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO token_revocations (jti, expires_at) VALUES (?, ?)",
+                (jti, expires_at.isoformat()),
+            )
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
 
     def revoke(self, jti: str, expires_at: datetime):
         """撤销一个 Token（内存 + 持久化）。

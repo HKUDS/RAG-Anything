@@ -544,9 +544,19 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
                 full_answer = llm_response
                 yield f"data: {json.dumps({'type': 'token', 'content': llm_response}, ensure_ascii=False)}\n\n"
             else:
-                async for token in llm_response:
-                    full_answer += token
-                    yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
+                _stream_tokens = []
+                try:
+                    async for token in llm_response:
+                        _stream_tokens.append(token)
+                        full_answer += token
+                        yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
+                except Exception as _stream_err:
+                    lightrag_logger.warning(
+                        f"LLM stream interrupted after {len(_stream_tokens)} tokens: {_stream_err}"
+                    )
+                    if not _stream_tokens:
+                        raise
+                    yield f"data: {json.dumps({'type': 'warning', 'content': '⚠️ 模型响应被截断，以下回答可能不完整'}, ensure_ascii=False)}\n\n"
 
             # Citation fallback: append 📚 参考来源 block if LLM omitted it
             if instance.config.enforce_citation and full_answer:

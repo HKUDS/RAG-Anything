@@ -40,6 +40,11 @@ class SettingsUpdate(BaseModel):
     chunking_strategy: Optional[str] = None
     entity_types: Optional[str] = None
     entity_extraction_min_degree: Optional[int] = None
+    max_async: Optional[int] = None
+    enable_image: Optional[bool] = None
+    enable_table: Optional[bool] = None
+    enable_equation: Optional[bool] = None
+    enable_video: Optional[bool] = None
 
 
 class WorkflowRunRequest(BaseModel):
@@ -382,9 +387,10 @@ async def update_settings(settings: SettingsUpdate, current_user: dict = Depends
         or settings.entity_types is not None
     )
     if need_rebuild:
-        rag = shared.create_rag()
-        await rag._ensure_lightrag_initialized()
-    return {"status": "ok", "changes": changes, "note": "model/config changes may require restart"}
+        # Clear all cached KB instances so they pick up the new config on next access
+        for name in list(shared.kb_instances.keys()):
+            del shared.kb_instances[name]
+    return {"status": "ok", "changes": changes, "note": "配置已更新，下次访问知识库时生效"}
 
 
 # ── 📈 监控面板 ─────────────────────────────────────

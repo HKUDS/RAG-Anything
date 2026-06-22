@@ -258,17 +258,6 @@ class QueryMixin:
                 query, system_prompt=system_prompt, **kwargs
             )
 
-        # Route context-only queries to RRF pipeline to avoid LightRAG
-        # internal query compatibility issues (embedding dimension mismatch,
-        # language-keyword mismatch, numpy array handling in kg_query).
-        if kwargs.get("only_need_context") and mode != "rrf" and mode != "graph":
-            self.logger.info(
-                f"Routing mode={mode} (only_need_context=True) to RRF pipeline"
-            )
-            return await self._aquery_rrf(
-                query, system_prompt=system_prompt, **kwargs
-            )
-
         # Check if VLM enhanced query should be used
         vlm_enhanced = kwargs.pop("vlm_enhanced", None)
         stream = kwargs.pop("stream", False)
@@ -413,6 +402,22 @@ class QueryMixin:
             self.logger.info(
                 f"RRF retrieved {len(chunks)} chunks"
             )
+
+            # Filter out chunks that are LightRAG fail_response artifacts.
+            # These get into the pipeline when the vector channel returns a
+            # "no-context" response that _parse_lightrag_context mis-parses
+            # as a valid chunk (defense-in-depth with the parser-level guard).
+            before_filter = len(chunks)
+            chunks = [c for c in chunks if "[no-context]" not in c.content]
+            if before_filter != len(chunks):
+                self.logger.warning(
+                    f"Filtered out {before_filter - len(chunks)} fail_response "
+                    f"artifact chunk(s)"
+                )
+
+            if not chunks:
+                self.logger.warning("All RRF chunks were fail_response artifacts — no valid context")
+                return "No relevant documents found for your query."
 
             # Stage 1.5: Rerank chunks (optional, enabled by RERANK_ENABLED=true)
             enable_rerank = kwargs.pop("enable_rerank", False)

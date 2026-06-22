@@ -139,6 +139,35 @@ def require_permission(permission: str):
     return _check_permission
 
 
+async def get_current_user_from_token(
+    token: Optional[str] = None,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(
+        HTTPBearer(auto_error=False)
+    ),
+) -> Optional[Dict[str, Any]]:
+    """从 query 参数 token 或 Bearer header 中解析用户。
+
+    优先级: query 参数 token > Authorization header。
+    用于 img 标签等无法设置 header 的场景。
+    """
+    # 尝试从 query 参数获取 token
+    if token:
+        from fastapi.security import HTTPAuthorizationCredentials
+        fake = HTTPAuthorizationCredentials(
+            scheme="Bearer", credentials=token
+        )
+        try:
+            return await get_current_user(fake)
+        except HTTPException:
+            return None
+
+    # 回退到 Authorization header
+    if credentials is not None:
+        return await get_current_user(credentials)
+
+    return None
+
+
 async def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(
         HTTPBearer(auto_error=False)

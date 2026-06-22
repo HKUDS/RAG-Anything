@@ -55,6 +55,9 @@ from raganything.services.kb_service import (  # noqa: F401 — re-export
     _build_citation_block,
     _get_kb_doc_list,
     infer_entity_type,
+    _compute_file_hash,
+    _is_file_being_processed,
+    _register_processing_file,
     API_KEY,
     BASE_URL,
     LLM_MODEL,
@@ -85,6 +88,7 @@ from raganything.services.state_service import (  # noqa: F401 — re-export
     QUERY_HISTORY_FILE,
     load_query_history,
     save_query_history,
+    cleanup_completed_tasks,
 )
 
 # ── Security Utilities (canonical source) ──────────────────
@@ -111,6 +115,7 @@ from raganything.chunking import (  # noqa: F401 — re-export
     structure_chunking,
     make_semantic_chunking,
     make_agentic_chunking,
+    STRATEGY_META as CHUNKING_STRATEGY_META,
 )
 
 # ── Request Size Middleware ─────────────────────────────────
@@ -252,6 +257,7 @@ __all__ = [
     # State
     "processing_tasks", "query_history", "conversation_manager",
     "QUERY_HISTORY_FILE", "load_query_history", "save_query_history",
+    "cleanup_completed_tasks",
     # Security
     "validate_query_input", "PROMPT_INJECTION_REGEX",
     # Local

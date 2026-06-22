@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Send, User, Bot, Clock, Globe, Search, FileText, Layers, History, MessageSquare, Brain, ChevronDown, ChevronRight, Zap, GitGraph } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
-import { api, getCurrentKB } from '../utils/api'
+import { api, getCurrentKB, getToken } from '../utils/api'
 
 const MODES = [
   { key: 'rrf', icon: Brain, label: '融合', desc: 'BM25+向量+图谱三路融合' },
@@ -245,16 +245,20 @@ export default function QueryPage() {
               <div className="mt-3 pt-3 border-t border-warm-200">
                 <p className="text-[10px] text-warm-500 mb-2">📷 引用的图片 ({m.images.length})</p>
                 <div className="grid grid-cols-2 gap-2">
-                  {m.images.map((img, i) => (
-                    <a key={i} href={`/api/files/image?path=${encodeURIComponent(img)}`} target="_blank" rel="noopener" className="block">
+                  {m.images.map((img, i) => {
+                    const token = getToken()
+                    const imgUrl = `/api/files/image?path=${encodeURIComponent(img)}${token ? '&token=' + encodeURIComponent(token) : ''}`
+                    return (
+                    <a key={i} href={imgUrl} target="_blank" rel="noopener" className="block">
                       <img
-                        src={`/api/files/image?path=${encodeURIComponent(img)}`}
+                        src={imgUrl}
                         alt={`引用图片 ${i + 1}`}
                         className="w-full h-32 object-cover rounded-xl border border-warm-200 hover:border-coral-300 transition-colors"
                         loading="lazy"
                       />
                     </a>
-                  ))}
+                    )
+                  })}
                 </div>
               </div>
             )}
