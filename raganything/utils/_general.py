@@ -11,8 +11,21 @@ Key Dependencies: lightrag.utils (logger), stdlib (json)
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List
 from lightrag.utils import logger
+
+
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def beijing_now() -> str:
+    """Return current Beijing time (UTC+8) formatted as ISO 8601 with offset.
+
+    Returns:
+        str: Timestamp like "2026-06-23T15:20:30+08:00"
+    """
+    return datetime.now(BEIJING_TZ).strftime("%Y-%m-%dT%H:%M:%S+08:00")
 
 
 def get_processor_for_type(modal_processors: Dict[str, Any], content_type: str):

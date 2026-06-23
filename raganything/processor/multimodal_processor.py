@@ -16,6 +16,7 @@ from pathlib import Path
 from raganything.base import DocStatus
 from raganything.parser import MineruParser, MineruExecutionError, get_parser
 from raganything.utils import (
+    beijing_now,
     separate_content,
     insert_text_content,
     insert_text_content_with_multimodal_content,
@@ -334,7 +335,7 @@ class MultimodalProcessorMixin:
                                 **current_doc_status,  # Keep existing fields
                                 "chunks_list": updated_chunks_list,  # Integrated chunks list
                                 "chunks_count": updated_chunks_count,  # Updated total count
-                                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                                "updated_at": beijing_now(),
                             }
                         }
                     )

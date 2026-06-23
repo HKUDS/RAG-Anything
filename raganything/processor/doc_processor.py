@@ -36,6 +36,7 @@ from pathlib import Path
 from raganything.base import DocStatus
 from raganything.parser import MineruParser, MineruExecutionError, get_parser
 from raganything.utils import (
+    beijing_now,
     separate_content,
     insert_text_content,
     insert_text_content_with_multimodal_content,
@@ -103,8 +104,8 @@ class DocProcessorMixin:
 
     @staticmethod
     def _current_doc_status_timestamp() -> str:
-        """Return a stable UTC timestamp for doc_status bookkeeping."""
-        return time.strftime("%Y-%m-%dT%H:%M:%S+00:00", time.gmtime())
+        """Return a Beijing time (UTC+8) timestamp for doc_status bookkeeping."""
+        return beijing_now()
     async def _ensure_doc_status_record(
         self,
         doc_id: str,
@@ -825,7 +826,7 @@ class DocProcessorMixin:
                     "scheme_name": scheme_name,
                     "content_length": 0,
                     "created_at": "",
-                    "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                    "updated_at": beijing_now(),
                     "file_path": file_name,
                 }
                 if existing_status:
@@ -833,7 +834,7 @@ class DocProcessorMixin:
                         **existing_status,
                         "status": DocStatus.FAILED,
                         "error_msg": error_msg,
-                        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+                        "updated_at": beijing_now(),
                     }
                 await doc_status.upsert({doc_pre_id: failed_status})
                 await doc_status.index_done_callback()

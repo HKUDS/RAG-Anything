@@ -38,6 +38,7 @@ from raganything.utils._insert import (  # noqa: F401 — re-export
     insert_text_content_with_multimodal_content,
 )
 from raganything.utils._general import (  # noqa: F401 — re-export
+    beijing_now,
     get_processor_for_type,
     get_processor_supports,
     error_response,
@@ -48,6 +49,8 @@ from raganything.utils._general import (  # noqa: F401 — re-export
 )
 
 __all__ = [
+    # Beijing time
+    "beijing_now",
     # Content separation & formatting
     "normalize_caption_list",
     "get_table_body",

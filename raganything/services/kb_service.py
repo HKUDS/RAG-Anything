@@ -704,7 +704,7 @@ async def _ensure_queue_draining(kb_name: str) -> tuple:
     queue = _rshared._kb_queues.setdefault(kb_name, asyncio.Queue())
     qsize = queue.qsize()
 
-    if not _rshared._kb_draining.get(kb_name) and qsize > 0:
+    if not _rshared._kb_draining.get(kb_name):
         asyncio.ensure_future(_drain_kb_queue(kb_name))
 
     return queue, qsize
