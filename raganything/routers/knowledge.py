@@ -490,6 +490,50 @@ async def graph_data(kb: str = Depends(verify_kb_access)):
     return {"nodes": nodes, "edges": edges}
 
 
+def _cleanup_document_files(kb_name: str, file_path: str, doc_id: str = "") -> None:
+    """Delete uploaded file and parse output for a document.
+
+    Called when a document or KB is deleted from the frontend.  Ensures the
+    ``uploads/`` directory and per-KB parser output directory stay in sync
+    with the knowledge base.
+    """
+    # 1. Delete the original uploaded file from uploads/
+    if file_path:
+        upload_file = Path("./uploads") / Path(file_path).name
+        if upload_file.exists():
+            try:
+                upload_file.unlink()
+                lightrag_logger.info(f"[CLEANUP] 已删除上传文件: {upload_file}")
+            except FileNotFoundError:
+                pass  # 已被并发请求删除
+
+    # 2. Delete the parser output subdirectory for this document
+    output_base = "./output" if kb_name == "default" else f"./output_{kb_name}"
+    output_dir = Path(output_base)
+    if output_dir.exists():
+        file_stem = Path(file_path).stem
+        for d in output_dir.iterdir():
+            if d.is_dir() and d.name.startswith(file_stem):
+                shutil.rmtree(d, ignore_errors=True)
+                lightrag_logger.info(f"[CLEANUP] 已删除解析输出: {d}")
+                break  # one document → one output directory
+
+    # 3. Remove parse cache entry for this doc_id
+    if doc_id:
+        cache_path = Path(kb_dir(kb_name)) / "kv_store_parse_cache.json"
+        if cache_path.exists():
+            try:
+                cache = json.loads(cache_path.read_text("utf-8"))
+                if doc_id in cache:
+                    del cache[doc_id]
+                    cache_path.write_text(
+                        json.dumps(cache, ensure_ascii=False, indent=2), "utf-8"
+                    )
+                    lightrag_logger.info(f"[CLEANUP] 已删除解析缓存: {doc_id[:16]}...")
+            except Exception:
+                pass
+
+
 @router.delete("/knowledge/documents/{doc_id}")
 async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """删除文档 - 使用 LightRAG 的 adelete_by_doc_id 彻底清理所有关联数据"""
@@ -534,6 +578,7 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
     await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
 
     if result.status == "success":
+        _cleanup_document_files(kb, file_name, full_id)
         return {"status": "deleted", "doc_id": full_id, "file": file_name, "message": result.message}
     elif result.status == "not_found":
         # Data may be partially missing (e.g. multimodal processing was
@@ -598,6 +643,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
             if result.status in ("success", "not_found"):
                 del doc_status[full_id]
                 deleted.append(doc_id)
+                _cleanup_document_files(kb, file_name, full_id)
                 await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
                 # Also clean up matching processing_tasks entry
                 for tid, task in list(processing_tasks.items()):
@@ -806,6 +852,31 @@ async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
     if name in kb_instances:
         await kb_instances[name].finalize_storages()
         del kb_instances[name]
+
+    # 清理该 KB 对应的上传文件和解析输出
+    doc_status_path = Path(kb_dir(name)) / "kv_store_doc_status.json"
+    if doc_status_path.exists():
+        try:
+            doc_status = json.loads(doc_status_path.read_text("utf-8"))
+            for info in doc_status.values():
+                file_path = info.get("file_path", "")
+                if file_path:
+                    upload_file = Path("./uploads") / Path(file_path).name
+                    if upload_file.exists():
+                        try:
+                            upload_file.unlink()
+                        except FileNotFoundError:
+                            pass
+        except Exception:
+            pass
+    # 删除该 KB 的解析输出目录
+    output_dir = "./output" if name == "default" else f"./output_{name}"
+    shutil.rmtree(output_dir, ignore_errors=True)
+    # 清理该 KB 的处理中任务
+    for tid, task in list(processing_tasks.items()):
+        if task.get("kb", "") == name:
+            del processing_tasks[tid]
+
     shutil.rmtree(kb_dir(name), ignore_errors=True)
     del meta[name]
     save_kb_meta(meta)
