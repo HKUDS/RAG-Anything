@@ -73,6 +73,13 @@ class EmbedProcessorMixin:
                                 f"(skipped): {chunk_err}"
                             )
 
+            # ── 持久化：确保 text_chunks 和 chunks_vdb 从内存刷到磁盘 ──
+            # JsonKVStorage.upsert() 和 NanoVectorDB.upsert() 仅写入内存，
+            # index_done_callback() 才真正落盘。若不调用，服务器重启后
+            # 所有多模态 chunk 数据（文本 + 向量）丢失。
+            await self.lightrag.text_chunks.index_done_callback()
+            await self.lightrag.chunks_vdb.index_done_callback()
+
             if failed_ids:
                 self.logger.warning(
                     f"{len(failed_ids)}/{len(chunks)} chunks skipped due to "

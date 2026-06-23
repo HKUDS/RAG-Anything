@@ -180,6 +180,13 @@ class BaseModalProcessor:
         # Store chunk
         await self.text_chunks_db.upsert({chunk_id: chunk_data})
 
+        # ── 持久化：确保 text_chunks 从内存刷到磁盘 ──
+        # JsonKVStorage.upsert() 仅写入内存，index_done_callback() 才
+        # 真正落盘。若不调用，服务器重启后所有多模态 chunk 数据丢失。
+        # 注意：每次调用都会完整重写 JSON 文件；批量路径已在
+        # _store_chunks_to_lightrag_storage_type_aware 中统一 flush。
+        await self.text_chunks_db.index_done_callback()
+
         # Store chunk in vector database for retrieval
         chunk_vdb_data = {
             chunk_id: {

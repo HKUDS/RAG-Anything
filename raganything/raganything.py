@@ -254,7 +254,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             audio_transcriber = None
             if self.config.enable_audio_transcription:
                 try:
-                    audio_transcriber = AudioTranscriber()
+                    audio_transcriber = AudioTranscriber(
+                        model_size=self.config.whisper_model_size
+                    )
                 except Exception as e:
                     self.logger.warning(
                         f"Audio transcription not available: {e}. "
@@ -273,6 +275,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 scene_detector=scene_detector,
                 video_frame_concurrent=self.config.video_frame_concurrent,
                 enable_frame_cache=self.config.enable_frame_cache,
+                config=self.config,
             )
 
         # Always include generic processor as fallback
@@ -284,6 +287,21 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
 
         self.logger.info("Multimodal processors initialized with context support")
         self.logger.info(f"Available processors: {list(self.modal_processors.keys())}")
+
+        # ── 诊断：检测被禁用的多模态处理器（防御静默降级） ──
+        disabled = []
+        if not self.config.enable_image_processing:
+            disabled.append("image")
+        if not self.config.enable_table_processing:
+            disabled.append("table")
+        if not self.config.enable_equation_processing:
+            disabled.append("equation")
+        if disabled:
+            self.logger.warning(
+                f"⚠️ 多模态处理器已禁用: {', '.join(disabled)} — "
+                f"文档中的{'/'.join(disabled)}内容将被跳过"
+            )
+
         self.logger.info(f"Context configuration: {self._create_context_config()}")
 
     def update_config(self, **kwargs):

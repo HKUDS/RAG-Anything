@@ -361,8 +361,10 @@ async def update_settings(settings: SettingsUpdate,
         shared.CHUNKING_STRATEGY = settings.chunking_strategy
         changes["chunking_strategy"] = settings.chunking_strategy
         # 分块策略变更需要重建所有知识库实例
+        from raganything.services.kb_service import _kb_cache_time
         for name in list(shared.kb_instances.keys()):
             del shared.kb_instances[name]
+            _kb_cache_time.pop(name, None)
     if settings.max_async is not None:
         # 硬上限：防止 API 预算被恶意耗尽
         clamped = max(1, min(settings.max_async, 16))
@@ -397,9 +399,37 @@ async def update_settings(settings: SettingsUpdate,
     )
     if need_rebuild:
         # Clear all cached KB instances so they pick up the new config on next access
+        from raganything.services.kb_service import _kb_cache_time
         for name in list(shared.kb_instances.keys()):
             del shared.kb_instances[name]
+            _kb_cache_time.pop(name, None)
     return {"status": "ok", "changes": changes, "note": "配置已更新，下次访问知识库时生效"}
+
+
+# ── 🔄 KB 缓存管理 ──────────────────────────────────
+@router.post("/reload-kb/{kb_name}")
+async def reload_kb(kb_name: str,
+                    current_user: dict = Depends(require_permission(Permission.SETTINGS_WRITE))):
+    """手动清除知识库内存缓存，下次查询从磁盘重新加载最新数据。
+
+    适用场景:
+    - 子进程写入磁盘后缓存未自动失效
+    - 手动修改了存储文件
+    - 排查查询返回旧数据的问题
+
+    权限: settings:write
+    """
+    if kb_name in shared.kb_instances:
+        try:
+            await shared.kb_instances[kb_name].finalize_storages()
+        except Exception:
+            pass
+        del shared.kb_instances[kb_name]
+        # Also clear cache timestamp so next get_kb() doesn't falsely skip mtime check
+        from raganything.services.kb_service import _kb_cache_time
+        _kb_cache_time.pop(kb_name, None)
+        return {"status": "ok", "message": f"KB '{kb_name}' 缓存已清除，下次查询将重新加载"}
+    return {"status": "skipped", "message": f"KB '{kb_name}' 不在缓存中"}
 
 
 # ── 📈 监控面板 ─────────────────────────────────────

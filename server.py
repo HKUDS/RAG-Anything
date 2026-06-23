@@ -7,6 +7,7 @@ import io
 import json
 import os
 import sys
+import asyncio
 from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -192,26 +193,13 @@ async def startup():
         llm_model=LLM_MODEL,
         query_history=query_history,
     )
-    # 启动时扫描所有 KB，修复卡在 handling 的文档（上次运行中断遗留）
-    stuck_count = 0
-    for kb_name in meta.keys():
-        try:
-            sp = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
-            if sp.exists():
-                d = json.loads(sp.read_text(encoding="utf-8"))
-                changed = False
-                for doc_id, info in d.items():
-                    if info.get("status") == "handling":
-                        info["status"] = "failed"
-                        info["error_msg"] = "服务重启，上一次处理未完成"
-                        stuck_count += 1
-                        changed = True
-                if changed:
-                    sp.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception:
-            pass
-    if stuck_count:
-        server_logger.info(f"[STARTUP-FIX] 修复了 {stuck_count} 个卡在 handling 的文档")
+    # 启动时扫描所有 KB，智能修复卡在 handling 的文档
+    # 文档若 processing_end_time 已写入 → 标记 completed（处理实际已完成）
+    # 文档若 processing_end_time 未写入 → 标记 failed（处理被中断）
+    from raganything.services.kb_service import _recover_stuck_documents, _stuck_recovery_loop
+    await _recover_stuck_documents()
+    # 启动周期性后台恢复任务（每 300 秒扫描一次）
+    asyncio.create_task(_stuck_recovery_loop(300))
     # 预加载默认知识库
     kb = await get_kb("default")
     server_logger.info(f"RAG-Anything 服务器已启动，智能体: {len(mgr.agents)}个, 知识库: {list(meta.keys())}")

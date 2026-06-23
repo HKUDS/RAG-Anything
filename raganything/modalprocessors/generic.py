@@ -98,11 +98,33 @@ class GenericModalProcessor(BaseModalProcessor):
                 modal_content, content_type, item_info, entity_name
             )
 
+            # ── 图片路径保留：即使没有 ImageModalProcessor，也要在 chunk 中
+            # 写入 "Image Path:" 行，确保 extract_image_paths() 能在查询时找到 ──
+            image_path_line = ""
+            if content_type == "image":
+                if isinstance(modal_content, dict):
+                    img_path = modal_content.get("img_path", "")
+                elif isinstance(modal_content, str):
+                    try:
+                        import json as _json
+                        _data = _json.loads(modal_content)
+                        img_path = _data.get("img_path", "")
+                    except Exception:
+                        img_path = ""
+                else:
+                    img_path = ""
+                if img_path:
+                    image_path_line = f"Image Path: {img_path}\n"
+
             modal_chunk = PROMPTS["generic_chunk"].format(
                 content_type=content_type.title(),
                 content=str(modal_content),
                 enhanced_caption=enhanced_caption,
             )
+
+            # Prepend image path line before the formatted chunk
+            if image_path_line:
+                modal_chunk = image_path_line + modal_chunk
 
             return await self._create_entity_and_chunk(
                 modal_chunk,

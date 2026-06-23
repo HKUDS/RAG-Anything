@@ -8,10 +8,20 @@ Primary Responsibility: Video modal processing — frame extraction via ffmpeg,
 Key Dependencies: lightrag (LightRAG), raganything.prompt (PROMPTS), ffmpeg
 
 Components:
-- FrameExtractor: Extract key frames from video files via ffmpeg
+- FrameExtractor: Extract key frames from video files via ffmpeg (duration-aware
+  routing: fps-filter for short videos, serial-seek for long videos)
 - SceneDetector: Detect scene boundaries for intelligent frame selection
-- AudioTranscriber: Transcribe audio tracks via Whisper
-- VideoModalProcessor: Main processor integrating all sub-components
+- AudioTranscriber: Transcribe audio tracks via Whisper (configurable model size,
+  default ``"small"`` for Chinese)
+- VideoModalProcessor: Main processor integrating all sub-components; accepts an
+  optional ``RAGAnythingConfig`` object for duration enforcement, transcript
+  truncation, and whisper model selection
+
+Duration Enforcement:
+    Videos exceeding ``VIDEO_MAX_DURATION`` (default 3600s) are rejected BEFORE
+    any frame extraction or API calls to prevent runaway costs.  The caller
+    (``multimodal_processor.py``) catches the ``ValueError`` and creates a
+    graceful fallback entity.
 """
 
 import os
@@ -205,7 +215,18 @@ def check_video_skippable(video_path: str, config: Any = None) -> Tuple:
 
 
 class FrameExtractor:
-    """Extract key frames from video files using ffmpeg."""
+    """Extract key frames from video files using ffmpeg.
+
+    Uses duration-aware routing:
+    - Short/medium videos (< 180 s and < 100 source frames per output frame):
+      single ffmpeg invocation with the ``fps`` filter (avoids N subprocess spawns).
+    - Long videos: serial ``-ss`` seeks (avoids decoding 99%+ of frames just to
+      drop them).
+    """
+
+    # Thresholds for fps-filter vs. serial-seek routing
+    FPS_FILTER_MAX_DURATION = 180       # seconds
+    FPS_FILTER_MAX_SOURCE_RATIO = 100   # source frames / output frames
 
     def __init__(self, sample_rate: float = 1.0, max_frames: int = 60):
         """Initialize frame extractor.
@@ -216,6 +237,113 @@ class FrameExtractor:
         """
         self.sample_rate = sample_rate
         self.max_frames = max_frames
+
+    def _extract_fps_filter(
+        self,
+        video_path: str,
+        output_dir: str,
+        frame_count: int,
+        duration: float,
+    ) -> List[Dict[str, Any]]:
+        """Extract frames via a single ffmpeg ``fps`` filter invocation.
+
+        This is optimal for short/medium videos because it avoids ``frame_count``
+        subprocess spawns.  Frame timestamps are recovered from the sequential
+        file naming (``frame_%04d.png``) via ``index / sample_rate``.
+        """
+        fps = self.sample_rate
+        if fps <= 0:
+            fps = frame_count / duration if duration > 0 else 1.0
+        if fps <= 0:
+            fps = 1.0
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-i", str(video_path),
+            "-vf", f"fps={fps}",
+            "-vframes", str(frame_count),
+            "-q:v", "2",
+            "-loglevel", "error",
+            os.path.join(output_dir, "frame_%04d.png"),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+
+        frames = []
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"ffmpeg fps filter failed: {result.stderr.strip()[:200]}"
+            )
+
+        # Collect output frames by glob pattern
+        import glob as _glob
+        pattern = os.path.join(output_dir, "frame_*.png")
+        for path in sorted(_glob.glob(pattern)):
+            basename = os.path.basename(path)
+            # Extract index from "frame_0001.png"
+            try:
+                idx_str = basename.replace("frame_", "").replace(".png", "")
+                index = int(idx_str)
+            except ValueError:
+                index = len(frames)
+            timestamp = index / fps if fps > 0 else float(index)
+            frames.append({
+                "path": path,
+                "timestamp": round(timestamp, 2),
+                "index": index,
+            })
+
+        return frames
+
+    def _extract_serial_seek(
+        self,
+        video_path: str,
+        output_dir: str,
+        frame_count: int,
+        duration: float,
+    ) -> List[Dict[str, Any]]:
+        """Extract frames via separate ``ffmpeg -ss`` invocations.
+
+        This is optimal for long videos where the fps filter would decode and
+        discard >99% of source frames.
+        """
+        interval = duration / frame_count if duration > 0 else 1.0
+        frames = []
+
+        for i in range(frame_count):
+            timestamp = i * interval
+            frame_filename = f"frame_{i:04d}_{timestamp:.2f}s.png"
+            frame_path = os.path.join(output_dir, frame_filename)
+
+            try:
+                cmd = [
+                    "ffmpeg",
+                    "-y",
+                    "-ss", str(timestamp),
+                    "-i", str(video_path),
+                    "-vframes", "1",
+                    "-q:v", "2",
+                    "-loglevel", "error",
+                    frame_path,
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+
+                if result.returncode == 0 and os.path.exists(frame_path):
+                    frames.append({
+                        "path": frame_path,
+                        "timestamp": timestamp,
+                        "index": i,
+                    })
+                else:
+                    logger.warning(
+                        f"Failed to extract frame at {timestamp:.2f}s: {result.stderr.strip()}"
+                    )
+            except subprocess.TimeoutExpired:
+                logger.warning(f"Timeout extracting frame at {timestamp:.2f}s")
+            except Exception as e:
+                logger.error(f"Error extracting frame at {timestamp:.2f}s: {e}")
+
+        return frames
 
     def extract_frames(
         self, video_path: str, output_dir: Optional[str] = None
@@ -258,60 +386,42 @@ class FrameExtractor:
             output_dir = tempfile.mkdtemp(prefix="rag_video_frames_")
         os.makedirs(output_dir, exist_ok=True)
 
-        # Calculate frame interval for uniform sampling
-        if duration > 0:
-            interval = duration / frame_count
-        else:
-            interval = 1.0 / self.sample_rate if self.sample_rate > 0 else 1.0
-
-        # Use ffmpeg to extract frames at calculated intervals
-        # Extract by timestamp to get uniform distribution
-        frame_paths = []
-
-        for i in range(frame_count):
-            timestamp = i * interval
-            frame_filename = f"frame_{i:04d}_{timestamp:.2f}s.png"
-            frame_path = os.path.join(output_dir, frame_filename)
-
-            try:
-                cmd = [
-                    "ffmpeg",
-                    "-y",
-                    "-ss",
-                    str(timestamp),
-                    "-i",
-                    str(video_path),
-                    "-vframes",
-                    "1",
-                    "-q:v",
-                    "2",
-                    "-loglevel",
-                    "error",
-                    frame_path,
-                ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-
-                if result.returncode == 0 and os.path.exists(frame_path):
-                    frame_paths.append({
-                        "path": frame_path,
-                        "timestamp": timestamp,
-                        "index": i,
-                    })
-                else:
-                    logger.warning(
-                        f"Failed to extract frame at {timestamp:.2f}s: {result.stderr.strip()}"
-                    )
-            except subprocess.TimeoutExpired:
-                logger.warning(f"Timeout extracting frame at {timestamp:.2f}s")
-            except Exception as e:
-                logger.error(f"Error extracting frame at {timestamp:.2f}s: {e}")
-
-        logger.info(
-            f"Extracted {len(frame_paths)}/{frame_count} frames from {video_path} "
-            f"(duration: {duration:.1f}s, sample_rate: {self.sample_rate} fps)"
+        # ── Duration-aware routing ────────────────────────────────────────
+        # Choose between single ffmpeg fps-filter invocation (fast for short
+        # videos) and serial -ss seeks (efficient for long videos).
+        video_fps = metadata.get("fps", 0) or 0
+        total_source_frames = int(duration * video_fps) if video_fps > 0 else 0
+        source_ratio = (total_source_frames / frame_count) if frame_count > 0 else 999
+        use_fps_filter = (
+            duration > 0
+            and duration < self.FPS_FILTER_MAX_DURATION
+            and source_ratio < self.FPS_FILTER_MAX_SOURCE_RATIO
         )
 
-        return frame_paths
+        if use_fps_filter:
+            try:
+                frames = self._extract_fps_filter(
+                    video_path, output_dir, frame_count, duration
+                )
+                logger.info(
+                    f"Extracted {len(frames)}/{frame_count} frames (fps-filter) from {video_path} "
+                    f"(duration: {duration:.1f}s, source_ratio: {source_ratio:.0f}:1)"
+                )
+                return frames
+            except Exception as e:
+                logger.warning(
+                    f"fps filter extraction failed ({e}), falling back to serial seek"
+                )
+
+        # Fallback: serial seek path
+        frames = self._extract_serial_seek(
+            video_path, output_dir, frame_count, duration
+        )
+        logger.info(
+            f"Extracted {len(frames)}/{frame_count} frames (serial-seek) from {video_path} "
+            f"(duration: {duration:.1f}s, sample_rate: {self.sample_rate} fps)"
+        )
+        return frames
 
 
 # ── SceneDetector ──────────────────────────────────────────────────────────
@@ -406,7 +516,7 @@ class SceneDetector:
 class AudioTranscriber:
     """Transcribe audio from video files using Whisper."""
 
-    def __init__(self, model_size: str = "tiny", timeout: int = 300):
+    def __init__(self, model_size: str = "small", timeout: int = 300):
         """Initialize audio transcriber.
 
         Args:
@@ -541,6 +651,7 @@ class VideoModalProcessor(BaseModalProcessor):
         scene_detector: SceneDetector = None,
         video_frame_concurrent: int = 3,
         enable_frame_cache: bool = True,
+        config = None,
     ):
         """Initialize video processor.
 
@@ -553,6 +664,7 @@ class VideoModalProcessor(BaseModalProcessor):
             scene_detector: Optional pre-configured SceneDetector
             video_frame_concurrent: Max concurrent frame VLM calls (default 3)
             enable_frame_cache: Whether to cache frame descriptions (default True)
+            config: Optional RAGAnythingConfig for duration/transcript/whisper settings
         """
         super().__init__(lightrag, modal_caption_func, context_extractor)
 
@@ -560,6 +672,11 @@ class VideoModalProcessor(BaseModalProcessor):
         self.frame_extractor = frame_extractor or FrameExtractor()
         self.audio_transcriber = audio_transcriber  # None = graceful degradation
         self.scene_detector = scene_detector or SceneDetector()
+
+        # Config-derived attributes (safe defaults when config is None)
+        self._max_duration = int(getattr(config, "video_max_duration", 3600) or 3600)
+        self._max_transcript_tokens = int(getattr(config, "max_transcript_tokens", 4000) or 4000)
+        self._whisper_model_size = str(getattr(config, "whisper_model_size", "small") or "small")
 
         # Frame concurrency control (isolated from image processing semaphore)
         self._frame_semaphore = asyncio.Semaphore(video_frame_concurrent)
@@ -631,6 +748,56 @@ class VideoModalProcessor(BaseModalProcessor):
             logger.error(f"Failed to encode image {image_path}: {e}")
             return ""
 
+    def _truncate_transcript(self, text: str, max_tokens: int) -> str:
+        """Truncate transcript to max_tokens at the nearest sentence boundary.
+
+        Uses tiktoken ``cl100k_base`` for accurate token counting when available,
+        falling back to character-based estimation (``len(text) * 0.6``) otherwise.
+        Truncation always lands on a sentence boundary (。！？\\n) and appends a
+        ``[转录已截断]`` marker so downstream consumers know the text is partial.
+
+        Args:
+            text: Raw transcription text
+            max_tokens: Token budget (from config.max_transcript_tokens)
+
+        Returns:
+            Truncated text with truncation marker appended, or original text if
+            it already fits within the token budget.
+        """
+        if not text:
+            return text
+
+        # Token counting: prefer tiktoken, fall back to character estimate
+        token_count = 0
+        try:
+            import tiktoken
+            enc = tiktoken.get_encoding("cl100k_base")
+            tokens = enc.encode(text)
+            token_count = len(tokens)
+        except (ImportError, Exception):
+            # Fallback: ~0.6 tokens per character for mixed Chinese/English text
+            token_count = int(len(text) * 0.6)
+
+        if token_count <= max_tokens:
+            return text
+
+        # Truncate: reverse-scan for nearest sentence boundary
+        # Estimate character cutoff: max_tokens / 0.6 tokens-per-char
+        char_cutoff = int(max_tokens / 0.6)
+        truncated = text[:char_cutoff]
+
+        # Find last sentence boundary (。！？\n) within the cutoff region
+        boundary = -1
+        for sep in ("。", "！", "？", "\n"):
+            pos = truncated.rfind(sep)
+            if pos > boundary:
+                boundary = pos
+
+        if boundary > 0:
+            truncated = truncated[: boundary + 1]
+
+        return truncated + "[转录已截断]"
+
     async def generate_description_only(
         self,
         modal_content,
@@ -695,6 +862,13 @@ class VideoModalProcessor(BaseModalProcessor):
 
             metadata = validation["metadata"]
             duration = metadata.get("duration", 0)
+
+            # Duration enforcement: reject videos exceeding max_duration
+            if duration > self._max_duration:
+                raise ValueError(
+                    f"视频时长 {duration:.1f}s 超过上限 {self._max_duration}s，"
+                    f"请调整 VIDEO_MAX_DURATION 环境变量或截取片段后重试"
+                )
 
             # Extract frames
             logger.info(f"Extracting frames from {video_path}...")
@@ -793,7 +967,9 @@ class VideoModalProcessor(BaseModalProcessor):
                 duration=f"{duration:.1f}",
                 frame_count=str(len(frames)),
                 frame_descriptions="\n\n".join(frame_descriptions),
-                transcript=transcript[:4000] if transcript else "No audio transcript available",
+                transcript=self._truncate_transcript(transcript, self._max_transcript_tokens)
+                if transcript
+                else "No audio transcript available",
                 context=context if context else "No additional context",
             )
 

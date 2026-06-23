@@ -50,6 +50,7 @@ CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
 # ── KB State ──────────────────────────────────────────────
 kb_instances: dict[str, RAGAnything] = {}
 _kb_locks: dict[str, asyncio.Lock] = {}
+_kb_cache_time: dict[str, float] = {}
 active_kb: str = "default"
 KB_META_FILE = Path("./rag_storage_kb_meta.json")
 
@@ -120,17 +121,41 @@ def kb_dir(name: str) -> str:
 async def get_kb(name: str = None) -> RAGAnything:
     """Get or create a KB instance.
 
+    Automatically detects when disk data is newer than the cached instance
+    (e.g. after a worker subprocess has written new documents) and rebuilds
+    the instance to ensure queries see the latest data.
+
     Args:
         name: KB name (defaults to active_kb)
 
     Returns:
         RAGAnything instance for the named KB
     """
+    import time as _time
     name = name or active_kb
     # Serialize initialization per KB to prevent concurrent creation race
     if name not in _kb_locks:
         _kb_locks[name] = asyncio.Lock()
     async with _kb_locks[name]:
+        if name in kb_instances:
+            # ── Cache freshness check: disk mtime vs cache creation time ──
+            doc_status_path = Path(kb_dir(name)) / "kv_store_doc_status.json"
+            if doc_status_path.exists():
+                try:
+                    disk_mtime = doc_status_path.stat().st_mtime
+                    cache_time = _kb_cache_time.get(name, 0)
+                    if disk_mtime > cache_time:
+                        kb_logger.info(
+                            f"[KB] 缓存过期重建: {name} "
+                            f"(disk={disk_mtime:.0f} > cache={cache_time:.0f})"
+                        )
+                        try:
+                            await kb_instances[name].finalize_storages()
+                        except Exception:
+                            pass
+                        del kb_instances[name]
+                except OSError:
+                    pass  # stat() failed, trust cache
         if name not in kb_instances:
             from lightrag.kg.shared_storage import set_default_workspace
             target = kb_dir(name)
@@ -141,6 +166,7 @@ async def get_kb(name: str = None) -> RAGAnything:
             if instance.lightrag and hasattr(instance.lightrag, 'chunks_vdb'):
                 instance.lightrag.chunks_vdb.cosine_better_than_threshold = 0.0
             kb_instances[name] = instance
+            _kb_cache_time[name] = _time.time()
             kb_logger.info(f"[KB] 初始化知识库实例: {name} workspace={target}")
     return kb_instances[name]
 
@@ -164,6 +190,7 @@ async def delete_kb(name: str) -> bool:
         except Exception:
             pass
         del kb_instances[name]
+        _kb_cache_time.pop(name, None)
 
     # Remove metadata
     meta = load_kb_meta()
@@ -334,6 +361,68 @@ async def _fix_stuck_doc_status(kb_name: str, filename: str):
             tmp.replace(status_path)
     except Exception as ex:
         kb_logger.error(f"[FIX-STUCK] 修复失败: {ex}")
+
+
+async def _recover_stuck_documents():
+    """Scan all KBs and auto-complete documents that finished processing
+    but are stuck with status='handling'.
+
+    A document is recoverable when its ``metadata.processing_end_time`` is
+    set (meaning the worker finished writing data) but the top-level
+    ``status`` was never updated from ``handling`` to ``completed``.
+    """
+    try:
+        meta = load_kb_meta()
+    except Exception:
+        return  # no KBs registered yet
+
+    for kb_name in list(meta.keys()):
+        try:
+            status_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+            if not status_path.exists():
+                continue
+            data = json.loads(status_path.read_text(encoding="utf-8"))
+            changed = False
+            for doc_id, info in data.items():
+                if info.get("status") != "handling":
+                    continue
+                end_time = info.get("metadata", {}).get("processing_end_time")
+                if end_time and end_time > 0:
+                    info["status"] = "completed"
+                    changed = True
+                    kb_logger.info(
+                        f"[Recovery] 修复卡住文档: {kb_name}/{doc_id[:16]} "
+                        f"(processing_end={end_time})"
+                    )
+            if changed:
+                status_path.write_text(
+                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+                )
+                # Clear cached instance so next query reloads from disk
+                if kb_name in kb_instances:
+                    try:
+                        await kb_instances[kb_name].finalize_storages()
+                    except Exception:
+                        pass
+                    del kb_instances[kb_name]
+                    _kb_cache_time.pop(kb_name, None)
+        except Exception as e:
+            kb_logger.warning(f"[Recovery] 扫描 KB '{kb_name}' 异常: {e}")
+
+
+async def _stuck_recovery_loop(interval_sec: int = 300):
+    """Background asyncio task: periodically scan for stuck documents.
+
+    Args:
+        interval_sec: Seconds between scans (default 5 minutes)
+    """
+    await asyncio.sleep(5)  # let startup settle first
+    while True:
+        try:
+            await _recover_stuck_documents()
+        except Exception as e:
+            kb_logger.warning(f"[Recovery] 周期扫描异常: {e}")
+        await asyncio.sleep(interval_sec)
 
 
 # ── Document Upload Processing ─────────────────────────────
@@ -509,6 +598,7 @@ async def _process_uploaded_file(
             except Exception as e:
                 kb_logger.warning(f"[KB] finalize_storages 失败 ({kb_name}): {e}")
             del kb_instances[kb_name]
+            _kb_cache_time.pop(kb_name, None)
             kb_logger.info(f"[KB] 清除缓存实例: {kb_name}（子进程写入新数据）")
 
         await emit_progress(task_id, 100, "处理完成")
@@ -865,6 +955,8 @@ __all__ = [
     "list_kbs",
     "create_rag",
     "_fix_stuck_doc_status",
+    "_recover_stuck_documents",
+    "_stuck_recovery_loop",
     "_process_uploaded_file",
     "_reprocess_multimodal_for_kb",
     "_build_citation_block",

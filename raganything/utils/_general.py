@@ -27,7 +27,7 @@ def get_processor_for_type(modal_processors: Dict[str, Any], content_type: str):
         Corresponding processor instance
     """
     if content_type == "image":
-        return modal_processors.get("image")
+        return modal_processors.get("image") or modal_processors.get("generic")
     elif content_type == "table":
         return modal_processors.get("table")
     elif content_type == "equation":

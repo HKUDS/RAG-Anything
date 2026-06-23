@@ -1,31 +1,6 @@
-# Video Audio Transcription
+# Video Audio Transcription (Delta)
 
-## Purpose
-
-从视频文件中提取音频轨道，通过 Whisper 模型转录音频为文本，为视频视觉分析提供语义上下文补充。
-
-## Requirements
-
-### Requirement: 音频轨道提取
-
-系统 SHALL 从视频文件中提取音频轨道并保存为临时音频文件，支持无音频轨道的视频优雅降级。
-
-#### Scenario: 视频包含音频轨道
-- **WHEN** 视频文件包含有效的音频轨道
-- **THEN** 系统使用 ffmpeg 提取音频为 16kHz 单声道 WAV 文件
-- **THEN** 音频文件保存到临时目录
-
-#### Scenario: 视频不包含音频轨道
-- **WHEN** 视频文件没有音频轨道
-- **THEN** 系统记录 `INFO` 日志"视频无音频轨道"
-- **THEN** 转录结果为空字符串
-- **THEN** 后续 VLM 分析仅基于视觉帧进行
-
-#### Scenario: 音频提取失败
-- **WHEN** ffmpeg 音频提取过程出错（如编码不支持）
-- **THEN** 系统记录 `WARNING` 日志包含错误详情
-- **THEN** 转录结果为空字符串
-- **THEN** 处理流程继续，不中断整个视频处理
+## ADDED Requirements
 
 ### Requirement: Whisper模型大小可配置
 
@@ -51,26 +26,7 @@
 - **THEN** 系统抛出 `ImportError` 并提示模型下载失败
 - **THEN** 如果 `ENABLE_AUDIO_TRANSCRIPTION=false`，转录被跳过而非报错
 
-### Requirement: Whisper 语音转录
-
-系统 SHALL 通过 Whisper 模型将提取的音频转录为文本，支持多语言识别和可配置模型大小。
-
-#### Scenario: 成功转录音频
-- **WHEN** 音频文件有效且 Whisper 模型可用
-- **THEN** 系统使用配置的 Whisper 模型（默认 `small`，可通过 `WHISPER_MODEL_SIZE` 环境变量配置）进行转录
-- **THEN** 返回转录文本字符串
-- **THEN** 文本中标注语言类型（如 `zh`、`en`）
-
-#### Scenario: Whisper 模型不可用
-- **WHEN** `openai-whisper` 包未安装
-- **THEN** 系统抛出 `ImportError` 并提示 `pip install openai-whisper`
-- **THEN** 如 `ENABLE_AUDIO_TRANSCRIPTION=false`，系统跳过转录直接返回空字符串
-
-#### Scenario: 转录超时
-- **WHEN** 转录时间超过 `video_transcribe_timeout=300`（默认 5 分钟）
-- **THEN** 系统中止转录进程
-- **THEN** 记录 `WARNING` 日志"转录超时"
-- **THEN** 返回空字符串，处理流程继续
+## MODIFIED Requirements
 
 ### Requirement: 转录文本截断
 
@@ -90,3 +46,24 @@
 - **WHEN** `tiktoken` 模块不可导入
 - **THEN** 系统使用字符估算 `len(text) * 0.6` 近似 token 数
 - **THEN** 记录 `DEBUG` 日志"tiktoken not available, using character-based estimation"
+
+### Requirement: Whisper 语音转录
+
+系统 SHALL 通过 Whisper 模型将提取的音频转录为文本，支持多语言识别和可配置模型大小。
+
+#### Scenario: 成功转录音频
+- **WHEN** 音频文件有效且 Whisper 模型可用
+- **THEN** 系统使用配置的 Whisper 模型（默认 `small`，可配置）进行转录
+- **THEN** 返回转录文本字符串
+- **THEN** 文本中标注语言类型（如 `zh`、`en`）
+
+#### Scenario: Whisper 模型不可用
+- **WHEN** `openai-whisper` 包未安装
+- **THEN** 系统抛出 `ImportError` 并提示 `pip install openai-whisper`
+- **THEN** 如 `ENABLE_AUDIO_TRANSCRIPTION=false`，系统跳过转录直接返回空字符串
+
+#### Scenario: 转录超时
+- **WHEN** 转录时间超过 `video_transcribe_timeout=300`（默认 5 分钟）
+- **THEN** 系统中止转录进程
+- **THEN** 记录 `WARNING` 日志"转录超时"
+- **THEN** 返回空字符串，处理流程继续

@@ -446,17 +446,49 @@ class MultimodalProcessorMixin:
                         self.modal_processors, content_type
                     )
 
-                    if not processor:
-                        self.logger.warning(
-                            f"No processor found for type: {content_type}"
-                        )
-                        return None
-
                     item_info = {
                         "page_idx": item.get("page_idx", 0),
                         "index": item.get("_content_list_index", index),
                         "type": content_type,
                     }
+
+                    if not processor:
+                        self.logger.warning(
+                            f"No processor found for type: {content_type} — "
+                            f"检查 ENABLE_{content_type.upper()}_PROCESSING 环境变量"
+                        )
+                        # ── 图片路径保留（防御纵深）：即使没有处理器，
+                        # 也创建最小 result 写入 "Image Path:" 行 ──
+                        if content_type == "image":
+                            img_path = item.get("img_path", "")
+                            if img_path:
+                                fallback_caption = item.get(
+                                    "image_caption",
+                                    item.get("img_caption", [])
+                                )
+                                caption_text = (
+                                    fallback_caption[0] if isinstance(fallback_caption, list) and fallback_caption
+                                    else str(fallback_caption) if fallback_caption else ""
+                                )
+                                return {
+                                    "index": index,
+                                    "content_type": "image",
+                                    "description": f"Image Path: {img_path}\n[Image: {caption_text or img_path}]",
+                                    "entity_info": {
+                                        "entity_name": f"image_{index}",
+                                        "entity_type": "image",
+                                        "summary": caption_text or f"Image at {img_path}",
+                                    },
+                                    "original_item": item,
+                                    "item_info": item_info,
+                                    "chunk_order_index": existing_chunks_count + index,
+                                    "processor": None,
+                                    "file_path": file_path,
+                                }
+                        return None
+
+                    # ── processor is not None, proceed with normal processing ──
+                    # (item_info already defined above)
 
                     # Call the correct processor's description generation method
                     (

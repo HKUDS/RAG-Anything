@@ -19,6 +19,32 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=".env", override=False)
 
+# ── 安全网：强制从 .env 读取多模态开关 ──────────────────
+# load_dotenv(override=False) 不会覆盖父进程已设的环境变量。
+# 若 admin API 曾设置 ENABLE_IMAGE_PROCESSING=false，该值会通过
+# os.environ 泄漏到子进程，导致图片/表格/公式被静默跳过。
+# 此处直接解析 .env 文件，确保 Worker 始终使用配置文件中的预期值。
+def _env_bool_from_dotenv(key: str, default: bool) -> bool:
+    """直接从 .env 文件读取布尔值，绕过 os.environ 缓存"""
+    try:
+        with open(".env", "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if _line.startswith("#") or "=" not in _line:
+                    continue
+                k, v = _line.split("=", 1)
+                if k.strip() == key:
+                    return v.strip().lower() in ("true", "1", "yes")
+    except (OSError, ValueError):
+        pass
+    return default
+
+# 强制覆盖：Worker 的多模态处理能力必须与 .env 一致
+os.environ["ENABLE_IMAGE_PROCESSING"] = str(_env_bool_from_dotenv("ENABLE_IMAGE_PROCESSING", True)).lower()
+os.environ["ENABLE_TABLE_PROCESSING"] = str(_env_bool_from_dotenv("ENABLE_TABLE_PROCESSING", True)).lower()
+os.environ["ENABLE_EQUATION_PROCESSING"] = str(_env_bool_from_dotenv("ENABLE_EQUATION_PROCESSING", True)).lower()
+os.environ["ENABLE_VIDEO_PROCESSING"] = str(_env_bool_from_dotenv("ENABLE_VIDEO_PROCESSING", False)).lower()
+
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig

@@ -120,6 +120,13 @@ class RAGAnythingConfig:
     )
     """Maximum number of tokens for audio transcript."""
 
+    whisper_model_size: str = field(
+        default=get_env_value("WHISPER_MODEL_SIZE", "small", str)
+    )
+    """Whisper model size for audio transcription.
+    Allowed values: ``"tiny"``, ``"base"``, ``"small"``, ``"medium"``, ``"large"``.
+    Default ``"small"`` balances accuracy and resource usage (~2GB RAM, ~10-15% Chinese WER)."""
+
     video_max_concurrent: int = field(
         default=get_env_value("VIDEO_MAX_CONCURRENT", 2, int)
     )
@@ -242,6 +249,30 @@ class RAGAnythingConfig:
                 UserWarning, stacklevel=2,
             )
             self.embedding_batch_size = _max_embed_batch
+
+        # ── whisper_model_size 枚举验证 ──────────────────────────
+        _allowed_whisper = frozenset({"tiny", "base", "small", "medium", "large"})
+        if self.whisper_model_size not in _allowed_whisper:
+            _w.warn(
+                f"WHISPER_MODEL_SIZE={self.whisper_model_size!r} 无效，"
+                f"允许值: {sorted(_allowed_whisper)}，已钳制为 'small'",
+                UserWarning, stacklevel=2,
+            )
+            self.whisper_model_size = "small"
+
+        # ── video_max_duration 边界验证 ──────────────────────────
+        if self.video_max_duration < 1:
+            _w.warn(
+                f"VIDEO_MAX_DURATION={self.video_max_duration} < 1，已钳制为 1",
+                UserWarning, stacklevel=2,
+            )
+            self.video_max_duration = 1
+        elif self.video_max_duration > 86400:
+            _w.warn(
+                f"VIDEO_MAX_DURATION={self.video_max_duration} > 86400，已钳制为 86400",
+                UserWarning, stacklevel=2,
+            )
+            self.video_max_duration = 86400
 
     @property
     def mineru_parse_method(self) -> str:
