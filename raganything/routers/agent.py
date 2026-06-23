@@ -19,8 +19,10 @@ from lightrag.llm.openai import openai_complete_if_cache
 from lightrag.utils import logger as lightrag_logger
 
 from raganything.routers.shared import (
+    _bigram_image_scan,
     _build_citation_block,
     _DEGRADED_HINT,
+    _discover_images_via_graph,
     _is_thinking_msg,
     _translate_thinking_msg,
     ANSWER_FORMAT_INSTRUCTION,
@@ -83,48 +85,6 @@ def _is_empty_context(ctx: str | None) -> bool:
     if "[来源 " not in ctx and len(ctx.strip()) <= 200:
         return True
     return False
-
-
-def _build_backfill_context(scored_texts: list[tuple], max_chars: int = 4800) -> tuple[str, int, int]:
-    """Build backfill context from bigram-matched chunks.
-
-    Args:
-        scored_texts: list of (chunk_id, content, score, doc_name) tuples
-        max_chars: max total characters for backfill text
-
-    Returns:
-        (backfill_text, num_chunks_used, total_chars_used)
-    """
-    if not scored_texts:
-        return "", 0, 0
-
-    # Deduplicate by chunk_id, keep highest score
-    best_by_id: dict[str, tuple[str, int]] = {}
-    for chunk_id, content, score, doc_name in scored_texts:
-        if chunk_id not in best_by_id or score > best_by_id[chunk_id][1]:
-            best_by_id[chunk_id] = (f"{doc_name or '未知文档'}\t{content}", score)
-
-    # Sort by score descending
-    sorted_entries = sorted(best_by_id.items(), key=lambda x: -x[1][1])
-
-    formatted: list[str] = []
-    total_chars = 0
-    chunk_count = 0
-
-    for chunk_id, (full_text, score) in sorted_entries:
-        doc_name, content = full_text.split("\t", 1) if "\t" in full_text else ("未知文档", full_text)
-        chunk_count += 1
-        source_label = f"{doc_name} (回填片段{chunk_count})"
-        block = f"[来源 {source_label}]\n{content}"
-        if total_chars + len(block) > max_chars and formatted:
-            # Truncate: include partial block if it's the first one, otherwise stop
-            break
-        formatted.append(block)
-        total_chars += len(block)
-        if total_chars >= max_chars:
-            break
-
-    return "\n\n".join(formatted), chunk_count, total_chars
 
 
 # ═══════════════════════════════════════════════════════════
@@ -516,7 +476,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 elapsed = round(time.time() - start_time, 2)
                 lightrag_logger.info(f"[AGENT-STREAM] mode={agent_mode} steps={len(trace_steps)} elapsed={elapsed}s")
 
-                # ── 图片匹配（复用普通模式的 bigram 扫描逻辑）──
+                # ── 图片匹配（图谱发现 + bigram 兜底）──
                 # 从 ReAct search observation 和 CoT 检索上下文中提取图片路径
                 all_retrieved_text = ""
                 for ts in trace_steps:
@@ -530,46 +490,21 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 agent_images = extract_image_paths(all_retrieved_text)
                 _backfill_text_react = ""
                 if not agent_images:
+                    # 第二道：实体图谱图片发现
+                    agent_images, _backfill_text_react = await _discover_images_via_graph(
+                        instance, req.query, actual_kb, all_retrieved_text
+                    )
+                    if _backfill_text_react:
+                        all_retrieved_text += "\n" + _backfill_text_react
+
+                if not agent_images:
+                    # 第三道：bigram 全库扫描
                     try:
-                        import json as _json
-                        _chunk_file = Path(kb_dir(actual_kb)) / 'kv_store_text_chunks.json'
-                        if _chunk_file.exists():
-                            _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
-                            q = req.query.lower()
-                            query_grams = set()
-                            for i in range(len(q) - 1):
-                                query_grams.add(q[i:i+2])
-                            scored = []
-                            scored_texts = []  # (chunk_id, content, score, doc_name)
-                            for _cid, _chunk in _all.items():
-                                content = _chunk.get('content', '')
-                                paths = extract_image_paths(content)
-                                if not paths:
-                                    continue
-                                content_lower = content.lower()
-                                score = sum(1 for bg in query_grams if bg in content_lower)
-                                for p in paths:
-                                    scored.append((p, score))
-                                # 同步收集文本内容
-                                if score > 0:
-                                    doc_name = _chunk.get('document_name', '') or _chunk.get('source', '')
-                                    scored_texts.append((_cid, content, score, doc_name))
-                            best = {}
-                            for p, s in scored:
-                                if p not in best or s > best[p]:
-                                    best[p] = s
-                            agent_images = [p for p, _ in sorted(best.items(), key=lambda x: -x[1]) if _ > 0][:3]
-                            if not agent_images:
-                                agent_images = list(best.keys())[:2]
-                            # 构建回填文本
-                            _backfill_text_react, _bf_count, _bf_chars = _build_backfill_context(scored_texts)
-                            if _backfill_text_react:
-                                all_retrieved_text += "\n" + _backfill_text_react
-                            if agent_images:
-                                _log_msg = f"[AGENT-IMG] bigram匹配到 {len(agent_images)} 张相关图片 (共 {len(best)} 张)"
-                                if _backfill_text_react:
-                                    _log_msg += f"，+回填 {_bf_count} 文本片段 ({_bf_chars} 字符)"
-                                lightrag_logger.info(_log_msg)
+                        agent_images, _backfill_text_react = await _bigram_image_scan(
+                            kb_dir(actual_kb), req.query, all_retrieved_text
+                        )
+                        if _backfill_text_react:
+                            all_retrieved_text += "\n" + _backfill_text_react
                     except Exception as _fe:
                         lightrag_logger.error(f"[AGENT-IMG] 全库扫描失败: {_fe}")
                 else:
@@ -704,67 +639,26 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 lightrag_logger.removeHandler(handler)
                 return
 
-            # ── 图片提取 + bigram 回退扫描（同步收集文本）──
+            # ── 图片提取（所有查询模式统一，三段式）──
             agent_images = extract_image_paths(ctx)
             backfill_text = ""
-            if not agent_images:
-                try:
-                    import json as _json
-                    _chunk_file = Path(kb_dir(actual_kb)) / 'kv_store_text_chunks.json'
-                    if _chunk_file.exists():
-                        _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
-                        # 查询字符二元组（中文无空格，bigram 比 split 有效）
-                        q = req.query.lower()
-                        query_grams = set()
-                        for i in range(len(q) - 1):
-                            query_grams.add(q[i:i+2])
-                        scored_images = []  # (path, score)
-                        scored_texts = []   # (chunk_id, content, score, doc_name)
-                        # 追踪 ctx 中已有的 chunk 内容，避免重复回填
-                        _existing_content_ids = set()
-                        for _cid, _chunk in _all.items():
-                            content = _chunk.get('content', '')
-                            if not content:
-                                continue
-                            paths = extract_image_paths(content)
-                            content_lower = content.lower()
-                            score = sum(1 for bg in query_grams if bg in content_lower)
-                            # 检查此 chunk 内容是否已在原始检索上下文中
-                            _content_key = content[:80]  # 用前 80 字符做模糊去重
-                            if _content_key in ctx:
-                                _existing_content_ids.add(_cid)
-                            if paths:
-                                for p in paths:
-                                    scored_images.append((p, score))
-                                # 同步收集文本内容（仅收集有图片的 chunk，因为 bigram 扫描就是为此触发的）
-                                if score > 0:
-                                    doc_name = _chunk.get('document_name', '') or _chunk.get('source', '')
-                                    scored_texts.append((_cid, content, score, doc_name))
-                        # 去重取最高分，按分数降序，取前 5 图片
-                        best_img = {}
-                        for p, s in scored_images:
-                            if p not in best_img or s > best_img[p]:
-                                best_img[p] = s
-                        agent_images = [p for p, _ in sorted(best_img.items(), key=lambda x: -x[1]) if _ > 0][:3]
-                        if not agent_images:
-                            agent_images = list(best_img.keys())[:2]
 
-                        # 构建回填文本（过滤已在 ctx 中的 chunk）
-                        _fresh_texts = [(cid, c, s, dn) for cid, c, s, dn in scored_texts
-                                        if cid not in _existing_content_ids]
-                        backfill_text, _bf_count, _bf_chars = _build_backfill_context(_fresh_texts)
-                        if backfill_text:
-                            ctx = ctx + "\n\n" + backfill_text
-                            lightrag_logger.info(
-                                f"[IMG-FALLBACK] bigram匹配到 {len(agent_images)} 张相关图片"
-                                f" (共 {len(best_img)} 张)"
-                                f"，+回填 {_bf_count} 文本片段 ({_bf_chars} 字符)"
-                            )
-                        elif agent_images:
-                            lightrag_logger.info(
-                                f"[IMG-FALLBACK] bigram匹配到 {len(agent_images)} 张相关图片"
-                                f" (共 {len(best_img)} 张)"
-                            )
+            if not agent_images:
+                # Africa 第二道：实体图谱图片发现（语义级别，模式无关）
+                agent_images, backfill_text = await _discover_images_via_graph(
+                    instance, req.query, actual_kb, ctx
+                )
+                if backfill_text:
+                    ctx = ctx + "\n\n" + backfill_text
+
+            if not agent_images:
+                # 第三道：bigram 全库扫描（字符级别兜底）
+                try:
+                    agent_images, backfill_text = await _bigram_image_scan(
+                        kb_dir(actual_kb), req.query, ctx
+                    )
+                    if backfill_text:
+                        ctx = ctx + "\n\n" + backfill_text
                 except Exception as _fe:
                     lightrag_logger.error(f"[IMG-FALLBACK] 全库扫描失败: {_fe}")
             else:

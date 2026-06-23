@@ -10,7 +10,6 @@ import queue
 import time
 import uuid
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -196,28 +195,30 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
                                      max_entity_tokens=3000, max_relation_tokens=2000,
                                      max_total_tokens=16000)
 
-        # Step 2: 从检索上下文提取相关图片（对齐流式端点），只有语义相关的图片
+        # Step 2: 三段式图片发现（对齐 agent 端点）
         ctx_images = shared.extract_image_paths(ctx)
+        backfill_text = ""
         if not ctx_images:
-            # 兜底：上下文无图片时扫描全库（旧文档兼容）
+            # 第二道：实体图谱图片发现
+            ctx_images, backfill_text = await shared._discover_images_via_graph(
+                instance, req.query, kb, ctx
+            )
+            if backfill_text:
+                ctx = ctx + "\n\n" + backfill_text
+
+        if not ctx_images:
+            # 第三道：bigram 全库扫描（字符级别兜底）
             try:
-                import json as _json
-                _chunk_file = Path(shared.kb_dir(kb)) / 'kv_store_text_chunks.json'
-                if _chunk_file.exists():
-                    _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
-                    _seen = set()
-                    for _cid, _chunk in _all.items():
-                        for _p in shared.extract_image_paths(_chunk.get('content', '')):
-                            if _p not in _seen:
-                                _seen.add(_p)
-                                ctx_images.append(_p)
-                    if ctx_images:
-                        lightrag_logger.info(f"[IMG-FALLBACK] query_rag 扫描到 {len(ctx_images)} 张图片")
+                ctx_images, backfill_text = await shared._bigram_image_scan(
+                    shared.kb_dir(kb), req.query, ctx
+                )
+                if backfill_text:
+                    ctx = ctx + "\n\n" + backfill_text
             except Exception as _fe:
                 lightrag_logger.error(f"[IMG-FALLBACK] query_rag 扫描失败: {_fe}")
 
-        # Step 3: 只发送 top-10 相关图片给 VLM，控制延迟和 token 消耗
-        vlm_images = ctx_images[:10]
+        # Step 3: 只发送 top-3 相关图片给 VLM（与 agent 端点对齐）
+        vlm_images = ctx_images[:3]
         img_list = '\n'.join(f'[img{i}] {p}' for i, p in enumerate(vlm_images))
         if vlm_images:
             enhanced_ctx = ctx + '\n\n## 可用图片\n' + img_list
@@ -486,18 +487,24 @@ async def query_rag_stream(req: QueryRequest, kb: str = Depends(verify_kb_access
                 await asyncio.sleep(0.06)
 
             ctx = ctx_task.result()
-            # 从检索上下文提取图片，没有则扫全库
+            # 三段式图片发现（对齐 agent 端点）
             stream_images = shared.extract_image_paths(ctx)
             if not stream_images:
+                # 第二道：实体图谱图片发现
+                stream_images, backfill_text = await shared._discover_images_via_graph(
+                    instance, req.query, kb, ctx
+                )
+                if backfill_text:
+                    ctx = ctx + "\n\n" + backfill_text
+
+            if not stream_images:
+                # 第三道：bigram 全库扫描（字符级别兜底）
                 try:
-                    import json as _json
-                    _chunk_file = Path(shared.kb_dir(kb)) / 'kv_store_text_chunks.json'
-                    if _chunk_file.exists():
-                        _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
-                        _all_text = '\n'.join(v.get('content', '') for v in _all.values() if isinstance(v, dict))
-                        stream_images = shared.extract_image_paths(_all_text)
-                        if stream_images:
-                            lightrag_logger.info(f"[IMG-FALLBACK] query_stream 扫描到 {len(set(stream_images))} 张图片")
+                    stream_images, backfill_text = await shared._bigram_image_scan(
+                        shared.kb_dir(kb), req.query, ctx
+                    )
+                    if backfill_text:
+                        ctx = ctx + "\n\n" + backfill_text
                 except Exception as _fe:
                     lightrag_logger.error(f"[IMG-FALLBACK] query_stream 扫描失败: {_fe}")
             stream_images = stream_images[:3]

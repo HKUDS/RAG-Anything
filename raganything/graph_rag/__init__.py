@@ -313,11 +313,15 @@ class GraphRetriever:
         results = []
         for rank, (chunk_id, weight) in enumerate(sorted_chunks):
             content = ""
+            doc_name = None
+            file_path = None
             try:
                 if hasattr(self._lightrag, "text_chunks"):
                     chunk_data = await self._lightrag.text_chunks.get_by_id(chunk_id)
                     if chunk_data:
                         content = chunk_data.get("content", "")
+                        doc_name = chunk_data.get("document_name")
+                        file_path = chunk_data.get("file_path")
             except Exception:
                 pass
 
@@ -338,6 +342,8 @@ class GraphRetriever:
                     sources=["graph"],
                     graph_rank=rank + 1,
                     graph_entities=chunk_entities,
+                    document_name=doc_name,
+                    file_path=file_path,
                 )
             )
         return results
@@ -410,11 +416,15 @@ class GraphRetriever:
         results = []
         for rank, (chunk_id, weight) in enumerate(sorted_chunks):
             content = ""
+            doc_name = None
+            file_path = None
             try:
                 if hasattr(self._lightrag, "text_chunks"):
                     chunk_data = await self._lightrag.text_chunks.get_by_id(chunk_id)
                     if chunk_data:
                         content = chunk_data.get("content", "")
+                        doc_name = chunk_data.get("document_name")
+                        file_path = chunk_data.get("file_path")
             except Exception:
                 pass
 
@@ -445,6 +455,8 @@ class GraphRetriever:
                         sources=["graph"],
                         graph_rank=rank + 1,
                         graph_entities=chunk_entity_names,
+                        document_name=doc_name,
+                        file_path=file_path,
                     ),
                     "paths": [
                         {"entity": p[0], "relation": p[1], "depth": p[2]}

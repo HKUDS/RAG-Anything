@@ -17,6 +17,7 @@ WebSocket, state, auth, utilities). Those have been extracted into:
     - raganything.utils.security         (prompt injection detection)
 """
 
+import asyncio
 import os
 import re as _re
 import logging
@@ -170,6 +171,270 @@ def extract_image_paths(text: str) -> list[str]:
     return paths
 
 
+# ── Graph-based Image Discovery ─────────────────────────────
+
+
+def _build_backfill_context(scored_texts: list, max_chars: int = 4800) -> tuple:
+    """Build backfill context from bigram-matched chunks.
+
+    Args:
+        scored_texts: list of (chunk_id, content, score, doc_name) tuples
+        max_chars: max total characters for backfill text
+
+    Returns:
+        (backfill_text, num_chunks_used, total_chars_used)
+    """
+    if not scored_texts:
+        return "", 0, 0
+
+    # Deduplicate by chunk_id, keep highest score
+    best_by_id: dict = {}
+    for chunk_id, content, score, doc_name in scored_texts:
+        if chunk_id not in best_by_id or score > best_by_id[chunk_id][1]:
+            best_by_id[chunk_id] = (f"{doc_name or '未知文档'}\t{content}", score)
+
+    # Sort by score descending
+    sorted_entries = sorted(best_by_id.items(), key=lambda x: -x[1][1])
+
+    formatted: list = []
+    total_chars = 0
+    chunk_count = 0
+
+    for chunk_id, (full_text, score) in sorted_entries:
+        doc_name, content = full_text.split("\t", 1) if "\t" in full_text else ("未知文档", full_text)
+        chunk_count += 1
+        source_label = f"{doc_name} (回填片段{chunk_count})"
+        block = f"[来源 {source_label}]\n{content}"
+        if total_chars + len(block) > max_chars and formatted:
+            break
+        formatted.append(block)
+        total_chars += len(block)
+        if total_chars >= max_chars:
+            break
+
+    return "\n\n".join(formatted), chunk_count, total_chars
+
+
+async def _discover_images_via_graph(instance, query: str, kb_name: str,
+                                      ctx: str = ""):
+    """Discover related images via entity graph traversal (mode-agnostic).
+
+    Uses the knowledge graph's ``belongs_to`` edges to find image entities
+    connected to query-matched text entities.  Runs only when
+    ``extract_image_paths(ctx)`` returned nothing — a semantic fallback
+    between the direct extraction and the bigram scan.
+
+    Args:
+        instance: RAGAnything instance with ``hybrid_search_engine``.
+        query: User query text.
+        kb_name: Knowledge base name (for logging context).
+        ctx: Current retrieval context (for dedup).
+
+    Returns:
+        (image_paths: list[str], backfill_text: str)
+    """
+    hybrid_engine = getattr(instance, "hybrid_search_engine", None)
+    if hybrid_engine is None:
+        return [], ""
+
+    graph_retriever = getattr(hybrid_engine, "graph_retriever", None)
+    if graph_retriever is None:
+        return [], ""
+
+    try:
+        # Step 1: Entity matching + neighbor traversal (with timeout + retry)
+        max_attempts = 3  # 1 initial + 2 retries
+        matched = []
+        results = []
+        for attempt in range(max_attempts):
+            try:
+                result = await asyncio.wait_for(
+                    graph_retriever.search_with_paths(query, top_k=30),
+                    timeout=8.0,
+                )
+                matched = result.get("matched_entities", [])
+                results = result.get("results", [])
+                if matched:
+                    break  # entities found, proceed
+                if attempt < max_attempts - 1:
+                    await asyncio.sleep(1.0)
+            except asyncio.TimeoutError:
+                if attempt < max_attempts - 1:
+                    lightrag_logger.debug(
+                        "[IMG-GRAPH] KB=%s attempt %d/%d: search_with_paths timed out, retrying...",
+                        kb_name, attempt + 1, max_attempts,
+                    )
+                    await asyncio.sleep(1.0)
+                else:
+                    raise  # last attempt timed out → handled by outer except
+
+        if not matched:
+            lightrag_logger.info(
+                "[IMG-GRAPH] KB=%s 图谱未匹配到实体 (重试 %d 次后仍为空)，回退到 bigram 兜底",
+                kb_name, max_attempts,
+            )
+            return [], ""
+
+        # Step 2: Identify image-type entities from matched set
+        image_entity_names = {
+            e["name"]
+            for e in matched
+            if e.get("type") == "image"
+        }
+
+        # Step 3: Collect chunks whose traversal paths touch an image entity
+        # Path format: {"entity": entity_name, "relation": rel, "depth": hop}
+        image_chunks: dict = {}  # chunk_id → {chunk, entity_name}
+        for item in results:
+            paths = item.get("paths", [])
+            for path in paths:
+                entity_name = path["entity"]
+                is_image = (
+                    entity_name in image_entity_names
+                    or " (image)" in entity_name
+                )
+                if is_image:
+                    chunk = item["chunk"]
+                    cid = chunk.chunk_id
+                    if cid not in image_chunks:
+                        image_chunks[cid] = {
+                            "chunk": chunk,
+                            "entity_name": entity_name,
+                        }
+                    break  # one image association is enough per chunk
+
+        if not image_chunks:
+            return [], ""
+
+        # Step 4: Extract image paths & build backfill text (dedup)
+        image_paths: list = []
+        backfill_parts: list = []
+        seen_paths: set = set()
+        existing_ids: set = set()
+
+        # Track chunks whose content (first 80 chars) already appears in ctx
+        for cid, info in image_chunks.items():
+            content = info["chunk"].content
+            if content[:80] in ctx:
+                existing_ids.add(cid)
+
+        for cid, info in image_chunks.items():
+            chunk = info["chunk"]
+            content = chunk.content
+
+            # Extract image paths
+            for p in extract_image_paths(content):
+                if p not in seen_paths:
+                    seen_paths.add(p)
+                    image_paths.append(p)
+
+            # Build backfill (skip chunks already in ctx)
+            if cid not in existing_ids and content:
+                doc_name = (
+                    getattr(chunk, "document_name", "")
+                    or getattr(chunk, "file_path", "")
+                    or "未知文档"
+                )
+                backfill_parts.append(
+                    f"[来源 {doc_name}（图谱关联）]\n{content[:1500]}"
+                )
+
+        backfill_text = (
+            "\n\n".join(backfill_parts[:5]) if backfill_parts else ""
+        )
+
+        if image_paths:
+            lightrag_logger.info(
+                "[IMG-GRAPH] KB=%s 图谱发现 %d 张图片 (匹配实体 %d 个)",
+                kb_name, len(image_paths), len(matched),
+            )
+
+        return image_paths[:5], backfill_text
+
+    except asyncio.TimeoutError:
+        lightrag_logger.warning(
+            "[IMG-GRAPH] KB=%s 图谱图片发现超时 (8s)", kb_name
+        )
+        return [], ""
+    except Exception as exc:
+        lightrag_logger.warning(
+            "[IMG-GRAPH] KB=%s 图谱图片发现失败: %s", kb_name, exc
+        )
+        return [], ""
+
+
+async def _bigram_image_scan(kb_dir_path, query: str, ctx: str = ""):
+    """Bigram full-scan fallback for image discovery.
+
+    Scans all chunks in the knowledge base's text_chunks JSON store,
+    scoring each chunk by character-bigram overlap with the query.
+    Only returns images from chunks with positive scores.
+
+    Args:
+        kb_dir_path: Path to the knowledge base directory.
+        query: User query text.
+        ctx: Current retrieval context (for dedup).
+
+    Returns:
+        (image_paths: list[str], backfill_text: str)
+    """
+    import json as _json
+
+    _chunk_file = Path(kb_dir_path) / 'kv_store_text_chunks.json'
+    if not _chunk_file.exists():
+        return [], ""
+
+    _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
+    q = query.lower()
+    query_grams = set()
+    for i in range(len(q) - 1):
+        query_grams.add(q[i:i+2])
+
+    scored_images = []  # (path, score)
+    scored_texts = []   # (chunk_id, content, score, doc_name)
+    _existing_content_ids = set()
+
+    for _cid, _chunk in _all.items():
+        content = _chunk.get('content', '')
+        if not content:
+            continue
+        paths = extract_image_paths(content)
+        content_lower = content.lower()
+        score = sum(1 for bg in query_grams if bg in content_lower)
+        _content_key = content[:80]
+        if _content_key in ctx:
+            _existing_content_ids.add(_cid)
+        if not paths:
+            continue
+        for p in paths:
+            scored_images.append((p, score))
+        if score > 0:
+            doc_name = _chunk.get('document_name', '') or _chunk.get('source', '')
+            scored_texts.append((_cid, content, score, doc_name))
+
+    # Dedup: highest score per path
+    best_img = {}
+    for p, s in scored_images:
+        if p not in best_img or s > best_img[p]:
+            best_img[p] = s
+    image_paths = [p for p, _ in sorted(best_img.items(), key=lambda x: -x[1]) if _ > 0][:3]
+    if not image_paths:
+        image_paths = list(best_img.keys())[:2]
+
+    # Build backfill (filter chunks already in ctx)
+    _fresh_texts = [(cid, c, s, dn) for cid, c, s, dn in scored_texts
+                    if cid not in _existing_content_ids]
+    backfill_text, _bf_count, _bf_chars = _build_backfill_context(_fresh_texts)
+
+    if image_paths:
+        _log_msg = f"[IMG-FALLBACK] bigram匹配到 {len(image_paths)} 张相关图片 (共 {len(best_img)} 张)"
+        if backfill_text:
+            _log_msg += f"，+回填 {_bf_count} 文本片段 ({_bf_chars} 字符)"
+        lightrag_logger.info(_log_msg)
+
+    return image_paths, backfill_text
+
+
 # ── Thinking/Progress Translation ──────────────────────────
 
 THINKING_PATTERNS = [
@@ -265,6 +530,8 @@ __all__ = [
     # Local
     "MAX_UPLOAD_SIZE", "MAX_BODY_SIZE", "RequestSizeMiddleware",
     "server_logger", "extract_image_paths",
+    "_discover_images_via_graph", "_build_backfill_context",
+    "_bigram_image_scan",
     "THINKING_PATTERNS", "QUERY_SYSTEM_PROMPT",
     "_is_thinking_msg", "_translate_thinking_msg",
     # Re-exports from other modules
