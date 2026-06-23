@@ -177,7 +177,18 @@ class BatchProcessorMixin:
     async def _batch_merge_lightrag_style_type_aware(
         self, enhanced_chunk_results: List[Tuple], file_path: str, doc_id: str = None
     ):
-        """Use LightRAG's merge_nodes_and_edges for batch merge"""
+        """Use LightRAG's merge_nodes_and_edges for batch merge
+
+        NOTE: LightRAG's merge_nodes_and_edges Phase 3 **overwrites**
+        full_entities[doc_id] / full_relations[doc_id] via upsert instead
+        of merging.  For mixed text+multimodal documents the text pipeline
+        has already written a complete entity list there; the multimodal
+        merge would clobber it, making text entities invisible to
+        ``adelete_by_doc_id`` and leaving them as undeletable orphans.
+
+        We work around this by saving the pre-merge state and re-merging
+        the union of old and new entity/relation names after the call.
+        """
         from lightrag.kg.shared_storage import (
             get_namespace_data,
             get_pipeline_status_lock,
@@ -189,6 +200,14 @@ class BatchProcessorMixin:
 
         # Use full path or basename based on config
         file_ref = self._get_file_reference(file_path)
+
+        # Save pre-merge state so we can restore text entities that
+        # merge_nodes_and_edges would otherwise drop.
+        prev_full_entities = None
+        prev_full_relations = None
+        if doc_id:
+            prev_full_entities = await self.lightrag.full_entities.get_by_id(doc_id)
+            prev_full_relations = await self.lightrag.full_relations.get_by_id(doc_id)
 
         await merge_nodes_and_edges(
             chunk_results=enhanced_chunk_results,
@@ -208,5 +227,48 @@ class BatchProcessorMixin:
             total_files=1,
             file_path=file_ref,
         )
+
+        # ── Fix: restore text entities that merge_nodes_and_edges overwrote ──
+        if doc_id and prev_full_entities:
+            current_entities = (
+                await self.lightrag.full_entities.get_by_id(doc_id) or {}
+            )
+            current_names = set(current_entities.get("entity_names", []))
+            prev_names = set(prev_full_entities.get("entity_names", []))
+            merged_names = current_names | prev_names
+            if merged_names != current_names:
+                await self.lightrag.full_entities.upsert({
+                    doc_id: {
+                        "entity_names": list(merged_names),
+                        "count": len(merged_names),
+                    }
+                })
+                self.logger.debug(
+                    f"Restored {len(merged_names) - len(current_names)} "
+                    f"text entities to full_entities[{doc_id}]"
+                )
+
+        if doc_id and prev_full_relations:
+            current_relations = (
+                await self.lightrag.full_relations.get_by_id(doc_id) or {}
+            )
+            current_pairs = {
+                tuple(p) for p in current_relations.get("relation_pairs", [])
+            }
+            prev_pairs = {
+                tuple(p) for p in prev_full_relations.get("relation_pairs", [])
+            }
+            merged_pairs = current_pairs | prev_pairs
+            if merged_pairs != current_pairs:
+                await self.lightrag.full_relations.upsert({
+                    doc_id: {
+                        "relation_pairs": [list(p) for p in merged_pairs],
+                        "count": len(merged_pairs),
+                    }
+                })
+                self.logger.debug(
+                    f"Restored {len(merged_pairs) - len(current_pairs)} "
+                    f"text relations to full_relations[{doc_id}]"
+                )
 
         await self.lightrag._insert_done()

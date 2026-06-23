@@ -72,7 +72,7 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
         try:
             from raganything.query_cache import get_query_cache
             cache = get_query_cache()
-            cached = cache.get(req.query)
+            cached = cache.get(f"{kb}:{req.query}")
             if cached:
                 cached["cache_hit"] = True
                 return JSONResponse(content=cached, headers={"X-Cache": "HIT"})
@@ -328,7 +328,7 @@ async def query_rag(request: Request, req: QueryRequest, kb: str = Depends(verif
         if not refresh and agent_mode == "none":
             try:
                 from raganything.query_cache import get_query_cache
-                get_query_cache().set(req.query, record)
+                get_query_cache().set(f"{kb}:{req.query}", record)
             except Exception:
                 pass
 

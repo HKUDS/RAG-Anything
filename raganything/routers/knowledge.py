@@ -601,6 +601,19 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
 
     if result.status == "success":
         _cleanup_document_files(kb, file_name, full_id)
+        # Clean up multimodal status cache entry for this document
+        if hasattr(instance, "multimodal_status_cache") and instance.multimodal_status_cache is not None:
+            try:
+                await instance.multimodal_status_cache.delete([full_id])
+                await instance.multimodal_status_cache.index_done_callback()
+            except Exception:
+                pass
+        # Force LightRAG storages to persist deletions to disk so that
+        # _bigram_image_scan and other disk-level readers see up-to-date data.
+        await instance.lightrag.finalize_storages()
+        # Invalidate query cache to prevent stale results referencing deleted data
+        from raganything.query_cache import get_query_cache
+        get_query_cache().invalidate()
         return {"status": "deleted", "doc_id": full_id, "file": file_name, "message": result.message}
     elif result.status == "not_found":
         # Data may be partially missing (e.g. multimodal processing was
@@ -612,6 +625,17 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(doc_status, f, ensure_ascii=False, indent=2)
             tmp.replace(status_path)
+            # Clean up file system leftovers and multimodal status cache
+            _cleanup_document_files(kb, file_name, full_id)
+            if hasattr(instance, "multimodal_status_cache") and instance.multimodal_status_cache is not None:
+                try:
+                    await instance.multimodal_status_cache.delete([full_id])
+                    await instance.multimodal_status_cache.index_done_callback()
+                except Exception:
+                    pass
+            # Invalidate query cache even for partial cleanup
+            from raganything.query_cache import get_query_cache
+            get_query_cache().invalidate()
             return {
                 "status": "deleted",
                 "doc_id": full_id,
@@ -642,6 +666,8 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
     not_found = []
     errors = []
 
+    deleted_full_ids: list[str] = []  # for multimodal_status_cache batch cleanup
+
     for doc_id in req.doc_ids:
         full_id = None
         for k in doc_status:
@@ -665,6 +691,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
             if result.status in ("success", "not_found"):
                 del doc_status[full_id]
                 deleted.append(doc_id)
+                deleted_full_ids.append(full_id)
                 _cleanup_document_files(kb, file_name, full_id)
                 await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
                 # Also clean up matching processing_tasks entry
@@ -676,9 +703,23 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
         except Exception as e:
             errors.append({"doc_id": doc_id, "error": str(e)})
 
+    # Clean up multimodal status cache entries for deleted documents
+    if deleted_full_ids and hasattr(instance, "multimodal_status_cache") and instance.multimodal_status_cache is not None:
+        try:
+            await instance.multimodal_status_cache.delete(deleted_full_ids)
+            await instance.multimodal_status_cache.index_done_callback()
+        except Exception:
+            pass
+
     # Write doc_status back once
     with open(status_path, "w", encoding="utf-8") as f:
         json.dump(doc_status, f, ensure_ascii=False, indent=2)
+
+    # Force LightRAG storages to persist deletions + invalidate query cache
+    if deleted:
+        await instance.lightrag.finalize_storages()
+        from raganything.query_cache import get_query_cache
+        get_query_cache().invalidate()
 
     return {"deleted": deleted, "not_found": not_found, "errors": errors,
             "total_deleted": len(deleted), "total_failed": len(errors)}
@@ -938,6 +979,9 @@ async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
     save_kb_meta(meta)
     if _shared.active_kb == name:
         _shared.active_kb = "default"
+    # Invalidate query cache to prevent stale results referencing deleted KB data
+    from raganything.query_cache import get_query_cache
+    get_query_cache().invalidate()
     return {"status": "deleted", "name": name}
 
 
