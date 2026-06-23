@@ -237,7 +237,15 @@ def _fix_stuck_doc(filename: str, target_dir: str, error_msg: str) -> bool:
             ds = json.load(f)
         changed = False
         for did, info in ds.items():
-            if info.get("file_path") == filename:
+            stored = info.get("file_path", "")
+            stored_base = os.path.basename(stored)
+            search_base = os.path.basename(filename)
+            # Robust match: handles hash-prefixed uploads (8-hex + "_" + original)
+            # Length guard: prefix is exactly 9 chars (8 hex + 1 underscore)
+            if (stored == filename
+                    or stored_base == search_base
+                    or (stored_base.endswith("_" + search_base)
+                        and len(stored_base) - len(search_base) == 9)):
                 if info.get("status") != "failed":
                     info["status"] = "failed"
                     info["error_msg"] = error_msg
@@ -310,29 +318,36 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
             with open(sp_status, "r", encoding="utf-8") as f:
                 ds = json.load(f)
             for _did, _info in ds.items():
-                if _info.get("file_path") == filename:
-                    if _info.get("status") == "processing":
-                        from datetime import datetime, timezone
-                        _updated = _info.get("updated_at", "")
-                        try:
-                            _dt = datetime.fromisoformat(str(_updated))
-                            _age = (datetime.now(timezone.utc) - _dt).total_seconds()
-                        except Exception:
-                            _age = 0
-                        if _age < _DOC_STATUS_STALE_SEC:
-                            print(
-                                f"[WORKER] 文档 {filename} 有活跃的处理器 "
-                                f"(updated {_age:.0f}s ago)，退出",
-                                flush=True,
-                            )
-                            sys.exit(3)
-                        else:
-                            print(
-                                f"[WORKER] 文档 {filename} 的 processing 状态已过期 "
-                                f"({_age:.0f}s)，继续处理",
-                                flush=True,
-                            )
-                    break
+                _stored = _info.get("file_path", "")
+                _s_base = os.path.basename(_stored)
+                _f_base = os.path.basename(filename)
+                if not (_stored == filename
+                        or _s_base == _f_base
+                        or (_s_base.endswith("_" + _f_base)
+                            and len(_s_base) - len(_f_base) == 9)):
+                    continue
+                if _info.get("status") == "processing":
+                    from datetime import datetime, timezone
+                    _updated = _info.get("updated_at", "")
+                    try:
+                        _dt = datetime.fromisoformat(str(_updated))
+                        _age = (datetime.now(timezone.utc) - _dt).total_seconds()
+                    except Exception:
+                        _age = 0
+                    if _age < _DOC_STATUS_STALE_SEC:
+                        print(
+                            f"[WORKER] 文档 {filename} 有活跃的处理器 "
+                            f"(updated {_age:.0f}s ago)，退出",
+                            flush=True,
+                        )
+                        sys.exit(3)
+                    else:
+                        print(
+                            f"[WORKER] 文档 {filename} 的 processing 状态已过期 "
+                            f"({_age:.0f}s)，继续处理",
+                            flush=True,
+                        )
+                break
         except Exception as exc:
             print(f"[WORKER] 读取 doc_status 失败: {exc}，跳过检查", flush=True)
 
@@ -419,7 +434,13 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                     with open(sp, "r", encoding="utf-8") as f:
                         ds = json.load(f)
                     for did, info in ds.items():
-                        if info.get("file_path") == filename:
+                        _stored = info.get("file_path", "")
+                        _s_base = os.path.basename(_stored)
+                        _f_base = os.path.basename(filename)
+                        if (_stored == filename
+                                or _s_base == _f_base
+                                or (_s_base.endswith("_" + _f_base)
+                                    and len(_s_base) - len(_f_base) == 9)):
                             if info.get("chunks_count", 0) > 0:
                                 chunks_ok = True
                             break
@@ -449,14 +470,26 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                 ds = json.load(f)
             found = False
             for did, info in ds.items():
-                if info.get("file_path") == filename:
+                stored = info.get("file_path", "")
+                if stored == filename or stored.endswith(filename) or os.path.basename(stored) == filename:
                     found = True
-                    if info.get("chunks_count", 0) == 0 or info.get("status") == "failed":
+                    chunks_count = info.get("chunks_count", 0)
+                    doc_status = info.get("status", "")
+                    if chunks_count == 0:
+                        # Truly failed: no text chunks were produced
                         merge_failed = True
                         print(
-                            f"[WORKER] ERROR: 文档处理失败. "
-                            f"chunks={info.get('chunks_count', 0)} status={info.get('status')}"
-                            f" doc_id={did}",
+                            f"[WORKER] ERROR: 文档处理失败 (chunks=0). "
+                            f"status={doc_status} doc_id={did}",
+                            flush=True,
+                        )
+                    elif doc_status == "failed":
+                        # Partial success: chunks exist but entity extraction failed
+                        # Data is still usable for Q&A; log warning, don't exit 1
+                        print(
+                            f"[WORKER] WARNING: 实体提取失败但文本块已入库 "
+                            f"(chunks={chunks_count} status=failed doc_id={did}). "
+                            f"向量检索可用，知识图谱可能不完整。",
                             flush=True,
                         )
                     break

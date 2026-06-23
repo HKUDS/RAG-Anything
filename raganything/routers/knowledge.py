@@ -100,15 +100,23 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
     # Register for dedup tracking BEFORE spawning the background task
     _register_processing_file(kb, file_hash, task_id)
 
-    # 后台异步处理
-    if background_tasks is None:
-        raise HTTPException(500, "服务器内部错误：BackgroundTasks 未注入")
-    background_tasks.add_task(_process_uploaded_file, task_id, str(file_path.absolute()),
-                               file.filename, kb, chunking_strategy, current_user["id"])
+    # 推入 per-KB 处理队列（统一排队，防止并发竞争 LightRAG 存储）
+    from .shared import _ensure_queue_draining
+    task_info = {
+        "task_id": task_id,
+        "file_path": str(file_path.absolute()),
+        "filename": file.filename,
+        "kb_name": kb,
+        "chunking_strategy": chunking_strategy,
+        "user_id": current_user["id"],
+    }
+    queue, qsize = await _ensure_queue_draining(kb)
+    queue.put_nowait(task_info)
     strategy_name = CHUNKING_STRATEGY_META.get(chunking_strategy or CHUNKING_STRATEGY, {}).get('name', '默认')
     return {"task_id": task_id, "filename": file.filename, "status": "queued", "kb": kb,
             "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY,
-            "message": f"文档已接收，使用{strategy_name}分块，后台处理中。请到知识库页面查看进度。"}
+            "position": qsize + 1, "queue_size": qsize + 1,
+            "message": f"文档已加入队列（第 {qsize + 1} 位），使用{strategy_name}分块。请到知识库页面查看进度。"}
 
 
 @router.post("/upload/batch")
@@ -125,6 +133,8 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
 
     tasks = []
     skipped: list[str] = []
+    from .shared import _ensure_queue_draining
+
     for file in files:
         task_id = str(uuid.uuid4())[:8]
         file_path = upload_dir / file.filename
@@ -142,17 +152,29 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
             continue
 
         _register_processing_file(kb, file_hash, task_id)
-        if background_tasks is None:
-            raise HTTPException(500, "服务器内部错误：BackgroundTasks 未注入")
-        background_tasks.add_task(_process_uploaded_file, task_id, str(file_path.absolute()),
-                                   file.filename, kb, chunking_strategy, current_user["id"])
-        tasks.append({"task_id": task_id, "filename": file.filename, "status": "queued"})
+
+        # Push to per-KB queue (shared with single-file upload endpoint)
+        task_info = {
+            "task_id": task_id,
+            "file_path": str(file_path.absolute()),
+            "filename": file.filename,
+            "kb_name": kb,
+            "chunking_strategy": chunking_strategy,
+            "user_id": current_user["id"],
+        }
+        queue, pre_qsize = await _ensure_queue_draining(kb)
+        queue.put_nowait(task_info)
+        tasks.append({
+            "task_id": task_id, "filename": file.filename,
+            "status": "queued", "position": pre_qsize + len(tasks),
+        })
         lightrag_logger.info(f"[UPLOAD-BATCH] 任务={task_id} 文件={file.filename} kb={kb}")
 
     strategy_name = CHUNKING_STRATEGY_META.get(chunking_strategy or CHUNKING_STRATEGY, {}).get('name', '默认')
     result = {"status": "queued", "tasks": tasks, "total": len(tasks), "kb": kb,
               "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY,
-              "message": f"已接收 {len(tasks)} 个文件，使用{strategy_name}分块，后台处理中"}
+              "queue_size": queue.qsize(),
+              "message": f"已接收 {len(tasks)} 个文件，使用{strategy_name}分块，排队处理中"}
     if skipped:
         result["skipped"] = skipped
         result["message"] += f"，{len(skipped)} 个跳过（重复）"
@@ -698,13 +720,22 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), curre
     with open(status_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
-    # 提交后台重新处理
+    # 推入 per-KB 处理队列（统一排队）
     task_id = str(uuid.uuid4())[:8]
-    if background_tasks is None:
-        raise HTTPException(500, "服务器内部错误")
-    background_tasks.add_task(_process_uploaded_file, task_id, str(file_path.absolute()),
-                               file_name, kb, "", current_user["id"])
-    return {"status": "queued", "task_id": task_id, "filename": file_name, "message": "文档已重新提交处理"}
+    from .shared import _ensure_queue_draining
+    task_info = {
+        "task_id": task_id,
+        "file_path": str(file_path.absolute()),
+        "filename": file_name,
+        "kb_name": kb,
+        "chunking_strategy": "",
+        "user_id": current_user["id"],
+    }
+    queue, qsize = await _ensure_queue_draining(kb)
+    queue.put_nowait(task_info)
+    return {"status": "queued", "task_id": task_id, "filename": file_name,
+            "position": qsize + 1, "queue_size": qsize + 1,
+            "message": "文档已加入处理队列"}
 
 
 @router.post("/kb/{kb_name}/reprocess-multimodal")
@@ -853,22 +884,47 @@ async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
         await kb_instances[name].finalize_storages()
         del kb_instances[name]
 
-    # 清理该 KB 对应的上传文件和解析输出
-    doc_status_path = Path(kb_dir(name)) / "kv_store_doc_status.json"
+    # 清理该 KB 对应的上传文件
+    # 从 doc_status 和 text_chunks 两个来源收集 file_path（兜底防止 doc_status 中 file_path 为空）
+    _found_files: set = set()
+    _kb_dir = Path(kb_dir(name))
+
+    # 来源 1：doc_status
+    doc_status_path = _kb_dir / "kv_store_doc_status.json"
     if doc_status_path.exists():
         try:
             doc_status = json.loads(doc_status_path.read_text("utf-8"))
             for info in doc_status.values():
-                file_path = info.get("file_path", "")
-                if file_path:
-                    upload_file = Path("./uploads") / Path(file_path).name
-                    if upload_file.exists():
-                        try:
-                            upload_file.unlink()
-                        except FileNotFoundError:
-                            pass
-        except Exception:
-            pass
+                fp = info.get("file_path", "")
+                if fp:
+                    _found_files.add(fp)
+        except Exception as e:
+            lightrag_logger.warning(f"[CLEANUP] 读取 doc_status 失败 (KB={name}): {e}")
+
+    # 来源 2：text_chunks（兜底 — 每个 chunk 都记录了 file_path）
+    chunks_path = _kb_dir / "kv_store_text_chunks.json"
+    if chunks_path.exists():
+        try:
+            chunks = json.loads(chunks_path.read_text("utf-8"))
+            for chunk_data in chunks.values():
+                try:
+                    cd = json.loads(chunk_data) if isinstance(chunk_data, str) else chunk_data
+                    fp = cd.get("file_path", "")
+                    if fp and fp not in _found_files:
+                        _found_files.add(fp)
+                except Exception:
+                    pass
+        except Exception as e:
+            lightrag_logger.warning(f"[CLEANUP] 读取 text_chunks 失败 (KB={name}): {e}")
+
+    for fp in _found_files:
+        upload_file = Path("./uploads") / Path(fp).name
+        if upload_file.exists():
+            try:
+                upload_file.unlink()
+                lightrag_logger.info(f"[CLEANUP] 已删除上传文件: {upload_file}")
+            except FileNotFoundError:
+                pass  # 已被并发请求删除
     # 删除该 KB 的解析输出目录
     output_dir = "./output" if name == "default" else f"./output_{name}"
     shutil.rmtree(output_dir, ignore_errors=True)

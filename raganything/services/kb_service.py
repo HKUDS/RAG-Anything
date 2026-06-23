@@ -348,7 +348,16 @@ async def _fix_stuck_doc_status(kb_name: str, filename: str):
             data = json.load(f)
         changed = False
         for doc_id, info in data.items():
-            if info.get("file_path") == filename and info.get("status") == "handling":
+            stored = info.get("file_path", "")
+            stored_base = os.path.basename(stored)
+            search_base = os.path.basename(filename)
+            # Robust match: handles hash-prefixed uploads and full/partial paths
+            # Length guard: prefix is exactly 9 chars (8 hex + 1 underscore)
+            if (stored == filename
+                    or stored_base == search_base
+                    or (stored_base.endswith("_" + search_base)
+                        and len(stored_base) - len(search_base) == 9)) \
+                    and info.get("status") == "handling":
                 info["status"] = "failed"
                 info["error_msg"] = "处理中断：子进程异常退出或超时"
                 changed = True
@@ -446,8 +455,13 @@ def _verify_document_persisted(kb_name: str, filename: str) -> None:
 
     fname = os.path.basename(filename)
     for doc_id, info in data.items():
-        stored = os.path.basename(info.get("file_path", ""))
-        if stored == fname:
+        stored_raw = info.get("file_path", "")
+        stored_base = os.path.basename(stored_raw)
+        # Robust match: handles hash-prefixed uploads (8-hex + "_" + original)
+        # Length guard: prefix is exactly 9 chars (8 hex + 1 underscore)
+        if (stored_base == fname
+                or (stored_base.endswith("_" + fname)
+                    and len(stored_base) - len(fname) == 9)):
             chunks = info.get("chunks_count", 0)
             status = info.get("status", "?")
             if chunks == 0:
@@ -614,6 +628,86 @@ async def _process_uploaded_file(
         await add_event("upload_error", file=filename, task_id=task_id, error=str(e), user_id=user_id)
         await _fix_stuck_doc_status(kb_name, filename)
         _unregister_processing_file(kb_name, file_hash)
+
+
+# ── Per-KB Queue Drain ────────────────────────────────────
+
+async def _drain_kb_queue(kb_name: str) -> None:
+    """Drain the per-KB processing queue, one file at a time.
+
+    This coroutine is started automatically when the first file enters an
+    empty queue.  It processes files sequentially (respecting
+    ``_MAX_CONCURRENT_FILES``) and exits when the queue is empty.
+    """
+    import raganything.routers.shared as _rshared
+
+    # Prevent duplicate drain coroutines for the same KB
+    if _rshared._kb_draining.get(kb_name):
+        kb_logger.debug(f"[QUEUE] Drain 已在运行: {kb_name}")
+        return
+    _rshared._kb_draining[kb_name] = True
+
+    queue = _rshared._kb_queues.setdefault(kb_name, asyncio.Queue())
+
+    try:
+        kb_logger.info(f"[QUEUE] 开始 drain: {kb_name}")
+        while True:
+            try:
+                # Block until a task is available
+                task_info = await queue.get()
+            except Exception:
+                break
+
+            kb_logger.info(
+                f"[QUEUE] 取出任务: file={task_info.get('filename', '?')} "
+                f"kb={kb_name} queue_remaining={queue.qsize()}"
+            )
+
+            # Notify frontend that queue position has changed
+            try:
+                from raganything.services.ws_service import ws_broadcast
+                await ws_broadcast({
+                    "type": "queue_position",
+                    "kb": kb_name,
+                    "filename": task_info.get("filename", ""),
+                    "queue_remaining": queue.qsize(),
+                })
+            except Exception:
+                pass  # WebSocket failure shouldn't block processing
+
+            try:
+                await _process_uploaded_file(**task_info)
+            except Exception as exc:
+                # Single file failure must not kill the drain loop.
+                kb_logger.error(
+                    f"[QUEUE] 文件处理失败 (继续队列): "
+                    f"file={task_info.get('filename', '?')} error={exc}"
+                )
+
+            # Exit if the queue is now empty
+            if queue.empty():
+                kb_logger.info(f"[QUEUE] 队列已空: {kb_name}")
+                break
+    finally:
+        _rshared._kb_draining[kb_name] = False
+        kb_logger.debug(f"[QUEUE] Drain 已退出: {kb_name}")
+
+
+async def _ensure_queue_draining(kb_name: str) -> tuple:
+    """Start drain if not already running; return queue and position info.
+
+    Returns:
+        (queue, position, queue_size) — position is 1-based.
+    """
+    import raganything.routers.shared as _rshared
+
+    queue = _rshared._kb_queues.setdefault(kb_name, asyncio.Queue())
+    qsize = queue.qsize()
+
+    if not _rshared._kb_draining.get(kb_name) and qsize > 0:
+        asyncio.ensure_future(_drain_kb_queue(kb_name))
+
+    return queue, qsize
 
 
 WORKFLOW_DIR = Path("./workflows")

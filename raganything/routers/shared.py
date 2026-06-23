@@ -60,6 +60,7 @@ from raganything.services.kb_service import (  # noqa: F401 — re-export
     _compute_file_hash,
     _is_file_being_processed,
     _register_processing_file,
+    _ensure_queue_draining,
     API_KEY,
     BASE_URL,
     LLM_MODEL,
@@ -145,6 +146,21 @@ class RequestSizeMiddleware(BaseHTTPMiddleware):
                 )
         return await call_next(request)
 
+
+# ── Per-KB Processing Queue ──────────────────────────────
+
+# Each KB gets its own FIFO queue of pending file-processing tasks.
+# Tasks are (task_id, file_path, filename, kb_name, strategy, user_id) tuples.
+_kb_queues: dict = {}          # kb_name → asyncio.Queue
+_kb_draining: dict = {}        # kb_name → bool (drain coroutine is active)
+
+# Max concurrent processing tasks per KB (from config / env).
+# Default 1 — safe for single LightRAG storage backend.
+from raganything.config import RAGAnythingConfig
+_MAX_CONCURRENT_FILES: int = int(
+    os.getenv("MAX_CONCURRENT_FILES",
+              str(getattr(RAGAnythingConfig, "max_concurrent_files", 1)))
+)
 
 # ── Server Logger ──────────────────────────────────────────
 
