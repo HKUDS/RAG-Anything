@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Factory, Cpu, Wrench, BookOpen, TrendingUp, Users, MessageSquare,
   AlertTriangle, Zap, Database, BarChart3, ChevronRight, Activity, Play
 } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { api } from '../utils/api'
+import { useManufacturingKB } from '../hooks/useManufacturingKB'
+import ManufacturingKBSelector from '../components/ManufacturingKBSelector'
 
 const CARD_VARIANTS = {
   hidden: { opacity: 0, y: 12 },
@@ -14,24 +16,14 @@ const CARD_VARIANTS = {
 
 export default function ManufacturingDashboardPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [dashboard, setDashboard] = useState(null)
   const [kgSummary, setKgSummary] = useState(null)
   const [faultStats, setFaultStats] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
-  const [mfgKb, setMfgKb] = useState(() => localStorage.getItem('mfg_kb') || 'default')
-  const [kbList, setKbList] = useState([])
-  useEffect(() => { api.get('/manufacturing/kb-list').then(r => {
-  let names = []
-  if (Array.isArray(r)) {
-    names = r.map(k => k.name || k.label).filter(Boolean)
-  } else if (r && typeof r === 'object') {
-    names = (r.knowledge_bases || []).map(k => k.name).filter(Boolean)
-  }
-  if (!names.length) names = ['default']
-  setKbList(names)
-}).catch(e => console.error('KB list error:', e)) }, [])
+  const { mfgKb, setMfgKb, kbList, kbLoading, creating, createMfgKb } = useManufacturingKB()
 
   const loadAll = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true)
@@ -52,7 +44,8 @@ export default function ManufacturingDashboardPage() {
     }
   }, [mfgKb])
 
-  useEffect(() => { loadAll() }, [loadAll])
+  // Initial data load (once on mount / when KB changes)
+  useEffect(() => { loadAll(true) }, [mfgKb])
 
   // Smart auto-refresh: active=5s, idle=15s, hidden=stopped
   useEffect(() => {
@@ -61,8 +54,7 @@ export default function ManufacturingDashboardPage() {
     const getDelay = () => (document.visibilityState === 'visible' ? 5000 : 15000)
     const schedule = () => {
       clearInterval(interval)
-      if (document.visibilityState === 'hidden') return  // stop when hidden
-      loadAll(false)
+      if (document.visibilityState === 'hidden') return
       interval = setInterval(() => {
         if (document.visibilityState === 'hidden') { clearInterval(interval); return }
         loadAll(false)
@@ -72,7 +64,7 @@ export default function ManufacturingDashboardPage() {
     const onVisibility = () => { if (document.visibilityState === 'visible') schedule() }
     document.addEventListener('visibilitychange', onVisibility)
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility) }
-  }, [autoRefresh, loadAll, mfgKb])
+  }, [autoRefresh, mfgKb])
 
   if (loading) {
     return (
@@ -110,13 +102,28 @@ export default function ManufacturingDashboardPage() {
             智能制造专业智能体
           </h1>
           <p className="text-sm text-warm-500 mt-1">第六届全国智能制造应用技术技能大赛 — 辅助教学系统</p>
+          <div className="flex gap-1 mt-2">
+            {[
+              { to: '/manufacturing', label: '仪表板' },
+              { to: '/manufacturing/knowledge', label: '知识库' },
+              { to: '/manufacturing/agent', label: '智能体' },
+            ].map(item => (
+              <button key={item.to} onClick={() => navigate(item.to)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  location.pathname === item.to
+                    ? 'bg-coral-50 text-coral-600'
+                    : 'text-warm-500 hover:text-warm-700 hover:bg-warm-100'
+                }`}>
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="flex gap-2 items-center">
-          <select value={mfgKb} onChange={e => { setMfgKb(e.target.value); localStorage.setItem('mfg_kb', e.target.value) }}
-            className="px-3 py-1.5 rounded-lg border border-warm-200 text-sm bg-white text-warm-700 cursor-pointer">
-            {kbList.length === 0 && <option value="default">KB: default</option>}
-            {kbList.map(k => <option key={k} value={k}>KB: {k}</option>)}
-          </select>
+          <ManufacturingKBSelector
+            mfgKb={mfgKb} kbList={kbList} loading={kbLoading} creating={creating}
+            onChange={setMfgKb} onCreate={createMfgKb}
+          />
           <button onClick={() => setAutoRefresh(!autoRefresh)}
             className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
               autoRefresh ? 'bg-sage-50 border-sage-200 text-sage-600' : 'bg-warm-100 border-warm-200 text-warm-500'
@@ -189,9 +196,20 @@ export default function ManufacturingDashboardPage() {
           <motion.div key={s.label} custom={i} variants={CARD_VARIANTS} initial="hidden" animate="visible"
             className="card p-5 hover:shadow-warm-md transition-shadow cursor-default">
             <div className="flex items-start justify-between">
-              <div className={`w-9 h-9 rounded-xl bg-${s.color}-50 flex items-center justify-center`}>
-                <s.icon size={18} className={`text-${s.color}-500`} />
-              </div>
+              {(() => {
+                const colorMap = {
+                  coral: { bg: 'bg-coral-50', text: 'text-coral-500' },
+                  amber: { bg: 'bg-amber-50', text: 'text-amber-500' },
+                  sage:  { bg: 'bg-sage-50',  text: 'text-sage-500' },
+                  sky:   { bg: 'bg-sky-50',   text: 'text-sky-500' },
+                }
+                const c = colorMap[s.color] || colorMap.coral
+                return (
+                  <div className={`w-9 h-9 rounded-xl ${c.bg} flex items-center justify-center`}>
+                    <s.icon size={18} className={c.text} />
+                  </div>
+                )
+              })()}
             </div>
             <p className="text-2xl font-bold text-warm-800 mt-3">{s.value}</p>
             <p className="text-xs text-warm-500 mt-1">{s.label}</p>

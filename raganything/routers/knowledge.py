@@ -878,7 +878,7 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/kb/create")
-async def create_kb(kb_name: str = QueryParam(...), current_user: dict = Depends(get_current_user), label: str = QueryParam("")):
+async def create_kb(kb_name: str = QueryParam(...), current_user: dict = Depends(get_current_user), label: str = QueryParam(""), domain: str = QueryParam("general")):
     meta = load_kb_meta()
     if kb_name in meta:
         raise HTTPException(400, f"知识库 '{kb_name}' 已存在")
@@ -887,6 +887,7 @@ async def create_kb(kb_name: str = QueryParam(...), current_user: dict = Depends
         "name": label, "created": datetime.now().isoformat(),
         "owner_id": current_user["id"],
         "owner_username": current_user["username"],
+        "domain": domain,
     }
     save_kb_meta(meta)
     # 预加载

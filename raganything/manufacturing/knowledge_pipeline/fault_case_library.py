@@ -35,7 +35,12 @@ class FaultCaseLibrary:
         """基于向量相似度检索故障案例。
 
         降级方案：关键词匹配。
+        空查询时返回全部案例。
         """
+        if not query.strip():
+            cases = list(self._cases.values())
+            cases.sort(key=lambda c: c.created_at, reverse=True)
+            return [self._case_to_result(c, 1.0) for c in cases[:top_k]]
         if self.embedding_client:
             return self._vector_search(query, top_k)
         return self._keyword_search(query, top_k)
@@ -56,6 +61,36 @@ class FaultCaseLibrary:
 
     def get_case(self, case_id: str) -> Optional[FaultCase]:
         return self._cases.get(case_id)
+
+    def update_case(self, case_id: str, updates: dict) -> bool:
+        """更新故障案例。返回是否成功。
+
+        ``updates`` 可以包含 FaultCase 中除 ``id`` 外的任意字段。
+        """
+        case = self._cases.get(case_id)
+        if not case:
+            return False
+        # Allowed update fields (id is immutable)
+        for field in ("title", "equipment_type", "fault_category",
+                      "phenomenon", "root_cause", "severity",
+                      "occurrence_count"):
+            if field in updates and updates[field] is not None:
+                setattr(case, field, updates[field])
+        # List fields — replace entirely if provided
+        for list_field in ("troubleshooting_steps", "preventive_measures",
+                           "related_tags"):
+            if list_field in updates and updates[list_field] is not None:
+                setattr(case, list_field, updates[list_field])
+        self._persist()
+        return True
+
+    def delete_case(self, case_id: str) -> bool:
+        """删除故障案例。返回是否成功。"""
+        if case_id not in self._cases:
+            return False
+        del self._cases[case_id]
+        self._persist()
+        return True
 
     def get_statistics(self) -> dict:
         """获取故障案例库统计信息。"""

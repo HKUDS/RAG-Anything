@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Send, User, Bot, Code2, MessageSquare, Wrench,
   AlertTriangle, ChevronDown, Play, Copy, Check, Trash2, Loader2,
@@ -6,7 +7,9 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
-import { api } from '../utils/api'
+import { api, getToken } from '../utils/api'
+import { useManufacturingKB } from '../hooks/useManufacturingKB'
+import ManufacturingKBSelector from '../components/ManufacturingKBSelector'
 import GCodeEditor from '../components/GCodeEditor'
 
 const TABS = [
@@ -47,10 +50,10 @@ function ThinkingStep({ step, isLast }) {
     ? (step.action === 'search' ? '检索知识库' : step.action === 'calculator' ? '计算' : step.action)
     : (step.action === 'FINISH' ? '完成推理' : '思考中')
 
-  if (step.step === 0) {
-    // Generic status message
+  if (step._displayMode === 'status') {
+    // Generic status message (no structured step data)
     return (
-      <div className="flex items-center gap-1.5 text-2xs text-warm-400">
+      <div className="flex items-center gap-1.5 text-2xs text-warm-500">
         <Loader2 size={10} className="animate-spin text-coral-400" />
         <span>{step.content || step.thought}</span>
       </div>
@@ -75,26 +78,26 @@ function ThinkingStep({ step, isLast }) {
           步骤 {step.step}: {actionLabel}
         </span>
         {step.elapsed_ms > 0 && (
-          <span className="ml-auto text-2xs text-warm-400">{(step.elapsed_ms / 1000).toFixed(1)}s</span>
+          <span className="ml-auto text-2xs text-warm-500">{(step.elapsed_ms / 1000).toFixed(1)}s</span>
         )}
       </button>
       {expanded && (
         <div className="px-2.5 pb-2 space-y-1.5 border-t border-warm-100 pt-1.5">
           {step.thought && (
             <div>
-              <p className="text-2xs text-warm-400 mb-0.5">思考</p>
+              <p className="text-2xs text-warm-500 mb-0.5">思考</p>
               <p className="text-warm-600 leading-relaxed">{step.thought.length > 300 ? step.thought.slice(0, 300) + '...' : step.thought}</p>
             </div>
           )}
           {step.action && (
             <div>
-              <p className="text-2xs text-warm-400 mb-0.5">行动</p>
+              <p className="text-2xs text-warm-500 mb-0.5">行动</p>
               <code className="text-2xs px-1.5 py-0.5 rounded bg-white text-sky-600 font-mono">{step.action}</code>
             </div>
           )}
           {step.observation_preview && (
             <div>
-              <p className="text-2xs text-warm-400 mb-0.5">观察</p>
+              <p className="text-2xs text-warm-500 mb-0.5">观察</p>
               <p className="text-warm-500 italic leading-relaxed">{step.observation_preview}</p>
             </div>
           )}
@@ -105,6 +108,8 @@ function ThinkingStep({ step, isLast }) {
 }
 
 export default function ManufacturingAgentPage() {
+  const navigate = useNavigate()
+  const location = useLocation()
   const [activeTab, setActiveTab] = useState('qa')
   const [loading, setLoading] = useState(false)
 
@@ -112,20 +117,20 @@ export default function ManufacturingAgentPage() {
   const [qaMessages, setQaMessages] = useState([])
   const [qaInput, setQaInput] = useState('')
   const qaEndRef = useRef(null)
+  const abortRef = useRef(null)
 
-  // KB selector
-  const [mfgKb, setMfgKb] = useState(() => localStorage.getItem('mfg_kb') || 'default')
-  const [kbList, setKbList] = useState([])
-  useEffect(() => { api.get('/manufacturing/kb-list').then(r => {
-  let names = []
-  if (Array.isArray(r)) {
-    names = r.map(k => k.name || k.label).filter(Boolean)
-  } else if (r && typeof r === 'object') {
-    names = (r.knowledge_bases || []).map(k => k.name).filter(Boolean)
-  }
-  if (!names.length) names = ['default']
-  setKbList(names)
-}).catch(e => console.error('KB list error:', e)) }, [])
+  // Abort streaming on unmount to prevent reader leaks
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) {
+        abortRef.current.abort()
+        abortRef.current = null
+      }
+    }
+  }, [])
+
+  // KB selector (shared hook)
+  const { mfgKb, setMfgKb, kbList, kbLoading, creating, createMfgKb } = useManufacturingKB()
 
   // Code parser state
   const [codeInput, setCodeInput] = useState('')
@@ -144,6 +149,14 @@ export default function ManufacturingAgentPage() {
   useEffect(() => { diagEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [diagMessages])
 
   // === QA (streaming with AgenticRAG trace) ===
+  const cancelQA = () => {
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+      setLoading(false)
+    }
+  }
+
   const handleQASend = async (presetQuery) => {
     const query = (presetQuery || qaInput).trim()
     if (!query || loading) return
@@ -152,12 +165,19 @@ export default function ManufacturingAgentPage() {
     setQaMessages(prev => [...prev, { role: 'user', content: query }])
     setQaMessages(prev => [...prev, { role: 'assistant', content: '', _streaming: true, _id: msgId, _thinking: [] }])
     setLoading(true)
+
+    // Cancel any in-flight request
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+
     try {
-      const token = (() => { try { return JSON.parse(localStorage.getItem('raganything_auth') || '{}').token || '' } catch { return '' } })()
+      const token = getToken()
       const res = await fetch(`/api/manufacturing/qa/stream?kb=${mfgKb}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ query }),
+        signal: controller.signal,
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -182,9 +202,9 @@ export default function ManufacturingAgentPage() {
                 m._id === msgId ? { ...m, _thinking: [...m._thinking, evt] } : m
               ))
             } else if (evt.type === 'thinking' && !evt.step) {
-              // Generic thinking message (e.g. "开始多步推理...")
+              // Generic status message (explicit display mode, not sentinel step:0)
               setQaMessages(prev => prev.map(m =>
-                m._id === msgId ? { ...m, _thinking: [...m._thinking, { ...evt, step: 0 }] } : m
+                m._id === msgId ? { ...m, _thinking: [...m._thinking, { ...evt, _displayMode: 'status' }] } : m
               ))
             } else if (evt.type === 'token') {
               setQaMessages(prev => prev.map(m =>
@@ -207,14 +227,25 @@ export default function ManufacturingAgentPage() {
                 m._id === msgId ? { ...m, content: m.content || evt.content, _streaming: false, _id: undefined } : m
               ))
             }
-          } catch {}
+          } catch (parseErr) {
+            console.warn('[ManufacturingQA] SSE parse error:', parseErr.message, 'line:', line.slice(0, 100))
+          }
         }
       }
     } catch (e) {
-      setQaMessages(prev => prev.map(m =>
-        m._id === msgId ? { ...m, content: m.content || `请求失败: ${e.message}`, _streaming: false, _id: undefined } : m
-      ))
-    } finally { setLoading(false) }
+      if (e.name === 'AbortError') {
+        setQaMessages(prev => prev.map(m =>
+          m._id === msgId ? { ...m, content: m.content || '（已取消）', _streaming: false, _id: undefined } : m
+        ))
+      } else {
+        setQaMessages(prev => prev.map(m =>
+          m._id === msgId ? { ...m, content: m.content || `请求失败: ${e.message}`, _streaming: false, _id: undefined } : m
+        ))
+      }
+    } finally {
+      setLoading(false)
+      abortRef.current = null
+    }
   }
 
   // === Code Parser ===
@@ -302,12 +333,27 @@ export default function ManufacturingAgentPage() {
             制造智能体
           </h1>
           <p className="text-sm text-warm-500 mt-1">智能问答 · 代码解析 · 故障诊断</p>
+          <div className="flex gap-1 mt-2">
+            {[
+              { to: '/manufacturing', label: '仪表板' },
+              { to: '/manufacturing/knowledge', label: '知识库' },
+              { to: '/manufacturing/agent', label: '智能体' },
+            ].map(item => (
+              <button key={item.to} onClick={() => navigate(item.to)}
+                className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
+                  location.pathname === item.to
+                    ? 'bg-coral-50 text-coral-600'
+                    : 'text-warm-500 hover:text-warm-700 hover:bg-warm-100'
+                }`}>
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
-        <select value={mfgKb} onChange={e => { setMfgKb(e.target.value); localStorage.setItem('mfg_kb', e.target.value) }}
-          className="px-3 py-1.5 rounded-lg border border-warm-200 text-sm bg-white text-warm-700 cursor-pointer">
-          {kbList.length === 0 && <option value="default">KB: default</option>}
-          {kbList.map(k => <option key={k} value={k}>KB: {k}</option>)}
-        </select>
+        <ManufacturingKBSelector
+          mfgKb={mfgKb} kbList={kbList} loading={kbLoading} creating={creating}
+          onChange={setMfgKb} onCreate={createMfgKb}
+        />
       </div>
 
       {/* Tabs */}
@@ -352,7 +398,7 @@ export default function ManufacturingAgentPage() {
                   )}
                   <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                     msg.role === 'user'
-                      ? 'bg-coral-500 text-white'
+                      ? 'bg-coral-700 text-white'
                       : 'bg-warm-50 border border-warm-100'
                   }`}>
                     {msg.role === 'user' ? (
@@ -407,9 +453,9 @@ export default function ManufacturingAgentPage() {
                   </div>
                   <div className="bg-warm-50 border border-warm-100 rounded-2xl px-4 py-3">
                     <div className="flex gap-1.5">
-                      <div className="w-2 h-2 rounded-full bg-warm-300 animate-bounce" />
-                      <div className="w-2 h-2 rounded-full bg-warm-300 animate-bounce" style={{ animationDelay: '0.1s' }} />
-                      <div className="w-2 h-2 rounded-full bg-warm-300 animate-bounce" style={{ animationDelay: '0.2s' }} />
+                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" />
+                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" style={{ animationDelay: '0.15s' }} />
+                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" style={{ animationDelay: '0.3s' }} />
                     </div>
                   </div>
                 </div>
@@ -424,10 +470,17 @@ export default function ManufacturingAgentPage() {
                 placeholder="输入制造领域问题…"
                 className="flex-1 px-4 py-3 rounded-xl border border-warm-200 text-sm bg-white
                   focus:outline-none focus:border-coral-300 focus:ring-2 focus:ring-coral-50 transition-all" />
-              <button onClick={handleQASend} disabled={loading || !qaInput.trim()}
-                className="btn-primary px-5 py-3 rounded-xl disabled:opacity-50">
-                <Send size={16} />
-              </button>
+              {loading && activeTab === 'qa' ? (
+                <button onClick={cancelQA}
+                  className="btn-danger px-5 py-3 rounded-xl">
+                  取消
+                </button>
+              ) : (
+                <button onClick={handleQASend} disabled={!qaInput.trim()}
+                  className="btn-primary px-5 py-3 rounded-xl disabled:opacity-50">
+                  <Send size={16} />
+                </button>
+              )}
             </div>
           </motion.div>
         )}
@@ -497,7 +550,7 @@ export default function ManufacturingAgentPage() {
                   )}
                   <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                     msg.role === 'user'
-                      ? 'bg-amber-500 text-white'
+                      ? 'bg-amber-800 text-white'
                       : 'bg-warm-50 border border-warm-100'
                   }`}>
                     {msg.role === 'user' ? (
@@ -530,12 +583,19 @@ export default function ManufacturingAgentPage() {
               {/* Quick reply buttons for active diagnosis */}
               {diagSession && !loading && (
                 <div className="flex flex-wrap gap-2 pl-10">
-                  {['是', '否', '不确定', '故障刚发生', '故障持续存在', '之前发生过'].map(opt => (
-                    <button key={opt} onClick={() => quickReply(opt)}
-                      className="px-3 py-1 rounded-full text-xs bg-warm-100 text-warm-600 hover:bg-amber-50 hover:text-amber-600 transition-colors">
-                      {opt}
-                    </button>
-                  ))}
+                  {(() => {
+                    // Use backend-suggested replies when available, fall back to defaults
+                    const lastMsg = diagMessages[diagMessages.length - 1]
+                    const replies = lastMsg?.suggested_replies?.length
+                      ? lastMsg.suggested_replies
+                      : ['是', '否', '不确定', '故障刚发生', '故障持续存在', '之前发生过']
+                    return replies.map(opt => (
+                      <button key={opt} onClick={() => quickReply(opt)}
+                        className="px-3 py-1 rounded-full text-xs bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800 border border-amber-200 transition-colors">
+                        {opt}
+                      </button>
+                    ))
+                  })()}
                 </div>
               )}
               {loading && activeTab === 'diagnosis' && (
@@ -545,9 +605,9 @@ export default function ManufacturingAgentPage() {
                   </div>
                   <div className="bg-warm-50 border border-warm-100 rounded-2xl px-4 py-3">
                     <div className="flex gap-1.5">
-                      <div className="w-2 h-2 rounded-full bg-warm-300 animate-bounce" />
-                      <div className="w-2 h-2 rounded-full bg-warm-300 animate-bounce" style={{ animationDelay: '0.1s' }} />
-                      <div className="w-2 h-2 rounded-full bg-warm-300 animate-bounce" style={{ animationDelay: '0.2s' }} />
+                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" />
+                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" style={{ animationDelay: '0.15s' }} />
+                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" style={{ animationDelay: '0.3s' }} />
                     </div>
                   </div>
                 </div>
@@ -555,20 +615,25 @@ export default function ManufacturingAgentPage() {
               <div ref={diagEndRef} />
             </div>
 
-            {/* Input */}
-            {!diagSession && (
-              <div className="shrink-0 flex gap-2">
-                <input value={diagInput} onChange={e => setDiagInput(e.target.value)}
-                  onKeyDown={e => e.key === 'Enter' && startDiagnosis()}
-                  placeholder="描述设备故障现象…"
-                  className="flex-1 px-4 py-3 rounded-xl border border-warm-200 text-sm bg-white
-                    focus:outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50 transition-all" />
-                <button onClick={startDiagnosis} disabled={loading || !diagInput.trim()}
-                  className="btn-primary px-5 py-3 rounded-xl disabled:opacity-50 bg-amber-500 hover:bg-amber-600">
-                  <Play size={16} />
-                </button>
-              </div>
-            )}
+            {/* Input — always visible so users can type custom responses */}
+            <div className="shrink-0 flex gap-2">
+              <textarea value={diagInput} onChange={e => setDiagInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    diagSession ? continueDiagnosis(diagInput) : startDiagnosis()
+                  }
+                }}
+                placeholder={diagSession ? '回答诊断问题或输入补充信息…' : '描述设备故障现象…'}
+                rows={2}
+                className="flex-1 px-4 py-3 rounded-xl border border-warm-200 text-sm bg-white resize-none
+                  focus:outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50 transition-all" />
+              <button onClick={() => diagSession ? continueDiagnosis(diagInput) : startDiagnosis()}
+                disabled={loading || !diagInput.trim()}
+                className="btn-primary px-5 py-3 rounded-xl disabled:opacity-50 bg-amber-500 hover:bg-amber-600">
+                <Send size={16} />
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

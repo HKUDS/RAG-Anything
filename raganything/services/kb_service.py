@@ -101,7 +101,7 @@ def load_kb_meta() -> dict[str, Any]:
     if KB_META_FILE.exists():
         with open(KB_META_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    return {"default": {"name": "默认知识库", "created": datetime.now().isoformat()}}
+    return {"default": {"name": "默认知识库", "created": datetime.now().isoformat(), "domain": "general"}}
 
 
 def save_kb_meta(meta: dict[str, Any]) -> None:
@@ -205,6 +205,24 @@ async def delete_kb(name: str) -> bool:
 def list_kbs() -> dict[str, Any]:
     """List all KB metadata entries."""
     return load_kb_meta()
+
+
+def list_kbs_by_domain(domain: str) -> dict[str, Any]:
+    """List KB metadata entries filtered by domain.
+
+    Args:
+        domain: Domain filter value (e.g. ``"manufacturing"``, ``"general"``).
+
+    Returns:
+        Dict of KB name → metadata for KBs matching the domain.
+        KBs without a ``domain`` field are treated as ``"general"`` for
+        backward compatibility with KBs created before this field existed.
+    """
+    meta = load_kb_meta()
+    return {
+        name: info for name, info in meta.items()
+        if info.get("domain", "general") == domain
+    }
 
 
 # ── RAGAnything Factory ────────────────────────────────────
@@ -1047,6 +1065,7 @@ __all__ = [
     "create_kb",
     "delete_kb",
     "list_kbs",
+    "list_kbs_by_domain",
     "create_rag",
     "_fix_stuck_doc_status",
     "_recover_stuck_documents",

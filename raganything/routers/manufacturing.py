@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import uuid as _uuid
+from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query as QueryParam
@@ -38,6 +39,43 @@ class MfgDiagnosisContinue(BaseModel):
     query: str
 
 
+class FaultCaseCreate(BaseModel):
+    title: str
+    equipment_type: str = ""
+    fault_category: str = ""
+    phenomenon: str = ""
+    root_cause: str = ""
+    troubleshooting_steps: list[str] = []
+    preventive_measures: list[str] = []
+    related_tags: list[str] = []
+    severity: str = "medium"
+
+
+class FaultCaseUpdate(BaseModel):
+    title: Optional[str] = None
+    equipment_type: Optional[str] = None
+    fault_category: Optional[str] = None
+    phenomenon: Optional[str] = None
+    root_cause: Optional[str] = None
+    troubleshooting_steps: Optional[list[str]] = None
+    preventive_measures: Optional[list[str]] = None
+    related_tags: Optional[list[str]] = None
+    severity: Optional[str] = None
+    occurrence_count: Optional[int] = None
+
+
+class ProcessDocCreate(BaseModel):
+    title: str
+    text: str
+    category: str = ""
+
+
+class ProcessDocUpdate(BaseModel):
+    title: Optional[str] = None
+    text: Optional[str] = None
+    category: Optional[str] = None
+
+
 # ── Lazy-init manufacturing modules ───────────────────
 
 _manufacturing_components = {}
@@ -46,7 +84,6 @@ _manufacturing_components = {}
 def _get_manufacturing():
     """延迟初始化制造模块（首次 API 调用时加载）。"""
     if not _manufacturing_components:
-        from raganything.manufacturing.knowledge_graph.graph_api import KnowledgeGraphAPI
         from raganything.manufacturing.knowledge_graph.models import (
             KnowledgeNode, KnowledgeEdge, CapabilityTag, TagTree,
         )
@@ -56,11 +93,7 @@ def _get_manufacturing():
         from raganything.manufacturing.agent.deployment_config import DeploymentConfig
         from raganything.manufacturing.deployment.dashboard import Dashboard
 
-        from raganything.manufacturing.knowledge_graph.graph_api import LightRAGGraphStore
-        graph_store = LightRAGGraphStore(working_dir=shared.WORKING_DIR)
-
         _manufacturing_components.update({
-            "graph_api": KnowledgeGraphAPI(graph_storage=graph_store),
             "process_library": ProcessLibrary(),
             "fault_case_library": FaultCaseLibrary(),
             "code_parser": CodeParser(),
@@ -72,6 +105,25 @@ def _get_manufacturing():
             "KnowledgeEdge": KnowledgeEdge,
         })
     return _manufacturing_components
+
+
+def _get_mfg_graph(kb: str = "default"):
+    """延迟初始化制造智能体知识图谱 API（每个 KB 独立实例）。
+
+    每个 KB 拥有独立的 LightRAG 存储目录，此函数确保图谱
+    统计（节点/边数量）来自对应 KB 的存储，而非全局默认。
+    """
+    from raganything.manufacturing.knowledge_graph.graph_api import (
+        KnowledgeGraphAPI, LightRAGGraphStore,
+    )
+    from raganything.services.kb_service import kb_dir as _kb_dir
+
+    m = _get_manufacturing()
+    cache_key = f"graph_api_{kb}"
+    if cache_key not in m:
+        store = LightRAGGraphStore(working_dir=_kb_dir(kb))
+        m[cache_key] = KnowledgeGraphAPI(graph_storage=store)
+    return m[cache_key]
 
 
 async def _get_mfg_agent_components(kb: str = "default"):
@@ -135,41 +187,40 @@ async def _get_mfg_qa_engine(kb: str = "default") -> "QAEngine":
 # ── 知识图谱 ──
 
 @router.get("/manufacturing/knowledge-graph/summary")
-async def mfg_kg_summary(current_user: dict = Depends(get_current_user)):
-    """知识图谱统计摘要。"""
-    m = _get_manufacturing()
-    return m["graph_api"].get_graph_summary()
+async def mfg_kg_summary(kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+    """知识图谱统计摘要（按 KB 过滤）。"""
+    return _get_mfg_graph(kb).get_graph_summary()
 
 
 @router.get("/manufacturing/knowledge-graph/nodes")
-async def mfg_kg_nodes(track: str = "", node_type: str = "", limit: int = 100, offset: int = 0, current_user: dict = Depends(get_current_user)):
-    """知识节点列表。"""
-    m = _get_manufacturing()
-    return m["graph_api"].get_nodes(competition_track=track, node_type=node_type, limit=limit, offset=offset)
+async def mfg_kg_nodes(track: str = "", node_type: str = "", limit: int = 100, offset: int = 0,
+                        kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+    """知识节点列表（按 KB 过滤）。"""
+    return _get_mfg_graph(kb).get_nodes(competition_track=track, node_type=node_type, limit=limit, offset=offset)
 
 
 @router.get("/manufacturing/knowledge-graph/edges")
-async def mfg_kg_edges(source_id: str = "", relation_type: str = "", limit: int = 200, current_user: dict = Depends(get_current_user)):
-    """知识图谱边列表。"""
-    m = _get_manufacturing()
-    return m["graph_api"].get_edges(source_id=source_id, relation_type=relation_type, limit=limit)
+async def mfg_kg_edges(source_id: str = "", relation_type: str = "", limit: int = 200,
+                        kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+    """知识图谱边列表（按 KB 过滤）。"""
+    return _get_mfg_graph(kb).get_edges(source_id=source_id, relation_type=relation_type, limit=limit)
 
 
 @router.get("/manufacturing/knowledge-graph/nodes/{node_id}")
-async def mfg_kg_node_detail(node_id: str, current_user: dict = Depends(get_current_user)):
-    """节点详情 + 关联边。"""
-    m = _get_manufacturing()
-    detail = m["graph_api"].get_node(node_id)
+async def mfg_kg_node_detail(node_id: str, kb: str = QueryParam("default"),
+                              current_user: dict = Depends(get_current_user)):
+    """节点详情 + 关联边（按 KB 过滤）。"""
+    detail = _get_mfg_graph(kb).get_node(node_id)
     if not detail:
         raise HTTPException(404, "节点不存在")
     return detail
 
 
 @router.get("/manufacturing/knowledge-graph/nodes/{node_id}/lineage")
-async def mfg_kg_lineage(node_id: str, upstream: int = 3, downstream: int = 3, current_user: dict = Depends(get_current_user)):
-    """知识谱系树。"""
-    m = _get_manufacturing()
-    lineage = m["graph_api"].get_lineage(node_id, upstream_depth=upstream, downstream_depth=downstream)
+async def mfg_kg_lineage(node_id: str, upstream: int = 3, downstream: int = 3,
+                          kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+    """知识谱系树（按 KB 过滤）。"""
+    lineage = _get_mfg_graph(kb).get_lineage(node_id, upstream_depth=upstream, downstream_depth=downstream)
     if not lineage:
         raise HTTPException(404, "节点不存在")
     return lineage
@@ -192,6 +243,70 @@ async def mfg_process_categories(current_user: dict = Depends(get_current_user))
     return m["process_library"].list_by_category()
 
 
+@router.get("/manufacturing/process-library/documents/{doc_id}")
+async def mfg_process_get(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """获取单个工艺文档。"""
+    m = _get_manufacturing()
+    doc = m["process_library"].get_document(doc_id)
+    if not doc:
+        raise HTTPException(404, "工艺文档不存在")
+    return {
+        "id": doc.get("id"), "title": doc.get("title"),
+        "category": doc.get("category"),
+        "parameters": doc.get("parameters", []),
+        "text_preview": doc.get("text_preview", ""),
+        "full_text": doc.get("full_text", doc.get("text_preview", "")),
+        "file_path": doc.get("file_path", ""),
+        "ingested_at": doc.get("ingested_at", ""),
+    }
+
+
+@router.post("/manufacturing/process-library/documents")
+async def mfg_process_create(body: ProcessDocCreate,
+                             current_user: dict = Depends(get_current_user)):
+    """创建工艺文档。"""
+    m = _get_manufacturing()
+    doc_id = m["process_library"].add_document({
+        "title": body.title,
+        "text": body.text,
+        "category": body.category,
+    })
+    return {"status": "created", "id": doc_id}
+
+
+@router.put("/manufacturing/process-library/documents/{doc_id}")
+async def mfg_process_update(doc_id: str, body: ProcessDocUpdate,
+                             current_user: dict = Depends(get_current_user)):
+    """更新工艺文档。"""
+    m = _get_manufacturing()
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "无更新字段")
+    # Map API field names to internal field names
+    internal_updates = {}
+    if "text" in updates:
+        internal_updates["full_text"] = updates["text"]
+        internal_updates["text_preview"] = updates["text"][:500]
+    if "title" in updates:
+        internal_updates["title"] = updates["title"]
+    if "category" in updates:
+        internal_updates["category"] = updates["category"]
+    ok = m["process_library"].update_document(doc_id, internal_updates)
+    if not ok:
+        raise HTTPException(404, "工艺文档不存在")
+    return {"status": "updated"}
+
+
+@router.delete("/manufacturing/process-library/documents/{doc_id}")
+async def mfg_process_delete(doc_id: str, current_user: dict = Depends(get_current_user)):
+    """删除工艺文档。"""
+    m = _get_manufacturing()
+    ok = m["process_library"].delete_document(doc_id)
+    if not ok:
+        raise HTTPException(404, "工艺文档不存在")
+    return {"status": "deleted"}
+
+
 # ── 故障案例库 ──
 
 @router.get("/manufacturing/fault-cases/search")
@@ -209,6 +324,74 @@ async def mfg_fault_stats(current_user: dict = Depends(get_current_user)):
     return m["fault_case_library"].get_statistics()
 
 
+@router.get("/manufacturing/fault-cases/{case_id}")
+async def mfg_fault_get(case_id: str, current_user: dict = Depends(get_current_user)):
+    """获取单个故障案例。"""
+    m = _get_manufacturing()
+    case = m["fault_case_library"].get_case(case_id)
+    if not case:
+        raise HTTPException(404, "故障案例不存在")
+    return {
+        "id": case.id, "title": case.title,
+        "equipment_type": case.equipment_type,
+        "fault_category": case.fault_category,
+        "phenomenon": case.phenomenon,
+        "root_cause": case.root_cause,
+        "troubleshooting_steps": case.troubleshooting_steps,
+        "preventive_measures": case.preventive_measures,
+        "related_tags": case.related_tags,
+        "severity": case.severity,
+        "occurrence_count": case.occurrence_count,
+    }
+
+
+@router.post("/manufacturing/fault-cases")
+async def mfg_fault_create(body: FaultCaseCreate,
+                           current_user: dict = Depends(get_current_user)):
+    """创建故障案例。"""
+    from raganything.manufacturing.knowledge_graph.models import FaultCase
+    import uuid as _uuid
+    case = FaultCase(
+        id=str(_uuid.uuid4())[:8],
+        title=body.title,
+        equipment_type=body.equipment_type,
+        fault_category=body.fault_category,
+        phenomenon=body.phenomenon,
+        root_cause=body.root_cause,
+        troubleshooting_steps=body.troubleshooting_steps,
+        preventive_measures=body.preventive_measures,
+        related_tags=body.related_tags,
+        severity=body.severity,
+    )
+    m = _get_manufacturing()
+    case_id = m["fault_case_library"].add_case(case)
+    return {"status": "created", "id": case_id}
+
+
+@router.put("/manufacturing/fault-cases/{case_id}")
+async def mfg_fault_update(case_id: str, body: FaultCaseUpdate,
+                           current_user: dict = Depends(get_current_user)):
+    """更新故障案例。"""
+    m = _get_manufacturing()
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(400, "无更新字段")
+    ok = m["fault_case_library"].update_case(case_id, updates)
+    if not ok:
+        raise HTTPException(404, "故障案例不存在")
+    return {"status": "updated"}
+
+
+@router.delete("/manufacturing/fault-cases/{case_id}")
+async def mfg_fault_delete(case_id: str, current_user: dict = Depends(get_current_user)):
+    """删除故障案例。"""
+    m = _get_manufacturing()
+    ok = m["fault_case_library"].delete_case(case_id)
+    if not ok:
+        raise HTTPException(404, "故障案例不存在")
+    return {"status": "deleted"}
+
+
 # ── 代码解析 ──
 
 @router.post("/manufacturing/code/parse")
@@ -222,13 +405,14 @@ async def mfg_code_parse(body: ManufacturingQuery, current_user: dict = Depends(
 # ── 数据看板 ──
 
 @router.get("/manufacturing/dashboard")
-async def mfg_dashboard(current_user: dict = Depends(get_current_user)):
-    """制造智能体数据看板。"""
+async def mfg_dashboard(kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+    """制造智能体数据看板（按 KB 过滤图谱数据）。"""
     m = _get_manufacturing()
     return m["dashboard"].get_snapshot(
-        knowledge_graph_api=m.get("graph_api"),
+        knowledge_graph_api=_get_mfg_graph(kb),
         process_library=m.get("process_library"),
         fault_case_library=m.get("fault_case_library"),
+        kb_name=kb,
     )
 
 
@@ -257,6 +441,7 @@ async def mfg_qa(body: MfgAgentQuery, kb: str = QueryParam("default"),
         query=body.query,
         query_type="qa",
         response_ms=response.processing_time_ms,
+        kb_name=kb,
     )
     return {
         "query": response.query,
@@ -315,6 +500,7 @@ async def mfg_qa_stream(body: MfgAgentQuery, kb: str = QueryParam("default"),
                             query=body.query,
                             query_type="qa",
                             response_ms=response_ms,
+                            kb_name=kb,
                         )
                     except Exception:
                         pass
@@ -371,10 +557,30 @@ async def mfg_diagnosis_continue(body: MfgDiagnosisContinue, kb: str = QueryPara
 
 @router.get("/manufacturing/kb-list")
 async def mfg_kb_list(current_user: dict = Depends(get_current_user)):
-    """制造智能体可用 KB 列表（跨用户，所有 KB 均可检索）。"""
-    meta = shared.load_kb_meta()
+    """制造智能体可用 KB 列表（仅制造领域 KB，无则自动创建）。"""
+    from raganything.services.kb_service import (
+        load_kb_meta, save_kb_meta, list_kbs_by_domain, get_kb,
+    )
+
+    # Filter to manufacturing-domain KBs only
+    mfg_kbs = list_kbs_by_domain("manufacturing")
+
+    # Auto-create manufacturing KB on first access if none exists
+    if not mfg_kbs:
+        kb_name = "manufacturing"
+        label = "制造知识库"
+        meta = load_kb_meta()
+        meta[kb_name] = {
+            "name": label,
+            "created": datetime.now().isoformat(),
+            "domain": "manufacturing",
+        }
+        save_kb_meta(meta)
+        await get_kb(kb_name)  # initialize storage directory
+        mfg_kbs = {kb_name: meta[kb_name]}
+
     kbs = []
-    for name, info in meta.items():
+    for name, info in mfg_kbs.items():
         kbs.append({
             "name": name,
             "label": info.get("name", name),

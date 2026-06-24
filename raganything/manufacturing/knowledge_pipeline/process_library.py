@@ -37,6 +37,7 @@ class ProcessLibrary:
         self.storage_path = Path(storage_path)
         self.storage_path.mkdir(parents=True, exist_ok=True)
         self._index: dict[str, dict] = {}
+        self._load_index()
 
     def ingest_document(self, file_path: str | Path) -> dict:
         """录入工艺文档。
@@ -112,6 +113,69 @@ class ProcessLibrary:
             counts[cat] = counts.get(cat, 0) + 1
         return counts
 
+    # ── CRUD ──────────────────────────────────────────
+
+    def get_document(self, doc_id: str) -> dict | None:
+        """获取单个工艺文档。"""
+        return self._index.get(doc_id)
+
+    def add_document(self, data: dict) -> str:
+        """从结构化数据添加工艺文档（不从文件读取）。
+
+        ``data`` 必须包含 ``title`` 和 ``text`` 字段。
+        """
+        title = data.get("title", "").strip()
+        text = data.get("text", "").strip()
+        if not title:
+            raise ValueError("工艺文档标题不能为空")
+        if not text:
+            raise ValueError("工艺文档内容不能为空")
+
+        category = data.get("category") or self._classify_process(text)
+        params = self._extract_parameters(text)
+        doc_id = f"proc_{datetime.now().strftime('%Y%m%d%H%M%S')}_{title[:20]}"
+
+        entry = {
+            "id": doc_id,
+            "title": title,
+            "category": category,
+            "parameters": params,
+            "file_path": data.get("file_path", ""),
+            "file_size_bytes": data.get("file_size_bytes", 0),
+            "ingested_at": datetime.now().isoformat(),
+            "text_preview": text[:500],
+            "full_text": text,
+        }
+        self._index[doc_id] = entry
+        self._persist_index()
+        return doc_id
+
+    def update_document(self, doc_id: str, updates: dict) -> bool:
+        """更新工艺文档。返回是否成功。"""
+        entry = self._index.get(doc_id)
+        if not entry:
+            return False
+        # Allowed update fields
+        for field in ("title", "category", "text_preview", "full_text"):
+            if field in updates and updates[field] is not None:
+                entry[field] = updates[field]
+        # Re-classify if text content changed
+        if "full_text" in updates and updates["full_text"]:
+            entry["category"] = self._classify_process(updates["full_text"])
+            entry["parameters"] = self._extract_parameters(updates["full_text"])
+        self._persist_index()
+        return True
+
+    def delete_document(self, doc_id: str) -> bool:
+        """删除工艺文档。返回是否成功。"""
+        if doc_id not in self._index:
+            return False
+        del self._index[doc_id]
+        self._persist_index()
+        return True
+
+    # ── Internal ──────────────────────────────────────
+
     def _classify_process(self, text: str) -> str:
         """根据关键词自动分类工艺类型。"""
         scores = {}
@@ -142,3 +206,18 @@ class ProcessLibrary:
             json.dumps(list(self._index.values()), ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+    def _load_index(self) -> None:
+        """从磁盘加载已有索引（防止重启丢数据）。"""
+        index_path = self.storage_path / "_index.json"
+        if not index_path.exists():
+            return
+        try:
+            data = json.loads(index_path.read_text(encoding="utf-8"))
+            for entry in data:
+                doc_id = entry.get("id")
+                if doc_id:
+                    self._index[doc_id] = entry
+            logger.info(f"Loaded {len(self._index)} process documents from {index_path}")
+        except Exception as e:
+            logger.warning(f"Failed to load process index: {e}")
