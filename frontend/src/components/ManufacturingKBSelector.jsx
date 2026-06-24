@@ -62,8 +62,8 @@ export default function ManufacturingKBSelector({
         onChange={e => onChange(e.target.value)}
         className="px-3 py-1.5 rounded-lg border border-warm-200 text-sm bg-white text-warm-700 cursor-pointer disabled:opacity-50"
       >
-        {kbList.length === 0 && <option value="manufacturing">KB: manufacturing</option>}
-        {kbList.map(k => <option key={k} value={k}>KB: {k}</option>)}
+        {kbList.length === 0 && <option value="manufacturing">制造知识库</option>}
+        {kbList.map(k => <option key={k.name} value={k.name}>{k.label || k.name}</option>)}
       </select>
 
       <button

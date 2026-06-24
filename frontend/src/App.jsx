@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Database, MessageSquare, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, BarChart3, Wrench, GitBranch, ScrollText } from 'lucide-react'
+import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, BarChart3, Wrench, GitBranch, ScrollText } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import KnowledgePage from './pages/KnowledgePage'
-import QueryPage from './pages/QueryPage'
+
 import SettingsPage from './pages/SettingsPage'
 import MonitorPage from './pages/MonitorPage'
 import AgentsPage from './pages/AgentsPage'
@@ -23,7 +23,7 @@ import { api } from './utils/api'
 const NAV = [
   { to: '/agents',    icon: Bot,           label: '智能体' },
   { to: '/knowledge', icon: Database,       label: '知识库' },
-  { to: '/query',     icon: MessageSquare,  label: '查询' },
+
   { to: '/workflow',  icon: GitBranch,      label: '工作流' },
   { to: '/manufacturing', icon: Factory,    label: '制造智能体' },
   { to: '/settings',  icon: Settings,       label: '设置' },
@@ -267,7 +267,7 @@ export default function App() {
                 <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
                 <Route path="/agents/:id" element={<ProtectedRoute><AgentChatPage /></ProtectedRoute>} />
                 <Route path="/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
-                <Route path="/query" element={<ProtectedRoute><QueryPage /></ProtectedRoute>} />
+
                 <Route path="/settings" element={<ProtectedRoute><SettingsPage onToast={showToast} /></ProtectedRoute>} />
                 <Route path="/monitor" element={<ProtectedRoute><MonitorPage /></ProtectedRoute>} />
                 <Route path="/admin/users" element={<ProtectedRoute adminOnly><AdminUsersPage /></ProtectedRoute>} />

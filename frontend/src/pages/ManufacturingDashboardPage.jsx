@@ -229,8 +229,7 @@ export default function ManufacturingDashboardPage() {
           <div className="space-y-1.5">
             {[
               { to: '/manufacturing/knowledge', icon: BookOpen, label: '知识图谱 & 案例库', desc: '浏览赛项知识结构、工艺文档与故障案例' },
-              { to: '/manufacturing/agent', icon: MessageSquare, label: '智能问答', desc: '文本问答、代码解析、故障诊断' },
-              { to: '/query', icon: Activity, label: 'RAG 全局查询', desc: '使用已有检索引擎搜索全库' },
+              { to: '/manufacturing/agent', icon: MessageSquare, label: '智能问答', desc: '文本问答、代码解析、故障诊断、全局搜索' },
             ].map(item => (
               <button key={item.to} onClick={() => navigate(item.to)}
                 className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-warm-50 transition-colors text-left group">

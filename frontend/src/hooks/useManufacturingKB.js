@@ -39,32 +39,33 @@ export function useManufacturingKB() {
     setKbError(null)
     return api.get('/manufacturing/kb-list')
       .then((r) => {
-        let names = []
+        let items = []  // {name, label}[]
         if (Array.isArray(r)) {
-          names = r.map((k) => k.name || k.label).filter(Boolean)
+          items = r.map((k) => ({ name: k.name || k.label, label: k.label || k.name })).filter(x => x.name)
         } else if (r && typeof r === 'object') {
-          names = (r.knowledge_bases || []).map((k) => k.name).filter(Boolean)
+          items = (r.knowledge_bases || []).map((k) => ({ name: k.name, label: k.label || k.name })).filter(x => x.name)
         }
-        if (!names.length) names = ['manufacturing']
-        setKbList(names)
+        if (!items.length) items = [{ name: 'manufacturing', label: '制造知识库' }]
+        const names = items.map(i => i.name)
+        setKbList(items)
         // If the stored KB is no longer in the manufacturing list
         // (e.g. old localStorage value pointing to a general KB),
         // automatically fall back to the first available manufacturing KB.
         setMfgKbRaw(prev => {
           if (!names.includes(prev)) {
-            const fallback = names[0]
+            const fallback = items[0].name
             try { localStorage.setItem('mfg_kb', fallback) } catch { /* non-critical */ }
             return fallback
           }
           return prev
         })
-        return names
+        return items
       })
       .catch((e) => {
         console.warn('[useManufacturingKB] Failed to load KB list:', e.message)
         setKbError(e.message || 'Failed to load KB list')
-        setKbList(['manufacturing'])
-        return ['manufacturing']
+        setKbList([{ name: 'manufacturing', label: '制造知识库' }])
+        return [{ name: 'manufacturing', label: '制造知识库' }]
       })
       .finally(() => setKbLoading(false))
   }, [])
@@ -76,9 +77,9 @@ export function useManufacturingKB() {
       const params = new URLSearchParams({ kb_name: kbName, domain: 'manufacturing' })
       if (label) params.set('label', label)
       await api.post(`/kb/create?${params.toString()}`)
-      const names = await refreshKbList()
+      const items = await refreshKbList()
       // Auto-select the newly created KB
-      if (names.includes(kbName)) {
+      if (items.some(i => i.name === kbName)) {
         setMfgKb(kbName)
       }
       return { success: true }

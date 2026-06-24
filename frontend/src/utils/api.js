@@ -120,13 +120,6 @@ export const api = {
   deleteDocuments: (ids) => request('/knowledge/documents/batch-delete', { method: 'POST', body: JSON.stringify({ doc_ids: ids }) }),
   retryDocument: (id) => request(`/knowledge/documents/${id}/retry`, { method: 'POST' }),
 
-  // Query
-  query: (query, mode = 'hybrid', vlm = false, agentMode = null) => request('/query', {
-    method: 'POST', body: JSON.stringify({ query, mode, vlm_enhanced: vlm, ...(agentMode ? { agent_mode: agentMode } : {}) }),
-  }),
-  getQueryHistory: (limit = 20) => request(`/query/history?limit=${limit}`),
-  clearQueryHistory: () => request('/query/history', { method: 'DELETE' }),
-
   // Settings (admin only — uses fetchJson to avoid ?kb= param)
   getSettings: () => fetchJson('/settings'),
   updateSettings: (data) => fetchJson('/settings', { method: 'PUT', body: JSON.stringify(data) }),
