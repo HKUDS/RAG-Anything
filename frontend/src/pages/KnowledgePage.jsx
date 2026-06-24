@@ -400,6 +400,9 @@ export default function KnowledgePage() {
   const zoomRef = useRef(null)
   const prevGraphFingerprint = useRef('')
   const prevGraphSearch = useRef('')
+  const selectedNodeRef = useRef(null)  // always-current, avoids stale closure in D3 callback
+  selectedNodeRef.current = selectedNode  // keep ref synced with state on every render
+  const simRef = useRef(null)  // current force simulation (lifecycle managed manually)
 
   const showToast = (msg, type = 'info') => {
     setToast({ msg, type })
@@ -500,24 +503,14 @@ export default function KnowledgePage() {
     }
   }
 
-  // D3 Graph
+  // D3 Graph (fingerprint check is done in the calling useEffect, not here)
   const drawGraph = useCallback(() => {
     if (!svgRef.current || !graph.nodes.length) return
 
-    // Skip redraw if graph data hasn't changed (prevents 8s polling from resetting zoom/simulation)
-    const fingerprint = JSON.stringify({
-      ns: graph.nodes.map(n => n.id).sort().join(','),
-      es: graph.edges.map(e => `${e.source}|${e.target}|${e.label || ''}`).sort().join(';'),
-      q: graphSearch.trim(),
-      sn: selectedNode?.id || '',
-    })
-    if (fingerprint === prevGraphFingerprint.current && graphSearch.trim() === prevGraphSearch.current) {
-      return
-    }
-    prevGraphFingerprint.current = fingerprint
-    prevGraphSearch.current = graphSearch.trim()
-
     try {
+      // Stop previous simulation before creating a new one
+      if (simRef.current) { simRef.current.stop(); simRef.current = null }
+
       const svg = d3.select(svgRef.current)
 
       // Save current zoom transform before clearing SVG
@@ -566,6 +559,7 @@ export default function KnowledgePage() {
         .force('charge', d3.forceManyBody().strength(-200))
         .force('center', d3.forceCenter(W / 2, H / 2))
         .force('collision', d3.forceCollide().radius(d => sizeScale(d.degree) + 8))
+      simRef.current = sim
 
       const link = g.append('g').selectAll('line').data(displayEdges).join('line')
         .attr('stroke', '#d9cebc').attr('stroke-width', 0.5).attr('stroke-opacity', 0.6)
@@ -602,20 +596,77 @@ export default function KnowledgePage() {
       })
       svgEl.on('click', () => { setSelectedNode(null); setNodeDetails(null) })
 
-      if (selectedNode) {
-        nodeGroup.select('circle').attr('opacity', d => d.id === selectedNode.id ? 1 : 0.3)
-        link.attr('stroke-opacity', d => d.source.id === selectedNode.id || d.target.id === selectedNode.id ? 0.9 : 0.15)
+      const selNode = selectedNodeRef.current
+      if (selNode) {
+        nodeGroup.select('circle').attr('opacity', d => d.id === selNode.id ? 1 : 0.3)
+        link.attr('stroke-opacity', d => d.source.id === selNode.id || d.target.id === selNode.id ? 0.9 : 0.15)
       }
       sim.on('tick', () => {
         link.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y)
         edgeLabels.attr('x', d => (d.source.x + d.target.x) / 2).attr('y', d => (d.source.y + d.target.y) / 2)
         nodeGroup.attr('transform', d => `translate(${d.x},${d.y})`)
       })
-      return () => sim.stop()
     } catch(e) { console.warn('D3 error:', e) }
-  }, [graph, graphSearch, selectedNode])
+  }, [graph, graphSearch])
 
-  useEffect(() => { return drawGraph() }, [drawGraph])
+  // Main graph effect: fingerprint-gated to prevent 8s polling from resetting zoom/simulation.
+  // Simulation lifecycle is managed via simRef — NOT via React effect cleanup —
+  // because React calls the old cleanup before the new effect, which would kill the
+  // simulation even when data hasn't changed.
+  useEffect(() => {
+    if (!graph.nodes.length) return
+
+    const fingerprint = JSON.stringify({
+      ns: graph.nodes.map(n => n.id).sort().join(','),
+      es: graph.edges.map(e => `${e.source}|${e.target}|${e.label || ''}`).sort().join(';'),
+      q: graphSearch.trim(),
+    })
+
+    if (fingerprint === prevGraphFingerprint.current && graphSearch.trim() === prevGraphSearch.current) {
+      return  // data unchanged → simulation keeps running, no cleanup
+    }
+    prevGraphFingerprint.current = fingerprint
+    prevGraphSearch.current = graphSearch.trim()
+
+    drawGraph()
+    // No cleanup returned — sim lifecycle handled manually via simRef
+  }, [graph, graphSearch, drawGraph])
+
+  // Stop simulation on unmount
+  useEffect(() => {
+    return () => { if (simRef.current) { simRef.current.stop(); simRef.current = null } }
+  }, [])
+
+  // Separate effect: update node/link highlighting without full graph rebuild.
+  // When selectedNode changes, we only mutate opacity on existing D3 elements —
+  // no simulation restart, no zoom reset, no SVG clear.
+  useEffect(() => {
+    if (!svgRef.current) return
+    try {
+      const svg = d3.select(svgRef.current)
+      const sid = selectedNode?.id || null
+
+      // Check that D3 elements actually exist (graph has been drawn)
+      const circles = svg.selectAll('circle')
+      if (circles.empty()) return
+
+      circles.attr('opacity', function () {
+        const pg = this.parentNode
+        if (!pg) return 0.85
+        const parentData = d3.select(pg).datum()
+        if (!sid) return 0.85
+        return parentData?.id === sid ? 1 : 0.3
+      })
+
+      svg.selectAll('line').attr('stroke-opacity', function (d) {
+        if (!sid) return 0.6
+        if (!d) return 0.6
+        const sourceId = d.source?.id ?? d.source
+        const targetId = d.target?.id ?? d.target
+        return sourceId === sid || targetId === sid ? 0.9 : 0.15
+      })
+    } catch (_) { /* SVG not yet rendered — safely ignore */ }
+  }, [selectedNode])
 
   const handleZoom = (dir) => {
     if (!svgRef.current) return
