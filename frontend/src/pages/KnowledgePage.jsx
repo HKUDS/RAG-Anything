@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import {
   Search, Eye, Trash2, X, FileText, Clock, Filter, ZoomIn, ZoomOut, RotateCcw,
   Plus, Layers, Database, Upload, Globe, FolderOpen, ClipboardPaste,
-  Loader2, CheckCircle2, XCircle, Scissors, ChevronDown, ChevronUp, Zap
+  Loader2, CheckCircle2, XCircle, Scissors, ChevronDown, ChevronUp, Zap, Image
 } from 'lucide-react'
 import * as d3 from 'd3'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -395,6 +395,9 @@ export default function KnowledgePage() {
   const [multimodal, setMultimodal] = useState({
     enable_image: true, enable_table: true, enable_equation: true, enable_video: false
   })
+  const [visionSearching, setVisionSearching] = useState(false)
+  const [visionResults, setVisionResults] = useState(null)
+  const visionInputRef = useRef()
   const svgRef = useRef()
   const graphContainerRef = useRef()
   const zoomRef = useRef(null)
@@ -703,6 +706,25 @@ export default function KnowledgePage() {
     setBatchDeleting(false)
   }
 
+  // ── Image similarity search (vision embedding) ──
+  const handleImageSearch = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setVisionSearching(true)
+    setVisionResults(null)
+    try {
+      const res = await api.imageSearch(file, 10)
+      setVisionResults(res)
+      showToast(`找到 ${res.count} 个相似图片`, 'success')
+    } catch (err) {
+      showToast('图片搜索失败: ' + err.message, 'error')
+    } finally {
+      setVisionSearching(false)
+      // Reset file input so the same file can be re-selected
+      if (visionInputRef.current) visionInputRef.current.value = ''
+    }
+  }
+
   return (
     <div className="space-y-6">
       {/* Page Header */}
@@ -845,6 +867,13 @@ export default function KnowledgePage() {
               <input className="input-field text-xs w-32 py-1.5" placeholder="搜索实体…" value={graphSearch}
                 onChange={e => setGraphSearch(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && drawGraph()} />
+              {/* Vision image search button */}
+              <input ref={visionInputRef} type="file" accept="image/*" className="hidden"
+                onChange={handleImageSearch} />
+              <button className="btn-ghost p-1.5" onClick={() => visionInputRef.current?.click()}
+                title="以图搜图" disabled={visionSearching}>
+                {visionSearching ? <Loader2 size={14} className="animate-spin"/> : <Image size={14}/>}
+              </button>
               <button className="btn-ghost p-1.5" onClick={() => handleZoom('in')} title="放大"><ZoomIn size={14}/></button>
               <button className="btn-ghost p-1.5" onClick={() => handleZoom('out')} title="缩小"><ZoomOut size={14}/></button>
               <button className="btn-ghost p-1.5" onClick={() => handleZoom('reset')} title="重置"><RotateCcw size={14}/></button>
@@ -860,6 +889,32 @@ export default function KnowledgePage() {
               </div>
             )}
           </div>
+          {/* Vision image search results */}
+          {visionResults && (
+            <div className="mt-3 p-3 bg-sage-50/50 border border-sage-200 rounded-xl">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-medium text-sage-700">
+                  🖼️ 相似图片 ({visionResults.count}/{visionResults.repo_count})
+                </span>
+                <button className="btn-ghost p-0.5" onClick={() => setVisionResults(null)} title="关闭">
+                  <X size={12}/>
+                </button>
+              </div>
+              {visionResults.count === 0 ? (
+                <p className="text-xs text-warm-500">未找到相似图片</p>
+              ) : (
+                <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto">
+                  {visionResults.results.map((r, i) => (
+                    <div key={i} className="bg-white rounded-lg p-2 border border-warm-100 text-[10px]">
+                      <p className="text-warm-700 font-medium truncate">{r.entity_name || r.image_path?.split('/').pop()}</p>
+                      <p className="text-coral-500 font-mono">相似度: {(r._score * 100).toFixed(1)}%</p>
+                      <p className="text-warm-500 truncate">{r.description?.slice(0, 60)}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Entity detail / list */}

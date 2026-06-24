@@ -48,6 +48,7 @@ os.environ["ENABLE_VIDEO_PROCESSING"] = str(_env_bool_from_dotenv("ENABLE_VIDEO_
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.embedding import create_vision_embed_func, make_cached_embed_func
 from raganything.chunking import STRATEGY_META
 from raganything.processor import get_pending_background_tasks
 from raganything.utils.process_lock import FileLock, get_file_lock_path
@@ -173,9 +174,16 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
         else:
             return llm_func(prompt, system_prompt, history_messages or [], **kw)
 
+    _raw_embed_func = partial(
+        openai_embed.func, model=EMB_MODEL, api_key=API_KEY, base_url=BASE_URL,
+    )
+    _raw_embed_func.embedding_dim = EMB_DIM
+
+    _cached_embed_func = make_cached_embed_func(_raw_embed_func, wd, EMB_MODEL)
+
     embedding_func = EmbeddingFunc(
         embedding_dim=EMB_DIM, max_token_size=8192,
-        func=partial(openai_embed.func, model=EMB_MODEL, api_key=API_KEY, base_url=BASE_URL),
+        func=_cached_embed_func,
     )
 
     async def _embed_wrapper(texts):
@@ -224,7 +232,9 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
     )
     return RAGAnything(config=config, llm_model_func=llm_func,
                        vision_model_func=vision_func,
-                       embedding_func=embedding_func, lightrag_kwargs=lightrag_kwargs)
+                       embedding_func=embedding_func,
+                       vision_embed_func=create_vision_embed_func(working_dir=wd),
+                       lightrag_kwargs=lightrag_kwargs)
 
 
 def _fix_stuck_doc(filename: str, target_dir: str, error_msg: str) -> bool:

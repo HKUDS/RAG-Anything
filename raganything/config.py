@@ -90,6 +90,27 @@ class RAGAnythingConfig:
     )
     """Enable video content processing. Defaults to False due to heavy optional dependencies (ffmpeg, opencv, whisper)."""
 
+    # Vision Embedding Configuration (doubao-embedding-vision)
+    # ---
+    enable_vision_embedding: bool = field(
+        default=get_env_value("ENABLE_VISION_EMBEDDING", False, bool)
+    )
+    """Enable vision embedding for image-to-image similarity search.
+    When True and ``vision_embedding_model`` is configured, images are embedded
+    via the vision model in addition to VLM text description."""
+
+    vision_embedding_model: str = field(
+        default=get_env_value("VISION_EMBEDDING_MODEL", "", str)
+    )
+    """Vision embedding model name (e.g. ``doubao-embedding-vision-251215``).
+    When empty, vision embedding is disabled regardless of ``enable_vision_embedding``."""
+
+    vision_embedding_dim: int = field(
+        default=get_env_value("VISION_EMBEDDING_DIM", 0, int)
+    )
+    """Vision embedding vector dimension. 0 means auto-detect on first API call.
+    Set explicitly to skip the discovery probe and avoid a startup API cost."""
+
     video_sample_rate: float = field(
         default=get_env_value("VIDEO_SAMPLE_RATE", 1.0, float)
     )

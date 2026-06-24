@@ -46,6 +46,7 @@ from raganything.modalprocessors import (
     ContextExtractor,
     ContextConfig,
 )
+from raganything.embedding import ImageVectorRepository
 from raganything.video_processor import (
     VideoModalProcessor,
     FrameExtractor,
@@ -71,6 +72,12 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
 
     embedding_func: Optional[Callable] = field(default=None)
     """Embedding function for text vectorization."""
+
+    vision_embed_func: Optional[Callable] = field(default=None)
+    """Vision embedding function for image-to-vector conversion.
+    When None (default), vision embedding is disabled.
+    Set to a :class:`DoubaoEmbeddingAdapter` instance to enable
+    image similarity search."""
 
     config: Optional[RAGAnythingConfig] = field(default=None)
     """Configuration object, if None will create with environment variables."""
@@ -229,6 +236,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 lightrag=self.lightrag,
                 modal_caption_func=self.vision_model_func or self.llm_model_func,
                 context_extractor=self.context_extractor,
+                vision_embed_func=self.vision_embed_func,
             )
 
         if self.config.enable_table_processing:
@@ -406,6 +414,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                         # Build BM25 index from existing LightRAG chunks
                         await self.hybrid_search_engine.ensure_bm25_index()
 
+                    # ── Vision embedding repository ──────────
+                    await self._init_vision_repo()
+
                     return {"success": True}
 
                 except Exception as e:
@@ -505,6 +516,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                     # Build BM25 index from existing LightRAG chunks
                     await self.hybrid_search_engine.ensure_bm25_index()
 
+                # ── Vision embedding repository ──────────
+                await self._init_vision_repo()
+
                 self.logger.info(
                     "LightRAG, parse cache, multimodal status cache, and multimodal processors initialized"
                 )
@@ -519,6 +533,51 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             error_msg = f"Unexpected error during LightRAG initialization: {str(e)}"
             self.logger.error(error_msg, exc_info=True)
             return {"success": False, "error": error_msg}
+
+    async def _init_vision_repo(self) -> None:
+        """Initialize the :class:`ImageVectorRepository` for vision embeddings.
+
+        Feature-gated: does nothing if ``vision_embed_func`` is not configured.
+        Auto-discovers the embedding dimension on first call and caches it
+        to ``{working_dir}/.vision_embed_meta.json``.
+        """
+        if self.vision_embed_func is None:
+            return
+        if hasattr(self.lightrag, 'image_vision_repo') and self.lightrag.image_vision_repo is not None:
+            return  # already initialized
+
+        try:
+            # Auto-discover dimension if not yet known
+            if getattr(self.vision_embed_func, 'dim', 0) <= 0:
+                await self.vision_embed_func.discover_dimension()
+                # Persist discovered dimension
+                from raganything.embedding.doubao_vision import _write_cached_dim
+                _write_cached_dim(
+                    self.working_dir,
+                    self.vision_embed_func.dim,
+                    self.vision_embed_func.model,
+                )
+
+            dim = self.vision_embed_func.dim
+            if dim <= 0:
+                self.logger.warning(
+                    "[vision-repo] Cannot initialize: vision embedding dimension unknown"
+                )
+                return
+
+            repo = ImageVectorRepository(working_dir=self.working_dir)
+            await repo.initialize(embedding_dim=dim)
+            self.lightrag.image_vision_repo = repo
+            self.logger.info(
+                "[vision-repo] Initialized dim=%d model=%s",
+                dim, self.vision_embed_func.model,
+            )
+        except Exception as e:
+            self.logger.error(
+                "[vision-repo] Initialization failed: %s. "
+                "Vision embedding will be disabled for this session.", e
+            )
+            self.vision_embed_func = None  # disable gracefully
 
     async def finalize_storages(self):
         """Finalize all storages including parse cache and LightRAG storages
@@ -560,6 +619,13 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             ):
                 tasks.append(self.lightrag.finalize_storages())
                 self.logger.debug("Scheduled LightRAG storages finalization")
+
+            # Finalize vision embedding repository
+            if (self.lightrag is not None
+                    and hasattr(self.lightrag, 'image_vision_repo')
+                    and self.lightrag.image_vision_repo is not None):
+                tasks.append(self.lightrag.image_vision_repo.flush())
+                self.logger.debug("Scheduled vision embedding repository finalization")
 
             # Run all finalization tasks concurrently
             if tasks:

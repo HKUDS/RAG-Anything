@@ -193,10 +193,80 @@ def apply_sensitive_log_filter():
         h.addFilter(SensitiveLogFilter())
 
 
+def decode_and_validate_query_image(data_uri: str, max_bytes: int = 5 * 1024 * 1024):
+    """Validate and decode a base64-encoded image from a query request.
+
+    Performs layered validation before returning raw image bytes:
+    1. Quick length check on the base64 string (rejects obviously huge payloads)
+    2. Data URI header validation (must start with ``data:image/``)
+    3. Base64 decode with error handling
+    4. Decoded byte size check against *max_bytes*
+    5. PIL ``verify()`` — checks file integrity without full pixel decode
+
+    Args:
+        data_uri: Base64 data URI string (e.g. ``data:image/jpeg;base64,...``).
+        max_bytes: Maximum allowed decoded image size in bytes (default 5 MiB).
+
+    Returns:
+        Raw image bytes if valid, ``None`` otherwise.
+        Caller is responsible for logging the reason.
+    """
+    import base64 as _b64
+    import io as _io
+
+    # 1. Quick size check on the base64 string
+    if len(data_uri) > max_bytes * 1.5:
+        return None
+
+    # 2. Parse data URI header — whitelist allowed image formats
+    _ALLOWED_MIME_PREFIXES = (
+        "data:image/jpeg;",
+        "data:image/png;",
+        "data:image/webp;",
+        "data:image/gif;",
+        "data:image/bmp;",
+    )
+    if not any(data_uri.startswith(p) for p in _ALLOWED_MIME_PREFIXES):
+        return None
+
+    try:
+        _header, b64_data = data_uri.split(",", 1)
+    except ValueError:
+        return None
+
+    # 3. Decode base64
+    try:
+        raw = _b64.b64decode(b64_data)
+    except Exception:
+        return None
+
+    # 4. Size check on decoded bytes
+    if len(raw) > max_bytes:
+        return None
+
+    # 5. Validate as actual image via PIL with decompression bomb protection
+    try:
+        from PIL import Image as _PILImage
+        # Prevent decompression bombs (e.g. 100KB file → 10GB in memory)
+        _PILImage.MAX_IMAGE_PIXELS = 50_000_000  # ≈ 7071×7071 max
+        img = _PILImage.open(_io.BytesIO(raw))
+        img.verify()  # checks integrity without full pixel decode
+        # Re-open after verify() (verify() exhausts the file pointer)
+        img = _PILImage.open(_io.BytesIO(raw))
+        w, h = img.size
+        if w > 8192 or h > 8192:
+            return None
+    except Exception:
+        return None
+
+    return raw
+
+
 __all__ = [
     "PROMPT_INJECTION_PATTERNS",
     "PROMPT_INJECTION_REGEX",
     "validate_query_input",
+    "decode_and_validate_query_image",
     "MAX_QUERY_LENGTH",
     "SensitiveLogFilter",
     "apply_sensitive_log_filter",

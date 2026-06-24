@@ -29,6 +29,11 @@ load_dotenv(dotenv_path=".env", override=False)
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.embedding import (
+    DoubaoEmbeddingAdapter,
+    create_vision_embed_func,
+    make_cached_embed_func,
+)
 from raganything.chunking import (
     recursive_chunking,
     sentence_chunking,
@@ -282,14 +287,18 @@ def create_rag(
     # but DashScope text-embedding-v3 returns 1024-dim vectors. We override the
     # embedding_dim attribute on the partial function so LightRAG allocates
     # vector storage at the correct (API-native) dimension.
-    _embed_func = partial(
+    _raw_embed_func = partial(
         openai_embed.func, model=EMB_MODEL, api_key=API_KEY, base_url=BASE_URL
     )
-    _embed_func.embedding_dim = EMB_DIM
+    _raw_embed_func.embedding_dim = EMB_DIM
+
+    # Wrap with local persistent cache to avoid redundant API calls.
+    # Same entity/relation names across chunks → instant cache hits.
+    _cached_embed_func = make_cached_embed_func(_raw_embed_func, wd, EMB_MODEL)
 
     embedding_func = EmbeddingFunc(
         embedding_dim=EMB_DIM, max_token_size=8192,
-        func=_embed_func,
+        func=_cached_embed_func,
     )
 
     def _env_int(key: str, default: int, min_val: int = 1, max_val: int = 100) -> int:
@@ -344,8 +353,13 @@ def create_rag(
         enable_video_processing=os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
     )
 
+    # ── Vision embedding (doubao-embedding-vision) ──────────
+    # Feature-gated: returns None when VISION_EMBEDDING_MODEL is not set.
+    vision_embed_func = create_vision_embed_func(working_dir=wd)
+
     return RAGAnything(config=config, llm_model_func=llm_func,
                        vision_model_func=vision_func, embedding_func=embedding_func,
+                       vision_embed_func=vision_embed_func,
                        lightrag_kwargs=lightrag_kwargs)
 
 
@@ -1092,6 +1106,7 @@ __all__ = [
     "_build_citation_block",
     "_get_kb_doc_list",
     "infer_entity_type",
+    "create_vision_embed_func",
     "API_KEY",
     "BASE_URL",
     "LLM_MODEL",

@@ -499,26 +499,179 @@ async def knowledge_stats(kb: str = Depends(verify_kb_access)):
     stats = {"documents": 0, "entities": 0, "relations": 0, "chunks": 0}
     base = Path(kb_dir(kb))
 
-    # 实体总数（聚合 count）
-    ep = base / "kv_store_full_entities.json"
-    if ep.exists():
-        for v in _safe_load_json(ep).values():
-            stats["entities"] += v.get("count", len(v.get("entity_names", [])))
-
-    # 关系总数
-    rp = base / "kv_store_full_relations.json"
-    if rp.exists():
-        for v in _safe_load_json(rp).values():
-            stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
-
-    # 文档总数 & 分块总数 — 从 doc_status 聚合
-    # （vdb_chunks.json 是 LightRAG NanoVectorDB 内部存储文件，其 JSON 键数不等于实际分块数）
+    # ── 加载 doc_status 作为合法文档白名单 ──
     dp = base / "kv_store_doc_status.json"
+    doc_data: dict = {}
+    valid_doc_ids: set = set()
     if dp.exists():
         doc_data = _safe_load_json(dp)
+        valid_doc_ids = set(doc_data.keys())
         stats["documents"] = len(doc_data)
         stats["chunks"] = sum(v.get("chunks_count", 0) for v in doc_data.values())
+
+    # 实体总数 — 只统计 doc_status 中存在的文档，过滤孤儿条目
+    ep = base / "kv_store_full_entities.json"
+    if ep.exists():
+        _orphan_entities = 0
+        for doc_id, v in _safe_load_json(ep).items():
+            if valid_doc_ids and doc_id not in valid_doc_ids:
+                _orphan_entities += v.get("count", len(v.get("entity_names", [])))
+                continue
+            stats["entities"] += v.get("count", len(v.get("entity_names", [])))
+        if _orphan_entities:
+            lightrag_logger.info(
+                "[KB-STATS] 过滤孤儿实体: %d (来自 %s)", _orphan_entities, kb,
+            )
+
+    # 关系总数 — 同上，交叉校验 doc_status
+    rp = base / "kv_store_full_relations.json"
+    if rp.exists():
+        _orphan_relations = 0
+        for doc_id, v in _safe_load_json(rp).items():
+            if valid_doc_ids and doc_id not in valid_doc_ids:
+                _orphan_relations += v.get("count", len(v.get("relation_pairs", [])))
+                continue
+            stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
+        if _orphan_relations:
+            lightrag_logger.info(
+                "[KB-STATS] 过滤孤儿关系: %d (来自 %s)", _orphan_relations, kb,
+            )
     return stats
+
+
+@router.post("/knowledge/repair")
+async def repair_kb_orphans(kb: str = Depends(verify_kb_access)):
+    """扫描并清理知识库中所有孤儿数据（doc_status 中不存在的文档残留）。
+
+    适用场景：
+    - 之前删除文档后实体/关系数未归零
+    - 文档处理中断导致部分数据残留
+    - 多模态处理产生的实体/向量引用了已不存在的文档
+    """
+    instance = await get_kb(kb)
+    if not instance.lightrag:
+        raise HTTPException(500, "知识库未初始化")
+
+    base = Path(kb_dir(kb))
+    dp = base / "kv_store_doc_status.json"
+    if not dp.exists():
+        return {"status": "ok", "message": "无文档记录，无需修复", "cleaned": {}}
+
+    # 加载合法文档白名单
+    doc_data = json.loads(dp.read_text(encoding="utf-8"))
+    valid_doc_ids = set(doc_data.keys())
+
+    _lg = instance.lightrag
+    report: dict[str, int] = {}
+
+    # ── 1. 扫描 full_entities ──
+    ep = base / "kv_store_full_entities.json"
+    if ep.exists():
+        entities_data = json.loads(ep.read_text(encoding="utf-8"))
+        orphan_entity_keys = [k for k in entities_data if k not in valid_doc_ids]
+        if orphan_entity_keys:
+            _ent_names_to_delete: list[str] = []
+            for _ok in orphan_entity_keys:
+                _ed = entities_data.get(_ok, {})
+                _ent_names_to_delete.extend(_ed.get("entity_names", []))
+                try:
+                    await _lg.full_entities.delete([_ok])
+                except Exception:
+                    pass
+            # 删除孤儿实体向量和图谱节点
+            if _ent_names_to_delete:
+                try:
+                    await _lg.entities_vdb.delete(_ent_names_to_delete)
+                except Exception:
+                    pass
+                try:
+                    _graph = getattr(_lg, "chunk_entity_relation_graph", None)
+                    if _graph:
+                        for _en in _ent_names_to_delete:
+                            try:
+                                await _graph.delete_node(_en)
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
+            report["orphan_entities"] = len(orphan_entity_keys)
+            lightrag_logger.info(
+                "[REPAIR] KB=%s 清理 %d 个孤儿实体组 (%d 个实体向量)",
+                kb, len(orphan_entity_keys), len(_ent_names_to_delete),
+            )
+
+    # ── 2. 扫描 full_relations ──
+    rp = base / "kv_store_full_relations.json"
+    if rp.exists():
+        relations_data = json.loads(rp.read_text(encoding="utf-8"))
+        orphan_rel_keys = [k for k in relations_data if k not in valid_doc_ids]
+        if orphan_rel_keys:
+            for _ok in orphan_rel_keys:
+                try:
+                    await _lg.full_relations.delete([_ok])
+                except Exception:
+                    pass
+            report["orphan_relations"] = len(orphan_rel_keys)
+            lightrag_logger.info(
+                "[REPAIR] KB=%s 清理 %d 个孤儿关系组", kb, len(orphan_rel_keys),
+            )
+
+    # ── 3. 扫描 full_docs ──
+    fdp = base / "kv_store_full_docs.json"
+    if fdp.exists():
+        full_docs_data = json.loads(fdp.read_text(encoding="utf-8"))
+        orphan_doc_keys = [k for k in full_docs_data if k not in valid_doc_ids]
+        if orphan_doc_keys:
+            for _ok in orphan_doc_keys:
+                try:
+                    await _lg.full_docs.delete([_ok])
+                except Exception:
+                    pass
+            report["orphan_docs"] = len(orphan_doc_keys)
+
+    # ── 4. 扫描 image_vision_repo ──
+    if hasattr(_lg, "image_vision_repo") and _lg.image_vision_repo is not None:
+        try:
+            _repo = _lg.image_vision_repo
+            _orphan_img = 0
+            for _d in list(_repo._vdb._NanoVectorDB__storage.get("data", [])):
+                if _d.get("doc_id") not in valid_doc_ids:
+                    try:
+                        _repo._vdb.delete([_d["__id__"]])
+                        _orphan_img += 1
+                    except Exception:
+                        pass
+            if _orphan_img:
+                await _repo.flush()
+                report["orphan_vision_vectors"] = _orphan_img
+                lightrag_logger.info(
+                    "[REPAIR] KB=%s 清理 %d 个孤儿视觉向量", kb, _orphan_img,
+                )
+        except Exception as e:
+            lightrag_logger.warning("[REPAIR] 视觉向量清理失败: %s", e)
+
+    # ── 5. 持久化（绕过 finalize 对非 cache 命名空间的 NO-OP）──
+    for _store in [_lg.full_entities, _lg.full_relations, _lg.full_docs]:
+        try:
+            await _store.index_done_callback()
+        except Exception:
+            pass
+    try:
+        if hasattr(_lg, "entities_vdb") and _lg.entities_vdb is not None:
+            await _lg.entities_vdb.index_done_callback()
+    except Exception:
+        pass
+
+    # 清除查询缓存
+    try:
+        from raganything.query_cache import get_query_cache
+        get_query_cache().invalidate()
+    except Exception:
+        pass
+
+    if not report:
+        return {"status": "ok", "message": "未发现孤儿数据，知识库状态正常", "cleaned": {}}
+    return {"status": "repaired", "message": f"已清理 {sum(report.values())} 条孤儿记录", "cleaned": report}
 
 
 @router.get("/knowledge/entities")
@@ -636,6 +789,241 @@ def _cleanup_document_files(kb_name: str, file_path: str, doc_id: str = "") -> N
                 pass
 
 
+async def _force_cleanup_lightrag_orphans(instance, full_id: str) -> list[str]:
+    """显式清理 LightRAG 内部存储中属于 full_id 的孤儿数据。
+
+    当 LightRAG 的 ``adelete_by_doc_id`` 返回 "not_found" 时，
+    LightRAG 内部的 doc_status 已丢失但 full_entities/full_relations
+    等存储可能仍有残留。此函数执行尽力而为的彻底清理。
+
+    Returns:
+        已清理的存储名称列表（用于日志）。
+    """
+    _lg = instance.lightrag
+    _cleaned: list[str] = []
+
+    # 0. 从 full_entities 读取实体名列表，用于清理 entities_vdb 和图谱节点
+    _ent_names: list[str] = []
+    try:
+        _ent_data = await _lg.full_entities.get_by_id(full_id)
+        if _ent_data and "entity_names" in _ent_data:
+            _ent_names = _ent_data["entity_names"]
+    except Exception:
+        pass
+    # 0b. 从 full_relations 读取关系对，用于清理图谱边
+    _rel_pairs: list[tuple] = []
+    try:
+        _rel_data = await _lg.full_relations.get_by_id(full_id)
+        if _rel_data and "relation_pairs" in _rel_data:
+            _rel_pairs = _rel_data["relation_pairs"]
+    except Exception:
+        pass
+
+    # 1. 清理 KV 存储（full_entities / full_relations / full_docs）
+    for _store_attr, _label in [
+        ("full_entities", "entities"),
+        ("full_relations", "relations"),
+        ("full_docs", "docs"),
+    ]:
+        try:
+            _store = getattr(_lg, _store_attr, None)
+            if _store is not None:
+                await _store.delete([full_id])
+                _cleaned.append(_label)
+        except Exception:
+            pass
+
+    # 2. 清理实体/关系向量库和图谱
+    if _ent_names:
+        try:
+            if hasattr(_lg, "entities_vdb") and _lg.entities_vdb is not None:
+                await _lg.entities_vdb.delete(_ent_names)
+                _cleaned.append("entities_vdb")
+        except Exception:
+            pass
+        try:
+            if hasattr(_lg, "relationships_vdb") and _lg.relationships_vdb is not None:
+                await _lg.relationships_vdb.delete(_ent_names)
+        except Exception:
+            pass
+        try:
+            _graph = getattr(_lg, "chunk_entity_relation_graph", None)
+            if _graph is not None:
+                for _ename in _ent_names:
+                    try:
+                        await _graph.delete_node(_ename)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    if _rel_pairs:
+        try:
+            _graph = getattr(_lg, "chunk_entity_relation_graph", None)
+            if _graph is not None:
+                for _src, _tgt in _rel_pairs:
+                    try:
+                        await _graph.delete_edge(_src, _tgt)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+    # 3. 显式持久化（绕过 LightRAG finalize() 对非 cache 命名空间的 NO-OP）
+    for _store in [_lg.full_entities, _lg.full_relations, _lg.full_docs]:
+        try:
+            await _store.index_done_callback()
+        except Exception:
+            pass
+    try:
+        if hasattr(_lg, "entities_vdb") and _lg.entities_vdb is not None:
+            await _lg.entities_vdb.index_done_callback()
+    except Exception:
+        pass
+
+    return _cleaned
+
+
+async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
+    """全量扫描并清除所有不在 doc_status 白名单中的孤儿数据。
+
+    每次文档删除后调用此函数，确保 full_entities / full_relations /
+    full_docs / image_vision_repo 中不残留任何已删除文档的数据。
+
+    Returns:
+        {"entities": N, "relations": N, "docs": N, "vision_vectors": N}
+    """
+    _lg = instance.lightrag
+    base = Path(kb_dir(kb))
+    report: dict[str, int] = {}
+
+    # ── 加载 doc_status 白名单 ──
+    dp = base / "kv_store_doc_status.json"
+    if not dp.exists():
+        return report
+    try:
+        doc_data = json.loads(dp.read_text(encoding="utf-8"))
+    except Exception:
+        return report
+    valid_doc_ids = set(doc_data.keys())
+    if not valid_doc_ids:
+        # 全部文档已删除 → 清空所有存储
+        valid_doc_ids = set()
+
+    # ── 1. full_entities ──
+    ep = base / "kv_store_full_entities.json"
+    if ep.exists():
+        try:
+            entities_data = json.loads(ep.read_text(encoding="utf-8"))
+            orphan_keys = [k for k in entities_data if k not in valid_doc_ids]
+            if orphan_keys:
+                _ent_names: list[str] = []
+                for _ok in orphan_keys:
+                    _ed = entities_data.get(_ok, {})
+                    _ent_names.extend(_ed.get("entity_names", []))
+                    try:
+                        await _lg.full_entities.delete([_ok])
+                    except Exception:
+                        pass
+                # 清理实体向量和图谱节点
+                if _ent_names and hasattr(_lg, "entities_vdb") and _lg.entities_vdb is not None:
+                    try:
+                        await _lg.entities_vdb.delete(_ent_names)
+                    except Exception:
+                        pass
+                _graph = getattr(_lg, "chunk_entity_relation_graph", None)
+                if _graph and _ent_names:
+                    for _en in _ent_names:
+                        try:
+                            await _graph.delete_node(_en)
+                        except Exception:
+                            pass
+                report["entities"] = len(orphan_keys)
+        except Exception:
+            pass
+
+    # ── 2. full_relations ──
+    rp = base / "kv_store_full_relations.json"
+    if rp.exists():
+        try:
+            relations_data = json.loads(rp.read_text(encoding="utf-8"))
+            orphan_keys = [k for k in relations_data if k not in valid_doc_ids]
+            if orphan_keys:
+                for _ok in orphan_keys:
+                    try:
+                        await _lg.full_relations.delete([_ok])
+                    except Exception:
+                        pass
+                report["relations"] = len(orphan_keys)
+        except Exception:
+            pass
+
+    # ── 3. full_docs ──
+    fdp = base / "kv_store_full_docs.json"
+    if fdp.exists():
+        try:
+            docs_data = json.loads(fdp.read_text(encoding="utf-8"))
+            orphan_keys = [k for k in docs_data if k not in valid_doc_ids]
+            if orphan_keys:
+                for _ok in orphan_keys:
+                    try:
+                        await _lg.full_docs.delete([_ok])
+                    except Exception:
+                        pass
+                report["docs"] = len(orphan_keys)
+        except Exception:
+            pass
+
+    # ── 4. image_vision_repo ──
+    if hasattr(_lg, "image_vision_repo") and _lg.image_vision_repo is not None:
+        try:
+            _repo = _lg.image_vision_repo
+            # 获取当前 VDB 内的所有记录
+            _storage = getattr(_repo._vdb, "_NanoVectorDB__storage", {})
+            _data = _storage.get("data", [])
+            _orphan_ids = [
+                d["__id__"] for d in _data
+                if d.get("doc_id") not in valid_doc_ids
+            ]
+            if _orphan_ids:
+                _repo._vdb.delete(_orphan_ids)
+                await _repo.flush()
+                report["vision_vectors"] = len(_orphan_ids)
+        except Exception:
+            pass
+
+    # ── 5. 持久化 ──
+    # ⚠️ LightRAG JsonKVStorage.finalize() 对 full_entities/full_relations/
+    #    full_docs 是 NO-OP（仅 _cache 后缀才会调用 index_done_callback）。
+    #    这里必须显式调用 index_done_callback() 确保内存删除落到磁盘。
+    if report:
+        for _store, _label in [
+            (_lg.full_entities, "entities"),
+            (_lg.full_relations, "relations"),
+            (_lg.full_docs, "docs"),
+        ]:
+            try:
+                await _store.index_done_callback()
+            except Exception:
+                pass
+        try:
+            # 向量库和图谱的持久化
+            if hasattr(_lg, "entities_vdb") and _lg.entities_vdb is not None:
+                await _lg.entities_vdb.index_done_callback()
+        except Exception:
+            pass
+        try:
+            if hasattr(_lg, "chunks_vdb") and _lg.chunks_vdb is not None:
+                await _lg.chunks_vdb.index_done_callback()
+        except Exception:
+            pass
+        lightrag_logger.info(
+            "[PURGE-ORPHANS] KB=%s 清理: %s", kb,
+            ", ".join(f"{k}={v}" for k, v in report.items()),
+        )
+
+    return report
+
+
 @router.delete("/knowledge/documents/{doc_id}")
 async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """删除文档 - 使用 LightRAG 的 adelete_by_doc_id 彻底清理所有关联数据"""
@@ -688,17 +1076,30 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
                 await instance.multimodal_status_cache.index_done_callback()
             except Exception:
                 pass
+        # Clean up vision embedding repository for this document
+        if (hasattr(instance.lightrag, 'image_vision_repo')
+                and instance.lightrag.image_vision_repo is not None):
+            try:
+                await instance.lightrag.image_vision_repo.delete_by_doc_id(full_id)
+                await instance.lightrag.image_vision_repo.flush()
+            except Exception:
+                pass
+
         # Force LightRAG storages to persist deletions to disk so that
         # _bigram_image_scan and other disk-level readers see up-to-date data.
         await instance.lightrag.finalize_storages()
         # Invalidate query cache to prevent stale results referencing deleted data
         from raganything.query_cache import get_query_cache
         get_query_cache().invalidate()
-        return {"status": "deleted", "doc_id": full_id, "file": file_name, "message": result.message}
+        _delete_response = {"status": "deleted", "doc_id": full_id, "file": file_name, "message": result.message}
     elif result.status == "not_found":
         # Data may be partially missing (e.g. multimodal processing was
-        # killed mid-flight).  Still remove the doc_status entry so the
-        # user isn't stuck with an undeletable ghost document.
+        # killed mid-flight, or LightRAG's internal doc_status is out of
+        # sync with the on-disk kv_store_doc_status.json).
+        # Still remove the doc_status entry so the user isn't stuck with
+        # an undeletable ghost document, AND explicitly purge orphaned
+        # entities/relations/chunks from LightRAG's internal KV stores
+        # and vector DBs so KB stats reflect the actual state.
         try:
             del doc_status[full_id]
             tmp = status_path.with_suffix(".tmp")
@@ -713,10 +1114,17 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
                     await instance.multimodal_status_cache.index_done_callback()
                 except Exception:
                     pass
+
+            # ── 显式清理 LightRAG 内部存储（防止实体/关系/文块孤儿）──
+            _cleaned_stores = await _force_cleanup_lightrag_orphans(instance, full_id)
+            lightrag_logger.info(
+                "[NOT_FOUND-CLEANUP] doc=%s 已清理存储: %s",
+                full_id, ", ".join(_cleaned_stores) if _cleaned_stores else "无额外存储需清理",
+            )
             # Invalidate query cache even for partial cleanup
             from raganything.query_cache import get_query_cache
             get_query_cache().invalidate()
-            return {
+            _delete_response = {
                 "status": "deleted",
                 "doc_id": full_id,
                 "file": file_name,
@@ -726,6 +1134,11 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
             raise HTTPException(404, f"文档 {file_name} 数据未找到")
     else:
         raise HTTPException(500, result.message)
+
+    # ── 删除后全量孤儿扫描：确保 full_entities/full_relations 等存储中
+    #    不残留任何已删除文档的数据（包括历史残留）。 ──
+    await _purge_all_orphans(instance, kb)
+    return _delete_response
 
 
 @router.post("/knowledge/documents/batch-delete")
@@ -747,6 +1160,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
     errors = []
 
     deleted_full_ids: list[str] = []  # for multimodal_status_cache batch cleanup
+    not_found_full_ids: list[str] = []  # for LightRAG orphan cleanup
 
     for doc_id in req.doc_ids:
         full_id = None
@@ -774,6 +1188,8 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
                 deleted_full_ids.append(full_id)
                 _cleanup_document_files(kb, file_name, full_id)
                 await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
+                if result.status == "not_found":
+                    not_found_full_ids.append(full_id)
                 # Also clean up matching processing_tasks entry
                 for tid, task in list(processing_tasks.items()):
                     if task.get("kb", "") == kb and task.get("file", "") == file_name:
@@ -782,6 +1198,17 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
                 errors.append({"doc_id": doc_id, "error": result.message})
         except Exception as e:
             errors.append({"doc_id": doc_id, "error": str(e)})
+
+    # ── 对 "not_found" 文档执行 LightRAG 深层存储清理 ──
+    for _nf_id in not_found_full_ids:
+        try:
+            _cleaned = await _force_cleanup_lightrag_orphans(instance, _nf_id)
+            lightrag_logger.info(
+                "[BATCH-NOT_FOUND-CLEANUP] doc=%s 已清理存储: %s",
+                _nf_id, ", ".join(_cleaned) if _cleaned else "无额外存储需清理",
+            )
+        except Exception:
+            pass
 
     # Clean up multimodal status cache entries for deleted documents
     if deleted_full_ids and hasattr(instance, "multimodal_status_cache") and instance.multimodal_status_cache is not None:
@@ -800,6 +1227,9 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
         await instance.lightrag.finalize_storages()
         from raganything.query_cache import get_query_cache
         get_query_cache().invalidate()
+
+    # ── 删除后全量孤儿扫描 ──
+    await _purge_all_orphans(instance, kb)
 
     return {"deleted": deleted, "not_found": not_found, "errors": errors,
             "total_deleted": len(deleted), "total_failed": len(errors)}
@@ -1064,6 +1494,67 @@ async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
     from raganything.query_cache import get_query_cache
     get_query_cache().invalidate()
     return {"status": "deleted", "name": name}
+
+
+# ── Vision Embedding Image Search ────────────────────────
+
+@router.post("/image-search")
+async def image_search(
+    request: Request,
+    image: UploadFile = File(...),
+    top_k: int = QueryParam(10, ge=1, le=50),
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+):
+    """搜索视觉相似图片 — 上传图片，返回知识库中视觉最相似的图片列表。
+
+    需要配置 ``VISION_EMBEDDING_MODEL`` 环境变量。如果未配置，返回 501。
+    """
+    instance = await get_kb(kb)
+    if not instance.lightrag:
+        raise HTTPException(500, "知识库未初始化")
+
+    repo = getattr(instance.lightrag, 'image_vision_repo', None)
+    vision_func = getattr(instance, 'vision_embed_func', None)
+
+    if repo is None or vision_func is None:
+        raise HTTPException(
+            501,
+            "视觉嵌入搜索未启用。请配置 VISION_EMBEDDING_MODEL 环境变量。",
+        )
+
+    # Save uploaded image to temp file
+    import tempfile
+    import os as _os
+
+    suffix = _os.path.splitext(image.filename or "image.jpg")[1] or ".jpg"
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=suffix)
+    try:
+        with open(tmp_fd, "wb") as f:
+            content = await image.read()
+            f.write(content)
+
+        # Compute vision embedding for query image
+        vec = await vision_func.embed_image(tmp_path)
+        if vec is None:
+            raise HTTPException(
+                400, "无法从上传图片中提取视觉特征，请确认图片格式正确。"
+            )
+
+        # Query similar images
+        results = await repo.query(vec, top_k=top_k)
+
+        return {
+            "query": image.filename,
+            "results": results,
+            "count": len(results),
+            "repo_count": repo.count(),
+        }
+    finally:
+        try:
+            _os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 # ── File serving ───────────────────────────────────────

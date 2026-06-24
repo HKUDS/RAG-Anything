@@ -144,6 +144,18 @@ export const api = {
   deleteDocuments: (ids) => request('/knowledge/documents/batch-delete', { method: 'POST', body: JSON.stringify({ doc_ids: ids }) }),
   retryDocument: (id) => request(`/knowledge/documents/${id}/retry`, { method: 'POST' }),
 
+  // Image similarity search (vision embedding - doubao-embedding-vision)
+  imageSearch: (file, topK = 10) => {
+    if (!currentKB) { console.warn('[api] 跳过 imageSearch：currentKB 未初始化'); return Promise.reject(new Error('知识库未就绪')) }
+    const fd = new FormData(); fd.append('image', file)
+    return fetch(`${API_BASE}/knowledge/image-search?kb=${currentKB}&top_k=${topK}`, {
+      method: 'POST', body: fd, headers: authHeaders()
+    }).then(r => {
+      if (!r.ok) return r.json().then(e => { throw new Error(e.detail || r.statusText) })
+      return r.json()
+    })
+  },
+
   // Settings (admin only — uses fetchJson to avoid ?kb= param)
   getSettings: () => fetchJson('/settings'),
   updateSettings: (data) => fetchJson('/settings', { method: 'PUT', body: JSON.stringify(data) }),

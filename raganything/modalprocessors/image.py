@@ -9,6 +9,7 @@ Primary Responsibility: ImageModalProcessor — VLM-based image analysis,
 Key Dependencies: lightrag (LightRAG, compute_mdhash_id), PIL, raganything.prompt (PROMPTS)
 """
 
+import asyncio
 import json
 import base64
 from typing import Dict, Any, Tuple
@@ -30,6 +31,7 @@ class ImageModalProcessor(BaseModalProcessor):
         lightrag: LightRAG,
         modal_caption_func,
         context_extractor: ContextExtractor = None,
+        vision_embed_func=None,
     ):
         """Initialize image processor
 
@@ -37,8 +39,11 @@ class ImageModalProcessor(BaseModalProcessor):
             lightrag: LightRAG instance
             modal_caption_func: Function for generating descriptions (supporting image understanding)
             context_extractor: Context extractor instance
+            vision_embed_func: Optional DoubaoEmbeddingAdapter for vision embeddings.
+                When None (default), vision embedding is disabled.
         """
         super().__init__(lightrag, modal_caption_func, context_extractor)
+        self.vision_embed_func = vision_embed_func
 
     # Minimum image dimension in pixels; any side smaller → skip VLM call.
     _MIN_IMAGE_DIM = 14
@@ -218,6 +223,25 @@ class ImageModalProcessor(BaseModalProcessor):
             # Parse response (reuse existing logic)
             enhanced_caption, entity_info = self._parse_response(response, entity_name)
 
+            # ── Vision embedding (doubao-embedding-vision) ──
+            # Await completion so vision vectors are guaranteed persisted
+            # before the worker subprocess exits.
+            # Failures are caught and logged — vision embedding is an
+            # enhancement, not a requirement for document processing.
+            if self.vision_embed_func is not None:
+                try:
+                    await self._compute_and_store_vision(
+                        image_path=image_path,
+                        entity_name=entity_info.get("entity_name", ""),
+                        entity_type=entity_info.get("entity_type", "image"),
+                        description=enhanced_caption,
+                    )
+                except Exception as e:
+                    logger.warning(
+                        "Vision embedding failed for %s (non-blocking): %s",
+                        entity_name, e,
+                    )
+
             return enhanced_caption, entity_info
 
         except Exception as e:
@@ -317,6 +341,66 @@ class ImageModalProcessor(BaseModalProcessor):
                 "summary": cleaned[:100] + "..." if len(cleaned) > 100 else cleaned,
             }
             return cleaned, fallback_entity
+
+    # ── Vision Embedding (doubao-embedding-vision) ──────────
+
+    async def _compute_and_store_vision(
+        self,
+        image_path: str,
+        entity_name: str,
+        entity_type: str = "image",
+        description: str = "",
+    ) -> None:
+        """Background task: compute vision embedding and store in ``image_vision_repo``.
+
+        This runs asynchronously after VLM description generation completes.
+        Failures are silently logged — vision embedding is an enhancement,
+        not a requirement for document processing.
+        """
+        try:
+            # Gate: only if vision_embed_func and image_vision_repo are available
+            if self.vision_embed_func is None:
+                return
+            repo = getattr(self.lightrag, 'image_vision_repo', None)
+            if repo is None:
+                logger.debug("[vision-embed] Repo not initialized, skipping")
+                return
+
+            vec = await self.vision_embed_func.embed_image(
+                image_path, caption_text=description[:500]
+            )
+            if vec is None:
+                return  # embed_image logged the reason
+
+            # Compute content hash for dedup + idempotent upsert
+            import hashlib
+            h = hashlib.sha256()
+            with open(image_path, "rb") as f:
+                h.update(f.read(65536))
+            image_hash = h.hexdigest()[:16]
+
+            await repo.upsert(
+                image_hash=image_hash,
+                vector=vec,
+                metadata={
+                    "entity_name": entity_name,
+                    "entity_type": entity_type,
+                    "image_path": image_path,
+                    "description": description,
+                    "vision_model": self.vision_embed_func.model,
+                },
+            )
+            await repo.flush()
+
+            logger.debug(
+                "[vision-embed] Stored embedding for %s (hash=%s)",
+                entity_name, image_hash,
+            )
+        except Exception as e:
+            logger.warning(
+                "[vision-embed] Background embedding failed for %s: %s",
+                image_path, e,
+            )
 
 
 __all__ = ["ImageModalProcessor"]

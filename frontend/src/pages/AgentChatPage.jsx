@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import {
   Send, User, Bot, Clock, Plus, Trash2, Edit3, X, ChevronLeft,
   ChevronDown, ChevronRight, Brain, Zap, MessageSquare, ArrowLeft,
-  Settings2, Layers, Cpu, Database, Check, GitGraph
+  Settings2, Layers, Cpu, Database, Check, GitGraph, Image
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -71,6 +71,61 @@ export default function AgentChatPage() {
   const [expandedThinking, setExpandedThinking] = useState({})
   const [renamingThread, setRenamingThread] = useState(null)
   const [renameTitle, setRenameTitle] = useState('')
+  const [selectedImage, setSelectedImage] = useState(null)
+  const [imagePreview, setImagePreview] = useState('')
+  const fileInputRef = useRef(null)
+
+  // ── Blob URL lifecycle tracking ──
+  // Track all active blob URLs to prevent memory leaks across
+  // thread switches, re-uploads, and component unmount.
+  const blobUrlsRef = useRef(new Set())
+  const prevMessagesRef = useRef([])
+
+  const trackBlobUrl = useCallback((url) => {
+    if (url && url.startsWith('blob:')) {
+      blobUrlsRef.current.add(url)
+    }
+    return url
+  }, [])
+
+  const revokeBlobUrl = useCallback((url) => {
+    if (url && blobUrlsRef.current.has(url)) {
+      URL.revokeObjectURL(url)
+      blobUrlsRef.current.delete(url)
+    }
+  }, [])
+
+  // Revoke blob URLs from messages that are no longer in the
+  // current messages array (e.g., after thread switch or deletion).
+  const cleanupMessageBlobUrls = useCallback((newMessages) => {
+    const prevUrls = new Set(
+      prevMessagesRef.current
+        .filter(m => m.imageUrl && m.imageUrl.startsWith('blob:'))
+        .map(m => m.imageUrl)
+    )
+    const currentUrls = new Set(
+      newMessages
+        .filter(m => m.imageUrl && m.imageUrl.startsWith('blob:'))
+        .map(m => m.imageUrl)
+    )
+    prevUrls.forEach(url => {
+      if (!currentUrls.has(url)) {
+        revokeBlobUrl(url)
+      }
+    })
+    prevMessagesRef.current = newMessages
+  }, [revokeBlobUrl])
+
+  // Revoke ALL tracked blob URLs on unmount to prevent memory leaks
+  // when navigating away from the chat page.
+  useEffect(() => {
+    return () => {
+      blobUrlsRef.current.forEach(url => {
+        try { URL.revokeObjectURL(url) } catch {}
+      })
+      blobUrlsRef.current.clear()
+    }
+  }, [])
 
   useEffect(() => {
     api.listAgents().then(r => {
@@ -97,19 +152,24 @@ export default function AgentChatPage() {
     setActiveThreadId(threadId)
     const t = threads.find(x => x.id === threadId)
     if (t?.messages) {
-      setMessages(t.messages.map((m, i) => ({
+      const mapped = t.messages.map((m, i) => ({
         ...m, id: `${threadId}-${i}`, thinking: [], thinkingDone: true, done: true,
-      })))
+      }))
+      setMessages(mapped)
+      cleanupMessageBlobUrls(mapped)
     } else {
       setMessages([])
+      cleanupMessageBlobUrls([])
     }
     api.listConversations(agentId).then(r => {
       const updated = (r.threads || []).find(x => x.id === threadId)
       if (updated?.messages) {
         setThreads(r.threads || [])
-        setMessages(updated.messages.map((m, i) => ({
+        const mapped = updated.messages.map((m, i) => ({
           ...m, id: `${threadId}-${i}`, thinking: [], thinkingDone: true, done: true,
-        })))
+        }))
+        setMessages(mapped)
+        cleanupMessageBlobUrls(mapped)
       }
     }).catch(e => console.warn('[AgentChat] Failed to load thread messages:', e.message))
   }
@@ -118,11 +178,12 @@ export default function AgentChatPage() {
     const res = await api.createConversation(agentId, '新对话')
     setActiveThreadId(res.thread.id)
     setMessages([])
+    cleanupMessageBlobUrls([])
   }
 
   const deleteThread = async (threadId) => {
     await api.deleteConversation(agentId, threadId)
-    if (activeThreadId === threadId) { setActiveThreadId(''); setMessages([]) }
+    if (activeThreadId === threadId) { setActiveThreadId(''); setMessages([]); cleanupMessageBlobUrls([]) }
     loadThreads()
   }
 
@@ -160,9 +221,24 @@ export default function AgentChatPage() {
           m.id === msgId ? { ...m, content: m.content + content } : m
         ))
         break
+      case 'image_analysis':
+        // Store image analysis status on the message
+        setMessages(prev => prev.map(m => {
+          if (m.id !== msgId) return m
+          if (event.status === 'done') {
+            return { ...m, image_description: event.description_preview || '', similar_count: event.similar_count || 0 }
+          }
+          return m
+        }))
+        break
       case 'done':
         setMessages(prev => prev.map(m =>
-          m.id === msgId ? { ...m, done: true, thinkingDone: true, elapsed, images: images || [] } : m
+          m.id === msgId ? {
+            ...m, done: true, thinkingDone: true, elapsed,
+            images: images || [],
+            image_description: event.image_description || m.image_description || null,
+            similar_images: event.similar_images || [],
+          } : m
         ))
         setTimeout(() => setExpandedThinking(prev => ({ ...prev, [msgId]: false })), 2000)
         setLoading(false)
@@ -180,7 +256,7 @@ export default function AgentChatPage() {
     }
   }
 
-  const streamQuery = useCallback(async (query) => {
+  const streamQuery = useCallback(async (query, imageFile) => {
     const controller = new AbortController()
     abortRef.current = controller
 
@@ -188,15 +264,26 @@ export default function AgentChatPage() {
     setMessages(prev => [...prev, {
       id: msgId, role: 'assistant', content: '',
       thinking: [], thinkingDone: false, done: false, elapsed: null,
+      image_description: null, similar_images: [],
     }])
     setExpandedThinking(prev => ({ ...prev, [msgId]: true }))
 
     try {
       let headers = { 'Content-Type': 'application/json' }
       try { const t = JSON.parse(localStorage.getItem('raganything_auth') || '{}').token; if (t) headers['Authorization'] = `Bearer ${t}` } catch {}
+      const body = { query, thread_id: activeThreadId, mode, agent_mode: agentMode }
+      if (imageFile) {
+        // Encode image as base64 data URI
+        body.image = await new Promise((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result)
+          reader.onerror = reject
+          reader.readAsDataURL(imageFile)
+        })
+      }
       const res = await fetch(`/api/agents/${agentId}/query/stream`, {
         method: 'POST', headers,
-        body: JSON.stringify({ query, thread_id: activeThreadId, mode, agent_mode: agentMode }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       })
 
@@ -233,13 +320,29 @@ export default function AgentChatPage() {
   }, [agentId, activeThreadId, mode, agentMode])
 
   const send = async () => {
-    if (!input.trim() || loading) return
+    if ((!input.trim() && !selectedImage) || loading) return
     if (!activeThreadId) await createThread()
     const q = input.trim()
+    const img = selectedImage
+    const preview = imagePreview
     setInput('')
-    setMessages(prev => [...prev, { role: 'user', content: q }])
+    // Clear image compose state. Do NOT revoke the blob URL here:
+    // it is transferred to the user message's imageUrl below and
+    // remains in use by the rendered <img> in the message bubble.
+    // It will be revoked when the message is cleared (thread switch,
+    // delete, or component unmount).
+    setSelectedImage(null)
+    setImagePreview('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+    // Track the blob URL as now-owned by the message list
+    if (preview) trackBlobUrl(preview)
+    setMessages(prev => {
+      const next = [...prev, { role: 'user', content: q, imageUrl: preview }]
+      cleanupMessageBlobUrls(next)
+      return next
+    })
     setLoading(true)
-    await streamQuery(q)
+    await streamQuery(q, img)
   }
 
   const cancelQuery = () => {
@@ -247,6 +350,65 @@ export default function AgentChatPage() {
       abortRef.current.abort()
       abortRef.current = null
       setLoading(false)
+    }
+  }
+
+  // ── Image attachment handlers ──
+  const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp']
+
+  const handlePickImage = () => fileInputRef.current?.click()
+
+  const handleImageChange = (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    // Client-side format + size validation
+    if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+      alert('不支持的图片格式，仅支持 PNG、JPEG、WebP、GIF、BMP')
+      return
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('图片大小不能超过 5MB')
+      return
+    }
+    // Revoke previous preview blob URL if any (same pattern as handlePaste)
+    if (imagePreview) revokeBlobUrl(imagePreview)
+    const blobUrl = trackBlobUrl(URL.createObjectURL(file))
+    setSelectedImage(file)
+    setImagePreview(blobUrl)
+  }
+
+  const handleRemoveImage = () => {
+    revokeBlobUrl(imagePreview)
+    setSelectedImage(null)
+    setImagePreview('')
+    if (fileInputRef.current) fileInputRef.current.value = ''
+  }
+
+  // ── Clipboard image paste handler ──
+  const handlePaste = (e) => {
+    const items = e.clipboardData?.items
+    if (!items) return
+
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile()
+        if (!file) continue
+        if (file.size > 5 * 1024 * 1024) {
+          alert('图片大小不能超过 5MB')
+          // Do NOT call e.preventDefault() on validation failure —
+          // allow the browser's default paste to still insert any
+          // text content from the same clipboard event.
+          return
+        }
+        // Only cancel the default paste after all validation passes.
+        e.preventDefault()
+        // Clean up previous preview blob URL if any
+        if (imagePreview) revokeBlobUrl(imagePreview)
+        const blobUrl = trackBlobUrl(URL.createObjectURL(file))
+        setSelectedImage(file)
+        setImagePreview(blobUrl)
+        return
+      }
     }
   }
 
@@ -406,7 +568,10 @@ export default function AgentChatPage() {
                     <User size={13} />
                   </div>
                   <div className="max-w-[80%] rounded-2xl rounded-tr-md px-4 py-2.5 text-sm bg-coral-50 border border-coral-200 text-warm-700">
-                    <div className="whitespace-pre-wrap">{m.content}</div>
+                    {m.imageUrl && (
+                      <img src={m.imageUrl} alt="上传的图片" className="w-full max-w-xs rounded-xl mb-2 border border-coral-200 object-cover" />
+                    )}
+                    {m.content && <div className="whitespace-pre-wrap">{m.content}</div>}
                   </div>
                 </div>
               )
@@ -473,6 +638,20 @@ export default function AgentChatPage() {
                       <ReactMarkdown components={markdownComponents}>{m.content}</ReactMarkdown>
                       {showTypingCursor && <span className="inline-block w-1.5 h-4 bg-coral-500 ml-0.5 animate-pulse align-middle rounded-sm" />}
                     </div>
+                    {m.similar_images && m.similar_images.length > 0 && (
+                      <div className="mt-3 pt-3 border-t border-amber-200">
+                        <p className="text-[10px] text-amber-600 mb-2">🔍 视觉相似图片 ({m.similar_images.length})</p>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          {m.similar_images.map((sim, si) => (
+                            <div key={si} className="bg-amber-50 rounded-lg p-1.5 border border-amber-100 text-[10px]">
+                              <p className="text-warm-700 font-medium truncate">{sim.entity_name || sim.image_path?.split('/').pop()}</p>
+                              {sim.description && <p className="text-warm-500 text-[9px] truncate">{sim.description}</p>}
+                              <p className="text-amber-600 font-mono">相似度: {sim.score}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                     {m.images && m.images.length > 0 && (
                       <div className="mt-3 pt-3 border-t border-warm-200">
                         <p className="text-[10px] text-warm-500 mb-2">📷 引用的图片 ({m.images.length})</p>
@@ -514,8 +693,33 @@ export default function AgentChatPage() {
           )}
         </div>
 
-        <div className="p-3 border-t border-warm-200/60 shrink-0">
-          <div className="flex gap-2">
+        <div className="p-3 border-t border-warm-200/60 shrink-0" onPaste={handlePaste}>
+          {imagePreview && (
+            <div className="mb-2 inline-block relative">
+              <img src={imagePreview} alt="预览" className="h-16 rounded-xl border border-coral-200 object-cover" />
+              <button
+                onClick={handleRemoveImage}
+                className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-100 hover:bg-rose-200 text-rose-500 rounded-full flex items-center justify-center transition-colors"
+                aria-label="移除图片"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          )}
+          <div className="flex gap-2 items-center">
+            <input
+              type="file" accept="image/*" ref={fileInputRef}
+              onChange={handleImageChange} className="hidden"
+            />
+            <button
+              className="p-2 rounded-xl text-warm-500 hover:text-coral-500 hover:bg-coral-50 transition-colors"
+              onClick={handlePickImage}
+              title="上传图片搜索"
+              aria-label="上传图片"
+              disabled={loading}
+            >
+              <Image size={18} />
+            </button>
             <input className="input-field flex-1 text-sm" placeholder={`向 ${agent.name} 提问...`} value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => {

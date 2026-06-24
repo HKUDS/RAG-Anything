@@ -31,6 +31,7 @@ from raganything.routers.shared import (
     INLINE_QUOTE_INSTRUCTION,
     LLM_MODEL,
     QUERY_SYSTEM_PROMPT,
+    VISION_MODEL,
     extract_image_paths,
     get_kb,
     kb_dir,
@@ -38,7 +39,7 @@ from raganything.routers.shared import (
     save_query_history,
     verify_kb_access,
 )
-from raganything.utils.security import validate_query_input
+from raganything.utils.security import validate_query_input, decode_and_validate_query_image
 from raganything.dependencies import get_current_user
 
 from raganything.services.agent_manager import AgentConfig, get_agent_manager
@@ -128,6 +129,7 @@ class AgentQueryRequest(BaseModel):
     mode: str = ""  # 空则使用智能体默认模式
     agent_mode: Optional[str] = None  # 空则使用智能体默认的 agent_mode
     vlm_enhanced: bool = False
+    image: Optional[str] = None  # base64 data URI of user-uploaded query image (e.g. data:image/jpeg;base64,...)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -314,6 +316,11 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
     if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权使用该智能体")
     # 输入校验 — Prompt Injection 防护
+    # 当用户仅发送图片而无文字时，自动补全安全占位查询文本，
+    # 确保 validate_query_input 始终有内容可校验，同时让下游
+    # SSE / VLM / 历史记录等 20+ 处 req.query 引用获得一致的默认值。
+    if (not req.query or not req.query.strip()) and req.image:
+        req.query = "请分析这张图片"
     validate_query_input(req.query, user_id=str(current_user.get("id", "anonymous")))
     # 验证 KB 访问权限（可能自动切换到用户的个人 KB）
     actual_kb = await verify_kb_access(kb=agent.kb_name, current_user=current_user)
@@ -370,6 +377,77 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
             yield f"data: {json.dumps({'type': 'agent_info', 'agent': agent.name, 'icon': agent.icon, 'thread_id': thread_id}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'🔍 开始查询: {req.query[:80]}...'}, ensure_ascii=False)}\n\n"
 
+            # ═══ Image Processing (user-uploaded query image) ═══
+            image_description = None
+            similar_images = []
+            if req.image:
+                yield f"data: {json.dumps({'type': 'image_analysis', 'status': 'analyzing'}, ensure_ascii=False)}\n\n"
+
+                # 0. Validate and decode the base64 image
+                image_bytes = decode_and_validate_query_image(req.image)
+                if image_bytes is None:
+                    yield f"data: {json.dumps({'type': 'image_analysis', 'status': 'error', 'error': '图片无效或大小超过限制（最大5MB）'}, ensure_ascii=False)}\n\n"
+                else:
+                    import base64 as _b64_mod
+                    _img_b64 = _b64_mod.b64encode(image_bytes).decode("ascii")
+
+                    # 1. Parallel: VLM description + Vision embedding search
+                    async def _run_vlm_desc():
+                        """Generate a text description of the uploaded image using VLM."""
+                        try:
+                            vis_func = getattr(instance, 'vision_model_func', None)
+                            if vis_func is None:
+                                return None
+                            _prompt = f"请详细描述这张图片的内容。用户的问题是：「{req.query}」。请根据用户的问题，重点描述图片中与问题相关的元素。使用中文，100-300字。"
+                            # vision_func returns a coroutine (from openai_complete_if_cache)
+                            result = await vis_func(
+                                _prompt,
+                                system_prompt="你是一个视觉分析助手。请用简洁的自然语言描述图片内容，不要使用JSON格式。",
+                                image_data=_img_b64,
+                            )
+                            if isinstance(result, str) and len(result.strip()) > 5:
+                                return result.strip()
+                            return None
+                        except Exception as _e:
+                            lightrag_logger.warning(f"[IMG-QUERY] VLM description failed: {_e}")
+                            return None
+
+                    async def _run_vision_search():
+                        """Find similar images in the KB via vision embedding."""
+                        try:
+                            vef = getattr(instance, 'vision_embed_func', None)
+                            repo = getattr(instance.lightrag, 'image_vision_repo', None) if hasattr(instance, 'lightrag') else None
+                            if vef is None or repo is None or repo.count() == 0:
+                                return []
+                            vec = await vef.embed_image_bytes(image_bytes, req.query[:500], label="query_image")
+                            if vec is None:
+                                return []
+                            results = await repo.query(vec, top_k=5)
+                            return [
+                                {"image_path": r.get("image_path", ""),
+                                 "entity_name": r.get("entity_name", ""),
+                                 "description": r.get("description", ""),
+                                 "score": round(r.get("_score", 0), 3)}
+                                for r in results if r.get("_score", 0) > 0.4
+                            ]
+                        except Exception as _e:
+                            lightrag_logger.warning(f"[IMG-QUERY] Vision search failed: {_e}")
+                            return []
+
+                    vlm_task = asyncio.create_task(_run_vlm_desc())
+                    vision_task = asyncio.create_task(_run_vision_search())
+                    _vlm_res, _vis_res = await asyncio.gather(vlm_task, vision_task, return_exceptions=True)
+
+                    image_description = _vlm_res if not isinstance(_vlm_res, Exception) else None
+                    similar_images = _vis_res if not isinstance(_vis_res, Exception) else []
+
+                    _status_fields = {"status": "done"}
+                    if image_description:
+                        _status_fields["description_preview"] = image_description[:100]
+                    if similar_images:
+                        _status_fields["similar_count"] = len(similar_images)
+                    yield f"data: {json.dumps({'type': 'image_analysis', **_status_fields}, ensure_ascii=False)}\n\n"
+
             # ═══ AgenticRAG 推理路径（ReAct / CoT） ═══
             if agent_mode in ("react", "cot"):
                 start_time = time.time()
@@ -386,12 +464,23 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                 trace_steps = []
 
                 if agent_mode == "react":
-                    # ReAct 流式路径 — 注入对话历史
+                    # ReAct 流式路径 — 注入对话历史 + 图片上下文
                     react_query = req.query
+                    # Prepend image context if available
+                    _img_ctx = ""
+                    if image_description:
+                        _img_ctx += f"## 用户上传图片的视觉描述\n{image_description}\n\n"
+                    if similar_images:
+                        _img_ctx += "## 知识库中找到的相似图片\n"
+                        for _si in similar_images[:5]:
+                            _img_ctx += f"- {_si['image_path']} (相似度: {_si['score']})\n"
+                        _img_ctx += "\n"
+                    if _img_ctx:
+                        react_query = f"{_img_ctx}## 用户问题\n{req.query}"
                     if conv_history_text:
                         react_query = (
                             f"## 对话历史\n{conv_history_text}\n\n"
-                            f"## 当前问题\n{req.query}"
+                            f"{react_query}"
                         )
                     async for event in agentic.run_stream(react_query):
                         if event.type == "thinking":
@@ -413,15 +502,32 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                             break
                 else:
                     # CoT 路径：先 RRF 检索获取上下文，再注入 CoT 推理
+                    # If we have an image description, use it to enrich the search query
+                    _cot_search_query = req.query
+                    if image_description:
+                        _cot_search_query = f"{req.query}\n\n[图片描述]\n{image_description[:500]}"
                     cot_context = ""
                     try:
                         cot_context = await instance.aquery(
-                            req.query, mode="rrf", only_need_context=True,
+                            _cot_search_query, mode="rrf", only_need_context=True,
                             top_k=30, max_total_tokens=8000,
                         ) or ""
                     except Exception:
                         pass
-                    # Detect empty context for CoT path
+                    # Prepend image context before conversation history
+                    _img_cot_ctx = ""
+                    if image_description:
+                        _img_cot_ctx += f"## 用户上传图片的视觉描述\n{image_description}\n\n"
+                    if similar_images:
+                        _img_cot_ctx += "## 知识库中找到的相似图片\n"
+                        for _si in similar_images[:5]:
+                            _img_cot_ctx += f"- {_si['image_path']} (相似度: {_si['score']})\n"
+                        _img_cot_ctx += "\n"
+                    # Inject conversation history
+                    if conv_history_text:
+                        _img_cot_ctx += f"## 对话历史\n{conv_history_text}\n\n"
+                    if _img_cot_ctx and cot_context:
+                        cot_context = _img_cot_ctx + "## 检索文档\n" + cot_context
                     if _is_empty_context(cot_context):
                         lightrag_logger.info("[AGENT-STREAM] CoT: no valid context, aborting")
                         full_answer = "抱歉，知识库中暂无与您问题相关的数据，无法回答此问题。请尝试上传相关文档或换个问题。"
@@ -453,15 +559,15 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                         if len(query_history) > 100:
                             query_history = query_history[:100]
                         save_query_history()
-                        yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': [], 'fallback': True}, ensure_ascii=False)}\n\n"
+                        _done_cot_empty = {'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': [], 'fallback': True}
+                        if image_description:
+                            _done_cot_empty['image_description'] = image_description
+                        if similar_images:
+                            _done_cot_empty['similar_images'] = similar_images
+                        yield f"data: {json.dumps(_done_cot_empty, ensure_ascii=False)}\n\n"
                         lightrag_logger.removeHandler(handler)
                         return
-                    # 注入对话历史到检索上下文前方
-                    if conv_history_text and cot_context:
-                        cot_context = (
-                            f"## 对话历史\n{conv_history_text}\n\n"
-                            f"## 检索文档\n{cot_context}"
-                        )
+                    # 对话历史已在 line 527-530 注入到 _img_cot_ctx，此处不重复注入
                     agent_result = await agentic.run_with_context(req.query, cot_context)
                     full_answer = agent_result.answer
                     for s in agent_result.trace:
@@ -554,15 +660,29 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                     query_history = query_history[:100]
                 save_query_history()
 
-                yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': agent_images}, ensure_ascii=False)}\n\n"
+                _done_agentic = {'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': agent_images}
+                if image_description:
+                    _done_agentic['image_description'] = image_description
+                if similar_images:
+                    _done_agentic['similar_images'] = similar_images
+                yield f"data: {json.dumps(_done_agentic, ensure_ascii=False)}\n\n"
                 return
 
             # ═══ 普通 RAG 流式路径（agent_mode=none） ═══
             start_time = time.time()
 
             # Step 1: 获取检索上下文
+            # 对标 CoT 路径 — 用 VLM 描述 + 视觉相似实体富化检索查询，
+            # 确保图片语义能够命中知识库中的相关文本块。
+            _search_query = req.query
+            if image_description:
+                _search_query = f"{req.query}\n\n[图片描述]\n{image_description[:500]}"
+            if similar_images:
+                _en = [si['entity_name'] for si in similar_images if si.get('entity_name')]
+                if _en:
+                    _search_query += f"\n\n[视觉相似实体]\n{' '.join(_en[:5])}"
             ctx_task = asyncio.ensure_future(
-                instance.aquery(req.query, mode=query_mode, vlm_enhanced=False,
+                instance.aquery(_search_query, mode=query_mode, vlm_enhanced=False,
                                 only_need_context=True, enable_rerank=False,
                                 chunk_top_k=40, top_k=60,
                                 max_entity_tokens=3000, max_relation_tokens=2000,
@@ -634,6 +754,10 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                     'thread_id': thread_id, 'images': agent_images,
                     'fallback': True,
                 }
+                if image_description:
+                    _done_data['image_description'] = image_description
+                if similar_images:
+                    _done_data['similar_images'] = similar_images
                 yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
                 # 提前返回，不走到下方的通用 LLM 调用路径
                 lightrag_logger.removeHandler(handler)
@@ -715,6 +839,10 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                     'thread_id': thread_id, 'images': agent_images,
                     'fallback': True,
                 }
+                if image_description:
+                    _done_data['image_description'] = image_description
+                if similar_images:
+                    _done_data['similar_images'] = similar_images
                 yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
                 lightrag_logger.removeHandler(handler)
                 return
@@ -741,10 +869,23 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
             # Uses enriched ctx — may include backfilled chunks.
             # When backfill was applied, we KNOW valid text chunks exist, so bypass the length check.
             _has_chunks = ("[来源 " in ctx and len(ctx.strip()) > 200) or bool(backfill_text)
+            # Build image context section for the prompt
+            _img_section = ""
+            if image_description:
+                _img_section += f"## 用户上传图片的视觉分析\n{image_description}\n\n"
+            if similar_images:
+                _img_section += "## 知识库中视觉相似的图片\n"
+                for _si in similar_images[:5]:
+                    _img_section += f"- {_si['entity_name'] or _si['image_path']} (相似度: {_si['score']})\n"
+                    if _si.get('description'):
+                        _img_section += f"  描述: {_si['description'][:200]}\n"
+                _img_section += "\n"
+
             if not _has_chunks and ctx.strip():
                 lightrag_logger.warning("agent_query_stream: context has no text chunks.")
             final_prompt = (
                 f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n"
+                f"{_img_section}"
                 f"{_conv_part}"
                 f"## 检索内容\n{ctx}\n\n"
                 f"## 问题\n{req.query}\n\n"
@@ -826,6 +967,10 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
             }
             if is_fallback:
                 _done_data['fallback'] = True
+            if image_description:
+                _done_data['image_description'] = image_description
+            if similar_images:
+                _done_data['similar_images'] = similar_images
             yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
 
         except Exception as exc:

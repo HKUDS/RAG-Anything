@@ -174,7 +174,7 @@
       "icon": "📋",
       "description": "平衡精度和效率的通用智能体，适合大多数场景",
       "welcome_message": "你好！我是通用文档助手，可以回答知识库中的任何问题。请问有什么可以帮你的？",
-      "kb_name": "default",
+      "kb_name": "图文召回",
       "llm_model": "qwen-plus",
       "temperature": 0.2,
       "max_response_tokens": 4096,
@@ -190,8 +190,8 @@
       "owner_username": "admin",
       "template_id": "general",
       "created_at": "2026-06-23T10:51:27.903887",
-      "updated_at": "2026-06-23T14:48:44.566227"
+      "updated_at": "2026-06-24T16:52:30.747997"
     }
   ],
-  "updated_at": "2026-06-23T14:48:44.566227"
+  "updated_at": "2026-06-24T16:52:30.747997"
 }
