@@ -911,6 +911,7 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
 
     # ── 1. full_entities ──
     ep = base / "kv_store_full_entities.json"
+    entities_data: dict = {}
     if ep.exists():
         try:
             entities_data = json.loads(ep.read_text(encoding="utf-8"))
@@ -1020,6 +1021,130 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
             "[PURGE-ORPHANS] KB=%s 清理: %s", kb,
             ", ".join(f"{k}={v}" for k, v in report.items()),
         )
+
+    # ── 6. VDB + 图谱深层扫描 ──
+    # 步骤 1-3 依赖 full_entities.json 里的 doc_id → entity_names 映射来
+    # 定位孤儿。但如果 full_entities 本身因为旧 bug 没写盘，实体向量会残留
+    # 在 entities_vdb / relationships_vdb / 图谱中无法被追踪到。
+    # 此处直接扫描 VDB 和图谱，清理所有不在 full_entities 白名单中的条目。
+    _vdb_purged = await _purge_orphan_vdb_entries(_lg, entities_data)
+    if _vdb_purged:
+        for k, v in _vdb_purged.items():
+            report[k] = report.get(k, 0) + v
+
+    return report
+
+
+async def _purge_orphan_vdb_entries(lg, entities_data: dict) -> dict[str, int]:
+    """Deep-scan entities_vdb, relationships_vdb, and graph for entries
+    whose names are not referenced by any doc in full_entities.
+
+    This catches stale vectors left over when ``full_entities`` entries were
+    lost due to old bugs (e.g. ``finalize_storages`` not writing to disk).
+
+    Returns:
+        {"entities_vdb": N, "relationships_vdb": N, "graph_nodes": N}
+    """
+    report: dict[str, int] = {}
+
+    # Build whitelist: all entity/relation names known to full_entities + full_relations
+    valid_ent_names: set[str] = set()
+    for v in entities_data.values():
+        valid_ent_names.update(v.get("entity_names", []))
+
+    # ── entities_vdb deep scan ──
+    if hasattr(lg, "entities_vdb") and lg.entities_vdb is not None:
+        try:
+            _vdb = lg.entities_vdb
+            _storage = getattr(_vdb, "_NanoVectorDB__storage", {})
+            _data = _storage.get("data", []) if isinstance(_storage, dict) else []
+            orphan_names: list[str] = []
+            for _row in _data:
+                _name = _row.get("__id__") or _row.get("entity_name") or ""
+                if _name and _name not in valid_ent_names:
+                    orphan_names.append(_name)
+            if orphan_names:
+                await _vdb.delete(orphan_names)
+                report["entities_vdb"] = len(orphan_names)
+                lightrag_logger.info(
+                    "[PURGE-ORPHANS-VDB] entities_vdb 清理了 %d 个不在白名单的向量",
+                    len(orphan_names),
+                )
+        except Exception as _e:
+            lightrag_logger.warning("[PURGE-ORPHANS-VDB] entities_vdb 扫描失败: %s", _e)
+
+    # ── relationships_vdb deep scan ──
+    if hasattr(lg, "relationships_vdb") and lg.relationships_vdb is not None:
+        try:
+            _rvdb = lg.relationships_vdb
+            _storage = getattr(_rvdb, "_NanoVectorDB__storage", {})
+            _data = _storage.get("data", []) if isinstance(_storage, dict) else []
+            orphan_rel_names: list[str] = []
+            for _row in _data:
+                _name = _row.get("__id__") or _row.get("relation_name") or ""
+                if _name and _name not in valid_ent_names:
+                    orphan_rel_names.append(_name)
+            if orphan_rel_names:
+                await _rvdb.delete(orphan_rel_names)
+                report["relationships_vdb"] = len(orphan_rel_names)
+                lightrag_logger.info(
+                    "[PURGE-ORPHANS-VDB] relationships_vdb 清理了 %d 个不在白名单的向量",
+                    len(orphan_rel_names),
+                )
+        except Exception as _e:
+            lightrag_logger.warning("[PURGE-ORPHANS-VDB] relationships_vdb 扫描失败: %s", _e)
+
+    # ── graph node deep scan ──
+    _graph = getattr(lg, "chunk_entity_relation_graph", None)
+    if _graph is not None and valid_ent_names:
+        try:
+            # Use existing graph API to enumerate nodes if available
+            orphan_graph_nodes: list[str] = []
+            _all_nodes = set()
+            # Try getting all nodes via graph storage
+            _graph_storage = getattr(_graph, "_graph", None)
+            if _graph_storage is not None:
+                # NetworkX graph
+                _all_nodes = set(_graph_storage.nodes())
+            elif hasattr(_graph, "get_all_nodes"):
+                _all_nodes = set(_graph.get_all_nodes() or [])
+            else:
+                # Fallback: enumerate from _node_data if available
+                _nd = getattr(_graph, "_node_data", None)
+                if _nd:
+                    _all_nodes = set(_nd.keys())
+
+            for _node in _all_nodes:
+                _node_name = str(_node)
+                if _node_name and _node_name not in valid_ent_names:
+                    orphan_graph_nodes.append(_node_name)
+
+            if orphan_graph_nodes:
+                for _gn in orphan_graph_nodes:
+                    try:
+                        await _graph.delete_node(_gn)
+                    except Exception:
+                        pass
+                report["graph_nodes"] = len(orphan_graph_nodes)
+                lightrag_logger.info(
+                    "[PURGE-ORPHANS-VDB] graph 清理了 %d 个不在白名单的节点",
+                    len(orphan_graph_nodes),
+                )
+        except Exception as _e:
+            lightrag_logger.warning("[PURGE-ORPHANS-VDB] graph 扫描失败: %s", _e)
+
+    # Persist VDB changes
+    if report:
+        try:
+            if hasattr(lg, "entities_vdb") and lg.entities_vdb is not None:
+                await lg.entities_vdb.index_done_callback()
+        except Exception:
+            pass
+        try:
+            if hasattr(lg, "relationships_vdb") and lg.relationships_vdb is not None:
+                await lg.relationships_vdb.index_done_callback()
+        except Exception:
+            pass
 
     return report
 

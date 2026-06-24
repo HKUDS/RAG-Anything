@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -303,7 +303,7 @@ async def delete_conversation(agent_id: str, thread_id: str, current_user: dict 
 # ── 🔍 智能查询（智能体增强）─────────────────────────────
 
 @router.post("/agents/{agent_id}/query/stream")
-async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user: dict = Depends(get_current_user)):
+async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Request, current_user: dict = Depends(get_current_user)):
     """智能体流式查询：使用智能体配置执行查询"""
     global query_history
     mgr = get_agent_manager()
@@ -380,6 +380,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
             # ═══ Image Processing (user-uploaded query image) ═══
             image_description = None
             similar_images = []
+            _similar_image_urls: list[dict] = []
             if req.image:
                 yield f"data: {json.dumps({'type': 'image_analysis', 'status': 'analyzing'}, ensure_ascii=False)}\n\n"
 
@@ -441,12 +442,30 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                     image_description = _vlm_res if not isinstance(_vlm_res, Exception) else None
                     similar_images = _vis_res if not isinstance(_vis_res, Exception) else []
 
+                    # Build shareable image URLs with the current user's token
+                    _auth_token = request.headers.get("Authorization", "").removeprefix("Bearer ")
+                    _similar_image_urls: list[dict] = []
+                    if similar_images and _auth_token:
+                        from urllib.parse import quote
+                        for _si in similar_images:
+                            _raw_path = _si.get("image_path", "")
+                            if _raw_path:
+                                _url = f"/api/files/image?path={quote(_raw_path, safe='')}&token={_auth_token}"
+                                _similar_image_urls.append({
+                                    "url": _url,
+                                    "name": _si.get("entity_name", ""),
+                                    "score": _si.get("score", 0),
+                                })
+
                     _status_fields = {"status": "done"}
                     if image_description:
                         _status_fields["description_preview"] = image_description[:100]
                     if similar_images:
                         _status_fields["similar_count"] = len(similar_images)
                     yield f"data: {json.dumps({'type': 'image_analysis', **_status_fields}, ensure_ascii=False)}\n\n"
+                    # Emit similar image URLs for frontend rendering
+                    if _similar_image_urls:
+                        yield f"data: {json.dumps({'type': 'image_results', 'images': _similar_image_urls}, ensure_ascii=False)}\n\n"
 
             # ═══ AgenticRAG 推理路径（ReAct / CoT） ═══
             if agent_mode in ("react", "cot"):
@@ -470,11 +489,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                     _img_ctx = ""
                     if image_description:
                         _img_ctx += f"## 用户上传图片的视觉描述\n{image_description}\n\n"
-                    if similar_images:
-                        _img_ctx += "## 知识库中找到的相似图片\n"
-                        for _si in similar_images[:5]:
-                            _img_ctx += f"- {_si['image_path']} (相似度: {_si['score']})\n"
-                        _img_ctx += "\n"
+                    if _similar_image_urls:
+                        _img_ctx += "## 知识库中找到的视觉相似图片\n"
+                        for _si in _similar_image_urls[:5]:
+                            _img_ctx += (
+                                f"![{_si['name']}]({_si['url']})\n"
+                                f"*{_si['name']} (视觉相似度: {_si['score']})*\n\n"
+                            )
                     if _img_ctx:
                         react_query = f"{_img_ctx}## 用户问题\n{req.query}"
                     if conv_history_text:
@@ -518,11 +539,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, current_user
                     _img_cot_ctx = ""
                     if image_description:
                         _img_cot_ctx += f"## 用户上传图片的视觉描述\n{image_description}\n\n"
-                    if similar_images:
-                        _img_cot_ctx += "## 知识库中找到的相似图片\n"
-                        for _si in similar_images[:5]:
-                            _img_cot_ctx += f"- {_si['image_path']} (相似度: {_si['score']})\n"
-                        _img_cot_ctx += "\n"
+                    if _similar_image_urls:
+                        _img_cot_ctx += "## 知识库中找到的视觉相似图片\n"
+                        for _si in _similar_image_urls[:5]:
+                            _img_cot_ctx += (
+                                f"![{_si['name']}]({_si['url']})\n"
+                                f"*{_si['name']} (视觉相似度: {_si['score']})*\n\n"
+                            )
                     # Inject conversation history
                     if conv_history_text:
                         _img_cot_ctx += f"## 对话历史\n{conv_history_text}\n\n"
