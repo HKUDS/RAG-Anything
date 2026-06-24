@@ -493,6 +493,10 @@ def _verify_document_persisted(kb_name: str, filename: str) -> None:
 async def _process_uploaded_file(
     task_id: str, file_path: str, filename: str,
     kb_name: str = "default", chunking_strategy: str = "", user_id: int = 0,
+    enable_image: bool | None = None,
+    enable_table: bool | None = None,
+    enable_equation: bool | None = None,
+    enable_video: bool | None = None,
 ):
     """Background upload processing via isolated subprocess.
 
@@ -533,6 +537,19 @@ async def _process_uploaded_file(
             "--kb", kb_name,
             "--strategy", actual_strategy,
         ]
+        # ── Per-upload multimodal flags ─────────────────
+        if enable_image is not None:
+            cmd.append("--enable-image")
+            cmd.append("true" if enable_image else "false")
+        if enable_table is not None:
+            cmd.append("--enable-table")
+            cmd.append("true" if enable_table else "false")
+        if enable_equation is not None:
+            cmd.append("--enable-equation")
+            cmd.append("true" if enable_equation else "false")
+        if enable_video is not None:
+            cmd.append("--enable-video")
+            cmd.append("true" if enable_video else "false")
 
         await emit_progress(task_id, 10, "处理中...")
 

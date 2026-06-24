@@ -126,7 +126,8 @@ function KBSelector({ kbs, activeKB, onSwitch, onCreate, onDelete, deletingKB })
 }
 
 // ====================== Upload Section ======================
-function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strategies, onUploaded }) {
+function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strategies, onUploaded,
+  multimodal, setMultimodal }) {
   const [dragOver, setDragOver] = useState(false)
   const [files, setFiles] = useState([])
   const [urlInput, setUrlInput] = useState('')
@@ -144,7 +145,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
   const processFile = async (idx) => {
     setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'uploading' } : f))
     try {
-      await api.uploadFile(files[idx].file, chunkingStrategy)
+      await api.uploadFile(files[idx].file, chunkingStrategy, multimodal)
       setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'done' } : f))
       onToast?.(`${files[idx].name} 上传成功 ✨`, 'success')
       onUploaded?.()
@@ -161,7 +162,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
     let ok = 0, fail = 0
     for (const { idx } of pending) {
       try {
-        await api.uploadFile(files[idx].file, chunkingStrategy)
+        await api.uploadFile(files[idx].file, chunkingStrategy, multimodal)
         setFiles(prev => prev.map((x, i) => i === idx ? { ...x, status: 'done' } : x))
         ok++
       } catch (e) {
@@ -181,7 +182,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
   const handlePaste = async () => {
     if (!pasteContent.trim()) return
     try {
-      await api.uploadContent(pasteContent, pasteTitle || '粘贴内容', chunkingStrategy)
+      await api.uploadContent(pasteContent, pasteTitle || '粘贴内容', chunkingStrategy, multimodal)
       onToast?.('内容已入库 📝', 'success')
       setPasteContent(''); setPasteTitle('')
       onUploaded?.()
@@ -192,8 +193,13 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
     if (!urlInput.trim()) return
     setUrlLoading(true)
     try {
-      const strategyParam = chunkingStrategy ? `&chunking_strategy=${chunkingStrategy}` : ''
-      const res = await fetch(`/api/upload/url?url=${encodeURIComponent(urlInput)}${strategyParam}`, { method: 'POST' })
+      const params = new URLSearchParams({ url: urlInput })
+      if (chunkingStrategy) params.set('chunking_strategy', chunkingStrategy)
+      if (multimodal.enable_image !== undefined) params.set('enable_image', multimodal.enable_image)
+      if (multimodal.enable_table !== undefined) params.set('enable_table', multimodal.enable_table)
+      if (multimodal.enable_equation !== undefined) params.set('enable_equation', multimodal.enable_equation)
+      if (multimodal.enable_video !== undefined) params.set('enable_video', multimodal.enable_video)
+      const res = await fetch(`/api/upload/url?${params.toString()}`, { method: 'POST' })
       if (!res.ok) throw new Error((await res.json()).detail || '导入失败')
       onToast?.('URL 导入成功 🌐', 'success')
       setUrlInput('')
@@ -206,7 +212,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
     if (!folderPath.trim()) return
     setFolderLoading(true)
     try {
-      await api.uploadFolder(folderPath, chunkingStrategy)
+      await api.uploadFolder(folderPath, chunkingStrategy, multimodal)
       onToast?.('文件夹处理完成 📂', 'success')
       onUploaded?.()
     } catch (e) { onToast?.(`处理失败: ${e.message}`, 'error') }
@@ -274,6 +280,29 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
               ) : (
                 <span className="text-xs text-warm-500">加载中...</span>
               )}
+            </div>
+
+            {/* Multimodal Toggles */}
+            <div className="flex gap-2 flex-wrap items-center">
+              <span className="text-xs text-warm-500 flex items-center gap-1"><Zap size={12}/> 多模态处理:</span>
+              {[
+                { key: 'enable_image', label: '图片', desc: 'VLM 分析图片' },
+                { key: 'enable_table', label: '表格', desc: '提取表格数据' },
+                { key: 'enable_equation', label: '公式', desc: 'LaTeX 转换' },
+                { key: 'enable_video', label: '视频', desc: '提取帧+音频' },
+              ].map(({ key, label, desc }) => (
+                <button key={key}
+                  onClick={() => setMultimodal(prev => ({ ...prev, [key]: !prev[key] }))}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border transition-all ${
+                    multimodal[key]
+                      ? 'border-coral-300 bg-coral-50 text-coral-600'
+                      : 'border-warm-200 text-warm-400 hover:border-warm-300'
+                  }`}
+                  title={desc}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
 
             {/* URL / Folder / Paste */}
@@ -363,9 +392,14 @@ export default function KnowledgePage() {
   const [toast, setToast] = useState(null)
   const [chunkingStrategy, setChunkingStrategy] = useState('')
   const [strategies, setStrategies] = useState({})
+  const [multimodal, setMultimodal] = useState({
+    enable_image: true, enable_table: true, enable_equation: true, enable_video: false
+  })
   const svgRef = useRef()
   const graphContainerRef = useRef()
   const zoomRef = useRef(null)
+  const prevGraphFingerprint = useRef('')
+  const prevGraphSearch = useRef('')
 
   const showToast = (msg, type = 'info') => {
     setToast({ msg, type })
@@ -469,8 +503,28 @@ export default function KnowledgePage() {
   // D3 Graph
   const drawGraph = useCallback(() => {
     if (!svgRef.current || !graph.nodes.length) return
+
+    // Skip redraw if graph data hasn't changed (prevents 8s polling from resetting zoom/simulation)
+    const fingerprint = JSON.stringify({
+      ns: graph.nodes.map(n => n.id).sort().join(','),
+      es: graph.edges.map(e => `${e.source}|${e.target}|${e.label || ''}`).sort().join(';'),
+      q: graphSearch.trim(),
+      sn: selectedNode?.id || '',
+    })
+    if (fingerprint === prevGraphFingerprint.current && graphSearch.trim() === prevGraphSearch.current) {
+      return
+    }
+    prevGraphFingerprint.current = fingerprint
+    prevGraphSearch.current = graphSearch.trim()
+
     try {
       const svg = d3.select(svgRef.current)
+
+      // Save current zoom transform before clearing SVG
+      const savedTransform = zoomRef.current
+        ? d3.zoomTransform(svg.node())
+        : d3.zoomIdentity
+
       svg.selectAll('*').remove()
 
       let displayNodes = [...graph.nodes]
@@ -500,6 +554,8 @@ export default function KnowledgePage() {
       const g = svgEl.append('g')
       const zoom = d3.zoom().scaleExtent([0.3, 4]).on('zoom', (e) => g.attr('transform', e.transform))
       svgEl.call(zoom)
+      // Restore saved zoom/pan position so graph doesn't jump on data update
+      svgEl.call(zoom.transform, savedTransform)
       zoomRef.current = zoom
 
       const colorScale = d3.scaleOrdinal(NODE_COLORS)
@@ -641,6 +697,8 @@ export default function KnowledgePage() {
           setChunkingStrategy={setChunkingStrategy}
           strategies={strategies}
           onUploaded={loadKBData}
+          multimodal={multimodal}
+          setMultimodal={setMultimodal}
         />
       </div>
 

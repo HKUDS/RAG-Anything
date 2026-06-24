@@ -80,7 +80,7 @@ export default function AgentChatPage() {
         setMode(a.query_mode || 'hybrid')
         setAgentMode(a.agent_mode || 'none')
       }
-    }).catch(() => {})
+    }).catch(e => console.warn('[AgentChat] Failed to load agent:', e.message))
     loadThreads(true)
   }, [agentId])
 
@@ -90,7 +90,7 @@ export default function AgentChatPage() {
       if (r.threads?.length > 0 && autoSelect) {
         loadThread(r.threads[0].id)
       }
-    }).catch(() => {})
+    }).catch(e => console.warn('[AgentChat] Failed to load conversations:', e.message))
   }
 
   const loadThread = (threadId) => {
@@ -111,7 +111,7 @@ export default function AgentChatPage() {
           ...m, id: `${threadId}-${i}`, thinking: [], thinkingDone: true, done: true,
         })))
       }
-    }).catch(() => {})
+    }).catch(e => console.warn('[AgentChat] Failed to load thread messages:', e.message))
   }
 
   const createThread = async () => {
@@ -212,7 +212,9 @@ export default function AgentChatPage() {
         buffer = lines.pop() || ''
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
-          try { handleSSEEvent(msgId, JSON.parse(line.slice(6))) } catch {}
+          try { handleSSEEvent(msgId, JSON.parse(line.slice(6))) } catch (parseErr) {
+            console.warn('[AgentChat] SSE parse error:', parseErr.message, 'line:', line.slice(0, 100))
+          }
         }
       }
     } catch (e) {
@@ -255,6 +257,16 @@ export default function AgentChatPage() {
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
+
+  // Abort streaming on unmount to prevent reader leaks
+  useEffect(() => {
+    return () => {
+      if (abortRef.current) {
+        abortRef.current.abort()
+        abortRef.current = null
+      }
+    }
+  }, [])
 
   if (!agent) {
     return (
@@ -493,9 +505,9 @@ export default function AgentChatPage() {
               <span className="text-xl">{agent.icon || '🤖'}</span>
               <div className="bg-warm-50 rounded-xl px-4 py-3 flex items-center gap-2 border border-warm-200">
                 <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 bg-coral-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <span className="w-1.5 h-1.5 bg-coral-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 bg-coral-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                  <span className="w-1.5 h-1.5 bg-coral-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 bg-coral-400 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-coral-400 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
                 </div>
               </div>
             </div>

@@ -348,14 +348,14 @@ class LightRAGGraphStore:
             for name in entity_names:
                 if name not in seen:
                     seen.add(name)
-                    node_type = data.get("entity_type", "unknown")
-        # 返回 KnowledgNode 兼容列表用于计数
+        # 使用实体名称作为 ID（而非数字索引），确保与 list_edges 中的
+        # 实体名称端点匹配，使 D3 forceLink 能解析边连接。
         return [type('_Node', (), {
-            'id': str(i), 'name': n, 'node_type': 'entity',
+            'id': n, 'name': n, 'node_type': 'entity',
             'description': '', 'competition_track': '',
             'difficulty_level': 1, 'estimated_hours': 0,
             'metadata': {},
-        })() for i, n in enumerate(seen)]
+        })() for n in seen]
 
     def list_edges(self, source_id=None, relation_type=None) -> list:
         """从 LightRAG full_relations 获取关系计数。"""

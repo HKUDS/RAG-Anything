@@ -45,6 +45,7 @@ export default function GCodeEditor({ onParseResult }) {
   const [copied, setCopied] = useState(false)
   const [lang, setLang] = useState('gcode')
   const textareaRef = useRef()
+  const preRef = useRef()
 
   const handleParse = useCallback(async () => {
     if (!code.trim() || loading) return
@@ -102,13 +103,14 @@ export default function GCodeEditor({ onParseResult }) {
               ref={textareaRef}
               value={code}
               onChange={e => setCode(e.target.value)}
+              onScroll={e => { if (preRef.current) preRef.current.scrollTop = e.target.scrollTop }}
               placeholder="粘贴 G 代码或 PLC 指令表…&#10;&#10;G90 G21&#10;G00 X10 Y20 Z5&#10;G01 Z-2 F100&#10;M30"
               className="w-full h-full min-h-[200px] p-3 font-mono text-sm bg-transparent resize-none
                 focus:outline-none text-transparent caret-warm-700 z-10 relative"
               style={{ lineHeight: '1.25rem' }}
             />
             {/* Highlighted overlay */}
-            <pre className="absolute inset-0 p-3 font-mono text-sm pointer-events-none overflow-hidden"
+            <pre ref={preRef} className="absolute inset-0 p-3 font-mono text-sm pointer-events-none overflow-hidden"
               style={{ lineHeight: '1.25rem' }}>
               <code className="text-warm-700">
                 {lines.map((l, i) => (

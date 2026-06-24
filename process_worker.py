@@ -298,11 +298,25 @@ async def _await_pending_background_tasks() -> None:
         print(f"[WORKER] 等待后台任务时出错: {exc}", flush=True)
 
 
-async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""):
+async def process_file(file_path: str, kb_name: str, chunking_strategy: str = "",
+                     enable_image: bool | None = None, enable_table: bool | None = None,
+                     enable_equation: bool | None = None, enable_video: bool | None = None):
     """处理单个文件并写入对应 KB 目录"""
     filename = os.path.basename(file_path)
     target_dir = kb_dir(kb_name)
     strategy = chunking_strategy or CHUNKING_STRATEGY
+
+    # ── Per-upload multimodal overrides ─────────────────
+    # If any multimodal toggle is explicitly set, override the env var
+    # so the RAGAnythingConfig picks it up.
+    if enable_image is not None:
+        os.environ["ENABLE_IMAGE_PROCESSING"] = str(enable_image).lower()
+    if enable_table is not None:
+        os.environ["ENABLE_TABLE_PROCESSING"] = str(enable_table).lower()
+    if enable_equation is not None:
+        os.environ["ENABLE_EQUATION_PROCESSING"] = str(enable_equation).lower()
+    if enable_video is not None:
+        os.environ["ENABLE_VIDEO_PROCESSING"] = str(enable_video).lower()
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     merge_failed = False  # Track merging/extraction failures
 
@@ -527,6 +541,20 @@ if __name__ == "__main__":
     parser.add_argument("--file", required=True)
     parser.add_argument("--kb", required=True)
     parser.add_argument("--strategy", default="")
+    parser.add_argument("--enable-image", dest="enable_image", default=None,
+                        choices=["true", "false"])
+    parser.add_argument("--enable-table", dest="enable_table", default=None,
+                        choices=["true", "false"])
+    parser.add_argument("--enable-equation", dest="enable_equation", default=None,
+                        choices=["true", "false"])
+    parser.add_argument("--enable-video", dest="enable_video", default=None,
+                        choices=["true", "false"])
     args = parser.parse_args()
 
-    asyncio.run(process_file(args.file, args.kb, args.strategy))
+    asyncio.run(process_file(
+        args.file, args.kb, args.strategy,
+        enable_image=args.enable_image == "true" if args.enable_image else None,
+        enable_table=args.enable_table == "true" if args.enable_table else None,
+        enable_equation=args.enable_equation == "true" if args.enable_equation else None,
+        enable_video=args.enable_video == "true" if args.enable_video else None,
+    ))

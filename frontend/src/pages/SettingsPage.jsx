@@ -172,32 +172,6 @@ export default function SettingsPage({ onToast }) {
         </div>
       </div>
 
-      {/* Multimodal Toggles */}
-      <div className="card p-5 space-y-3">
-        <h3 className="text-sm font-medium text-warm-700">多模态处理</h3>
-        {[
-          { key: 'enable_image', label: '🖼️ 图片分析', desc: '使用 VLM 分析文档中的图片' },
-          { key: 'enable_table', label: '📊 表格处理', desc: '提取并理解表格数据' },
-          { key: 'enable_equation', label: '📐 公式解析', desc: '数学公式 LaTeX 转换' },
-          { key: 'enable_video', label: '🎬 视频处理', desc: '提取视频帧并转录音频（需要 ffmpeg）' },
-        ].map(({ key, label, desc }) => (
-          <div key={key} className="flex items-center justify-between py-2">
-            <div>
-              <p className="text-sm text-warm-700">{label}</p>
-              <p className="text-xs text-warm-500">{desc}</p>
-            </div>
-            <button
-              onClick={() => { save({ [key]: !local[key] }); setLocal({ ...local, [key]: !local[key] }) }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${local[key] ? 'bg-coral-500' : 'bg-warm-300'}`}
-              aria-label={label}
-            >
-              <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
-                style={{ left: local[key] ? '1.25rem' : '0.125rem' }} />
-            </button>
-          </div>
-        ))}
-      </div>
-
       {/* Cache */}
       <div className="card p-5">
         <h3 className="flex items-center gap-2 text-sm font-medium text-warm-700 mb-3"><Trash2 size={16}/>缓存管理</h3>

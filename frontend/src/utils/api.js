@@ -79,36 +79,60 @@ export const api = {
   deleteKB: (name) => fetchJson(`/kb/${name}`, { method: 'DELETE' }),
 
   // Upload (FormData - no Content-Type so browser sets multipart boundary)
-  uploadFile: (file, chunking_strategy = '') => {
+  uploadFile: (file, chunking_strategy = '', multimodal = {}) => {
     if (!currentKB) { console.warn('[api] 跳过 upload：currentKB 未初始化'); return Promise.reject(new Error('知识库未就绪')) }
     const fd = new FormData(); fd.append('file', file)
-    const strategyParam = chunking_strategy ? `&chunking_strategy=${chunking_strategy}` : ''
-    return fetch(`${API_BASE}/upload?kb=${currentKB}${strategyParam}`, {
+    const params = new URLSearchParams()
+    if (chunking_strategy) params.set('chunking_strategy', chunking_strategy)
+    if (multimodal.enable_image !== undefined) params.set('enable_image', multimodal.enable_image)
+    if (multimodal.enable_table !== undefined) params.set('enable_table', multimodal.enable_table)
+    if (multimodal.enable_equation !== undefined) params.set('enable_equation', multimodal.enable_equation)
+    if (multimodal.enable_video !== undefined) params.set('enable_video', multimodal.enable_video)
+    const qs = params.toString()
+    return fetch(`${API_BASE}/upload?kb=${currentKB}${qs ? '&' + qs : ''}`, {
       method: 'POST', body: fd, headers: authHeaders()
     }).then(r => {
       if (!r.ok) return r.json().then(e => { throw new Error(e.detail || r.statusText) })
       return r.json()
     })
   },
-  uploadFiles: (files, chunking_strategy = '') => {
+  uploadFiles: (files, chunking_strategy = '', multimodal = {}) => {
     if (!currentKB) { console.warn('[api] 跳过 uploadFiles：currentKB 未初始化'); return Promise.reject(new Error('知识库未就绪')) }
     const fd = new FormData()
     files.forEach(f => fd.append('files', f))
-    const strategyParam = chunking_strategy ? `&chunking_strategy=${chunking_strategy}` : ''
-    return fetch(`${API_BASE}/upload/batch?kb=${currentKB}${strategyParam}`, {
+    const params = new URLSearchParams()
+    if (chunking_strategy) params.set('chunking_strategy', chunking_strategy)
+    if (multimodal.enable_image !== undefined) params.set('enable_image', multimodal.enable_image)
+    if (multimodal.enable_table !== undefined) params.set('enable_table', multimodal.enable_table)
+    if (multimodal.enable_equation !== undefined) params.set('enable_equation', multimodal.enable_equation)
+    if (multimodal.enable_video !== undefined) params.set('enable_video', multimodal.enable_video)
+    const qs = params.toString()
+    return fetch(`${API_BASE}/upload/batch?kb=${currentKB}${qs ? '&' + qs : ''}`, {
       method: 'POST', body: fd, headers: authHeaders()
     }).then(r => {
       if (!r.ok) return r.json().then(e => { throw new Error(e.detail || r.statusText) })
       return r.json()
     })
   },
-  uploadFolder: (path, chunking_strategy = '') => {
-    const strategyParam = chunking_strategy ? `&chunking_strategy=${chunking_strategy}` : ''
-    return request(`/upload/folder${strategyParam ? '?' + strategyParam.slice(1) : ''}`, { method: 'POST', body: JSON.stringify({ folder_path: path }) })
+  uploadFolder: (path, chunking_strategy = '', multimodal = {}) => {
+    const params = new URLSearchParams()
+    if (chunking_strategy) params.set('chunking_strategy', chunking_strategy)
+    if (multimodal.enable_image !== undefined) params.set('enable_image', multimodal.enable_image)
+    if (multimodal.enable_table !== undefined) params.set('enable_table', multimodal.enable_table)
+    if (multimodal.enable_equation !== undefined) params.set('enable_equation', multimodal.enable_equation)
+    if (multimodal.enable_video !== undefined) params.set('enable_video', multimodal.enable_video)
+    const qs = params.toString()
+    return request(`/upload/folder${qs ? '?' + qs : ''}`, { method: 'POST', body: JSON.stringify({ folder_path: path }) })
   },
-  uploadContent: (content, title, chunking_strategy = '') => {
-    const strategyParam = chunking_strategy ? `&chunking_strategy=${chunking_strategy}` : ''
-    return request(`/upload/content${strategyParam ? '?' + strategyParam.slice(1) : ''}`, { method: 'POST', body: JSON.stringify({ content, title }) })
+  uploadContent: (content, title, chunking_strategy = '', multimodal = {}) => {
+    const params = new URLSearchParams()
+    if (chunking_strategy) params.set('chunking_strategy', chunking_strategy)
+    if (multimodal.enable_image !== undefined) params.set('enable_image', multimodal.enable_image)
+    if (multimodal.enable_table !== undefined) params.set('enable_table', multimodal.enable_table)
+    if (multimodal.enable_equation !== undefined) params.set('enable_equation', multimodal.enable_equation)
+    if (multimodal.enable_video !== undefined) params.set('enable_video', multimodal.enable_video)
+    const qs = params.toString()
+    return request(`/upload/content${qs ? '?' + qs : ''}`, { method: 'POST', body: JSON.stringify({ content, title }) })
   },
 
   // Knowledge

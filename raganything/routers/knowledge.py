@@ -67,6 +67,8 @@ class BatchDeleteRequest(BaseModel):
 @limiter.limit("30/minute")
 async def upload_file(request: Request, file: UploadFile = File(...), background_tasks: BackgroundTasks = None,
                        kb: str = Depends(verify_kb_access), chunking_strategy: str = "",
+                       enable_image: str = "", enable_table: str = "",
+                       enable_equation: str = "", enable_video: str = "",
                        current_user: dict = Depends(get_current_user)):
     """Upload a single file — immediate return, background processing"""
     task_id = str(uuid.uuid4())[:8]
@@ -109,6 +111,10 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
         "kb_name": kb,
         "chunking_strategy": chunking_strategy,
         "user_id": current_user["id"],
+        "enable_image": enable_image.lower() == "true" if enable_image else None,
+        "enable_table": enable_table.lower() == "true" if enable_table else None,
+        "enable_equation": enable_equation.lower() == "true" if enable_equation else None,
+        "enable_video": enable_video.lower() == "true" if enable_video else None,
     }
     queue, qsize = await _ensure_queue_draining(kb)
     queue.put_nowait(task_info)
@@ -123,6 +129,8 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
 @limiter.limit("20/minute")
 async def upload_files(request: Request, files: list[UploadFile] = File(...), background_tasks: BackgroundTasks = None,
                        kb: str = Depends(verify_kb_access), chunking_strategy: str = "",
+                       enable_image: str = "", enable_table: str = "",
+                       enable_equation: str = "", enable_video: str = "",
                        current_user: dict = Depends(get_current_user)):
     """批量上传文件 - 接收多个文件，逐个后台处理"""
     if not files:
@@ -161,6 +169,10 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
             "kb_name": kb,
             "chunking_strategy": chunking_strategy,
             "user_id": current_user["id"],
+            "enable_image": enable_image.lower() == "true" if enable_image else None,
+            "enable_table": enable_table.lower() == "true" if enable_table else None,
+            "enable_equation": enable_equation.lower() == "true" if enable_equation else None,
+            "enable_video": enable_video.lower() == "true" if enable_video else None,
         }
         queue, pre_qsize = await _ensure_queue_draining(kb)
         queue.put_nowait(task_info)
@@ -183,68 +195,129 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
 
 @router.post("/upload/folder")
 async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(verify_kb_access),
-                         chunking_strategy: str = "", current_user: dict = Depends(get_current_user)):
+                         chunking_strategy: str = "", current_user: dict = Depends(get_current_user),
+                         enable_image: str = "", enable_table: str = "",
+                         enable_equation: str = "", enable_video: str = ""):
     """批量处理文件夹"""
     if not os.path.isdir(folder_path):
         raise HTTPException(400, "文件夹不存在")
-    task_id = str(uuid.uuid4())[:8]
-    instance = await get_kb(kb)
-    processing_tasks[task_id] = {
-        "id": task_id, "file": folder_path, "status": "processing",
-        "started_at": datetime.now().isoformat(), "kb": kb, "user_id": current_user["id"],
-    }
-    # 临时切换分块策略
-    original_func = None
+
+    import os as _os
+    _prev_env = {}
+    for key, val in [
+        ("ENABLE_IMAGE_PROCESSING", enable_image),
+        ("ENABLE_TABLE_PROCESSING", enable_table),
+        ("ENABLE_EQUATION_PROCESSING", enable_equation),
+        ("ENABLE_VIDEO_PROCESSING", enable_video),
+    ]:
+        if val:
+            _prev_env[key] = _os.environ.get(key)
+            _os.environ[key] = val.lower()
+
     try:
-        if chunking_strategy and instance.lightrag:
-            new_func = build_chunking_func(chunking_strategy, instance.lightrag)
-            if new_func is not None:
-                original_func = instance.lightrag.chunking_func
-                instance.lightrag.chunking_func = new_func
-        await instance.process_folder_complete(folder_path, output_dir="./output", recursive=True)
-        processing_tasks[task_id]["status"] = "completed"
-        processing_tasks[task_id]["chunking_strategy"] = chunking_strategy or CHUNKING_STRATEGY
-    except Exception as e:
-        processing_tasks[task_id]["status"] = "failed"
-        processing_tasks[task_id]["error"] = str(e)
-        raise HTTPException(500, str(e))
+        task_id = str(uuid.uuid4())[:8]
+        instance = await get_kb(kb)
+        processing_tasks[task_id] = {
+            "id": task_id, "file": folder_path, "status": "processing",
+            "started_at": datetime.now().isoformat(), "kb": kb, "user_id": current_user["id"],
+        }
+        # 临时切换分块策略
+        original_func = None
+        try:
+            if chunking_strategy and instance.lightrag:
+                new_func = build_chunking_func(chunking_strategy, instance.lightrag)
+                if new_func is not None:
+                    original_func = instance.lightrag.chunking_func
+                    instance.lightrag.chunking_func = new_func
+            await instance.process_folder_complete(folder_path, output_dir="./output", recursive=True)
+            processing_tasks[task_id]["status"] = "completed"
+            processing_tasks[task_id]["chunking_strategy"] = chunking_strategy or CHUNKING_STRATEGY
+        except Exception as e:
+            processing_tasks[task_id]["status"] = "failed"
+            processing_tasks[task_id]["error"] = str(e)
+            raise HTTPException(500, str(e))
+        finally:
+            if original_func and instance.lightrag:
+                instance.lightrag.chunking_func = original_func
+        return {"task_id": task_id, "folder": folder_path, "status": "completed"}
     finally:
-        if original_func and instance.lightrag:
-            instance.lightrag.chunking_func = original_func
-    return {"task_id": task_id, "folder": folder_path, "status": "completed"}
+        for key, val in _prev_env.items():
+            if val is None:
+                _os.environ.pop(key, None)
+            else:
+                _os.environ[key] = val
 
 
 @router.post("/upload/content")
 async def upload_content(req: PasteContentRequest, kb: str = Depends(verify_kb_access),
-                          chunking_strategy: str = ""):
+                          chunking_strategy: str = "",
+                          enable_image: str = "", enable_table: str = "",
+                          enable_equation: str = "", enable_video: str = ""):
     """直接粘贴内容入库"""
-    instance = await get_kb(kb)
-    content_list = [{"type": "text", "text": req.content, "page_idx": 0}]
-    original_func = None
+    import os as _os
+
+    # ── Per-upload multimodal overrides ─────────────
+    _prev_env = {}
+    for key, val in [
+        ("ENABLE_IMAGE_PROCESSING", enable_image),
+        ("ENABLE_TABLE_PROCESSING", enable_table),
+        ("ENABLE_EQUATION_PROCESSING", enable_equation),
+        ("ENABLE_VIDEO_PROCESSING", enable_video),
+    ]:
+        if val:
+            _prev_env[key] = _os.environ.get(key)
+            _os.environ[key] = val.lower()
+
     try:
-        if chunking_strategy and instance.lightrag:
-            new_func = build_chunking_func(chunking_strategy, instance.lightrag)
-            if new_func is not None:
-                original_func = instance.lightrag.chunking_func
-                instance.lightrag.chunking_func = new_func
-        await instance.insert_content_list(content_list, file_path=req.title or "pasted_content")
-        return {"status": "completed", "title": req.title or "pasted_content",
-                "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY}
-    except Exception as e:
-        raise HTTPException(500, str(e))
+        instance = await get_kb(kb)
+        content_list = [{"type": "text", "text": req.content, "page_idx": 0}]
+        original_func = None
+        try:
+            if chunking_strategy and instance.lightrag:
+                new_func = build_chunking_func(chunking_strategy, instance.lightrag)
+                if new_func is not None:
+                    original_func = instance.lightrag.chunking_func
+                    instance.lightrag.chunking_func = new_func
+            await instance.insert_content_list(content_list, file_path=req.title or "pasted_content")
+            return {"status": "completed", "title": req.title or "pasted_content",
+                    "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY}
+        except Exception as e:
+            raise HTTPException(500, str(e))
+        finally:
+            if original_func and instance.lightrag:
+                instance.lightrag.chunking_func = original_func
     finally:
-        if original_func and instance.lightrag:
-            instance.lightrag.chunking_func = original_func
+        # Restore env vars
+        for key, val in _prev_env.items():
+            if val is None:
+                _os.environ.pop(key, None)
+            else:
+                _os.environ[key] = val
 
 
 @router.post("/upload/url")
-async def upload_from_url(url: str = QueryParam(...), current_user: dict = Depends(get_current_user)):
+async def upload_from_url(url: str = QueryParam(...), current_user: dict = Depends(get_current_user),
+                         enable_image: str = "", enable_table: str = "",
+                         enable_equation: str = "", enable_video: str = ""):
     """从 URL 下载文档并入库"""
     if not url.startswith("http"):
         raise HTTPException(400, "无效 URL")
-    task_id = str(uuid.uuid4())[:8]
-    await add_event("url_download_start", url=url, task_id=task_id, user_id=current_user.get("id", 0))
+
+    import os as _os
+    _prev_env = {}
+    for key, val in [
+        ("ENABLE_IMAGE_PROCESSING", enable_image),
+        ("ENABLE_TABLE_PROCESSING", enable_table),
+        ("ENABLE_EQUATION_PROCESSING", enable_equation),
+        ("ENABLE_VIDEO_PROCESSING", enable_video),
+    ]:
+        if val:
+            _prev_env[key] = _os.environ.get(key)
+            _os.environ[key] = val.lower()
+
     try:
+        task_id = str(uuid.uuid4())[:8]
+        await add_event("url_download_start", url=url, task_id=task_id, user_id=current_user.get("id", 0))
         async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
             resp = await client.get(url)
             if resp.status_code != 200:
@@ -295,6 +368,13 @@ async def upload_from_url(url: str = QueryParam(...), current_user: dict = Depen
     except Exception as e:
         await add_event("url_error", url=url, error=str(e), user_id=current_user.get("id", 0))
         raise HTTPException(500, str(e))
+    finally:
+        # Restore env vars
+        for key, val in _prev_env.items():
+            if val is None:
+                _os.environ.pop(key, None)
+            else:
+                _os.environ[key] = val
 
 
 # ── Knowledge / Document handlers ──────────────────────

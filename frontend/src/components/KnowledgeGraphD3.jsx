@@ -32,8 +32,11 @@ export default function KnowledgeGraphD3({
   const initialTransform = useRef(null)
   const simRef = useRef(null)
   const renderRef = useRef(0) // track renders for cleanup
+  const selectedNodeIdRef = useRef(null) // always-current ref to avoid stale closure
 
   const [selectedNodeId, setSelectedNodeId] = useState(null)
+  // Keep ref in sync — used by D3 effect to avoid stale closure
+  selectedNodeIdRef.current = selectedNodeId
   const [tooltip, setTooltip] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -64,15 +67,16 @@ export default function KnowledgeGraphD3({
 
   const filteredNodeIds = useMemo(() => new Set(filteredNodes.map(n => n.id)), [filteredNodes])
 
-  // Filter edges to only include those where both ends are in filtered nodes
+  // Filter edges to only include those where both ends are in filtered nodes.
+  // ALWAYS apply this filter — not just when search/filter is active — to prevent
+  // D3 "node not found" errors when edges reference nodes outside the loaded set.
   const filteredEdges = useMemo(() => {
-    if (!searchTerm.trim() && !typeFilter) return edges
     return edges.filter(e => {
       const sid = typeof e.source === 'object' ? e.source.id : e.source
       const tid = typeof e.target === 'object' ? e.target.id : e.target
       return filteredNodeIds.has(sid) && filteredNodeIds.has(tid)
     })
-  }, [edges, filteredNodeIds, searchTerm, typeFilter])
+  }, [edges, filteredNodeIds])
 
   // ---- Node types present in data ----
   const presentNodeTypes = useMemo(() => {
@@ -113,15 +117,23 @@ export default function KnowledgeGraphD3({
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
-    const ro = new ResizeObserver(() => {
-      const svg = d3.select(svgRef.current)
-      if (svg.empty()) return
-      const w = container.clientWidth
-      const h = Math.max(350, container.clientHeight || 450)
-      svg.attr('width', w).attr('height', h)
-    })
-    ro.observe(container)
-    return () => ro.disconnect()
+    // Guard: ResizeObserver may not exist in older browsers / embedded WebViews
+    if (typeof ResizeObserver === 'undefined') return
+    let ro
+    try {
+      ro = new ResizeObserver(() => {
+        const svg = d3.select(svgRef.current)
+        if (svg.empty()) return
+        const w = container.clientWidth
+        const h = Math.max(350, container.clientHeight || 450)
+        svg.attr('width', w).attr('height', h)
+      })
+      ro.observe(container)
+    } catch (e) {
+      // ResizeObserver constructor or observe() may throw in restricted environments
+      return
+    }
+    return () => { if (ro) ro.disconnect() }
   }, [])
 
   // ---- Clear selection on Escape ----
@@ -253,15 +265,16 @@ export default function KnowledgeGraphD3({
       .attr('x', 12).attr('y', 4).attr('font-size', 10)
       .attr('fill', '#5f6570').attr('pointer-events', 'none')
 
-    // ---- Selection highlight ----
+    // ---- Selection highlight (uses ref to avoid stale closure) ----
     const updateSelectionHighlight = () => {
+      const sid = selectedNodeIdRef.current
       node.selectAll('circle')
-        .attr('stroke', d => d.id === selectedNodeId ? '#f59e0b' : '#fff')
-        .attr('stroke-width', d => d.id === selectedNodeId ? 3 : 2)
-        .attr('filter', d => d.id === selectedNodeId ? `url(#${SELECTED_GLOW_ID})` : null)
+        .attr('stroke', d => d.id === sid ? '#f59e0b' : '#fff')
+        .attr('stroke-width', d => d.id === sid ? 3 : 2)
+        .attr('filter', d => d.id === sid ? `url(#${SELECTED_GLOW_ID})` : null)
       node.selectAll('text')
-        .attr('font-weight', d => d.id === selectedNodeId ? '700' : '400')
-        .attr('fill', d => d.id === selectedNodeId ? '#1e293b' : '#5f6570')
+        .attr('font-weight', d => d.id === sid ? '700' : '400')
+        .attr('fill', d => d.id === sid ? '#1e293b' : '#5f6570')
     }
     // Apply initial selection
     updateSelectionHighlight()
@@ -300,7 +313,7 @@ export default function KnowledgeGraphD3({
     // ---- Click handler ----
     node.on('click', (e, d) => {
       e.stopPropagation()
-      setSelectedNodeId(d.id === selectedNodeId ? null : d.id)
+      setSelectedNodeId(d.id === selectedNodeIdRef.current ? null : d.id)
       onNodeClick?.(d)
     })
 
@@ -345,7 +358,7 @@ export default function KnowledgeGraphD3({
 
     // ---- End ----
     sim.on('end', () => {
-      if (!initialTransform.current) {
+      if (!initialTransform.current && simNodes.length > 0) {
         const xs = simNodes.map(n => n.x), ys = simNodes.map(n => n.y)
         const xMin = Math.min(...xs), xMax = Math.max(...xs)
         const yMin = Math.min(...ys), yMax = Math.max(...ys)
@@ -359,8 +372,8 @@ export default function KnowledgeGraphD3({
       drawEdgeLabels()
     })
 
-    // ---- Sync selected node state to D3 when changed externally ----
-    // (handled via updateSelectionHighlight in click handler)
+    // ---- Cleanup on re-render: stop old simulation to prevent CPU leak ----
+    return () => { sim.stop() }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredNodes, filteredEdges, loading, hasData])

@@ -25,7 +25,8 @@ class Dashboard:
 
     def log_query(self, user_id: str, institution_id: str,
                   query: str, query_type: str = "qa",
-                  response_ms: float = 0) -> None:
+                  response_ms: float = 0,
+                  kb_name: str = "default") -> None:
         """记录一次查询。"""
         self._query_log.append({
             "user_id": user_id,
@@ -33,6 +34,7 @@ class Dashboard:
             "query": query,
             "query_type": query_type,
             "response_ms": response_ms,
+            "kb_name": kb_name,
             "timestamp": datetime.now(),
         })
         self._save_query_log()
@@ -76,8 +78,15 @@ class Dashboard:
     def get_snapshot(self,
                      knowledge_graph_api=None,
                      process_library=None,
-                     fault_case_library=None) -> dict:
+                     fault_case_library=None,
+                     kb_name: str = None) -> dict:
         """获取当前数据看板快照。
+
+        Args:
+            knowledge_graph_api: 知识图谱 API 实例
+            process_library: 工艺库实例
+            fault_case_library: 故障案例库实例
+            kb_name: 可选 KB 名称，用于过滤查询日志统计数据
 
         Returns:
             看板数据结构 (供前端渲染):
@@ -93,10 +102,10 @@ class Dashboard:
             "kb_stats": self._get_kb_stats(
                 knowledge_graph_api, process_library, fault_case_library
             ),
-            "usage_stats": self._get_usage_stats(),
-            "top_queries": self._get_top_queries(10),
-            "user_activity": self._get_user_activity(),
-            "query_trend": self._get_query_trend(),
+            "usage_stats": self._get_usage_stats(kb_name=kb_name),
+            "top_queries": self._get_top_queries(10, kb_name=kb_name),
+            "user_activity": self._get_user_activity(kb_name=kb_name),
+            "query_trend": self._get_query_trend(kb_name=kb_name),
             "timestamp": datetime.now().isoformat(),
         }
 
@@ -123,48 +132,57 @@ class Dashboard:
 
         return stats
 
-    def _get_usage_stats(self) -> dict:
+    def _get_usage_stats(self, kb_name: str = None) -> dict:
         """使用统计。"""
         now = datetime.now()
+        logs = self._query_log
+        if kb_name:
+            logs = [q for q in logs if q.get("kb_name", "default") == kb_name]
 
         # 按时间范围分类
-        today = [q for q in self._query_log
+        today = [q for q in logs
                  if q["timestamp"].date() == now.date()]
-        this_week = [q for q in self._query_log
+        this_week = [q for q in logs
                      if q["timestamp"] >= now - timedelta(days=7)]
-        this_month = [q for q in self._query_log
+        this_month = [q for q in logs
                       if q["timestamp"] >= now - timedelta(days=30)]
 
         # 按类型统计
-        type_counts = Counter(q["query_type"] for q in self._query_log)
+        type_counts = Counter(q["query_type"] for q in logs)
 
         return {
-            "total_queries": len(self._query_log),
+            "total_queries": len(logs),
             "today": len(today),
             "this_week": len(this_week),
             "this_month": len(this_month),
             "by_type": dict(type_counts),
             "avg_response_ms": round(
-                sum(q.get("response_ms", 0) for q in self._query_log)
-                / max(len(self._query_log), 1), 1
+                sum(q.get("response_ms", 0) for q in logs)
+                / max(len(logs), 1), 1
             ),
         }
 
-    def _get_top_queries(self, n: int = 10) -> list[dict]:
+    def _get_top_queries(self, n: int = 10, kb_name: str = None) -> list[dict]:
         """热门查询 Top-N。"""
-        query_counter = Counter(q["query"] for q in self._query_log)
+        logs = self._query_log
+        if kb_name:
+            logs = [q for q in logs if q.get("kb_name", "default") == kb_name]
+        query_counter = Counter(q["query"] for q in logs)
         return [
             {"query": q, "count": c}
             for q, c in query_counter.most_common(n)
         ]
 
-    def _get_user_activity(self) -> dict:
+    def _get_user_activity(self, kb_name: str = None) -> dict:
         """用户活跃度。"""
         now = datetime.now()
+        logs = self._query_log
+        if kb_name:
+            logs = [q for q in logs if q.get("kb_name", "default") == kb_name]
         active_users_today = set()
         active_institutions_today = set()
 
-        for q in self._query_log:
+        for q in logs:
             if q["timestamp"].date() == now.date():
                 active_users_today.add(q["user_id"])
                 active_institutions_today.add(q["institution_id"])
@@ -174,13 +192,13 @@ class Dashboard:
 
         week_ago = now - timedelta(days=7)
         wau = len(set(
-            q["user_id"] for q in self._query_log
+            q["user_id"] for q in logs
             if q["timestamp"] >= week_ago
         ))
 
         month_ago = now - timedelta(days=30)
         mau = len(set(
-            q["user_id"] for q in self._query_log
+            q["user_id"] for q in logs
             if q["timestamp"] >= month_ago
         ))
 
@@ -192,15 +210,18 @@ class Dashboard:
             "stickiness": round(dau / mau * 100, 1) if mau else 0,
         }
 
-    def _get_query_trend(self, days: int = 7) -> list[dict]:
+    def _get_query_trend(self, days: int = 7, kb_name: str = None) -> list[dict]:
         """最近 N 天的查询趋势。"""
         now = datetime.now()
+        logs = self._query_log
+        if kb_name:
+            logs = [q for q in logs if q.get("kb_name", "default") == kb_name]
         trend = []
 
         for i in range(days - 1, -1, -1):
             day = (now - timedelta(days=i)).date()
             count = sum(
-                1 for q in self._query_log
+                1 for q in logs
                 if q["timestamp"].date() == day
             )
             trend.append({"date": day.isoformat(), "count": count})
