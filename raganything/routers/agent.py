@@ -415,13 +415,25 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
 
                     async def _run_vision_search():
                         """Find similar images in the KB via vision embedding."""
+                        if not instance.config.vision_search_enabled:
+                            lightrag_logger.info("[IMG-QUERY] VISION_SEARCH_ENABLED=False, skipping vision search")
+                            return []
                         try:
                             vef = getattr(instance, 'vision_embed_func', None)
                             repo = getattr(instance.lightrag, 'image_vision_repo', None) if hasattr(instance, 'lightrag') else None
-                            if vef is None or repo is None or repo.count() == 0:
+                            if vef is None:
+                                lightrag_logger.warning("[IMG-QUERY] vision_embed_func unavailable, skipping vision search")
                                 return []
+                            if repo is None:
+                                lightrag_logger.warning("[IMG-QUERY] image_vision_repo not initialized, skipping vision search")
+                                return []
+                            # Reload VDB from disk so we see data written by worker subprocess
+                            await repo.reload()
+                            vdb_count_before = repo.count()
+                            lightrag_logger.info("[IMG-QUERY] VDB count after reload: %d", vdb_count_before)
                             vec = await vef.embed_image_bytes(image_bytes, req.query[:500], label="query_image")
                             if vec is None:
+                                lightrag_logger.warning("[IMG-QUERY] embed_image_bytes returned None, skipping vision search")
                                 return []
                             results = await repo.query(vec, top_k=5)
                             return [
@@ -630,7 +642,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     # 第三道：bigram 全库扫描
                     try:
                         agent_images, _backfill_text_react = await _bigram_image_scan(
-                            kb_dir(actual_kb), req.query, all_retrieved_text
+                            kb_dir(actual_kb), req.query, all_retrieved_text, instance
                         )
                         if _backfill_text_react:
                             all_retrieved_text += "\n" + _backfill_text_react
@@ -802,7 +814,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 # 第三道：bigram 全库扫描（字符级别兜底）
                 try:
                     agent_images, backfill_text = await _bigram_image_scan(
-                        kb_dir(actual_kb), req.query, ctx
+                        kb_dir(actual_kb), req.query, ctx, instance
                     )
                     if backfill_text:
                         ctx = ctx + "\n\n" + backfill_text

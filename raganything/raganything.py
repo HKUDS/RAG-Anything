@@ -634,6 +634,41 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             else:
                 self.logger.debug("No storages to finalize")
 
+            # ── Explicitly persist non-cache KV stores ──
+            # LightRAG JsonKVStorage.finalize() is a NO-OP unless the namespace
+            # ends with "_cache".  full_entities, full_relations, full_docs,
+            # text_chunks, entity_chunks, and relation_chunks must be explicitly
+            # flushed to disk via index_done_callback() — otherwise data written
+            # by worker subprocesses is lost when the process exits.
+            if self.lightrag is not None:
+                _non_cache_stores = [
+                    ("full_entities", getattr(self.lightrag, "full_entities", None)),
+                    ("full_relations", getattr(self.lightrag, "full_relations", None)),
+                    ("full_docs", getattr(self.lightrag, "full_docs", None)),
+                    ("text_chunks", getattr(self.lightrag, "text_chunks", None)),
+                    ("entity_chunks", getattr(self.lightrag, "entity_chunks", None)),
+                    ("relation_chunks", getattr(self.lightrag, "relation_chunks", None)),
+                ]
+                for _name, _store in _non_cache_stores:
+                    if _store is not None:
+                        try:
+                            await _store.index_done_callback()
+                        except Exception:
+                            self.logger.debug(
+                                "Non-cache store %s index_done_callback skipped", _name
+                            )
+
+                # Persist VDBs to disk
+                for _vdb_name in ("entities_vdb", "relationships_vdb", "chunks_vdb"):
+                    _vdb = getattr(self.lightrag, _vdb_name, None)
+                    if _vdb is not None:
+                        try:
+                            await _vdb.index_done_callback()
+                        except Exception:
+                            self.logger.debug(
+                                "VDB %s index_done_callback skipped", _vdb_name
+                            )
+
         except Exception as e:
             self.logger.error(f"Error during storage finalization: {e}")
             raise

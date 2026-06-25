@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Factory, Cpu, Wrench, BookOpen, TrendingUp, Users, MessageSquare,
@@ -24,8 +24,10 @@ export default function ManufacturingDashboardPage() {
   const [error, setError] = useState(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
   const { mfgKb, setMfgKb, kbList, kbLoading, creating, createMfgKb } = useManufacturingKB()
+  const genRef = useRef(0)  // generation counter: discard stale API responses on KB switch
 
   const loadAll = useCallback(async (showLoading = true) => {
+    const gen = ++genRef.current
     if (showLoading) setLoading(true)
     setError(null)
     try {
@@ -34,14 +36,23 @@ export default function ManufacturingDashboardPage() {
         api.get(`/manufacturing/knowledge-graph/summary?kb=${mfgKb}`).catch(() => null),
         api.get(`/manufacturing/fault-cases/stats?kb=${mfgKb}`).catch(() => null),
       ])
+      if (gen !== genRef.current) return  // stale — newer request in flight
       setDashboard(dashRes?.data || dashRes)
       setKgSummary(kgRes?.data || kgRes)
       setFaultStats(faultRes?.data || faultRes)
     } catch (e) {
+      if (gen !== genRef.current) return
       setError('数据加载失败，请确认后端服务已启动')
     } finally {
-      if (showLoading) setLoading(false)
+      if (gen === genRef.current && showLoading) setLoading(false)
     }
+  }, [mfgKb])
+
+  // Clear stale data on KB switch
+  useEffect(() => {
+    setDashboard(null)
+    setKgSummary(null)
+    setFaultStats(null)
   }, [mfgKb])
 
   // Initial data load (once on mount / when KB changes)

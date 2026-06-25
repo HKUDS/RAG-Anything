@@ -213,6 +213,37 @@ class ImageVectorRepository:
             return 0
         return len(self._vdb)
 
+    async def reload(self) -> None:
+        """Reload the VDB from disk if it has been modified by another process.
+
+        This is necessary because the worker subprocess writes vision embeddings
+        to the shared VDB file, but the server's in-memory NanoVectorDB instance
+        was loaded before those writes.
+        """
+        if self._vdb is None:
+            return
+        async with self._lock:
+            if not os.path.exists(self._db_path):
+                return
+            try:
+                with open(self._db_path, "r", encoding="utf-8") as f:
+                    storage = json.load(f)
+                new_data = storage.get("data", [])
+                current_count = len(self._vdb)
+                if len(new_data) > current_count:
+                    # Re-instantiate VDB to pick up new entries
+                    self._vdb = NanoVectorDB(
+                        embedding_dim=self._dim,
+                        storage_file=self._db_path,
+                        metric=_METRIC,
+                    )
+                    logger.info(
+                        "[vision-repo] Reloaded VDB from disk: %d -> %d entries",
+                        current_count, len(self._vdb),
+                    )
+            except Exception as e:
+                logger.warning("[vision-repo] Reload failed: %s", e)
+
     # ── Persistence ──────────────────────────────────────
 
     async def flush(self) -> None:

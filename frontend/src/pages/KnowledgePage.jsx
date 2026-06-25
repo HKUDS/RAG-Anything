@@ -403,6 +403,7 @@ export default function KnowledgePage() {
   const zoomRef = useRef(null)
   const prevGraphFingerprint = useRef('')
   const prevGraphSearch = useRef('')
+  const genRef = useRef(0)  // generation counter: discard stale API responses on KB switch
   const selectedNodeRef = useRef(null)  // always-current, avoids stale closure in D3 callback
   selectedNodeRef.current = selectedNode  // keep ref synced with state on every render
   const simRef = useRef(null)  // current force simulation (lifecycle managed manually)
@@ -436,12 +437,14 @@ export default function KnowledgePage() {
     setKbsLoaded(true)
   }, [])
 
-  // Load data for selected KB
+  // Load data for selected KB (with stale-request cancellation)
   const loadKBData = useCallback(() => {
-    api.getDocuments().then(r => setDocs(r.documents || [])).catch(() => {})
-    api.getStats().then(setStats).catch(() => {})
-    api.getEntities(200).then(r => setEntities(r.entities || [])).catch(() => {})
+    const gen = ++genRef.current
+    api.getDocuments().then(r => { if (gen === genRef.current) setDocs(r.documents || []) }).catch(() => {})
+    api.getStats().then(r => { if (gen === genRef.current) setStats(r) }).catch(() => {})
+    api.getEntities(200).then(r => { if (gen === genRef.current) setEntities(r.entities || []) }).catch(() => {})
     api.getGraph().then(r => {
+      if (gen !== genRef.current) return
       const degree = {}
       ;(r.edges || []).forEach(e => {
         degree[e.source] = (degree[e.source] || 0) + 1
@@ -470,12 +473,21 @@ export default function KnowledgePage() {
     return () => clearInterval(t)
   }, [activeKB, kbsLoaded, loadKBData])
 
-  // Switch KB
+  // Switch KB — clear stale state immediately to prevent flash of wrong data
   const switchKB = async (name) => {
+    // Immediately clear all data from previous KB
+    setDocs([])
+    setEntities([])
+    setStats({})
+    setGraph({ nodes: [], edges: [] })
+    setSelectedNode(null)
+    setNodeDetails(null)
+    setVisionResults(null)
+    setSelectedIds(new Set())
+
     await api.switchKB(name)
     setCurrentKB(name)
     setActiveKB(name)
-    setSelectedIds(new Set())
     loadKBs()
   }
 
@@ -508,7 +520,14 @@ export default function KnowledgePage() {
 
   // D3 Graph (fingerprint check is done in the calling useEffect, not here)
   const drawGraph = useCallback(() => {
-    if (!svgRef.current || !graph.nodes.length) return
+    if (!svgRef.current) return
+    if (!graph.nodes.length) {
+      // 数据为空时清除旧图谱，防止幽灵节点残留
+      d3.select(svgRef.current).selectAll('*').remove()
+      if (simRef.current) { simRef.current.stop(); simRef.current = null }
+      zoomRef.current = null
+      return
+    }
 
     try {
       // Stop previous simulation before creating a new one
@@ -617,7 +636,15 @@ export default function KnowledgePage() {
   // because React calls the old cleanup before the new effect, which would kill the
   // simulation even when data hasn't changed.
   useEffect(() => {
-    if (!graph.nodes.length) return
+    if (!graph.nodes.length) {
+      // 数据为空时清除旧图谱，防止幽灵节点残留在 SVG 中
+      if (svgRef.current) d3.select(svgRef.current).selectAll('*').remove()
+      if (simRef.current) { simRef.current.stop(); simRef.current = null }
+      zoomRef.current = null
+      prevGraphFingerprint.current = ''
+      prevGraphSearch.current = ''
+      return
+    }
 
     const fingerprint = JSON.stringify({
       ns: graph.nodes.map(n => n.id).sort().join(','),

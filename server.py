@@ -291,5 +291,6 @@ def _acquire_server_lock(port: int) -> None:
 
 
 if __name__ == "__main__":
-    _acquire_server_lock(port=8001)
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    _server_port = int(os.getenv("PORT", "8001"))
+    _acquire_server_lock(port=_server_port)
+    uvicorn.run(app, host="0.0.0.0", port=_server_port)

@@ -111,6 +111,13 @@ class RAGAnythingConfig:
     """Vision embedding vector dimension. 0 means auto-detect on first API call.
     Set explicitly to skip the discovery probe and avoid a startup API cost."""
 
+    vision_search_enabled: bool = field(
+        default=get_env_value("VISION_SEARCH_ENABLED", False, bool)
+    )
+    """Feature gate for vision search API and UI. When False (default),
+    image-to-image similarity search is disabled regardless of
+    ``vision_embedding_model`` configuration."""
+
     video_sample_rate: float = field(
         default=get_env_value("VIDEO_SAMPLE_RATE", 1.0, float)
     )

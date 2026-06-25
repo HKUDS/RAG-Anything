@@ -15,35 +15,13 @@ from functools import partial
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
-from dotenv import load_dotenv
-
-load_dotenv(dotenv_path=".env", override=False)
-
-# ── 安全网：强制从 .env 读取多模态开关 ──────────────────
-# load_dotenv(override=False) 不会覆盖父进程已设的环境变量。
-# 若 admin API 曾设置 ENABLE_IMAGE_PROCESSING=false，该值会通过
-# os.environ 泄漏到子进程，导致图片/表格/公式被静默跳过。
-# 此处直接解析 .env 文件，确保 Worker 始终使用配置文件中的预期值。
-def _env_bool_from_dotenv(key: str, default: bool) -> bool:
-    """直接从 .env 文件读取布尔值，绕过 os.environ 缓存"""
-    try:
-        with open(".env", "r", encoding="utf-8") as _f:
-            for _line in _f:
-                _line = _line.strip()
-                if _line.startswith("#") or "=" not in _line:
-                    continue
-                k, v = _line.split("=", 1)
-                if k.strip() == key:
-                    return v.strip().lower() in ("true", "1", "yes")
-    except (OSError, ValueError):
-        pass
-    return default
-
-# 强制覆盖：Worker 的多模态处理能力必须与 .env 一致
-os.environ["ENABLE_IMAGE_PROCESSING"] = str(_env_bool_from_dotenv("ENABLE_IMAGE_PROCESSING", True)).lower()
-os.environ["ENABLE_TABLE_PROCESSING"] = str(_env_bool_from_dotenv("ENABLE_TABLE_PROCESSING", True)).lower()
-os.environ["ENABLE_EQUATION_PROCESSING"] = str(_env_bool_from_dotenv("ENABLE_EQUATION_PROCESSING", True)).lower()
-os.environ["ENABLE_VIDEO_PROCESSING"] = str(_env_bool_from_dotenv("ENABLE_VIDEO_PROCESSING", False)).lower()
+# ── 配置来源：os.environ ────────────────────────────────
+# Worker 子进程通过 asyncio.create_subprocess_exec() 继承父进程
+# 的完整 os.environ。父进程的 PUT /api/settings 修改 os.environ
+# 后，新启动的 Worker 自动获得最新配置 — 无需读取 .env 文件。
+#
+# 重要：不再调用 load_dotenv() 或从 .env 文件强制覆盖！
+# 这确保 Admin API 的运行时设置变更能真正传播到 Worker。
 
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
@@ -53,6 +31,7 @@ from raganything.chunking import STRATEGY_META
 from raganything.processor import get_pending_background_tasks
 from raganything.utils.process_lock import FileLock, get_file_lock_path
 
+# 所有配置从 os.environ 读取（继承自父进程，反映 Admin API 最新设置）
 API_KEY = os.getenv("LLM_BINDING_API_KEY")
 BASE_URL = os.getenv("LLM_BINDING_HOST")
 LLM_MODEL = os.getenv("LLM_MODEL", "qwen-plus")
@@ -229,11 +208,17 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
         enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
         enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
         enable_video_processing=os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
+        entity_types=os.getenv("ENTITY_TYPES", ""),
+        entity_extraction_min_degree=int(os.getenv("ENTITY_EXTRACTION_MIN_DEGREE", "0")),
     )
+    # Feature gate: only create vision_embed_func if VISION_SEARCH_ENABLED
+    _vision_embed_func = None
+    if os.getenv("VISION_SEARCH_ENABLED", "false").lower() == "true":
+        _vision_embed_func = create_vision_embed_func(working_dir=wd)
     return RAGAnything(config=config, llm_model_func=llm_func,
                        vision_model_func=vision_func,
                        embedding_func=embedding_func,
-                       vision_embed_func=create_vision_embed_func(working_dir=wd),
+                       vision_embed_func=_vision_embed_func,
                        lightrag_kwargs=lightrag_kwargs)
 
 
@@ -375,9 +360,13 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
         except Exception as exc:
             print(f"[WORKER] 读取 doc_status 失败: {exc}，跳过检查", flush=True)
 
-    # L4: Acquire exclusive file lock
+    # L4: Acquire exclusive file lock (based on content hash, not filename —
+    # two uploads of the same file get different random prefixes but identical content)
     import hashlib
-    _fh = hashlib.sha256(os.path.basename(file_path).encode()).hexdigest()[:16]
+    _fh = hashlib.sha256()
+    with open(file_path, "rb") as _rf:
+        _fh.update(_rf.read(65536))
+    _fh = _fh.hexdigest()[:16]
     lock_path = get_file_lock_path(os.getenv("WORKING_DIR", "./rag_storage"), _fh)
     file_lock = FileLock(str(lock_path))
     if not file_lock.acquire():

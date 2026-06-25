@@ -61,6 +61,7 @@ from raganything.services.kb_service import (  # noqa: F401 — re-export
     _is_file_being_processed,
     _register_processing_file,
     _ensure_queue_draining,
+    cleanup_kb_resources,
     API_KEY,
     BASE_URL,
     LLM_MODEL,
@@ -379,74 +380,216 @@ async def _discover_images_via_graph(instance, query: str, kb_name: str,
         return [], ""
 
 
-async def _bigram_image_scan(kb_dir_path, query: str, ctx: str = ""):
-    """Bigram full-scan fallback for image discovery.
+async def _bigram_image_scan(kb_dir_path, query: str, ctx: str = "", instance=None):
+    """Full-scan fallback for image discovery.
 
-    Scans all chunks in the knowledge base's text_chunks JSON store,
-    scoring each chunk by character-bigram overlap with the query.
-    Only returns images from chunks with positive scores.
+    Two-path strategy:
+    1. **BM25 path** (primary): Uses the existing BM25 index (jieba + Okapi IDF)
+       for proper Chinese text relevance scoring. Zero API cost, zero extra latency.
+    2. **Improved bigram path** (fallback): Jaccard-normalized character bigram
+       scoring with chunk-level diversity, for when BM25 index isn't ready.
 
     Args:
         kb_dir_path: Path to the knowledge base directory.
         query: User query text.
         ctx: Current retrieval context (for dedup).
+        instance: Optional RAGAnything instance (enables BM25 path).
 
     Returns:
         (image_paths: list[str], backfill_text: str)
     """
     import json as _json
+    import math
+    import hashlib
+    import random as _random
 
+    q = query.lower().strip()
+
+    # Early exit: queries too short for meaningful matching
+    if len(q) < 2:
+        return [], ""
+
+    # ── Path 1: BM25 scoring (when available) ────────────────
+    if instance is not None:
+        hybrid_engine = getattr(instance, "hybrid_search_engine", None)
+        bm25_mgr = getattr(hybrid_engine, "_bm25", None) if hybrid_engine else None
+        if bm25_mgr is not None and bm25_mgr.is_ready:
+            try:
+                return await _bm25_image_scan(
+                    bm25_mgr, query, ctx
+                )
+            except Exception:
+                pass  # BM25 failed → fall through to bigram path
+
+    # ── Path 2: Improved bigram scan (last resort) ───────────
     _chunk_file = Path(kb_dir_path) / 'kv_store_text_chunks.json'
     if not _chunk_file.exists():
         return [], ""
 
-    _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
-    q = query.lower()
+    # JSON retry: guard against mid-write by worker subprocess
+    _all = None
+    for _attempt in range(2):
+        try:
+            _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
+            break
+        except (_json.JSONDecodeError, UnicodeDecodeError):
+            if _attempt == 0:
+                import asyncio as _asyncio
+                await _asyncio.sleep(0.1)
+            else:
+                lightrag_logger.warning("[IMG-FALLBACK] JSON decode failed after retry")
+                return [], ""
+
+    if _all is None:
+        return [], ""
+
+    # Build query bigram set
     query_grams = set()
     for i in range(len(q) - 1):
         query_grams.add(q[i:i+2])
 
-    scored_images = []  # (path, score)
-    scored_texts = []   # (chunk_id, content, score, doc_name)
+    # Score chunks with Jaccard-like normalization to eliminate length bias.
+    # score = |query_grams ∩ chunk_grams| / sqrt(|chunk|)
+    # The sqrt normalization penalizes long chunks without over-penalizing
+    # moderately long ones.  Pure Jaccard (division by union) over-penalizes
+    # long chunks; raw count favours them.  sqrt is a pragmatic middle ground.
+    # Per-chunk data: (chunk_id, score, paths, doc_name)
     _existing_content_ids = set()
+    _chunk_results = []  # (cid, norm_score, paths, doc_name)
 
     for _cid, _chunk in _all.items():
         content = _chunk.get('content', '')
         if not content:
             continue
         paths = extract_image_paths(content)
+        if not paths:
+            continue
         content_lower = content.lower()
-        score = sum(1 for bg in query_grams if bg in content_lower)
+        raw = sum(1 for bg in query_grams if bg in content_lower)
+        if raw == 0:
+            continue
+        norm_score = raw / math.sqrt(max(len(content_lower), 1))
         _content_key = content[:80]
         if _content_key in ctx:
             _existing_content_ids.add(_cid)
-        if not paths:
+        doc_name = _chunk.get('document_name', '') or _chunk.get('source', '')
+        _chunk_results.append((_cid, norm_score, paths, doc_name))
+
+    if not _chunk_results:
+        # All scores are zero — hash-based pseudo-random (deterministic per
+        # query, varied across queries).  Gives different queries different
+        # images instead of always returning the same first-two-in-file.
+        _all_paths = []
+        for _cid, _chunk in _all.items():
+            _all_paths.extend(extract_image_paths(_chunk.get('content', '')))
+        _all_paths = list(dict.fromkeys(_all_paths))  # dedup, preserve order
+        if not _all_paths:
+            return [], ""
+        seed = int(hashlib.md5(query.encode()).hexdigest()[:8], 16)
+        rng = _random.Random(seed)
+        rng.shuffle(_all_paths)
+        image_paths = _all_paths[:2]
+        lightrag_logger.info(
+            "[IMG-FALLBACK] bigram得分全零，降级为hash-random选择 query_hash=%s candidates=%d",
+            hashlib.md5(query.encode()).hexdigest()[:8], len(_all_paths),
+        )
+        return image_paths, ""
+
+    # ── Diversity: one image per chunk ──
+    # Within a chunk, pick the FIRST image (position bias: images that appear
+    # earlier in the text are more likely to be topically relevant).  Across
+    # chunks, rank by normalized score.
+    _chunk_results.sort(key=lambda x: -x[1])
+    image_paths = []
+    seen_chunks = set()
+    for _cid, _score, _paths, _dname in _chunk_results:
+        if _cid in seen_chunks:
             continue
-        for p in paths:
-            scored_images.append((p, score))
-        if score > 0:
-            doc_name = _chunk.get('document_name', '') or _chunk.get('source', '')
-            scored_texts.append((_cid, content, score, doc_name))
+        seen_chunks.add(_cid)
+        image_paths.append(_paths[0])  # first image in chunk = most relevant
+        if len(image_paths) >= 3:
+            break
 
-    # Dedup: highest score per path
-    best_img = {}
-    for p, s in scored_images:
-        if p not in best_img or s > best_img[p]:
-            best_img[p] = s
-    image_paths = [p for p, _ in sorted(best_img.items(), key=lambda x: -x[1]) if _ > 0][:3]
-    if not image_paths:
-        image_paths = list(best_img.keys())[:2]
-
-    # Build backfill (filter chunks already in ctx)
+    # ── Build backfill ──
+    scored_texts = [
+        (cid, _all[cid].get('content', ''), score, dname)
+        for cid, score, _, dname in _chunk_results
+    ]
     _fresh_texts = [(cid, c, s, dn) for cid, c, s, dn in scored_texts
                     if cid not in _existing_content_ids]
     backfill_text, _bf_count, _bf_chars = _build_backfill_context(_fresh_texts)
 
     if image_paths:
-        _log_msg = f"[IMG-FALLBACK] bigram匹配到 {len(image_paths)} 张相关图片 (共 {len(best_img)} 张)"
-        if backfill_text:
-            _log_msg += f"，+回填 {_bf_count} 文本片段 ({_bf_chars} 字符)"
-        lightrag_logger.info(_log_msg)
+        lightrag_logger.info(
+            "[IMG-FALLBACK] bigram(标准化)匹配到 %d 张图片 (来自 %d 个不同chunk), +回填 %d 文本片段 (%d 字符)",
+            len(image_paths), len(seen_chunks), _bf_count, _bf_chars,
+        )
+
+    return image_paths, backfill_text
+
+
+async def _bm25_image_scan(bm25_mgr, query: str, ctx: str = "") -> tuple:
+    """BM25-based image scan — primary path inside _bigram_image_scan.
+
+    Uses the existing BM25 index (jieba tokenization + Okapi IDF weighting)
+    for proper Chinese keyword relevance.  Zero API cost, O(1) index lookup
+    vs O(N) full-scan for the bigram fallback.
+
+    Args:
+        bm25_mgr: BM25IndexManager instance with ready index.
+        query: User query text.
+        ctx: Current retrieval context (for dedup).
+
+    Returns:
+        (image_paths: list[str], backfill_text: str)
+    """
+    bm25_results = bm25_mgr.search(query, top_k=100)
+
+    # Score images by their chunk's BM25 score, one image per chunk
+    _chunk_results = []  # (chunk_id, score, first_image_path, doc_name)
+    _existing_content_ids = set()
+
+    for result in bm25_results:
+        content = result.content
+        if not content:
+            continue
+        paths = extract_image_paths(content)
+        if not paths:
+            continue
+        _content_key = content[:80]
+        if _content_key in ctx:
+            _existing_content_ids.add(result.chunk_id)
+        doc_name = result.document_name or getattr(result, 'file_path', '') or ''
+        _chunk_results.append((result.chunk_id, result.score, paths[0], doc_name))
+
+    # Dedup by chunk, keep highest BM25 score
+    best_per_chunk = {}
+    for cid, score, path, dname in _chunk_results:
+        if cid not in best_per_chunk or score > best_per_chunk[cid][0]:
+            best_per_chunk[cid] = (score, path, dname)
+
+    # Top-3 images from different chunks
+    ranked = sorted(best_per_chunk.items(), key=lambda x: -x[1][0])
+    image_paths = [path for _, (_, path, _) in ranked[:3]]
+
+    # Build backfill from top-scoring chunks
+    scored_texts = []
+    for cid, (score, path, dname) in ranked[:10]:
+        # Content is in the BM25 result — find it
+        for r in bm25_results:
+            if r.chunk_id == cid and r.content:
+                scored_texts.append((cid, r.content, score, dname))
+                break
+
+    _fresh_texts = [(cid, c, s, dn) for cid, c, s, dn in scored_texts
+                    if cid not in _existing_content_ids]
+    backfill_text, _bf_count, _bf_chars = _build_backfill_context(_fresh_texts)
+
+    if image_paths:
+        lightrag_logger.info(
+            "[IMG-FALLBACK] BM25匹配到 %d 张图片 (来自 %d 个不同chunk), +回填 %d 文本片段 (%d 字符)",
+            len(image_paths), len(ranked[:3]), _bf_count, _bf_chars,
+        )
 
     return image_paths, backfill_text
 

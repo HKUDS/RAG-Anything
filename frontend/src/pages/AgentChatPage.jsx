@@ -231,6 +231,12 @@ export default function AgentChatPage() {
           return m
         }))
         break
+      case 'image_results':
+        // Store vision search image URLs on the message
+        setMessages(prev => prev.map(m =>
+          m.id === msgId ? { ...m, similar_images: event.images || [] } : m
+        ))
+        break
       case 'done':
         setMessages(prev => prev.map(m =>
           m.id === msgId ? {
@@ -644,8 +650,15 @@ export default function AgentChatPage() {
                         <div className="grid grid-cols-2 gap-1.5">
                           {m.similar_images.map((sim, si) => (
                             <div key={si} className="bg-amber-50 rounded-lg p-1.5 border border-amber-100 text-[10px]">
-                              <p className="text-warm-700 font-medium truncate">{sim.entity_name || sim.image_path?.split('/').pop()}</p>
-                              {sim.description && <p className="text-warm-500 text-[9px] truncate">{sim.description}</p>}
+                              {sim.url && (
+                                <img
+                                  src={sim.url}
+                                  alt={sim.name || ''}
+                                  className="w-full h-24 object-cover rounded mb-1"
+                                  loading="lazy"
+                                />
+                              )}
+                              <p className="text-warm-700 font-medium truncate">{sim.name || sim.entity_name || sim.image_path?.split('/').pop()}</p>
                               <p className="text-amber-600 font-mono">相似度: {sim.score}</p>
                             </div>
                           ))}

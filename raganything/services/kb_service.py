@@ -61,10 +61,23 @@ KB_META_FILE = Path("./rag_storage_kb_meta.json")
 
 kb_logger = logging.getLogger("rag_server.kb")
 
+# ── Queue sentinel — tells drain coroutine to exit ──────────
+_QUEUE_SENTINEL = object()
+
+# ── KBs currently being deleted — set BEFORE any async yield ─
+# Used by _process_uploaded_file except block to skip state writes
+# for KBs that are mid-deletion (avoids zombie processing_tasks entries).
+_kbs_being_deleted: set[str] = set()
+
 # ── Upload Dedup Tracking ───────────────────────────────────
 # Maps (kb_name, file_hash) -> task_id for active processing tasks.
 # Entries are removed when the worker completes or fails.
 _processing_files: dict[tuple[str, str], str] = {}
+
+# ── Worker Process Tracking ─────────────────────────────────
+# Maps kb_name -> list of (asyncio.subprocess.Process, task_id) for
+# running worker subprocesses.  Used by KB deletion to kill workers.
+_kb_worker_procs: dict[str, list] = {}
 
 
 def _compute_file_hash(file_path: str) -> str:
@@ -176,8 +189,140 @@ async def get_kb(name: str = None) -> RAGAnything:
     return kb_instances[name]
 
 
+async def cleanup_kb_resources(name: str) -> None:
+    """Unified cleanup of all resources when a KB is deleted.
+
+    Kills running workers, clears queues, removes cached instances,
+    cleans dedup/processing state, deletes storage directories and
+    upload files, and removes metadata.
+
+    Idempotent — safe to call multiple times.
+    """
+    import shutil as _shutil
+    import raganything.routers.shared as _rshared
+
+    kb_logger.info(f"[cleanup] 开始清理 KB 资源: {name}")
+    _kbs_being_deleted.add(name)  # set BEFORE any async yield
+
+    # ── 1. Kill all running worker subprocesses ──────────
+    worker_list = _kb_worker_procs.pop(name, [])
+    for proc, task_id in worker_list:
+        try:
+            if proc.returncode is None:
+                proc.kill()
+                kb_logger.info(f"[cleanup] 已终止 Worker 进程: task={task_id}")
+        except Exception:
+            pass
+
+    # ── 2. Stop drain & clear queue ──────────────────────
+    _drain_start_locks.pop(name, None)
+    queue = _rshared._kb_queues.pop(name, None)
+    if queue is not None:
+        # Put a sentinel so the drain coroutine exits even if it is
+        # currently blocked on queue.get().  Any intervening tasks
+        # will fail (KB dir is gone) and the drain cleans up after each.
+        try:
+            queue.put_nowait(_QUEUE_SENTINEL)
+        except Exception:
+            pass
+    _rshared._kb_draining.pop(name, None)
+
+    # ── 3. Clean dedup tracking entries ──────────────────
+    dedup_removed = 0
+    for (kb_n, fh) in list(_processing_files.keys()):
+        if kb_n == name:
+            del _processing_files[(kb_n, fh)]
+            dedup_removed += 1
+    if dedup_removed:
+        kb_logger.info(f"[cleanup] 已清理 {dedup_removed} 个去重记录: {name}")
+
+    # ── 4. Clean processing_tasks entries ────────────────
+    from raganything.services.state_service import processing_tasks
+    tasks_removed = 0
+    for tid in list(processing_tasks.keys()):
+        if processing_tasks[tid].get("kb", "") == name:
+            del processing_tasks[tid]
+            tasks_removed += 1
+    if tasks_removed:
+        kb_logger.info(f"[cleanup] 已清理 {tasks_removed} 个处理中任务记录: {name}")
+
+    # ── 5. Clean cached KB instance ──────────────────────
+    if name in kb_instances:
+        try:
+            await kb_instances[name].finalize_storages()
+        except Exception as exc:
+            kb_logger.warning(f"[cleanup] finalize_storages 失败 ({name}): {exc}")
+        del kb_instances[name]
+    _kb_cache_time.pop(name, None)
+
+    # ── 6. Collect upload files BEFORE deleting dir ──────
+    _found_files: set = set()
+    _kb_dir = Path(kb_dir(name))
+    doc_status_path = _kb_dir / "kv_store_doc_status.json"
+    if doc_status_path.exists():
+        try:
+            doc_status = json.loads(doc_status_path.read_text("utf-8"))
+            for info in doc_status.values():
+                fp = info.get("file_path", "")
+                if fp:
+                    _found_files.add(fp)
+        except Exception:
+            pass
+    chunks_path = _kb_dir / "kv_store_text_chunks.json"
+    if chunks_path.exists():
+        try:
+            chunks = json.loads(chunks_path.read_text("utf-8"))
+            for chunk_data in chunks.values():
+                try:
+                    cd = json.loads(chunk_data) if isinstance(chunk_data, str) else chunk_data
+                    fp = cd.get("file_path", "")
+                    if fp and fp not in _found_files:
+                        _found_files.add(fp)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+    # ── 7. Delete output & storage directories ───────────
+    output_dir = "./output" if name == "default" else f"./output_{name}"
+    _shutil.rmtree(output_dir, ignore_errors=True)
+    _shutil.rmtree(kb_dir(name), ignore_errors=True)
+    kb_logger.info(f"[cleanup] 已删除存储目录: {kb_dir(name)}")
+
+    # ── 8. Delete upload files ───────────────────────────
+    for fp in _found_files:
+        upload_file = Path("./uploads") / Path(fp).name
+        if upload_file.exists():
+            try:
+                upload_file.unlink()
+            except OSError:
+                pass
+
+    # ── 9. Remove metadata ───────────────────────────────
+    meta = load_kb_meta()
+    if name in meta:
+        del meta[name]
+        save_kb_meta(meta)
+
+    # ── 10. Reset active KB if needed ────────────────────
+    if _rshared.active_kb == name:
+        _rshared.active_kb = "default"
+
+    # ── 11. Invalidate query cache ───────────────────────
+    try:
+        from raganything.query_cache import get_query_cache
+        get_query_cache().invalidate()
+    except Exception:
+        pass
+
+    kb_logger.info(f"[cleanup] KB 资源清理完成: {name}")
+    _kbs_being_deleted.discard(name)
+
+
 async def delete_kb(name: str) -> bool:
     """Delete a KB instance and its storage.
+
+    Delegates to ``cleanup_kb_resources()`` for unified cleanup.
 
     Args:
         name: KB name to delete
@@ -188,21 +333,7 @@ async def delete_kb(name: str) -> bool:
     if name not in kb_instances and name not in load_kb_meta():
         return False
 
-    # Remove from in-memory cache
-    if name in kb_instances:
-        try:
-            await kb_instances[name].finalize_storages()
-        except Exception:
-            pass
-        del kb_instances[name]
-        _kb_cache_time.pop(name, None)
-
-    # Remove metadata
-    meta = load_kb_meta()
-    if name in meta:
-        del meta[name]
-        save_kb_meta(meta)
-
+    await cleanup_kb_resources(name)
     kb_logger.info(f"[KB] 已删除知识库: {name}")
     return True
 
@@ -248,29 +379,39 @@ def create_rag(
         Configured RAGAnything instance
     """
     if parser is None:
-        parser = os.getenv("PARSER", "mineru")
+        parser = os.getenv("PARSER", "docling")
     if chunking_strategy is None:
-        chunking_strategy = CHUNKING_STRATEGY
+        chunking_strategy = os.getenv("CHUNKING_STRATEGY", "recursive")
     wd = working_dir or WORKING_DIR
+
+    # ── 从 os.environ 读取运行时可变配置 ──────────────────
+    # 不依赖模块级全局变量！PUT /api/settings 修改 os.environ 后，
+    # 下次 create_rag() 调用自动获得最新值。
+    _llm_model = os.getenv("LLM_MODEL", "qwen-plus")
+    _vision_model = os.getenv("VISION_MODEL", "qwen-vl-plus")
+    _emb_model = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
+    _emb_dim = int(os.getenv("EMBEDDING_DIM", "1024"))
+    _api_key = os.getenv("LLM_BINDING_API_KEY")
+    _base_url = os.getenv("LLM_BINDING_HOST")
 
     def llm_func(prompt, system_prompt=None, history_messages=[], **kw):
         if "max_tokens" not in kw:
             kw["max_tokens"] = int(os.getenv("MAX_TOKENS", "4096"))
         return openai_complete_if_cache(
-            LLM_MODEL, prompt, system_prompt=system_prompt,
-            history_messages=history_messages, api_key=API_KEY, base_url=BASE_URL, **kw,
+            _llm_model, prompt, system_prompt=system_prompt,
+            history_messages=history_messages, api_key=_api_key, base_url=_base_url, **kw,
         )
 
     def vision_func(prompt, system_prompt=None, history_messages=[],
                     image_data=None, messages=None, **kw):
         if messages is not None:
             return openai_complete_if_cache(
-                VISION_MODEL, "", system_prompt=None, history_messages=[],
-                messages=messages, api_key=API_KEY, base_url=BASE_URL, **kw,
+                _vision_model, "", system_prompt=None, history_messages=[],
+                messages=messages, api_key=_api_key, base_url=_base_url, **kw,
             )
         elif image_data is not None:
             return openai_complete_if_cache(
-                VISION_MODEL, "", system_prompt=None, history_messages=[],
+                _vision_model, "", system_prompt=None, history_messages=[],
                 messages=[
                     {"role": "system", "content": system_prompt} if system_prompt else None,
                     {"role": "user", "content": [
@@ -278,7 +419,7 @@ def create_rag(
                         {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}},
                     ]},
                 ],
-                api_key=API_KEY, base_url=BASE_URL, **kw,
+                api_key=_api_key, base_url=_base_url, **kw,
             )
         else:
             return llm_func(prompt, system_prompt, history_messages, **kw)
@@ -288,16 +429,16 @@ def create_rag(
     # embedding_dim attribute on the partial function so LightRAG allocates
     # vector storage at the correct (API-native) dimension.
     _raw_embed_func = partial(
-        openai_embed.func, model=EMB_MODEL, api_key=API_KEY, base_url=BASE_URL
+        openai_embed.func, model=_emb_model, api_key=_api_key, base_url=_base_url
     )
-    _raw_embed_func.embedding_dim = EMB_DIM
+    _raw_embed_func.embedding_dim = _emb_dim
 
     # Wrap with local persistent cache to avoid redundant API calls.
     # Same entity/relation names across chunks → instant cache hits.
-    _cached_embed_func = make_cached_embed_func(_raw_embed_func, wd, EMB_MODEL)
+    _cached_embed_func = make_cached_embed_func(_raw_embed_func, wd, _emb_model)
 
     embedding_func = EmbeddingFunc(
-        embedding_dim=EMB_DIM, max_token_size=8192,
+        embedding_dim=_emb_dim, max_token_size=8192,
         func=_cached_embed_func,
     )
 
@@ -326,7 +467,7 @@ def create_rag(
         "sentence": sentence_chunking,
         "structure": structure_chunking,
         "semantic": make_semantic_chunking(_get_embedding_func_for_chunk),
-        "agentic": make_agentic_chunking(_get_llm_func_for_chunk, LLM_MODEL),
+        "agentic": make_agentic_chunking(_get_llm_func_for_chunk, _llm_model),
     }
     chosen_chunking_func = chunking_strategy_map.get(chunking_strategy)
 
@@ -351,11 +492,17 @@ def create_rag(
         enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
         enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
         enable_video_processing=os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
+        entity_types=os.getenv("ENTITY_TYPES", ""),
+        entity_extraction_min_degree=int(os.getenv("ENTITY_EXTRACTION_MIN_DEGREE", "0")),
     )
 
     # ── Vision embedding (doubao-embedding-vision) ──────────
-    # Feature-gated: returns None when VISION_EMBEDDING_MODEL is not set.
-    vision_embed_func = create_vision_embed_func(working_dir=wd)
+    # Feature-gated: returns None when VISION_SEARCH_ENABLED is False
+    # or VISION_EMBEDDING_MODEL is not set.
+    if os.getenv("VISION_SEARCH_ENABLED", "false").lower() == "true":
+        vision_embed_func = create_vision_embed_func(working_dir=wd)
+    else:
+        vision_embed_func = None
 
     return RAGAnything(config=config, llm_model_func=llm_func,
                        vision_model_func=vision_func, embedding_func=embedding_func,
@@ -439,16 +586,42 @@ async def _recover_stuck_documents():
                 status_path.write_text(
                     json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
                 )
-                # Clear cached instance so next query reloads from disk
+                # Clear cached instance so next query reloads from disk.
+                # ⚠️ Do NOT call finalize_storages() — the cached instance is
+                # stale and would overwrite any fresher data written by workers.
                 if kb_name in kb_instances:
-                    try:
-                        await kb_instances[kb_name].finalize_storages()
-                    except Exception:
-                        pass
                     del kb_instances[kb_name]
                     _kb_cache_time.pop(kb_name, None)
         except Exception as e:
             kb_logger.warning(f"[Recovery] 扫描 KB '{kb_name}' 异常: {e}")
+
+    # ── Periodic orphan purge (once per recovery scan) ──
+    # Only purge for KBs that have accumulated orphans.  Uses a fresh
+    # instance from get_kb() to avoid stale-data overwrite.
+    for kb_name in list(meta.keys()):
+        try:
+            dp = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+            if not dp.exists():
+                continue
+            doc_data = json.loads(dp.read_text(encoding="utf-8"))
+            valid_ids = set(doc_data.keys())
+            ep = Path(kb_dir(kb_name)) / "kv_store_full_entities.json"
+            if ep.exists():
+                entities_data = json.loads(ep.read_text(encoding="utf-8"))
+                orphan_count = sum(1 for k in entities_data if k not in valid_ids)
+                if orphan_count > 0:
+                    try:
+                        _inst = await get_kb(kb_name)
+                        from raganything.routers.knowledge import _purge_all_orphans
+                        await _purge_all_orphans(_inst, kb_name)
+                        # Clear the instance after purge so next query sees clean data
+                        if kb_name in kb_instances:
+                            del kb_instances[kb_name]
+                            _kb_cache_time.pop(kb_name, None)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
 
 
 async def _stuck_recovery_loop(interval_sec: int = 300):
@@ -536,11 +709,13 @@ async def _process_uploaded_file(
     await add_event("upload_start", file=filename, task_id=task_id, user_id=user_id)
     actual_strategy = chunking_strategy or CHUNKING_STRATEGY
 
-    # Register for dedup tracking
-    file_hash = _compute_file_hash(file_path)
-    _register_processing_file(kb_name, file_hash, task_id)
-
+    # Register for dedup tracking (inside try — file I/O can fail)
+    file_hash = None
     try:
+        # Compute file hash and register for dedup (may fail if file was removed)
+        file_hash = _compute_file_hash(file_path)
+        _register_processing_file(kb_name, file_hash, task_id)
+
         await emit_progress(task_id, 5, f"子进程处理: {filename}")
         kb_logger.info(f"[UPLOAD] 任务={task_id} 文件={filename} KB={kb_name} 策略={actual_strategy}")
 
@@ -573,6 +748,9 @@ async def _process_uploaded_file(
             stderr=asyncio.subprocess.PIPE,
             cwd=str(Path(__file__).parent.parent.parent),
         )
+
+        # Track worker process for KB deletion to kill it if needed
+        _kb_worker_procs.setdefault(kb_name, []).append((proc, task_id))
 
         worker_output_lines: list[str] = []
 
@@ -629,6 +807,12 @@ async def _process_uploaded_file(
         await stdout_task
         await stderr_task
 
+        # Worker completed — remove from tracking list
+        try:
+            _kb_worker_procs.setdefault(kb_name, []).remove((proc, task_id))
+        except ValueError:
+            pass  # already removed by cleanup_kb_resources
+
         # Check worker output for merge/extraction errors
         worker_has_errors = any(
             "ERROR:" in line and ("Merging stage failed" in line or "chunks=0" in line)
@@ -654,12 +838,12 @@ async def _process_uploaded_file(
         # LightRAG internally marked the document as failed.
         _verify_document_persisted(kb_name, filename)
 
-        # Clear cached instance so next query reloads from disk
+        # Clear cached instance so next query reloads from disk.
+        # ⚠️ Do NOT call finalize_storages() on the cached instance — the
+        # worker subprocess already persisted the latest data to disk via
+        # RAGAnything.finalize_storages().  The server's cached instance
+        # holds PRE-WORKER state and would overwrite fresh data.
         if kb_name in kb_instances:
-            try:
-                await kb_instances[kb_name].finalize_storages()
-            except Exception as e:
-                kb_logger.warning(f"[KB] finalize_storages 失败 ({kb_name}): {e}")
             del kb_instances[kb_name]
             _kb_cache_time.pop(kb_name, None)
             kb_logger.info(f"[KB] 清除缓存实例: {kb_name}（子进程写入新数据）")
@@ -672,11 +856,28 @@ async def _process_uploaded_file(
         _unregister_processing_file(kb_name, file_hash)
 
     except Exception as e:
+        # Remove worker from tracking list (may not exist if exception was pre-spawn)
+        try:
+            _kb_worker_procs.get(kb_name, []).remove((proc, task_id))
+        except (NameError, ValueError):
+            pass
+
+        # If the KB is being deleted (cleanup_kb_resources), skip all
+        # state writes to avoid zombie processing_tasks entries and
+        # writes to deleted storage directories.
+        if kb_name in _kbs_being_deleted:
+            kb_logger.warning(
+                f"[UPLOAD] KB '{kb_name}' 已被删除，跳过失败状态写入: "
+                f"file={filename} task={task_id}"
+            )
+            return
+
         processing_tasks[task_id]["status"] = "failed"
         processing_tasks[task_id]["error"] = str(e)
         await add_event("upload_error", file=filename, task_id=task_id, error=str(e), user_id=user_id)
         await _fix_stuck_doc_status(kb_name, filename)
-        _unregister_processing_file(kb_name, file_hash)
+        if file_hash is not None:
+            _unregister_processing_file(kb_name, file_hash)
 
 
 # ── Per-KB Queue Drain ────────────────────────────────────
@@ -705,6 +906,11 @@ async def _drain_kb_queue(kb_name: str) -> None:
                 # Block until a task is available
                 task_info = await queue.get()
             except Exception:
+                break
+
+            # Sentinel — KB was deleted, exit immediately
+            if task_info is _QUEUE_SENTINEL:
+                kb_logger.info(f"[QUEUE] 收到停止信号 (KB 已删除): {kb_name}")
                 break
 
             kb_logger.info(
@@ -742,6 +948,10 @@ async def _drain_kb_queue(kb_name: str) -> None:
         kb_logger.debug(f"[QUEUE] Drain 已退出: {kb_name}")
 
 
+# Per-KB locks to prevent duplicate drain coroutines from racing
+_drain_start_locks: dict[str, asyncio.Lock] = {}
+
+
 async def _ensure_queue_draining(kb_name: str) -> tuple:
     """Start drain if not already running; return queue and position info.
 
@@ -750,11 +960,14 @@ async def _ensure_queue_draining(kb_name: str) -> tuple:
     """
     import raganything.routers.shared as _rshared
 
-    queue = _rshared._kb_queues.setdefault(kb_name, asyncio.Queue())
-    qsize = queue.qsize()
+    lock = _drain_start_locks.setdefault(kb_name, asyncio.Lock())
 
-    if not _rshared._kb_draining.get(kb_name):
-        asyncio.ensure_future(_drain_kb_queue(kb_name))
+    async with lock:
+        queue = _rshared._kb_queues.setdefault(kb_name, asyncio.Queue())
+        qsize = queue.qsize()
+
+        if not _rshared._kb_draining.get(kb_name):
+            asyncio.ensure_future(_drain_kb_queue(kb_name))
 
     return queue, qsize
 

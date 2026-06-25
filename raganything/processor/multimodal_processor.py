@@ -500,6 +500,8 @@ class MultimodalProcessorMixin:
                         content_type=content_type,
                         item_info=item_info,
                         entity_name=None,  # Let LLM auto-generate
+                        doc_id=doc_id,
+                        file_path=file_path,
                     )
 
                     # Update progress (non-blocking)

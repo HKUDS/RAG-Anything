@@ -60,13 +60,15 @@ export default function SettingsPage({ onToast }) {
           <input className="input-field text-sm mt-1" type="text"
             placeholder="如：Part,Process,Material"
             value={local.entity_types || ''}
-            onChange={e => { setLocal({ ...local, entity_types: e.target.value }); save({ entity_types: e.target.value }) }} />
+            onChange={e => setLocal({ ...local, entity_types: e.target.value })}
+            onBlur={e => save({ entity_types: e.target.value })} />
         </div>
         <div>
           <label className="text-xs text-warm-500">最小连通度（0=不过滤, 1=移除孤立实体）</label>
           <input className="input-field text-sm mt-1" type="number" min="0" max="10"
             value={local.entity_extraction_min_degree ?? 0}
-            onChange={e => { const v = parseInt(e.target.value) || 0; setLocal({ ...local, entity_extraction_min_degree: v }); save({ entity_extraction_min_degree: v }) }} />
+            onChange={e => { const v = parseInt(e.target.value) || 0; setLocal({ ...local, entity_extraction_min_degree: v }) }}
+            onBlur={e => save({ entity_extraction_min_degree: parseInt(e.target.value) || 0 })} />
         </div>
       </div>
 
@@ -76,7 +78,11 @@ export default function SettingsPage({ onToast }) {
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs text-warm-500">LLM 模型</label>
-            <input className="input-field text-sm mt-1" value={local.llm_model || ''} readOnly />
+            <input className="input-field text-sm mt-1"
+              value={local.llm_model || ''}
+              onChange={e => setLocal({ ...local, llm_model: e.target.value })}
+              onBlur={e => { if (e.target.value) save({ llm_model: e.target.value }) }}
+              placeholder="如：qwen-plus" />
           </div>
           <div>
             <label className="text-xs text-warm-500">Vision 模型</label>
@@ -102,25 +108,60 @@ export default function SettingsPage({ onToast }) {
         <div>
           <div className="flex justify-between text-sm">
             <span className="text-warm-500">切块大小</span>
-            <span className="font-mono text-coral-500 font-medium">{local.chunk_size || 1200} tokens</span>
+            <span className="font-mono text-coral-500 font-medium">{local.chunk_size || 800} tokens</span>
           </div>
           <input type="range" min="200" max="4000" step="200"
-            value={local.chunk_size || 1200}
-            onChange={e => { const v = e.target.value; setLocal({ ...local, chunk_size: v }) }}
+            value={local.chunk_size || 800}
+            onChange={e => { const v = parseInt(e.target.value); setLocal({ ...local, chunk_size: v }) }}
             onMouseUp={() => save({ chunk_size: parseInt(local.chunk_size) })}
+            onTouchEnd={() => save({ chunk_size: parseInt(local.chunk_size) })}
             className="w-full mt-2 accent-coral-500" />
         </div>
         <div>
           <div className="flex justify-between text-sm">
-            <span className="text-warm-500">LLM 并发数</span>
-            <span className="font-mono text-coral-500 font-medium">{local.llm_max_async || 4}</span>
+            <span className="text-warm-500">最大并发数</span>
+            <span className="font-mono text-coral-500 font-medium">{local.max_async || 4}</span>
           </div>
-          <input type="range" min="1" max="8" step="1"
-            value={local.llm_max_async || 4}
-            onChange={e => { const v = e.target.value; setLocal({ ...local, llm_max_async: v }) }}
-            onMouseUp={() => save({ max_async: parseInt(local.llm_max_async) })}
+          <input type="range" min="1" max="16" step="1"
+            value={local.max_async || 4}
+            onChange={e => { const v = parseInt(e.target.value); setLocal({ ...local, max_async: v }) }}
+            onMouseUp={() => save({ max_async: parseInt(local.max_async) })}
+            onTouchEnd={() => save({ max_async: parseInt(local.max_async) })}
             className="w-full mt-2 accent-coral-500" />
         </div>
+      </div>
+
+      {/* Multimodal Processing Toggles */}
+      <div className="card p-5 space-y-3">
+        <h3 className="flex items-center gap-2 text-sm font-medium text-warm-700"><Sliders size={16}/>多模态处理</h3>
+        <p className="text-xs text-warm-500">控制文档上传时是否处理各类多模态内容。关闭可加快处理速度。</p>
+        {[
+          { key: 'enable_image', label: '图片处理', desc: '提取图片并生成 VLM 文字描述' },
+          { key: 'enable_table', label: '表格处理', desc: '提取表格并转换为结构化数据' },
+          { key: 'enable_equation', label: '公式处理', desc: '提取数学公式并转换为 LaTeX' },
+          { key: 'enable_video', label: '视频处理', desc: '提取视频帧并分析（需 ffmpeg）' },
+        ].map(({ key, label, desc }) => (
+          <div key={key} className="flex items-center justify-between py-1.5">
+            <div>
+              <span className="text-sm text-warm-700">{label}</span>
+              <p className="text-xs text-warm-400">{desc}</p>
+            </div>
+            <button
+              onClick={() => {
+                const newVal = !(local[key] ?? true)
+                setLocal({ ...local, [key]: newVal })
+                save({ [key]: newVal })
+              }}
+              className={`relative w-10 h-5 rounded-full transition-colors ${
+                (local[key] ?? true) ? 'bg-coral-500' : 'bg-warm-300'
+              }`}
+            >
+              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
+                (local[key] ?? true) ? 'translate-x-5' : 'translate-x-0.5'
+              }`} />
+            </button>
+          </div>
+        ))}
       </div>
 
       {/* Chunking Strategy */}

@@ -47,6 +47,17 @@ class SettingsUpdate(BaseModel):
     enable_table: Optional[bool] = None
     enable_equation: Optional[bool] = None
     enable_video: Optional[bool] = None
+    # RRF (Reciprocal Rank Fusion) 检索参数
+    rrf_k: Optional[int] = None
+    bm25_top_k: Optional[int] = None
+    vector_top_k: Optional[int] = None
+    graph_top_k: Optional[int] = None
+    graph_depth: Optional[int] = None
+    bm25_k1: Optional[float] = None
+    bm25_b: Optional[float] = None
+    bm25_tokenizer: Optional[str] = None
+    rrf_channel_timeout: Optional[float] = None
+    enabled_channels: Optional[str] = None
 
 
 class WorkflowRunRequest(BaseModel):
@@ -315,11 +326,10 @@ async def get_settings(current_user: dict = Depends(get_current_user)):
         "vision_model": shared.VISION_MODEL,
         "embedding_model": shared.EMB_MODEL,
         "embedding_dim": shared.EMB_DIM,
-        "chunk_size": os.getenv("CHUNK_SIZE", "1200"),
+        "chunk_size": os.getenv("CHUNK_SIZE", "800"),
         "chunking_strategy": shared.CHUNKING_STRATEGY,
         "chunking_strategies": shared.CHUNKING_STRATEGY_META,
         "max_async": os.getenv("MAX_ASYNC", "4"),
-        "llm_max_async": os.getenv("LLM_MODEL_MAX_ASYNC", "4"),
         "enable_image": os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true",
         "enable_table": os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
         "enable_equation": os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
@@ -353,12 +363,22 @@ async def update_settings(settings: SettingsUpdate,
     if settings.parser is not None:
         os.environ["PARSER"] = settings.parser
         changes["parser"] = settings.parser
+    if settings.llm_model is not None:
+        os.environ["LLM_MODEL"] = settings.llm_model
+        # 同步更新 kb_service 模块级变量（兼容仍引用它的旧代码路径）
+        import raganything.services.kb_service as _kbs
+        _kbs.LLM_MODEL = settings.llm_model
+        shared.LLM_MODEL = settings.llm_model
+        changes["llm_model"] = settings.llm_model
     if settings.chunk_size is not None:
         os.environ["CHUNK_SIZE"] = str(settings.chunk_size)
         changes["chunk_size"] = settings.chunk_size
     if settings.chunking_strategy is not None:
         os.environ["CHUNKING_STRATEGY"] = settings.chunking_strategy
         shared.CHUNKING_STRATEGY = settings.chunking_strategy
+        # 同时更新 kb_service 模块级变量
+        import raganything.services.kb_service as _kbs
+        _kbs.CHUNKING_STRATEGY = settings.chunking_strategy
         changes["chunking_strategy"] = settings.chunking_strategy
         # 分块策略变更需要重建所有知识库实例
         from raganything.services.kb_service import _kb_cache_time
@@ -388,14 +408,49 @@ async def update_settings(settings: SettingsUpdate,
     if settings.entity_extraction_min_degree is not None:
         os.environ["ENTITY_EXTRACTION_MIN_DEGREE"] = str(settings.entity_extraction_min_degree)
         changes["entity_extraction_min_degree"] = settings.entity_extraction_min_degree
+    # RRF (Reciprocal Rank Fusion) 检索参数 — 运行时调参，无需重建 KB
+    if settings.rrf_k is not None:
+        os.environ["RRF_K"] = str(settings.rrf_k)
+        changes["rrf_k"] = settings.rrf_k
+    if settings.bm25_top_k is not None:
+        os.environ["BM25_TOP_K"] = str(settings.bm25_top_k)
+        changes["bm25_top_k"] = settings.bm25_top_k
+    if settings.vector_top_k is not None:
+        os.environ["VECTOR_TOP_K"] = str(settings.vector_top_k)
+        changes["vector_top_k"] = settings.vector_top_k
+    if settings.graph_top_k is not None:
+        os.environ["GRAPH_TOP_K"] = str(settings.graph_top_k)
+        changes["graph_top_k"] = settings.graph_top_k
+    if settings.graph_depth is not None:
+        os.environ["GRAPH_DEPTH"] = str(settings.graph_depth)
+        changes["graph_depth"] = settings.graph_depth
+    if settings.bm25_k1 is not None:
+        os.environ["BM25_K1"] = str(settings.bm25_k1)
+        changes["bm25_k1"] = settings.bm25_k1
+    if settings.bm25_b is not None:
+        os.environ["BM25_B"] = str(settings.bm25_b)
+        changes["bm25_b"] = settings.bm25_b
+    if settings.bm25_tokenizer is not None:
+        os.environ["BM25_TOKENIZER"] = settings.bm25_tokenizer
+        changes["bm25_tokenizer"] = settings.bm25_tokenizer
+    if settings.rrf_channel_timeout is not None:
+        os.environ["RRF_CHANNEL_TIMEOUT"] = str(settings.rrf_channel_timeout)
+        changes["rrf_channel_timeout"] = settings.rrf_channel_timeout
+    if settings.enabled_channels is not None:
+        os.environ["RRF_ENABLED_CHANNELS"] = settings.enabled_channels
+        changes["enabled_channels"] = settings.enabled_channels
     # 部分配置需要重建 RAG 实例才能生效
     need_rebuild = (
         settings.parser is not None
+        or settings.llm_model is not None
         or settings.entity_types is not None
+        or settings.chunk_size is not None
+        or settings.entity_extraction_min_degree is not None
         or settings.enable_image is not None
         or settings.enable_table is not None
         or settings.enable_equation is not None
         or settings.enable_video is not None
+        or settings.max_async is not None
     )
     if need_rebuild:
         # Clear all cached KB instances so they pick up the new config on next access

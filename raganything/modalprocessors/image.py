@@ -105,6 +105,8 @@ class ImageModalProcessor(BaseModalProcessor):
         content_type: str,
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
+        doc_id: str = None,
+        file_path: str = "",
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Generate image description and entity info only, without entity relation extraction.
@@ -224,23 +226,27 @@ class ImageModalProcessor(BaseModalProcessor):
             enhanced_caption, entity_info = self._parse_response(response, entity_name)
 
             # ── Vision embedding (doubao-embedding-vision) ──
-            # Await completion so vision vectors are guaranteed persisted
-            # before the worker subprocess exits.
-            # Failures are caught and logged — vision embedding is an
-            # enhancement, not a requirement for document processing.
+            # Fire-and-forget: vision embedding runs concurrently with the next
+            # image's VLM analysis. Registered as a background task so the
+            # worker subprocess waits for all vision embeddings to complete
+            # before calling finalize_storages() and exiting.
             if self.vision_embed_func is not None:
                 try:
-                    await self._compute_and_store_vision(
-                        image_path=image_path,
-                        entity_name=entity_info.get("entity_name", ""),
-                        entity_type=entity_info.get("entity_type", "image"),
-                        description=enhanced_caption,
+                    from raganything.processor.batch_processor import register_background_task
+                    _vision_task = asyncio.create_task(
+                        self._compute_and_store_vision(
+                            image_path=image_path,
+                            entity_name=entity_info.get("entity_name", ""),
+                            entity_type=entity_info.get("entity_type", "image"),
+                            description=enhanced_caption,
+                            doc_id=doc_id,
+                            file_path=file_path,
+                        )
                     )
+                    register_background_task(_vision_task)
+                    logger.info("[VISION] Scheduled async embedding for %s", entity_info.get('entity_name', ''))
                 except Exception as e:
-                    logger.warning(
-                        "Vision embedding failed for %s (non-blocking): %s",
-                        entity_name, e,
-                    )
+                    logger.warning("[VISION] Failed to schedule embedding for %s: %s", entity_info.get("entity_name",""), e)
 
             return enhanced_caption, entity_info
 
@@ -271,7 +277,8 @@ class ImageModalProcessor(BaseModalProcessor):
         try:
             # Generate description and entity info
             enhanced_caption, entity_info = await self.generate_description_only(
-                modal_content, content_type, item_info, entity_name
+                modal_content, content_type, item_info, entity_name,
+                doc_id=doc_id, file_path=file_path,
             )
 
             # Build complete image content
@@ -350,6 +357,8 @@ class ImageModalProcessor(BaseModalProcessor):
         entity_name: str,
         entity_type: str = "image",
         description: str = "",
+        doc_id: str = "",
+        file_path: str = "",
     ) -> None:
         """Background task: compute vision embedding and store in ``image_vision_repo``.
 
@@ -360,16 +369,19 @@ class ImageModalProcessor(BaseModalProcessor):
         try:
             # Gate: only if vision_embed_func and image_vision_repo are available
             if self.vision_embed_func is None:
+                logger.warning("[VISION] vision_embed_func is None, skipping vision embedding for %s", entity_name)
                 return
             repo = getattr(self.lightrag, 'image_vision_repo', None)
             if repo is None:
-                logger.debug("[vision-embed] Repo not initialized, skipping")
+                logger.warning("[VISION] image_vision_repo is None, skipping vision embedding for %s", entity_name)
                 return
 
+            logger.info("[VISION] Computing embedding for %s", entity_name)
             vec = await self.vision_embed_func.embed_image(
                 image_path, caption_text=description[:500]
             )
             if vec is None:
+                logger.warning("[VISION] embed_image returned None for %s", entity_name)
                 return  # embed_image logged the reason
 
             # Compute content hash for dedup + idempotent upsert
@@ -388,19 +400,15 @@ class ImageModalProcessor(BaseModalProcessor):
                     "image_path": image_path,
                     "description": description,
                     "vision_model": self.vision_embed_func.model,
+                    "doc_id": doc_id,
+                    "file_path": file_path,
                 },
             )
             await repo.flush()
 
-            logger.debug(
-                "[vision-embed] Stored embedding for %s (hash=%s)",
-                entity_name, image_hash,
-            )
+            logger.info("[VISION] SUCCESS: Stored embedding for %s (hash=%s)", entity_name, image_hash)
         except Exception as e:
-            logger.warning(
-                "[vision-embed] Background embedding failed for %s: %s",
-                image_path, e,
-            )
+            logger.warning("[VISION] FAILED for %s: %s", image_path, e)
 
 
 __all__ = ["ImageModalProcessor"]

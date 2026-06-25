@@ -24,15 +24,25 @@ __all__ = ["EmbeddingCache", "make_cached_embed_func"]
 
 logger = logging.getLogger("rag_server.embedding_cache")
 
+# Maximum number of cached embedding entries before eviction kicks in.
+# Each entry is approximately 8 KB (1024-dim float32 → JSON). At 50 000
+# entries the cache file is ~400 MB, which is about the practical limit
+# for single-pass json.load on a machine with 2 GB free RAM.
+_MAX_CACHE_ENTRIES = int(os.getenv("EMBEDDING_CACHE_MAX_ENTRIES", "50000"))
+
 
 class EmbeddingCache:
     """Persistent key-value cache for text embedding vectors.
 
     Keys are MD5 hashes of ``(text, model_name)``.
     Values are ``list[float]`` for JSON serialization.
+
+    Capped at ``EMBEDDING_CACHE_MAX_ENTRIES`` (default 50 000) to prevent
+    unbounded growth and MemoryError on save/load.
     """
 
-    __slots__ = ("_cache_path", "_model", "_enabled", "_data", "_loaded", "_dirty")
+    __slots__ = ("_cache_path", "_model", "_enabled", "_data",
+                 "_loaded", "_dirty", "_max_entries")
 
     def __init__(self, working_dir: str, model: str, enabled: bool = True) -> None:
         self._cache_path = Path(working_dir) / ".embedding_cache.json"
@@ -41,6 +51,7 @@ class EmbeddingCache:
         self._data: dict[str, list[float]] = {}
         self._loaded = False
         self._dirty = False
+        self._max_entries = _MAX_CACHE_ENTRIES
 
     # ── public API ─────────────────────────────────────────────
 
@@ -67,13 +78,29 @@ class EmbeddingCache:
         return self._data.get(key)
 
     def put(self, text: str, embedding: list[float]) -> None:
-        """Store an embedding in the cache and persist immediately."""
+        """Store an embedding in the cache and persist immediately.
+
+        If the cache exceeds ``_max_entries``, the oldest entries are
+        evicted first (Python 3.7+ dicts preserve insertion order).
+        """
         if not self._enabled:
             return
         self._ensure_loaded()
         key = self._key(text)
         self._data[key] = embedding
         self._dirty = True
+
+        # Evict oldest entries if over the cap
+        excess = len(self._data) - self._max_entries
+        if excess > 0:
+            victims = list(self._data.keys())[:excess]
+            for k in victims:
+                del self._data[k]
+            logger.info(
+                "Embedding cache evicted %d oldest entries "
+                "(now %d/%d)", excess, len(self._data), self._max_entries,
+            )
+
         self._save()
 
     def flush(self) -> None:
@@ -106,6 +133,13 @@ class EmbeddingCache:
                 self._data = json.load(fh)
             logger.debug("Embedding cache loaded: %d entries from %s",
                          len(self._data), self._cache_path)
+        except MemoryError:
+            logger.warning(
+                "Embedding cache file too large to load (%s), "
+                "starting fresh.  Consider reducing MAX_CACHE_ENTRIES.",
+                self._cache_path.stat().st_size if self._cache_path.exists() else 0,
+            )
+            self._data = {}
         except (json.JSONDecodeError, OSError) as exc:
             logger.warning(
                 "Embedding cache file corrupt (%s), starting fresh", exc
@@ -113,17 +147,22 @@ class EmbeddingCache:
             self._data = {}
 
     def _save(self) -> None:
-        """Atomically write cache to disk (tmp → rename)."""
+        """Atomically write cache to disk (tmp → rename).
+
+        Uses atomic-write pattern: write to .tmp, then os.replace().
+        No verification load — that would double memory pressure and
+        cause MemoryError on large caches.  If json.dump succeeds the
+        output is valid JSON; the only failure mode is a disk-full or
+        kernel crash mid-write, which would leave the stale-but-valid
+        original file untouched.
+        """
         tmp_path = self._cache_path.with_suffix(".tmp")
         try:
             with open(tmp_path, "w", encoding="utf-8") as fh:
                 json.dump(self._data, fh, ensure_ascii=False, separators=(",", ":"))
-            # Verify the write is readable before replacing
-            with open(tmp_path, "r", encoding="utf-8") as fh:
-                json.load(fh)
             os.replace(tmp_path, self._cache_path)
             self._dirty = False
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, MemoryError, json.JSONDecodeError) as exc:
             logger.error("Failed to save embedding cache: %s", exc)
             # Don't leave a corrupt tmp file behind
             try:

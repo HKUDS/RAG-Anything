@@ -1,5 +1,6 @@
 """Knowledge Router — /api/upload/*, /api/knowledge/*, /api/kb/*, /api/files/image"""
 
+import asyncio
 import json
 import os
 import re
@@ -36,6 +37,7 @@ from .shared import (
     load_kb_meta,
     save_kb_meta,
     kb_instances,
+    cleanup_kb_resources,
 )
 from raganything.dependencies import get_optional_user, get_current_user_from_token
 from raganything.chunking import build_chunking_func, STRATEGY_META as CHUNKING_STRATEGY_META
@@ -514,7 +516,7 @@ async def knowledge_stats(kb: str = Depends(verify_kb_access)):
     if ep.exists():
         _orphan_entities = 0
         for doc_id, v in _safe_load_json(ep).items():
-            if valid_doc_ids and doc_id not in valid_doc_ids:
+            if doc_id not in valid_doc_ids:
                 _orphan_entities += v.get("count", len(v.get("entity_names", [])))
                 continue
             stats["entities"] += v.get("count", len(v.get("entity_names", [])))
@@ -522,13 +524,19 @@ async def knowledge_stats(kb: str = Depends(verify_kb_access)):
             lightrag_logger.info(
                 "[KB-STATS] 过滤孤儿实体: %d (来自 %s)", _orphan_entities, kb,
             )
+            # 自动触发后台清理，防止孤儿数据持续累积
+            try:
+                _instance = await get_kb(kb)
+                asyncio.create_task(_purge_all_orphans(_instance, kb))
+            except Exception:
+                pass
 
     # 关系总数 — 同上，交叉校验 doc_status
     rp = base / "kv_store_full_relations.json"
     if rp.exists():
         _orphan_relations = 0
         for doc_id, v in _safe_load_json(rp).items():
-            if valid_doc_ids and doc_id not in valid_doc_ids:
+            if doc_id not in valid_doc_ids:
                 _orphan_relations += v.get("count", len(v.get("relation_pairs", [])))
                 continue
             stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
@@ -684,7 +692,16 @@ async def list_entities(request: Request, limit: int = 50, kb: str = Depends(ver
         data = json.load(f)
     entities = []
     seen = set()
+    # 交叉校验 doc_status，过滤孤儿条目
+    dp = Path(kb_dir(kb)) / "kv_store_doc_status.json"
+    valid_doc_ids: set = set()
+    if dp.exists():
+        with open(dp, "r", encoding="utf-8") as f:
+            doc_data = json.load(f)
+        valid_doc_ids = set(doc_data.keys())
     for k, v in data.items():
+        if k not in valid_doc_ids:
+            continue
         names = v.get("entity_names", [])
         for name in names:
             if name not in seen and len(entities) < limit:
@@ -695,7 +712,7 @@ async def list_entities(request: Request, limit: int = 50, kb: str = Depends(ver
     if type_filter:
         entities = [e for e in entities if e["type"] == type_filter]
 
-    return {"entities": entities, "total": sum(v.get("count", len(v.get("entity_names", []))) for v in data.values())}
+    return {"entities": entities, "total": sum(v.get("count", len(v.get("entity_names", []))) for k, v in data.items() if k in valid_doc_ids)}
 
 
 @router.get("/knowledge/graph")
@@ -718,10 +735,20 @@ async def graph_data(kb: str = Depends(verify_kb_access)):
             return False
         return True
 
+    # 交叉校验 doc_status，过滤已删除文档的孤儿节点/边
+    dp = Path(kb_dir(kb)) / "kv_store_doc_status.json"
+    valid_doc_ids: set = set()
+    if dp.exists():
+        with open(dp, "r", encoding="utf-8") as f:
+            doc_data = json.load(f)
+        valid_doc_ids = set(doc_data.keys())
+
     # 从 entities 建节点
     if ep.exists():
         with open(ep, "r", encoding="utf-8") as f:
             for k, v in json.load(f).items():
+                if k not in valid_doc_ids:
+                    continue
                 for name in v.get("entity_names", []):
                     if is_valid_node(name) and name not in node_ids:
                         node_ids.add(name)
@@ -731,6 +758,8 @@ async def graph_data(kb: str = Depends(verify_kb_access)):
     if rp.exists():
         with open(rp, "r", encoding="utf-8") as f:
             for k, v in json.load(f).items():
+                if k not in valid_doc_ids:
+                    continue
                 for src, tgt in v.get("relation_pairs", []):
                     if not is_valid_node(src) or not is_valid_node(tgt):
                         continue
@@ -944,14 +973,27 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
 
     # ── 2. full_relations ──
     rp = base / "kv_store_full_relations.json"
+    relations_data: dict = {}
     if rp.exists():
         try:
             relations_data = json.loads(rp.read_text(encoding="utf-8"))
             orphan_keys = [k for k in relations_data if k not in valid_doc_ids]
             if orphan_keys:
+                # 收集孤儿 relation pairs 用于清理 VDB
+                _rel_pairs: list[list[str]] = []
                 for _ok in orphan_keys:
+                    _rd = relations_data.get(_ok, {})
+                    _rel_pairs.extend(_rd.get("relation_pairs", []))
                     try:
                         await _lg.full_relations.delete([_ok])
+                    except Exception:
+                        pass
+                # 清理 relationships_vdb 中的向量
+                if _rel_pairs and hasattr(_lg, "relationships_vdb") and _lg.relationships_vdb is not None:
+                    try:
+                        # Relation VDB keys: "src<SEP>tgt" format
+                        _rel_ids = [f"{src}<SEP>{tgt}" for src, tgt in _rel_pairs]
+                        await _lg.relationships_vdb.delete(_rel_ids)
                     except Exception:
                         pass
                 report["relations"] = len(orphan_keys)
@@ -1027,7 +1069,7 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
     # 定位孤儿。但如果 full_entities 本身因为旧 bug 没写盘，实体向量会残留
     # 在 entities_vdb / relationships_vdb / 图谱中无法被追踪到。
     # 此处直接扫描 VDB 和图谱，清理所有不在 full_entities 白名单中的条目。
-    _vdb_purged = await _purge_orphan_vdb_entries(_lg, entities_data)
+    _vdb_purged = await _purge_orphan_vdb_entries(_lg, entities_data, relations_data)
     if _vdb_purged:
         for k, v in _vdb_purged.items():
             report[k] = report.get(k, 0) + v
@@ -1035,22 +1077,31 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
     return report
 
 
-async def _purge_orphan_vdb_entries(lg, entities_data: dict) -> dict[str, int]:
+async def _purge_orphan_vdb_entries(lg, entities_data: dict, relations_data: dict = None) -> dict[str, int]:
     """Deep-scan entities_vdb, relationships_vdb, and graph for entries
-    whose names are not referenced by any doc in full_entities.
+    whose names are not referenced by any doc in full_entities or full_relations.
 
-    This catches stale vectors left over when ``full_entities`` entries were
-    lost due to old bugs (e.g. ``finalize_storages`` not writing to disk).
+    This catches stale vectors left over when ``full_entities``/``full_relations``
+    entries were lost due to old bugs (e.g. ``finalize_storages`` not writing to disk).
 
     Returns:
         {"entities_vdb": N, "relationships_vdb": N, "graph_nodes": N}
     """
     report: dict[str, int] = {}
+    if relations_data is None:
+        relations_data = {}
 
-    # Build whitelist: all entity/relation names known to full_entities + full_relations
+    # Build whitelist: all entity names known to full_entities
     valid_ent_names: set[str] = set()
     for v in entities_data.values():
         valid_ent_names.update(v.get("entity_names", []))
+
+    # Build whitelist: all relation keys known to full_relations
+    # Relation VDB uses "src<SEP>tgt" format
+    valid_rel_keys: set[str] = set()
+    for v in relations_data.values():
+        for src, tgt in v.get("relation_pairs", []):
+            valid_rel_keys.add(f"{src}<SEP>{tgt}")
 
     # ── entities_vdb deep scan ──
     if hasattr(lg, "entities_vdb") and lg.entities_vdb is not None:
@@ -1082,7 +1133,7 @@ async def _purge_orphan_vdb_entries(lg, entities_data: dict) -> dict[str, int]:
             orphan_rel_names: list[str] = []
             for _row in _data:
                 _name = _row.get("__id__") or _row.get("relation_name") or ""
-                if _name and _name not in valid_ent_names:
+                if _name and _name not in valid_rel_keys:
                     orphan_rel_names.append(_name)
             if orphan_rel_names:
                 await _rvdb.delete(orphan_rel_names)
@@ -1546,6 +1597,10 @@ async def switch_kb(name: str = QueryParam(...), current_user: dict = Depends(ge
 
 @router.delete("/kb/{name}")
 async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
+    """删除知识库 — 清理所有资源（Worker 进程、队列、缓存、文件、元数据）。
+
+    委托给 ``cleanup_kb_resources()`` 统一处理，确保不遗漏任何状态。
+    """
     if name == "default":
         raise HTTPException(400, "不能删除默认知识库")
     meta = load_kb_meta()
@@ -1556,68 +1611,8 @@ async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
     owner_id = kb_info.get("owner_id")
     if owner_id is not None and owner_id != current_user["id"] and not current_user.get("is_admin"):
         raise HTTPException(403, "无权删除该知识库")
-    # 清理实例和文件
-    if name in kb_instances:
-        await kb_instances[name].finalize_storages()
-        del kb_instances[name]
 
-    # 清理该 KB 对应的上传文件
-    # 从 doc_status 和 text_chunks 两个来源收集 file_path（兜底防止 doc_status 中 file_path 为空）
-    _found_files: set = set()
-    _kb_dir = Path(kb_dir(name))
-
-    # 来源 1：doc_status
-    doc_status_path = _kb_dir / "kv_store_doc_status.json"
-    if doc_status_path.exists():
-        try:
-            doc_status = json.loads(doc_status_path.read_text("utf-8"))
-            for info in doc_status.values():
-                fp = info.get("file_path", "")
-                if fp:
-                    _found_files.add(fp)
-        except Exception as e:
-            lightrag_logger.warning(f"[CLEANUP] 读取 doc_status 失败 (KB={name}): {e}")
-
-    # 来源 2：text_chunks（兜底 — 每个 chunk 都记录了 file_path）
-    chunks_path = _kb_dir / "kv_store_text_chunks.json"
-    if chunks_path.exists():
-        try:
-            chunks = json.loads(chunks_path.read_text("utf-8"))
-            for chunk_data in chunks.values():
-                try:
-                    cd = json.loads(chunk_data) if isinstance(chunk_data, str) else chunk_data
-                    fp = cd.get("file_path", "")
-                    if fp and fp not in _found_files:
-                        _found_files.add(fp)
-                except Exception:
-                    pass
-        except Exception as e:
-            lightrag_logger.warning(f"[CLEANUP] 读取 text_chunks 失败 (KB={name}): {e}")
-
-    for fp in _found_files:
-        upload_file = Path("./uploads") / Path(fp).name
-        if upload_file.exists():
-            try:
-                upload_file.unlink()
-                lightrag_logger.info(f"[CLEANUP] 已删除上传文件: {upload_file}")
-            except FileNotFoundError:
-                pass  # 已被并发请求删除
-    # 删除该 KB 的解析输出目录
-    output_dir = "./output" if name == "default" else f"./output_{name}"
-    shutil.rmtree(output_dir, ignore_errors=True)
-    # 清理该 KB 的处理中任务
-    for tid, task in list(processing_tasks.items()):
-        if task.get("kb", "") == name:
-            del processing_tasks[tid]
-
-    shutil.rmtree(kb_dir(name), ignore_errors=True)
-    del meta[name]
-    save_kb_meta(meta)
-    if _shared.active_kb == name:
-        _shared.active_kb = "default"
-    # Invalidate query cache to prevent stale results referencing deleted KB data
-    from raganything.query_cache import get_query_cache
-    get_query_cache().invalidate()
+    await cleanup_kb_resources(name)
     return {"status": "deleted", "name": name}
 
 
@@ -1633,8 +1628,16 @@ async def image_search(
 ):
     """搜索视觉相似图片 — 上传图片，返回知识库中视觉最相似的图片列表。
 
-    需要配置 ``VISION_EMBEDDING_MODEL`` 环境变量。如果未配置，返回 501。
+    需要配置 ``VISION_EMBEDDING_MODEL`` 环境变量且 ``VISION_SEARCH_ENABLED=true``。
+    如果未启用，返回 501。
     """
+    import os as _os
+    if _os.getenv("VISION_SEARCH_ENABLED", "false").lower() != "true":
+        raise HTTPException(
+            501,
+            "视觉搜索功能未启用。请设置环境变量 VISION_SEARCH_ENABLED=true 并配置 VISION_EMBEDDING_MODEL。",
+        )
+
     instance = await get_kb(kb)
     if not instance.lightrag:
         raise HTTPException(500, "知识库未初始化")
@@ -1647,6 +1650,9 @@ async def image_search(
             501,
             "视觉嵌入搜索未启用。请配置 VISION_EMBEDDING_MODEL 环境变量。",
         )
+
+    # Reload VDB from disk to pick up data written by worker subprocesses
+    await repo.reload()
 
     # Save uploaded image to temp file
     import tempfile
