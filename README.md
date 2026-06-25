@@ -270,6 +270,7 @@ pip install raganything
 pip install 'raganything[all]'              # All optional features
 pip install 'raganything[image]'            # Image format conversion (BMP, TIFF, GIF, WebP)
 pip install 'raganything[text]'             # Text file processing (TXT, MD)
+pip install 'raganything[video]'            # Video understanding & embeddings (TwelveLabs)
 pip install 'raganything[image,text]'       # Multiple features
 ```
 
@@ -578,6 +579,41 @@ async def process_multimodal_content():
 if __name__ == "__main__":
     asyncio.run(process_multimodal_content())
 ```
+
+##### Video Modality (TwelveLabs) — optional
+
+RAG-Anything ships an **opt-in** `video` modality powered by [TwelveLabs](https://twelvelabs.io):
+
+- **Pegasus** (`analyze`) generates a rich transcript/description of the video, which flows through the same knowledge-graph + chunk pipeline as every other modality.
+- **Marengo** (`embed`) produces a 512-dim multimodal embedding returned on the video item's `entity_info` (key `tl_video_embedding`) for semantic retrieval; pair it with `embed_text()` to score a text query in the same space.
+
+Enable it with the `video` extra and an API key (free tier at https://twelvelabs.io):
+
+```bash
+pip install 'raganything[video]'
+export ENABLE_VIDEO_PROCESSING=true
+export TWELVELABS_API_KEY=your-twelvelabs-api-key
+```
+
+When enabled, video items are routed automatically during document processing. You can also use the processor directly:
+
+```python
+from raganything import TwelveLabsModalProcessor
+
+video_processor = TwelveLabsModalProcessor(lightrag=rag)  # reads TWELVELABS_API_KEY
+
+description, entity_info = await video_processor.process_multimodal_content(
+    modal_content={
+        "type": "video",
+        "video_url": "https://example.com/clip.mp4",  # or video_path / video_id
+        "video_caption": ["Product demo recording"],
+    },
+    content_type="video",
+    file_path="product_demo.mp4",
+)
+```
+
+This modality is disabled by default; existing behaviour is unchanged when `ENABLE_VIDEO_PROCESSING` is unset.
 
 #### 3. Batch Processing
 
