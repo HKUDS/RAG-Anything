@@ -133,20 +133,16 @@ class EmbedProcessorMixin:
                 content_type, original_item, description
             )
 
-            # Truncate before computing chunk_id, MUST match
-            # _convert_to_lightrag_chunks_type_aware (line ~1350).
-            # Otherwise entity source_id points to a hash of untruncated content
-            # while text_chunks_db stores the chunk under the hash of truncated
-            # content, causing every chunk lookup to return None.
-            _MAX_CHUNK_CHARS = 8000
-            if len(formatted_chunk_content) > _MAX_CHUNK_CHARS:
+            # Generate chunk_id via unified helper (includes truncation).
+            # Must match _convert_to_lightrag_chunks_type_aware and all other
+            # chunk_id computation sites.  Never call compute_mdhash_id directly.
+            chunk_id = self._compute_chunk_id(formatted_chunk_content)
+            # Also truncate for the entity's own content consistency
+            if len(formatted_chunk_content) > 8000:
                 formatted_chunk_content = (
-                    formatted_chunk_content[:_MAX_CHUNK_CHARS]
+                    formatted_chunk_content[:8000]
                     + "\n\n[内容已截断，超出嵌入模型长度限制]"
                 )
-
-            # Generate chunk_id using the formatted content (same as in _convert_to_lightrag_chunks)
-            chunk_id = compute_mdhash_id(formatted_chunk_content, prefix="chunk-")
 
             # Generate entity_id using LightRAG's standard format
             entity_id = compute_mdhash_id(entity_name, prefix="ent-")

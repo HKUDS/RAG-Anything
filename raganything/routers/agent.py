@@ -23,8 +23,10 @@ from raganything.routers.shared import (
     _build_citation_block,
     _DEGRADED_HINT,
     _discover_images_via_graph,
+    _filter_images_by_relevance,
     _is_thinking_msg,
     _translate_thinking_msg,
+    _validate_image_paths,
     ANSWER_FORMAT_INSTRUCTION,
     API_KEY,
     BASE_URL,
@@ -375,6 +377,31 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             yield f"data: {json.dumps({'type': 'agent_info', 'agent': agent.name, 'icon': agent.icon, 'thread_id': thread_id}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'🔍 开始查询: {req.query[:80]}...'}, ensure_ascii=False)}\n\n"
 
+            # ── 查询改写：基于对话历史消解指代词 ──
+            rewritten_query = req.query
+            if conv_history_text and os.getenv("REWRITE_QUERY_ENABLED", "true").lower() == "true":
+                try:
+                    from raganything.query.utils import rewrite_query
+                    _history = [
+                        {"role": m.get("role"), "content": m.get("content", "")}
+                        for m in (conv_thread.messages[-6:] if conv_thread and conv_thread.messages else [])
+                    ]
+                    rewritten = await rewrite_query(
+                        req.query,
+                        openai_complete_if_cache,
+                        history=_history,
+                        api_key=API_KEY,
+                        base_url=BASE_URL,
+                    )
+                    if rewritten and rewritten != req.query and len(rewritten.strip()) > 2:
+                        lightrag_logger.info(
+                            f"[QUERY-REWRITE] '{req.query[:60]}' -> '{rewritten[:80]}'"
+                        )
+                        rewritten_query = rewritten
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': f'📝 查询已结合对话历史改写: {rewritten[:100]}'}, ensure_ascii=False)}\n\n"
+                except Exception as _rewrite_err:
+                    lightrag_logger.warning(f"[QUERY-REWRITE] rewrite failed, using original query: {_rewrite_err}")
+
             # ═══ Image Processing (user-uploaded query image) ═══
             image_description = None
             similar_images = []
@@ -494,7 +521,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
 
                 if agent_mode == "react":
                     # ReAct 流式路径 — 注入对话历史 + 图片上下文
-                    react_query = req.query
+                    react_query = rewritten_query
                     # Prepend image context if available
                     _img_ctx = ""
                     if image_description:
@@ -507,7 +534,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                                 f"*{_si['name']} (视觉相似度: {_si['score']})*\n\n"
                             )
                     if _img_ctx:
-                        react_query = f"{_img_ctx}## 用户问题\n{req.query}"
+                        react_query = f"{_img_ctx}## 用户问题\n{rewritten_query}"
                     if conv_history_text:
                         react_query = (
                             f"## 对话历史\n{conv_history_text}\n\n"
@@ -534,9 +561,9 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 else:
                     # CoT 路径：先 RRF 检索获取上下文，再注入 CoT 推理
                     # If we have an image description, use it to enrich the search query
-                    _cot_search_query = req.query
+                    _cot_search_query = rewritten_query
                     if image_description:
-                        _cot_search_query = f"{req.query}\n\n[图片描述]\n{image_description[:500]}"
+                        _cot_search_query = f"{rewritten_query}\n\n[图片描述]\n{image_description[:500]}"
                     cot_context = ""
                     try:
                         cot_context = await instance.aquery(
@@ -598,7 +625,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         lightrag_logger.removeHandler(handler)
                         return
                     # 对话历史已在 line 527-530 注入到 _img_cot_ctx，此处不重复注入
-                    agent_result = await agentic.run_with_context(req.query, cot_context)
+                    agent_result = await agentic.run_with_context(rewritten_query, cot_context)
                     full_answer = agent_result.answer
                     for s in agent_result.trace:
                         trace_steps.append({
@@ -620,7 +647,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         all_retrieved_text += ts["observation"] + "\n"
                 if agent_mode == "cot" and cot_context:
                     all_retrieved_text += cot_context + "\n"
-                all_retrieved_text += " " + req.query
+                all_retrieved_text += " " + rewritten_query
                 all_retrieved_text += " " + full_answer
 
                 agent_images = extract_image_paths(all_retrieved_text)
@@ -643,8 +670,15 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                             all_retrieved_text += "\n" + _backfill_text_react
                     except Exception as _fe:
                         lightrag_logger.error(f"[AGENT-IMG] 全库扫描失败: {_fe}")
-                else:
-                    agent_images = agent_images[:3]
+
+                # ── 截断 + 文件存在性校验（安全网）──
+                agent_images = _validate_image_paths(agent_images)[:3]
+
+                # ── 图片相关性过滤（Agentic 路径）──
+                if agent_images and not image_description:
+                    agent_images = _filter_images_by_relevance(
+                        agent_images, req.query, all_retrieved_text or "", min_overlap=2
+                    )
 
                 # Citation fallback for agent path: collect context from trace/COT
                 _agent_ctx = ""
@@ -701,13 +735,21 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             # Step 1: 获取检索上下文
             # 对标 CoT 路径 — 用 VLM 描述 + 视觉相似实体富化检索查询，
             # 确保图片语义能够命中知识库中的相关文本块。
-            _search_query = req.query
+            _search_query = rewritten_query
+            _vis_context_parts: list[str] = []
             if image_description:
-                _search_query = f"{req.query}\n\n[图片描述]\n{image_description[:500]}"
+                _vis_context_parts.append(f"[图片描述]\n{image_description[:500]}")
             if similar_images:
                 _en = [si['entity_name'] for si in similar_images if si.get('entity_name')]
                 if _en:
-                    _search_query += f"\n\n[视觉相似实体]\n{' '.join(_en[:5])}"
+                    _vis_context_parts.append(f"[视觉相似实体]\n{' '.join(_en[:5])}")
+                # 注入视觉相似图片的描述作为语义锚点（这些描述来自文档处理时的 VLM，
+                # 比实体名更精确地表达图片内容，能显著提升文本检索召回率）
+                _vis_descs = [si['description'][:200] for si in similar_images if si.get('description')]
+                if _vis_descs:
+                    _vis_context_parts.append(f"[相似图片描述]\n{' | '.join(_vis_descs[:3])}")
+            if _vis_context_parts:
+                _search_query = f"{rewritten_query}\n\n" + "\n".join(_vis_context_parts)
             ctx_task = asyncio.ensure_future(
                 instance.aquery(_search_query, mode=query_mode, vlm_enhanced=False,
                                 only_need_context=True, enable_rerank=False,
@@ -809,8 +851,41 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         ctx = ctx + "\n\n" + backfill_text
                 except Exception as _fe:
                     lightrag_logger.error(f"[IMG-FALLBACK] 全库扫描失败: {_fe}")
-            else:
-                agent_images = agent_images[:3]
+
+            # ── 截断 + 文件存在性校验（安全网）──
+            agent_images = _validate_image_paths(agent_images)[:3]
+
+            # ── 图片相关性过滤 ──
+            # 三段式发现只管"找到图片"，不管"图片是否与查询相关"。
+            # 此过滤器用查询关键词与图片周围文本（VLM 描述/标题）做重叠匹配，
+            # 剔除明显无关的图片。min_overlap=2 可过滤掉约 60-80% 假阳性。
+            if agent_images and not image_description:
+                # 仅对纯文本查询启用过滤（上传图片时跳过，因为视觉搜索已提供语义锚定）
+                agent_images = _filter_images_by_relevance(
+                    agent_images, req.query, ctx or "", min_overlap=2
+                )
+
+            # ── 视觉相似图片上下文注入 ──
+            # 将视觉搜索找到的相似图片描述注入 LLM 上下文。
+            # 这些描述来自文档处理时的 VLM，语义密度远高于纯文本检索。
+            # 独立于三段式图片发现，即使图谱/扫描找到图，视觉描述仍有增量价值。
+            if similar_images:
+                _vis_snippets: list[str] = []
+                for _si in similar_images:
+                    _desc = _si.get("description", "")
+                    _name = _si.get("entity_name", "")
+                    _score = _si.get("score", 0)
+                    if _desc:
+                        _vis_snippets.append(
+                            f"[视觉相似 {_score:.0%}] {_name}: {_desc[:300]}"
+                        )
+                if _vis_snippets:
+                    _vis_ctx = "[视觉增强上下文] 以下来自知识库中视觉相似的图片描述：\n" + "\n".join(_vis_snippets[:5])
+                    ctx = _vis_ctx + "\n\n" + (ctx or "")
+                    lightrag_logger.info(
+                        "[IMG-FUSION] 注入 %d 条视觉相似描述 (共 %d 字符)",
+                        len(_vis_snippets[:5]), len(_vis_ctx),
+                    )
 
             # ── 最终空上下文检测（使用富化后的 ctx）──
             is_fallback = _is_empty_context(ctx)
@@ -876,7 +951,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
             # Step 2: 构造 prompt 并使用智能体配置的模型
-            sp = (agent.system_prompt or "") + ("\n你是知识库助手。只使用检索内容回答。" if agent.use_default_prompt else "")
+            sp = (agent.system_prompt or "") + ("\n你是知识库助手。结合对话历史理解用户上下文和指代关系，但回答中的事实和数据必须来源于检索内容。" if agent.use_default_prompt else "")
             _conv_part = (
                 f"## 对话历史\n{conv_history_text}\n\n"
                 if conv_history_text else ""
@@ -905,7 +980,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             if not _has_chunks and ctx.strip():
                 lightrag_logger.warning("agent_query_stream: context has no text chunks.")
             final_prompt = (
-                f"以下是知识库检索内容。必须基于这些内容回答，不得使用你自己的知识。\n\n"
+                f"对话历史用于理解用户上下文。以下是知识库检索内容，回答中的事实必须基于以下检索内容，不得编造。\n\n"
                 f"{_img_section}"
                 f"{_conv_part}"
                 f"## 检索内容\n{ctx}\n\n"

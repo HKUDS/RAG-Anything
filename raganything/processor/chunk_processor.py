@@ -29,6 +29,29 @@ import asyncio
 from lightrag.utils import compute_mdhash_id
 
 
+# ── Unified chunk ID computation ──────────────────────────────
+# ALL code paths MUST use this function — never compute_mdhash_id directly.
+# This ensures the chunk_id key matches what is stored in text_chunks_db.
+
+def compute_chunk_id(content: str) -> str:
+    """Compute a deterministic chunk ID from content with truncation.
+
+    Truncates content exceeding the embedding model's input limit before
+    hashing, so the resulting chunk ID matches the key used in
+    ``text_chunks_db``.
+
+    Truncation note: LightRAG uses o200k_base (gpt-4o-mini) tokenizer
+    which counts ~2× fewer tokens for Chinese text than the actual qwen
+    embedding API.  Using a character-based limit avoids this mismatch.
+    8000 chars keeps qwen well under its 8192-token ceiling even for
+    all-Chinese content (~1 char/token worst case).
+    """
+    _MAX_CHUNK_CHARS = 8000
+    if len(content) > _MAX_CHUNK_CHARS:
+        content = content[:_MAX_CHUNK_CHARS] + "\n\n[内容已截断，超出嵌入模型长度限制]"
+    return compute_mdhash_id(content, prefix="chunk-")
+
+
 
 class ChunkProcessorMixin:
     """Chunk-to-document source mapping and BM25 index management."""
@@ -243,16 +266,14 @@ class ChunkProcessorMixin:
             # Calculate tokens
             tokens = len(self.lightrag.tokenizer.encode(formatted_chunk_content))
 
-            # Truncate content exceeding the embedding model's input limit.
-            # NOTE: LightRAG uses o200k_base (gpt-4o-mini) tokenizer which
-            # counts ~2× fewer tokens for Chinese text than the actual qwen
-            # embedding API.  Using a character-based limit avoids this mismatch.
-            # 8000 chars keeps qwen well under its 8192-token ceiling even for
-            # all-Chinese content (~1 char/token worst case).
-            _MAX_CHUNK_CHARS = 8000
-            if len(formatted_chunk_content) > _MAX_CHUNK_CHARS:
+            # Generate chunk_id via unified helper (includes truncation).
+            # Always use _compute_chunk_id — never compute_mdhash_id directly —
+            # so the resulting key matches text_chunks_db.
+            _before = len(formatted_chunk_content)
+            chunk_id = self._compute_chunk_id(formatted_chunk_content)
+            if len(formatted_chunk_content) > 8000:
                 formatted_chunk_content = (
-                    formatted_chunk_content[:_MAX_CHUNK_CHARS]
+                    formatted_chunk_content[:8000]
                     + "\n\n[内容已截断，超出嵌入模型长度限制]"
                 )
                 tokens = len(
@@ -260,12 +281,9 @@ class ChunkProcessorMixin:
                 )
                 self.logger.warning(
                     f"Truncated multimodal chunk: "
-                    f"{len(formatted_chunk_content)} chars, {tokens} tokens "
+                    f"{_before}→{len(formatted_chunk_content)} chars, {tokens} tokens "
                     f"(content_type={content_type})"
                 )
-
-            # Generate chunk_id from the (possibly truncated) content
-            chunk_id = compute_mdhash_id(formatted_chunk_content, prefix="chunk-")
 
             # Use full path or basename based on config
             file_ref = self._get_file_reference(file_path)
@@ -289,6 +307,16 @@ class ChunkProcessorMixin:
             f"Converted {len(chunks)} multimodal items to multimodal chunks format"
         )
         return chunks
+
+    @staticmethod
+    def _compute_chunk_id(content: str) -> str:
+        """Compute a deterministic chunk ID from content (convenience wrapper).
+
+        Delegates to the module-level :func:`compute_chunk_id` so every
+        code path — whether inside or outside the mixin hierarchy — uses
+        the same truncation + hash logic.
+        """
+        return compute_chunk_id(content)
 
     def _apply_chunk_template(
         self, content_type: str, original_item: Dict[str, Any], description: str

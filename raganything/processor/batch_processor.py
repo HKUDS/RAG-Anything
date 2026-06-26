@@ -25,7 +25,6 @@ from raganything.utils import (
     normalize_caption_list,
 )
 import asyncio
-from lightrag.utils import compute_mdhash_id
 
 
 
@@ -123,11 +122,13 @@ class BatchProcessorMixin:
             content_type = data["content_type"]
             original_item = data["original_item"]
 
-            # Use the same template formatting as in _convert_to_lightrag_chunks_type_aware
+            # Use the unified chunk_id helper (includes 8000-char truncation).
+            # Must match _convert_to_lightrag_chunks_type_aware and all other
+            # chunk_id computation sites.  Never call compute_mdhash_id directly.
             formatted_chunk_content = self._apply_chunk_template(
                 content_type, original_item, description
             )
-            chunk_id = compute_mdhash_id(formatted_chunk_content, prefix="chunk-")
+            chunk_id = self._compute_chunk_id(formatted_chunk_content)
 
             chunk_to_modal_entity[chunk_id] = data["entity_info"]["entity_name"]
             chunk_to_file_path[chunk_id] = data.get("file_path", "multimodal_content")

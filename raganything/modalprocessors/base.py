@@ -144,17 +144,14 @@ class BaseModalProcessor:
         chunk_order_index: int = 0,
     ) -> Tuple[str, Dict[str, Any]]:
         """Create entity and text chunk"""
-        # Truncate chunk content exceeding the embedding model's input limit.
-        # NOTE: LightRAG uses o200k_base (gpt-4o-mini) tokenizer which counts
-        # ~2× fewer tokens for Chinese text than the actual qwen embedding API.
-        # Using a character-based limit avoids this mismatch.
-        # 8000 chars keeps qwen well under its 8192-token ceiling even for
-        # all-Chinese content (~1 char/token worst case).
-        _MAX_CHUNK_CHARS = 8000
+        # Truncate + hash via unified helper — ensures chunk_id matches
+        # text_chunks_db key everywhere.  Never call compute_mdhash_id directly.
+        from raganything.processor.chunk_processor import compute_chunk_id
+
         tokens = len(self.tokenizer.encode(str(modal_chunk)))
-        if len(str(modal_chunk)) > _MAX_CHUNK_CHARS:
+        if len(str(modal_chunk)) > 8000:
             modal_chunk = (
-                str(modal_chunk)[:_MAX_CHUNK_CHARS]
+                str(modal_chunk)[:8000]
                 + "\n\n[内容已截断，超出嵌入模型长度限制]"
             )
             tokens = len(self.tokenizer.encode(modal_chunk))
@@ -164,7 +161,7 @@ class BaseModalProcessor:
             )
 
         # Create chunk
-        chunk_id = compute_mdhash_id(str(modal_chunk), prefix="chunk-")
+        chunk_id = compute_chunk_id(str(modal_chunk))
 
         # Use provided doc_id or generate one from chunk_id for backward compatibility
         actual_doc_id = doc_id if doc_id else chunk_id

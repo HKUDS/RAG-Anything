@@ -169,6 +169,24 @@ _MAX_CONCURRENT_FILES: int = int(
 server_logger = logging.getLogger("rag_server")
 
 
+# ── Image Path Validation ──────────────────────────────────
+
+def _validate_image_paths(paths: list[str]) -> list[str]:
+    """Filter out image paths that don't exist on disk.
+
+    Extracted paths from chunk content may reference files that have been
+    deleted or moved since document processing.  This validator ensures
+    the frontend only receives paths it can actually load.
+    """
+    if not paths:
+        return []
+    valid: list[str] = []
+    for p in paths:
+        if p and Path(p).exists():
+            valid.append(p)
+    return valid
+
+
 # ── Image Path Extraction ──────────────────────────────────
 
 def extract_image_paths(text: str) -> list[str]:
@@ -361,6 +379,9 @@ async def _discover_images_via_graph(instance, query: str, kb_name: str,
             "\n\n".join(backfill_parts[:5]) if backfill_parts else ""
         )
 
+        # Validate paths exist on disk before returning
+        image_paths = _validate_image_paths(image_paths)
+
         if image_paths:
             lightrag_logger.info(
                 "[IMG-GRAPH] KB=%s 图谱发现 %d 张图片 (匹配实体 %d 个)",
@@ -489,17 +510,29 @@ async def _bigram_image_scan(kb_dir_path, query: str, ctx: str = "", instance=No
         seed = int(hashlib.md5(query.encode()).hexdigest()[:8], 16)
         rng = _random.Random(seed)
         rng.shuffle(_all_paths)
-        image_paths = _all_paths[:2]
-        lightrag_logger.info(
-            "[IMG-FALLBACK] bigram得分全零，降级为hash-random选择 query_hash=%s candidates=%d",
-            hashlib.md5(query.encode()).hexdigest()[:8], len(_all_paths),
-        )
+        # Validate before returning — stop at first 2 that exist
+        image_paths = []
+        for _p in _all_paths:
+            if Path(_p).exists():
+                image_paths.append(_p)
+                if len(image_paths) >= 2:
+                    break
+        if image_paths:
+            lightrag_logger.info(
+                "[IMG-FALLBACK] bigram得分全零，降级为hash-random选择 query_hash=%s candidates=%d",
+                hashlib.md5(query.encode()).hexdigest()[:8], len(image_paths),
+            )
+        else:
+            lightrag_logger.info(
+                "[IMG-FALLBACK] bigram得分全零，%d候选路径无一存在",
+                len(_all_paths),
+            )
         return image_paths, ""
 
     # ── Diversity: one image per chunk ──
     # Within a chunk, pick the FIRST image (position bias: images that appear
     # earlier in the text are more likely to be topically relevant).  Across
-    # chunks, rank by normalized score.
+    # chunks, rank by normalized score.  Skip paths that don't exist on disk.
     _chunk_results.sort(key=lambda x: -x[1])
     image_paths = []
     seen_chunks = set()
@@ -507,7 +540,10 @@ async def _bigram_image_scan(kb_dir_path, query: str, ctx: str = "", instance=No
         if _cid in seen_chunks:
             continue
         seen_chunks.add(_cid)
-        image_paths.append(_paths[0])  # first image in chunk = most relevant
+        for _p in _paths:
+            if Path(_p).exists():
+                image_paths.append(_p)
+                break  # first existing image in chunk
         if len(image_paths) >= 3:
             break
 
@@ -569,9 +605,14 @@ async def _bm25_image_scan(bm25_mgr, query: str, ctx: str = "") -> tuple:
         if cid not in best_per_chunk or score > best_per_chunk[cid][0]:
             best_per_chunk[cid] = (score, path, dname)
 
-    # Top-3 images from different chunks
+    # Top-3 images from different chunks (validate existence)
     ranked = sorted(best_per_chunk.items(), key=lambda x: -x[1][0])
-    image_paths = [path for _, (_, path, _) in ranked[:3]]
+    image_paths = []
+    for _, (_, path, _) in ranked:
+        if Path(path).exists():
+            image_paths.append(path)
+            if len(image_paths) >= 3:
+                break
 
     # Build backfill from top-scoring chunks
     scored_texts = []
@@ -595,6 +636,105 @@ async def _bm25_image_scan(bm25_mgr, query: str, ctx: str = "") -> tuple:
     return image_paths, backfill_text
 
 
+# ── Image Relevance Filter ──────────────────────────────────
+
+def _filter_images_by_relevance(
+    image_paths: list[str],
+    query: str,
+    ctx: str = "",
+    min_overlap: int = 2,
+) -> list[str]:
+    """Filter images by keyword overlap between query and image context.
+
+    Extracts text surrounding each image path in *ctx* (captions, VLM
+    descriptions, entity names) and computes overlap with *query* keywords.
+    Images with fewer than *min_overlap* matching keywords are dropped.
+
+    This is a lightweight post-filter — it trades recall for precision.
+    False positives (irrelevant images in retrieval context) are the
+    dominant failure mode for text queries, and this eliminates the most
+    obvious ones without requiring an extra API call.
+
+    Args:
+        image_paths: Candidate image paths from any discovery tier.
+        query: Original user query.
+        ctx: Retrieval context (contains image descriptions).
+        min_overlap: Minimum number of query keywords that must appear in
+            the image's surrounding text. Default 2.
+
+    Returns:
+        Filtered list of image paths (may be empty).
+    """
+    if not image_paths or not query or not ctx:
+        return image_paths
+
+    # Tokenize query into keywords (jieba for Chinese, split for ASCII)
+    try:
+        import jieba as _jieba
+        _q_kw = set(
+            w.strip().lower()
+            for w in _jieba.cut(query)
+            if len(w.strip()) >= 2
+        )
+    except Exception:
+        _q_kw = set(query.lower().split())
+
+    if len(_q_kw) < 2:
+        return image_paths  # query too short to filter meaningfully
+
+    # For each image, extract a text window from ctx around the image path
+    _ctx_lower = ctx.lower()
+    _scored: list[tuple[str, int]] = []
+
+    for _img in image_paths:
+        _img_lower = _img.lower()
+        _img_name = _img_lower.replace("\\", "/").split("/")[-1]
+
+        # Find the image in context and extract surrounding text window.
+        # Use a tight window (500 chars each side) to avoid cross-chunk
+        # contamination when multiple images appear in the same context.
+        _window = ""
+        _idx = _ctx_lower.find(_img_name)
+        if _idx == -1:
+            _idx = _ctx_lower.find(_img_lower.split("/")[-1])
+
+        if _idx >= 0:
+            _start = max(0, _idx - 500)
+            _end = min(len(ctx), _idx + 500)
+            _window = ctx[_start:_end].lower()
+            # Tighten further: trim to nearest double-newline (chunk boundary)
+            # so we don't bleed into adjacent chunks' descriptions
+            if "\n\n" in _window:
+                # Find the chunk that actually contains the image path
+                _parts = _window.split("\n\n")
+                for _part in _parts:
+                    if _img_name in _part:
+                        _window = _part
+                        break
+        else:
+            # Image not found in ctx — keep it (no evidence to filter)
+            _scored.append((_img, min_overlap))
+            continue
+
+        # Count keyword overlaps
+        _overlap = sum(1 for kw in _q_kw if kw in _window)
+        _scored.append((_img, _overlap))
+
+    # Filter
+    _filtered = [img for img, score in _scored if score >= min_overlap]
+    _dropped = len(image_paths) - len(_filtered)
+
+    if _dropped > 0:
+        lightrag_logger.info(
+            "[IMG-FILTER] %d/%d images dropped (below overlap threshold %d). "
+            "Query keywords: %s",
+            _dropped, len(image_paths), min_overlap,
+            ", ".join(sorted(_q_kw)[:10]),
+        )
+
+    return _filtered
+
+
 # ── Thinking/Progress Translation ──────────────────────────
 
 THINKING_PATTERNS = [
@@ -605,7 +745,7 @@ THINKING_PATTERNS = [
     "retrying request", "embedding",
 ]
 
-QUERY_SYSTEM_PROMPT = "基于检索内容回答。引用检索内容中的具体事实和数据。检索内容没有的信息不要编造。"
+QUERY_SYSTEM_PROMPT = "基于检索内容回答。对话历史可用作理解用户上下文和指代关系，但事实性回答必须引用检索内容中的具体信息。检索内容没有的信息不要编造。"
 
 
 def _is_thinking_msg(msg: str) -> bool:

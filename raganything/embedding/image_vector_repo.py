@@ -219,15 +219,24 @@ class ImageVectorRepository:
         This is necessary because the worker subprocess writes vision embeddings
         to the shared VDB file, but the server's in-memory NanoVectorDB instance
         was loaded before those writes.
+
+        File I/O runs in a thread-pool executor so the event loop is never blocked.
         """
         if self._vdb is None:
             return
+
+        loop = asyncio.get_running_loop()
+
         async with self._lock:
             if not os.path.exists(self._db_path):
                 return
             try:
-                with open(self._db_path, "r", encoding="utf-8") as f:
-                    storage = json.load(f)
+                # Run sync file read in thread pool to avoid blocking event loop
+                def _read_storage():
+                    with open(self._db_path, "r", encoding="utf-8") as f:
+                        return json.load(f)
+
+                storage = await loop.run_in_executor(None, _read_storage)
                 new_data = storage.get("data", [])
                 current_count = len(self._vdb)
                 if len(new_data) > current_count:
@@ -251,36 +260,49 @@ class ImageVectorRepository:
 
         Uses write-to-tmp + validate + rename pattern to prevent
         truncation/corruption on mid-write crashes.
+
+        All file I/O runs in a thread-pool executor so the event loop
+        is never blocked — safe to call from async request handlers.
         """
         if self._vdb is None:
             return
 
+        loop = asyncio.get_running_loop()
+
         async with self._lock:
-            # 1. Save to temp file
             tmp_path = self._db_path + ".tmp"
+
+            # 1. Save to temp file (sync → thread pool)
             self._vdb.storage_file = tmp_path
             try:
-                self._vdb.save()
+                await loop.run_in_executor(None, self._vdb.save)
             finally:
                 self._vdb.storage_file = self._db_path
 
-            # 2. Validate temp file is loadable
-            try:
+            # 2. Validate temp file is loadable (sync → thread pool)
+            def _validate():
                 with open(tmp_path, "r", encoding="utf-8") as f:
                     storage = json.load(f)
                 assert storage.get("embedding_dim") == self._dim, \
                     f"Dimension mismatch in saved file: {storage.get('embedding_dim')}"
+                return storage
+
+            try:
+                await loop.run_in_executor(None, _validate)
             except Exception as e:
                 logger.error("[vision-repo] Temp file validation failed: %s", e)
                 raise
 
-            # 3. Rotate: current → .bak, tmp → current
-            if os.path.exists(self._db_path):
-                try:
-                    os.replace(self._db_path, self._bak_path)
-                except OSError as e:
-                    logger.warning("[vision-repo] Backup rotation failed: %s", e)
-            os.replace(tmp_path, self._db_path)
+            # 3. Rotate: current → .bak, tmp → current (atomic, fast)
+            def _rotate():
+                if os.path.exists(self._db_path):
+                    try:
+                        os.replace(self._db_path, self._bak_path)
+                    except OSError as e:
+                        logger.warning("[vision-repo] Backup rotation failed: %s", e)
+                os.replace(tmp_path, self._db_path)
+
+            await loop.run_in_executor(None, _rotate)
 
             count = len(self._vdb)
             fsize = os.path.getsize(self._db_path) if os.path.exists(self._db_path) else 0
