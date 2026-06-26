@@ -29,7 +29,7 @@ REFRESH_SECRET_KEY = os.getenv("JWT_REFRESH_SECRET") or secrets.token_hex(32)
 JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "1"))
 REFRESH_EXPIRY_DAYS = int(os.getenv("REFRESH_EXPIRY_DAYS", "7"))
 ALGORITHM = "HS256"
-SERVER_START_ID = uuid.uuid4().hex  # Regenerated on each process start for restart-invalidation
+SERVER_START_ID = uuid.uuid4().hex  # Regenerated on each process start; persisted to settings for multi-worker consistency
 
 # ── Database Path ──────────────────────────────────────────
 DB_PATH = Path(os.getenv("AUTH_DB_PATH", "./auth.db"))
@@ -225,6 +225,24 @@ async def init_db():
                     (REFRESH_SECRET_KEY,)
                 )
                 await db.commit()
+
+        # ── Persist/load SERVER_START_ID for cross-worker JWT consistency ──
+        # In multi-worker deployments (gunicorn --workers N), each worker must
+        # share the same SERVER_START_ID so tokens issued by one worker are
+        # accepted by all.  The first worker persists its ID; subsequent workers
+        # load the persisted value from the settings table.
+        global SERVER_START_ID
+        row = await (await db.execute(
+            "SELECT value FROM settings WHERE key = 'server_start_id'"
+        )).fetchone()
+        if row:
+            SERVER_START_ID = row[0]
+        else:
+            await db.execute(
+                "INSERT INTO settings (key, value) VALUES ('server_start_id', ?)",
+                (SERVER_START_ID,)
+            )
+            await db.commit()
 
     # Ensure default admin exists
     admin = await get_user_by_username(DEFAULT_ADMIN_USERNAME)

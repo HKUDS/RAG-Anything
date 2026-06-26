@@ -36,7 +36,7 @@ from raganything.routers.shared import (
     get_kb,
     kb_dir,
     query_history,
-    save_query_history,
+    record_query,
     verify_kb_access,
 )
 from raganything.utils.security import validate_query_input, decode_and_validate_query_image
@@ -305,7 +305,6 @@ async def delete_conversation(agent_id: str, thread_id: str, current_user: dict 
 @router.post("/agents/{agent_id}/query/stream")
 async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Request, current_user: dict = Depends(get_current_user)):
     """智能体流式查询：使用智能体配置执行查询"""
-    global query_history
     mgr = get_agent_manager()
     agent = mgr.get_agent(agent_id)
     if not agent:
@@ -366,7 +365,6 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             conv_history_text = "\n".join(lines)
 
     async def event_stream():
-        global query_history
         log_queue: queue.Queue = queue.Queue()
         handler = LogCaptureHandler(log_queue)
         lightrag_logger.addHandler(handler)
@@ -590,10 +588,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                             "user_id": current_user["id"], "username": current_user["username"],
                             "fallback": True,
                         }
-                        query_history.insert(0, record)
-                        if len(query_history) > 100:
-                            query_history = query_history[:100]
-                        save_query_history()
+                        await record_query(record, max_history=100)
                         _done_cot_empty = {'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': [], 'fallback': True}
                         if image_description:
                             _done_cot_empty['image_description'] = image_description
@@ -690,10 +685,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "agent_id": agent_id, "thread_id": thread_id,
                     "user_id": current_user["id"], "username": current_user["username"],
                 }
-                query_history.insert(0, record)
-                if len(query_history) > 100:
-                    query_history = query_history[:100]
-                save_query_history()
+                await record_query(record, max_history=100)
 
                 _done_agentic = {'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': agent_images}
                 if image_description:
@@ -777,10 +769,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "username": current_user["username"],
                     "fallback": True,
                 }
-                query_history.insert(0, record)
-                if len(query_history) > 100:
-                    query_history = query_history[:100]
-                save_query_history()
+                await record_query(record, max_history=100)
 
                 yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
                 _done_data = {
@@ -862,10 +851,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "username": current_user["username"],
                     "fallback": True,
                 }
-                query_history.insert(0, record)
-                if len(query_history) > 100:
-                    query_history = query_history[:100]
-                save_query_history()
+                await record_query(record, max_history=100)
 
                 yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
                 _done_data = {
@@ -991,10 +977,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 "username": current_user["username"],
                 "fallback": is_fallback,
             }
-            query_history.insert(0, record)
-            if len(query_history) > 100:
-                query_history = query_history[:100]
-            save_query_history()
+            await record_query(record, max_history=100)
 
             _done_data = {
                 'type': 'done', 'id': query_id, 'elapsed': elapsed,

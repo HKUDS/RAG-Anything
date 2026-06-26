@@ -23,6 +23,7 @@ import asyncio
 import json
 import hashlib
 import logging
+import os
 import re
 import time
 import uuid
@@ -582,8 +583,10 @@ class QueryMixin:
                 self.logger.error("llm_model_func is None, returning context only")
                 return context
 
-            answer = await self.llm_model_func(
-                prompt, system_prompt=system_prompt
+            llm_timeout = float(os.getenv("LLM_QUERY_TIMEOUT", "60"))
+            answer = await asyncio.wait_for(
+                self.llm_model_func(prompt, system_prompt=system_prompt),
+                timeout=llm_timeout,
             )
 
             # Guard against None return from LLM

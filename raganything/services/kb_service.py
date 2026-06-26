@@ -510,7 +510,48 @@ def create_rag(
                        lightrag_kwargs=lightrag_kwargs)
 
 
-# ── Stuck Document Recovery ─────────────────────────────────
+# ── Recovery File Lock ────────────────────────────────────────
+# In multi-worker deployments, multiple workers can race to run the
+# stuck-document recovery loop.  A file-based lock in the WORKING_DIR
+# ensures only one worker executes recovery at a time.
+
+import tempfile
+import time as _time_module
+
+
+def _acquire_recovery_lock(timeout_sec: float = 30.0) -> bool:
+    """Attempt to acquire a file-based recovery lock.
+
+    Returns True if the lock was acquired, False if another process holds it.
+    The lock auto-expires after *timeout_sec* to prevent deadlock from crashes.
+    """
+    lock_path = Path(WORKING_DIR) / ".recovery.lock"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    now = _time_module.time()
+    try:
+        if lock_path.exists():
+            content = lock_path.read_text(encoding="utf-8").strip()
+            try:
+                lock_time = float(content)
+                if now - lock_time < timeout_sec:
+                    return False  # another process is actively recovering
+            except ValueError:
+                pass  # corrupt lock file, overwrite
+        lock_path.write_text(str(now), encoding="utf-8")
+        return True
+    except Exception:
+        return False
+
+
+def _release_recovery_lock() -> None:
+    """Release the file-based recovery lock."""
+    lock_path = Path(WORKING_DIR) / ".recovery.lock"
+    try:
+        if lock_path.exists():
+            lock_path.unlink()
+    except Exception:
+        pass
+
 
 async def _fix_stuck_doc_status(kb_name: str, filename: str):
     """Fix documents stuck in 'handling' state after subprocess crash/timeout.
@@ -558,70 +599,74 @@ async def _recover_stuck_documents():
     A document is recoverable when its ``metadata.processing_end_time`` is
     set (meaning the worker finished writing data) but the top-level
     ``status`` was never updated from ``handling`` to ``completed``.
+
+    Uses a file-based lock (``.recovery.lock``) so only one worker runs
+    recovery at a time in multi-worker deployments.
     """
+    if not _acquire_recovery_lock():
+        kb_logger.debug("[Recovery] 另一进程正在执行恢复，跳过")
+        return
     try:
-        meta = load_kb_meta()
-    except Exception:
-        return  # no KBs registered yet
-
-    for kb_name in list(meta.keys()):
         try:
-            status_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
-            if not status_path.exists():
-                continue
-            data = json.loads(status_path.read_text(encoding="utf-8"))
-            changed = False
-            for doc_id, info in data.items():
-                if info.get("status") != "handling":
-                    continue
-                end_time = info.get("metadata", {}).get("processing_end_time")
-                if end_time and end_time > 0:
-                    info["status"] = "completed"
-                    changed = True
-                    kb_logger.info(
-                        f"[Recovery] 修复卡住文档: {kb_name}/{doc_id[:16]} "
-                        f"(processing_end={end_time})"
-                    )
-            if changed:
-                status_path.write_text(
-                    json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
-                )
-                # Clear cached instance so next query reloads from disk.
-                # ⚠️ Do NOT call finalize_storages() — the cached instance is
-                # stale and would overwrite any fresher data written by workers.
-                if kb_name in kb_instances:
-                    del kb_instances[kb_name]
-                    _kb_cache_time.pop(kb_name, None)
-        except Exception as e:
-            kb_logger.warning(f"[Recovery] 扫描 KB '{kb_name}' 异常: {e}")
-
-    # ── Periodic orphan purge (once per recovery scan) ──
-    # Only purge for KBs that have accumulated orphans.  Uses a fresh
-    # instance from get_kb() to avoid stale-data overwrite.
-    for kb_name in list(meta.keys()):
-        try:
-            dp = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
-            if not dp.exists():
-                continue
-            doc_data = json.loads(dp.read_text(encoding="utf-8"))
-            valid_ids = set(doc_data.keys())
-            ep = Path(kb_dir(kb_name)) / "kv_store_full_entities.json"
-            if ep.exists():
-                entities_data = json.loads(ep.read_text(encoding="utf-8"))
-                orphan_count = sum(1 for k in entities_data if k not in valid_ids)
-                if orphan_count > 0:
-                    try:
-                        _inst = await get_kb(kb_name)
-                        from raganything.routers.knowledge import _purge_all_orphans
-                        await _purge_all_orphans(_inst, kb_name)
-                        # Clear the instance after purge so next query sees clean data
-                        if kb_name in kb_instances:
-                            del kb_instances[kb_name]
-                            _kb_cache_time.pop(kb_name, None)
-                    except Exception:
-                        pass
+            meta = load_kb_meta()
         except Exception:
-            pass
+            return  # no KBs registered yet
+
+        for kb_name in list(meta.keys()):
+            try:
+                status_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+                if not status_path.exists():
+                    continue
+                data = json.loads(status_path.read_text(encoding="utf-8"))
+                changed = False
+                for doc_id, info in data.items():
+                    if info.get("status") != "handling":
+                        continue
+                    end_time = info.get("metadata", {}).get("processing_end_time")
+                    if end_time and end_time > 0:
+                        info["status"] = "completed"
+                        changed = True
+                        kb_logger.info(
+                            f"[Recovery] 修复卡住文档: {kb_name}/{doc_id[:16]} "
+                            f"(processing_end={end_time})"
+                        )
+                if changed:
+                    status_path.write_text(
+                        json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+                    )
+                    # Clear cached instance so next query reloads from disk.
+                    if kb_name in kb_instances:
+                        del kb_instances[kb_name]
+                        _kb_cache_time.pop(kb_name, None)
+            except Exception as e:
+                kb_logger.warning(f"[Recovery] 扫描 KB '{kb_name}' 异常: {e}")
+
+        # ── Periodic orphan purge (once per recovery scan) ──
+        for kb_name in list(meta.keys()):
+            try:
+                dp = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+                if not dp.exists():
+                    continue
+                doc_data = json.loads(dp.read_text(encoding="utf-8"))
+                valid_ids = set(doc_data.keys())
+                ep = Path(kb_dir(kb_name)) / "kv_store_full_entities.json"
+                if ep.exists():
+                    entities_data = json.loads(ep.read_text(encoding="utf-8"))
+                    orphan_count = sum(1 for k in entities_data if k not in valid_ids)
+                    if orphan_count > 0:
+                        try:
+                            _inst = await get_kb(kb_name)
+                            from raganything.routers.knowledge import _purge_all_orphans
+                            await _purge_all_orphans(_inst, kb_name)
+                            if kb_name in kb_instances:
+                                del kb_instances[kb_name]
+                                _kb_cache_time.pop(kb_name, None)
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+    finally:
+        _release_recovery_lock()
 
 
 async def _stuck_recovery_loop(interval_sec: int = 300):
@@ -629,6 +674,10 @@ async def _stuck_recovery_loop(interval_sec: int = 300):
 
     Args:
         interval_sec: Seconds between scans (default 5 minutes)
+
+    Uses a file-based lock (``.recovery.lock``) to deduplicate across
+    workers.  The lock auto-expires after 30 seconds to recover from
+    process crashes during recovery.
     """
     await asyncio.sleep(5)  # let startup settle first
     while True:

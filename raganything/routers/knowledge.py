@@ -399,7 +399,7 @@ async def list_documents(kb: str = Depends(verify_kb_access)):
     """列出所有文档及其状态（含处理中的任务）"""
     try:
         # Clean up completed/failed tasks before building the response
-        cleanup_completed_tasks()
+        await cleanup_completed_tasks()
 
         status_path = Path(kb_dir(kb)) / "kv_store_doc_status.json"
         data = {}

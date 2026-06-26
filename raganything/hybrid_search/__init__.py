@@ -11,11 +11,30 @@ Fusion: RRF (Reciprocal Rank Fusion) — Σ 1/(k + rank_i)
 
 import os
 import asyncio
+import concurrent.futures
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, field
 
 from lightrag.utils import logger as lightrag_logger
 from raganything.graph_rag import GraphRetriever  # extracted module
+
+# ── Shared ThreadPoolExecutor ────────────────────────────────
+# Single shared executor avoids the overhead of creating a new
+# ThreadPoolExecutor on every BM25 search call.  Under concurrent
+# load this prevents thread-leak storms.
+_MAX_BM25_WORKERS = int(os.getenv("BM25_THREAD_WORKERS", "4"))
+_bm25_executor: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _get_bm25_executor() -> concurrent.futures.ThreadPoolExecutor:
+    """Return the shared BM25 ThreadPoolExecutor, creating it lazily."""
+    global _bm25_executor
+    if _bm25_executor is None:
+        _bm25_executor = concurrent.futures.ThreadPoolExecutor(
+            max_workers=_MAX_BM25_WORKERS,
+            thread_name_prefix="bm25-",
+        )
+    return _bm25_executor
 
 
 # ═══════════════════════════════════════════════════════════
@@ -123,12 +142,11 @@ class BM25IndexManager:
 
     async def rebuild_index_async(self, chunks: List[Dict[str, Any]]):
         """Async-safe index rebuild: build in background, atomically swap."""
-        import concurrent.futures
-
         loop = asyncio.get_running_loop()
         async with self._lock:
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-                await loop.run_in_executor(pool, self.build_index, list(chunks))
+            await loop.run_in_executor(
+                _get_bm25_executor(), self.build_index, list(chunks)
+            )
 
     async def update_index_incremental(self, new_chunks: List[Dict[str, Any]]):
         """Rebuild index with added chunks (full rebuild for correctness)."""
@@ -298,16 +316,13 @@ class HybridSearchEngine:
     # ------------------------------------------------------------------
 
     async def _bm25_search(self, query: str, top_k: int) -> List[ScoredChunk]:
-        """BM25 channel (sync, run in executor)."""
+        """BM25 channel (sync, run in shared executor)."""
         if "bm25" not in self._enabled_channels:
             return []
         loop = asyncio.get_running_loop()
-        import concurrent.futures
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            return await loop.run_in_executor(
-                pool, self._bm25.search, query, top_k
-            )
+        return await loop.run_in_executor(
+            _get_bm25_executor(), self._bm25.search, query, top_k
+        )
 
     async def _vector_search(self, query: str, top_k: int) -> List[ScoredChunk]:
         """Vector semantic search via LightRAG's internal retrieval."""

@@ -92,6 +92,7 @@ from raganything.services.state_service import (  # noqa: F401 — re-export
     QUERY_HISTORY_FILE,
     load_query_history,
     save_query_history,
+    record_query,
     cleanup_completed_tasks,
 )
 

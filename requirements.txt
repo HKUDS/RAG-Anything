@@ -5,6 +5,8 @@ bcrypt<4.1.0
 lightrag-hku
 # MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
 mineru[core]
+# Observability: Prometheus metrics endpoint (pinned <8 for starlette 0.x compat)
+prometheus-fastapi-instrumentator<8
 # RRF Hybrid Search: BM25 keyword index + Chinese tokenization
 rank-bm25
 jieba

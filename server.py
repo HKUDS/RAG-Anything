@@ -60,6 +60,21 @@ limiter = Limiter(key_func=get_remote_address, default_limits=["120/minute"])
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# ── Prometheus Metrics ─────────────────────────────
+from prometheus_fastapi_instrumentator import Instrumentator
+_metrics_path = os.getenv("METRICS_PATH", "/metrics")
+_instrumentator = Instrumentator(
+    should_group_status_codes=True,
+    should_ignore_untemplated=True,
+    should_respect_env_var=True,
+    should_instrument_requests_inprogress=True,
+    excluded_handlers=[_metrics_path, "/health", "/favicon.ico"],
+    env_var_name="ENABLE_METRICS",
+    inprogress_name="rag_requests_inprogress",
+    inprogress_labels=True,
+)
+_instrumentator.instrument(app).expose(app, endpoint=_metrics_path, include_in_schema=True)
+
 # ── CORS 白名单 ─────────────────────────────────────
 _cors_origins_str = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173")
 _cors_origins = [o.strip() for o in _cors_origins_str.split(",") if o.strip()]
@@ -216,14 +231,17 @@ async def shutdown():
         except: pass
 
 # ── Server Startup Guard ─────────────────────────────────────
-def _acquire_server_lock(port: int) -> None:
-    """Ensure only one server instance runs at a time.
+def _acquire_server_lock(port: int, workers: int = 1) -> None:
+    """Ensure server instances don't conflict.
 
-    Checks:
-    1. PID file — if it exists and the PID is alive, refuse to start.
-    2. Port — if already bound, refuse to start.
+    - Single-worker mode (default): exclusive PID lock — refuses to start
+      if another instance is already running on the same port.
+    - Multi-worker mode (workers > 1): skips PID lock. Workers share the
+      port via SO_REUSEPORT (uvicorn handles this). Port pre-check is
+      still performed to catch obvious misconfiguration.
 
-    On success, writes a PID file and registers cleanup handlers.
+    On success, writes a PID file (single-worker) or a multi-worker PID
+    manifest (multi-worker) and registers cleanup handlers.
     """
     import atexit
     import signal
@@ -232,47 +250,57 @@ def _acquire_server_lock(port: int) -> None:
     from raganything.utils.process_lock import get_server_pid_path
 
     pid_path = get_server_pid_path(WORKING_DIR)
-
-    # 1. Validate any existing PID file
-    if pid_path.exists():
-        try:
-            stale_pid = int(pid_path.read_text(encoding="utf-8").strip())
-        except (ValueError, OSError):
-            stale_pid = None
-        if stale_pid is not None:
-            try:
-                os.kill(stale_pid, 0)
-                server_logger.error(
-                    f"Server 已在运行 (PID {stale_pid})。"
-                    f"如果确定未运行，请删除 {pid_path}"
-                )
-                sys.exit(1)
-            except OSError:
-                server_logger.warning(
-                    f"发现过时 PID 文件 (PID {stale_pid} 已不存在)，覆盖"
-                )
-
-    # 2. Port pre-check
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    try:
-        sock.bind(("0.0.0.0", port))
-    except OSError:
-        server_logger.error(
-            f"端口 {port} 已被占用，Server 可能已在运行"
-        )
-        sys.exit(1)
-    finally:
-        sock.close()
-
-    # 3. Write PID file
     pid_path.parent.mkdir(parents=True, exist_ok=True)
-    pid_path.write_text(
-        f"{os.getpid()}\n{datetime.now(timezone.utc).isoformat()}",
-        encoding="utf-8",
-    )
-    server_logger.info(f"PID 文件已创建: {pid_path} (PID {os.getpid()})")
 
-    # 4. Cleanup handlers
+    if workers <= 1:
+        # ── Single-worker: exclusive PID lock ──
+        if pid_path.exists():
+            try:
+                stale_pid = int(pid_path.read_text(encoding="utf-8").strip())
+            except (ValueError, OSError):
+                stale_pid = None
+            if stale_pid is not None:
+                try:
+                    os.kill(stale_pid, 0)
+                    server_logger.error(
+                        f"Server 已在运行 (PID {stale_pid})。"
+                        f"如果确定未运行，请删除 {pid_path}"
+                    )
+                    sys.exit(1)
+                except OSError:
+                    server_logger.warning(
+                        f"发现过时 PID 文件 (PID {stale_pid} 已不存在)，覆盖"
+                    )
+
+        # Port pre-check
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind(("0.0.0.0", port))
+        except OSError:
+            server_logger.error(
+                f"端口 {port} 已被占用，Server 可能已在运行"
+            )
+            sys.exit(1)
+        finally:
+            sock.close()
+
+        pid_path.write_text(
+            f"{os.getpid()}\n{datetime.now(timezone.utc).isoformat()}",
+            encoding="utf-8",
+        )
+        server_logger.info(f"PID 文件已创建: {pid_path} (PID {os.getpid()})")
+    else:
+        # ── Multi-worker: append to manifest ──
+        server_logger.info(
+            f"多 Worker 模式 ({workers} workers)，跳过 PID 独占锁"
+        )
+        manifest = (
+            f"{os.getpid()}\t{datetime.now(timezone.utc).isoformat()}\tworker\n"
+        )
+        with open(pid_path, "a", encoding="utf-8") as f:
+            f.write(manifest)
+
+    # Cleanup handlers (single-worker only: full cleanup on exit)
     def _cleanup_pid() -> None:
         try:
             if pid_path.exists():
@@ -280,17 +308,35 @@ def _acquire_server_lock(port: int) -> None:
         except Exception:
             pass
 
-    atexit.register(_cleanup_pid)
+    if workers <= 1:
+        atexit.register(_cleanup_pid)
 
-    def _signal_handler(signum, frame):
-        _cleanup_pid()
-        sys.exit(0)
+        def _signal_handler(signum, frame):
+            _cleanup_pid()
+            sys.exit(0)
 
-    signal.signal(signal.SIGTERM, _signal_handler)
-    signal.signal(signal.SIGINT, _signal_handler)
+        signal.signal(signal.SIGTERM, _signal_handler)
+        signal.signal(signal.SIGINT, _signal_handler)
 
 
 if __name__ == "__main__":
+    import argparse
+
+    _parser = argparse.ArgumentParser(description="RAG-Anything Server")
+    _parser.add_argument(
+        "--workers", "-w",
+        type=int,
+        default=int(os.getenv("SERVER_WORKERS", "1")),
+        help="Number of worker processes (default: 1, from SERVER_WORKERS env)",
+    )
+    _args = _parser.parse_args()
+
     _server_port = int(os.getenv("PORT", "8001"))
-    _acquire_server_lock(port=_server_port)
-    uvicorn.run(app, host="0.0.0.0", port=_server_port)
+    _acquire_server_lock(port=_server_port, workers=_args.workers)
+    uvicorn.run(
+        "server:app",
+        host="0.0.0.0",
+        port=_server_port,
+        workers=_args.workers if _args.workers > 1 else None,
+        reload=False,
+    )
