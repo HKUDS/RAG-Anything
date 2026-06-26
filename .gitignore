@@ -84,6 +84,7 @@ CLAUDE.md
 uploads/
 query_history.json
 rag_storage_kb_meta.json
+auth.db
 agent_conversations/
 my_docs/
 node_modules/

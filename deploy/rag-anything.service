@@ -1,0 +1,34 @@
+[Unit]
+Description=RAG-Anything Knowledge Management API
+Documentation=https://github.com/619916cgh/RAG-Anything
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/rag-anything
+EnvironmentFile=/opt/rag-anything/.env
+ExecStart=/opt/rag-anything/.venv/bin/python server.py --workers 4
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/opt/rag-anything/rag_storage /opt/rag-anything/logs
+ReadOnlyPaths=/opt/rag-anything/.env
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=rag-anything
+
+[Install]
+WantedBy=multi-user.target

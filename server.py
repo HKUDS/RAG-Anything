@@ -53,6 +53,95 @@ EMB_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
 WORKING_DIR = os.getenv("WORKING_DIR", "./rag_storage")
 CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
 
+# ── 日志（轮转文件 + 控制台）─────────────────────
+import logging
+from logging.handlers import RotatingFileHandler
+
+LOG_DIR = os.getenv("LOG_DIR", os.path.join(WORKING_DIR, "logs"))
+LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", str(10 * 1024 * 1024)))  # 10MB
+LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "10"))
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+
+def _setup_logging() -> logging.Logger:
+    """配置 rag_server 日志：轮转文件 + 控制台输出"""
+    Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
+    _logger = logging.getLogger("rag_server")
+    _logger.setLevel(getattr(logging, LOG_LEVEL.upper(), logging.INFO))
+
+    # 避免重复添加 handler（多 worker 模式下每个子进程各自添加）
+    if not _logger.handlers:
+        # 轮转文件 handler
+        _fh = RotatingFileHandler(
+            Path(LOG_DIR) / "server.log",
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        _fh.setFormatter(logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%dT%H:%M:%S",
+        ))
+        _logger.addHandler(_fh)
+
+        # 控制台 handler（stderr，uvicorn 会捕获）
+        _ch = logging.StreamHandler(sys.stderr)
+        _ch.setFormatter(logging.Formatter(
+            "[%(levelname)s] %(name)s: %(message)s"
+        ))
+        _logger.addHandler(_ch)
+
+    return _logger
+
+# 立即初始化日志
+_server_logger = _setup_logging()
+
+# ── 存储空间监控 ──────────────────────────────────
+from prometheus_client import Gauge as PromGauge
+
+DISK_ALERT_THRESHOLD_MB = int(os.getenv("DISK_ALERT_THRESHOLD_MB", "10240"))  # 10GB
+DISK_ALERT_PERCENT = float(os.getenv("DISK_ALERT_PERCENT", "85"))  # 85%
+DISK_CHECK_INTERVAL = int(os.getenv("DISK_CHECK_INTERVAL", "300"))  # 5 min
+
+_storage_usage_bytes_g = PromGauge(
+    "rag_storage_bytes",
+    "Storage directory total size in bytes",
+    ["dir"],
+)
+_storage_file_count_g = PromGauge(
+    "rag_storage_file_count",
+    "Number of files in storage directory",
+    ["dir"],
+)
+
+async def _disk_monitor_loop(interval: int = DISK_CHECK_INTERVAL):
+    """周期性扫描存储目录，更新 Prometheus 指标并在超阈值时告警"""
+    # 延迟首次检查，等所有 KB 加载完毕
+    await asyncio.sleep(60)
+    while True:
+        try:
+            storage_path = Path(WORKING_DIR)
+            if storage_path.exists():
+                total_bytes = 0
+                file_count = 0
+                for f in storage_path.rglob("*"):
+                    if f.is_file():
+                        try:
+                            total_bytes += f.stat().st_size
+                            file_count += 1
+                        except OSError:
+                            pass
+                _storage_usage_bytes_g.labels(dir=WORKING_DIR).set(total_bytes)
+                _storage_file_count_g.labels(dir=WORKING_DIR).set(file_count)
+                total_mb = total_bytes / (1024 * 1024)
+                if total_mb > DISK_ALERT_THRESHOLD_MB:
+                    _server_logger.warning(
+                        f"磁盘告警: 存储目录 {WORKING_DIR} 占用 {total_mb:.1f}MB，"
+                        f"超过阈值 {DISK_ALERT_THRESHOLD_MB}MB"
+                    )
+        except Exception as exc:
+            _server_logger.error(f"磁盘监控错误: {exc}")
+        await asyncio.sleep(interval)
+
 app = FastAPI(title="RAG-Anything API", version="1.3.1")
 
 # ── Rate Limiting ──────────────────────────────────
@@ -213,6 +302,8 @@ async def startup():
     await _recover_stuck_documents()
     # 启动周期性后台恢复任务（每 300 秒扫描一次）
     asyncio.create_task(_stuck_recovery_loop(300))
+    # 启动磁盘空间监控（Prometheus 指标 + 阈值告警）
+    asyncio.create_task(_disk_monitor_loop(DISK_CHECK_INTERVAL))
     # 预加载默认知识库
     kb = await get_kb("default")
     server_logger.info(f"RAG-Anything 服务器已启动，智能体: {len(mgr.agents)}个, 知识库: {list(meta.keys())}")

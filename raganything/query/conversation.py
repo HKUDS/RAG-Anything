@@ -97,14 +97,16 @@ class ConversationManager:
                 self._threads = {}
 
     async def _save_nolock(self) -> None:
-        """持久化（调用方需持有锁）。"""
+        """持久化（调用方需持有锁），原子写入防崩溃损坏。"""
         try:
             self.storage_path.parent.mkdir(parents=True, exist_ok=True)
             data = {"threads": self._threads}
-            self.storage_path.write_text(
+            tmp = self.storage_path.with_suffix(".tmp")
+            tmp.write_text(
                 json.dumps(data, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
+            tmp.replace(self.storage_path)
         except Exception as e:
             logger.error(f"Failed to save conversations: {e}")
 
