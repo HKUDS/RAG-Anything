@@ -60,7 +60,7 @@ export default function ManufacturingKBSelector({
         value={mfgKb}
         disabled={loading}
         onChange={e => onChange(e.target.value)}
-        className="px-3 py-1.5 rounded-lg border border-warm-200 text-sm bg-white text-warm-700 cursor-pointer disabled:opacity-50"
+        className="px-3 py-1.5 rounded-lg border border-cloud-300 text-sm bg-white text-ink-body cursor-pointer disabled:opacity-50"
       >
         {kbList.length === 0 && <option value="manufacturing">制造知识库</option>}
         {kbList.map(k => <option key={k.name} value={k.name}>{k.label || k.name}</option>)}
@@ -69,7 +69,7 @@ export default function ManufacturingKBSelector({
       <button
         onClick={() => { setShowCreate(!showCreate); setCreateError(null) }}
         disabled={creating}
-        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-warm-200 text-warm-500 hover:text-warm-700 hover:bg-warm-50 transition-colors disabled:opacity-50"
+        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-cloud-300 text-ink-muted hover:text-ink-body hover:bg-cloud-200 transition-colors disabled:opacity-50"
         title="新建制造领域知识库"
       >
         {creating ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
@@ -78,8 +78,8 @@ export default function ManufacturingKBSelector({
 
       {/* Inline create form */}
       {showCreate && (
-        <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-warm-200 rounded-xl shadow-lg p-4 z-50">
-          <p className="text-sm font-medium text-warm-800 mb-3">新建制造领域知识库</p>
+        <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-cloud-300 rounded-xl shadow-lg p-4 z-50">
+          <p className="text-sm font-medium text-ink-primary mb-3">新建制造领域知识库</p>
           <div className="space-y-2">
             <input
               ref={inputRef}
@@ -88,7 +88,7 @@ export default function ManufacturingKBSelector({
               onChange={e => { setNewName(e.target.value); setCreateError(null) }}
               onKeyDown={handleKeyDown}
               placeholder="输入子领域名称，如：焊接工艺"
-              className="w-full px-3 py-2 rounded-lg border border-warm-200 text-sm text-warm-800 placeholder-warm-400 focus:outline-none focus:border-coral-400 transition-colors"
+              className="w-full px-3 py-2 rounded-lg border border-cloud-300 text-sm text-ink-primary placeholder-ink-muted focus:outline-none focus:border-sky-400 transition-colors"
               maxLength={40}
             />
             {createError && (
@@ -100,13 +100,13 @@ export default function ManufacturingKBSelector({
               <button
                 onClick={handleCreate}
                 disabled={!newName.trim() || creating}
-                className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-coral-500 text-white hover:bg-coral-600 disabled:opacity-40 transition-colors"
+                className="flex-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-40 transition-colors"
               >
                 {creating ? '创建中…' : '确认创建'}
               </button>
               <button
                 onClick={() => { setShowCreate(false); setNewName('') }}
-                className="px-3 py-1.5 rounded-lg text-xs border border-warm-200 text-warm-500 hover:bg-warm-50 transition-colors"
+                className="px-3 py-1.5 rounded-lg text-xs border border-cloud-300 text-ink-muted hover:bg-cloud-200 transition-colors"
               >
                 取消
               </button>

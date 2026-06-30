@@ -18,12 +18,26 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
   const [username, setUsername] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  const [roleId, setRoleId] = useState(3) // default viewer
+  const [roleId, setRoleId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [strength, setStrength] = useState(null)
 
+  // Derive default role ID from roles list (default to "student")
+  useEffect(() => {
+    if (!roles || roles.length === 0) return
+    const student = roles.find(r => r.name === 'student')
+    if (student) setRoleId(student.id)
+  }, [roles])
+
   useEffect(() => { setStrength(checkPasswordStrength(password)) }, [password])
+
+  useEffect(() => {
+    if (!isOpen) return
+    const handleEsc = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
+  }, [isOpen, onClose])
 
   if (!isOpen) return null
 
@@ -45,7 +59,8 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
       onCreated?.(data.user)
-      setUsername(''); setEmail(''); setPassword(''); setRoleId(3); setError('')
+      const studentRole = (roles || []).find(r => r.name === 'student')
+      setUsername(''); setEmail(''); setPassword(''); setRoleId(studentRole?.id || null); setError('')
       onClose()
     } catch (e) {
       setError(e.message)
@@ -55,14 +70,14 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="创建用户">
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 mx-4">
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-semibold text-warm-800 flex items-center gap-2">
-            <UserPlus size={18} className="text-coral-500" /> 创建用户
+          <h3 className="text-base font-semibold text-ink-primary flex items-center gap-2">
+            <UserPlus size={18} className="text-sky-500" /> 创建用户
           </h3>
-          <button onClick={onClose} className="text-warm-400 hover:text-warm-600 transition-colors">
-            <X size={18} />
+          <button onClick={onClose} aria-label="关闭" className="text-ink-muted hover:text-ink-body transition-colors">
+            <X size={18} aria-hidden="true" />
           </button>
         </div>
 
@@ -72,44 +87,44 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-warm-600 mb-1">用户名 *</label>
+            <label className="block text-xs font-medium text-ink-body mb-1">用户名 *</label>
             <input className="input-field text-sm py-2 w-full" placeholder="至少 2 个字符" value={username}
               onChange={e => setUsername(e.target.value)} autoFocus />
           </div>
           <div>
-            <label className="block text-xs font-medium text-warm-600 mb-1">邮箱 *</label>
+            <label className="block text-xs font-medium text-ink-body mb-1">邮箱 *</label>
             <input className="input-field text-sm py-2 w-full" type="email" placeholder="user@example.com" value={email}
               onChange={e => setEmail(e.target.value)} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-warm-600 mb-1">密码 *</label>
+            <label className="block text-xs font-medium text-ink-body mb-1">密码 *</label>
             <input className="input-field text-sm py-2 w-full" type="password" placeholder="至少 8 位，包含 3/4 类字符" value={password}
               onChange={e => setPassword(e.target.value)} />
             {password && strength && (
               <div className="mt-2 space-y-1">
-                <div className={`flex items-center gap-1.5 text-xs ${strength.length ? 'text-sage-600' : 'text-warm-400'}`}>
+                <div className={`flex items-center gap-1.5 text-xs ${strength.length ? 'text-sage-600' : 'text-ink-muted'}`}>
                   {strength.length ? <Check size={11} /> : <Circle size={11} />} 至少 8 位
                 </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.upper ? 'text-sage-600' : 'text-warm-400'}`}>
+                <div className={`flex items-center gap-1.5 text-xs ${strength.upper ? 'text-sage-600' : 'text-ink-muted'}`}>
                   {strength.upper ? <Check size={11} /> : <Circle size={11} />} 大写字母
                 </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.lower ? 'text-sage-600' : 'text-warm-400'}`}>
+                <div className={`flex items-center gap-1.5 text-xs ${strength.lower ? 'text-sage-600' : 'text-ink-muted'}`}>
                   {strength.lower ? <Check size={11} /> : <Circle size={11} />} 小写字母
                 </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.digit ? 'text-sage-600' : 'text-warm-400'}`}>
+                <div className={`flex items-center gap-1.5 text-xs ${strength.digit ? 'text-sage-600' : 'text-ink-muted'}`}>
                   {strength.digit ? <Check size={11} /> : <Circle size={11} />} 数字
                 </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.special ? 'text-sage-600' : 'text-warm-400'}`}>
+                <div className={`flex items-center gap-1.5 text-xs ${strength.special ? 'text-sage-600' : 'text-ink-muted'}`}>
                   {strength.special ? <Check size={11} /> : <Circle size={11} />} 特殊字符
                 </div>
-                <div className="text-xs text-warm-500 mt-1">
+                <div className="text-xs text-ink-muted mt-1">
                   满足 {strength.score()} / 4 类 {strength.score() >= 3 ? '✅' : '（需要至少 3 类）'}
                 </div>
               </div>
             )}
           </div>
           <div>
-            <label className="block text-xs font-medium text-warm-600 mb-1">角色</label>
+            <label className="block text-xs font-medium text-ink-body mb-1">角色</label>
             <select className="input-field text-sm py-2 w-full" value={roleId} onChange={e => setRoleId(Number(e.target.value))}>
               {(roles || []).map(r => (
                 <option key={r.id} value={r.id}>{r.name} — {r.description}</option>

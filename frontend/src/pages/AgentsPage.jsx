@@ -32,9 +32,9 @@ export default function AgentsPage() {
   }
 
   const loadData = () => {
-    api.listAgents().then(r => setAgents(r.agents || [])).catch(() => {})
-    api.getAgentTemplates().then(r => setTemplates(r.templates || [])).catch(() => {})
-    api.listKBs().then(r => setKBs(r.knowledge_bases || [])).catch(() => {})
+    api.listAgents().then(r => setAgents(r.agents || [])).catch(err => console.error(err))
+    api.getAgentTemplates().then(r => setTemplates(r.templates || [])).catch(err => console.error(err))
+    api.listKBs().then(r => setKBs(r.knowledge_bases || [])).catch(err => console.error(err))
   }
 
   const openCreate = () => {
@@ -124,22 +124,22 @@ export default function AgentsPage() {
               <div className="flex items-center gap-3">
                 <span className="text-3xl">{agent.icon || '🤖'}</span>
                 <div>
-                  <h3 className="font-medium text-warm-700 text-sm">{agent.name}</h3>
-                  <p className="text-[11px] text-warm-500 font-mono">ID: {agent.id}</p>
+                  <h3 className="font-medium text-ink-body text-sm">{agent.name}</h3>
+                  <p className="text-[11px] text-ink-muted font-mono">ID: {agent.id}</p>
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                <button className="p-1.5 rounded-lg text-warm-500 hover:text-coral-500 hover:bg-coral-50 transition-colors" onClick={() => openEdit(agent)}>
-                  <Edit3 size={14} />
+                <button className="p-1.5 rounded-lg text-ink-muted hover:text-sky-500 hover:bg-sky-50 transition-colors" onClick={() => openEdit(agent)} aria-label={`编辑 ${agent.name}`}>
+                  <Edit3 size={14} aria-hidden="true" />
                 </button>
-                <button className="p-1.5 rounded-lg text-warm-500 hover:text-rose-500 hover:bg-rose-50 transition-colors" onClick={() => setDeleteConfirm(agent.id)}>
-                  <Trash2 size={14} />
+                <button className="p-1.5 rounded-lg text-ink-muted hover:text-rose-500 hover:bg-rose-50 transition-colors" onClick={() => setDeleteConfirm(agent.id)} aria-label={`删除 ${agent.name}`}>
+                  <Trash2 size={14} aria-hidden="true" />
                 </button>
               </div>
             </div>
 
             {agent.description && (
-              <p className="text-xs text-warm-500 mb-3 line-clamp-2">{agent.description}</p>
+              <p className="text-xs text-ink-muted mb-3 line-clamp-2">{agent.description}</p>
             )}
 
             <div className="flex flex-wrap gap-1.5 mb-3">
@@ -157,7 +157,7 @@ export default function AgentsPage() {
               </span>
             </div>
 
-            <button className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-coral-50 text-coral-600 text-xs font-medium hover:bg-coral-100 transition-colors border border-coral-200/60">
+            <button className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 text-xs font-medium hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors border border-sky-200/60 dark:border-sky-800/30">
               <MessageSquare size={13} /> 开始对话
             </button>
           </motion.div>
@@ -176,7 +176,7 @@ export default function AgentsPage() {
       {/* Create/Edit Modal */}
       <AnimatePresence>
         {showModal && (
-          <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 bg-warm-900/25 backdrop-blur-sm" onClick={() => setShowModal(false)}>
+          <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 bg-sky-900/25 dark:bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)} role="dialog" aria-modal="true" aria-label={editingAgent ? '编辑智能体' : '新建智能体'}>
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -186,26 +186,26 @@ export default function AgentsPage() {
             >
               <div className="p-6 space-y-5">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-display text-lg font-semibold text-warm-800">
+                  <h3 className="font-display text-lg font-semibold text-ink-primary">
                     {editingAgent ? '编辑智能体' : '新建智能体'}
                   </h3>
-                  <button onClick={() => setShowModal(false)} className="text-warm-500 hover:text-warm-600 transition-colors">
-                    <X size={20} />
+                  <button onClick={() => setShowModal(false)} aria-label="关闭" className="text-ink-muted hover:text-ink-body transition-colors">
+                    <X size={20} aria-hidden="true" />
                   </button>
                 </div>
 
                 {/* Template Selection */}
                 {!editingAgent && templates.length > 0 && (
                   <div>
-                    <label className="text-xs text-warm-500 mb-2 block">从模板创建</label>
+                    <label className="text-xs text-ink-muted mb-2 block">从模板创建</label>
                     <div className="flex gap-2 flex-wrap">
                       {templates.map(tpl => (
                         <button key={tpl.id}
                           onClick={() => applyTemplate(tpl)}
                           className={`px-3 py-1.5 rounded-xl text-xs border transition-all ${
                             form.template_id === tpl.id
-                              ? 'border-coral-300 bg-coral-50 text-coral-600 shadow-warm-sm'
-                              : 'border-warm-200 text-warm-500 hover:border-warm-300 hover:text-warm-600'
+                              ? 'border-sky-300 bg-sky-50 text-sky-600 shadow-cloud-sm'
+                              : 'border-cloud-300 text-ink-muted hover:border-cloud-400 hover:text-ink-body'
                           }`}>
                           {tpl.icon} {tpl.name.replace(/^[^一-龥]*\s*/, '')}
                         </button>
@@ -217,25 +217,25 @@ export default function AgentsPage() {
                 {/* Basic Info */}
                 <div className="grid grid-cols-4 gap-3">
                   <div className="col-span-1">
-                    <label className="text-xs text-warm-500 mb-1 block">图标</label>
+                    <label className="text-xs text-ink-muted mb-1 block">图标</label>
                     <input className="input-field text-center text-2xl py-1" value={form.icon}
                       onChange={e => setForm({ ...form, icon: e.target.value })} maxLength={4} />
                   </div>
                   <div className="col-span-3">
-                    <label className="text-xs text-warm-500 mb-1 block">名称</label>
+                    <label className="text-xs text-ink-muted mb-1 block">名称</label>
                     <input className="input-field" placeholder="智能体名称" value={form.name}
                       onChange={e => setForm({ ...form, name: e.target.value })} />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs text-warm-500 mb-1 block">描述</label>
+                  <label className="text-xs text-ink-muted mb-1 block">描述</label>
                   <input className="input-field" placeholder="简短描述智能体的用途" value={form.description}
                     onChange={e => setForm({ ...form, description: e.target.value })} />
                 </div>
 
                 <div>
-                  <label className="text-xs text-warm-500 mb-1 block">欢迎语</label>
+                  <label className="text-xs text-ink-muted mb-1 block">欢迎语</label>
                   <input className="input-field" placeholder="进入对话时显示的欢迎消息" value={form.welcome_message}
                     onChange={e => setForm({ ...form, welcome_message: e.target.value })} />
                 </div>
@@ -243,14 +243,14 @@ export default function AgentsPage() {
                 {/* KB + Model */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-warm-500 mb-1 block">关联知识库</label>
+                    <label className="text-xs text-ink-muted mb-1 block">关联知识库</label>
                     <select className="input-field" value={form.kb_name}
                       onChange={e => setForm({ ...form, kb_name: e.target.value })}>
                       {kbs.map(kb => <option key={kb.name} value={kb.name}>{kb.label}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-warm-500 mb-1 block">LLM 模型</label>
+                    <label className="text-xs text-ink-muted mb-1 block">LLM 模型</label>
                     <select className="input-field" value={form.llm_model}
                       onChange={e => setForm({ ...form, llm_model: e.target.value })}>
                       <option value="qwen-plus">qwen-plus（推荐）</option>
@@ -263,7 +263,7 @@ export default function AgentsPage() {
 
                 {/* Query Mode */}
                 <div>
-                  <label className="text-xs text-warm-500 mb-1 block">默认查询模式</label>
+                  <label className="text-xs text-ink-muted mb-1 block">默认查询模式</label>
                   <select className="input-field" value={form.query_mode}
                     onChange={e => setForm({ ...form, query_mode: e.target.value })}>
                     <option value="rrf">融合检索 RRF</option>
@@ -276,7 +276,7 @@ export default function AgentsPage() {
 
                 {/* Reasoning Mode */}
                 <div>
-                  <label className="text-xs text-warm-500 mb-1 block">推理模式</label>
+                  <label className="text-xs text-ink-muted mb-1 block">推理模式</label>
                   <select className="input-field" value={form.agent_mode}
                     onChange={e => setForm({ ...form, agent_mode: e.target.value })}>
                     <option value="none">无（直接回答）</option>
@@ -288,20 +288,20 @@ export default function AgentsPage() {
                 {/* Temperature */}
                 <div>
                   <div className="flex justify-between">
-                    <label className="text-xs text-warm-500 mb-1 block">回复温度</label>
-                    <span className="text-[10px] font-mono text-coral-500">{form.temperature.toFixed(1)}</span>
+                    <label className="text-xs text-ink-muted mb-1 block">回复温度</label>
+                    <span className="text-[10px] font-mono text-sky-500">{form.temperature.toFixed(1)}</span>
                   </div>
                   <input type="range" min="0" max="1.5" step="0.1" value={form.temperature}
                     onChange={e => setForm({ ...form, temperature: parseFloat(e.target.value) })}
-                    className="w-full accent-coral-500" />
-                  <div className="flex justify-between text-[10px] text-warm-500">
+                    className="w-full accent-sky-500" />
+                  <div className="flex justify-between text-[10px] text-ink-muted">
                     <span>严谨 (0)</span><span>平衡</span><span>创意 (1.5)</span>
                   </div>
                 </div>
 
                 {/* System Prompt */}
                 <div>
-                  <label className="text-xs text-warm-500 mb-1 block">系统提示词</label>
+                  <label className="text-xs text-ink-muted mb-1 block">系统提示词</label>
                   <textarea className="input-field h-24 text-xs font-mono" placeholder="自定义智能体行为指令..."
                     value={form.system_prompt}
                     onChange={e => setForm({ ...form, system_prompt: e.target.value })} />
@@ -310,11 +310,11 @@ export default function AgentsPage() {
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setForm({ ...form, use_default_prompt: !form.use_default_prompt })}
-                    className={`relative w-10 h-5 rounded-full transition-colors ${form.use_default_prompt ? 'bg-coral-500' : 'bg-warm-300'}`}>
+                    className={`relative w-10 h-5 rounded-full transition-colors ${form.use_default_prompt ? 'bg-sky-500' : 'bg-cloud-300'}`}>
                     <span className="absolute top-0.5 w-4 h-4 rounded-full bg-white shadow-sm transition-transform"
                       style={{ left: form.use_default_prompt ? '1.25rem' : '0.125rem' }} />
                   </button>
-                  <span className="text-xs text-warm-500">叠加默认格式化提示词（标题、列表、表格结构）</span>
+                  <span className="text-xs text-ink-muted">叠加默认格式化提示词（标题、列表、表格结构）</span>
                 </div>
 
                 {/* Action buttons */}
@@ -333,7 +333,7 @@ export default function AgentsPage() {
       {/* Delete Confirmation */}
       <AnimatePresence>
         {deleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-warm-900/25 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)}>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-sky-900/25 dark:bg-black/40 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除智能体">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
@@ -341,11 +341,11 @@ export default function AgentsPage() {
               className="card p-6 max-w-sm w-full m-4"
               onClick={e => e.stopPropagation()}
             >
-              <h3 className="font-medium text-warm-800 mb-2">确认删除智能体？</h3>
-              <p className="text-sm text-warm-500 mb-4">删除后对话历史将永久丢失，关联的知识库不受影响。</p>
+              <h3 className="font-medium text-ink-primary mb-2">确认删除智能体？</h3>
+              <p className="text-sm text-ink-muted mb-4">删除后对话历史将永久丢失，关联的知识库不受影响。</p>
               <div className="flex gap-3">
                 <button onClick={() => deleteAgent(deleteConfirm)} className="flex-1 py-2 rounded-xl bg-rose-50 text-rose-600 border border-rose-200 text-sm hover:bg-rose-100 transition-colors">确认删除</button>
-                <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2 rounded-xl bg-warm-100 text-warm-500 text-sm hover:bg-warm-200 transition-colors">取消</button>
+                <button onClick={() => setDeleteConfirm(null)} className="flex-1 py-2 rounded-xl bg-cloud-100 text-ink-muted text-sm hover:bg-cloud-300 transition-colors">取消</button>
               </div>
             </motion.div>
           </div>

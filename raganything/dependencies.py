@@ -72,9 +72,9 @@ async def get_current_user(
     if lock_error:
         raise HTTPException(403, lock_error)
 
-    # 获取角色信息 — is_admin 必须从角色派生，不从 is_admin 列回退
+    # 获取角色信息 — is_admin 从 super_admin 或 admin 角色派生
     role = await _auth_get_user_role(user_id)
-    is_admin = role is not None and role.get("name") == "admin"
+    is_admin = role is not None and role.get("name") in ("super_admin", "admin")
 
     return {
         "id": user_id,
@@ -113,6 +113,9 @@ def require_permission(permission: str):
         async def list_users(user: dict = Depends(require_permission("users:read"))):
             ...
 
+    权限拒绝时自动记录审计日志（action="permission.denied"），
+    包含请求端点、HTTP 方法、所需权限和用户当前角色。
+
     Args:
         permission: 权限常数字符串（如 Permission.USERS_READ）
 
@@ -121,6 +124,7 @@ def require_permission(permission: str):
     """
 
     async def _check_permission(
+        request: Request,
         current_user: dict = Depends(get_current_user),
     ) -> dict:
         """检查当前用户是否具有指定权限（统一通过 RBAC 角色权限系统）。"""
@@ -128,6 +132,26 @@ def require_permission(permission: str):
         user_id = current_user["id"]
         if await _auth_has_permission(user_id, permission):
             return current_user
+
+        # ── 审计日志：记录权限拒绝事件 ──────────────────────
+        try:
+            from raganything.services.audit import get_audit_logger
+
+            audit = get_audit_logger()
+            await audit.log(
+                actor_id=user_id,
+                action="permission.denied",
+                details={
+                    "required_permission": permission,
+                    "endpoint": request.url.path,
+                    "method": request.method,
+                    "user_role": current_user.get("role", {}).get("name", "unknown"),
+                    "username": current_user.get("username", "unknown"),
+                },
+                ip_address=request.client.host if request.client else None,
+            )
+        except Exception:
+            pass  # 审计日志失败不应影响正常权限检查流程
 
         raise HTTPException(
             403,

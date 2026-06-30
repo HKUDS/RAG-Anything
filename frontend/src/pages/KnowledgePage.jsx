@@ -12,7 +12,8 @@ const SUPPORTED = '.pdf .jpg .jpeg .png .bmp .tiff .gif .webp .doc .docx .ppt .p
 const STATUS = { processed: 'badge-success', processing: 'badge-warning', handling: 'badge-info', failed: 'badge-error' }
 const STATUS_CN = { processed: '已完成', processing: '处理中', handling: '入库中', failed: '失败' }
 const PHASE_CN = { parsing: '解析文档', 'entity-extraction': '抽取实体', embedding: '向量化', 'graph-building': '构建图谱', 'multimodal-tasks': '多模态处理' }
-const NODE_COLORS = ['#e8734a', '#5b9bd5', '#6b9e7a', '#d4a853', '#c9707e', '#8b5cf6', '#06b6d4', '#f97316']
+// Brand palette for D3 knowledge graph entity types — all from DESIGN.md color ramps
+const NODE_COLORS = ['#e8734a', '#5b9bd5', '#6b9e7a', '#d4a853', '#c9707e', '#366596', '#6da9d7', '#f08f6d']
 
 const COST_COLORS = {
   free: 'text-sage-600 bg-sage-50 border-sage-200',
@@ -39,9 +40,9 @@ function KBSelector({ kbs, activeKB, onSwitch, onCreate, onDelete, deletingKB })
   return (
     <div className="flex items-center gap-3">
       <div className="flex items-center gap-2">
-        <Layers size={16} className="text-warm-500" />
+        <Layers size={16} className="text-ink-muted" />
         <select
-          className="rounded-xl border border-warm-300 bg-warm-50 text-sm text-warm-700 px-3 py-2 focus:outline-none focus:border-coral-400 transition-colors cursor-pointer min-w-[160px]"
+          className="rounded-xl border border-cloud-400 bg-cloud-200 text-sm text-ink-body px-3 py-2 focus:outline-none focus:border-sky-400 transition-colors cursor-pointer min-w-[160px]"
           value={activeKB}
           onChange={e => onSwitch(e.target.value)}
         >
@@ -66,17 +67,18 @@ function KBSelector({ kbs, activeKB, onSwitch, onCreate, onDelete, deletingKB })
             initial={{ opacity: 0, y: -8, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.95 }}
-            className="absolute top-full left-0 mt-2 w-72 card p-4 shadow-warm-md z-50"
+            className="absolute top-full left-0 mt-2 w-72 card p-4 shadow-cloud-md z-50"
           >
-            <p className="text-sm font-medium text-warm-800 mb-3">新建知识库</p>
+            <p className="text-sm font-medium text-ink-primary mb-3">新建知识库</p>
             <div className="space-y-3">
               <div>
-                <label className="text-xs text-warm-500 mb-1 block">名称</label>
+                <label className="text-xs text-ink-muted mb-1 block">名称</label>
                 <input
                   ref={inputRef}
                   className="input-field text-sm"
                   placeholder="输入知识库名称…"
                   value={newKBName}
+                  maxLength={64}
                   onChange={e => setNewKBName(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') setShowCreate(false) }}
                 />
@@ -97,13 +99,16 @@ function KBSelector({ kbs, activeKB, onSwitch, onCreate, onDelete, deletingKB })
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-warm-900/20"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-sky-900/20"
             onClick={() => setShowDelete(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="确认删除知识库"
           >
             <div className="card p-6 max-w-sm w-full m-4" onClick={e => e.stopPropagation()}>
               <Trash2 size={32} className="mx-auto mb-3 text-rose-500" />
-              <p className="text-warm-800 font-medium text-center mb-1">确认删除知识库</p>
-              <p className="text-sm text-warm-500 text-center mb-2">
+              <p className="text-ink-primary font-medium text-center mb-1">确认删除知识库</p>
+              <p className="text-sm text-ink-muted text-center mb-2">
                 「{activeKB}」
               </p>
               <p className="text-xs text-rose-500 text-center mb-4">将清除所有文档、实体和向量数据，不可恢复</p>
@@ -223,12 +228,12 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
     <div className="space-y-4">
       <button
         onClick={() => setShowUpload(!showUpload)}
-        className="flex items-center gap-2 text-sm font-medium text-warm-600 hover:text-coral-500 transition-colors"
+        className="flex items-center gap-2 text-sm font-medium text-ink-body hover:text-sky-500 transition-colors"
       >
         {showUpload ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
         <Upload size={16} />
         上传文档到当前知识库
-        {files.length > 0 && <span className="text-xs text-warm-500">({files.length} 个文件)</span>}
+        {files.length > 0 && <span className="text-xs text-ink-muted">({files.length} 个文件)</span>}
       </button>
 
       <AnimatePresence>
@@ -245,20 +250,20 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
               onDragLeave={() => setDragOver(false)}
               onDrop={handleDrop}
               className={`card border-dashed p-8 text-center cursor-pointer transition-all ${
-                dragOver ? 'border-coral-400 bg-coral-50/50 scale-[1.01] shadow-warm-md' : 'border-warm-300/70'
+                dragOver ? 'border-sky-400 bg-sky-50/50 scale-[1.01] shadow-cloud-md' : 'border-cloud-400/70'
               }`}
               onClick={() => document.getElementById('kb-file-input').click()}
             >
               <input id="kb-file-input" type="file" multiple className="hidden"
                 onChange={(e) => Array.from(e.target.files).forEach(addFile)} />
-              <Upload size={36} className="mx-auto mb-3 text-warm-500" />
-              <p className="text-warm-700 font-medium text-sm">拖拽文件到此处，或点击选择</p>
-              <p className="text-warm-500 text-xs mt-1">PDF · Word · PPT · Excel · 图片 · 文本 · 视频</p>
+              <Upload size={36} className="mx-auto mb-3 text-ink-muted" />
+              <p className="text-ink-body font-medium text-sm">拖拽文件到此处，或点击选择</p>
+              <p className="text-ink-muted text-xs mt-1">PDF · Word · PPT · Excel · 图片 · 文本 · 视频</p>
             </div>
 
             {/* Chunking Strategy */}
             <div className="flex gap-2 flex-wrap items-center">
-              <span className="text-xs text-warm-500 flex items-center gap-1"><Scissors size={12}/> 分块策略:</span>
+              <span className="text-xs text-ink-muted flex items-center gap-1"><Scissors size={12}/> 分块策略:</span>
               {Object.entries(strategies).length > 0 ? (
                 Object.entries(strategies).map(([key, meta]) => {
                   const isActive = (chunkingStrategy || 'recursive') === key
@@ -267,8 +272,8 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                       onClick={() => setChunkingStrategy(key)}
                       className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-all ${
                         isActive
-                          ? 'border-coral-300 bg-coral-50 text-coral-600'
-                          : 'border-warm-200 text-warm-500 hover:border-warm-300'
+                          ? 'border-sky-300 bg-sky-50 text-sky-600'
+                          : 'border-cloud-300 text-ink-muted hover:border-cloud-400'
                       }`}>
                       {meta.name}
                       <span className={`text-[9px] px-1 py-0.5 rounded-full border ${COST_COLORS[meta.cost_level] || COST_COLORS.free}`}>
@@ -278,13 +283,13 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                   )
                 })
               ) : (
-                <span className="text-xs text-warm-500">加载中...</span>
+                <span className="text-xs text-ink-muted">加载中...</span>
               )}
             </div>
 
             {/* Multimodal Toggles */}
             <div className="flex gap-2 flex-wrap items-center">
-              <span className="text-xs text-warm-500 flex items-center gap-1"><Zap size={12}/> 多模态处理:</span>
+              <span className="text-xs text-ink-muted flex items-center gap-1"><Zap size={12}/> 多模态处理:</span>
               {[
                 { key: 'enable_image', label: '图片', desc: 'VLM 分析图片' },
                 { key: 'enable_table', label: '表格', desc: '提取表格数据' },
@@ -295,8 +300,8 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                   onClick={() => setMultimodal(prev => ({ ...prev, [key]: !prev[key] }))}
                   className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border transition-all ${
                     multimodal[key]
-                      ? 'border-coral-300 bg-coral-50 text-coral-600'
-                      : 'border-warm-200 text-warm-400 hover:border-warm-300'
+                      ? 'border-sky-300 bg-sky-50 text-sky-600'
+                      : 'border-cloud-300 text-ink-muted hover:border-cloud-400'
                   }`}
                   title={desc}
                 >
@@ -308,16 +313,16 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
             {/* URL / Folder / Paste */}
             <div className="grid grid-cols-3 gap-4">
               <div className="card p-3 space-y-2">
-                <p className="text-xs font-medium text-warm-600 flex items-center gap-1"><Globe size={12}/> URL 导入</p>
+                <p className="text-xs font-medium text-ink-body flex items-center gap-1"><Globe size={12}/> URL 导入</p>
                 <input className="input-field text-xs py-1.5" placeholder="https://..." value={urlInput}
-                  onChange={e => setUrlInput(e.target.value)}
+                  onChange={e => setUrlInput(e.target.value)} maxLength={2048}
                   onKeyDown={e => e.key === 'Enter' && handleUrlImport()} />
                 <button className="btn-primary text-xs w-full py-1.5" onClick={handleUrlImport} disabled={!urlInput || urlLoading}>
                   {urlLoading ? '导入中…' : '导入'}
                 </button>
               </div>
               <div className="card p-3 space-y-2">
-                <p className="text-xs font-medium text-warm-600 flex items-center gap-1"><FolderOpen size={12}/> 文件夹</p>
+                <p className="text-xs font-medium text-ink-body flex items-center gap-1"><FolderOpen size={12}/> 文件夹</p>
                 <input className="input-field text-xs py-1.5" placeholder="D:\文档" value={folderPath}
                   onChange={e => setFolderPath(e.target.value)} />
                 <button className="btn-primary text-xs w-full py-1.5" onClick={handleFolderUpload} disabled={!folderPath || folderLoading}>
@@ -325,9 +330,9 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                 </button>
               </div>
               <div className="card p-3 space-y-2">
-                <p className="text-xs font-medium text-warm-600 flex items-center gap-1"><ClipboardPaste size={12}/> 粘贴</p>
+                <p className="text-xs font-medium text-ink-body flex items-center gap-1"><ClipboardPaste size={12}/> 粘贴</p>
                 <input className="input-field text-xs py-1.5" placeholder="标题" value={pasteTitle}
-                  onChange={e => setPasteTitle(e.target.value)} />
+                  onChange={e => setPasteTitle(e.target.value)} maxLength={128} />
                 <textarea className="input-field text-xs h-16 resize-none" placeholder="内容…" value={pasteContent}
                   onChange={e => setPasteContent(e.target.value)} />
                 <button className="btn-primary text-xs w-full py-1.5" onClick={handlePaste} disabled={!pasteContent.trim()}>提交</button>
@@ -338,7 +343,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
             {files.length > 0 && (
               <div className="card p-3 space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-warm-600">文件列表 ({files.length})</p>
+                  <p className="text-xs font-medium text-ink-body">文件列表 ({files.length})</p>
                   {files.some(f => f.status === 'pending') && (
                     <button className="btn-primary text-xs py-1 px-3" onClick={processAllFiles}>
                       全部上传 ({files.filter(f => f.status === 'pending').length})
@@ -346,17 +351,17 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                   )}
                 </div>
                 {files.map((f, i) => (
-                  <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-warm-50 rounded-lg text-xs">
+                  <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-cloud-200 rounded-lg text-xs">
                     <div className="flex items-center gap-2">
-                      {f.status === 'uploading' ? <Loader2 size={14} className="animate-spin text-coral-500" />
+                      {f.status === 'uploading' ? <Loader2 size={14} className="animate-spin text-sky-500" />
                         : f.status === 'done' ? <CheckCircle2 size={14} className="text-sage-500" />
                         : f.status === 'error' ? <XCircle size={14} className="text-rose-500" />
-                        : <FileText size={14} className="text-warm-500" />}
-                      <span className="text-warm-700 truncate max-w-[200px]">{f.name}</span>
+                        : <FileText size={14} className="text-ink-muted" />}
+                      <span className="text-ink-body truncate max-w-[200px]">{f.name}</span>
                       {f.error && <span className="text-rose-500">{f.error}</span>}
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-warm-500 font-mono">{(f.size / 1024).toFixed(0)} KB</span>
+                      <span className="text-ink-muted font-mono">{(f.size / 1024).toFixed(0)} KB</span>
                       {f.status === 'pending' && <button className="btn-primary text-xs py-0.5 px-2" onClick={() => processFile(i)}>上传</button>}
                     </div>
                   </div>
@@ -395,6 +400,7 @@ export default function KnowledgePage() {
   const [multimodal, setMultimodal] = useState({
     enable_image: true, enable_table: true, enable_equation: true, enable_video: false
   })
+  const [activeTab, setActiveTab] = useState('documents')
   const [visionSearching, setVisionSearching] = useState(false)
   const [visionResults, setVisionResults] = useState(null)
   const visionInputRef = useRef()
@@ -440,9 +446,9 @@ export default function KnowledgePage() {
   // Load data for selected KB (with stale-request cancellation)
   const loadKBData = useCallback(() => {
     const gen = ++genRef.current
-    api.getDocuments().then(r => { if (gen === genRef.current) setDocs(r.documents || []) }).catch(() => {})
-    api.getStats().then(r => { if (gen === genRef.current) setStats(r) }).catch(() => {})
-    api.getEntities(200).then(r => { if (gen === genRef.current) setEntities(r.entities || []) }).catch(() => {})
+    api.getDocuments().then(r => { if (gen === genRef.current) setDocs(r.documents || []) }).catch(err => console.error(err))
+    api.getStats().then(r => { if (gen === genRef.current) setStats(r) }).catch(err => console.error(err))
+    api.getEntities(200).then(r => { if (gen === genRef.current) setEntities(r.entities || []) }).catch(err => console.error(err))
     api.getGraph().then(r => {
       if (gen !== genRef.current) return
       const degree = {}
@@ -453,7 +459,7 @@ export default function KnowledgePage() {
       const nodes = (r.nodes || []).map(n => ({ ...n, degree: degree[n.id] || 0 }))
       nodes.sort((a, b) => b.degree - a.degree)
       setGraph({ nodes, edges: r.edges || [] })
-    }).catch(() => {})
+    }).catch(err => console.error(err))
   }, [])
 
   // Load strategies
@@ -461,7 +467,7 @@ export default function KnowledgePage() {
     api.getSettings().then(s => {
       if (s.chunking_strategies) setStrategies(s.chunking_strategies)
       if (s.chunking_strategy) setChunkingStrategy(s.chunking_strategy)
-    }).catch(() => {})
+    }).catch(err => console.error(err))
   }, [])
 
   // Init
@@ -584,9 +590,9 @@ export default function KnowledgePage() {
       simRef.current = sim
 
       const link = g.append('g').selectAll('line').data(displayEdges).join('line')
-        .attr('stroke', '#d9cebc').attr('stroke-width', 0.5).attr('stroke-opacity', 0.6)
+        .attr('stroke', '#c7ddf0').attr('stroke-width', 0.5).attr('stroke-opacity', 0.6)
       const edgeLabels = g.append('g').selectAll('text').data(displayEdges.slice(0, 15)).join('text')
-        .text(d => (d.label || '').slice(0, 10)).attr('font-size', 7).attr('fill', '#8a8276').attr('text-anchor', 'middle')
+        .text(d => (d.label || '').slice(0, 10)).attr('font-size', 7).attr('fill', '#6b8aaa').attr('text-anchor', 'middle')
 
       const nodeGroup = g.append('g').selectAll('g').data(displayNodes).join('g').attr('cursor', 'pointer')
         .call(d3.drag().on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y })
@@ -594,11 +600,11 @@ export default function KnowledgePage() {
           .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null }))
 
       nodeGroup.append('circle').attr('r', d => sizeScale(d.degree)).attr('fill', d => colorScale(d.id))
-        .attr('stroke', '#f3efe6').attr('stroke-width', 1).attr('opacity', 0.85)
+        .attr('stroke', '#e3eef7').attr('stroke-width', 1).attr('opacity', 0.85)
       nodeGroup.filter(d => d.degree >= 2 || displayNodes.length <= 20).append('text')
         .text(d => (d.label || d.id || '').slice(0, 10))
         .attr('font-size', d => Math.max(7, Math.min(11, sizeScale(d.degree) * 0.7)))
-        .attr('fill', '#4a433b').attr('text-anchor', 'middle').attr('dy', d => sizeScale(d.degree) + 12)
+        .attr('fill', '#3a5a78').attr('text-anchor', 'middle').attr('dy', d => sizeScale(d.degree) + 12)
         .attr('font-family', "'Microsoft YaHei', 'SimHei', sans-serif")
 
       nodeGroup.on('click', async (e, d) => {
@@ -777,7 +783,7 @@ export default function KnowledgePage() {
       {/* Stats for active KB */}
       <div className="grid grid-cols-4 gap-5">
         {[
-          { label: '文档总数', val: stats.documents || 0, color: 'text-coral-500' },
+          { label: '文档总数', val: stats.documents || 0, color: 'text-sky-500' },
           { label: '实体总数', val: stats.entities || 0, color: 'text-sage-500' },
           { label: '关系总数', val: stats.relations || 0, color: 'text-amber-500' },
           { label: '分块总数', val: stats.chunks || 0, color: 'text-sky-500' },
@@ -789,6 +795,27 @@ export default function KnowledgePage() {
         ))}
       </div>
 
+      {/* Tab Bar — splits the page into focused views */}
+      <div className="flex items-center gap-1 p-1 rounded-xl bg-cloud-200 w-fit">
+        {[
+          { key: 'documents', icon: '📄', label: '文档管理' },
+          { key: 'graph', icon: '🔗', label: '知识图谱' },
+          { key: 'entities', icon: '🏷️', label: '实体列表' },
+        ].map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-all ${
+              activeTab === tab.key
+                ? 'bg-white text-ink-primary shadow-cloud-sm'
+                : 'text-ink-muted hover:text-ink-body'
+            }`}>
+            <span>{tab.icon}</span> {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab: Documents ── */}
+      {activeTab === 'documents' && (
+      <>
       {/* Upload Section */}
       <div className="card p-5">
         <UploadSection
@@ -806,7 +833,7 @@ export default function KnowledgePage() {
       <div className="card p-4 space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <h3 className="text-sm font-semibold text-warm-700">文档列表 ({filteredDocs.length})</h3>
+            <h3 className="text-sm font-semibold text-ink-body">文档列表 ({filteredDocs.length})</h3>
             {selectedIds.size > 0 && (
               <button
                 className="btn-danger text-xs py-1.5 px-3"
@@ -818,7 +845,7 @@ export default function KnowledgePage() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <Search size={14} className="text-warm-500"/>
+            <Search size={14} className="text-ink-muted"/>
             <input className="input-field text-xs w-48 py-1.5" placeholder="搜索文档…" value={filter}
               onChange={e => setFilter(e.target.value)} />
           </div>
@@ -826,36 +853,36 @@ export default function KnowledgePage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-warm-200/60 text-left">
-                <th className="pb-2.5 font-medium text-xs text-warm-500 w-8">
+              <tr className="border-b border-cloud-300/60 text-left">
+                <th className="pb-2.5 font-medium text-xs text-ink-muted w-8">
                   <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredDocs.length}
-                    onChange={toggleSelectAll} className="w-3.5 h-3.5 accent-coral-500" />
+                    onChange={toggleSelectAll} className="w-3.5 h-3.5 accent-sky-500" />
                 </th>
-                <th className="pb-2.5 font-medium text-xs text-warm-500">文件名</th>
-                <th className="pb-2.5 font-medium text-xs text-warm-500">状态</th>
-                <th className="pb-2.5 font-medium text-xs text-warm-500">分块</th>
-                <th className="pb-2.5 font-medium text-xs text-warm-500">字数</th>
-                <th className="pb-2.5 font-medium text-xs text-warm-500">更新时间</th>
-                <th className="pb-2.5 font-medium text-xs text-warm-500">操作</th>
+                <th className="pb-2.5 font-medium text-xs text-ink-muted">文件名</th>
+                <th className="pb-2.5 font-medium text-xs text-ink-muted">状态</th>
+                <th className="pb-2.5 font-medium text-xs text-ink-muted">分块</th>
+                <th className="pb-2.5 font-medium text-xs text-ink-muted">字数</th>
+                <th className="pb-2.5 font-medium text-xs text-ink-muted">更新时间</th>
+                <th className="pb-2.5 font-medium text-xs text-ink-muted">操作</th>
               </tr>
             </thead>
             <tbody>
               {filteredDocs.map(doc => (
-                <tr key={doc.id} className="border-b border-warm-100 hover:bg-warm-50/50 transition-colors">
+                <tr key={doc.id} className="border-b border-cloud-200 hover:bg-cloud-200/50 transition-colors">
                   <td className="py-2.5">
                     <input type="checkbox" checked={selectedIds.has(doc.id)}
-                      onChange={() => toggleSelect(doc.id)} className="w-3.5 h-3.5 accent-coral-500" />
+                      onChange={() => toggleSelect(doc.id)} className="w-3.5 h-3.5 accent-sky-500" />
                   </td>
-                  <td className="py-2.5 text-warm-700 max-w-40 truncate text-sm" title={doc.file}>{doc.file}</td>
+                  <td className="py-2.5 text-ink-body max-w-40 truncate text-sm" title={doc.file}>{doc.file}</td>
                   <td className="py-2.5">
                     <span className={STATUS[doc.status] || 'badge-info'}>
                       {STATUS_CN[doc.status] || doc.status}
                       {doc.phase && PHASE_CN[doc.phase] ? <span className="ml-1 text-[10px] opacity-70">({PHASE_CN[doc.phase]})</span> : null}
                     </span>
                   </td>
-                  <td className="py-2.5 font-mono text-warm-500 text-sm">{doc.chunks}</td>
-                  <td className="py-2.5 font-mono text-warm-500 text-sm">{(doc.length || 0).toLocaleString()}</td>
-                  <td className="py-2.5 text-xs text-warm-500">{doc.updated?.slice(0, 16) || '-'}</td>
+                  <td className="py-2.5 font-mono text-ink-muted text-sm">{doc.chunks}</td>
+                  <td className="py-2.5 font-mono text-ink-muted text-sm">{(doc.length || 0).toLocaleString()}</td>
+                  <td className="py-2.5 text-xs text-ink-muted">{doc.updated?.slice(0, 16) || '-'}</td>
                   <td className="py-2.5 flex gap-1">
                     {doc.status === 'failed' && (
                       <button className="btn-ghost text-xs py-1 px-2 text-amber-600" onClick={async () => { await api.retryDocument(doc.id); loadKBData() }} title="重试"><RotateCcw size={14}/></button>
@@ -878,15 +905,16 @@ export default function KnowledgePage() {
           </table>
         </div>
       </div>
+      </>
+      )}
 
-      {/* Knowledge Graph + Entity Detail Row */}
-      <div className="grid grid-cols-2 gap-5">
-        {/* Graph */}
-        <div className="card p-4 space-y-3">
+      {/* ── Tab: Knowledge Graph ── */}
+      {activeTab === 'graph' && (
+      <div className="card p-4 space-y-3">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-warm-700 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-ink-body flex items-center gap-2">
               <Filter size={14}/>知识图谱
-              <span className="text-[10px] text-warm-500 font-normal">
+              <span className="text-[10px] text-ink-muted font-normal">
                 {graph.nodes.length} 节点 · {graph.edges.length} 边
               </span>
             </h3>
@@ -907,12 +935,12 @@ export default function KnowledgePage() {
             </div>
           </div>
           <div ref={graphContainerRef} className="relative">
-            <svg ref={svgRef} className="w-full bg-warm-50/50 rounded-xl cursor-grab active:cursor-grabbing" style={{ minHeight: 420 }} />
+            <svg ref={svgRef} className="w-full bg-cloud-200/50 rounded-xl cursor-grab active:cursor-grabbing min-h-[420px]" />
             {selectedNode && (
-              <div className="absolute top-2 left-2 bg-white/95 border border-warm-200 rounded-xl p-2 text-xs max-w-48 shadow-warm-md">
-                <p className="text-warm-700 font-medium truncate">{selectedNode.label || selectedNode.id}</p>
-                <p className="text-warm-500">关联: {selectedNode.degree} 条边</p>
-                <p className="text-[10px] text-warm-500 mt-1">点击空白取消选中</p>
+              <div className="absolute top-2 left-2 bg-white/95 border border-cloud-300 rounded-xl p-2 text-xs max-w-48 shadow-cloud-md">
+                <p className="text-ink-body font-medium truncate">{selectedNode.label || selectedNode.id}</p>
+                <p className="text-ink-muted">关联: {selectedNode.degree} 条边</p>
+                <p className="text-[10px] text-ink-muted mt-1">点击空白取消选中</p>
               </div>
             )}
           </div>
@@ -928,14 +956,14 @@ export default function KnowledgePage() {
                 </button>
               </div>
               {visionResults.count === 0 ? (
-                <p className="text-xs text-warm-500">未找到相似图片</p>
+                <p className="text-xs text-ink-muted">未找到相似图片</p>
               ) : (
                 <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto">
                   {visionResults.results.map((r, i) => (
-                    <div key={i} className="bg-white rounded-lg p-2 border border-warm-100 text-[10px]">
-                      <p className="text-warm-700 font-medium truncate">{r.entity_name || r.image_path?.split('/').pop()}</p>
-                      <p className="text-coral-500 font-mono">相似度: {(r._score * 100).toFixed(1)}%</p>
-                      <p className="text-warm-500 truncate">{r.description?.slice(0, 60)}</p>
+                    <div key={i} className="bg-white rounded-lg p-2 border border-cloud-200 text-[10px]">
+                      <p className="text-ink-body font-medium truncate">{r.entity_name || r.image_path?.split('/').pop()}</p>
+                      <p className="text-sky-500 font-mono">相似度: {(r._score * 100).toFixed(1)}%</p>
+                      <p className="text-ink-muted truncate">{r.description?.slice(0, 60)}</p>
                     </div>
                   ))}
                 </div>
@@ -943,27 +971,29 @@ export default function KnowledgePage() {
             </div>
           )}
         </div>
+      )}
 
-        {/* Entity detail / list */}
+      {/* ── Tab: Entities ── */}
+      {activeTab === 'entities' && (
         <div className="card p-4 space-y-3">
           {nodeDetails ? (
             <>
-              <h3 className="text-sm font-semibold text-warm-700">🔗 "{nodeDetails.node.label || nodeDetails.node.id}" 的关联</h3>
+              <h3 className="text-sm font-semibold text-ink-body">🔗 "{nodeDetails.node.label || nodeDetails.node.id}" 的关联</h3>
               <div className="space-y-2 max-h-[420px] overflow-y-auto">
-                <p className="text-xs text-warm-500">共 {nodeDetails.totalConnections} 条关系</p>
+                <p className="text-xs text-ink-muted">共 {nodeDetails.totalConnections} 条关系</p>
                 {nodeDetails.connections.map((c, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-warm-50 text-xs">
-                    <span className="text-coral-500 font-mono shrink-0">{c.direction}</span>
-                    <span className="text-warm-600 truncate flex-1">{c.other}</span>
-                    {c.label && <span className="text-[10px] text-warm-500 shrink-0">{c.label.slice(0, 15)}</span>}
+                  <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cloud-200 text-xs">
+                    <span className="text-sky-500 font-mono shrink-0">{c.direction}</span>
+                    <span className="text-ink-body truncate flex-1">{c.other}</span>
+                    {c.label && <span className="text-[10px] text-ink-muted shrink-0">{c.label.slice(0, 15)}</span>}
                   </div>
                 ))}
                 {nodeDetails.connectedNodes.length > 0 && (
                   <div className="mt-3">
-                    <p className="text-[10px] text-warm-500 mb-1">关联实体:</p>
+                    <p className="text-[10px] text-ink-muted mb-1">关联实体:</p>
                     <div className="flex flex-wrap gap-1">
                       {nodeDetails.connectedNodes.map(n => (
-                        <span key={n.id} className="px-2 py-0.5 rounded-lg text-[10px] bg-warm-100 text-warm-600">{n.label || n.id}</span>
+                        <span key={n.id} className="px-2 py-0.5 rounded-lg text-[10px] bg-cloud-100 text-ink-body">{n.label || n.id}</span>
                       ))}
                     </div>
                   </div>
@@ -972,11 +1002,11 @@ export default function KnowledgePage() {
             </>
           ) : (
             <>
-              <h3 className="text-sm font-semibold text-warm-700">全部实体 ({entities.length})</h3>
+              <h3 className="text-sm font-semibold text-ink-body">全部实体 ({entities.length})</h3>
               <div className="space-y-1 max-h-[420px] overflow-y-auto">
                 {entities.slice(0, 100).map((e, i) => (
                   <div key={e.id || i}
-                    className="px-3 py-1.5 rounded-xl bg-warm-50 text-xs flex items-center justify-between hover:bg-warm-100 cursor-pointer transition-colors"
+                    className="px-3 py-1.5 rounded-xl bg-cloud-200 text-xs flex items-center justify-between hover:bg-cloud-100 cursor-pointer transition-colors"
                     onClick={() => {
                       let node = graph.nodes.find(n => n.id === e.name)
                       if (!node) node = { id: e.name, label: e.name, degree: 0 }
@@ -992,30 +1022,30 @@ export default function KnowledgePage() {
                         totalConnections: connectionList.length,
                       })
                     }}>
-                    <span className="text-warm-700 truncate flex-1">{e.name}</span>
-                    {e.type && <span className="text-[10px] text-warm-500 ml-2">{e.type}</span>}
+                    <span className="text-ink-body truncate flex-1">{e.name}</span>
+                    {e.type && <span className="text-[10px] text-ink-muted ml-2">{e.type}</span>}
                   </div>
                 ))}
                 {entities.length === 0 && (
                   <div className="py-8 text-center">
-                    <p className="text-xs text-warm-500">暂无实体数据</p>
-                    <p className="text-[10px] text-warm-500 mt-1">上传文档后将自动抽取实体 🏷️</p>
+                    <p className="text-xs text-ink-muted">暂无实体数据</p>
+                    <p className="text-[10px] text-ink-muted mt-1">上传文档后将自动抽取实体 🏷️</p>
                   </div>
                 )}
               </div>
             </>
           )}
         </div>
-      </div>
+      )}
 
       {/* Doc Detail Drawer */}
       {detailDoc && (
-        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setDetailDoc(null)}>
-          <div className="absolute inset-0 bg-warm-900/20" />
+        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setDetailDoc(null)} role="dialog" aria-modal="true" aria-label="文档详情">
+          <div className="absolute inset-0 bg-sky-900/20" />
           <div className="relative w-96 card m-3 p-6 overflow-y-auto animate-slide-in-right" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-warm-800">文档详情</h3>
-              <button className="btn-ghost p-1" onClick={() => setDetailDoc(null)}><X size={16}/></button>
+              <h3 className="font-semibold text-ink-primary">文档详情</h3>
+              <button className="btn-ghost p-1" onClick={() => setDetailDoc(null)} aria-label="关闭文档详情"><X size={16} aria-hidden="true"/></button>
             </div>
             <div className="space-y-3 text-sm">
               {[{ icon: FileText, label: '文件名', val: detailDoc.file },
@@ -1026,9 +1056,9 @@ export default function KnowledgePage() {
                 { icon: Clock, label: '更新时间', val: detailDoc.updated?.slice(0, 19) || '-' }]
                 .map(({ icon: Icon, label, val }) => (
                   <div key={label} className="flex items-center gap-3">
-                    <Icon size={14} className="text-warm-500 shrink-0"/>
-                    <span className="text-warm-500 w-16 shrink-0">{label}</span>
-                    <span className="text-warm-700 truncate">{val}</span>
+                    <Icon size={14} className="text-ink-muted shrink-0"/>
+                    <span className="text-ink-muted w-16 shrink-0">{label}</span>
+                    <span className="text-ink-body truncate">{val}</span>
                   </div>
                 ))}
             </div>
@@ -1038,12 +1068,12 @@ export default function KnowledgePage() {
 
       {/* Document Delete Confirm */}
       {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDeleteConfirm(null)}>
-          <div className="absolute inset-0 bg-warm-900/20" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDeleteConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除文档">
+          <div className="absolute inset-0 bg-sky-900/20" />
           <div className="relative card p-6 w-80 text-center" onClick={e => e.stopPropagation()}>
             <Trash2 size={32} className="mx-auto mb-3 text-rose-500" />
-            <p className="text-warm-800 font-medium mb-1">确认删除文档</p>
-            <p className="text-xs text-warm-500 mb-4 truncate">{deleteConfirm.file}</p>
+            <p className="text-ink-primary font-medium mb-1">确认删除文档</p>
+            <p className="text-xs text-ink-muted mb-4 truncate">{deleteConfirm.file}</p>
             <div className="flex gap-3 justify-center">
               <button className="btn-secondary text-sm" onClick={() => setDeleteConfirm(null)}>取消</button>
               <button className="btn-danger text-sm" onClick={handleDelete} disabled={deleting}>
@@ -1061,7 +1091,7 @@ export default function KnowledgePage() {
             initial={{ opacity: 0, y: 24, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 24, scale: 0.95 }}
-            className={`fixed bottom-6 right-6 px-5 py-3.5 rounded-2xl text-sm font-medium z-50 shadow-warm-md ${
+            className={`fixed bottom-6 right-6 px-5 py-3.5 rounded-2xl text-sm font-medium z-50 shadow-cloud-md ${
               toast.type === 'error' ? 'toast-error' : toast.type === 'success' ? 'toast-success' : 'toast-info'
             }`}>
             {toast.msg}

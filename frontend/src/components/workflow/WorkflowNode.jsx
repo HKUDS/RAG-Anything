@@ -2,10 +2,11 @@ import { memo } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { ICON_MAP, getNodeType } from './nodeTypes'
 
+// Brand-aligned run-status colors: sky (running), sage (done), rose (error)
 const RUN_COLORS = {
-  running: { bg: '#eff6ff', border: '#93c5fd', text: '#3b82f6', pulse: true },
-  done: { bg: '#f0fdf4', border: '#86efac', text: '#22c55e', pulse: false },
-  error: { bg: '#fff1f2', border: '#fda4af', text: '#f43f5e', pulse: false },
+  running: { bg: '#f4f8fc', border: '#9dc6e5', text: '#5b9bd5', pulse: true },
+  done:    { bg: '#f5f8f3', border: '#adc9a0', text: '#6b9e7a', pulse: false },
+  error:   { bg: '#fdf5f6', border: '#ecb0bb', text: '#c9707e', pulse: false },
 }
 
 const handleStyle = {
@@ -28,12 +29,12 @@ export default memo(function WorkflowNode({ data, selected }) {
         padding: '1px',
         borderRadius: 12,
         background: rc ? rc.border : selected ? def?.color : 'transparent',
-        boxShadow: selected ? `0 0 0 2px ${def?.color}40` : '0 1px 3px rgba(0,0,0,0.08)',
+        boxShadow: selected ? `0 0 0 2px ${def?.color}40` : '0 1px 3px rgba(48,86,122,0.04), 0 1px 2px rgba(48,86,122,0.03)',
       }}
     >
       <div
         className="flex items-center gap-2 px-3 py-2.5 rounded-[11px] min-w-[140px]"
-        style={{ background: def?.bgColor || '#fff', border: `1px solid ${def?.borderColor || '#e5e7eb'}` }}
+        style={{ background: def?.bgColor || '#fff', border: `1px solid ${def?.borderColor || '#e3eef7'}` }}
       >
         {/* Input handle */}
         {(def?.inputs ?? 1) > 0 && (
@@ -41,7 +42,7 @@ export default memo(function WorkflowNode({ data, selected }) {
             type="target"
             position={Position.Left}
             className="workflow-handle"
-            style={{ ...handleStyle, background: def?.color || '#94a3b8' }}
+            style={{ ...handleStyle, background: def?.color || '#6b8aaa' }}
           />
         )}
 
@@ -56,7 +57,7 @@ export default memo(function WorkflowNode({ data, selected }) {
         )}
 
         {/* Label */}
-        <span className="text-xs font-medium text-gray-700 truncate max-w-[120px]">
+        <span className="text-xs font-medium text-ink-body truncate max-w-[120px]">
           {data.label || def?.label}
         </span>
 
@@ -66,7 +67,7 @@ export default memo(function WorkflowNode({ data, selected }) {
             type="source"
             position={Position.Right}
             className="workflow-handle"
-            style={{ ...handleStyle, background: def?.color || '#94a3b8' }}
+            style={{ ...handleStyle, background: def?.color || '#6b8aaa' }}
           />
         )}
       </div>

@@ -2,28 +2,28 @@
   "id": "8839145a-7818-4042-8c96-f381fd9bde3b",
   "name": "未命名工作流",
   "created_at": "2026-06-16T14:25:45.342950",
-  "updated_at": "2026-06-16T16:29:48.982606",
+  "updated_at": "2026-06-29T09:37:15.287346",
   "nodes": [
     {
       "id": "document_input-c1e1d60e",
       "type": "custom",
       "position": {
-        "x": 100.70517928286853,
-        "y": 51.410358565737056
+        "x": 82.51658048474377,
+        "y": 55.95750826526826
       },
       "data": {
         "nodeType": "document_input",
         "label": "文档输入",
         "file_type": "全部",
         "max_size_mb": 100,
-        "file_name": "13.相关文件（完整）.pdf",
+        "file_name": "e7a598a2_智能仓储 AGV 物料流转工艺教学文档.docx",
         "runStatus": "done"
       },
       "measured": {
         "width": 142,
         "height": 51
       },
-      "selected": true,
+      "selected": false,
       "dragging": false
     },
     {
@@ -36,7 +36,7 @@
       "data": {
         "nodeType": "text_splitter",
         "label": "文本分割",
-        "chunk_size": 800,
+        "chunk_size": 700,
         "chunk_overlap": 100,
         "runStatus": "done"
       },
@@ -99,9 +99,9 @@
       "data": {
         "nodeType": "llm_answer",
         "label": "LLM 回答",
-        "model": "qwen-vl-plus",
-        "temperature": 0.4,
-        "system_prompt": "",
+        "model": "qwen-plus",
+        "temperature": 0.3,
+        "system_prompt": "在输出内容之前加上一句早上好",
         "runStatus": "done"
       },
       "measured": {

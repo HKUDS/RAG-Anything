@@ -113,7 +113,7 @@ async def login(request: Request, req: AuthLoginRequest):
 
     # Fetch role for embedding in JWT
     role = await _auth_get_user_role(user["id"])
-    is_admin = role is not None and role.get("name") == "admin"
+    is_admin = role is not None and role.get("name") in ("super_admin", "admin")
     token = create_token(user["id"], user["username"], is_admin, role)
     refresh = create_refresh_token(user["id"], user["username"], is_admin, role)
 
@@ -166,7 +166,7 @@ async def refresh(request: Request, req: RefreshRequest):
 
     # 颁发新 token 对（嵌入角色信息）
     role = await _auth_get_user_role(user["id"])
-    is_admin = role is not None and role.get("name") == "admin"
+    is_admin = role is not None and role.get("name") in ("super_admin", "admin")
     token = create_token(user["id"], user["username"], is_admin, role)
     new_refresh = create_refresh_token(user["id"], user["username"], is_admin, role)
 
@@ -424,7 +424,7 @@ async def admin_list_users(
             u = {k: r[k] for k in r.keys() if k != "password_hash"}
             # 向后兼容: is_admin 字段
             if "role_name" in u and u["role_name"] is not None:
-                u["is_admin"] = (u["role_name"] == "admin")
+                u["is_admin"] = (u["role_name"] in ("super_admin", "admin"))
             else:
                 u["is_admin"] = bool(u.get("is_admin", 0))
             # 清理内部字段
@@ -505,13 +505,29 @@ async def admin_create_user(
 
     new_user = await get_user_by_id(new_id)
 
-    # 审计日志
+    # 审计日志 — 包含角色名称
     audit = get_audit_logger()
+    # 解析角色名称
+    role_name = "unknown"
+    async with aiosqlite.connect(str(DB_PATH)) as _db:
+        _db.row_factory = aiosqlite.Row
+        _row = await (await _db.execute(
+            "SELECT name FROM roles WHERE id = ?", (req.role_id,)
+        )).fetchone()
+        if _row:
+            role_name = _row["name"]
+
     await audit.log(
         actor_id=user["id"],
         action="user.create",
         target_user_id=new_id,
-        details={"username": req.username, "email": req.email, "role_id": req.role_id},
+        details={
+            "username": req.username,
+            "email": req.email,
+            "role_id": req.role_id,
+            "role_name": role_name,
+            "actor_role": user.get("role", {}).get("name", "unknown"),
+        },
         ip_address=request.client.host if request.client else None,
     )
 
@@ -540,7 +556,7 @@ async def admin_get_user(
             raise HTTPException(404, "用户不存在")
 
         u = {k: row[k] for k in row.keys() if k != "password_hash"}
-        u["is_admin"] = (u.get("role_name") == "admin")
+        u["is_admin"] = (u.get("role_name") in ("super_admin", "admin"))
 
         import json as _json
         perms_raw = u.pop("role_permissions", "[]")
@@ -572,7 +588,7 @@ async def admin_update_user(
         is_admin_val = update_data.pop("is_admin")
         async with aiosqlite.connect(str(DB_PATH)) as db:
             db.row_factory = aiosqlite.Row
-            role_name = "admin" if is_admin_val else "viewer"
+            role_name = "super_admin" if is_admin_val else "student"
             role_row = await (await db.execute(
                 "SELECT id FROM roles WHERE name = ?", (role_name,)
             )).fetchone()
@@ -586,7 +602,7 @@ async def admin_update_user(
         async with aiosqlite.connect(str(DB_PATH)) as db:
             db.row_factory = aiosqlite.Row
             admin_role = await (await db.execute(
-                "SELECT id FROM roles WHERE name = 'admin'"
+                "SELECT id FROM roles WHERE name IN ('super_admin', 'admin')"
             )).fetchone()
             if admin_role and update_data["role_id"] != admin_role["id"]:
                 raise HTTPException(403, "不能取消自己的管理员权限")
@@ -602,7 +618,7 @@ async def admin_update_user(
     if updated is None:
         raise HTTPException(404, "用户不存在")
 
-    # 审计日志
+    # 审计日志 — 角色变更时解析角色名称
     audit = get_audit_logger()
     action = "user.role_change" if "role_id" in update_data else "user.update"
     # 记录变更字段
@@ -610,15 +626,39 @@ async def admin_update_user(
     if "password" in update_data:
         changed_fields.remove("password")
         changed_fields.append("password_hash")
+
+    # 构建审计详情（含角色名称解析）
+    audit_details = {
+        "changed_fields": changed_fields,
+        "before": {k: before_user[k] for k in changed_fields if k in before_user} if before_user else {},
+        "after": {k: updated[k] for k in changed_fields if k in updated},
+    }
+
+    # 角色变更时，附加角色名称以便审计可读性
+    if "role_id" in update_data:
+        import aiosqlite as _aio
+        async with _aio.connect(str(DB_PATH)) as _db:
+            _db.row_factory = _aio.Row
+            # 解析变更前后的角色名称
+            old_role_id = before_user.get("role_id") if before_user else None
+            new_role_id = update_data["role_id"]
+            for _rid, _key in [(old_role_id, "before_role_name"), (new_role_id, "after_role_name")]:
+                if _rid:
+                    _row = await (await _db.execute(
+                        "SELECT name FROM roles WHERE id = ?", (_rid,)
+                    )).fetchone()
+                    if _row:
+                        audit_details[_key] = _row["name"]
+            # 同时记录操作人的角色
+            actor_role = user.get("role", {}).get("name", "unknown")
+            audit_details["actor_role"] = actor_role
+        # _aio 连接在此退出上下文管理器时关闭
+
     await audit.log(
         actor_id=user["id"],
         action=action,
         target_user_id=user_id,
-        details={
-            "changed_fields": changed_fields,
-            "before": {k: before_user[k] for k in changed_fields if k in before_user} if before_user else {},
-            "after": {k: updated[k] for k in changed_fields if k in updated},
-        },
+        details=audit_details,
         ip_address=request.client.host if request.client else None,
     )
 
@@ -651,6 +691,8 @@ async def admin_delete_user(
         details={
             "username": deleted_user.get("username") if deleted_user else "unknown",
             "email": deleted_user.get("email") if deleted_user else "unknown",
+            "role_id": deleted_user.get("role_id") if deleted_user else None,
+            "actor_role": user.get("role", {}).get("name", "unknown"),
         },
         ip_address=request.client.host if request.client else None,
     )

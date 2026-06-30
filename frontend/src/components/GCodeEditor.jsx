@@ -7,14 +7,14 @@ const PATTERNS = [
   { regex: /\b[GM]\d{2}(\.\d+)?\b/g, cls: 'text-sky-600 font-semibold' },       // G/M codes
   { regex: /\b[XYZIJKR]\s*-?[\d.]+/g, cls: 'text-amber-600' },                    // Coordinates
   { regex: /\b[SF]\s*[\d.]+/g, cls: 'text-sage-600' },                            // Speed/Feed
-  { regex: /[TN]\d+/g, cls: 'text-coral-600' },                                   // Tool numbers
-  { regex: /\(.*?\)|;.*/g, cls: 'text-warm-400 italic' },                         // Comments
+  { regex: /[TN]\d+/g, cls: 'text-sky-600' },                                   // Tool numbers
+  { regex: /\(.*?\)|;.*/g, cls: 'text-ink-muted italic' },                         // Comments
   { regex: /\bG00\b.*Z\s*-\d/g, cls: 'bg-rose-100 text-rose-700 rounded px-0.5' }, // Risk: rapid to negative Z
 ]
 
 function highlightLine(line) {
   if (!line || line.startsWith('(') || line.startsWith(';') || line.startsWith('%')) {
-    return <span className="text-warm-400 italic">{line}</span>
+    return <span className="text-ink-muted italic">{line}</span>
   }
   // Simple regex-based highlighting
   let parts = [{ text: line, cls: '' }]
@@ -67,7 +67,7 @@ export default function GCodeEditor({ onParseResult }) {
       {/* Toolbar */}
       <div className="flex items-center gap-2">
         <select value={lang} onChange={e => setLang(e.target.value)}
-          className="px-3 py-1.5 rounded-lg border border-warm-200 text-sm bg-white text-warm-700">
+          className="px-3 py-1.5 rounded-lg border border-cloud-300 text-sm bg-white text-ink-body">
           <option value="gcode">G 代码</option>
           <option value="plc_instruction_list">PLC 指令表</option>
         </select>
@@ -78,7 +78,7 @@ export default function GCodeEditor({ onParseResult }) {
         </button>
         {result && (
           <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(result, null, 2)); setCopied(true); setTimeout(() => setCopied(false), 2000) }}
-            className="px-3 py-1.5 rounded-lg text-xs border border-warm-200 text-warm-600 hover:bg-warm-50 flex items-center gap-1">
+            className="px-3 py-1.5 rounded-lg text-xs border border-cloud-300 text-ink-body hover:bg-cloud-200 flex items-center gap-1">
             {copied ? <Check size={13} className="text-sage-500" /> : <Copy size={13} />}
             {copied ? '已复制' : '复制结果'}
           </button>
@@ -86,12 +86,12 @@ export default function GCodeEditor({ onParseResult }) {
       </div>
 
       {/* Editor */}
-      <div className="relative rounded-xl border border-warm-200 overflow-hidden bg-warm-50">
+      <div className="relative rounded-xl border border-cloud-300 overflow-hidden bg-cloud-200">
         <div className="flex">
           {/* Line numbers */}
-          <div className="shrink-0 bg-warm-100 py-3 select-none border-r border-warm-200">
+          <div className="shrink-0 bg-cloud-100 py-3 select-none border-r border-cloud-300">
             {lines.map((_, i) => (
-              <div key={i} className="text-right px-2 text-2xs font-mono text-warm-400 leading-5 h-5">
+              <div key={i} className="text-right px-2 text-2xs font-mono text-ink-muted leading-5 h-5">
                 {i + 1}
               </div>
             ))}
@@ -106,13 +106,13 @@ export default function GCodeEditor({ onParseResult }) {
               onScroll={e => { if (preRef.current) preRef.current.scrollTop = e.target.scrollTop }}
               placeholder="粘贴 G 代码或 PLC 指令表…&#10;&#10;G90 G21&#10;G00 X10 Y20 Z5&#10;G01 Z-2 F100&#10;M30"
               className="w-full h-full min-h-[200px] p-3 font-mono text-sm bg-transparent resize-none
-                focus:outline-none text-transparent caret-warm-700 z-10 relative"
+                focus:outline-none text-transparent caret-ink-body z-10 relative"
               style={{ lineHeight: '1.25rem' }}
             />
             {/* Highlighted overlay */}
             <pre ref={preRef} className="absolute inset-0 p-3 font-mono text-sm pointer-events-none overflow-hidden"
               style={{ lineHeight: '1.25rem' }}>
-              <code className="text-warm-700">
+              <code className="text-ink-body">
                 {lines.map((l, i) => (
                   <div key={i} className="h-5 leading-5">{highlightLine(l)}</div>
                 ))}
@@ -135,11 +135,11 @@ export default function GCodeEditor({ onParseResult }) {
               {result.lines && (
                 <div className="space-y-0.5">
                   {result.lines.map((l, i) => (
-                    <div key={i} className={`flex gap-3 text-xs py-1 px-2 rounded ${l.type === 'comment_or_meta' ? 'text-warm-400' : ''}`}>
-                      <span className="text-warm-400 font-mono w-7 text-right shrink-0">{l.line_number}</span>
-                      <code className="font-mono flex-1 text-warm-700">{l.code}</code>
+                    <div key={i} className={`flex gap-3 text-xs py-1 px-2 rounded ${l.type === 'comment_or_meta' ? 'text-ink-muted' : ''}`}>
+                      <span className="text-ink-muted font-mono w-7 text-right shrink-0">{l.line_number}</span>
+                      <code className="font-mono flex-1 text-ink-body">{l.code}</code>
                       {l.explanation && l.explanation !== '—' && (
-                        <span className="text-warm-500 max-w-[200px] truncate hidden lg:inline">{l.explanation}</span>
+                        <span className="text-ink-muted max-w-[200px] truncate hidden lg:inline">{l.explanation}</span>
                       )}
                     </div>
                   ))}

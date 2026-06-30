@@ -12,7 +12,8 @@ from pydantic import BaseModel
 
 from lightrag.llm.openai import openai_complete_if_cache
 from raganything.routers import shared
-from raganything.dependencies import get_current_user
+from raganything.dependencies import get_current_user, require_permission
+from raganything.permissions import Permission
 from raganything.utils.security import validate_query_input
 
 router = APIRouter(tags=["manufacturing"])
@@ -187,28 +188,28 @@ async def _get_mfg_qa_engine(kb: str = "default") -> "QAEngine":
 # ── 知识图谱 ──
 
 @router.get("/manufacturing/knowledge-graph/summary")
-async def mfg_kg_summary(kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+async def mfg_kg_summary(kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """知识图谱统计摘要（按 KB 过滤）。"""
     return _get_mfg_graph(kb).get_graph_summary()
 
 
 @router.get("/manufacturing/knowledge-graph/nodes")
 async def mfg_kg_nodes(track: str = "", node_type: str = "", limit: int = 100, offset: int = 0,
-                        kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+                        kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """知识节点列表（按 KB 过滤）。"""
     return _get_mfg_graph(kb).get_nodes(competition_track=track, node_type=node_type, limit=limit, offset=offset)
 
 
 @router.get("/manufacturing/knowledge-graph/edges")
 async def mfg_kg_edges(source_id: str = "", relation_type: str = "", limit: int = 200,
-                        kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+                        kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """知识图谱边列表（按 KB 过滤）。"""
     return _get_mfg_graph(kb).get_edges(source_id=source_id, relation_type=relation_type, limit=limit)
 
 
 @router.get("/manufacturing/knowledge-graph/nodes/{node_id}")
 async def mfg_kg_node_detail(node_id: str, kb: str = QueryParam("default"),
-                              current_user: dict = Depends(get_current_user)):
+                              _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """节点详情 + 关联边（按 KB 过滤）。"""
     detail = _get_mfg_graph(kb).get_node(node_id)
     if not detail:
@@ -218,7 +219,7 @@ async def mfg_kg_node_detail(node_id: str, kb: str = QueryParam("default"),
 
 @router.get("/manufacturing/knowledge-graph/nodes/{node_id}/lineage")
 async def mfg_kg_lineage(node_id: str, upstream: int = 3, downstream: int = 3,
-                          kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+                          kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """知识谱系树（按 KB 过滤）。"""
     lineage = _get_mfg_graph(kb).get_lineage(node_id, upstream_depth=upstream, downstream_depth=downstream)
     if not lineage:
@@ -229,7 +230,7 @@ async def mfg_kg_lineage(node_id: str, upstream: int = 3, downstream: int = 3,
 # ── 工艺库 ──
 
 @router.get("/manufacturing/process-library/search")
-async def mfg_process_search(q: str = "", category: str = "", limit: int = 20, current_user: dict = Depends(get_current_user)):
+async def mfg_process_search(q: str = "", category: str = "", limit: int = 20, _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """企业工艺库检索。"""
     m = _get_manufacturing()
     results = m["process_library"].search(q, category=category, limit=limit)
@@ -237,14 +238,14 @@ async def mfg_process_search(q: str = "", category: str = "", limit: int = 20, c
 
 
 @router.get("/manufacturing/process-library/categories")
-async def mfg_process_categories(current_user: dict = Depends(get_current_user)):
+async def mfg_process_categories(_perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """工艺类别统计。"""
     m = _get_manufacturing()
     return m["process_library"].list_by_category()
 
 
 @router.get("/manufacturing/process-library/documents/{doc_id}")
-async def mfg_process_get(doc_id: str, current_user: dict = Depends(get_current_user)):
+async def mfg_process_get(doc_id: str, _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """获取单个工艺文档。"""
     m = _get_manufacturing()
     doc = m["process_library"].get_document(doc_id)
@@ -263,7 +264,7 @@ async def mfg_process_get(doc_id: str, current_user: dict = Depends(get_current_
 
 @router.post("/manufacturing/process-library/documents")
 async def mfg_process_create(body: ProcessDocCreate,
-                             current_user: dict = Depends(get_current_user)):
+                             _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """创建工艺文档。"""
     m = _get_manufacturing()
     doc_id = m["process_library"].add_document({
@@ -276,7 +277,7 @@ async def mfg_process_create(body: ProcessDocCreate,
 
 @router.put("/manufacturing/process-library/documents/{doc_id}")
 async def mfg_process_update(doc_id: str, body: ProcessDocUpdate,
-                             current_user: dict = Depends(get_current_user)):
+                             _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """更新工艺文档。"""
     m = _get_manufacturing()
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -298,7 +299,7 @@ async def mfg_process_update(doc_id: str, body: ProcessDocUpdate,
 
 
 @router.delete("/manufacturing/process-library/documents/{doc_id}")
-async def mfg_process_delete(doc_id: str, current_user: dict = Depends(get_current_user)):
+async def mfg_process_delete(doc_id: str, _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """删除工艺文档。"""
     m = _get_manufacturing()
     ok = m["process_library"].delete_document(doc_id)
@@ -310,7 +311,7 @@ async def mfg_process_delete(doc_id: str, current_user: dict = Depends(get_curre
 # ── 故障案例库 ──
 
 @router.get("/manufacturing/fault-cases/search")
-async def mfg_fault_search(q: str = "", top_k: int = 10, current_user: dict = Depends(get_current_user)):
+async def mfg_fault_search(q: str = "", top_k: int = 10, _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """故障案例检索。"""
     m = _get_manufacturing()
     results = m["fault_case_library"].search(q, top_k=top_k)
@@ -318,14 +319,14 @@ async def mfg_fault_search(q: str = "", top_k: int = 10, current_user: dict = De
 
 
 @router.get("/manufacturing/fault-cases/stats")
-async def mfg_fault_stats(current_user: dict = Depends(get_current_user)):
+async def mfg_fault_stats(_perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """故障案例统计。"""
     m = _get_manufacturing()
     return m["fault_case_library"].get_statistics()
 
 
 @router.get("/manufacturing/fault-cases/{case_id}")
-async def mfg_fault_get(case_id: str, current_user: dict = Depends(get_current_user)):
+async def mfg_fault_get(case_id: str, _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """获取单个故障案例。"""
     m = _get_manufacturing()
     case = m["fault_case_library"].get_case(case_id)
@@ -347,7 +348,7 @@ async def mfg_fault_get(case_id: str, current_user: dict = Depends(get_current_u
 
 @router.post("/manufacturing/fault-cases")
 async def mfg_fault_create(body: FaultCaseCreate,
-                           current_user: dict = Depends(get_current_user)):
+                           _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """创建故障案例。"""
     from raganything.manufacturing.knowledge_graph.models import FaultCase
     import uuid as _uuid
@@ -370,7 +371,7 @@ async def mfg_fault_create(body: FaultCaseCreate,
 
 @router.put("/manufacturing/fault-cases/{case_id}")
 async def mfg_fault_update(case_id: str, body: FaultCaseUpdate,
-                           current_user: dict = Depends(get_current_user)):
+                           _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """更新故障案例。"""
     m = _get_manufacturing()
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
@@ -383,7 +384,7 @@ async def mfg_fault_update(case_id: str, body: FaultCaseUpdate,
 
 
 @router.delete("/manufacturing/fault-cases/{case_id}")
-async def mfg_fault_delete(case_id: str, current_user: dict = Depends(get_current_user)):
+async def mfg_fault_delete(case_id: str, _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """删除故障案例。"""
     m = _get_manufacturing()
     ok = m["fault_case_library"].delete_case(case_id)
@@ -395,7 +396,7 @@ async def mfg_fault_delete(case_id: str, current_user: dict = Depends(get_curren
 # ── 代码解析 ──
 
 @router.post("/manufacturing/code/parse")
-async def mfg_code_parse(body: ManufacturingQuery, current_user: dict = Depends(get_current_user)):
+async def mfg_code_parse(body: ManufacturingQuery, _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """G 代码 / PLC 指令表解析。"""
     validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     m = _get_manufacturing()
@@ -405,7 +406,7 @@ async def mfg_code_parse(body: ManufacturingQuery, current_user: dict = Depends(
 # ── 数据看板 ──
 
 @router.get("/manufacturing/dashboard")
-async def mfg_dashboard(kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+async def mfg_dashboard(kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """制造智能体数据看板（按 KB 过滤图谱数据）。"""
     m = _get_manufacturing()
     return m["dashboard"].get_snapshot(
@@ -419,7 +420,7 @@ async def mfg_dashboard(kb: str = QueryParam("default"), current_user: dict = De
 # ── 部署配置 ──
 
 @router.get("/manufacturing/institutions")
-async def mfg_institutions(current_user: dict = Depends(get_current_user)):
+async def mfg_institutions(_perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """注册机构列表。"""
     m = _get_manufacturing()
     return m["deployment_config"].list_institutions()
@@ -429,7 +430,7 @@ async def mfg_institutions(current_user: dict = Depends(get_current_user)):
 
 @router.post("/manufacturing/qa")
 async def mfg_qa(body: MfgAgentQuery, kb: str = QueryParam("default"),
-                 current_user: dict = Depends(get_current_user)):
+                 _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """智能制造文本问答 — AgenticRAG 多步推理。"""
     validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     engine = await _get_mfg_qa_engine(kb)
@@ -457,7 +458,7 @@ async def mfg_qa(body: MfgAgentQuery, kb: str = QueryParam("default"),
 
 @router.post("/manufacturing/qa/stream")
 async def mfg_qa_stream(body: MfgAgentQuery, kb: str = QueryParam("default"),
-                        current_user: dict = Depends(get_current_user)):
+                        _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """智能制造文本问答 — AgenticRAG 真流式 SSE（与通用智能体一致）。"""
     if not shared.API_KEY or not shared.BASE_URL:
         raise HTTPException(503, "LLM 服务未配置")
@@ -535,7 +536,7 @@ async def mfg_qa_stream(body: MfgAgentQuery, kb: str = QueryParam("default"),
 
 
 @router.post("/manufacturing/fault-diagnosis")
-async def mfg_diagnosis_start(body: MfgDiagnosisStart, kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+async def mfg_diagnosis_start(body: MfgDiagnosisStart, kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """故障诊断 — 开始新会话。"""
     validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     m = await _get_mfg_agent_components(kb=kb)
@@ -545,7 +546,7 @@ async def mfg_diagnosis_start(body: MfgDiagnosisStart, kb: str = QueryParam("def
 
 
 @router.post("/manufacturing/fault-diagnosis/continue")
-async def mfg_diagnosis_continue(body: MfgDiagnosisContinue, kb: str = QueryParam("default"), current_user: dict = Depends(get_current_user)):
+async def mfg_diagnosis_continue(body: MfgDiagnosisContinue, kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """故障诊断 — 继续会话。"""
     validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     m = await _get_mfg_agent_components(kb=kb)
@@ -556,7 +557,7 @@ async def mfg_diagnosis_continue(body: MfgDiagnosisContinue, kb: str = QueryPara
 # ── 健康检查 ──
 
 @router.get("/manufacturing/kb-list")
-async def mfg_kb_list(current_user: dict = Depends(get_current_user)):
+async def mfg_kb_list(_perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """制造智能体可用 KB 列表（仅制造领域 KB，无则自动创建）。"""
     from raganything.services.kb_service import (
         load_kb_meta, save_kb_meta, list_kbs_by_domain, get_kb,

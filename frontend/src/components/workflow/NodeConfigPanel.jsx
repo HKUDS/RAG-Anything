@@ -15,7 +15,7 @@ function ModelSelect({ value, onChange, modelType = 'llm' }) {
     fetch(`/api/workflows/models?type=${modelType}`, { headers: { Authorization: `Bearer ${getToken()}` } })
       .then(r => r.json())
       .then(data => { if (!cancelled) setModels(data.models || []) })
-      .catch(() => {})
+      .catch(err => console.error(err))
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
   }, [modelType])
@@ -25,8 +25,8 @@ function ModelSelect({ value, onChange, modelType = 'llm' }) {
       <select
         value={value || ''}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full text-xs px-3 py-2 rounded-lg border border-warm-200 bg-white
-                   focus:outline-none focus:ring-2 focus:ring-coral-200 focus:border-coral-300 text-warm-700"
+        className="w-full text-xs px-3 py-2 rounded-lg border border-cloud-300 bg-white
+                   focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400 text-ink-body"
       >
         <option value="">默认（服务器配置）</option>
         {models.map((m) => (
@@ -35,7 +35,7 @@ function ModelSelect({ value, onChange, modelType = 'llm' }) {
           </option>
         ))}
       </select>
-      {loading && <p className="text-2xs text-warm-400 mt-1">加载中...</p>}
+      {loading && <p className="text-2xs text-ink-muted mt-1">加载中...</p>}
     </div>
   )
 }
@@ -57,7 +57,7 @@ function FilePicker({ value, onChange, filterType }) {
         const data = await res.json()
         setFiles(data.files || [])
       }
-    } catch {} finally { setLoading(false) }
+    } catch { /* noop */ } finally { setLoading(false) }
   }
 
   useEffect(() => { fetchFiles() }, [filterType])
@@ -76,7 +76,7 @@ function FilePicker({ value, onChange, filterType }) {
         const data = await res.json()
         onChange(data.filename)
       }
-    } catch {} finally { setUploading(false) }
+    } catch { /* noop */ } finally { setUploading(false) }
   }
 
   const formatSize = (bytes) => {
@@ -91,8 +91,8 @@ function FilePicker({ value, onChange, filterType }) {
         <select
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
-          className="flex-1 text-xs px-2 py-2 rounded-lg border border-warm-200 bg-white
-                     focus:outline-none focus:ring-2 focus:ring-coral-200 focus:border-coral-300 text-warm-700"
+          className="flex-1 text-xs px-2 py-2 rounded-lg border border-cloud-300 bg-white
+                     focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400 text-ink-body"
         >
           <option value="">自动选择（最新文件）</option>
           {files.map((f) => (
@@ -102,8 +102,8 @@ function FilePicker({ value, onChange, filterType }) {
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
-          className="flex items-center justify-center w-8 h-9 rounded-lg border border-warm-200
-                     hover:bg-warm-50 text-warm-500 disabled:opacity-50 transition-colors"
+          className="flex items-center justify-center w-8 h-9 rounded-lg border border-cloud-300
+                     hover:bg-cloud-200 text-ink-muted disabled:opacity-50 transition-colors"
           title="上传文件"
         >
           {uploading ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
@@ -111,7 +111,7 @@ function FilePicker({ value, onChange, filterType }) {
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload}
                accept={filterType === '全部' ? '*' : filterType} />
       </div>
-      {loading && <p className="text-2xs text-warm-400">加载文件列表...</p>}
+      {loading && <p className="text-2xs text-ink-muted">加载文件列表...</p>}
       {value && <p className="text-2xs text-emerald-600">✓ 已选择: {value}</p>}
     </div>
   )
@@ -131,23 +131,23 @@ export default function NodeConfigPanel({ node, onClose, onUpdate }) {
   }
 
   return (
-    <div className="w-64 flex-shrink-0 bg-white border-l border-warm-200 flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-warm-100">
-        <h3 className="text-sm font-semibold text-warm-700">节点配置</h3>
-        <button onClick={onClose} className="p-1 rounded-lg hover:bg-warm-100 text-warm-400 transition-colors">
+    <div className="w-64 flex-shrink-0 bg-white border-l border-cloud-300 flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-cloud-200">
+        <h3 className="text-sm font-semibold text-ink-body">节点配置</h3>
+        <button onClick={onClose} className="p-1 rounded-lg hover:bg-cloud-100 text-ink-muted transition-colors">
           <X size={16} />
         </button>
       </div>
 
-      <div className="px-4 py-2.5 border-b border-warm-100 flex items-center gap-2">
+      <div className="px-4 py-2.5 border-b border-cloud-200 flex items-center gap-2">
         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: def.color }} />
-        <span className="text-xs text-warm-500">{def.label}</span>
+        <span className="text-xs text-ink-muted">{def.label}</span>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {def.configFields.map((field) => (
           <div key={field.key}>
-            <label className="block text-xs font-medium text-warm-600 mb-1.5">{field.label}</label>
+            <label className="block text-xs font-medium text-ink-body mb-1.5">{field.label}</label>
 
             {field.type === 'file_picker' ? (
               <FilePicker
@@ -164,28 +164,28 @@ export default function NodeConfigPanel({ node, onClose, onUpdate }) {
             ) : field.type === 'select' ? (
               <select value={node.data[field.key] ?? field.default}
                 onChange={(e) => handleChange(field.key, e.target.value)}
-                className="w-full text-xs px-3 py-2 rounded-lg border border-warm-200 bg-white
-                           focus:outline-none focus:ring-2 focus:ring-coral-200 focus:border-coral-300 text-warm-700">
+                className="w-full text-xs px-3 py-2 rounded-lg border border-cloud-300 bg-white
+                           focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400 text-ink-body">
                 {field.options.map((opt) => (<option key={opt} value={opt}>{opt}</option>))}
               </select>
             ) : field.type === 'textarea' ? (
               <textarea value={node.data[field.key] ?? field.default}
                 onChange={(e) => handleChange(field.key, e.target.value)} rows={4}
                 placeholder="输入系统提示词..."
-                className="w-full text-xs px-3 py-2 rounded-lg border border-warm-200
-                           focus:outline-none focus:ring-2 focus:ring-coral-200 focus:border-coral-300
-                           text-warm-700 resize-y font-mono" />
+                className="w-full text-xs px-3 py-2 rounded-lg border border-cloud-300
+                           focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400
+                           text-ink-body resize-y font-mono" />
             ) : field.type === 'number' ? (
               <input type="number" value={node.data[field.key] ?? field.default}
                 onChange={(e) => handleChange(field.key, Number(e.target.value))}
                 min={field.min} max={field.max} step={field.step}
-                className="w-full text-xs px-3 py-2 rounded-lg border border-warm-200
-                           focus:outline-none focus:ring-2 focus:ring-coral-200 focus:border-coral-300 text-warm-700" />
+                className="w-full text-xs px-3 py-2 rounded-lg border border-cloud-300
+                           focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400 text-ink-body" />
             ) : (
               <input type={field.type} value={node.data[field.key] ?? field.default}
                 onChange={(e) => handleChange(field.key, e.target.value)}
-                className="w-full text-xs px-3 py-2 rounded-lg border border-warm-200
-                           focus:outline-none focus:ring-2 focus:ring-coral-200 focus:border-coral-300 text-warm-700" />
+                className="w-full text-xs px-3 py-2 rounded-lg border border-cloud-300
+                           focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400 text-ink-body" />
             )}
           </div>
         ))}

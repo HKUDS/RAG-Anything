@@ -20,8 +20,8 @@ const API = '/api/workflows'
 const defaultEdgeOptions = {
   type: 'smoothstep',
   animated: true,
-  style: { stroke: '#94a3b8', strokeWidth: 2 },
-  markerEnd: { type: MarkerType.ArrowClosed, color: '#94a3b8', width: 16, height: 16 },
+  style: { stroke: '#9aaec5', strokeWidth: 2 },
+  markerEnd: { type: MarkerType.ArrowClosed, color: '#9aaec5', width: 16, height: 16 },
 }
 
 function getToken() {
@@ -40,19 +40,22 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center"
+      className="fixed inset-0 bg-sky-900/25 dark:bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center"
       onClick={onCancel}
+      role="dialog"
+      aria-modal="true"
+      aria-label={title}
     >
       <motion.div
         initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-        className="bg-white rounded-2xl shadow-warm-xl p-6 w-full max-w-sm"
+        className="bg-white dark:bg-sky-900/80 rounded-2xl shadow-cloud-xl dark:border dark:border-sky-800/30 p-6 w-full max-w-sm"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-semibold text-warm-800 mb-2">{title}</h3>
-        <p className="text-sm text-warm-500 mb-5">{message}</p>
+        <h3 className="text-base font-semibold text-ink-primary dark:text-cloud-200 mb-2">{title}</h3>
+        <p className="text-sm text-ink-muted dark:text-cloud-500 mb-5">{message}</p>
         <div className="flex gap-3 justify-end">
-          <button onClick={onCancel} className="px-4 py-2 text-sm font-medium rounded-xl bg-warm-100 text-warm-600 hover:bg-warm-200 transition-colors">取消</button>
-          <button onClick={onConfirm} className="px-4 py-2 text-sm font-medium rounded-xl bg-coral-500 text-white hover:bg-coral-600 transition-colors">确认</button>
+          <button onClick={onCancel} className="px-4 py-2 text-sm font-medium rounded-xl bg-cloud-100 dark:bg-sky-900/40 text-ink-body dark:text-cloud-300 hover:bg-cloud-200 dark:hover:bg-sky-900/60 transition-colors">取消</button>
+          <button onClick={onConfirm} className="px-4 py-2 text-sm font-medium rounded-xl bg-sky-500 text-white hover:bg-sky-600 transition-colors">确认</button>
         </div>
       </motion.div>
     </motion.div>
@@ -299,7 +302,7 @@ function WorkflowPageInner() {
           ))
         })
       }
-    } catch {}
+    } catch { /* noop */ }
   }
 
   // Node click
@@ -415,34 +418,37 @@ function WorkflowPageInner() {
         {showLoadDialog && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-black/30 z-50 flex items-center justify-center"
+            className="fixed inset-0 bg-sky-900/25 dark:bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center"
             onClick={() => setShowLoadDialog(false)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="加载工作流"
           >
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-2xl shadow-warm-xl p-6 w-full max-w-md"
+              className="bg-white rounded-2xl shadow-cloud-xl p-6 w-full max-w-md"
               onClick={(e) => e.stopPropagation()}
             >
-              <h3 className="text-lg font-semibold text-warm-800 mb-4">加载工作流</h3>
+              <h3 className="text-lg font-semibold text-ink-primary mb-4">加载工作流</h3>
               {workflowList.length === 0 ? (
-                <p className="text-sm text-warm-500 text-center py-8">暂无保存的工作流</p>
+                <p className="text-sm text-ink-muted text-center py-8">暂无保存的工作流</p>
               ) : (
                 <div className="space-y-2 max-h-80 overflow-y-auto">
                   {workflowList.map((w) => (
-                    <div key={w.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-warm-50 border border-warm-100">
+                    <div key={w.id} className="flex items-center justify-between p-3 rounded-xl hover:bg-cloud-200 border border-cloud-200">
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-warm-700 truncate">{w.name}</p>
-                        <p className="text-2xs text-warm-400">{new Date(w.updated_at || w.created_at).toLocaleString()}</p>
+                        <p className="text-sm font-medium text-ink-body truncate">{w.name}</p>
+                        <p className="text-2xs text-ink-muted">{new Date(w.updated_at || w.created_at).toLocaleString()}</p>
                       </div>
                       <div className="flex gap-1.5 ml-3">
-                        <button onClick={() => handleLoad(w.id)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-coral-50 text-coral-600 hover:bg-coral-100 transition-colors">加载</button>
+                        <button onClick={() => handleLoad(w.id)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-sky-50 text-sky-600 hover:bg-coral-100 transition-colors">加载</button>
                         <button onClick={() => handleDelete(w.id, w.name)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors">删除</button>
                       </div>
                     </div>
                   ))}
                 </div>
               )}
-              <button onClick={() => setShowLoadDialog(false)} className="mt-4 w-full py-2 text-sm text-warm-500 hover:text-warm-700 transition-colors">关闭</button>
+              <button onClick={() => setShowLoadDialog(false)} className="mt-4 w-full py-2 text-sm text-ink-muted hover:text-ink-body transition-colors">关闭</button>
             </motion.div>
           </motion.div>
         )}
@@ -465,10 +471,10 @@ function WorkflowPageInner() {
         {toast && (
           <motion.div
             initial={{ opacity: 0, y: 24 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 24 }}
-            className={`fixed bottom-6 right-6 px-5 py-3 rounded-2xl text-sm font-medium z-50 shadow-warm-md ${
+            className={`fixed bottom-6 right-6 px-5 py-3 rounded-2xl text-sm font-medium z-50 shadow-cloud-md ${
               toast.type === 'error' ? 'bg-rose-50 text-rose-600' :
               toast.type === 'success' ? 'bg-emerald-50 text-emerald-600' :
-              'bg-warm-50 text-warm-600'
+              'bg-cloud-200 text-ink-body'
             }`}
           >
             {toast.msg}

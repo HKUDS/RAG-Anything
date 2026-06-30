@@ -80,23 +80,53 @@ async def init_db():
         # Insert default roles if missing
         import json as _json_rbac
         default_roles = {
-            "admin": {
-                "desc": "系统管理员，拥有全部权限",
+            "super_admin": {
+                "desc": "超级管理员，拥有全部权限（信息中心/IT运维）",
                 "perms": [
                     "users:read", "users:write", "users:delete",
                     "kb:read", "kb:write", "kb:delete",
                     "agent:read", "agent:write", "agent:delete",
                     "settings:read", "settings:write",
                     "audit:read", "monitor:read",
+                    "analytics:read",
+                    "workflow:read", "workflow:write",
+                    "manufacturing:read", "manufacturing:write",
                 ],
             },
-            "editor": {
-                "desc": "内容编辑，可读写知识库和智能体",
-                "perms": ["kb:read", "kb:write", "agent:read", "agent:write", "monitor:read"],
+            "dept_admin": {
+                "desc": "系部管理员，管理系统内知识库、智能体和用户（系主任/实训中心主任）",
+                "perms": [
+                    "users:read", "users:write",
+                    "kb:read", "kb:write", "kb:delete",
+                    "agent:read", "agent:write", "agent:delete",
+                    "settings:read", "audit:read", "monitor:read",
+                    "analytics:read",
+                    "workflow:read", "workflow:write",
+                    "manufacturing:read", "manufacturing:write",
+                ],
             },
-            "viewer": {
-                "desc": "只读用户，仅可查看知识库和智能体",
-                "perms": ["kb:read", "agent:read", "monitor:read"],
+            "teacher": {
+                "desc": "主讲教师，可创建管理自有知识库和智能体（任课教师）",
+                "perms": [
+                    "kb:read", "kb:write",
+                    "agent:read", "agent:write",
+                    "monitor:read", "analytics:read",
+                    "workflow:read",
+                    "manufacturing:read", "manufacturing:write",
+                ],
+            },
+            "assistant": {
+                "desc": "助理教师，可编辑知识库内容、使用智能体（实训指导教师/助教）",
+                "perms": [
+                    "kb:read", "kb:write",
+                    "agent:read",
+                    "monitor:read",
+                    "manufacturing:read",
+                ],
+            },
+            "student": {
+                "desc": "学生，可查看知识库并使用智能体问答（各年级学生）",
+                "perms": ["kb:read", "agent:read", "manufacturing:read"],
             },
         }
         for role_name, role_cfg in default_roles.items():
@@ -176,14 +206,14 @@ async def init_db():
 
         # Migrate existing users: if role_id is NULL, assign from is_admin
         admin_role = await (await db.execute(
-            "SELECT id FROM roles WHERE name = 'admin'"
+            "SELECT id FROM roles WHERE name IN ('super_admin', 'admin') ORDER BY id LIMIT 1"
         )).fetchone()
-        viewer_role = await (await db.execute(
-            "SELECT id FROM roles WHERE name = 'viewer'"
+        student_role = await (await db.execute(
+            "SELECT id FROM roles WHERE name IN ('student', 'viewer') ORDER BY id LIMIT 1"
         )).fetchone()
-        if admin_role and viewer_role:
+        if admin_role and student_role:
             admin_id = admin_role[0]
-            viewer_id = viewer_role[0]
+            student_id = student_role[0]
             # Assign role to users with NULL role_id based on legacy is_admin flag
             await db.execute(
                 "UPDATE users SET role_id = ? WHERE role_id IS NULL AND is_admin = 1",
@@ -191,7 +221,7 @@ async def init_db():
             )
             await db.execute(
                 "UPDATE users SET role_id = ? WHERE role_id IS NULL AND is_admin = 0",
-                (viewer_id,),
+                (student_id,),
             )
             await db.commit()
 
@@ -317,7 +347,7 @@ async def create_user(username: str, email: str, password: str, is_admin: bool =
     async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
         # Resolve role_id from is_admin parameter (backward-compatible)
-        role_name = "admin" if is_admin else "viewer"
+        role_name = "super_admin" if is_admin else "student"
         role_row = await (await db.execute(
             "SELECT id FROM roles WHERE name = ?", (role_name,)
         )).fetchone()
@@ -435,9 +465,9 @@ async def has_permission(user_id: int, permission: str) -> bool:
 
 
 async def user_is_admin(user_id: int) -> bool:
-    """Backward-compatible: check if user role is 'admin'."""
+    """Backward-compatible: check if user role is 'super_admin' or 'admin'."""
     role = await get_user_role(user_id)
-    return role is not None and role.get("name") == "admin"
+    return role is not None and role.get("name") in ("super_admin", "admin")
 
 
 async def delete_user(user_id: int) -> bool:
@@ -547,7 +577,7 @@ def create_token(user_id: int, username: str, is_admin: bool, role: dict | None 
     payload = {
         "user_id": user_id,
         "username": username,
-        "role": role.get("name") if role else ("admin" if is_admin else "viewer"),
+        "role": role.get("name") if role else ("super_admin" if is_admin else "student"),
         "permissions": role.get("permissions") if role else [],
         "sid": SERVER_START_ID,
         "jti": uuid.uuid4().hex,
@@ -576,7 +606,7 @@ def create_refresh_token(user_id: int, username: str, is_admin: bool, role: dict
     payload = {
         "user_id": user_id,
         "username": username,
-        "role": role.get("name") if role else ("admin" if is_admin else "viewer"),
+        "role": role.get("name") if role else ("super_admin" if is_admin else "student"),
         "permissions": role.get("permissions") if role else [],
         "type": "refresh",
         "sid": SERVER_START_ID,
@@ -608,3 +638,127 @@ def _sanitize_user(user: dict | None) -> dict | None:
     if user is None:
         return None
     return {k: v for k, v in user.items() if k != "password_hash"}
+
+
+# ═══════════════════════════════════════════════════════════════
+# PostgreSQL Backend Override (当 DATABASE_URL 或 POSTGRES_HOST 存在时激活)
+# ═══════════════════════════════════════════════════════════════
+
+_USE_PG = bool(os.getenv("DATABASE_URL") or os.getenv("POSTGRES_HOST"))
+
+if _USE_PG:
+    import logging as _logging
+    _pg_logger = _logging.getLogger("rag_server.auth")
+    _pg_logger.info("检测到 PostgreSQL 配置，激活 PG 后端（带 SQLite 回退）")
+
+    # Save original SQLite implementations for fallback
+    _sqlite_init_db = init_db
+    _sqlite_get_user_by_username = get_user_by_username
+    _sqlite_get_user_by_id = get_user_by_id
+    _sqlite_create_user = create_user
+    _sqlite_update_user = update_user
+    _sqlite_delete_user = delete_user
+    _sqlite_list_users = list_users
+    _sqlite_get_user_role = get_user_role
+    _sqlite_has_permission = has_permission
+    _sqlite_user_is_admin = user_is_admin
+    _sqlite_check_account_locked = check_account_locked
+    _sqlite_record_failed_login = record_failed_login
+    _sqlite_reset_failed_logins = reset_failed_logins
+
+    from raganything.services.pg_auth_repo import (
+        init_db as _pg_init_db,
+        get_user_by_username as _pg_get_user_by_username,
+        get_user_by_id as _pg_get_user_by_id,
+        create_user as _pg_create_user,
+        update_user as _pg_update_user,
+        delete_user as _pg_delete_user,
+        list_users as _pg_list_users,
+        get_user_role as _pg_get_user_role,
+        has_permission as _pg_has_permission,
+        user_is_admin as _pg_user_is_admin,
+        check_account_locked as _pg_check_account_locked,
+        record_failed_login as _pg_record_failed_login,
+        reset_failed_logins as _pg_reset_failed_logins,
+        SECRET_KEY as _PG_SECRET_KEY,
+        REFRESH_SECRET_KEY as _PG_REFRESH_SECRET_KEY,
+        SERVER_START_ID as _PG_SERVER_START_ID,
+        DEFAULT_ADMIN_USERNAME as _PG_DEFAULT_ADMIN_USERNAME,
+        DEFAULT_ADMIN_EMAIL as _PG_DEFAULT_ADMIN_EMAIL,
+        DEFAULT_ADMIN_PASSWORD as _PG_DEFAULT_ADMIN_PASSWORD,
+    )
+
+    # Helper: returns True if PG pool is ready
+    def _pg_ready() -> bool:
+        try:
+            from raganything.services.pg_state_repo import get_pg_pool
+            get_pg_pool()
+            return True
+        except RuntimeError:
+            return False
+
+    def _sync_pg_constants():
+        """Re-sync auth.py module-level constants from pg_auth_repo.
+
+        pg_auth_repo.init_db() updates its own globals (e.g. SECRET_KEY,
+        SERVER_START_ID) from the settings table. We must mirror those
+        updates back to auth.py's globals so JWT sign/verify functions
+        (defined in this module) use the correct, persisted values.
+        """
+        import raganything.services.pg_auth_repo as _pg_mod
+        globals()["SECRET_KEY"] = _pg_mod.SECRET_KEY
+        globals()["REFRESH_SECRET_KEY"] = _pg_mod.REFRESH_SECRET_KEY
+        globals()["SERVER_START_ID"] = _pg_mod.SERVER_START_ID
+
+    # Wrapper: PG with SQLite fallback
+    async def init_db():
+        if _pg_ready():
+            await _pg_init_db()
+            _sync_pg_constants()  # pick up settings-persisted values
+        else:
+            await _sqlite_init_db()
+
+    async def get_user_by_username(username: str):
+        return await _pg_get_user_by_username(username) if _pg_ready() else await _sqlite_get_user_by_username(username)
+
+    async def get_user_by_id(user_id: int):
+        return await _pg_get_user_by_id(user_id) if _pg_ready() else await _sqlite_get_user_by_id(user_id)
+
+    async def create_user(username: str, email: str, password: str, is_admin: bool = False):
+        return await _pg_create_user(username, email, password, is_admin) if _pg_ready() else await _sqlite_create_user(username, email, password, is_admin)
+
+    async def update_user(user_id: int, data: dict):
+        return await _pg_update_user(user_id, data) if _pg_ready() else await _sqlite_update_user(user_id, data)
+
+    async def delete_user(user_id: int):
+        return await _pg_delete_user(user_id) if _pg_ready() else await _sqlite_delete_user(user_id)
+
+    async def list_users():
+        return await _pg_list_users() if _pg_ready() else await _sqlite_list_users()
+
+    async def get_user_role(user_id: int):
+        return await _pg_get_user_role(user_id) if _pg_ready() else await _sqlite_get_user_role(user_id)
+
+    async def has_permission(user_id: int, permission: str):
+        return await _pg_has_permission(user_id, permission) if _pg_ready() else await _sqlite_has_permission(user_id, permission)
+
+    async def user_is_admin(user_id: int):
+        return await _pg_user_is_admin(user_id) if _pg_ready() else await _sqlite_user_is_admin(user_id)
+
+    async def check_account_locked(user_id: int):
+        return await _pg_check_account_locked(user_id) if _pg_ready() else await _sqlite_check_account_locked(user_id)
+
+    async def record_failed_login(user_id: int):
+        return await _pg_record_failed_login(user_id) if _pg_ready() else await _sqlite_record_failed_login(user_id)
+
+    async def reset_failed_logins(user_id: int):
+        return await _pg_reset_failed_logins(user_id) if _pg_ready() else await _sqlite_reset_failed_logins(user_id)
+
+    # Sync module-level constants so JWT functions use the PG-backed values
+    SECRET_KEY = _PG_SECRET_KEY
+    REFRESH_SECRET_KEY = _PG_REFRESH_SECRET_KEY
+    SERVER_START_ID = _PG_SERVER_START_ID
+    DEFAULT_ADMIN_USERNAME = _PG_DEFAULT_ADMIN_USERNAME
+    DEFAULT_ADMIN_EMAIL = _PG_DEFAULT_ADMIN_EMAIL
+    DEFAULT_ADMIN_PASSWORD = _PG_DEFAULT_ADMIN_PASSWORD
+    _pg_logger.info("PG 后端已激活（带 SQLite 运行时回退）")

@@ -3,6 +3,15 @@ import { Clock, Zap, BarChart3, Terminal, Cpu, TrendingUp } from 'lucide-react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { api } from '../utils/api'
 
+// Chart colors — literal hex values required by Recharts; all drawn from DESIGN.md
+const CHART_INK = '#6b8aaa'       // ink-muted
+const CHART_SKY = '#5b9bd5'       // sky-500
+const CHART_CORAL = '#e8734a'     // coral-500 (warm accent for data viz)
+const CHART_SURFACE = '#ffffff'   // cloud-surface
+const CHART_BORDER = '#e3eef7'    // cloud-border
+const CHART_TEXT = '#3a5a78'      // ink-body
+const CHART_SHADOW = 'rgba(48,86,122,0.06)' // ink-primary at 0.06
+
 export default function MonitorPage() {
   const [status, setStatus] = useState({ tasks: [], events: [] })
   const [llmStats, setLLMStats] = useState({ total_cache_entries: 0, extract_calls: 0, other_calls: 0 })
@@ -23,8 +32,8 @@ export default function MonitorPage() {
   }, [])
 
   const chartData = [
-    { name: '实体提取', count: llmStats.extract_calls || 0, fill: '#e8734a' },
-    { name: '其他调用', count: llmStats.other_calls || 0, fill: '#5b9bd5' },
+    { name: '实体提取', count: llmStats.extract_calls || 0, fill: CHART_CORAL },
+    { name: '其他调用', count: llmStats.other_calls || 0, fill: CHART_SKY },
   ]
 
   return (
@@ -39,7 +48,7 @@ export default function MonitorPage() {
       {/* Metrics Cards */}
       <div className="grid grid-cols-4 gap-5">
         {[
-          { icon: Zap, label: 'LLM 总调用', val: llmStats.total_cache_entries || 0, color: 'text-coral-500' },
+          { icon: Zap, label: 'LLM 总调用', val: llmStats.total_cache_entries || 0, color: 'text-sky-500' },
           { icon: TrendingUp, label: '实体提取', val: llmStats.extract_calls || 0, color: 'text-sage-500' },
           { icon: Cpu, label: '处理任务', val: (status.tasks || []).length, color: 'text-amber-500' },
           { icon: BarChart3, label: '事件记录', val: (logs || []).length, color: 'text-sky-500' },
@@ -55,27 +64,36 @@ export default function MonitorPage() {
 
       {/* Chart + Tasks Row */}
       <div className="grid grid-cols-2 gap-5">
-        <div className="card p-4">
-          <h3 className="text-sm font-medium text-warm-700 mb-3">LLM 调用分布</h3>
+        <div className="card p-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+          <h3 className="text-sm font-medium text-ink-body dark:text-cloud-300 mb-3">LLM 调用分布</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData}>
-              <XAxis dataKey="name" tick={{ fill: '#8a8276', fontSize: 12, fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif" }} />
-              <YAxis tick={{ fill: '#8a8276', fontSize: 12, fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif" }} />
-              <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e8e2d6', borderRadius: '12px', color: '#4a433b', fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif", boxShadow: '0 4px 16px rgba(74,67,59,0.08)' }} />
-              <Bar dataKey="count" radius={[4, 4, 0, 0]} fill="#e8734a" />
+              <XAxis dataKey="name"
+                tick={{ fill: CHART_INK, fontSize: 12, fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif" }} />
+              <YAxis
+                tick={{ fill: CHART_INK, fontSize: 12, fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif" }} />
+              <Tooltip contentStyle={{
+                background: CHART_SURFACE,
+                border: `1px solid ${CHART_BORDER}`,
+                borderRadius: '12px',
+                color: CHART_TEXT,
+                fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif",
+                boxShadow: `0 4px 16px ${CHART_SHADOW}`,
+              }} />
+              <Bar dataKey="count" radius={[4, 4, 0, 0]} fill={CHART_CORAL} />
             </BarChart>
           </ResponsiveContainer>
         </div>
-        <div className="card p-4 space-y-2">
-          <h3 className="text-sm font-medium text-warm-700 mb-3">处理时间线</h3>
+        <div className="card p-4 space-y-2 dark:bg-sky-900/20 dark:border-sky-800/30">
+          <h3 className="text-sm font-medium text-ink-body dark:text-cloud-300 mb-3">处理时间线</h3>
           <div className="space-y-2 max-h-52 overflow-y-auto">
             {(logs || []).slice().reverse().slice(0, 15).map((e, i) => (
               <div key={i} className="flex items-start gap-3 text-xs">
-                <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-coral-400"/>
+                <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-sky-400"/>
                 <div>
-                  <span className="text-warm-500 font-mono">{e.time?.slice(11, 19) || ''}</span>
-                  <span className="text-coral-500 ml-2 font-medium">{e.event}</span>
-                  <span className="text-warm-500 ml-2">{e.file || ''}</span>
+                  <span className="text-ink-muted dark:text-cloud-500 font-mono">{e.time?.slice(11, 19) || ''}</span>
+                  <span className="text-sky-500 dark:text-sky-400 ml-2 font-medium">{e.event}</span>
+                  <span className="text-ink-muted dark:text-cloud-500 ml-2">{e.file || ''}</span>
                   {e.error && <p className="text-rose-500 mt-0.5">{e.error.slice(0, 80)}</p>}
                 </div>
               </div>
@@ -85,22 +103,22 @@ export default function MonitorPage() {
       </div>
 
       {/* Live Log */}
-      <div className="card p-4">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-warm-700 mb-3">
+      <div className="card p-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300 mb-3">
           <Terminal size={14}/> 实时日志
         </h3>
-        <div className="bg-warm-50 rounded-xl p-4 font-mono text-xs text-warm-500 h-48 overflow-y-auto space-y-1 border border-warm-200/60">
+        <div className="bg-cloud-100 dark:bg-sky-950/60 rounded-xl p-4 font-mono text-xs text-ink-muted dark:text-cloud-500 h-48 overflow-y-auto space-y-1 border border-cloud-200 dark:border-sky-800/30">
           {(logs || []).slice().reverse().slice(0, 20).map((e, i) => (
             <div key={i}>
-              <span className="text-warm-500">[{e.time?.slice(0, 19) || '?'}]</span>{' '}
-              <span className={e.event?.includes('error') ? 'text-rose-500 font-medium' : 'text-coral-500 font-medium'}>{e.event}</span>{' '}
-              <span className="text-warm-500">{e.file || e.task_id || ''}</span>
+              <span className="text-ink-muted dark:text-cloud-500">[{e.time?.slice(0, 19) || '?'}]</span>{' '}
+              <span className={e.event?.includes('error') ? 'text-rose-500 font-medium' : 'text-sky-500 dark:text-sky-400 font-medium'}>{e.event}</span>{' '}
+              <span className="text-ink-muted dark:text-cloud-500">{e.file || e.task_id || ''}</span>
             </div>
           ))}
           {(!logs || logs.length === 0) && (
             <div className="text-center py-8">
-              <span className="text-warm-500 text-sm">等待事件...</span>
-              <p className="text-warm-500 text-xs mt-1">系统事件将实时显示在这里 📡</p>
+              <span className="text-ink-muted dark:text-cloud-500 text-sm">等待事件...</span>
+              <p className="text-ink-muted dark:text-cloud-500 text-xs mt-1">系统事件将实时显示在这里 📡</p>
             </div>
           )}
         </div>

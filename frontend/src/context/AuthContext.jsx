@@ -57,7 +57,7 @@ export function AuthProvider({ children }) {
             } catch (_) {}
           }
         }
-      } catch {} finally {
+      } catch { /* noop */ } finally {
         if (!cancelled) setLoading(false)
       }
     }
@@ -129,7 +129,7 @@ export function AuthProvider({ children }) {
           body: JSON.stringify({ refresh_token: refreshToken }),
         })
       }
-    } catch {} finally {
+    } catch { /* noop */ } finally {
       clearAuth()
     }
   }, [token, clearAuth])
@@ -146,15 +146,28 @@ export function AuthProvider({ children }) {
         setUser(data.user)
         return true
       }
-    } catch {}
+    } catch { /* noop */ }
     clearAuth()
     return false
   }, [token, clearAuth])
 
   const isAdmin = user?.is_admin === true || user?.is_admin === 1
 
+  // 权限集（从 JWT/role 中解析）
+  const permissions = user?.role?.permissions || []
+
+  // 权限检查：用户拥有指定权限则返回 true；管理员自动拥有所有权限
+  const hasPermission = useCallback((perm) => {
+    if (isAdmin) return true
+    if (!perm) return true
+    return Array.isArray(permissions) && permissions.includes(perm)
+  }, [isAdmin, permissions])
+
+  // 角色名快捷访问
+  const roleName = user?.role?.name || null
+
   return (
-    <AuthContext.Provider value={{ user, token, loading, isAdmin, login, register, logout, verifyToken, saveAuth, clearAuth }}>
+    <AuthContext.Provider value={{ user, token, loading, isAdmin, permissions, roleName, hasPermission, login, register, logout, verifyToken, saveAuth, clearAuth }}>
       {children}
     </AuthContext.Provider>
   )

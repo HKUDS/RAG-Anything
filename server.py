@@ -97,17 +97,26 @@ _server_logger = _setup_logging()
 
 # ── 存储空间监控 ──────────────────────────────────
 from prometheus_client import Gauge as PromGauge
+from prometheus_client import REGISTRY as _PROM_REGISTRY
 
 DISK_ALERT_THRESHOLD_MB = int(os.getenv("DISK_ALERT_THRESHOLD_MB", "10240"))  # 10GB
 DISK_ALERT_PERCENT = float(os.getenv("DISK_ALERT_PERCENT", "85"))  # 85%
 DISK_CHECK_INTERVAL = int(os.getenv("DISK_CHECK_INTERVAL", "300"))  # 5 min
 
-_storage_usage_bytes_g = PromGauge(
+def _get_or_create_gauge(name: str, description: str, labelnames: list) -> PromGauge:
+    """Create a Prometheus Gauge, reusing existing if already registered
+    (handles uvicorn multi-worker module re-import)."""
+    try:
+        return PromGauge(name, description, labelnames)
+    except ValueError:
+        return _PROM_REGISTRY._names_to_collectors[name]
+
+_storage_usage_bytes_g = _get_or_create_gauge(
     "rag_storage_bytes",
     "Storage directory total size in bytes",
     ["dir"],
 )
-_storage_file_count_g = PromGauge(
+_storage_file_count_g = _get_or_create_gauge(
     "rag_storage_file_count",
     "Number of files in storage directory",
     ["dir"],
@@ -256,6 +265,13 @@ app.include_router(manufacturing_router, prefix="/api")
 
 @app.on_event("startup")
 async def startup():
+    # 初始化 PostgreSQL 连接池（若 DATABASE_URL 已配置）
+    try:
+        from raganything.services.pg_state_repo import init_pg_pool
+        await init_pg_pool()
+    except Exception as _pg_exc:
+        server_logger.warning(f"PostgreSQL 初始化跳过（将使用 SQLite）: {_pg_exc}")
+
     # 初始化认证数据库
     await init_db()
     # 初始化 ConversationManager（多轮对话上下文记忆）
@@ -320,6 +336,12 @@ async def shutdown():
     for name, kb in kb_instances.items():
         try: await kb.finalize_storages()
         except: pass
+    # 关闭 PostgreSQL 连接池
+    try:
+        from raganything.services.pg_state_repo import close_pg_pool
+        await close_pg_pool()
+    except Exception:
+        pass
 
 # ── Server Startup Guard ─────────────────────────────────────
 def _acquire_server_lock(port: int, workers: int = 1) -> None:

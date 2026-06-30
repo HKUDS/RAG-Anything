@@ -30,6 +30,13 @@ from raganything.dependencies import (
     require_permission,
 )
 from raganything.permissions import Permission
+from raganything.services.auth import (
+    decode_token,
+    get_user_by_id,
+    check_account_locked,
+    has_permission as _auth_has_permission,
+)
+from raganything.services.token_blacklist import get_token_blacklist
 
 router = APIRouter(tags=["admin"])
 
@@ -69,7 +76,7 @@ class WorkflowRunRequest(BaseModel):
 # ════════════════════════════════════════════════════════
 
 @router.get("/workflows")
-async def list_workflows(current_user: dict = Depends(get_current_user)):
+async def list_workflows(_perm: None = Depends(require_permission(Permission.WORKFLOW_READ)), current_user: dict = Depends(get_current_user)):
     """列出所有工作流"""
     workflows = []
     for f in sorted(shared.WORKFLOW_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
@@ -82,7 +89,7 @@ async def list_workflows(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/workflows/files")
-async def list_workflow_files(file_type: str = "", current_user: dict = Depends(get_current_user)):
+async def list_workflow_files(file_type: str = "", _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)), current_user: dict = Depends(get_current_user)):
     """列出 uploads/ 目录下的文件供工作流选择"""
     upload_dir = Path("./uploads")
     upload_dir.mkdir(exist_ok=True)
@@ -99,7 +106,7 @@ async def list_workflow_files(file_type: str = "", current_user: dict = Depends(
 
 
 @router.post("/workflows/upload")
-async def upload_workflow(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+async def upload_workflow(file: UploadFile = File(...), _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)), current_user: dict = Depends(get_current_user)):
     """上传文件到 uploads/ 供工作流使用"""
     upload_dir = Path("./uploads")
     upload_dir.mkdir(exist_ok=True)
@@ -149,7 +156,7 @@ async def get_workflow_models(
 
 
 @router.get("/workflows/{workflow_id}")
-async def get_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
+async def get_workflow(workflow_id: str, _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)), current_user: dict = Depends(get_current_user)):
     """获取单个工作流"""
     fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
     if not fpath.exists():
@@ -158,7 +165,7 @@ async def get_workflow(workflow_id: str, current_user: dict = Depends(get_curren
 
 
 @router.post("/workflows")
-async def create_workflow(request: Request, current_user: dict = Depends(get_current_user)):
+async def create_workflow(request: Request, _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)), current_user: dict = Depends(get_current_user)):
     """创建新工作流"""
     try:
         body = await request.json()
@@ -179,7 +186,7 @@ async def create_workflow(request: Request, current_user: dict = Depends(get_cur
 
 
 @router.put("/workflows/{workflow_id}")
-async def update_workflow(workflow_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+async def update_workflow(workflow_id: str, request: Request, _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)), current_user: dict = Depends(get_current_user)):
     """更新工作流"""
     fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
     if not fpath.exists():
@@ -198,7 +205,7 @@ async def update_workflow(workflow_id: str, request: Request, current_user: dict
 
 
 @router.delete("/workflows/{workflow_id}")
-async def delete_workflow(workflow_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_workflow(workflow_id: str, _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)), current_user: dict = Depends(get_current_user)):
     """删除工作流"""
     fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
     if not fpath.exists():
@@ -207,11 +214,80 @@ async def delete_workflow(workflow_id: str, current_user: dict = Depends(get_cur
     return {"status": "ok"}
 
 
-# ── WebSocket 连接管理 ─────────────────────────────
+# ── WebSocket 认证辅助 ─────────────────────────────
+
+async def _authenticate_ws(ws: WebSocket, required_permission: str | None = None) -> dict | None:
+    """验证 WebSocket 连接的 token（查询参数）。
+
+    在 ws.accept() 之前调用。认证失败时自动关闭连接（code=4001）。
+
+    Args:
+        ws: WebSocket 连接
+        required_permission: 若提供，额外检查用户是否具有该权限
+
+    Returns:
+        用户 dict（含 id, username, role），失败返回 None
+    """
+    token = ws.query_params.get("token")
+    if not token:
+        await ws.close(code=4001, reason="Missing authentication token")
+        return None
+
+    # 解码 Token
+    try:
+        payload = decode_token(token)
+    except Exception:
+        await ws.close(code=4001, reason="Invalid token format")
+        return None
+
+    if payload is None:
+        await ws.close(code=4001, reason="Token invalid or expired")
+        return None
+
+    user_id = payload.get("user_id")
+    if not user_id:
+        await ws.close(code=4001, reason="Token missing user identity")
+        return None
+
+    # 检查 Token 是否已被撤销
+    jti = payload.get("jti")
+    if jti and get_token_blacklist().is_revoked(jti):
+        await ws.close(code=4001, reason="Token has been revoked")
+        return None
+
+    # 检查用户状态
+    user = await get_user_by_id(user_id)
+    if not user:
+        await ws.close(code=4001, reason="User not found")
+        return None
+
+    if not user.get("is_active"):
+        await ws.close(code=4001, reason="Account disabled")
+        return None
+
+    lock_error = await check_account_locked(user_id)
+    if lock_error:
+        await ws.close(code=4001, reason="Account locked")
+        return None
+
+    # 可选权限检查
+    if required_permission:
+        if not await _auth_has_permission(user_id, required_permission):
+            await ws.close(code=4001, reason=f"Insufficient permission: {required_permission}")
+            return None
+
+    return {"id": user_id, "username": user["username"]}
+
+
+# ── WebSocket 端点 ─────────────────────────────────
 
 @router.websocket("/ws/workflow-run/{run_id}")
 async def websocket_workflow_run(ws: WebSocket, run_id: str):
-    """WebSocket: 推送工作流执行状态"""
+    """WebSocket: 推送工作流执行状态（需要 token 查询参数 + workflow:read 权限）"""
+    user = await _authenticate_ws(ws, required_permission=Permission.WORKFLOW_READ)
+    if user is None:
+        return  # 认证失败，连接已关闭
+
     await ws.accept()
     if run_id not in shared.active_ws_connections:
         shared.active_ws_connections[run_id] = []
@@ -222,13 +298,16 @@ async def websocket_workflow_run(ws: WebSocket, run_id: str):
     except WebSocketDisconnect:
         pass
     finally:
-        shared.active_ws_connections[run_id].remove(ws)
-        if not shared.active_ws_connections[run_id]:
+        try:
+            shared.active_ws_connections[run_id].remove(ws)
+        except (ValueError, KeyError):
+            pass
+        if run_id in shared.active_ws_connections and not shared.active_ws_connections[run_id]:
             del shared.active_ws_connections[run_id]
 
 
 @router.post("/workflows/{workflow_id}/run")
-async def run_workflow(workflow_id: str, body: WorkflowRunRequest = WorkflowRunRequest(), current_user: dict = Depends(get_current_user)):
+async def run_workflow(workflow_id: str, body: WorkflowRunRequest = WorkflowRunRequest(), _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)), current_user: dict = Depends(get_current_user)):
     """执行工作流 DAG，支持运行时 query_text 注入到 retriever 节点"""
     fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
     if not fpath.exists():
@@ -274,7 +353,7 @@ async def run_workflow(workflow_id: str, body: WorkflowRunRequest = WorkflowRunR
 
 
 @router.get("/workflows/{workflow_id}/runs")
-async def list_workflow_runs(workflow_id: str, current_user: dict = Depends(get_current_user)):
+async def list_workflow_runs(workflow_id: str, _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)), current_user: dict = Depends(get_current_user)):
     """列出工作流的所有运行记录"""
     runs = []
     for f in sorted(RUNS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
@@ -292,7 +371,7 @@ async def list_workflow_runs(workflow_id: str, current_user: dict = Depends(get_
 
 
 @router.get("/workflows/{workflow_id}/runs/{run_id}")
-async def get_workflow_run(workflow_id: str, run_id: str, current_user: dict = Depends(get_current_user)):
+async def get_workflow_run(workflow_id: str, run_id: str, _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)), current_user: dict = Depends(get_current_user)):
     """获取单次运行详情"""
     fpath = RUNS_DIR / f"{run_id}.json"
     if not fpath.exists():
@@ -302,6 +381,11 @@ async def get_workflow_run(workflow_id: str, run_id: str, current_user: dict = D
 
 @router.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
+    """WebSocket: 通用进度推送（需要 token 查询参数，任何有效用户均可连接）"""
+    user = await _authenticate_ws(ws, required_permission=None)
+    if user is None:
+        return  # 认证失败，连接已关闭
+
     await ws.accept()
     shared.ws_clients.append(ws)
     try:
@@ -316,7 +400,7 @@ async def websocket_endpoint(ws: WebSocket):
 
 # ── ⚙️ 系统设置 ─────────────────────────────────────
 @router.get("/settings")
-async def get_settings(current_user: dict = Depends(get_current_user)):
+async def get_settings(_perm: None = Depends(require_permission(Permission.SETTINGS_READ)), current_user: dict = Depends(get_current_user)):
     """获取当前配置"""
     return {
         "parser": os.getenv("PARSER", "docling"),
@@ -489,7 +573,7 @@ async def reload_kb(kb_name: str,
 
 # ── 📈 监控面板 ─────────────────────────────────────
 @router.get("/monitor/status")
-async def monitor_status(current_user: dict = Depends(get_current_user)):
+async def monitor_status(_perm: None = Depends(require_permission(Permission.MONITOR_READ)), current_user: dict = Depends(get_current_user)):
     """获取当前处理状态（按用户隔离，管理员看全部）"""
     is_admin = current_user.get("is_admin", False)
     if is_admin:
@@ -508,7 +592,7 @@ async def monitor_status(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/monitor/stats")
-async def monitor_stats(current_user: dict = Depends(get_current_user)):
+async def monitor_stats(_perm: None = Depends(require_permission(Permission.MONITOR_READ)), current_user: dict = Depends(get_current_user)):
     """LLM 调用统计（聚合数据，无用户隐私）"""
     cache_path = Path(shared.WORKING_DIR) / "kv_store_llm_response_cache.json"
     if not cache_path.exists():
@@ -524,7 +608,7 @@ async def monitor_stats(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/monitor/logs")
-async def monitor_logs(limit: int = 50, current_user: dict = Depends(get_current_user)):
+async def monitor_logs(limit: int = 50, _perm: None = Depends(require_permission(Permission.MONITOR_READ)), current_user: dict = Depends(get_current_user)):
     """获取最近事件日志（按用户隔离，管理员看全部）"""
     is_admin = current_user.get("is_admin", False)
     if is_admin:

@@ -7,7 +7,7 @@ export default function WorkflowToolbar({
   queryText, onQueryTextChange,
 }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-warm-200 flex-shrink-0">
+    <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-cloud-300 flex-shrink-0">
       {/* Workflow name */}
       <div className="flex items-center gap-1.5">
         <input
@@ -15,15 +15,15 @@ export default function WorkflowToolbar({
           value={workflowName}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="未命名工作流"
-          className="text-sm font-medium text-warm-800 bg-transparent border-none outline-none
-                     focus:bg-warm-50 rounded-lg px-2 py-1 w-48 placeholder:text-warm-400"
+          className="text-sm font-medium text-ink-primary bg-transparent border-none outline-none
+                     focus:bg-cloud-200 rounded-lg px-2 py-1 w-48 placeholder:text-ink-muted"
         />
         {isDirty && (
           <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="有未保存的修改" />
         )}
       </div>
 
-      <div className="w-px h-5 bg-warm-200" />
+      <div className="w-px h-5 bg-cloud-300" />
 
       {/* Actions */}
       <button onClick={onNew} title="新建 (未保存时弹出确认)" className="toolbar-btn">
@@ -36,7 +36,7 @@ export default function WorkflowToolbar({
         <FolderOpen size={16} />
       </button>
 
-      <div className="w-px h-5 bg-warm-200" />
+      <div className="w-px h-5 bg-cloud-300" />
 
       {/* Undo/Redo */}
       <button onClick={onUndo} title="撤销 (Ctrl+Z)" className="toolbar-btn">
@@ -46,14 +46,14 @@ export default function WorkflowToolbar({
         <Redo2 size={15} />
       </button>
 
-      <div className="w-px h-5 bg-warm-200" />
+      <div className="w-px h-5 bg-cloud-300" />
 
       <div className="flex-1" />
 
       {/* Runtime query input */}
       {hasNodes && (
         <div className="flex items-center gap-1.5 flex-1 max-w-md">
-          <MessageCircle size={14} className="text-warm-400 flex-shrink-0" />
+          <MessageCircle size={14} className="text-ink-muted flex-shrink-0" />
           <input
             type="text"
             value={queryText || ''}
@@ -61,9 +61,9 @@ export default function WorkflowToolbar({
             placeholder="输入问题后运行..."
             onKeyDown={(e) => { if (e.key === 'Enter' && !running) onRun?.() }}
             disabled={running}
-            className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-warm-200 bg-white
-                       focus:outline-none focus:ring-2 focus:ring-coral-200 focus:border-coral-300
-                       text-warm-700 placeholder:text-warm-350 disabled:opacity-50"
+            className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-cloud-300 bg-white
+                       focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400
+                       text-ink-body placeholder:text-cloud-400 disabled:opacity-50"
           />
         </div>
       )}
@@ -92,11 +92,11 @@ export default function WorkflowToolbar({
       </button>
 
       {/* Zoom group */}
-      <div className="flex items-center gap-1 bg-warm-50 rounded-lg px-1">
+      <div className="flex items-center gap-1 bg-cloud-200 rounded-lg px-1">
         <button onClick={onZoomOut} title="缩小" className="toolbar-btn !w-7 !h-7">
           <ZoomOut size={15} />
         </button>
-        <span className="text-2xs font-mono text-warm-500 w-9 text-center tabular-nums select-none">
+        <span className="text-2xs font-mono text-ink-muted w-9 text-center tabular-nums select-none">
           {zoomLevel}%
         </span>
         <button onClick={onZoomIn} title="放大" className="toolbar-btn !w-7 !h-7">

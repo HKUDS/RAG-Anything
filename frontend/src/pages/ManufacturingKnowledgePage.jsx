@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Search, Database, AlertTriangle, Wrench, BookOpen,
@@ -22,10 +22,10 @@ class KnowledgeErrorBoundary extends React.Component {
         <div className="flex items-center justify-center py-24">
           <div className="text-center space-y-3 max-w-sm">
             <AlertCircle size={32} className="mx-auto text-rose-400" />
-            <p className="text-sm font-medium text-warm-700">知识库组件加载异常</p>
-            <p className="text-xs text-warm-500">{this.state.error?.message || '未知错误'}</p>
+            <p className="text-sm font-medium text-ink-body">知识库组件加载异常</p>
+            <p className="text-xs text-ink-muted">{this.state.error?.message || '未知错误'}</p>
             <button onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload() }}
-              className="px-4 py-2 text-xs font-medium text-white bg-coral-500 rounded-lg hover:bg-coral-600 transition-colors">
+              className="px-4 py-2 text-xs font-medium text-white bg-sky-500 rounded-lg hover:bg-sky-600 transition-colors">
               刷新页面
             </button>
           </div>
@@ -342,11 +342,11 @@ export default function ManufacturingKnowledgePage() {
   // Node type color
   const nodeTypeColor = (type) => {
     const map = {
-      knowledge_point: 'bg-coral-50 text-coral-600 border-coral-200',
+      knowledge_point: 'bg-sky-50 text-sky-600 border-sky-200',
       competition_topic: 'bg-sage-50 text-sage-600 border-sage-200',
       skill_point: 'bg-sky-50 text-sky-600 border-sky-200',
     }
-    return map[type] || 'bg-warm-100 text-warm-600 border-warm-200'
+    return map[type] || 'bg-cloud-100 text-ink-body border-cloud-300'
   }
 
   const nodeTypeLabel = (type) => {
@@ -360,11 +360,11 @@ export default function ManufacturingKnowledgePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-warm-800 flex items-center gap-2">
+          <h1 className="text-xl font-semibold text-ink-primary flex items-center gap-2">
             <Database size={22} className="text-sage-500" />
             知识库
           </h1>
-          <p className="text-sm text-warm-500 mt-1">赛项知识图谱 · 故障案例 · 工艺文档</p>
+          <p className="text-sm text-ink-muted mt-1">赛项知识图谱 · 故障案例 · 工艺文档</p>
           <div className="flex gap-1 mt-2">
             {[
               { to: '/manufacturing', label: '仪表板' },
@@ -374,8 +374,8 @@ export default function ManufacturingKnowledgePage() {
               <button key={item.to} onClick={() => navigate(item.to)}
                 className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                   location.pathname === item.to
-                    ? 'bg-coral-50 text-coral-600'
-                    : 'text-warm-500 hover:text-warm-700 hover:bg-warm-100'
+                    ? 'bg-sky-50 text-sky-600'
+                    : 'text-ink-muted hover:text-ink-body hover:bg-cloud-100'
                 }`}>
                 {item.label}
               </button>
@@ -389,7 +389,7 @@ export default function ManufacturingKnowledgePage() {
           />
           <button
             onClick={() => navigate(`/knowledge`)}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs border border-coral-200 text-coral-600 hover:bg-coral-50 transition-colors"
+            className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs border border-sky-200 dark:border-sky-800/30 text-sky-600 hover:bg-sky-50 transition-colors"
             title="跳转到通用知识库管理页面上传文档"
           >
             <BookOpen size={13} /> 上传文档
@@ -398,11 +398,11 @@ export default function ManufacturingKnowledgePage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 bg-warm-100 rounded-xl w-fit">
+      <div className="flex gap-1 p-1 bg-cloud-100 rounded-xl w-fit">
         {TABS.map(t => (
           <button key={t.key} onClick={() => { setActiveTab(t.key); setSelectedNode(null); setLineage(null); setViewingFault(null); setViewingProcess(null); setProcessDetail(null) }}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === t.key ? 'bg-white text-warm-800 shadow-sm' : 'text-warm-500 hover:text-warm-700'
+              activeTab === t.key ? 'bg-white text-ink-primary shadow-sm' : 'text-ink-muted hover:text-ink-body'
             }`}>
             <t.icon size={15} /> {t.label}
           </button>
@@ -413,12 +413,12 @@ export default function ManufacturingKnowledgePage() {
       {(activeTab === 'faults' || activeTab === 'process') && (
         <div className="flex gap-2">
           <div className="flex-1 relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-warm-400" />
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
             <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleSearch()}
               placeholder={activeTab === 'faults' ? '搜索故障现象、原因…' : '搜索工艺名称、参数…'}
-              className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-warm-200 text-sm bg-white
-                focus:outline-none focus:border-coral-300 focus:ring-2 focus:ring-coral-50 transition-all" />
+              className="w-full pl-9 pr-4 py-2.5 rounded-xl border border-cloud-300 text-sm bg-white
+                focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-50 transition-all" />
           </div>
           <button onClick={handleSearch}
             className="btn-primary px-5 py-2.5 text-sm rounded-xl">搜索</button>
@@ -434,20 +434,20 @@ export default function ManufacturingKnowledgePage() {
             {kgSummary && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
-                  { label: '节点总数', value: kgSummary.total_nodes, icon: Database, color: 'coral' },
+                  { label: '节点总数', value: kgSummary.total_nodes, icon: Database, color: 'sky' },
                   { label: '关系总数', value: kgSummary.total_edges, icon: GitBranch, color: 'sage' },
                   { label: '节点类型', value: Object.keys(kgSummary.node_types || {}).length, icon: Layers, color: 'sky' },
                   { label: '关系类型', value: Object.keys(kgSummary.relation_types || {}).length, icon: Tag, color: 'amber' },
                 ].map(s => {
                   const colorMap = {
-                    coral: 'text-coral-400', sage: 'text-sage-400',
+                    sky: 'text-sky-400', sage: 'text-sage-400',
                     sky: 'text-sky-400', amber: 'text-amber-400',
                   }
                   return (
                   <div key={s.label} className="card p-4">
-                    <s.icon size={16} className={`${colorMap[s.color] || 'text-warm-400'} mb-2`} />
-                    <p className="text-xl font-bold text-warm-800">{s.value}</p>
-                    <p className="text-xs text-warm-500">{s.label}</p>
+                    <s.icon size={16} className={`${colorMap[s.color] || 'text-ink-muted'} mb-2`} />
+                    <p className="text-xl font-bold text-ink-primary">{s.value}</p>
+                    <p className="text-xs text-ink-muted">{s.label}</p>
                   </div>
                   )
                 })}
@@ -471,30 +471,30 @@ export default function ManufacturingKnowledgePage() {
             {selectedNode && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                className="card p-4 space-y-3 ring-1 ring-coral-200">
+                className="card p-4 space-y-3 ring-1 ring-sky-200 dark:ring-sky-800/30">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className={`px-2 py-0.5 rounded-md text-2xs border ${nodeTypeColor(selectedNode.node_type)}`}>
                       {nodeTypeLabel(selectedNode.node_type)}
                     </div>
-                    <h4 className="text-sm font-semibold text-warm-700">{selectedNode.name}</h4>
+                    <h4 className="text-sm font-semibold text-ink-body">{selectedNode.name}</h4>
                     {selectedNode.difficulty_level && (
-                      <span className="text-2xs text-warm-400">Lv.{selectedNode.difficulty_level}</span>
+                      <span className="text-2xs text-ink-muted">Lv.{selectedNode.difficulty_level}</span>
                     )}
                   </div>
-                  <button onClick={() => setSelectedNode(null)}
-                    className="text-warm-400 hover:text-warm-600 transition-colors">
-                    <X size={16} />
+                  <button onClick={() => setSelectedNode(null)} aria-label="关闭详情"
+                    className="text-ink-muted hover:text-ink-body transition-colors">
+                    <X size={16} aria-hidden="true" />
                   </button>
                 </div>
-                <p className="text-xs text-warm-600">{selectedNode.description || '暂无描述'}</p>
+                <p className="text-xs text-ink-body">{selectedNode.description || '暂无描述'}</p>
                 {selectedNode.estimated_hours > 0 && (
-                  <p className="text-2xs text-warm-400">预计学时：{selectedNode.estimated_hours}h</p>
+                  <p className="text-2xs text-ink-muted">预计学时：{selectedNode.estimated_hours}h</p>
                 )}
 
                 {/* Lineage */}
                 {lineage && (
-                  <div className="grid grid-cols-3 gap-3 pt-3 border-t border-warm-100">
+                  <div className="grid grid-cols-3 gap-3 pt-3 border-t border-cloud-200">
                     <div className="p-2.5 rounded-lg bg-amber-50 text-xs">
                       <p className="font-medium text-amber-700 mb-1.5">前置知识 ({lineage.prerequisite_count || 0})</p>
                       {lineage.prerequisites?.length > 0 ? (
@@ -505,12 +505,12 @@ export default function ManufacturingKnowledgePage() {
                         <p className="text-amber-400 text-2xs">无前置依赖</p>
                       )}
                     </div>
-                    <div className="p-2.5 rounded-lg bg-coral-50 text-xs flex items-center justify-center">
+                    <div className="p-2.5 rounded-lg bg-sky-50 text-xs flex items-center justify-center">
                       <div className="text-center">
                         <div className={`inline-block px-2 py-0.5 rounded-md text-2xs border mb-1 ${nodeTypeColor(selectedNode.node_type)}`}>
                           {nodeTypeLabel(selectedNode.node_type)}
                         </div>
-                        <p className="text-coral-600 font-medium text-xs">当前节点</p>
+                        <p className="text-sky-600 font-medium text-xs">当前节点</p>
                       </div>
                     </div>
                     <div className="p-2.5 rounded-lg bg-sage-50 text-xs">
@@ -535,25 +535,25 @@ export default function ManufacturingKnowledgePage() {
           <motion.div key="nodes" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-4">
             <div className="card p-0 overflow-hidden">
-              <div className="p-4 border-b border-warm-100 flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-warm-700">知识节点</h3>
-                <span className="text-xs text-warm-500">{kgNodes.length} 个节点</span>
+              <div className="p-4 border-b border-cloud-200 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-ink-body">知识节点</h3>
+                <span className="text-xs text-ink-muted">{kgNodes.length} 个节点</span>
               </div>
               <div className="max-h-[420px] overflow-y-auto">
                 {kgNodes.length > 0 ? kgNodes.slice(0, 100).map(node => (
                   <button key={node.id} onClick={() => viewNodeDetail(node.id)}
-                    className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-warm-50 transition-colors border-b border-warm-50 text-left ${
-                      selectedNode?.id === node.id ? 'bg-coral-50' : ''
+                    className={`w-full flex items-center gap-3 px-4 py-3 hover:bg-cloud-200 transition-colors border-b border-cloud-200 text-left ${
+                      selectedNode?.id === node.id ? 'bg-sky-50' : ''
                     }`}>
                     <div className={`px-2 py-0.5 rounded-md text-2xs border ${nodeTypeColor(node.node_type)}`}>
                       {nodeTypeLabel(node.node_type)}
                     </div>
-                    <span className="text-sm text-warm-700 flex-1 truncate">{node.name}</span>
-                    <span className="text-xs text-warm-400">Lv.{node.difficulty_level || 1}</span>
-                    <ChevronRight size={14} className="text-warm-400" />
+                    <span className="text-sm text-ink-body flex-1 truncate">{node.name}</span>
+                    <span className="text-xs text-ink-muted">Lv.{node.difficulty_level || 1}</span>
+                    <ChevronRight size={14} className="text-ink-muted" />
                   </button>
                 )) : (
-                  <p className="text-center text-sm text-warm-400 py-12">
+                  <p className="text-center text-sm text-ink-muted py-12">
                     {kgLoading ? '加载中…' : '暂无节点数据'}
                   </p>
                 )}
@@ -564,34 +564,34 @@ export default function ManufacturingKnowledgePage() {
             {selectedNode && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
-                className="card p-4 space-y-3 ring-1 ring-coral-200">
+                className="card p-4 space-y-3 ring-1 ring-sky-200 dark:ring-sky-800/30">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <div className={`px-2 py-0.5 rounded-md text-2xs border ${nodeTypeColor(selectedNode.node_type)}`}>
                       {nodeTypeLabel(selectedNode.node_type)}
                     </div>
-                    <h4 className="text-sm font-semibold text-warm-700">{selectedNode.name}</h4>
+                    <h4 className="text-sm font-semibold text-ink-body">{selectedNode.name}</h4>
                   </div>
-                  <button onClick={() => setSelectedNode(null)}
-                    className="text-warm-400 hover:text-warm-600 transition-colors">
-                    <X size={16} />
+                  <button onClick={() => setSelectedNode(null)} aria-label="关闭详情"
+                    className="text-ink-muted hover:text-ink-body transition-colors">
+                    <X size={16} aria-hidden="true" />
                   </button>
                 </div>
-                <p className="text-xs text-warm-600">{selectedNode.description || '暂无描述'}</p>
+                <p className="text-xs text-ink-body">{selectedNode.description || '暂无描述'}</p>
                 {lineage && (
-                  <div className="grid grid-cols-3 gap-3 pt-3 border-t border-warm-100">
+                  <div className="grid grid-cols-3 gap-3 pt-3 border-t border-cloud-200">
                     <div className="p-2.5 rounded-lg bg-amber-50 text-xs">
                       <p className="font-medium text-amber-700 mb-1.5">前置知识 ({lineage.prerequisite_count || 0})</p>
                       {lineage.prerequisites?.length > 0 ? (
                         lineage.prerequisites.map(p => <div key={p.id} className="text-amber-800 py-0.5">• {p.name}</div>)
                       ) : <p className="text-amber-400 text-2xs">无前置依赖</p>}
                     </div>
-                    <div className="p-2.5 rounded-lg bg-coral-50 text-xs flex items-center justify-center">
+                    <div className="p-2.5 rounded-lg bg-sky-50 text-xs flex items-center justify-center">
                       <div className="text-center">
                         <div className={`inline-block px-2 py-0.5 rounded-md text-2xs border mb-1 ${nodeTypeColor(selectedNode.node_type)}`}>
                           {nodeTypeLabel(selectedNode.node_type)}
                         </div>
-                        <p className="text-coral-600 font-medium text-xs">当前节点</p>
+                        <p className="text-sky-600 font-medium text-xs">当前节点</p>
                       </div>
                     </div>
                     <div className="p-2.5 rounded-lg bg-sage-50 text-xs">
@@ -612,9 +612,9 @@ export default function ManufacturingKnowledgePage() {
           <motion.div key="faults" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-warm-500">共 {faultStats?.total_cases || faultResults.length} 个案例</p>
+              <p className="text-xs text-ink-muted">共 {faultStats?.total_cases || faultResults.length} 个案例</p>
               <button onClick={openFaultCreate}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-coral-500 text-white hover:bg-coral-600 transition-colors">
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500 text-white hover:bg-sky-600 transition-colors">
                 <Plus size={13} /> 新建案例
               </button>
             </div>
@@ -622,30 +622,30 @@ export default function ManufacturingKnowledgePage() {
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="card p-4">
                   <AlertTriangle size={16} className="text-amber-400 mb-2" />
-                  <p className="text-xl font-bold text-warm-800">{faultStats.total_cases}</p>
-                  <p className="text-xs text-warm-500">总案例数</p>
+                  <p className="text-xl font-bold text-ink-primary">{faultStats.total_cases}</p>
+                  <p className="text-xs text-ink-muted">总案例数</p>
                 </div>
                 {faultStats.equipment_types && (
                   <div className="card p-4">
                     <Wrench size={16} className="text-sage-400 mb-2" />
-                    <p className="text-xl font-bold text-warm-800">{Object.keys(faultStats.equipment_types).length}</p>
-                    <p className="text-xs text-warm-500">设备类型</p>
+                    <p className="text-xl font-bold text-ink-primary">{Object.keys(faultStats.equipment_types).length}</p>
+                    <p className="text-xs text-ink-muted">设备类型</p>
                   </div>
                 )}
                 {faultStats.fault_categories && (
                   <div className="card p-4">
                     <Layers size={16} className="text-sky-400 mb-2" />
-                    <p className="text-xl font-bold text-warm-800">{Object.keys(faultStats.fault_categories).length}</p>
-                    <p className="text-xs text-warm-500">故障类别</p>
+                    <p className="text-xl font-bold text-ink-primary">{Object.keys(faultStats.fault_categories).length}</p>
+                    <p className="text-xs text-ink-muted">故障类别</p>
                   </div>
                 )}
                 {faultStats.severity_distribution && (
                   <div className="card p-4">
                     <AlertTriangle size={16} className="text-rose-400 mb-2" />
-                    <p className="text-xl font-bold text-warm-800">
+                    <p className="text-xl font-bold text-ink-primary">
                       {faultStats.severity_distribution.critical || faultStats.severity_distribution.high || 0}
                     </p>
-                    <p className="text-xs text-warm-500">高严重度</p>
+                    <p className="text-xs text-ink-muted">高严重度</p>
                   </div>
                 )}
               </div>
@@ -656,17 +656,17 @@ export default function ManufacturingKnowledgePage() {
                 <motion.div key={c.id || i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
                   onClick={() => openFaultDetail(c)}
-                  className="card p-4 hover:shadow-warm-md transition-shadow cursor-pointer">
+                  className="card p-4 hover:shadow-cloud-md transition-shadow cursor-pointer">
                   <div className="flex items-start justify-between mb-2">
-                    <h4 className="text-sm font-semibold text-warm-800 hover:text-coral-600 transition-colors">{c.title}</h4>
+                    <h4 className="text-sm font-semibold text-ink-primary hover:text-sky-600 transition-colors">{c.title}</h4>
                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                       <button onClick={() => openFaultEdit(c)}
-                        className="p-1 rounded text-warm-400 hover:text-sage-600 hover:bg-sage-50 transition-colors"
+                        className="p-1 rounded text-ink-muted hover:text-sage-600 hover:bg-sage-50 transition-colors"
                         title="编辑案例">
                         <Edit3 size={12} />
                       </button>
                       <button onClick={() => handleDeleteFault(c.id, c.title)}
-                        className="p-1 rounded text-warm-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                        className="p-1 rounded text-ink-muted hover:text-rose-600 hover:bg-rose-50 transition-colors"
                         title="删除案例">
                         <Trash2 size={12} />
                       </button>
@@ -675,29 +675,29 @@ export default function ManufacturingKnowledgePage() {
                       </span>
                     </div>
                   </div>
-                  <p className="text-xs text-warm-600 mb-3 line-clamp-2">{c.phenomenon}</p>
+                  <p className="text-xs text-ink-body mb-3 line-clamp-2">{c.phenomenon}</p>
                   <div className="flex flex-wrap gap-1.5 mb-3">
-                    <span className="px-2 py-0.5 rounded-md text-2xs bg-warm-100 text-warm-600">
+                    <span className="px-2 py-0.5 rounded-md text-2xs bg-cloud-100 text-ink-body">
                       {c.equipment_type}
                     </span>
-                    <span className="px-2 py-0.5 rounded-md text-2xs bg-warm-100 text-warm-600">
+                    <span className="px-2 py-0.5 rounded-md text-2xs bg-cloud-100 text-ink-body">
                       {c.fault_category}
                     </span>
                     {c.score && (
-                      <span className="px-2 py-0.5 rounded-md text-2xs bg-coral-50 text-coral-600">
+                      <span className="px-2 py-0.5 rounded-md text-2xs bg-sky-50 text-sky-600">
                         匹配 {(c.score * 100).toFixed(0)}%
                       </span>
                     )}
                   </div>
                   {c.root_cause && (
-                    <div className="p-2 rounded-lg bg-warm-50 text-xs text-warm-700">
+                    <div className="p-2 rounded-lg bg-cloud-200 text-xs text-ink-body">
                       <span className="font-medium text-amber-600">根因：</span>{c.root_cause}
                     </div>
                   )}
                   {c.troubleshooting_steps?.length > 0 && (
                     <details className="mt-2" onClick={e => e.stopPropagation()}>
                       <summary className="text-xs text-sage-600 cursor-pointer font-medium">排除步骤 ({c.troubleshooting_steps.length} 步)</summary>
-                      <ol className="mt-1 pl-4 text-xs text-warm-600 space-y-0.5 list-decimal">
+                      <ol className="mt-1 pl-4 text-xs text-ink-body space-y-0.5 list-decimal">
                         {c.troubleshooting_steps.map((s, j) => <li key={j}>{s}</li>)}
                       </ol>
                     </details>
@@ -706,7 +706,7 @@ export default function ManufacturingKnowledgePage() {
               ))}
             </div>
             {faultResults.length === 0 && !loading && (
-              <p className="text-center text-sm text-warm-400 py-12">暂无故障案例数据</p>
+              <p className="text-center text-sm text-ink-muted py-12">暂无故障案例数据</p>
             )}
           </motion.div>
         )}
@@ -716,17 +716,17 @@ export default function ManufacturingKnowledgePage() {
           <motion.div key="process" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-4">
             <div className="flex items-center justify-between">
-              <p className="text-xs text-warm-500">共 {processResults.length} 份文档</p>
+              <p className="text-xs text-ink-muted">共 {processResults.length} 份文档</p>
               <button onClick={openProcessCreate}
-                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-coral-500 text-white hover:bg-coral-600 transition-colors">
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500 text-white hover:bg-sky-600 transition-colors">
                 <Plus size={13} /> 新建工艺文档
               </button>
             </div>
             {Object.keys(processCats).length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {Object.entries(processCats).map(([cat, count]) => (
-                  <div key={cat} className="px-3 py-1.5 rounded-lg bg-warm-100 text-xs font-medium text-warm-600">
-                    {cat}: <span className="text-warm-800">{count}</span>
+                  <div key={cat} className="px-3 py-1.5 rounded-lg bg-cloud-100 text-xs font-medium text-ink-body">
+                    {cat}: <span className="text-ink-primary">{count}</span>
                   </div>
                 ))}
               </div>
@@ -737,24 +737,24 @@ export default function ManufacturingKnowledgePage() {
                 <motion.div key={p.id || i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.03 }}
                   onClick={() => openProcessDetail(p)}
-                  className="card p-4 hover:shadow-warm-md transition-shadow cursor-pointer">
+                  className="card p-4 hover:shadow-cloud-md transition-shadow cursor-pointer">
                   <div className="flex items-start justify-between mb-2">
-                    <h4 className="text-sm font-semibold text-warm-800 hover:text-coral-600 transition-colors">{p.title}</h4>
+                    <h4 className="text-sm font-semibold text-ink-primary hover:text-sky-600 transition-colors">{p.title}</h4>
                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
                       <button onClick={() => openProcessEdit(p)}
-                        className="p-1 rounded text-warm-400 hover:text-sage-600 hover:bg-sage-50 transition-colors"
+                        className="p-1 rounded text-ink-muted hover:text-sage-600 hover:bg-sage-50 transition-colors"
                         title="编辑文档">
                         <Edit3 size={12} />
                       </button>
                       <button onClick={() => handleDeleteProcess(p.id, p.title)}
-                        className="p-1 rounded text-warm-400 hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                        className="p-1 rounded text-ink-muted hover:text-rose-600 hover:bg-rose-50 transition-colors"
                         title="删除文档">
                         <Trash2 size={12} />
                       </button>
                       <span className="badge badge-info text-2xs">{p.category}</span>
                     </div>
                   </div>
-                  <p className="text-xs text-warm-500 mb-3 line-clamp-2">{p.text_preview}</p>
+                  <p className="text-xs text-ink-muted mb-3 line-clamp-2">{p.text_preview}</p>
                   {p.parameters?.length > 0 && (
                     <div className="flex flex-wrap gap-1.5">
                       {p.parameters.map((pm, j) => (
@@ -768,7 +768,7 @@ export default function ManufacturingKnowledgePage() {
               ))}
             </div>
             {processResults.length === 0 && !loading && (
-              <p className="text-center text-sm text-warm-400 py-12">暂无工艺文档数据</p>
+              <p className="text-center text-sm text-ink-muted py-12">暂无工艺文档数据</p>
             )}
           </motion.div>
         )}
@@ -776,75 +776,75 @@ export default function ManufacturingKnowledgePage() {
 
       {/* ===== Fault Case Modal ===== */}
       {faultModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setFaultModalOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setFaultModalOpen(false)} role="dialog" aria-modal="true" aria-label={editingFault ? '编辑故障案例' : '新建故障案例'}>
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-warm-800 mb-4">
+            <h3 className="text-lg font-semibold text-ink-primary mb-4">
               {editingFault ? '编辑故障案例' : '新建故障案例'}
             </h3>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-warm-600">标题 *</label>
+                <label className="text-xs font-medium text-ink-body">标题 *</label>
                 <input value={faultForm.title || ''} onChange={e => setFaultForm({...faultForm, title: e.target.value})}
-                  className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400"
+                  className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400"
                   placeholder="如：数控机床主轴异响" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs font-medium text-warm-600">设备类型</label>
+                  <label className="text-xs font-medium text-ink-body">设备类型</label>
                   <input value={faultForm.equipment_type || ''} onChange={e => setFaultForm({...faultForm, equipment_type: e.target.value})}
-                    className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400"
+                    className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400"
                     placeholder="如：数控车床" />
                 </div>
                 <div>
-                  <label className="text-xs font-medium text-warm-600">故障类别</label>
+                  <label className="text-xs font-medium text-ink-body">故障类别</label>
                   <input value={faultForm.fault_category || ''} onChange={e => setFaultForm({...faultForm, fault_category: e.target.value})}
-                    className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400"
+                    className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400"
                     placeholder="如：机械故障" />
                 </div>
               </div>
               <div>
-                <label className="text-xs font-medium text-warm-600">故障现象 *</label>
+                <label className="text-xs font-medium text-ink-body">故障现象 *</label>
                 <textarea value={faultForm.phenomenon || ''} onChange={e => setFaultForm({...faultForm, phenomenon: e.target.value})} rows={2}
-                  className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400"
+                  className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400"
                   placeholder="描述故障的表现…" />
               </div>
               <div>
-                <label className="text-xs font-medium text-warm-600">根本原因 *</label>
+                <label className="text-xs font-medium text-ink-body">根本原因 *</label>
                 <input value={faultForm.root_cause || ''} onChange={e => setFaultForm({...faultForm, root_cause: e.target.value})}
-                  className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400"
+                  className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400"
                   placeholder="如：轴承磨损导致间隙过大" />
               </div>
               <div>
-                <label className="text-xs font-medium text-warm-600">排除步骤（每行一步）</label>
+                <label className="text-xs font-medium text-ink-body">排除步骤（每行一步）</label>
                 <textarea value={faultForm.troubleshooting_steps || ''} onChange={e => setFaultForm({...faultForm, troubleshooting_steps: e.target.value})} rows={3}
-                  className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400 font-mono text-xs"
+                  className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400 font-mono text-xs"
                   placeholder="1. 检查轴承温度&#10;2. 测量主轴径向跳动&#10;3. …" />
               </div>
               <div>
-                <label className="text-xs font-medium text-warm-600">预防措施（每行一条）</label>
+                <label className="text-xs font-medium text-ink-body">预防措施（每行一条）</label>
                 <textarea value={faultForm.preventive_measures || ''} onChange={e => setFaultForm({...faultForm, preventive_measures: e.target.value})} rows={2}
-                  className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400 font-mono text-xs"
+                  className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400 font-mono text-xs"
                   placeholder="1. 定期更换轴承&#10;2. …" />
               </div>
               <div>
-                <label className="text-xs font-medium text-warm-600">严重程度</label>
+                <label className="text-xs font-medium text-ink-body">严重程度</label>
                 <select value={faultForm.severity || 'medium'} onChange={e => setFaultForm({...faultForm, severity: e.target.value})}
-                  className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400">
+                  className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400">
                   {SEVERITY_OPTIONS.map(o => (
                     <option key={o.value} value={o.value}>{o.label}</option>
                   ))}
                 </select>
               </div>
             </div>
-            <div className="flex gap-2 mt-5 pt-4 border-t border-warm-100">
+            <div className="flex gap-2 mt-5 pt-4 border-t border-cloud-200">
               <button onClick={handleSaveFault} disabled={faultSaving || !faultForm.title?.trim() || !faultForm.phenomenon?.trim() || !faultForm.root_cause?.trim()}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-coral-500 text-white hover:bg-coral-600 disabled:opacity-40 transition-colors">
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-40 transition-colors">
                 {faultSaving && <Loader2 size={14} className="animate-spin" />}
                 {faultSaving ? '保存中…' : (editingFault ? '更新案例' : '创建案例')}
               </button>
               <button onClick={() => setFaultModalOpen(false)}
-                className="px-4 py-2 rounded-lg text-sm border border-warm-200 text-warm-500 hover:bg-warm-50 transition-colors">取消</button>
+                className="px-4 py-2 rounded-lg text-sm border border-cloud-300 text-ink-muted hover:bg-cloud-200 transition-colors">取消</button>
             </div>
           </div>
         </div>
@@ -852,39 +852,39 @@ export default function ManufacturingKnowledgePage() {
 
       {/* ===== Fault Case Detail Modal ===== */}
       {viewingFault && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setViewingFault(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setViewingFault(null)} role="dialog" aria-modal="true" aria-label={`故障案例详情: ${viewingFault.title}`}>
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h3 className="text-lg font-semibold text-warm-800">{viewingFault.title}</h3>
+                <h3 className="text-lg font-semibold text-ink-primary">{viewingFault.title}</h3>
                 <div className="flex items-center gap-2 mt-1">
                   <span className={`badge text-2xs ${BADGE_COLORS[viewingFault.severity] || 'badge-info'}`}>
                     {SEVERITY_LABELS[viewingFault.severity] || viewingFault.severity || '中'}
                   </span>
                   {viewingFault.equipment_type && (
-                    <span className="px-2 py-0.5 rounded-md text-2xs bg-warm-100 text-warm-600">{viewingFault.equipment_type}</span>
+                    <span className="px-2 py-0.5 rounded-md text-2xs bg-cloud-100 text-ink-body">{viewingFault.equipment_type}</span>
                   )}
                   {viewingFault.fault_category && (
-                    <span className="px-2 py-0.5 rounded-md text-2xs bg-warm-100 text-warm-600">{viewingFault.fault_category}</span>
+                    <span className="px-2 py-0.5 rounded-md text-2xs bg-cloud-100 text-ink-body">{viewingFault.fault_category}</span>
                   )}
                 </div>
               </div>
               <button onClick={() => setViewingFault(null)}
-                className="p-1 rounded text-warm-400 hover:text-warm-600 hover:bg-warm-100 transition-colors">
-                <X size={18} />
+                className="p-1 rounded text-ink-muted hover:text-ink-body hover:bg-cloud-100 transition-colors">
+                <X size={18} aria-hidden="true" />
               </button>
             </div>
 
             {/* Phenomenon */}
             <div className="mb-4">
-              <h4 className="text-xs font-semibold text-warm-400 uppercase tracking-wide mb-1">故障现象</h4>
-              <p className="text-sm text-warm-700 bg-warm-50 rounded-lg p-3">{viewingFault.phenomenon || '暂无描述'}</p>
+              <h4 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-1">故障现象</h4>
+              <p className="text-sm text-ink-body bg-cloud-200 rounded-lg p-3">{viewingFault.phenomenon || '暂无描述'}</p>
             </div>
 
             {/* Root cause */}
             <div className="mb-4">
-              <h4 className="text-xs font-semibold text-warm-400 uppercase tracking-wide mb-1">根本原因</h4>
+              <h4 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-1">根本原因</h4>
               <div className="p-3 rounded-lg bg-amber-50 text-sm text-amber-800 border border-amber-100">
                 {viewingFault.root_cause || '未指定'}
               </div>
@@ -898,7 +898,7 @@ export default function ManufacturingKnowledgePage() {
                 </h4>
                 <ol className="space-y-1.5">
                   {viewingFault.troubleshooting_steps.map((s, j) => (
-                    <li key={j} className="flex gap-2 text-sm text-warm-700">
+                    <li key={j} className="flex gap-2 text-sm text-ink-body">
                       <span className="flex-shrink-0 w-5 h-5 rounded-full bg-sage-100 text-sage-600 text-2xs flex items-center justify-center font-medium mt-0.5">
                         {j + 1}
                       </span>
@@ -917,7 +917,7 @@ export default function ManufacturingKnowledgePage() {
                 </h4>
                 <ul className="space-y-1.5">
                   {viewingFault.preventive_measures.map((m, j) => (
-                    <li key={j} className="flex gap-2 text-sm text-warm-700">
+                    <li key={j} className="flex gap-2 text-sm text-ink-body">
                       <span className="flex-shrink-0 text-sky-400 mt-0.5">💡</span>
                       {m}
                     </li>
@@ -929,13 +929,13 @@ export default function ManufacturingKnowledgePage() {
             {/* Occurrence count */}
             {viewingFault.occurrence_count > 0 && (
               <div className="mb-4">
-                <h4 className="text-xs font-semibold text-warm-400 uppercase tracking-wide mb-1">发生次数</h4>
-                <p className="text-sm text-warm-700">{viewingFault.occurrence_count} 次</p>
+                <h4 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-1">发生次数</h4>
+                <p className="text-sm text-ink-body">{viewingFault.occurrence_count} 次</p>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex gap-2 pt-4 border-t border-warm-100">
+            <div className="flex gap-2 pt-4 border-t border-cloud-200">
               <button onClick={() => { setViewingFault(null); openFaultEdit(viewingFault); }}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-sage-200 text-sage-600 hover:bg-sage-50 transition-colors">
                 <Edit3 size={14} /> 编辑
@@ -951,23 +951,23 @@ export default function ManufacturingKnowledgePage() {
 
       {/* ===== Process Document Modal ===== */}
       {processModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setProcessModalOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setProcessModalOpen(false)} role="dialog" aria-modal="true" aria-label={editingProcess ? "编辑工艺文档" : "新建工艺文档"}>
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
-            <h3 className="text-lg font-semibold text-warm-800 mb-4">
+            <h3 className="text-lg font-semibold text-ink-primary mb-4">
               {editingProcess ? '编辑工艺文档' : '新建工艺文档'}
             </h3>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-warm-600">文档标题 *</label>
+                <label className="text-xs font-medium text-ink-body">文档标题 *</label>
                 <input value={processForm.title || ''} onChange={e => setProcessForm({...processForm, title: e.target.value})}
-                  className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400"
+                  className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400"
                   placeholder="如：焊接工艺规范 Q235" />
               </div>
               <div>
-                <label className="text-xs font-medium text-warm-600">工艺类别</label>
+                <label className="text-xs font-medium text-ink-body">工艺类别</label>
                 <select value={processForm.category || ''} onChange={e => setProcessForm({...processForm, category: e.target.value})}
-                  className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400">
+                  className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400">
                   <option value="">（自动识别）</option>
                   <option value="machining">机加工</option>
                   <option value="welding">焊接</option>
@@ -980,20 +980,20 @@ export default function ManufacturingKnowledgePage() {
                 </select>
               </div>
               <div>
-                <label className="text-xs font-medium text-warm-600">工艺内容 *</label>
+                <label className="text-xs font-medium text-ink-body">工艺内容 *</label>
                 <textarea value={processForm.text || ''} onChange={e => setProcessForm({...processForm, text: e.target.value})} rows={8}
-                  className="w-full mt-1 px-3 py-2 rounded-lg border border-warm-200 text-sm focus:outline-none focus:border-coral-400"
+                  className="w-full mt-1 px-3 py-2 rounded-lg border border-cloud-300 text-sm focus:outline-none focus:border-sky-400"
                   placeholder="输入工艺文档内容，系统会自动识别类别和参数…" />
               </div>
             </div>
-            <div className="flex gap-2 mt-5 pt-4 border-t border-warm-100">
+            <div className="flex gap-2 mt-5 pt-4 border-t border-cloud-200">
               <button onClick={handleSaveProcess} disabled={processSaving || !processForm.title?.trim() || !processForm.text?.trim()}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-coral-500 text-white hover:bg-coral-600 disabled:opacity-40 transition-colors">
+                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-sky-500 text-white hover:bg-sky-600 disabled:opacity-40 transition-colors">
                 {processSaving && <Loader2 size={14} className="animate-spin" />}
                 {processSaving ? '保存中…' : (editingProcess ? '更新文档' : '创建文档')}
               </button>
               <button onClick={() => setProcessModalOpen(false)}
-                className="px-4 py-2 rounded-lg text-sm border border-warm-200 text-warm-500 hover:bg-warm-50 transition-colors">取消</button>
+                className="px-4 py-2 rounded-lg text-sm border border-cloud-300 text-ink-muted hover:bg-cloud-200 transition-colors">取消</button>
             </div>
           </div>
         </div>
@@ -1001,24 +1001,24 @@ export default function ManufacturingKnowledgePage() {
 
       {/* ===== Process Document Detail Modal ===== */}
       {viewingProcess && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => { setViewingProcess(null); setProcessDetail(null) }}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => { setViewingProcess(null); setProcessDetail(null) }} role="dialog" aria-modal="true" aria-label="工艺文档详情">
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
             onClick={e => e.stopPropagation()}>
             <div className="flex items-start justify-between mb-4">
               <div>
-                <h3 className="text-lg font-semibold text-warm-800">{viewingProcess.title}</h3>
+                <h3 className="text-lg font-semibold text-ink-primary">{viewingProcess.title}</h3>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="badge badge-info text-2xs">{viewingProcess.category}</span>
                   {viewingProcess.ingested_at && (
-                    <span className="text-2xs text-warm-400">
+                    <span className="text-2xs text-ink-muted">
                       {new Date(viewingProcess.ingested_at).toLocaleDateString('zh-CN')}
                     </span>
                   )}
                 </div>
               </div>
               <button onClick={() => { setViewingProcess(null); setProcessDetail(null) }}
-                className="p-1 rounded text-warm-400 hover:text-warm-600 hover:bg-warm-100 transition-colors">
-                <X size={18} />
+                className="p-1 rounded text-ink-muted hover:text-ink-body hover:bg-cloud-100 transition-colors">
+                <X size={18} aria-hidden="true" />
               </button>
             </div>
 
@@ -1040,13 +1040,13 @@ export default function ManufacturingKnowledgePage() {
 
             {/* Full content */}
             <div className="mb-4">
-              <h4 className="text-xs font-semibold text-warm-400 uppercase tracking-wide mb-1">文档内容</h4>
+              <h4 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-1">文档内容</h4>
               {processDetailLoading ? (
                 <div className="flex items-center justify-center py-8">
-                  <Loader2 size={20} className="animate-spin text-warm-400" />
+                  <Loader2 size={20} className="animate-spin text-ink-muted" />
                 </div>
               ) : (
-                <div className="p-3 rounded-lg bg-warm-50 text-sm text-warm-700 whitespace-pre-wrap max-h-64 overflow-y-auto">
+                <div className="p-3 rounded-lg bg-cloud-200 text-sm text-ink-body whitespace-pre-wrap max-h-64 overflow-y-auto">
                   {processDetail?.full_text || processDetail?.text_preview || viewingProcess.text_preview || '暂无内容'}
                 </div>
               )}
@@ -1055,13 +1055,13 @@ export default function ManufacturingKnowledgePage() {
             {/* File info */}
             {viewingProcess.file_path && (
               <div className="mb-4">
-                <h4 className="text-xs font-semibold text-warm-400 uppercase tracking-wide mb-1">源文件</h4>
-                <p className="text-xs text-warm-500 font-mono truncate">{viewingProcess.file_path}</p>
+                <h4 className="text-xs font-semibold text-ink-muted uppercase tracking-wide mb-1">源文件</h4>
+                <p className="text-xs text-ink-muted font-mono truncate">{viewingProcess.file_path}</p>
               </div>
             )}
 
             {/* Actions */}
-            <div className="flex gap-2 pt-4 border-t border-warm-100">
+            <div className="flex gap-2 pt-4 border-t border-cloud-200">
               <button onClick={() => { setViewingProcess(null); setProcessDetail(null); openProcessEdit(viewingProcess); }}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-sage-200 text-sage-600 hover:bg-sage-50 transition-colors">
                 <Edit3 size={14} /> 编辑

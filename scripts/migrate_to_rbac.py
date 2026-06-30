@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-RAG-Anything 数据库迁移脚本：is_admin 二值模型 → RBAC 角色系统
+RAG-Anything 数据库迁移脚本：is_admin 二值模型 → RBAC 五级角色系统
 
 迁移内容：
-  1. 创建 roles 表 + 插入 3 个默认角色（admin/editor/viewer）
+  1. 创建 roles 表 + 插入 5 个默认角色（super_admin/dept_admin/teacher/assistant/student）
   2. users 表新增 role_id、last_login_at、must_change_password 列
-  3. 现有用户数据迁移（is_admin=1 → admin, is_admin=0 → viewer）
+  3. 现有用户数据迁移（is_admin=1 → super_admin, is_admin=0 → student）
   4. 创建 audit_logs 表及索引
   5. 使用事务包裹，失败自动回滚；输出迁移结果统计
 
@@ -23,30 +23,52 @@ from pathlib import Path
 # ── 权限常量（与 raganything/permissions.py 保持一致）────────────────
 
 PERMISSIONS = {
-    "admin": [
+    "super_admin": [
         "users:read", "users:write", "users:delete",
         "kb:read", "kb:write", "kb:delete",
         "agent:read", "agent:write", "agent:delete",
         "settings:read", "settings:write",
         "audit:read",
         "monitor:read",
+        "analytics:read",
+        "workflow:read", "workflow:write",
+        "manufacturing:read", "manufacturing:write",
     ],
-    "editor": [
+    "dept_admin": [
+        "users:read", "users:write",
+        "kb:read", "kb:write", "kb:delete",
+        "agent:read", "agent:write", "agent:delete",
+        "settings:read", "audit:read", "monitor:read",
+        "analytics:read",
+        "workflow:read", "workflow:write",
+        "manufacturing:read", "manufacturing:write",
+    ],
+    "teacher": [
         "kb:read", "kb:write",
         "agent:read", "agent:write",
-        "monitor:read",
+        "monitor:read", "analytics:read",
+        "workflow:read",
+        "manufacturing:read", "manufacturing:write",
     ],
-    "viewer": [
-        "kb:read",
+    "assistant": [
+        "kb:read", "kb:write",
         "agent:read",
         "monitor:read",
+        "manufacturing:read",
+    ],
+    "student": [
+        "kb:read",
+        "agent:read",
+        "manufacturing:read",
     ],
 }
 
 ROLES = [
-    ("admin", "系统管理员，拥有全部权限"),
-    ("editor", "内容编辑，可读写知识库和智能体"),
-    ("viewer", "只读用户，仅可查看知识库和智能体"),
+    ("super_admin", "超级管理员，拥有全部权限（信息中心/IT运维）"),
+    ("dept_admin", "系部管理员，管理系统内知识库、智能体和用户（系主任/实训中心主任）"),
+    ("teacher", "主讲教师，可创建管理自有知识库和智能体（任课教师）"),
+    ("assistant", "助理教师，可编辑知识库内容、使用智能体（实训指导教师/助教）"),
+    ("student", "学生，可查看知识库并使用智能体问答（各年级学生）"),
 ]
 
 
@@ -131,19 +153,25 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
 
         # ── Step 3: 现有用户数据迁移 ──
         print("\n📋 Step 3: 迁移现有用户数据...")
-        # 获取角色 ID
-        admin_role = conn.execute("SELECT id FROM roles WHERE name = 'admin'").fetchone()
-        viewer_role = conn.execute("SELECT id FROM roles WHERE name = 'viewer'").fetchone()
+        # 获取角色 ID（优先查找新角色名，回退到旧角色名）
+        super_admin_role = (
+            conn.execute("SELECT id FROM roles WHERE name = 'super_admin'").fetchone()
+            or conn.execute("SELECT id FROM roles WHERE name = 'admin'").fetchone()
+        )
+        student_role = (
+            conn.execute("SELECT id FROM roles WHERE name = 'student'").fetchone()
+            or conn.execute("SELECT id FROM roles WHERE name = 'viewer'").fetchone()
+        )
 
-        if not admin_role or not viewer_role:
-            raise RuntimeError("角色数据不完整，迁移中止")
+        if not super_admin_role or not student_role:
+            raise RuntimeError("角色数据不完整（缺少 super_admin/admin 或 student/viewer），迁移中止")
 
-        admin_role_id = admin_role["id"]
-        viewer_role_id = viewer_role["id"]
+        admin_role_id = super_admin_role["id"]
+        student_role_id = student_role["id"]
 
         users = conn.execute("SELECT id, username, is_admin FROM users").fetchall()
         for user in users:
-            new_role_id = admin_role_id if user["is_admin"] else viewer_role_id
+            new_role_id = admin_role_id if user["is_admin"] else student_role_id
             existing_role = conn.execute(
                 "SELECT role_id FROM users WHERE id = ?", (user["id"],)
             ).fetchone()
@@ -154,7 +182,7 @@ def migrate(db_path: str, dry_run: bool = False) -> dict:
                         (new_role_id, user["id"]),
                     )
                 stats["users_migrated"] += 1
-                role_label = "admin" if user["is_admin"] else "viewer"
+                role_label = "super_admin" if user["is_admin"] else "student"
                 print(f"  ✅ {user['username']} → {role_label}")
 
         if stats["users_migrated"] == 0:

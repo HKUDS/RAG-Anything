@@ -39,7 +39,8 @@ from .shared import (
     kb_instances,
     cleanup_kb_resources,
 )
-from raganything.dependencies import get_optional_user, get_current_user_from_token
+from raganything.dependencies import get_current_user, get_optional_user, get_current_user_from_token, require_permission
+from raganything.permissions import Permission
 from raganything.chunking import build_chunking_func, STRATEGY_META as CHUNKING_STRATEGY_META
 
 # Module reference for writing to shared mutable state (active_kb)
@@ -252,6 +253,7 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
 
 @router.post("/upload/content")
 async def upload_content(req: PasteContentRequest, kb: str = Depends(verify_kb_access),
+                          current_user: dict = Depends(get_current_user),
                           chunking_strategy: str = "",
                           enable_image: str = "", enable_table: str = "",
                           enable_equation: str = "", enable_video: str = ""):
@@ -298,7 +300,8 @@ async def upload_content(req: PasteContentRequest, kb: str = Depends(verify_kb_a
 
 
 @router.post("/upload/url")
-async def upload_from_url(url: str = QueryParam(...), current_user: dict = Depends(get_current_user),
+async def upload_from_url(url: str = QueryParam(...), kb: str = Depends(verify_kb_access),
+                         current_user: dict = Depends(get_current_user),
                          enable_image: str = "", enable_table: str = "",
                          enable_equation: str = "", enable_video: str = ""):
     """从 URL 下载文档并入库"""
@@ -395,7 +398,7 @@ def _strip_hash_prefix(filename: str) -> str:
 
 
 @router.get("/knowledge/documents")
-async def list_documents(kb: str = Depends(verify_kb_access)):
+async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """列出所有文档及其状态（含处理中的任务）"""
     try:
         # Clean up completed/failed tasks before building the response
@@ -464,7 +467,7 @@ async def list_documents(kb: str = Depends(verify_kb_access)):
 
 
 @router.get("/knowledge/stats")
-async def knowledge_stats(kb: str = Depends(verify_kb_access)):
+async def knowledge_stats(kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """知识库总体统计"""
 
     def _safe_load_json(path: Path) -> dict:
@@ -548,7 +551,11 @@ async def knowledge_stats(kb: str = Depends(verify_kb_access)):
 
 
 @router.post("/knowledge/repair")
-async def repair_kb_orphans(kb: str = Depends(verify_kb_access)):
+async def repair_kb_orphans(
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.SETTINGS_WRITE)),
+):
     """扫描并清理知识库中所有孤儿数据（doc_status 中不存在的文档残留）。
 
     适用场景：
@@ -683,7 +690,7 @@ async def repair_kb_orphans(kb: str = Depends(verify_kb_access)):
 
 
 @router.get("/knowledge/entities")
-async def list_entities(request: Request, limit: int = 50, kb: str = Depends(verify_kb_access)):
+async def list_entities(request: Request, limit: int = 50, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """列出知识图谱实体"""
     p = Path(kb_dir(kb)) / "kv_store_full_entities.json"
     if not p.exists():
@@ -716,7 +723,7 @@ async def list_entities(request: Request, limit: int = 50, kb: str = Depends(ver
 
 
 @router.get("/knowledge/graph")
-async def graph_data(kb: str = Depends(verify_kb_access)):
+async def graph_data(kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """返回知识图谱数据(前端可视化用)"""
     ep = Path(kb_dir(kb)) / "kv_store_full_entities.json"
     rp = Path(kb_dir(kb)) / "kv_store_full_relations.json"

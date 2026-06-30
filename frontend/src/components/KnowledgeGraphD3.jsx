@@ -402,7 +402,7 @@ export default function KnowledgeGraphD3({
       <div className="flex items-center gap-2 mb-3 flex-wrap">
         {/* Node type legend */}
         {Object.entries(COLORS).filter(([k]) => presentNodeTypes.includes(k) || k === 'default').map(([k, c]) => (
-          <div key={k} className="flex items-center gap-1 text-2xs text-warm-500">
+          <div key={k} className="flex items-center gap-1 text-2xs text-ink-muted">
             <div className="w-3 h-3 rounded-full" style={{ background: c }} />
             {nodeTypeLabel(k)}
           </div>
@@ -411,9 +411,9 @@ export default function KnowledgeGraphD3({
         {/* Edge style legend */}
         {edges.length > 0 && (
           <>
-            <div className="w-px h-4 bg-warm-200 mx-1" />
+            <div className="w-px h-4 bg-cloud-300 mx-1" />
             {Object.entries(LINE_STYLES).map(([rel, dash]) => (
-              <div key={rel} className="flex items-center gap-1 text-2xs text-warm-500">
+              <div key={rel} className="flex items-center gap-1 text-2xs text-ink-muted">
                 <svg width="16" height="8"><line x1="0" y1="4" x2="16" y2="4"
                   stroke="#9ca3af" strokeWidth="1.5" strokeDasharray={dash} /></svg>
                 {RELATION_LABELS[rel]}
@@ -426,18 +426,18 @@ export default function KnowledgeGraphD3({
 
         {/* Search */}
         <div className="relative">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-warm-400" />
+          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted" />
           <input
             value={searchTerm}
             onChange={e => setSearchTerm(e.target.value)}
             placeholder="搜索节点…"
-            className="w-36 pl-7 pr-2 py-1.5 rounded-lg border border-warm-200 text-xs
-              bg-white focus:outline-none focus:border-coral-300 focus:ring-1 focus:ring-coral-50 transition-all"
+            className="w-36 pl-7 pr-2 py-1.5 rounded-lg border border-cloud-300 text-xs
+              bg-white focus:outline-none focus:border-sky-400 focus:ring-1 focus:ring-sky-50 transition-all"
           />
           {searchTerm && (
-            <button onClick={() => setSearchTerm('')}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-warm-400 hover:text-warm-600">
-              <X size={12} />
+            <button onClick={() => setSearchTerm('')} aria-label="清除搜索"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 text-ink-muted hover:text-ink-body">
+              <X size={12} aria-hidden="true" />
             </button>
           )}
         </div>
@@ -447,8 +447,8 @@ export default function KnowledgeGraphD3({
           <select
             value={typeFilter}
             onChange={e => setTypeFilter(e.target.value)}
-            className="py-1.5 pl-2 pr-6 rounded-lg border border-warm-200 text-xs
-              bg-white focus:outline-none focus:border-coral-300 transition-all text-warm-600"
+            className="py-1.5 pl-2 pr-6 rounded-lg border border-cloud-300 text-xs
+              bg-white focus:outline-none focus:border-sky-400 transition-all text-ink-body"
           >
             <option value="">全部类型</option>
             {presentNodeTypes.map(t => (
@@ -458,19 +458,19 @@ export default function KnowledgeGraphD3({
         )}
 
         {/* Node count */}
-        <span className="text-2xs text-warm-400">
+        <span className="text-2xs text-ink-muted">
           {filteredNodes.length}{nodes.length !== filteredNodes.length && `/${nodes.length}`} 节点
           {edges.length > 0 && ` · ${filteredEdges.length} 边`}
         </span>
 
         {/* Zoom controls */}
-        <button onClick={handleZoomIn} className="p-1.5 rounded-lg hover:bg-warm-100 text-warm-500 transition-colors" title="放大">
+        <button onClick={handleZoomIn} className="p-1.5 rounded-lg hover:bg-cloud-100 text-ink-muted transition-colors" title="放大" aria-label="放大">
           <ZoomIn size={14} />
         </button>
-        <button onClick={handleZoomOut} className="p-1.5 rounded-lg hover:bg-warm-100 text-warm-500 transition-colors" title="缩小">
+        <button onClick={handleZoomOut} className="p-1.5 rounded-lg hover:bg-cloud-100 text-ink-muted transition-colors" title="缩小" aria-label="缩小">
           <ZoomOut size={14} />
         </button>
-        <button onClick={handleReset} className="p-1.5 rounded-lg hover:bg-warm-100 text-warm-500 transition-colors" title="重置视图">
+        <button onClick={handleReset} className="p-1.5 rounded-lg hover:bg-cloud-100 text-ink-muted transition-colors" title="重置视图" aria-label="重置视图">
           <RotateCcw size={14} />
         </button>
       </div>
@@ -479,24 +479,24 @@ export default function KnowledgeGraphD3({
       <div ref={containerRef} className="w-full relative">
         {/* Loading state */}
         {loading && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-warm-50/80 rounded-xl border border-warm-200">
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-cloud-200/80 rounded-xl border border-cloud-300">
             <div className="flex flex-col items-center gap-3">
               <Loader2 size={28} className="text-coral-400 animate-spin" />
-              <p className="text-sm text-warm-500">加载知识图谱…</p>
+              <p className="text-sm text-ink-muted">加载知识图谱…</p>
             </div>
           </div>
         )}
 
         {/* Error state */}
         {!loading && error && (
-          <div className="absolute inset-0 z-10 flex items-center justify-center bg-warm-50/80 rounded-xl border border-warm-200">
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-cloud-200/80 rounded-xl border border-cloud-300">
             <div className="flex flex-col items-center gap-3 max-w-xs text-center">
               <AlertCircle size={28} className="text-rose-400" />
-              <p className="text-sm text-warm-700 font-medium">加载失败</p>
-              <p className="text-xs text-warm-500">{error}</p>
+              <p className="text-sm text-ink-body font-medium">加载失败</p>
+              <p className="text-xs text-ink-muted">{error}</p>
               {onRetry && (
                 <button onClick={onRetry}
-                  className="px-4 py-2 text-xs font-medium text-white bg-coral-500 rounded-lg hover:bg-coral-600 transition-colors">
+                  className="px-4 py-2 text-xs font-medium text-white bg-sky-500 rounded-lg hover:bg-sky-600 transition-colors">
                   重试
                 </button>
               )}
@@ -506,12 +506,12 @@ export default function KnowledgeGraphD3({
 
         {/* Empty state */}
         {!loading && !error && !hasData && (
-          <div className="flex items-center justify-center rounded-xl border border-warm-200 bg-warm-50"
+          <div className="flex items-center justify-center rounded-xl border border-cloud-300 bg-cloud-200"
             style={{ minHeight: 350, height: 450 }}>
             <div className="flex flex-col items-center gap-3 text-center">
-              <Database size={32} className="text-warm-300" />
-              <p className="text-sm text-warm-600 font-medium">暂无知识图谱数据</p>
-              <p className="text-xs text-warm-400 max-w-xs">
+              <Database size={32} className="text-cloud-300" />
+              <p className="text-sm text-ink-body font-medium">暂无知识图谱数据</p>
+              <p className="text-xs text-ink-muted max-w-xs">
                 导入文档后，系统将自动抽取实体与关系构建知识图谱
               </p>
             </div>
@@ -521,7 +521,7 @@ export default function KnowledgeGraphD3({
         {/* SVG graph */}
         {hasData && (
           <svg ref={svgRef}
-            className="w-full rounded-xl border border-warm-200 bg-warm-50"
+            className="w-full rounded-xl border border-cloud-300 bg-cloud-200"
             style={{ minHeight: 350, height: 450 }}
             role="img" aria-label="知识图谱可视化"
             tabIndex={0}
@@ -531,16 +531,16 @@ export default function KnowledgeGraphD3({
 
       {/* ---- Tooltip ---- */}
       {tooltip && (
-        <div className="fixed z-50 pointer-events-none px-2.5 py-1.5 rounded-lg bg-warm-800 text-white text-xs shadow-lg max-w-56"
+        <div className="fixed z-50 pointer-events-none px-2.5 py-1.5 rounded-lg bg-ink-primary text-white text-xs shadow-lg max-w-56"
           style={{ left: tooltip.x + 14, top: tooltip.y - 10 }}>
           <p className="font-medium truncate">{tooltip.name}</p>
-          <p className="text-warm-300 text-2xs">{tooltip.type}</p>
+          <p className="text-cloud-300 text-2xs">{tooltip.type}</p>
         </div>
       )}
 
       {/* ---- Node count notice (when truncated) ---- */}
       {hasData && summary && summary.total_nodes > nodes.length && (
-        <p className="mt-2 text-2xs text-warm-400 text-center">
+        <p className="mt-2 text-2xs text-ink-muted text-center">
           显示最近 {nodes.length} 个节点（共 {summary.total_nodes} 个）
         </p>
       )}

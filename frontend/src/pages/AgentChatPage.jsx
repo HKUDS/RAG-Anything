@@ -1,65 +1,122 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
-  Send, User, Bot, Clock, Plus, Trash2, Edit3, X, ChevronLeft,
+  Send, User, Clock, Plus, Trash2, Edit3, X, ChevronLeft,
   ChevronDown, ChevronRight, Brain, Zap, MessageSquare, ArrowLeft,
-  Settings2, Layers, Cpu, Database, Check, GitGraph, Image
+  Layers, Cpu, Database, GitGraph, Image, StopCircle, Sparkles,
+  BookOpen, Search, AlertTriangle, RefreshCw, Check
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
 import { api, getToken } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
 
-const MODES = [
-  { key: 'rrf', icon: Brain, label: '融合' },
-  { key: 'graph', icon: GitGraph, label: '图谱' },
-  { key: 'hybrid', icon: Layers, label: '智能' },
-  { key: 'local', icon: Zap, label: '精确' },
-  { key: 'global', icon: Brain, label: '全局' },
-  { key: 'naive', icon: MessageSquare, label: '快速' },
+// ── Mode definitions ───────────────────────────────────────────
+const RETRIEVAL_MODES = [
+  { key: 'hybrid', icon: Layers, label: '智能混合', desc: '图谱+向量融合检索' },
+  { key: 'graph', icon: GitGraph, label: '知识图谱', desc: '基于实体关系检索' },
+  { key: 'rrf', icon: Brain, label: '融合排序', desc: 'RRF 多路召回融合' },
+  { key: 'local', icon: Zap, label: '精确匹配', desc: '局部上下文精确检索' },
+  { key: 'global', icon: Search, label: '全局摘要', desc: '全库摘要式检索' },
+  { key: 'naive', icon: MessageSquare, label: '快速问答', desc: '直接向量检索' },
 ]
 
 const REASONING_MODES = [
-  { key: 'none', icon: Zap, label: '普通' },
-  { key: 'react', icon: Brain, label: 'ReAct' },
-  { key: 'cot', icon: Layers, label: 'CoT' },
+  { key: 'none', icon: Zap, label: '直接回答', desc: '不展示推理过程' },
+  { key: 'react', icon: Brain, label: 'ReAct 推理', desc: '思考-行动-观察循环' },
+  { key: 'cot', icon: Layers, label: '思维链', desc: '逐步推理链' },
 ]
 
-// Warm theme markdown components
+// ── Markdown render components ──────────────────────────────────
 const markdownComponents = {
-  h2: ({ children, ...props }) => <h2 className="text-base font-semibold text-warm-800 mt-5 mb-2 pb-1.5 border-b border-warm-200" {...props}>{children}</h2>,
-  h3: ({ children, ...props }) => <h3 className="text-sm font-semibold text-warm-700 mt-4 mb-1.5" {...props}>{children}</h3>,
-  p: ({ children, ...props }) => <p className="text-sm text-warm-600 leading-relaxed my-2" {...props}>{children}</p>,
-  strong: ({ children, ...props }) => <strong className="font-semibold text-coral-600" {...props}>{children}</strong>,
-  ul: ({ children, ...props }) => <ul className="text-sm text-warm-600 space-y-1 my-2 pl-4" {...props}>{children}</ul>,
-  ol: ({ children, ...props }) => <ol className="text-sm text-warm-600 space-y-1 my-2 pl-4 list-decimal" {...props}>{children}</ol>,
-  li: ({ children, ...props }) => <li className="text-sm text-warm-600" {...props}>{children}</li>,
+  h2: ({ children, ...props }) => (
+    <h2 className="text-base font-semibold text-ink-primary mt-5 mb-2 pb-1.5 border-b border-cloud-200 dark:border-sky-800/30" {...props}>{children}</h2>
+  ),
+  h3: ({ children, ...props }) => (
+    <h3 className="text-sm font-semibold text-ink-body mt-4 mb-1.5" {...props}>{children}</h3>
+  ),
+  p: ({ children, ...props }) => (
+    <p className="text-sm text-ink-body dark:text-cloud-300 leading-relaxed my-2" {...props}>{children}</p>
+  ),
+  strong: ({ children, ...props }) => (
+    <strong className="font-semibold text-sky-600 dark:text-sky-400" {...props}>{children}</strong>
+  ),
+  ul: ({ children, ...props }) => (
+    <ul className="text-sm text-ink-body dark:text-cloud-300 space-y-1 my-2 pl-4" {...props}>{children}</ul>
+  ),
+  ol: ({ children, ...props }) => (
+    <ol className="text-sm text-ink-body dark:text-cloud-300 space-y-1 my-2 pl-4 list-decimal" {...props}>{children}</ol>
+  ),
+  li: ({ children, ...props }) => (
+    <li className="text-sm text-ink-body dark:text-cloud-300" {...props}>{children}</li>
+  ),
   code: ({ inline, className, children, ...props }) => {
     const match = /language-(\w+)/.exec(className || '')
     return !inline ? (
-      <div className="my-3 rounded-xl border border-warm-200 overflow-hidden">
-        <div className="bg-warm-100 px-3 py-1 text-[10px] text-warm-500 font-mono">{match ? match[1] : 'code'}</div>
-        <pre className="bg-warm-50 p-3 overflow-x-auto text-xs"><code className={className} {...props}>{children}</code></pre>
+      <div className="my-3 rounded-xl border border-cloud-200 dark:border-sky-800/30 overflow-hidden">
+        <div className="bg-cloud-100 dark:bg-sky-900/40 px-3 py-1 text-[10px] text-ink-muted dark:text-cloud-500 font-mono">
+          {match ? match[1] : 'code'}
+        </div>
+        <pre className="bg-cloud-50 dark:bg-sky-950/60 p-3 overflow-x-auto text-xs">
+          <code className={className} {...props}>{children}</code>
+        </pre>
       </div>
     ) : (
-      <code className="px-1.5 py-0.5 rounded-md text-xs font-mono bg-warm-100 text-amber-700" {...props}>{children}</code>
+      <code className="px-1.5 py-0.5 rounded-md text-xs font-mono bg-cloud-100 dark:bg-sky-900/40 text-amber-700 dark:text-amber-400" {...props}>{children}</code>
     )
   },
-  table: ({ children, ...props }) => <div className="my-3 overflow-x-auto"><table className="min-w-full text-xs border-collapse" {...props}>{children}</table></div>,
-  thead: ({ children, ...props }) => <thead className="bg-warm-50" {...props}>{children}</thead>,
-  th: ({ children, ...props }) => <th className="border border-warm-200 px-3 py-1.5 text-left text-warm-700 font-medium" {...props}>{children}</th>,
-  td: ({ children, ...props }) => <td className="border border-warm-200 px-3 py-1.5 text-warm-500" {...props}>{children}</td>,
-  blockquote: ({ children, ...props }) => <blockquote className="border-l-3 border-coral-300 pl-3 my-2 text-warm-500 italic text-xs" {...props}>{children}</blockquote>,
-  hr: (props) => <hr className="my-4 border-warm-200" {...props} />,
-  a: ({ children, href, ...props }) => <a href={href} className="text-coral-500 underline underline-offset-2 hover:text-coral-600" target="_blank" rel="noopener" {...props}>{children}</a>,
-  em: ({ children, ...props }) => <em className="italic text-warm-700" {...props}>{children}</em>,
+  table: ({ children, ...props }) => (
+    <div className="my-3 overflow-x-auto">
+      <table className="min-w-full text-xs border-collapse" {...props}>{children}</table>
+    </div>
+  ),
+  thead: ({ children, ...props }) => (
+    <thead className="bg-cloud-100 dark:bg-sky-900/40" {...props}>{children}</thead>
+  ),
+  th: ({ children, ...props }) => (
+    <th className="border border-cloud-200 dark:border-sky-800/30 px-3 py-1.5 text-left text-ink-body dark:text-cloud-300 font-medium" {...props}>{children}</th>
+  ),
+  td: ({ children, ...props }) => (
+    <td className="border border-cloud-200 dark:border-sky-800/30 px-3 py-1.5 text-ink-muted dark:text-cloud-500" {...props}>{children}</td>
+  ),
+  blockquote: ({ children, ...props }) => (
+    <blockquote className="border border-cloud-200 dark:border-sky-800/30 bg-cloud-50 dark:bg-sky-900/30 rounded-lg px-3 py-1.5 my-2 text-ink-muted dark:text-cloud-500 italic text-xs" {...props}>{children}</blockquote>
+  ),
+  hr: (props) => <hr className="my-4 border-cloud-200 dark:border-sky-800/30" {...props} />,
+  a: ({ children, href, ...props }) => (
+    <a href={href} className="text-sky-500 dark:text-sky-400 underline underline-offset-2 hover:text-sky-600 dark:hover:text-sky-300" target="_blank" rel="noopener" {...props}>{children}</a>
+  ),
+  em: ({ children, ...props }) => (
+    <em className="italic text-ink-body dark:text-cloud-300" {...props}>{children}</em>
+  ),
+}
+
+// ── Welcome suggested questions ─────────────────────────────────
+const DEFAULT_SUGGESTIONS = [
+  '这个知识库主要包含哪些内容？',
+  '帮我总结一下核心概念',
+  '最近更新了哪些文档？',
+]
+
+// ── Helper: format elapsed ──────────────────────────────────────
+function formatElapsed(ms) {
+  if (ms < 1000) return `${ms}ms`
+  return `${(ms / 1000).toFixed(1)}s`
 }
 
 export default function AgentChatPage() {
   const { id: agentId } = useParams()
   const navigate = useNavigate()
+  const { user } = useAuth()
   const chatRef = useRef()
   const abortRef = useRef(null)
+  const inputRef = useRef(null)
 
+  // ── User role ───────────────────────────────────────────────
+  const userRole = user?.role?.name || 'student'
+  const isTeacher = userRole === 'super_admin' || userRole === 'dept_admin' || userRole === 'teacher' || userRole === 'assistant'
+
+  // ── State ────────────────────────────────────────────────────
   const [agent, setAgent] = useState(null)
   const [threads, setThreads] = useState([])
   const [activeThreadId, setActiveThreadId] = useState('')
@@ -74,10 +131,9 @@ export default function AgentChatPage() {
   const [selectedImage, setSelectedImage] = useState(null)
   const [imagePreview, setImagePreview] = useState('')
   const fileInputRef = useRef(null)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
 
-  // ── Blob URL lifecycle tracking ──
-  // Track all active blob URLs to prevent memory leaks across
-  // thread switches, re-uploads, and component unmount.
+  // ── Blob URL lifecycle tracking ──────────────────────────────
   const blobUrlsRef = useRef(new Set())
   const prevMessagesRef = useRef([])
 
@@ -95,8 +151,6 @@ export default function AgentChatPage() {
     }
   }, [])
 
-  // Revoke blob URLs from messages that are no longer in the
-  // current messages array (e.g., after thread switch or deletion).
   const cleanupMessageBlobUrls = useCallback((newMessages) => {
     const prevUrls = new Set(
       prevMessagesRef.current
@@ -116,17 +170,17 @@ export default function AgentChatPage() {
     prevMessagesRef.current = newMessages
   }, [revokeBlobUrl])
 
-  // Revoke ALL tracked blob URLs on unmount to prevent memory leaks
-  // when navigating away from the chat page.
+  // Revoke ALL tracked blob URLs on unmount
   useEffect(() => {
     return () => {
       blobUrlsRef.current.forEach(url => {
-        try { URL.revokeObjectURL(url) } catch {}
+        try { URL.revokeObjectURL(url) } catch { /* noop */ }
       })
       blobUrlsRef.current.clear()
     }
   }, [])
 
+  // ── Agent loading ────────────────────────────────────────────
   useEffect(() => {
     api.listAgents().then(r => {
       const a = (r.agents || []).find(x => x.id === agentId)
@@ -139,6 +193,7 @@ export default function AgentChatPage() {
     loadThreads(true)
   }, [agentId])
 
+  // ── Thread management ────────────────────────────────────────
   const loadThreads = (autoSelect = false) => {
     api.listConversations(agentId).then(r => {
       setThreads(r.threads || [])
@@ -179,6 +234,8 @@ export default function AgentChatPage() {
     setActiveThreadId(res.thread.id)
     setMessages([])
     cleanupMessageBlobUrls([])
+    // Focus input after creating new thread
+    setTimeout(() => inputRef.current?.focus(), 100)
   }
 
   const deleteThread = async (threadId) => {
@@ -194,11 +251,11 @@ export default function AgentChatPage() {
     loadThreads()
   }
 
+  // ── SSE event handler ────────────────────────────────────────
   const handleSSEEvent = (msgId, event) => {
     const { type, content, id: resultId, elapsed, images } = event
     switch (type) {
       case 'thinking':
-        // 结构化 thinking（ReAct/CoT: {step, thought, action, observation}）
         if (event.thought) {
           setMessages(prev => prev.map(m =>
             m.id === msgId ? { ...m, thinking: [...(m.thinking || []), {
@@ -210,7 +267,6 @@ export default function AgentChatPage() {
             }]} : m
           ))
         } else if (content) {
-          // 普通模式 thinking 字符串
           setMessages(prev => prev.map(m =>
             m.id === msgId ? { ...m, thinking: [...(m.thinking || []), content] } : m
           ))
@@ -222,7 +278,6 @@ export default function AgentChatPage() {
         ))
         break
       case 'image_analysis':
-        // Store image analysis status on the message
         setMessages(prev => prev.map(m => {
           if (m.id !== msgId) return m
           if (event.status === 'done') {
@@ -232,7 +287,6 @@ export default function AgentChatPage() {
         }))
         break
       case 'image_results':
-        // Store vision search image URLs on the message
         setMessages(prev => prev.map(m =>
           m.id === msgId ? { ...m, similar_images: event.images || [] } : m
         ))
@@ -246,6 +300,7 @@ export default function AgentChatPage() {
             similar_images: event.similar_images || [],
           } : m
         ))
+        // Auto-collapse thinking 2s after completion
         setTimeout(() => setExpandedThinking(prev => ({ ...prev, [msgId]: false })), 2000)
         setLoading(false)
         abortRef.current = null
@@ -262,6 +317,7 @@ export default function AgentChatPage() {
     }
   }
 
+  // ── Stream query ─────────────────────────────────────────────
   const streamQuery = useCallback(async (query, imageFile) => {
     const controller = new AbortController()
     abortRef.current = controller
@@ -276,10 +332,9 @@ export default function AgentChatPage() {
 
     try {
       let headers = { 'Content-Type': 'application/json' }
-      try { const t = JSON.parse(localStorage.getItem('raganything_auth') || '{}').token; if (t) headers['Authorization'] = `Bearer ${t}` } catch {}
+      try { const t = JSON.parse(localStorage.getItem('raganything_auth') || '{}').token; if (t) headers['Authorization'] = `Bearer ${t}` } catch { /* noop */ }
       const body = { query, thread_id: activeThreadId, mode, agent_mode: agentMode }
       if (imageFile) {
-        // Encode image as base64 data URI
         body.image = await new Promise((resolve, reject) => {
           const reader = new FileReader()
           reader.onload = () => resolve(reader.result)
@@ -313,11 +368,11 @@ export default function AgentChatPage() {
     } catch (e) {
       if (e.name === 'AbortError') {
         setMessages(prev => prev.map(m =>
-          m.id === msgId ? { ...m, content: m.content || '⏹️ 已取消', done: true } : m
+          m.id === msgId ? { ...m, content: m.content || '⏹️ 已取消', done: true, cancelled: true } : m
         ))
       } else {
         setMessages(prev => prev.map(m =>
-          m.id === msgId ? { ...m, content: `❌ 错误: ${e.message}`, done: true, error: true } : m
+          m.id === msgId ? { ...m, content: `❌ 请求失败: ${e.message}`, done: true, error: true } : m
         ))
       }
       setLoading(false)
@@ -325,22 +380,40 @@ export default function AgentChatPage() {
     }
   }, [agentId, activeThreadId, mode, agentMode])
 
+  // ── Send message ─────────────────────────────────────────────
   const send = async () => {
     if ((!input.trim() && !selectedImage) || loading) return
-    if (!activeThreadId) await createThread()
+    // Create a thread if none is active
+    if (!activeThreadId) {
+      const res = await api.createConversation(agentId, '新对话')
+      setActiveThreadId(res.thread.id)
+      setMessages([])
+      cleanupMessageBlobUrls([])
+      const q = input.trim()
+      const img = selectedImage
+      const preview = imagePreview
+      setInput('')
+      setSelectedImage(null)
+      setImagePreview('')
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      if (preview) trackBlobUrl(preview)
+      setMessages(prev => {
+        const next = [...prev, { role: 'user', content: q, imageUrl: preview }]
+        cleanupMessageBlobUrls(next)
+        return next
+      })
+      setLoading(true)
+      await streamQuery(q, img)
+      return
+    }
+
     const q = input.trim()
     const img = selectedImage
     const preview = imagePreview
     setInput('')
-    // Clear image compose state. Do NOT revoke the blob URL here:
-    // it is transferred to the user message's imageUrl below and
-    // remains in use by the rendered <img> in the message bubble.
-    // It will be revoked when the message is cleared (thread switch,
-    // delete, or component unmount).
     setSelectedImage(null)
     setImagePreview('')
     if (fileInputRef.current) fileInputRef.current.value = ''
-    // Track the blob URL as now-owned by the message list
     if (preview) trackBlobUrl(preview)
     setMessages(prev => {
       const next = [...prev, { role: 'user', content: q, imageUrl: preview }]
@@ -359,7 +432,7 @@ export default function AgentChatPage() {
     }
   }
 
-  // ── Image attachment handlers ──
+  // ── Image attachment handlers ─────────────────────────────────
   const ALLOWED_IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/bmp']
 
   const handlePickImage = () => fileInputRef.current?.click()
@@ -367,7 +440,6 @@ export default function AgentChatPage() {
   const handleImageChange = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    // Client-side format + size validation
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
       alert('不支持的图片格式，仅支持 PNG、JPEG、WebP、GIF、BMP')
       return
@@ -376,7 +448,6 @@ export default function AgentChatPage() {
       alert('图片大小不能超过 5MB')
       return
     }
-    // Revoke previous preview blob URL if any (same pattern as handlePaste)
     if (imagePreview) revokeBlobUrl(imagePreview)
     const blobUrl = trackBlobUrl(URL.createObjectURL(file))
     setSelectedImage(file)
@@ -390,25 +461,19 @@ export default function AgentChatPage() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  // ── Clipboard image paste handler ──
+  // ── Clipboard image paste handler ────────────────────────────
   const handlePaste = (e) => {
     const items = e.clipboardData?.items
     if (!items) return
-
     for (const item of items) {
       if (item.type.startsWith('image/')) {
         const file = item.getAsFile()
         if (!file) continue
         if (file.size > 5 * 1024 * 1024) {
           alert('图片大小不能超过 5MB')
-          // Do NOT call e.preventDefault() on validation failure —
-          // allow the browser's default paste to still insert any
-          // text content from the same clipboard event.
           return
         }
-        // Only cancel the default paste after all validation passes.
         e.preventDefault()
-        // Clean up previous preview blob URL if any
         if (imagePreview) revokeBlobUrl(imagePreview)
         const blobUrl = trackBlobUrl(URL.createObjectURL(file))
         setSelectedImage(file)
@@ -418,15 +483,17 @@ export default function AgentChatPage() {
     }
   }
 
+  // ── Thinking toggle ──────────────────────────────────────────
   const toggleThinking = (msgId) => {
     setExpandedThinking(prev => ({ ...prev, [msgId]: !prev[msgId] }))
   }
 
+  // ── Scroll to bottom on new messages ─────────────────────────
   useEffect(() => {
     chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: 'smooth' })
   }, [messages])
 
-  // Abort streaming on unmount to prevent reader leaks
+  // ── Cleanup on unmount ───────────────────────────────────────
   useEffect(() => {
     return () => {
       if (abortRef.current) {
@@ -436,296 +503,599 @@ export default function AgentChatPage() {
     }
   }, [])
 
+  // ── Keyboard: Ctrl+Enter → new thread ────────────────────────
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault()
+        createThread()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [agentId])
+
+  // ── Loading state ────────────────────────────────────────────
   if (!agent) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="text-center">
-          <div className="w-8 h-8 mx-auto mb-3 rounded-full border-2 border-coral-300 border-t-coral-500 animate-spin" />
-          <p className="text-warm-500 text-xs">正在加载智能体…</p>
+      <div className="flex items-center justify-center h-[calc(100vh-7rem)]">
+        <div className="text-center space-y-4">
+          <div className="w-10 h-10 mx-auto rounded-full border-2 border-sky-300 border-t-sky-500 animate-spin" />
+          <p className="text-sm text-ink-muted dark:text-cloud-500">正在加载智能体…</p>
         </div>
       </div>
     )
   }
 
+  // ── Suggested questions for empty state ──────────────────────
+  const suggestions = (agent.suggested_questions?.length > 0
+    ? agent.suggested_questions
+    : DEFAULT_SUGGESTIONS
+  )
+
+  // ── Get current mode label ───────────────────────────────────
+  const currentRetrievalLabel = RETRIEVAL_MODES.find(m => m.key === mode)?.label || '智能混合'
+  const currentReasoningLabel = REASONING_MODES.find(m => m.key === agentMode)?.label || '直接回答'
+
   return (
-    <div className="flex gap-3" style={{ height: 'calc(100vh - 7rem)' }}>
-      {/* Thread Sidebar */}
-      <div className="w-56 card p-3 space-y-2 shrink-0 overflow-y-auto flex flex-col">
-        <div className="pb-3 border-b border-warm-100">
-          <button onClick={() => navigate('/agents')} className="flex items-center gap-1 text-xs text-warm-500 hover:text-warm-600 mb-2 transition-colors">
-            <ArrowLeft size={12} /> 返回智能体列表
-          </button>
-          <div className="flex items-center gap-2">
-            <span className="text-2xl">{agent.icon || '🤖'}</span>
-            <div className="min-w-0">
-              <p className="text-sm font-medium text-warm-700 truncate">{agent.name}</p>
-              <p className="text-[10px] text-warm-500">{agent.kb_name} · {agent.llm_model}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center justify-between">
-          <span className="text-[10px] text-warm-500 uppercase tracking-wider">对话线程</span>
-          <button onClick={createThread} className="text-warm-500 hover:text-coral-500 transition-colors">
-            <Plus size={14} />
-          </button>
-        </div>
-        <div className="flex-1 space-y-1 overflow-y-auto">
-          {threads.map(t => (
-            <div key={t.id}
-              className={`group flex items-center gap-1 px-2 py-1.5 rounded-xl text-xs cursor-pointer transition-colors ${
-                activeThreadId === t.id
-                  ? 'bg-coral-50 text-coral-600 border border-coral-200'
-                  : 'text-warm-500 hover:text-warm-700 hover:bg-warm-50'
-              }`}
-              onClick={() => loadThread(t.id)}
-            >
-              {renamingThread === t.id ? (
-                <input className="input-field flex-1 text-[11px] py-0.5" value={renameTitle}
-                  onChange={e => setRenameTitle(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') renameThread(); if (e.key === 'Escape') setRenamingThread(null) }}
-                  onClick={e => e.stopPropagation()} autoFocus />
-              ) : (
-                <>
-                  <span className="flex-1 truncate">{t.title}</span>
-                  <span className="text-[9px] text-warm-500 font-mono opacity-0 group-hover:opacity-100">{t.updated_at?.slice(11, 16)}</span>
-                  <button className="opacity-0 group-hover:opacity-100 p-0.5 text-warm-500 hover:text-warm-600"
-                    onClick={e => { e.stopPropagation(); setRenamingThread(t.id); setRenameTitle(t.title) }}>
-                    <Edit3 size={10} />
-                  </button>
-                  <button className="opacity-0 group-hover:opacity-100 p-0.5 text-warm-500 hover:text-rose-500"
-                    onClick={e => { e.stopPropagation(); deleteThread(t.id) }}>
-                    <Trash2 size={10} />
-                  </button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-        {threads.length === 0 && (
-          <div className="text-center py-6">
-            <p className="text-xs text-warm-500">还没有对话</p>
-            <p className="text-[10px] text-warm-400 mt-1">发送第一条消息开始 ✨</p>
-          </div>
-        )}
-
-        <div className="pt-3 border-t border-warm-100 space-y-1">
-          <p className="text-[10px] text-warm-500 flex items-center gap-1"><Database size={10}/> {agent.kb_name}</p>
-          <p className="text-[10px] text-warm-500 flex items-center gap-1"><Cpu size={10}/> {agent.llm_model}</p>
-        </div>
-      </div>
-
-      {/* Main Chat */}
-      <div className="flex-1 flex flex-col card p-0 overflow-hidden">
-        <div className="p-3 border-b border-warm-200/60 flex items-center gap-3 shrink-0">
-          <span className="text-xl">{agent.icon || '🤖'}</span>
-          <div className="flex-1 min-w-0">
-            <h2 className="font-display text-sm font-semibold text-warm-800 truncate">{agent.name}</h2>
-            <p className="text-[10px] text-warm-500 truncate">{agent.welcome_message || agent.description}</p>
-          </div>
-          <div className="flex items-center gap-2">
-            {/* 检索模式 */}
-            <div className="flex gap-1">
-              {MODES.map(({ key, icon: Icon, label }) => (
-                <button key={key}
-                  onClick={() => setMode(key)}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-all ${
-                    mode === key
-                      ? 'bg-coral-50 text-coral-600 border border-coral-200'
-                      : 'text-warm-500 hover:text-warm-600'
-                  }`}
-                >
-                  <Icon size={11} /> {label}
-                </button>
-              ))}
-            </div>
-            {/* 分隔符 */}
-            <div className="w-px h-5 bg-warm-300" />
-            {/* 推理模式 */}
-            <div className="flex gap-1">
-              {REASONING_MODES.map(({ key, icon: Icon, label }) => (
-                <button key={key}
-                  onClick={() => setAgentMode(key)}
-                  className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium transition-all ${
-                    agentMode === key
-                      ? 'bg-sage-50 text-sage-600 border border-sage-200'
-                      : 'text-warm-500 hover:text-warm-600'
-                  }`}
-                >
-                  <Icon size={11} /> {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.length === 0 && (
-            <div className="flex flex-col items-center justify-center h-full">
-              <span className="text-5xl mb-3">{agent.icon || '🤖'}</span>
-              <p className="text-sm text-warm-500">{agent.welcome_message || '你好！有什么可以帮你的？'}</p>
-            </div>
-          )}
-          {messages.map((m, i) => {
-            if (m.role === 'user') {
-              return (
-                <div key={i} className="flex gap-3 flex-row-reverse">
-                  <div className="w-7 h-7 rounded-xl flex items-center justify-center shrink-0 bg-coral-50 text-coral-500">
-                    <User size={13} />
-                  </div>
-                  <div className="max-w-[80%] rounded-2xl rounded-tr-md px-4 py-2.5 text-sm bg-coral-50 border border-coral-200 text-warm-700">
-                    {m.imageUrl && (
-                      <img src={m.imageUrl} alt="上传的图片" className="w-full max-w-xs rounded-xl mb-2 border border-coral-200 object-cover" />
-                    )}
-                    {m.content && <div className="whitespace-pre-wrap">{m.content}</div>}
-                  </div>
-                </div>
-              )
-            }
-            const hasThinking = m.thinking?.length > 0
-            // 推理进行中时强制展开，完成后允许折叠
-            const isExpanded = !m.thinkingDone || expandedThinking[m.id] !== false
-            const showTypingCursor = !m.done && m.content?.length > 0
-            return (
-              <div key={i} className="flex gap-3">
-                <span className="text-xl shrink-0 mt-0.5">{agent.icon || '🤖'}</span>
-                <div className="max-w-[80%] min-w-[40%]">
-                  {hasThinking && (
-                    <div className="mb-2 rounded-xl border border-warm-200 bg-warm-50 overflow-hidden">
-                      <button onClick={() => toggleThinking(m.id)}
-                        className="w-full flex items-center gap-2 px-3 py-1.5 text-xs text-warm-500 hover:text-warm-700">
-                        {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-                        <Brain size={12} className="text-purple-500" />
-                        <span>思考过程</span>
-                        {m.thinkingDone ? <span className="ml-auto text-[9px] text-sage-500">完成 ✓</span>
-                          : <Zap size={9} className="ml-auto text-amber-500 animate-pulse" />}
-                        <span className="text-[9px] text-warm-500 ml-1">{m.thinking.length} 步</span>
-                      </button>
-                      {isExpanded && (
-                        <div className="border-t border-warm-200/50 px-3 py-2 space-y-2 max-h-96 overflow-y-auto">
-                          {m.thinking.map((step, j) => (
-                            typeof step === 'object' ? (
-                              <div key={j} className="text-[10px] space-y-0.5">
-                                <div className="flex items-start gap-1.5">
-                                  <span className="shrink-0 mt-0.5">🧠</span>
-                                  <span className="text-warm-600">{step.thought}</span>
-                                </div>
-                                {step.action && (
-                                  <div className="flex items-start gap-1.5 ml-1">
-                                    <span className="shrink-0 mt-0.5">🔧</span>
-                                    <span className="text-sky-500 font-medium">{step.action}</span>
-                                  </div>
-                                )}
-                                {step.observation && (
-                                  <div className="flex items-start gap-1.5 ml-1">
-                                    <span className="shrink-0 mt-0.5">📋</span>
-                                    <span className="text-sage-500 whitespace-pre-wrap break-all">{step.observation}</span>
-                                  </div>
-                                )}
-                                {step.elapsed_ms > 0 && (
-                                  <div className="text-[9px] text-warm-400 ml-4.5">{(step.elapsed_ms / 1000).toFixed(2)}s</div>
-                                )}
-                              </div>
-                            ) : (
-                              <div key={j} className="text-[10px] text-warm-500 font-mono flex items-start gap-1.5">
-                                <span className="text-warm-400 shrink-0 mt-0.5">▸</span><span>{step}</span>
-                              </div>
-                            )
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <div className={`rounded-2xl rounded-tl-md px-4 py-3 text-sm leading-relaxed ${
-                    m.error ? 'bg-rose-50 border border-rose-200 text-rose-700'
-                      : 'bg-warm-50 border border-warm-200 text-warm-700'
-                  }`}>
-                    <div className="markdown-content">
-                      <ReactMarkdown components={markdownComponents}>{m.content}</ReactMarkdown>
-                      {showTypingCursor && <span className="inline-block w-1.5 h-4 bg-coral-500 ml-0.5 animate-pulse align-middle rounded-sm" />}
-                    </div>
-                    {m.similar_images && m.similar_images.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-amber-200">
-                        <p className="text-[10px] text-amber-600 mb-2">🔍 视觉相似图片 ({m.similar_images.length})</p>
-                        <div className="grid grid-cols-2 gap-1.5">
-                          {m.similar_images.map((sim, si) => (
-                            <div key={si} className="bg-amber-50 rounded-lg p-1.5 border border-amber-100 text-[10px]">
-                              {sim.url && (
-                                <img
-                                  src={sim.url}
-                                  alt={sim.name || ''}
-                                  className="w-full h-24 object-cover rounded mb-1"
-                                  loading="lazy"
-                                />
-                              )}
-                              <p className="text-warm-700 font-medium truncate">{sim.name || sim.entity_name || sim.image_path?.split('/').pop()}</p>
-                              <p className="text-amber-600 font-mono">相似度: {sim.score}</p>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {m.images && m.images.length > 0 && (
-                      <div className="mt-3 pt-3 border-t border-warm-200">
-                        <p className="text-[10px] text-warm-500 mb-2">📷 引用的图片 ({m.images.length})</p>
-                        <div className="grid grid-cols-2 gap-2">
-                          {m.images.map((img, i) => {
-                            const token = getToken()
-                            const imgUrl = `/api/files/image?path=${encodeURIComponent(img)}${token ? '&token=' + encodeURIComponent(token) : ''}`
-                            return (
-                            <a key={i} href={imgUrl} target="_blank" rel="noopener" className="block">
-                              <img
-                                src={imgUrl}
-                                alt={`引用图片 ${i + 1}`}
-                                className="w-full h-32 object-cover rounded-xl border border-warm-200 hover:border-coral-300 transition-colors"
-                                loading="lazy"
-                              />
-                            </a>
-                            )
-                          })}
-                        </div>
-                      </div>
-                    )}
-                    {m.elapsed && <p className="text-[10px] text-warm-500 mt-1.5 font-mono">{m.elapsed}s</p>}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
-          {loading && !messages.some(m => m.role === 'assistant' && !m.done) && (
-            <div className="flex gap-3">
-              <span className="text-xl">{agent.icon || '🤖'}</span>
-              <div className="bg-warm-50 rounded-xl px-4 py-3 flex items-center gap-2 border border-warm-200">
-                <div className="flex gap-1">
-                  <span className="w-1.5 h-1.5 bg-coral-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
-                  <span className="w-1.5 h-1.5 bg-coral-400 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
-                  <span className="w-1.5 h-1.5 bg-coral-400 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="p-3 border-t border-warm-200/60 shrink-0" onPaste={handlePaste}>
-          {imagePreview && (
-            <div className="mb-2 inline-block relative">
-              <img src={imagePreview} alt="预览" className="h-16 rounded-xl border border-coral-200 object-cover" />
+    <div className="flex gap-3 h-[calc(100vh-7rem)]">
+      {/* ═══════════════════════════════════════════════════════════
+          SIDEBAR
+          ═══════════════════════════════════════════════════════════ */}
+      <AnimatePresence>
+        {sidebarOpen && (
+          <motion.div
+            initial={{ width: 0, opacity: 0 }}
+            animate={{ width: 220, opacity: 1 }}
+            exit={{ width: 0, opacity: 0 }}
+            transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }}
+            className="w-[220px] shrink-0 card p-3 flex flex-col overflow-hidden"
+          >
+            {/* Back + Agent info */}
+            <div className="pb-3 border-b border-cloud-200 dark:border-sky-800/30">
               <button
-                onClick={handleRemoveImage}
-                className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-100 hover:bg-rose-200 text-rose-500 rounded-full flex items-center justify-center transition-colors"
-                aria-label="移除图片"
+                onClick={() => navigate('/agents')}
+                className="flex items-center gap-1 text-xs text-ink-muted dark:text-cloud-500 hover:text-ink-body dark:hover:text-cloud-300 mb-2.5 transition-colors"
               >
-                <X size={10} />
+                <ArrowLeft size={12} /> 返回列表
+              </button>
+              <div className="flex items-center gap-2.5">
+                <span className="text-2xl shrink-0">{agent.icon || '🤖'}</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-ink-primary dark:text-cloud-200 truncate">{agent.name}</p>
+                  <p className="text-[10px] text-ink-muted dark:text-cloud-500 truncate">{agent.kb_name}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Thread list header */}
+            <div className="flex items-center justify-between mt-3 mb-1.5">
+              <span className="text-[10px] font-medium text-ink-muted dark:text-cloud-500 uppercase tracking-wider">对话</span>
+              <button
+                onClick={createThread}
+                className="p-1 rounded-lg text-ink-muted dark:text-cloud-500 hover:text-sky-500 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 transition-colors"
+                aria-label="新建对话"
+                title="新建对话"
+              >
+                <Plus size={14} />
               </button>
             </div>
+
+            {/* Thread list */}
+            <div className="flex-1 space-y-0.5 overflow-y-auto">
+              {threads.map(t => (
+                <div key={t.id}
+                  className={`group flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs cursor-pointer transition-colors ${
+                    activeThreadId === t.id
+                      ? 'bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400'
+                      : 'text-ink-muted dark:text-cloud-500 hover:text-ink-body dark:hover:text-cloud-300 hover:bg-cloud-100 dark:hover:bg-sky-900/20'
+                  }`}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`对话: ${t.title}`}
+                  aria-current={activeThreadId === t.id ? 'true' : undefined}
+                  onClick={() => loadThread(t.id)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); loadThread(t.id) } }}
+                >
+                  {renamingThread === t.id ? (
+                    <input
+                      className="input-field flex-1 text-[11px] py-0.5 px-1.5"
+                      value={renameTitle}
+                      onChange={e => setRenameTitle(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter') renameThread(); if (e.key === 'Escape') setRenamingThread(null) }}
+                      onClick={e => e.stopPropagation()}
+                      autoFocus
+                    />
+                  ) : (
+                    <>
+                      <span className="flex-1 truncate">{t.title}</span>
+                      <button
+                        className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-muted dark:text-cloud-500 hover:text-ink-body dark:hover:text-cloud-300 transition-opacity"
+                        onClick={e => { e.stopPropagation(); setRenamingThread(t.id); setRenameTitle(t.title) }}
+                        aria-label={`重命名 ${t.title}`}
+                      >
+                        <Edit3 size={10} />
+                      </button>
+                      <button
+                        className="opacity-0 group-hover:opacity-100 p-0.5 text-ink-muted dark:text-cloud-500 hover:text-rose-500 transition-opacity"
+                        onClick={e => { e.stopPropagation(); deleteThread(t.id) }}
+                        aria-label={`删除 ${t.title}`}
+                      >
+                        <Trash2 size={10} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+              {threads.length === 0 && (
+                <div className="text-center py-8">
+                  <p className="text-xs text-ink-muted dark:text-cloud-500">暂无对话</p>
+                </div>
+              )}
+            </div>
+
+            {/* Agent info footer */}
+            <div className="pt-3 mt-auto border-t border-cloud-200 dark:border-sky-800/30 space-y-1">
+              <p className="text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                <Database size={10} className="shrink-0" /> {agent.kb_name}
+              </p>
+              <p className="text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                <Cpu size={10} className="shrink-0" /> {agent.llm_model}
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ═══════════════════════════════════════════════════════════
+          MAIN CHAT
+          ═══════════════════════════════════════════════════════════ */}
+      <div className="flex-1 flex flex-col card p-0 overflow-hidden min-w-0">
+        {/* ── Top bar ─────────────────────────────────────────── */}
+        <div className="shrink-0 px-4 py-2.5 border-b border-cloud-200 dark:border-sky-800/30 flex items-center gap-3">
+          {/* Sidebar toggle */}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-1.5 rounded-lg text-ink-muted dark:text-cloud-500 hover:text-ink-body dark:hover:text-cloud-300 hover:bg-cloud-100 dark:hover:bg-sky-900/30 transition-colors"
+            aria-label={sidebarOpen ? '收起侧边栏' : '展开侧边栏'}
+          >
+            <ChevronLeft size={16} className={`transition-transform duration-200 ${!sidebarOpen ? 'rotate-180' : ''}`} />
+          </button>
+
+          {/* Agent identity */}
+          <span className="text-xl shrink-0">{agent.icon || '🤖'}</span>
+          <div className="flex-1 min-w-0">
+            <h2 className="text-sm font-semibold text-ink-primary dark:text-cloud-200 truncate">{agent.name}</h2>
+          </div>
+
+          {/* ── Role-aware mode controls ──────────────────────── */}
+          {isTeacher ? (
+            <div className="flex items-center gap-1.5">
+              {/* Retrieval mode dropdown */}
+              <div className="relative group">
+                <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-ink-body dark:text-cloud-300 bg-cloud-50 dark:bg-sky-900/30 border border-cloud-200 dark:border-sky-800/30 hover:border-sky-300 dark:hover:border-sky-700 transition-colors">
+                  <Search size={11} className="text-sky-500 dark:text-sky-400" />
+                  {currentRetrievalLabel}
+                  <ChevronDown size={10} className="text-ink-muted dark:text-cloud-500" />
+                </button>
+                <div className="absolute right-0 top-full mt-1 w-52 card p-1.5 shadow-cloud-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 z-30">
+                  {RETRIEVAL_MODES.map(({ key, icon: Icon, label, desc }) => (
+                    <button
+                      key={key}
+                      onClick={() => setMode(key)}
+                      className={`w-full flex items-start gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                        mode === key
+                          ? 'bg-sky-50 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400'
+                          : 'text-ink-body dark:text-cloud-300 hover:bg-cloud-50 dark:hover:bg-sky-900/20'
+                      }`}
+                    >
+                      <Icon size={13} className={`shrink-0 mt-0.5 ${mode === key ? 'text-sky-500' : 'text-ink-muted dark:text-cloud-500'}`} />
+                      <div>
+                        <p className="text-xs font-medium">{label}</p>
+                        <p className="text-[10px] text-ink-muted dark:text-cloud-500">{desc}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Separator */}
+              <div className="w-px h-5 bg-cloud-200 dark:bg-sky-800/30" />
+
+              {/* Reasoning mode dropdown */}
+              <div className="relative group">
+                <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-ink-body dark:text-cloud-300 bg-cloud-50 dark:bg-sky-900/30 border border-cloud-200 dark:border-sky-800/30 hover:border-sky-300 dark:hover:border-sky-700 transition-colors">
+                  <Brain size={11} className="text-sage-500" />
+                  {currentReasoningLabel}
+                  <ChevronDown size={10} className="text-ink-muted dark:text-cloud-500" />
+                </button>
+                <div className="absolute right-0 top-full mt-1 w-48 card p-1.5 shadow-cloud-md opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150 z-30">
+                  {REASONING_MODES.map(({ key, icon: Icon, label, desc }) => (
+                    <button
+                      key={key}
+                      onClick={() => setAgentMode(key)}
+                      className={`w-full flex items-start gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
+                        agentMode === key
+                          ? 'bg-sky-50 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400'
+                          : 'text-ink-body dark:text-cloud-300 hover:bg-cloud-50 dark:hover:bg-sky-900/20'
+                      }`}
+                    >
+                      <Icon size={13} className={`shrink-0 mt-0.5 ${agentMode === key ? 'text-sky-500' : 'text-ink-muted dark:text-cloud-500'}`} />
+                      <div>
+                        <p className="text-xs font-medium">{label}</p>
+                        <p className="text-[10px] text-ink-muted dark:text-cloud-500">{desc}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Student: subtle mode indicator, no controls */
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                <Sparkles size={11} className="text-sky-400" />
+                AI 助教
+              </span>
+            </div>
           )}
-          <div className="flex gap-2 items-center">
+        </div>
+
+        {/* ── Messages area ───────────────────────────────────── */}
+        <div ref={chatRef} className="flex-1 overflow-y-auto px-4 py-5 space-y-5">
+          {/* Empty: no messages */}
+          {messages.length === 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex flex-col items-center justify-center h-full max-w-md mx-auto text-center"
+            >
+              <span className="text-5xl mb-4">{agent.icon || '🤖'}</span>
+              <h3 className="text-lg font-semibold text-ink-primary dark:text-cloud-200 mb-1.5">
+                {agent.welcome_message || '你好！有什么可以帮你的？'}
+              </h3>
+              <p className="text-sm text-ink-muted dark:text-cloud-500 mb-6">
+                我是你的 AI 知识助手，可以回答关于知识库的任何问题
+              </p>
+
+              {/* Suggested questions */}
+              <div className="w-full space-y-2">
+                <p className="text-[11px] font-medium text-ink-muted dark:text-cloud-500 text-left">💡 试试这些问题</p>
+                {suggestions.map((q, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setInput(q)
+                      inputRef.current?.focus()
+                    }}
+                    className="w-full text-left px-4 py-2.5 rounded-xl text-sm text-ink-body dark:text-cloud-300 bg-cloud-50 dark:bg-sky-900/30 border border-cloud-200 dark:border-sky-800/30 hover:border-sky-300 dark:hover:border-sky-700 hover:bg-sky-50 dark:hover:bg-sky-900/40 transition-all group"
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="text-sky-400 dark:text-sky-500 shrink-0">
+                        <MessageSquare size={13} />
+                      </span>
+                      {q}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              {/* Keyboard shortcut hint */}
+              <p className="text-[10px] text-ink-muted dark:text-cloud-500 mt-6">
+                按 <kbd className="px-1 py-0.5 rounded text-[10px] bg-cloud-100 dark:bg-sky-900/40 border border-cloud-200 dark:border-sky-800/30 font-mono">Enter</kbd> 发送 ·
+                按 <kbd className="px-1 py-0.5 rounded text-[10px] bg-cloud-100 dark:bg-sky-900/40 border border-cloud-200 dark:border-sky-800/30 font-mono">Shift + Enter</kbd> 换行 ·
+                按 <kbd className="px-1 py-0.5 rounded text-[10px] bg-cloud-100 dark:bg-sky-900/40 border border-cloud-200 dark:border-sky-800/30 font-mono">Ctrl + Enter</kbd> 新建对话
+              </p>
+            </motion.div>
+          )}
+
+          {/* Messages */}
+          <AnimatePresence>
+            {messages.map((m, i) => {
+              // ── User message ──────────────────────────────────
+              if (m.role === 'user') {
+                return (
+                  <motion.div
+                    key={m.id || i}
+                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.2, ease: [0.25, 1, 0.5, 1] }}
+                    className="flex gap-3 flex-row-reverse"
+                  >
+                    <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 bg-sky-100 dark:bg-sky-900/40 text-sky-500 dark:text-sky-400">
+                      <User size={14} />
+                    </div>
+                    <div className="max-w-[75%] rounded-2xl rounded-tr-md px-4 py-2.5 text-sm bg-sky-50 dark:bg-sky-900/30 border border-sky-100 dark:border-sky-800/30 text-ink-body dark:text-cloud-300">
+                      {m.imageUrl && (
+                        <img
+                          src={m.imageUrl}
+                          alt="上传的图片"
+                          className="w-full max-w-xs rounded-xl mb-2 border border-sky-100 dark:border-sky-800/30 object-cover"
+                        />
+                      )}
+                      {m.content && <div className="whitespace-pre-wrap break-words">{m.content}</div>}
+                    </div>
+                  </motion.div>
+                )
+              }
+
+              // ── AI message ────────────────────────────────────
+              const hasThinking = m.thinking?.length > 0
+              const isExpanded = !m.thinkingDone || expandedThinking[m.id] !== false
+              const showTypingCursor = !m.done && m.content?.length > 0
+
+              return (
+                <motion.div
+                  key={m.id || i}
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, ease: [0.25, 1, 0.5, 1] }}
+                  className="flex gap-3"
+                >
+                  {/* Agent avatar */}
+                  <span className="text-xl shrink-0 mt-0.5 select-none">{agent.icon || '🤖'}</span>
+
+                  <div className="max-w-[80%] min-w-[40%] space-y-2">
+                    {/* ── Thinking process (Perplexity-like) ───── */}
+                    {hasThinking && (
+                      <div className="rounded-xl border border-cloud-200 dark:border-sky-800/30 bg-cloud-50/80 dark:bg-sky-900/20 overflow-hidden">
+                        <button
+                          onClick={() => toggleThinking(m.id)}
+                          className="w-full flex items-center gap-2 px-3 py-2 text-xs text-ink-muted dark:text-cloud-500 hover:text-ink-body dark:hover:text-cloud-300 transition-colors"
+                        >
+                          {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                          <Brain size={12} className="text-sky-500 dark:text-sky-400" />
+                          <span className="font-medium text-ink-body dark:text-cloud-300">
+                            {m.thinkingDone ? '推理过程' : '正在推理…'}
+                          </span>
+                          {m.thinkingDone ? (
+                            <span className="ml-auto text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                              <Check size={10} className="text-sage-500" />
+                              {m.thinking.length} 步
+                            </span>
+                          ) : (
+                            <span className="ml-auto flex items-center gap-1 text-[10px] text-ink-muted dark:text-cloud-500">
+                              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
+                              {m.thinking.length} 步
+                            </span>
+                          )}
+                        </button>
+
+                        {isExpanded && (
+                          <div className="border-t border-cloud-200 dark:border-sky-800/30 px-3 py-2.5 space-y-2.5 max-h-80 overflow-y-auto">
+                            {m.thinking.map((step, j) => (
+                              typeof step === 'object' ? (
+                                <div key={j} className="flex gap-2 text-[11px]">
+                                  {/* Step number */}
+                                  <span className="shrink-0 w-5 h-5 rounded-full bg-cloud-100 dark:bg-sky-900/40 flex items-center justify-center text-[10px] font-mono text-ink-muted dark:text-cloud-500 mt-0.5">
+                                    {j + 1}
+                                  </span>
+                                  <div className="flex-1 min-w-0 space-y-1">
+                                    {/* Thought */}
+                                    <div className="flex items-start gap-1.5">
+                                      <span className="shrink-0 mt-0.5 text-[10px]">💭</span>
+                                      <span className="text-ink-body dark:text-cloud-300 leading-relaxed">{step.thought}</span>
+                                    </div>
+                                    {/* Action */}
+                                    {step.action && (
+                                      <div className="flex items-start gap-1.5 ml-0.5">
+                                        <span className="shrink-0 mt-0.5 text-[10px]">🔧</span>
+                                        <span className="text-sky-600 dark:text-sky-400 font-medium bg-sky-50 dark:bg-sky-900/30 px-1.5 py-0.5 rounded text-[10px]">
+                                          {step.action}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {/* Observation */}
+                                    {step.observation && (
+                                      <div className="flex items-start gap-1.5 ml-0.5">
+                                        <span className="shrink-0 mt-0.5 text-[10px]">📋</span>
+                                        <span className="text-sage-600 dark:text-sage-400 whitespace-pre-wrap break-all text-[10px] leading-relaxed bg-sage-50 dark:bg-sage-900/20 px-1.5 py-1 rounded">
+                                          {step.observation}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {/* Elapsed */}
+                                    {step.elapsed_ms > 0 && (
+                                      <p className="text-[10px] text-ink-muted dark:text-cloud-500 font-mono ml-5">
+                                        ⏱ {formatElapsed(step.elapsed_ms)}
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              ) : (
+                                <div key={j} className="text-[10px] text-ink-muted dark:text-cloud-500 font-mono flex items-start gap-2">
+                                  <span className="shrink-0 w-5 h-5 rounded-full bg-cloud-100 dark:bg-sky-900/40 flex items-center justify-center text-[10px] mt-0.5">
+                                    {j + 1}
+                                  </span>
+                                  <span className="leading-relaxed">{step}</span>
+                                </div>
+                              )
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Answer bubble ────────────────────────── */}
+                    <div className={`rounded-2xl rounded-tl-md px-4 py-3 text-sm leading-relaxed ${
+                      m.error
+                        ? 'bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/30 text-rose-700 dark:text-rose-300'
+                        : m.cancelled
+                          ? 'bg-cloud-50 dark:bg-sky-900/20 border border-cloud-200 dark:border-sky-800/30 text-ink-body dark:text-cloud-300'
+                          : 'bg-cloud-50 dark:bg-sky-900/20 border border-cloud-200 dark:border-sky-800/30 text-ink-body dark:text-cloud-300'
+                    }`}>
+                      {/* Error state with retry */}
+                      {m.error && (
+                        <div className="flex items-center gap-2 mb-2 pb-2 border-b border-rose-200 dark:border-rose-800/30">
+                          <AlertTriangle size={13} className="text-rose-500 shrink-0" />
+                          <span className="text-xs text-rose-600 dark:text-rose-400 flex-1">回答生成失败</span>
+                          <button
+                            onClick={() => {
+                              // Retry: re-send the last user message
+                              const lastUserMsg = [...messages].reverse().find(msg => msg.role === 'user')
+                              if (lastUserMsg) {
+                                setLoading(true)
+                                streamQuery(lastUserMsg.content, null)
+                              }
+                            }}
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors"
+                          >
+                            <RefreshCw size={10} /> 重试
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Cancelled indicator */}
+                      {m.cancelled && !m.error && (
+                        <div className="flex items-center gap-2 mb-2 text-[10px] text-ink-muted dark:text-cloud-500">
+                          <StopCircle size={11} />
+                          已取消 · 可继续追问或重新提问
+                        </div>
+                      )}
+
+                      {/* Markdown content */}
+                      <div className="markdown-content break-words">
+                        <ReactMarkdown components={markdownComponents}>{m.content}</ReactMarkdown>
+                        {showTypingCursor && (
+                          <span className="inline-block w-1.5 h-4 bg-sky-500 dark:bg-sky-400 ml-0.5 animate-pulse align-middle rounded-sm" />
+                        )}
+                      </div>
+
+                      {/* ── Source citations ──────────────────── */}
+                      {/* Similar images (vision search) */}
+                      {m.similar_images && m.similar_images.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-cloud-200 dark:border-sky-800/30">
+                          <p className="text-[10px] font-medium text-ink-muted dark:text-cloud-500 mb-2 flex items-center gap-1">
+                            <Image size={10} /> 视觉相似结果 ({m.similar_images.length})
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {m.similar_images.map((sim, si) => (
+                              <div key={si} className="bg-white dark:bg-sky-950/60 rounded-lg p-2 border border-cloud-200 dark:border-sky-800/30">
+                                {sim.url && (
+                                  <img
+                                    src={sim.url}
+                                    alt={sim.name || ''}
+                                    className="w-full h-24 object-cover rounded-md mb-1.5"
+                                    loading="lazy"
+                                  />
+                                )}
+                                <p className="text-[10px] text-ink-body dark:text-cloud-300 font-medium truncate">
+                                  {sim.name || sim.entity_name || sim.image_path?.split('/').pop()}
+                                </p>
+                                <p className="text-[10px] text-sky-500 dark:text-sky-400 font-mono">
+                                  相似度 {(sim.score * 100).toFixed(1)}%
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Referenced images from knowledge base */}
+                      {m.images && m.images.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-cloud-200 dark:border-sky-800/30">
+                          <p className="text-[10px] font-medium text-ink-muted dark:text-cloud-500 mb-2 flex items-center gap-1">
+                            <BookOpen size={10} /> 引用来源 ({m.images.length})
+                          </p>
+                          <div className="grid grid-cols-2 gap-2">
+                            {m.images.map((img, idx) => {
+                              const token = getToken()
+                              const imgUrl = `/api/files/image?path=${encodeURIComponent(img)}${token ? '&token=' + encodeURIComponent(token) : ''}`
+                              return (
+                                <a key={idx} href={imgUrl} target="_blank" rel="noopener"
+                                  className="block rounded-lg overflow-hidden border border-cloud-200 dark:border-sky-800/30 hover:border-sky-300 dark:hover:border-sky-700 transition-colors"
+                                >
+                                  <img
+                                    src={imgUrl}
+                                    alt={`引用图片 ${idx + 1}`}
+                                    className="w-full h-28 object-cover"
+                                    loading="lazy"
+                                  />
+                                </a>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Elapsed time */}
+                      {m.elapsed && m.done && (
+                        <p className="text-[10px] text-ink-muted dark:text-cloud-500 mt-2 font-mono">
+                          <Clock size={9} className="inline mr-1" />
+                          {m.elapsed}s
+                        </p>
+                      )}
+
+                      {/* Cancelled partial elapsed */}
+                      {m.cancelled && !m.done && (
+                        <p className="text-[10px] text-ink-muted dark:text-cloud-500 mt-2 italic">
+                          已取消 · 部分内容已生成
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )
+            })}
+          </AnimatePresence>
+
+          {/* Loading: waiting for first token */}
+          {loading && !messages.some(m => m.role === 'assistant' && !m.done) && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="flex gap-3"
+            >
+              <span className="text-xl select-none">{agent.icon || '🤖'}</span>
+              <div className="bg-cloud-50 dark:bg-sky-900/20 rounded-2xl rounded-tl-md px-4 py-3 border border-cloud-200 dark:border-sky-800/30">
+                <div className="flex items-center gap-2 text-xs text-ink-muted dark:text-cloud-500">
+                  <span className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-pulse" style={{ animationDelay: '0ms' }} />
+                  <span className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-pulse" style={{ animationDelay: '150ms' }} />
+                  <span className="w-1.5 h-1.5 bg-sky-400 rounded-full animate-pulse" style={{ animationDelay: '300ms' }} />
+                  <span className="ml-1">正在思考…</span>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </div>
+
+        {/* ── Input area ──────────────────────────────────────── */}
+        <div className="shrink-0 px-4 py-3 border-t border-cloud-200 dark:border-sky-800/30" onPaste={handlePaste}>
+          {/* Image preview */}
+          <AnimatePresence>
+            {imagePreview && (
+              <motion.div
+                initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                className="mb-2.5 inline-block relative"
+              >
+                <img
+                  src={imagePreview}
+                  alt="图片预览"
+                  className="h-16 rounded-xl border border-cloud-200 dark:border-sky-800/30 object-cover"
+                />
+                <button
+                  onClick={handleRemoveImage}
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-rose-100 dark:bg-rose-900/40 hover:bg-rose-200 dark:hover:bg-rose-900/60 text-rose-500 rounded-full flex items-center justify-center transition-colors"
+                  aria-label="移除图片"
+                >
+                  <X size={10} />
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="flex gap-2 items-end">
+            {/* Hidden file input */}
             <input
               type="file" accept="image/*" ref={fileInputRef}
               onChange={handleImageChange} className="hidden"
             />
+
+            {/* Image upload button */}
             <button
-              className="p-2 rounded-xl text-warm-500 hover:text-coral-500 hover:bg-coral-50 transition-colors"
+              className="p-2 rounded-xl text-ink-muted dark:text-cloud-500 hover:text-sky-500 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
               onClick={handlePickImage}
               title="上传图片搜索"
               aria-label="上传图片"
@@ -733,21 +1103,83 @@ export default function AgentChatPage() {
             >
               <Image size={18} />
             </button>
-            <input className="input-field flex-1 text-sm" placeholder={`向 ${agent.name} 提问...`} value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Enter' && !e.shiftKey) send()
-                if (e.key === 'Escape') cancelQuery()
-              }} />
+
+            {/* Text input */}
+            <div className="flex-1 relative">
+              <textarea
+                ref={inputRef}
+                className="input-field w-full resize-none text-sm py-2.5 max-h-32"
+                placeholder={`向 ${agent.name} 提问…`}
+                value={input}
+                onChange={e => setInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault()
+                    send()
+                  }
+                  if (e.key === 'Escape') {
+                    if (loading) cancelQuery()
+                    else setInput('')
+                  }
+                }}
+                rows={1}
+                disabled={loading && !abortRef.current}
+                style={{ minHeight: '42px' }}
+                onInput={e => {
+                  // Auto-resize
+                  const el = e.target
+                  el.style.height = 'auto'
+                  el.style.height = Math.min(el.scrollHeight, 128) + 'px'
+                }}
+              />
+            </div>
+
+            {/* Send / Cancel button */}
             {loading ? (
-              <button className="btn-danger flex items-center gap-2 text-sm" onClick={cancelQuery}>
+              <button
+                className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800/30 hover:bg-rose-100 dark:hover:bg-rose-900/30 transition-colors shrink-0"
+                onClick={cancelQuery}
+              >
+                <StopCircle size={14} />
                 取消
               </button>
             ) : (
-              <button className="btn-primary flex items-center gap-2 text-sm" onClick={send}>
-                <Send size={14} /> 发送
+              <button
+                className="btn-primary flex items-center gap-1.5 px-4 py-2.5 text-sm shrink-0 disabled:opacity-40 disabled:cursor-not-allowed"
+                onClick={send}
+                disabled={!input.trim() && !selectedImage}
+              >
+                <Send size={14} />
+                发送
               </button>
             )}
+          </div>
+
+          {/* Mode indicator (subtle, always visible) */}
+          <div className="flex items-center justify-between mt-2">
+            <div className="flex items-center gap-3">
+              {isTeacher && (
+                <>
+                  <span className="text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                    <Search size={10} />
+                    {currentRetrievalLabel}
+                  </span>
+                  <span className="text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                    <Brain size={10} />
+                    {currentReasoningLabel}
+                  </span>
+                </>
+              )}
+              {!isTeacher && (
+                <span className="text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                  <Sparkles size={10} />
+                  AI 助教模式
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] text-ink-muted dark:text-cloud-500">
+              {agent.kb_name} · {agent.llm_model}
+            </span>
           </div>
         </div>
       </div>

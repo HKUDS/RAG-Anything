@@ -13,16 +13,17 @@ export default function Pagination({ page, totalPages, onPageChange }) {
 
   return (
     <div className="flex items-center justify-between pt-4">
-      <span className="text-xs text-warm-500">
+      <span className="text-xs text-ink-muted">
         第 {page} / {totalPages} 页
       </span>
       <div className="flex items-center gap-1">
         <button
           onClick={() => onPageChange(page - 1)}
           disabled={page <= 1}
-          className="p-1.5 rounded-lg hover:bg-warm-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          aria-label="上一页"
+          className="p-1.5 rounded-lg hover:bg-cloud-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
-          <ChevronLeft size={14} className="text-warm-600" />
+          <ChevronLeft size={14} className="text-ink-body" aria-hidden="true" />
         </button>
         {pages.map(p => (
           <button
@@ -30,8 +31,8 @@ export default function Pagination({ page, totalPages, onPageChange }) {
             onClick={() => onPageChange(p)}
             className={`w-7 h-7 rounded-lg text-xs font-medium transition-colors ${
               p === page
-                ? 'bg-coral-500 text-white'
-                : 'text-warm-600 hover:bg-warm-100'
+                ? 'bg-sky-500 text-white'
+                : 'text-ink-body hover:bg-cloud-100'
             }`}
           >
             {p}
@@ -40,9 +41,10 @@ export default function Pagination({ page, totalPages, onPageChange }) {
         <button
           onClick={() => onPageChange(page + 1)}
           disabled={page >= totalPages}
-          className="p-1.5 rounded-lg hover:bg-warm-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+          aria-label="下一页"
+          className="p-1.5 rounded-lg hover:bg-cloud-100 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
         >
-          <ChevronRight size={14} className="text-warm-600" />
+          <ChevronRight size={14} className="text-ink-body" aria-hidden="true" />
         </button>
       </div>
     </div>

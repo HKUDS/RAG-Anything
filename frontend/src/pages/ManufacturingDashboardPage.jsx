@@ -81,8 +81,8 @@ export default function ManufacturingDashboardPage() {
     return (
       <div className="flex items-center justify-center py-24">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center space-y-3">
-          <Factory size={40} className="mx-auto text-warm-300 animate-pulse" />
-          <p className="text-sm text-warm-500">正在加载制造智能体数据…</p>
+          <Factory size={40} className="mx-auto text-cloud-300 animate-pulse" />
+          <p className="text-sm text-ink-muted">正在加载制造智能体数据…</p>
         </motion.div>
       </div>
     )
@@ -108,11 +108,11 @@ export default function ManufacturingDashboardPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-warm-800 flex items-center gap-2">
-            <Factory size={22} className="text-coral-500" />
+          <h1 className="text-xl font-semibold text-ink-primary flex items-center gap-2">
+            <Factory size={22} className="text-sky-500" />
             智能制造专业智能体
           </h1>
-          <p className="text-sm text-warm-500 mt-1">第六届全国智能制造应用技术技能大赛 — 辅助教学系统</p>
+          <p className="text-sm text-ink-muted mt-1">第六届全国智能制造应用技术技能大赛 — 辅助教学系统</p>
           <div className="flex gap-1 mt-2">
             {[
               { to: '/manufacturing', label: '仪表板' },
@@ -122,8 +122,8 @@ export default function ManufacturingDashboardPage() {
               <button key={item.to} onClick={() => navigate(item.to)}
                 className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                   location.pathname === item.to
-                    ? 'bg-coral-50 text-coral-600'
-                    : 'text-warm-500 hover:text-warm-700 hover:bg-warm-100'
+                    ? 'bg-sky-50 text-sky-600'
+                    : 'text-ink-muted hover:text-ink-body hover:bg-cloud-100'
                 }`}>
                 {item.label}
               </button>
@@ -137,11 +137,11 @@ export default function ManufacturingDashboardPage() {
           />
           <button onClick={() => setAutoRefresh(!autoRefresh)}
             className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${
-              autoRefresh ? 'bg-sage-50 border-sage-200 text-sage-600' : 'bg-warm-100 border-warm-200 text-warm-500'
+              autoRefresh ? 'bg-sage-50 border-sage-200 text-sage-600' : 'bg-cloud-100 border-cloud-300 text-ink-muted'
             }`}>
             {autoRefresh ? '自动刷新 5s' : '手动刷新'}
           </button>
-          <button onClick={() => loadAll(false)} className="px-3 py-1.5 rounded-lg text-xs border border-warm-200 text-warm-600 hover:bg-warm-50">
+          <button onClick={() => loadAll(false)} className="px-3 py-1.5 rounded-lg text-xs border border-cloud-300 text-ink-body hover:bg-cloud-200">
             刷新
           </button>
           <button onClick={() => navigate('/manufacturing/agent')}
@@ -153,8 +153,11 @@ export default function ManufacturingDashboardPage() {
 
       {/* Error */}
       {error && (
-        <div className="card p-4 border-rose-200 bg-rose-50 text-sm text-rose-600 flex items-center gap-2">
-          <AlertTriangle size={16} /> {error}
+        <div className="card p-4 border-rose-200 bg-rose-50 text-sm text-rose-600 flex items-center justify-between gap-2">
+          <span className="flex items-center gap-2"><AlertTriangle size={16} /> {error}</span>
+          <button onClick={() => loadAll(false)} className="px-3 py-1.5 rounded-xl text-xs font-medium bg-rose-100 hover:bg-rose-200 text-rose-700 transition-colors">
+            重试
+          </button>
         </div>
       )}
 
@@ -162,12 +165,12 @@ export default function ManufacturingDashboardPage() {
       {!loading && !error && !hasData && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           className="card p-8 text-center space-y-6">
-          <div className="w-14 h-14 rounded-2xl bg-coral-50 flex items-center justify-center mx-auto">
+          <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto">
             <Factory size={28} className="text-coral-400" />
           </div>
           <div>
-            <h3 className="text-lg font-semibold text-warm-700">欢迎使用制造智能体</h3>
-            <p className="text-sm text-warm-500 mt-1 max-w-md mx-auto">
+            <h3 className="text-lg font-semibold text-ink-body">欢迎使用制造智能体</h3>
+            <p className="text-sm text-ink-muted mt-1 max-w-md mx-auto">
               知识库尚未导入数据，请按照以下步骤开始使用
             </p>
           </div>
@@ -177,26 +180,26 @@ export default function ManufacturingDashboardPage() {
               { step: 2, icon: BarChart3, label: '构建知识图谱', desc: '系统自动构建知识节点与关系', to: '/manufacturing/knowledge', btn: '查看图谱' },
               { step: 3, icon: MessageSquare, label: '开始智能问答', desc: '基于知识库进行检索增强问答', to: '/manufacturing/agent', btn: '启动智能体' },
             ].map(item => (
-              <div key={item.step} className="p-5 rounded-xl bg-warm-50 border border-warm-100 text-left space-y-3">
+              <div key={item.step} className="p-5 rounded-xl bg-cloud-200 border border-cloud-200 text-left space-y-3">
                 <div className="flex items-center gap-3">
-                  <div className="w-7 h-7 rounded-full bg-coral-100 flex items-center justify-center text-xs font-bold text-coral-500">
+                  <div className="w-7 h-7 rounded-full bg-coral-100 flex items-center justify-center text-xs font-bold text-sky-500">
                     {item.step}
                   </div>
-                  <item.icon size={18} className="text-warm-500" />
+                  <item.icon size={18} className="text-ink-muted" />
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-warm-700">{item.label}</p>
-                  <p className="text-xs text-warm-500 mt-1">{item.desc}</p>
+                  <p className="text-sm font-medium text-ink-body">{item.label}</p>
+                  <p className="text-xs text-ink-muted mt-1">{item.desc}</p>
                 </div>
                 <button onClick={() => navigate(item.to)}
-                  className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-white border border-warm-200 text-warm-600 hover:bg-coral-50 hover:border-coral-200 hover:text-coral-600 transition-colors">
+                  className="w-full px-3 py-2 rounded-lg text-xs font-medium bg-white border border-cloud-300 text-ink-body hover:bg-sky-50 hover:border-coral-200 hover:text-sky-600 transition-colors">
                   {item.btn} →
                 </button>
               </div>
             ))}
           </div>
-          <p className="text-xs text-warm-400">
-            你也可以使用脚本批量导入：<code className="px-1.5 py-0.5 rounded bg-warm-100 font-mono text-warm-500">python scripts/import_exams.py</code>
+          <p className="text-xs text-ink-muted">
+            你也可以使用脚本批量导入：<code className="px-1.5 py-0.5 rounded bg-cloud-100 font-mono text-ink-muted">python scripts/import_exams.py</code>
           </p>
         </motion.div>
       )}
@@ -205,11 +208,11 @@ export default function ManufacturingDashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((s, i) => (
           <motion.div key={s.label} custom={i} variants={CARD_VARIANTS} initial="hidden" animate="visible"
-            className="card p-5 hover:shadow-warm-md transition-shadow cursor-default">
+            className="card p-5 hover:shadow-cloud-md transition-shadow cursor-default">
             <div className="flex items-start justify-between">
               {(() => {
                 const colorMap = {
-                  coral: { bg: 'bg-coral-50', text: 'text-coral-500' },
+                  coral: { bg: 'bg-sky-50', text: 'text-sky-500' },
                   amber: { bg: 'bg-amber-50', text: 'text-amber-500' },
                   sage:  { bg: 'bg-sage-50',  text: 'text-sage-500' },
                   sky:   { bg: 'bg-sky-50',   text: 'text-sky-500' },
@@ -222,9 +225,9 @@ export default function ManufacturingDashboardPage() {
                 )
               })()}
             </div>
-            <p className="text-2xl font-bold text-warm-800 mt-3">{s.value}</p>
-            <p className="text-xs text-warm-500 mt-1">{s.label}</p>
-            <p className="text-2xs text-warm-400 mt-0.5">{s.sub}</p>
+            <p className="text-2xl font-bold text-ink-primary mt-3">{s.value}</p>
+            <p className="text-xs text-ink-muted mt-1">{s.label}</p>
+            <p className="text-2xs text-ink-muted mt-0.5">{s.sub}</p>
           </motion.div>
         ))}
       </div>
@@ -234,7 +237,7 @@ export default function ManufacturingDashboardPage() {
         {/* Quick Nav */}
         <motion.div custom={4} variants={CARD_VARIANTS} initial="hidden" animate="visible"
           className="card p-5">
-          <h3 className="text-sm font-semibold text-warm-700 mb-4 flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-ink-body mb-4 flex items-center gap-2">
             <Zap size={15} className="text-amber-500" /> 快速入口
           </h3>
           <div className="space-y-1.5">
@@ -243,15 +246,15 @@ export default function ManufacturingDashboardPage() {
               { to: '/manufacturing/agent', icon: MessageSquare, label: '智能问答', desc: '文本问答、代码解析、故障诊断、全局搜索' },
             ].map(item => (
               <button key={item.to} onClick={() => navigate(item.to)}
-                className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-warm-50 transition-colors text-left group">
-                <div className="w-8 h-8 rounded-lg bg-warm-100 flex items-center justify-center group-hover:bg-coral-50 transition-colors">
-                  <item.icon size={15} className="text-warm-500 group-hover:text-coral-500 transition-colors" />
+                className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-cloud-200 transition-colors text-left group">
+                <div className="w-8 h-8 rounded-lg bg-cloud-100 flex items-center justify-center group-hover:bg-sky-50 transition-colors">
+                  <item.icon size={15} className="text-ink-muted group-hover:text-sky-500 transition-colors" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-warm-700">{item.label}</p>
-                  <p className="text-2xs text-warm-500 truncate">{item.desc}</p>
+                  <p className="text-sm font-medium text-ink-body">{item.label}</p>
+                  <p className="text-2xs text-ink-muted truncate">{item.desc}</p>
                 </div>
-                <ChevronRight size={14} className="text-warm-400" />
+                <ChevronRight size={14} className="text-ink-muted" />
               </button>
             ))}
           </div>
@@ -260,36 +263,36 @@ export default function ManufacturingDashboardPage() {
         {/* Knowledge Stats */}
         <motion.div custom={5} variants={CARD_VARIANTS} initial="hidden" animate="visible"
           className="card p-5">
-          <h3 className="text-sm font-semibold text-warm-700 mb-4 flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-ink-body mb-4 flex items-center gap-2">
             <Database size={15} className="text-sage-500" /> 知识库规模
           </h3>
           {kbStats.knowledge_graph ? (
             <div className="space-y-3">
               <div className="flex justify-between text-xs">
-                <span className="text-warm-500">图节点</span>
-                <span className="font-semibold text-warm-700">{kbStats.knowledge_graph.total_nodes}</span>
+                <span className="text-ink-muted">图节点</span>
+                <span className="font-semibold text-ink-body">{kbStats.knowledge_graph.total_nodes}</span>
               </div>
-              <div className="w-full bg-warm-100 rounded-full h-2">
-                <div className="bg-coral-400 h-2 rounded-full" style={{ width: '60%' }} />
+              <div className="w-full bg-cloud-100 rounded-full h-2">
+                <div className="bg-sky-400 h-2 rounded-full w-[60%]" />
               </div>
               <div className="flex justify-between text-xs">
-                <span className="text-warm-500">图关系</span>
-                <span className="font-semibold text-warm-700">{kbStats.knowledge_graph.total_edges}</span>
+                <span className="text-ink-muted">图关系</span>
+                <span className="font-semibold text-ink-body">{kbStats.knowledge_graph.total_edges}</span>
               </div>
-              <div className="w-full bg-warm-100 rounded-full h-2">
-                <div className="bg-sage-400 h-2 rounded-full" style={{ width: '40%' }} />
+              <div className="w-full bg-cloud-100 rounded-full h-2">
+                <div className="bg-sage-400 h-2 rounded-full w-[40%]" />
               </div>
             </div>
           ) : (
-            <p className="text-xs text-warm-400">知识图谱数据待导入</p>
+            <p className="text-xs text-ink-muted">知识图谱数据待导入</p>
           )}
           {kbStats.process_documents && (
-            <div className="mt-4 pt-3 border-t border-warm-100">
-              <p className="text-xs text-warm-500 mb-2">工艺文档分布</p>
+            <div className="mt-4 pt-3 border-t border-cloud-200">
+              <p className="text-xs text-ink-muted mb-2">工艺文档分布</p>
               {Object.entries(kbStats.process_documents).slice(0, 5).map(([k, v]) => (
                 <div key={k} className="flex justify-between text-xs py-0.5">
-                  <span className="text-warm-600">{k}</span>
-                  <span className="text-warm-500 font-medium">{v}</span>
+                  <span className="text-ink-body">{k}</span>
+                  <span className="text-ink-muted font-medium">{v}</span>
                 </div>
               ))}
             </div>
@@ -299,23 +302,23 @@ export default function ManufacturingDashboardPage() {
         {/* Top Queries */}
         <motion.div custom={6} variants={CARD_VARIANTS} initial="hidden" animate="visible"
           className="card p-5">
-          <h3 className="text-sm font-semibold text-warm-700 mb-4 flex items-center gap-2">
-            <TrendingUp size={15} className="text-coral-500" /> 热门查询 Top-10
+          <h3 className="text-sm font-semibold text-ink-body mb-4 flex items-center gap-2">
+            <TrendingUp size={15} className="text-sky-500" /> 热门查询 Top-10
           </h3>
           {(dashboard?.top_queries || []).length > 0 ? (
             <div className="space-y-1.5">
               {dashboard.top_queries.map((q, i) => (
                 <div key={i} className="flex items-center gap-2 text-xs">
-                  <span className={`font-mono w-5 text-right ${i < 3 ? 'text-coral-500 font-bold' : 'text-warm-400'}`}>
+                  <span className={`font-mono w-5 text-right ${i < 3 ? 'text-sky-500 font-bold' : 'text-ink-muted'}`}>
                     {i + 1}
                   </span>
-                  <span className="text-warm-600 truncate flex-1">{q.query}</span>
-                  <span className="text-warm-400 font-mono">{q.count}</span>
+                  <span className="text-ink-body truncate flex-1">{q.query}</span>
+                  <span className="text-ink-muted font-mono">{q.count}</span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-xs text-warm-400">尚无查询数据</p>
+            <p className="text-xs text-ink-muted">尚无查询数据</p>
           )}
         </motion.div>
       </div>
@@ -324,7 +327,7 @@ export default function ManufacturingDashboardPage() {
       {dashboard?.query_trend && dashboard.query_trend.length > 0 && (
         <motion.div custom={7} variants={CARD_VARIANTS} initial="hidden" animate="visible"
           className="card p-5">
-          <h3 className="text-sm font-semibold text-warm-700 mb-4 flex items-center gap-2">
+          <h3 className="text-sm font-semibold text-ink-body mb-4 flex items-center gap-2">
             <BarChart3 size={15} className="text-sage-500" /> 7 日查询趋势
           </h3>
           <div className="flex items-end gap-2 h-24">
@@ -333,12 +336,12 @@ export default function ManufacturingDashboardPage() {
               const h = (d.count / maxCount) * 100
               return (
                 <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-2xs text-warm-500 font-mono">{d.count}</span>
+                  <span className="text-2xs text-ink-muted font-mono">{d.count}</span>
                   <div className="w-full bg-coral-200 rounded-t-md transition-all"
                     style={{ height: `${Math.max(h, 4)}%` }}>
                     <div className="w-full h-full bg-coral-400 rounded-t-md opacity-80" />
                   </div>
-                  <span className="text-2xs text-warm-400">{d.date.slice(5)}</span>
+                  <span className="text-2xs text-ink-muted">{d.date.slice(5)}</span>
                 </div>
               )
             })}

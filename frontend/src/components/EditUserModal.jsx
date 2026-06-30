@@ -58,7 +58,9 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
       const form = {
         username: user.username || '',
         email: user.email || '',
-        role_id: user.role?.id || (user.is_admin ? 1 : 3),
+        role_id: user.role?.id || (user.is_admin
+          ? ((roles || []).find(r => r.name === 'super_admin')?.id || (roles || []).find(r => r.name === 'admin')?.id)
+          : ((roles || []).find(r => r.name === 'student')?.id)),
         is_active: user.is_active !== false,
         password: '',
       }
@@ -129,7 +131,8 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
   if (!isOpen || !user) return null
 
   const isEditingSelf = me?.id === user.id
-  const isAdminSelf = isEditingSelf && (user.role?.name === 'admin' || user.is_admin)
+  const adminRoleIds = (roles || []).filter(r => r.name === 'super_admin' || r.name === 'admin').map(r => r.id)
+  const isAdminSelf = isEditingSelf && (user.role?.name === 'super_admin' || user.role?.name === 'admin' || user.is_admin)
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -147,8 +150,8 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
     }
 
     // 管理员修改自身角色为降级时给出额外确认
-    if (isAdminSelf && editForm.role_id !== 1) {
-      if (!confirm('⚠️ 你正在将自己的角色从"管理员"降级！\n\n降级后将失去管理权限（用户管理、审计日志等），且无法自行恢复。\n\n确认继续？')) {
+    if (isAdminSelf && !adminRoleIds.includes(editForm.role_id)) {
+      if (!confirm('⚠️ 你正在将自己的角色从管理员降级！\n\n降级后将失去管理权限（用户管理、审计日志等），且无法自行恢复。\n\n确认继续？')) {
         return
       }
     }
@@ -202,11 +205,11 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 mx-4" onClick={e => e.stopPropagation()}>
         {/* 头部 */}
         <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-semibold text-warm-800 flex items-center gap-2">
+          <h3 className="text-base font-semibold text-ink-primary flex items-center gap-2">
             <Edit3 size={18} className="text-amber-500" aria-hidden="true" />
             编辑用户 — {user.username}
             {isEditingSelf && (
-              <span className="text-[10px] font-normal text-coral-500 bg-coral-50 px-1.5 py-0.5 rounded-lg border border-coral-200 ml-1">
+              <span className="text-[10px] font-normal text-sky-500 bg-sky-50 px-1.5 py-0.5 rounded-lg border border-coral-200 ml-1">
                 自己
               </span>
             )}
@@ -214,7 +217,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
           <button
             ref={closeBtnRef}
             onClick={handleClose}
-            className="text-warm-400 hover:text-warm-600 transition-colors p-1 rounded-lg hover:bg-warm-50"
+            className="text-ink-muted hover:text-ink-body transition-colors p-1 rounded-lg hover:bg-cloud-200"
             aria-label="关闭编辑弹窗"
             disabled={loading}
           >
@@ -255,7 +258,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           {/* 用户名 */}
           <div>
-            <label className="block text-xs font-medium text-warm-600 mb-1" htmlFor="edit-username">
+            <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="edit-username">
               用户名
             </label>
             <input
@@ -278,7 +281,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
 
           {/* 邮箱 */}
           <div>
-            <label className="block text-xs font-medium text-warm-600 mb-1" htmlFor="edit-email">
+            <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="edit-email">
               邮箱
             </label>
             <input
@@ -300,7 +303,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
 
           {/* 角色 */}
           <div>
-            <label className="block text-xs font-medium text-warm-600 mb-1" htmlFor="edit-role">
+            <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="edit-role">
               角色
               {isAdminSelf && (
                 <span className="ml-2 text-[10px] text-amber-500 font-normal">⚠ 谨慎更改</span>
@@ -309,22 +312,28 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
             <select
               id="edit-role"
               className="input-field text-sm py-2 w-full"
-              value={editForm.role_id || 3}
+              value={editForm.role_id || ''}
               onChange={e => setEditForm(f => ({ ...f, role_id: Number(e.target.value) }))}
             >
-              {(roles || []).map(r => (
+              {(roles || []).map(r => {
+                const ROLE_LABEL = {
+                  super_admin: '超级管理员', admin: '管理员', dept_admin: '系部管理员',
+                  teacher: '主讲教师', assistant: '助理教师', student: '学生',
+                }
+                return (
                 <option key={r.id} value={r.id}>
-                  {r.name === 'admin' ? '管理员' : r.name === 'editor' ? '编辑者' : '只读'}
+                  {ROLE_LABEL[r.name] || r.name}
                   {r.description ? ` — ${r.description}` : ''}
                   {r.id === user.role?.id ? ' (当前)' : ''}
                 </option>
-              ))}
+                )
+              })}
             </select>
           </div>
 
           {/* 状态 */}
           <div>
-            <label className="block text-xs font-medium text-warm-600 mb-1" htmlFor="edit-status">
+            <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="edit-status">
               状态
             </label>
             <select
@@ -343,7 +352,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
 
           {/* 新密码 */}
           <div>
-            <label className="block text-xs font-medium text-warm-600 mb-1" htmlFor="edit-password">
+            <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="edit-password">
               新密码（留空不修改）
             </label>
             <input
@@ -366,19 +375,19 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
             {/* 密码强度指示器（与 CreateUserModal 保持一致） */}
             {strength && (
               <div className="mt-2 space-y-1">
-                <div className={`flex items-center gap-1.5 text-xs ${strength.length ? 'text-sage-600' : 'text-warm-400'}`}>
+                <div className={`flex items-center gap-1.5 text-xs ${strength.length ? 'text-sage-600' : 'text-ink-muted'}`}>
                   {strength.length ? <Check size={11} /> : <Circle size={11} />} 至少 8 位
                 </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.upper ? 'text-sage-600' : 'text-warm-400'}`}>
+                <div className={`flex items-center gap-1.5 text-xs ${strength.upper ? 'text-sage-600' : 'text-ink-muted'}`}>
                   {strength.upper ? <Check size={11} /> : <Circle size={11} />} 大写字母
                 </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.lower ? 'text-sage-600' : 'text-warm-400'}`}>
+                <div className={`flex items-center gap-1.5 text-xs ${strength.lower ? 'text-sage-600' : 'text-ink-muted'}`}>
                   {strength.lower ? <Check size={11} /> : <Circle size={11} />} 小写字母
                 </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.digit ? 'text-sage-600' : 'text-warm-400'}`}>
+                <div className={`flex items-center gap-1.5 text-xs ${strength.digit ? 'text-sage-600' : 'text-ink-muted'}`}>
                   {strength.digit ? <Check size={11} /> : <Circle size={11} />} 数字
                 </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.special ? 'text-sage-600' : 'text-warm-400'}`}>
+                <div className={`flex items-center gap-1.5 text-xs ${strength.special ? 'text-sage-600' : 'text-ink-muted'}`}>
                   {strength.special ? <Check size={11} /> : <Circle size={11} />} 特殊字符
                 </div>
                 <div className={`text-xs mt-1 ${strength.score() >= 3 ? 'text-sage-600' : 'text-rose-500'}`}>
@@ -434,8 +443,8 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
                 <AlertTriangle size={18} className="text-amber-500" />
               </div>
               <div>
-                <h4 className="text-sm font-semibold text-warm-800">未保存的更改</h4>
-                <p className="text-xs text-warm-500 mt-0.5">你有未保存的更改，确定要放弃吗？</p>
+                <h4 className="text-sm font-semibold text-ink-primary">未保存的更改</h4>
+                <p className="text-xs text-ink-muted mt-0.5">你有未保存的更改，确定要放弃吗？</p>
               </div>
             </div>
             <div className="flex gap-2">

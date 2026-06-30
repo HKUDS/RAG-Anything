@@ -24,12 +24,22 @@ async function authFetch(url, options = {}) {
 }
 
 const ROLE_COLORS = {
-  admin: 'bg-amber-50 text-amber-600 border-amber-200',
-  editor: 'bg-blue-50 text-blue-600 border-blue-200',
-  viewer: 'bg-warm-100 text-warm-500 border-warm-200',
+  super_admin: 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800/30',
+  admin:       'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800/30',
+  dept_admin:  'bg-amber-50 text-amber-600 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/30',
+  teacher:     'bg-sky-50 text-sky-600 border-sky-200 dark:bg-sky-900/20 dark:text-sky-400 dark:border-sky-800/30',
+  assistant:   'bg-sage-50 text-sage-600 border-sage-200 dark:bg-sage-900/20 dark:text-sage-400 dark:border-sage-800/30',
+  student:     'bg-cloud-50 text-ink-muted border-cloud-200 dark:bg-sky-900/10 dark:text-cloud-500 dark:border-sky-800/30',
 }
 
-const ROLE_LABELS = { admin: '管理员', editor: '编辑者', viewer: '只读' }
+const ROLE_LABELS = {
+  super_admin: '超级管理员',
+  admin:       '管理员',
+  dept_admin:  '系部管理员',
+  teacher:     '主讲教师',
+  assistant:   '助理教师',
+  student:     '学生',
+}
 
 export default function AdminUsersPage() {
   const { user: me } = useAuth()
@@ -93,7 +103,7 @@ export default function AdminUsersPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 size={24} className="animate-spin text-coral-500" />
+        <Loader2 size={24} className="animate-spin text-sky-500" />
       </div>
     )
   }
@@ -123,7 +133,7 @@ export default function AdminUsersPage() {
       {/* Toolbar */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[180px] max-w-xs">
-          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-warm-400" />
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
           <input
             className="input-field text-sm py-2 pl-9 w-full"
             placeholder="搜索用户名或邮箱..."
@@ -133,7 +143,7 @@ export default function AdminUsersPage() {
         </div>
         <select className="input-field text-sm py-2" value={roleFilter} onChange={e => { setRoleFilter(e.target.value); setPage(1) }}>
           <option value="">全部角色</option>
-          {roles.map(r => <option key={r.id} value={r.name}>{r.name === 'admin' ? '管理员' : r.name === 'editor' ? '编辑者' : '只读'}</option>)}
+          {roles.map(r => <option key={r.id} value={r.name}>{ROLE_LABELS[r.name] || r.name}</option>)}
         </select>
         <select className="input-field text-sm py-2" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1) }}>
           <option value="">全部状态</option>
@@ -147,30 +157,31 @@ export default function AdminUsersPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-warm-200/60 text-left">
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">ID</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">用户名</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">邮箱</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">角色</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">状态</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">最后登录</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">操作</th>
+              <tr className="border-b border-cloud-300/60 text-left">
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">ID</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">用户名</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">邮箱</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">角色</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">状态</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">最后登录</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">操作</th>
               </tr>
             </thead>
             <tbody>
               {users.map(u => (
-                <tr key={u.id} className="border-b border-warm-100 hover:bg-warm-50/50 transition-colors">
-                  <td className="py-2 px-3 text-xs text-warm-500 font-mono">{u.id}</td>
-                  <td className="py-2 px-3 text-warm-700 flex items-center gap-1.5 font-medium">
-                    {u.role_name === 'admin' ? <Shield size={12} className="text-amber-500" />
-                      : u.role_name === 'editor' ? <Edit3 size={12} className="text-blue-500" />
-                      : <User size={12} className="text-warm-500" />}
+                <tr key={u.id} className="border-b border-cloud-200 hover:bg-cloud-200/50 transition-colors">
+                  <td className="py-2 px-3 text-xs text-ink-muted font-mono">{u.id}</td>
+                  <td className="py-2 px-3 text-ink-body flex items-center gap-1.5 font-medium">
+                    {(u.role_name === 'super_admin' || u.role_name === 'admin') ? <Shield size={12} className="text-rose-500" />
+                      : u.role_name === 'dept_admin' ? <Shield size={12} className="text-amber-500" />
+                      : u.role_name === 'teacher' ? <Edit3 size={12} className="text-sky-500" />
+                      : <User size={12} className="text-ink-muted" />}
                     {u.username}
-                    {u.id === me?.id && <span className="text-[10px] text-coral-500 ml-1">(我)</span>}
+                    {u.id === me?.id && <span className="text-[10px] text-sky-500 ml-1">(我)</span>}
                   </td>
-                  <td className="py-2 px-3 text-xs text-warm-500">{u.email}</td>
+                  <td className="py-2 px-3 text-xs text-ink-muted">{u.email}</td>
                   <td className="py-2 px-3">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-lg border ${ROLE_COLORS[u.role_name] || ROLE_COLORS.viewer}`}>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-lg border ${ROLE_COLORS[u.role_name] || ROLE_COLORS.student}`}>
                       {ROLE_LABELS[u.role_name] || '只读'}
                     </span>
                   </td>
@@ -179,23 +190,23 @@ export default function AdminUsersPage() {
                       {u.is_active ? '启用' : '禁用'}
                     </span>
                   </td>
-                  <td className="py-2 px-3 text-xs text-warm-500">
+                  <td className="py-2 px-3 text-xs text-ink-muted">
                     {u.last_login_at ? u.last_login_at.replace('T', ' ').substring(0, 16) : '从未登录'}
                   </td>
                   <td className="py-2 px-3 flex gap-1">
-                    <button className="text-warm-500 hover:text-amber-500 transition-colors" onClick={() => setEditUser(u)} title="编辑">
-                      <Edit3 size={13}/>
+                    <button className="text-ink-muted hover:text-amber-500 transition-colors" onClick={() => setEditUser(u)} title="编辑" aria-label={`编辑用户 ${u.username}`}>
+                      <Edit3 size={13} aria-hidden="true"/>
                     </button>
                     {u.id !== me?.id && (
-                      <button className="text-warm-500 hover:text-rose-500 transition-colors" onClick={() => handleDelete(u.id)} disabled={deletingId === u.id} title="删除">
-                        {deletingId === u.id ? <Loader2 size={13} className="animate-spin" /> : <Trash2 size={13}/>}
+                      <button className="text-ink-muted hover:text-rose-500 transition-colors" onClick={() => handleDelete(u.id)} disabled={deletingId === u.id} title="删除" aria-label={`删除用户 ${u.username}`}>
+                        {deletingId === u.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Trash2 size={13} aria-hidden="true"/>}
                       </button>
                     )}
                   </td>
                 </tr>
               ))}
               {users.length === 0 && (
-                <tr><td colSpan={7} className="py-8 text-center text-warm-400 text-sm">暂无用户</td></tr>
+                <tr><td colSpan={7} className="py-8 text-center text-ink-muted text-sm">暂无用户</td></tr>
               )}
             </tbody>
           </table>

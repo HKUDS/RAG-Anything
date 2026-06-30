@@ -15,6 +15,23 @@ export default {
         '3xl':  ['1.875rem',  { lineHeight: '2.25rem' }],     // 30px
       },
       colors: {
+        // === Cloud-Blue Neutral Scale (blue-tinted, replaces warm) ===
+        cloud: {
+          50:  '#f8fafd',  // surface hover
+          100: '#f4f8fc',  // body bg (cloud-bg)
+          200: '#f0f5fa',  // well bg
+          300: '#e3eef7',  // border (cloud-border)
+          400: '#c7ddf0',  // border strong
+          500: '#9aaec5',  // muted icons
+        },
+        // === Ink Text Scale (blue-gray, replaces warm text) ===
+        ink: {
+          muted:  '#6b8aaa',  // secondary/label/placeholder
+          body:   '#3a5a78',  // body text
+          primary:'#30567a',  // headings (sky-800)
+          deep:   '#1f3d56',  // darkest text (rare)
+        },
+        // === Warm Neutral (legacy, kept for transition) ===
         warm: {
           50:  '#fefdfb',
           100: '#faf8f2',
@@ -99,10 +116,16 @@ export default {
         '88':  '22rem',
       },
       boxShadow: {
-        'warm-sm': '0 1px 3px rgba(74, 67, 59, 0.06), 0 1px 2px rgba(74, 67, 59, 0.04)',
-        'warm':    '0 4px 16px rgba(74, 67, 59, 0.07), 0 2px 4px rgba(74, 67, 59, 0.03)',
-        'warm-md': '0 8px 30px rgba(74, 67, 59, 0.09), 0 3px 8px rgba(74, 67, 59, 0.05)',
-        'warm-lg': '0 16px 48px rgba(74, 67, 59, 0.11), 0 4px 12px rgba(74, 67, 59, 0.05)',
+        // Cloud shadows — blue-tinted (ink-primary #30567a) not pure black
+        'cloud-sm': '0 1px 3px rgba(48,86,122,0.04), 0 1px 2px rgba(48,86,122,0.03)',
+        'cloud':    '0 4px 16px rgba(48,86,122,0.06), 0 2px 4px rgba(48,86,122,0.03)',
+        'cloud-md': '0 8px 30px rgba(48,86,122,0.08), 0 3px 8px rgba(48,86,122,0.04)',
+        'cloud-lg': '0 16px 48px rgba(48,86,122,0.10), 0 4px 12px rgba(48,86,122,0.04)',
+        // Legacy aliases (transitional)
+        'warm-sm': '0 1px 3px rgba(48,86,122,0.04), 0 1px 2px rgba(48,86,122,0.03)',
+        'warm':    '0 4px 16px rgba(48,86,122,0.06), 0 2px 4px rgba(48,86,122,0.03)',
+        'warm-md': '0 8px 30px rgba(48,86,122,0.08), 0 3px 8px rgba(48,86,122,0.04)',
+        'warm-lg': '0 16px 48px rgba(48,86,122,0.10), 0 4px 12px rgba(48,86,122,0.04)',
       },
       borderRadius: {
         '2xl': '0.875rem',

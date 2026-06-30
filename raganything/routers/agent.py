@@ -42,7 +42,8 @@ from raganything.routers.shared import (
     verify_kb_access,
 )
 from raganything.utils.security import validate_query_input, decode_and_validate_query_image
-from raganything.dependencies import get_current_user
+from raganything.dependencies import get_current_user, require_permission
+from raganything.permissions import Permission
 
 from raganything.services.agent_manager import AgentConfig, get_agent_manager
 
@@ -144,7 +145,10 @@ router = APIRouter(tags=["agents"])
 # ── 智能体 CRUD ─────────────────────────────────────
 
 @router.get("/agents")
-async def list_agents(current_user: dict = Depends(get_current_user)):
+async def list_agents(
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_READ)),
+):
     """列出智能体（按用户隔离，管理员看全部）"""
     mgr = get_agent_manager()
     agents = mgr.list_agents(
@@ -158,7 +162,10 @@ async def list_agents(current_user: dict = Depends(get_current_user)):
 
 
 @router.get("/agents/templates")
-async def get_agent_templates(current_user: dict = Depends(get_current_user)):
+async def get_agent_templates(
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_READ)),
+):
     """获取智能体模板"""
     try:
         templates_file = Path("agent_templates.json")
@@ -171,7 +178,11 @@ async def get_agent_templates(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/agents")
-async def create_agent(req: AgentCreateRequest, current_user: dict = Depends(get_current_user)):
+async def create_agent(
+    req: AgentCreateRequest,
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
+):
     """创建新智能体"""
     # 验证 KB 访问权限
     await verify_kb_access(kb=req.kb_name, current_user=current_user)
@@ -195,7 +206,11 @@ async def create_agent(req: AgentCreateRequest, current_user: dict = Depends(get
 
 
 @router.put("/agents/{agent_id}")
-async def update_agent(agent_id: str, req: AgentUpdateRequest, current_user: dict = Depends(get_current_user)):
+async def update_agent(
+    agent_id: str, req: AgentUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
+):
     """更新智能体配置（仅所有者或管理员）"""
     mgr = get_agent_manager()
     agent = mgr.get_agent(agent_id)
@@ -212,7 +227,11 @@ async def update_agent(agent_id: str, req: AgentUpdateRequest, current_user: dic
 
 
 @router.delete("/agents/{agent_id}")
-async def delete_agent(agent_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_agent(
+    agent_id: str,
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_DELETE)),
+):
     """删除智能体（仅所有者或管理员）"""
     mgr = get_agent_manager()
     agent = mgr.get_agent(agent_id)
@@ -229,7 +248,9 @@ async def delete_agent(agent_id: str, current_user: dict = Depends(get_current_u
 # ── 对话线程 CRUD ──────────────────────────────────
 
 @router.get("/agents/{agent_id}/conversations")
-async def list_conversations(agent_id: str, current_user: dict = Depends(get_current_user)):
+async def list_conversations(agent_id: str, current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_READ)),
+):
     """列出智能体的对话线程（按用户隔离，管理员看全部）"""
     mgr = get_agent_manager()
     agent = mgr.get_agent(agent_id)
@@ -250,7 +271,9 @@ async def list_conversations(agent_id: str, current_user: dict = Depends(get_cur
 
 
 @router.post("/agents/{agent_id}/conversations")
-async def create_conversation(agent_id: str, title: str = "新对话", current_user: dict = Depends(get_current_user)):
+async def create_conversation(agent_id: str, title: str = "新对话", current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
+):
     """创建新对话线程（注入所有权，需校验 Agent 所有权）"""
     mgr = get_agent_manager()
     agent = mgr.get_agent(agent_id)
@@ -264,7 +287,9 @@ async def create_conversation(agent_id: str, title: str = "新对话", current_u
 
 
 @router.put("/agents/{agent_id}/conversations/{thread_id}")
-async def update_conversation(agent_id: str, thread_id: str, title: str = None, current_user: dict = Depends(get_current_user)):
+async def update_conversation(agent_id: str, thread_id: str, title: str = None, current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
+):
     """更新对话线程（需校验 Agent 所有权 + 对话所有权）"""
     mgr = get_agent_manager()
     agent = mgr.get_agent(agent_id)
@@ -283,7 +308,9 @@ async def update_conversation(agent_id: str, thread_id: str, title: str = None, 
 
 
 @router.delete("/agents/{agent_id}/conversations/{thread_id}")
-async def delete_conversation(agent_id: str, thread_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_conversation(agent_id: str, thread_id: str, current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_DELETE)),
+):
     """删除对话线程（需校验 Agent 所有权 + 对话所有权）"""
     mgr = get_agent_manager()
     agent = mgr.get_agent(agent_id)
@@ -305,7 +332,9 @@ async def delete_conversation(agent_id: str, thread_id: str, current_user: dict 
 # ── 🔍 智能查询（智能体增强）─────────────────────────────
 
 @router.post("/agents/{agent_id}/query/stream")
-async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Request, current_user: dict = Depends(get_current_user)):
+async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Request, current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_READ)),
+):
     """智能体流式查询：使用智能体配置执行查询"""
     mgr = get_agent_manager()
     agent = mgr.get_agent(agent_id)

@@ -1,37 +1,87 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, lazy, Suspense, Component } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
 import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, BarChart3, Wrench, GitBranch, ScrollText } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
-import KnowledgePage from './pages/KnowledgePage'
-
-import SettingsPage from './pages/SettingsPage'
-import MonitorPage from './pages/MonitorPage'
-import AgentsPage from './pages/AgentsPage'
-import AgentChatPage from './pages/AgentChatPage'
-import LoginPage from './pages/LoginPage'
-import RegisterPage from './pages/RegisterPage'
-import AdminUsersPage from './pages/AdminUsersPage'
-import AdminAuditLogsPage from './pages/AdminAuditLogsPage'
-import ManufacturingDashboardPage from './pages/ManufacturingDashboardPage'
-import ManufacturingKnowledgePage from './pages/ManufacturingKnowledgePage'
-import ManufacturingAgentPage from './pages/ManufacturingAgentPage'
-import WorkflowPage from './pages/WorkflowPage'
 import { api } from './utils/api'
 
-const NAV = [
-  { to: '/agents',    icon: Bot,           label: '智能体' },
-  { to: '/knowledge', icon: Database,       label: '知识库' },
+// ---- Route-level code splitting ----
+const KnowledgePage               = lazy(() => import('./pages/KnowledgePage'))
+const SettingsPage                = lazy(() => import('./pages/SettingsPage'))
+const MonitorPage                 = lazy(() => import('./pages/MonitorPage'))
+const AgentsPage                  = lazy(() => import('./pages/AgentsPage'))
+const AgentChatPage               = lazy(() => import('./pages/AgentChatPage'))
+const LoginPage                   = lazy(() => import('./pages/LoginPage'))
+const RegisterPage                = lazy(() => import('./pages/RegisterPage'))
+const AdminUsersPage              = lazy(() => import('./pages/AdminUsersPage'))
+const AdminAuditLogsPage          = lazy(() => import('./pages/AdminAuditLogsPage'))
+const ManufacturingDashboardPage  = lazy(() => import('./pages/ManufacturingDashboardPage'))
+const ManufacturingKnowledgePage  = lazy(() => import('./pages/ManufacturingKnowledgePage'))
+const ManufacturingAgentPage      = lazy(() => import('./pages/ManufacturingAgentPage'))
+const WorkflowPage                = lazy(() => import('./pages/WorkflowPage'))
 
-  { to: '/workflow',  icon: GitBranch,      label: '工作流' },
-  { to: '/manufacturing', icon: Factory,    label: '制造智能体' },
-  { to: '/settings',  icon: Settings,       label: '设置' },
-  { to: '/monitor',   icon: Activity,       label: '监控' },
+// ---- Route-level loading skeleton ----
+const PageLoader = () => (
+  <div className="flex items-center justify-center py-20">
+    <div className="skeleton h-6 w-32" />
+  </div>
+)
+
+// ---- Error boundary for lazy routes ----
+class LazyErrorBoundary extends Component {
+  constructor(props) {
+    super(props)
+    this.state = { hasError: false }
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center py-20 gap-3">
+          <p className="text-ink-muted text-sm">页面加载失败</p>
+          <button
+            className="btn-secondary text-xs"
+            onClick={() => { this.setState({ hasError: false }); window.location.reload() }}
+          >
+            重新加载
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
+const NAV = [
+  { to: '/agents',        icon: Bot,       label: '智能体',     requiredPermission: null },
+  { to: '/knowledge',     icon: Database,   label: '知识库',     requiredPermission: null },
+  { to: '/workflow',      icon: GitBranch,  label: '工作流',     requiredPermission: 'workflow:read' },
+  { to: '/manufacturing', icon: Factory,    label: '制造智能体', requiredPermission: 'manufacturing:read' },
+  { to: '/settings',      icon: Settings,   label: '设置',       requiredPermission: 'settings:read' },
+  { to: '/monitor',       icon: Activity,   label: '监控',       requiredPermission: 'monitor:read' },
 ]
 
+// ---- Role Badge ----
+const ROLE_META = {
+  super_admin: { label: '超级管理员', color: 'text-rose-500' },
+  admin:        { label: '管理员',     color: 'text-rose-500' },  // 向后兼容
+  dept_admin:   { label: '系部管理员', color: 'text-amber-600' },
+  teacher:      { label: '主讲教师',   color: 'text-sky-600' },
+  assistant:    { label: '助理教师',   color: 'text-sage-600' },
+  student:      { label: '学生',       color: 'text-ink-muted' },
+}
+
+function RoleBadge({ roleName, isAdmin }) {
+  const meta = ROLE_META[roleName] || (isAdmin ? ROLE_META.admin : null)
+  if (!meta) return <span className="text-ink-muted">普通用户</span>
+  return <span className={`font-medium ${meta.color}`}>{meta.label}</span>
+}
+
 // ---- User Menu Dropdown ----
-function UserMenu({ user, isAdmin, dark, toggleTheme, onLogout }) {
+function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
   const [open, setOpen] = useState(false)
   const ref = useRef()
 
@@ -41,17 +91,27 @@ function UserMenu({ user, isAdmin, dark, toggleTheme, onLogout }) {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+  useEffect(() => {
+    if (!open) return
+    const handleEsc = (e) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('keydown', handleEsc)
+    return () => document.removeEventListener('keydown', handleEsc)
+  }, [open])
+
   return (
     <div className="relative" ref={ref}>
       <button
         onClick={() => setOpen(!open)}
-        className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-warm-100 transition-colors text-warm-600"
+        className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-cloud-200 transition-colors text-ink-body"
+        aria-expanded={open}
+        aria-haspopup="true"
+        aria-label={`用户菜单：${user?.username}`}
       >
         <div className="w-6 h-6 rounded-full bg-coral-100 flex items-center justify-center">
-          <User size={11} className="text-coral-500" />
+          <User size={11} className="text-sky-500" />
         </div>
         <span className="text-xs font-medium max-w-[80px] truncate hidden sm:inline">{user?.username}</span>
-        <ChevronDown size={12} className={`text-warm-500 transition-transform ${open ? 'rotate-180' : ''}`} />
+        <ChevronDown size={12} className={`text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       <AnimatePresence>
@@ -61,20 +121,22 @@ function UserMenu({ user, isAdmin, dark, toggleTheme, onLogout }) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -4, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full mt-1 w-52 card p-1.5 shadow-warm-md z-50 origin-top-right"
+            className="absolute right-0 top-full mt-1 w-52 card p-1.5 shadow-cloud-md z-50 origin-top-right"
+            role="menu"
           >
             {/* User info */}
-            <div className="px-3 py-2.5 border-b border-warm-100 mb-1">
-              <p className="text-sm font-medium text-warm-800 truncate">{user?.username}</p>
-              <p className="text-2xs text-warm-500 mt-0.5">
-                {isAdmin ? <span className="text-amber-600 font-medium">管理员</span> : '普通用户'}
+            <div className="px-3 py-2.5 border-b border-cloud-200 mb-1">
+              <p className="text-sm font-medium text-ink-primary truncate">{user?.username}</p>
+              <p className="text-2xs text-ink-muted mt-0.5">
+                <RoleBadge roleName={roleName} isAdmin={isAdmin} />
               </p>
             </div>
 
             {/* Theme toggle */}
             <button
               onClick={() => { toggleTheme(); setOpen(false) }}
-              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-warm-600 hover:bg-warm-50 transition-colors"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-ink-body hover:bg-cloud-200 transition-colors"
+              role="menuitem"
             >
               {dark ? <Sun size={14} className="text-amber-500" /> : <Moon size={14} className="text-sky-500" />}
               {dark ? '切换到浅色模式' : '切换到深色模式'}
@@ -84,6 +146,7 @@ function UserMenu({ user, isAdmin, dark, toggleTheme, onLogout }) {
             <button
               onClick={() => { onLogout(); setOpen(false) }}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-rose-500 hover:bg-rose-50 transition-colors"
+              role="menuitem"
             >
               <LogOut size={14} />
               退出登录
@@ -99,7 +162,7 @@ function UserMenu({ user, isAdmin, dark, toggleTheme, onLogout }) {
 export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { token, user, isAdmin, logout, loading: authLoading } = useAuth()
+  const { token, user, isAdmin, roleName: authRoleName, hasPermission, logout, loading: authLoading } = useAuth()
   const [stats, setStats] = useState({ documents: 0, entities: 0, relations: 0 })
   const [toast, setToast] = useState(null)
   const [dark, setDark] = useState(() => {
@@ -123,7 +186,7 @@ export default function App() {
 
   // Load global stats
   const loadStats = useCallback(() => {
-    api.getStats().then(setStats).catch(() => {})
+    api.getStats().then(setStats).catch(err => console.error(err))
   }, [])
   useEffect(() => { if (token) loadStats() }, [location.pathname, token])
 
@@ -151,10 +214,10 @@ export default function App() {
   // ---- Loading ----
   if (authLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-warm-100">
+      <div className="flex items-center justify-center h-screen bg-cloud-100">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center space-y-4">
-          <BookOpen size={36} className="mx-auto text-warm-400 animate-float" />
-          <p className="text-warm-500 text-sm font-medium">正在准备你的知识空间…</p>
+          <BookOpen size={36} className="mx-auto text-sky-300 animate-float" />
+          <p className="text-ink-muted text-sm font-medium">正在准备你的知识空间…</p>
         </motion.div>
       </div>
     )
@@ -163,19 +226,23 @@ export default function App() {
   // ---- Not logged in ----
   if (!token) {
     return (
-      <div className="min-h-screen bg-warm-100">
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route path="/register" element={<RegisterPage />} />
-          <Route path="*" element={<LoginPage />} />
-        </Routes>
+      <div className="min-h-screen bg-cloud-100">
+        <LazyErrorBoundary>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="*" element={<LoginPage />} />
+            </Routes>
+          </Suspense>
+        </LazyErrorBoundary>
       </div>
     )
   }
 
   // ---- Main Layout ----
   return (
-    <div className="min-h-screen bg-warm-100">
+    <div className="min-h-screen bg-cloud-100">
       {/* ========== TOP NAVIGATION BAR ========== */}
       <header className="topnav">
         <div className="topnav-inner">
@@ -185,13 +252,17 @@ export default function App() {
               <BookOpen size={16} className="text-white" />
             </div>
             <span className="topnav-brand-text">
-              RAG<span className="text-coral-500">Anything</span>
+              RAG<span className="text-sky-500">Anything</span>
             </span>
           </NavLink>
 
           {/* Nav Links */}
           <nav className="topnav-nav">
-            {NAV.map(({ to, icon: Icon, label }) => (
+            {NAV.filter(item => {
+              // 权限过滤：检查每个导航项的 requiredPermission
+              if (!item.requiredPermission) return true
+              return hasPermission(item.requiredPermission)
+            }).map(({ to, icon: Icon, label }) => (
               <NavLink
                 key={to}
                 to={to}
@@ -204,7 +275,7 @@ export default function App() {
                 <span className="hidden sm:inline">{label}</span>
               </NavLink>
             ))}
-            {isAdmin && (
+            {hasPermission('users:read') && (
               <NavLink
                 to="/admin/users"
                 className={({ isActive }) =>
@@ -215,7 +286,7 @@ export default function App() {
                 <span className="hidden sm:inline">用户管理</span>
               </NavLink>
             )}
-            {isAdmin && (
+            {hasPermission('audit:read') && (
               <NavLink
                 to="/admin/audit-logs"
                 className={({ isActive }) =>
@@ -232,9 +303,9 @@ export default function App() {
           <div className="topnav-actions">
             {/* Stats inline */}
             <div className="hidden lg:flex items-center gap-3">
-              <span className="text-2xs text-warm-500 flex items-center gap-1"><Zap size={10} className="text-coral-400"/>{stats.documents}</span>
-              <span className="text-2xs text-warm-500 flex items-center gap-1"><Cpu size={10} className="text-sage-400"/>{stats.entities}</span>
-              <span className="text-2xs text-warm-500 flex items-center gap-1"><Hash size={10} className="text-amber-400"/>{stats.relations}</span>
+              <span className="text-2xs text-ink-muted flex items-center gap-1"><Zap size={10} className="text-sky-400"/>{stats.documents}</span>
+              <span className="text-2xs text-ink-muted flex items-center gap-1"><Cpu size={10} className="text-sage-400"/>{stats.entities}</span>
+              <span className="text-2xs text-ink-muted flex items-center gap-1"><Hash size={10} className="text-amber-400"/>{stats.relations}</span>
             </div>
 
             {/* User */}
@@ -242,6 +313,7 @@ export default function App() {
               <UserMenu
                 user={user}
                 isAdmin={isAdmin}
+                roleName={authRoleName}
                 dark={dark}
                 toggleTheme={toggleTheme}
                 onLogout={handleLogout}
@@ -254,31 +326,34 @@ export default function App() {
       {/* ========== MAIN CONTENT ========== */}
       <main className="pt-14">
         <div className="max-w-7xl mx-auto px-6 py-8">
-          <AnimatePresence mode="wait">
-            <motion.div
-              key={location.pathname}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -10 }}
-              transition={{ duration: 0.25, ease: 'easeOut' }}
-            >
-              <Routes>
-                <Route path="/" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
-                <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
-                <Route path="/agents/:id" element={<ProtectedRoute><AgentChatPage /></ProtectedRoute>} />
-                <Route path="/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
-
-                <Route path="/settings" element={<ProtectedRoute><SettingsPage onToast={showToast} /></ProtectedRoute>} />
-                <Route path="/monitor" element={<ProtectedRoute><MonitorPage /></ProtectedRoute>} />
-                <Route path="/admin/users" element={<ProtectedRoute adminOnly><AdminUsersPage /></ProtectedRoute>} />
-                <Route path="/admin/audit-logs" element={<ProtectedRoute adminOnly><AdminAuditLogsPage /></ProtectedRoute>} />
-                <Route path="/manufacturing" element={<ProtectedRoute><ManufacturingDashboardPage /></ProtectedRoute>} />
-                <Route path="/manufacturing/knowledge" element={<ProtectedRoute><ManufacturingKnowledgePage /></ProtectedRoute>} />
-                <Route path="/manufacturing/agent" element={<ProtectedRoute><ManufacturingAgentPage /></ProtectedRoute>} />
-                <Route path="/workflow" element={<ProtectedRoute><WorkflowPage /></ProtectedRoute>} />
-              </Routes>
-            </motion.div>
-          </AnimatePresence>
+          <LazyErrorBoundary>
+            <Suspense fallback={<PageLoader />}>
+              <AnimatePresence mode="wait">
+              <motion.div
+                key={location.pathname}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+                transition={{ duration: 0.25, ease: 'easeOut' }}
+              >
+                <Routes>
+                  <Route path="/" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
+                  <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
+                  <Route path="/agents/:id" element={<ProtectedRoute><AgentChatPage /></ProtectedRoute>} />
+                  <Route path="/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
+                  <Route path="/workflow" element={<ProtectedRoute requiredPermission="workflow:read"><WorkflowPage /></ProtectedRoute>} />
+                  <Route path="/manufacturing" element={<ProtectedRoute requiredPermission="manufacturing:read"><ManufacturingDashboardPage /></ProtectedRoute>} />
+                  <Route path="/manufacturing/knowledge" element={<ProtectedRoute requiredPermission="manufacturing:read"><ManufacturingKnowledgePage /></ProtectedRoute>} />
+                  <Route path="/manufacturing/agent" element={<ProtectedRoute requiredPermission="manufacturing:read"><ManufacturingAgentPage /></ProtectedRoute>} />
+                  <Route path="/settings" element={<ProtectedRoute requiredPermission="settings:read"><SettingsPage onToast={showToast} /></ProtectedRoute>} />
+                  <Route path="/monitor" element={<ProtectedRoute requiredPermission="monitor:read"><MonitorPage /></ProtectedRoute>} />
+                  <Route path="/admin/users" element={<ProtectedRoute requiredPermission="users:read"><AdminUsersPage /></ProtectedRoute>} />
+                  <Route path="/admin/audit-logs" element={<ProtectedRoute requiredPermission="audit:read"><AdminAuditLogsPage /></ProtectedRoute>} />
+                </Routes>
+              </motion.div>
+            </AnimatePresence>
+            </Suspense>
+          </LazyErrorBoundary>
         </div>
       </main>
 
@@ -289,7 +364,9 @@ export default function App() {
             initial={{ opacity: 0, y: 24, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 24, scale: 0.95 }}
-            className={`fixed bottom-6 right-6 px-5 py-3.5 rounded-2xl text-sm font-medium z-50 shadow-warm-md backdrop-blur-sm ${
+            role="status"
+            aria-live="polite"
+            className={`fixed bottom-6 right-6 px-5 py-3.5 rounded-2xl text-sm font-medium z-50 shadow-cloud-md backdrop-blur-sm ${
               toast.type === 'error' ? 'toast-error' :
               toast.type === 'success' ? 'toast-success' :
               'toast-info'

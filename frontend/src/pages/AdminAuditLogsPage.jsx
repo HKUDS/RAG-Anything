@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, ScrollText, Eye } from 'lucide-react'
+import { Loader2, ScrollText, ShieldOff, UserPlus, UserCog, Trash2, ShieldAlert } from 'lucide-react'
 import Pagination from '../components/Pagination'
 
 const AUTH_TOKEN = () => {
@@ -12,6 +12,50 @@ const ACTION_LABELS = {
   'user.update': '更新用户',
   'user.delete': '删除用户',
   'user.role_change': '角色变更',
+  'permission.denied': '权限拒绝',
+}
+
+// 操作类型的颜色和图标映射
+const ACTION_META = {
+  'user.create':      { color: 'bg-sage-50 text-sage-600 border-sage-200 dark:bg-sage-900/20 dark:text-sage-400 dark:border-sage-800/30', icon: UserPlus },
+  'user.update':      { color: 'bg-sky-50 text-sky-600 border-sky-200', icon: UserCog },
+  'user.delete':      { color: 'bg-rose-50 text-rose-600 border-rose-200', icon: Trash2 },
+  'user.role_change': { color: 'bg-amber-50 text-amber-600 border-amber-200', icon: ShieldAlert },
+  'permission.denied':{ color: 'bg-rose-50 text-rose-600 border-rose-200 dark:bg-rose-900/20 dark:text-rose-400 dark:border-rose-800/30', icon: ShieldOff },
+}
+
+// 角色名称映射（与全局 ROLE_META 保持一致）
+const ROLE_LABELS = {
+  super_admin: '超级管理员', admin: '管理员', dept_admin: '系部管理员',
+  teacher: '主讲教师', assistant: '助理教师', student: '学生',
+}
+
+/** 将审计详情 JSON 渲染为可读的中文描述 */
+function formatDetails(action, details) {
+  if (!details || typeof details !== 'object') return String(details || '—')
+
+  switch (action) {
+    case 'user.create':
+      return `创建用户 ${details.username || '?'}（${ROLE_LABELS[details.role_name] || details.role_name || '角色#' + details.role_id}）`
+    case 'user.role_change': {
+      const before = ROLE_LABELS[details.before_role_name] || details.before_role_name || '角色#' + details.before?.role_id
+      const after = ROLE_LABELS[details.after_role_name] || details.after_role_name || '角色#' + details.after?.role_id
+      return `${before} → ${after}（由 ${ROLE_LABELS[details.actor_role] || details.actor_role || '?'} 操作）`
+    }
+    case 'user.update': {
+      const fields = details.changed_fields?.map(f => {
+        const FIELD_MAP = { username: '用户名', email: '邮箱', is_active: '状态', password_hash: '密码', role_id: '角色' }
+        return FIELD_MAP[f] || f
+      }).join('、') || '未知字段'
+      return `修改了：${fields}`
+    }
+    case 'user.delete':
+      return `删除用户 ${details.username || '?'}（${ROLE_LABELS[details.actor_role] || '?'} 操作）`
+    case 'permission.denied':
+      return `尝试访问 ${details.method} ${details.endpoint}，需要权限 ${details.required_permission}（当前角色：${ROLE_LABELS[details.user_role] || details.user_role}）`
+    default:
+      return JSON.stringify(details).substring(0, 80)
+  }
 }
 
 export default function AdminAuditLogsPage() {
@@ -48,7 +92,7 @@ export default function AdminAuditLogsPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
-        <Loader2 size={24} className="animate-spin text-coral-500" />
+        <Loader2 size={24} className="animate-spin text-sky-500" />
       </div>
     )
   }
@@ -57,8 +101,8 @@ export default function AdminAuditLogsPage() {
     <div className="space-y-6">
       <div className="page-header page-header-divider">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
-            <ScrollText size={18} className="text-indigo-600" />
+          <div className="w-9 h-9 rounded-xl bg-sky-50 dark:bg-sky-900/40 flex items-center justify-center">
+            <ScrollText size={18} className="text-sky-500 dark:text-sky-400" />
           </div>
           <div>
             <h2 className="page-title">📋 审计日志</h2>
@@ -82,36 +126,41 @@ export default function AdminAuditLogsPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-warm-200/60 text-left">
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">ID</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">操作人</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">操作类型</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">目标用户</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">详情</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">IP</th>
-                <th className="py-2.5 px-3 text-xs text-warm-500 font-medium">时间</th>
+              <tr className="border-b border-cloud-300/60 text-left">
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">ID</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">操作人</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">操作类型</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">目标用户</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">详情</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">IP</th>
+                <th className="py-2.5 px-3 text-xs text-ink-muted font-medium">时间</th>
               </tr>
             </thead>
             <tbody>
-              {logs.map(l => (
-                <tr key={l.id} className="border-b border-warm-100 hover:bg-warm-50/50 transition-colors">
-                  <td className="py-2 px-3 text-xs text-warm-500 font-mono">{l.id}</td>
-                  <td className="py-2 px-3 text-xs text-warm-700 font-medium">#{l.actor_id}</td>
+              {logs.map(l => {
+                const meta = ACTION_META[l.action] || { color: 'bg-cloud-50 text-ink-muted border-cloud-200 dark:bg-sky-900/20 dark:text-cloud-500 dark:border-sky-800/30', icon: null }
+                const ActionIcon = meta.icon
+                return (
+                <tr key={l.id} className="border-b border-cloud-200 hover:bg-cloud-200/50 transition-colors">
+                  <td className="py-2 px-3 text-xs text-ink-muted font-mono">{l.id}</td>
+                  <td className="py-2 px-3 text-xs text-ink-body font-medium">#{l.actor_id}</td>
                   <td className="py-2 px-3">
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-200">
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-lg border inline-flex items-center gap-1 ${meta.color}`}>
+                      {ActionIcon && <ActionIcon size={10} />}
                       {ACTION_LABELS[l.action] || l.action}
                     </span>
                   </td>
-                  <td className="py-2 px-3 text-xs text-warm-500">#{l.target_user_id || '—'}</td>
-                  <td className="py-2 px-3 text-xs text-warm-500 max-w-[200px] truncate">
-                    {typeof l.details === 'object' ? JSON.stringify(l.details).substring(0, 60) + '...' : String(l.details || '—')}
+                  <td className="py-2 px-3 text-xs text-ink-muted">{l.target_user_id ? `#${l.target_user_id}` : '—'}</td>
+                  <td className="py-2 px-3 text-xs text-ink-muted max-w-[280px] truncate" title={typeof l.details === 'object' ? JSON.stringify(l.details) : String(l.details || '')}>
+                    {formatDetails(l.action, l.details)}
                   </td>
-                  <td className="py-2 px-3 text-xs text-warm-500 font-mono">{l.ip_address || '—'}</td>
-                  <td className="py-2 px-3 text-xs text-warm-500">{l.created_at?.replace('T', ' ').substring(0, 16)}</td>
+                  <td className="py-2 px-3 text-xs text-ink-muted font-mono">{l.ip_address || '—'}</td>
+                  <td className="py-2 px-3 text-xs text-ink-muted whitespace-nowrap">{l.created_at?.replace('T', ' ').substring(0, 16)}</td>
                 </tr>
-              ))}
+                )
+              })}
               {logs.length === 0 && (
-                <tr><td colSpan={7} className="py-8 text-center text-warm-400 text-sm">暂无审计日志</td></tr>
+                <tr><td colSpan={7} className="py-8 text-center text-ink-muted text-sm">暂无审计日志</td></tr>
               )}
             </tbody>
           </table>

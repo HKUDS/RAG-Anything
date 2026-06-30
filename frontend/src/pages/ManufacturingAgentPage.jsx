@@ -24,19 +24,19 @@ const LANGUAGES = [
 ]
 
 const markdownComponents = {
-  h2: ({ children, ...props }) => <h2 className="text-base font-semibold text-warm-800 mt-4 mb-2 pb-1 border-b border-warm-200" {...props}>{children}</h2>,
-  h3: ({ children, ...props }) => <h3 className="text-sm font-semibold text-warm-700 mt-3 mb-1" {...props}>{children}</h3>,
-  p: ({ children, ...props }) => <p className="text-sm text-warm-600 leading-relaxed my-1.5" {...props}>{children}</p>,
-  strong: ({ children, ...props }) => <strong className="font-semibold text-coral-600" {...props}>{children}</strong>,
+  h2: ({ children, ...props }) => <h2 className="text-base font-semibold text-ink-primary mt-4 mb-2 pb-1 border-b border-cloud-300" {...props}>{children}</h2>,
+  h3: ({ children, ...props }) => <h3 className="text-sm font-semibold text-ink-body mt-3 mb-1" {...props}>{children}</h3>,
+  p: ({ children, ...props }) => <p className="text-sm text-ink-body leading-relaxed my-1.5" {...props}>{children}</p>,
+  strong: ({ children, ...props }) => <strong className="font-semibold text-sky-600" {...props}>{children}</strong>,
   code: ({ inline, className, children, ...props }) => {
     const match = /language-(\w+)/.exec(className || '')
     return !inline ? (
-      <div className="my-2 rounded-lg border border-warm-200 overflow-hidden">
-        <div className="bg-warm-100 px-3 py-1 text-[10px] text-warm-500 font-mono">{match ? match[1] : 'code'}</div>
-        <pre className="bg-warm-50 p-3 overflow-x-auto text-xs"><code className={className} {...props}>{children}</code></pre>
+      <div className="my-2 rounded-lg border border-cloud-300 overflow-hidden">
+        <div className="bg-cloud-100 px-3 py-1 text-[10px] text-ink-muted font-mono">{match ? match[1] : 'code'}</div>
+        <pre className="bg-cloud-200 p-3 overflow-x-auto text-xs"><code className={className} {...props}>{children}</code></pre>
       </div>
     ) : (
-      <code className="px-1.5 py-0.5 rounded-md text-xs font-mono bg-warm-100 text-amber-700" {...props}>{children}</code>
+      <code className="px-1.5 py-0.5 rounded-md text-xs font-mono bg-cloud-100 text-amber-700" {...props}>{children}</code>
     )
   },
   table: ({ children }) => <div className="my-2 overflow-x-auto"><table className="min-w-full text-xs border-collapse">{children}</table></div>,
@@ -53,8 +53,8 @@ function ThinkingStep({ step, isLast }) {
   if (step._displayMode === 'status') {
     // Generic status message (no structured step data)
     return (
-      <div className="flex items-center gap-1.5 text-2xs text-warm-500">
-        <Loader2 size={10} className="animate-spin text-coral-400" />
+      <div className="flex items-center gap-1.5 text-2xs text-ink-muted">
+        <Loader2 size={10} className="animate-spin text-sky-400" />
         <span>{step.content || step.thought}</span>
       </div>
     )
@@ -62,43 +62,43 @@ function ThinkingStep({ step, isLast }) {
 
   return (
     <div className={`rounded-lg border text-xs overflow-hidden ${
-      isAction ? 'border-sky-200 bg-sky-50/50' : 'border-warm-200 bg-warm-50/50'
+      isAction ? 'border-sky-200 bg-sky-50/50' : 'border-cloud-300 bg-cloud-200/50'
     }`}>
       <button
         onClick={() => setExpanded(!expanded)}
-        className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-warm-100/50 transition-colors text-left"
+        className="w-full flex items-center gap-2 px-2.5 py-1.5 hover:bg-cloud-100/50 transition-colors text-left"
       >
-        <ChevronRight size={10} className={`text-warm-400 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+        <ChevronRight size={10} className={`text-ink-muted transition-transform ${expanded ? 'rotate-90' : ''}`} />
         {isAction ? (
           <Search size={11} className="text-sky-500 shrink-0" />
         ) : (
-          <Brain size={11} className="text-coral-500 shrink-0" />
+          <Brain size={11} className="text-sky-500 shrink-0" />
         )}
-        <span className="font-medium text-warm-600">
+        <span className="font-medium text-ink-body">
           步骤 {step.step}: {actionLabel}
         </span>
         {step.elapsed_ms > 0 && (
-          <span className="ml-auto text-2xs text-warm-500">{(step.elapsed_ms / 1000).toFixed(1)}s</span>
+          <span className="ml-auto text-2xs text-ink-muted">{(step.elapsed_ms / 1000).toFixed(1)}s</span>
         )}
       </button>
       {expanded && (
-        <div className="px-2.5 pb-2 space-y-1.5 border-t border-warm-100 pt-1.5">
+        <div className="px-2.5 pb-2 space-y-1.5 border-t border-cloud-200 pt-1.5">
           {step.thought && (
             <div>
-              <p className="text-2xs text-warm-500 mb-0.5">思考</p>
-              <p className="text-warm-600 leading-relaxed">{step.thought.length > 300 ? step.thought.slice(0, 300) + '...' : step.thought}</p>
+              <p className="text-2xs text-ink-muted mb-0.5">思考</p>
+              <p className="text-ink-body leading-relaxed">{step.thought.length > 300 ? step.thought.slice(0, 300) + '...' : step.thought}</p>
             </div>
           )}
           {step.action && (
             <div>
-              <p className="text-2xs text-warm-500 mb-0.5">行动</p>
+              <p className="text-2xs text-ink-muted mb-0.5">行动</p>
               <code className="text-2xs px-1.5 py-0.5 rounded bg-white text-sky-600 font-mono">{step.action}</code>
             </div>
           )}
           {step.observation_preview && (
             <div>
-              <p className="text-2xs text-warm-500 mb-0.5">观察</p>
-              <p className="text-warm-500 italic leading-relaxed">{step.observation_preview}</p>
+              <p className="text-2xs text-ink-muted mb-0.5">观察</p>
+              <p className="text-ink-muted italic leading-relaxed">{step.observation_preview}</p>
             </div>
           )}
         </div>
@@ -328,11 +328,11 @@ export default function ManufacturingAgentPage() {
       {/* Header */}
       <div className="flex items-center justify-between shrink-0">
         <div>
-          <h1 className="text-xl font-semibold text-warm-800 flex items-center gap-2">
-            <Bot size={22} className="text-coral-500" />
+          <h1 className="text-xl font-semibold text-ink-primary flex items-center gap-2">
+            <Bot size={22} className="text-sky-500" />
             制造智能体
           </h1>
-          <p className="text-sm text-warm-500 mt-1">智能问答 · 代码解析 · 故障诊断</p>
+          <p className="text-sm text-ink-muted mt-1">智能问答 · 代码解析 · 故障诊断</p>
           <div className="flex gap-1 mt-2">
             {[
               { to: '/manufacturing', label: '仪表板' },
@@ -342,8 +342,8 @@ export default function ManufacturingAgentPage() {
               <button key={item.to} onClick={() => navigate(item.to)}
                 className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                   location.pathname === item.to
-                    ? 'bg-coral-50 text-coral-600'
-                    : 'text-warm-500 hover:text-warm-700 hover:bg-warm-100'
+                    ? 'bg-sky-50 text-sky-600'
+                    : 'text-ink-muted hover:text-ink-body hover:bg-cloud-100'
                 }`}>
                 {item.label}
               </button>
@@ -357,11 +357,11 @@ export default function ManufacturingAgentPage() {
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 p-1 bg-warm-100 rounded-xl w-fit shrink-0">
+      <div className="flex gap-1 p-1 bg-cloud-100 rounded-xl w-fit shrink-0">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-              activeTab === t.key ? 'bg-white text-warm-800 shadow-sm' : 'text-warm-500 hover:text-warm-700'
+              activeTab === t.key ? 'bg-white text-ink-primary shadow-sm' : 'text-ink-muted hover:text-ink-body'
             }`}>
             <t.icon size={15} /> {t.label}
           </button>
@@ -376,13 +376,13 @@ export default function ManufacturingAgentPage() {
             {/* Messages */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-2 mb-4">
               {qaMessages.length === 0 && (
-                <div className="text-center py-16 text-warm-400">
+                <div className="text-center py-16 text-ink-muted">
                   <MessageSquare size={40} className="mx-auto mb-3 opacity-30" />
                   <p className="text-sm">输入你的制造领域问题，智能体将基于知识库回答</p>
                   <div className="flex flex-wrap justify-center gap-2 mt-4">
                     {['数控铣削的切削参数如何选择？', 'PLC 程序梯形图设计原则', '如何检测加工中心的定位精度？'].map(q => (
                       <button key={q} onClick={() => handleQASend(q)}
-                        className="px-3 py-1.5 rounded-full text-xs bg-warm-100 text-warm-600 hover:bg-coral-50 hover:text-coral-600 transition-colors">
+                        className="px-3 py-1.5 rounded-full text-xs bg-cloud-100 text-ink-body hover:bg-sky-50 hover:text-sky-600 transition-colors">
                         {q}
                       </button>
                     ))}
@@ -392,19 +392,19 @@ export default function ManufacturingAgentPage() {
               {qaMessages.map((msg, i) => (
                 <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : ''}`}>
                   {msg.role === 'assistant' && (
-                    <div className="w-7 h-7 rounded-full bg-coral-100 flex items-center justify-center shrink-0 mt-0.5">
-                      <Bot size={14} className="text-coral-500" />
+                    <div className="w-7 h-7 rounded-full bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center shrink-0 mt-0.5">
+                      <Bot size={14} className="text-sky-500" />
                     </div>
                   )}
                   <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                     msg.role === 'user'
-                      ? 'bg-coral-700 text-white'
-                      : 'bg-warm-50 border border-warm-100'
+                      ? 'bg-sky-500 dark:bg-sky-600 text-white'
+                      : 'bg-cloud-200 border border-cloud-200'
                   }`}>
                     {msg.role === 'user' ? (
                       <p className="text-sm">{msg.content}</p>
                     ) : (
-                      <div className="text-sm text-warm-700">
+                      <div className="text-sm text-ink-body">
                         {/* Thinking steps (AgenticRAG trace) */}
                         {msg._thinking && msg._thinking.length > 0 && (
                           <div className="mb-3 space-y-1.5">
@@ -415,24 +415,24 @@ export default function ManufacturingAgentPage() {
                         )}
                         <ReactMarkdown components={markdownComponents}>{msg.content || (msg._streaming ? '▊' : '')}</ReactMarkdown>
                         {msg._streaming && (
-                          <span className="inline-block w-1.5 h-4 bg-coral-400 animate-pulse rounded-sm ml-0.5 align-middle" />
+                          <span className="inline-block w-1.5 h-4 bg-sky-400 animate-pulse rounded-sm ml-0.5 align-middle" />
                         )}
                         {/* Matched images */}
                         {msg._images && msg._images.length > 0 && (
                           <div className="mt-3 space-y-2">
                             {msg._images.map((img, ii) => (
-                              <div key={ii} className="rounded-lg overflow-hidden border border-warm-200">
-                                <img src={img.data_url} alt={img.caption} className="w-full max-h-48 object-contain bg-warm-50" />
-                                <p className="text-2xs text-warm-500 px-2 py-1">{img.caption} (页 {img.page})</p>
+                              <div key={ii} className="rounded-lg overflow-hidden border border-cloud-300">
+                                <img src={img.data_url} alt={img.caption} className="w-full max-h-48 object-contain bg-cloud-200" />
+                                <p className="text-2xs text-ink-muted px-2 py-1">{img.caption} (页 {img.page})</p>
                               </div>
                             ))}
                           </div>
                         )}
                         {msg.time && (
-                          <div className="mt-2 text-2xs text-warm-400 flex items-center gap-3">
+                          <div className="mt-2 text-2xs text-ink-muted flex items-center gap-3">
                             <span>{msg.time.toFixed(0)}ms</span>
                             {msg.confidence !== undefined && (
-                              <span className="text-coral-500">置信度 {(msg.confidence * 100).toFixed(0)}%</span>
+                              <span className="text-sky-500">置信度 {(msg.confidence * 100).toFixed(0)}%</span>
                             )}
                           </div>
                         )}
@@ -440,22 +440,22 @@ export default function ManufacturingAgentPage() {
                     )}
                   </div>
                   {msg.role === 'user' && (
-                    <div className="w-7 h-7 rounded-full bg-warm-200 flex items-center justify-center shrink-0 mt-0.5">
-                      <User size={14} className="text-warm-500" />
+                    <div className="w-7 h-7 rounded-full bg-cloud-300 flex items-center justify-center shrink-0 mt-0.5">
+                      <User size={14} className="text-ink-muted" />
                     </div>
                   )}
                 </div>
               ))}
               {loading && activeTab === 'qa' && (
                 <div className="flex gap-3">
-                  <div className="w-7 h-7 rounded-full bg-coral-100 flex items-center justify-center">
-                    <Loader2 size={14} className="text-coral-500 animate-spin" />
+                  <div className="w-7 h-7 rounded-full bg-sky-100 dark:bg-sky-900/40 flex items-center justify-center">
+                    <Loader2 size={14} className="text-sky-500 animate-spin" />
                   </div>
-                  <div className="bg-warm-50 border border-warm-100 rounded-2xl px-4 py-3">
+                  <div className="bg-cloud-200 border border-cloud-200 rounded-2xl px-4 py-3">
                     <div className="flex gap-1.5">
-                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" />
-                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" style={{ animationDelay: '0.15s' }} />
-                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" style={{ animationDelay: '0.3s' }} />
+                      <div className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+                      <div className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" style={{ animationDelay: '0.15s' }} />
+                      <div className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" style={{ animationDelay: '0.3s' }} />
                     </div>
                   </div>
                 </div>
@@ -468,15 +468,15 @@ export default function ManufacturingAgentPage() {
               <input value={qaInput} onChange={e => setQaInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleQASend()}
                 placeholder="输入制造领域问题…"
-                className="flex-1 px-4 py-3 rounded-xl border border-warm-200 text-sm bg-white
-                  focus:outline-none focus:border-coral-300 focus:ring-2 focus:ring-coral-50 transition-all" />
+                className="flex-1 px-4 py-3 rounded-xl border border-cloud-300 text-sm bg-white
+                  focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-50 transition-all" />
               {loading && activeTab === 'qa' ? (
                 <button onClick={cancelQA}
                   className="btn-danger px-5 py-3 rounded-xl">
                   取消
                 </button>
               ) : (
-                <button onClick={handleQASend} disabled={!qaInput.trim()}
+                <button onClick={() => handleQASend()} disabled={!qaInput.trim()}
                   className="btn-primary px-5 py-3 rounded-xl disabled:opacity-50">
                   <Send size={16} />
                 </button>
@@ -490,10 +490,10 @@ export default function ManufacturingAgentPage() {
           <motion.div key="code" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="flex-1 min-h-0 overflow-y-auto">
             {!codeResult && (
-              <div className="text-center py-8 text-warm-400">
+              <div className="text-center py-8 text-ink-muted">
                 <Code2 size={32} className="mx-auto mb-2 opacity-30" />
                 <p className="text-sm">粘贴 G 代码或 PLC 程序进行分析</p>
-                <p className="text-xs text-warm-400 mt-1">支持 G 代码语法高亮、指令解释与风险检测</p>
+                <p className="text-xs text-ink-muted mt-1">支持 G 代码语法高亮、指令解释与风险检测</p>
               </div>
             )}
             <GCodeEditor onParseResult={(data) => setCodeResult(data)} />
@@ -528,13 +528,13 @@ export default function ManufacturingAgentPage() {
             {/* Messages */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-2 mb-4">
               {diagMessages.length === 0 && (
-                <div className="text-center py-16 text-warm-400">
+                <div className="text-center py-16 text-ink-muted">
                   <Wrench size={40} className="mx-auto mb-3 opacity-30" />
                   <p className="text-sm">描述设备故障现象，智能体将进行交互式诊断</p>
                   <div className="flex flex-wrap justify-center gap-2 mt-4">
                     {['加工精度超差，误差约0.05mm', '主轴运转时有异常振动', 'PLC 输出信号无响应'].map(q => (
                       <button key={q} onClick={() => startDiagnosis(q)}
-                        className="px-3 py-1.5 rounded-full text-xs bg-warm-100 text-warm-600 hover:bg-coral-50 hover:text-coral-600 transition-colors">
+                        className="px-3 py-1.5 rounded-full text-xs bg-cloud-100 text-ink-body hover:bg-sky-50 hover:text-sky-600 transition-colors">
                         {q}
                       </button>
                     ))}
@@ -551,22 +551,22 @@ export default function ManufacturingAgentPage() {
                   <div className={`max-w-[80%] rounded-2xl px-4 py-3 ${
                     msg.role === 'user'
                       ? 'bg-amber-800 text-white'
-                      : 'bg-warm-50 border border-warm-100'
+                      : 'bg-cloud-200 border border-cloud-200'
                   }`}>
                     {msg.role === 'user' ? (
                       <p className="text-sm">{msg.content}</p>
                     ) : (
-                      <div className="text-sm text-warm-700">
+                      <div className="text-sm text-ink-body">
                         {msg.isFinal ? (
                           <ReactMarkdown components={markdownComponents}>{msg.content}</ReactMarkdown>
                         ) : (
                           <>
                             <p>{msg.content}</p>
                             {msg.initial_matches !== undefined && (
-                              <p className="text-xs text-warm-500 mt-1">匹配到 {msg.initial_matches} 个相似案例</p>
+                              <p className="text-xs text-ink-muted mt-1">匹配到 {msg.initial_matches} 个相似案例</p>
                             )}
                             {msg.confidence !== undefined && (
-                              <p className="text-xs text-warm-500 mt-1">当前置信度 {(msg.confidence * 100).toFixed(0)}%</p>
+                              <p className="text-xs text-ink-muted mt-1">当前置信度 {(msg.confidence * 100).toFixed(0)}%</p>
                             )}
                           </>
                         )}
@@ -574,8 +574,8 @@ export default function ManufacturingAgentPage() {
                     )}
                   </div>
                   {msg.role === 'user' && (
-                    <div className="w-7 h-7 rounded-full bg-warm-200 flex items-center justify-center shrink-0 mt-0.5">
-                      <User size={14} className="text-warm-500" />
+                    <div className="w-7 h-7 rounded-full bg-cloud-300 flex items-center justify-center shrink-0 mt-0.5">
+                      <User size={14} className="text-ink-muted" />
                     </div>
                   )}
                 </div>
@@ -603,11 +603,11 @@ export default function ManufacturingAgentPage() {
                   <div className="w-7 h-7 rounded-full bg-amber-100 flex items-center justify-center">
                     <Loader2 size={14} className="text-amber-500 animate-spin" />
                   </div>
-                  <div className="bg-warm-50 border border-warm-100 rounded-2xl px-4 py-3">
+                  <div className="bg-cloud-200 border border-cloud-200 rounded-2xl px-4 py-3">
                     <div className="flex gap-1.5">
-                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" />
-                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" style={{ animationDelay: '0.15s' }} />
-                      <div className="w-2 h-2 rounded-full bg-coral-400 animate-pulse" style={{ animationDelay: '0.3s' }} />
+                      <div className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" />
+                      <div className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" style={{ animationDelay: '0.15s' }} />
+                      <div className="w-2 h-2 rounded-full bg-sky-400 animate-pulse" style={{ animationDelay: '0.3s' }} />
                     </div>
                   </div>
                 </div>
@@ -626,7 +626,7 @@ export default function ManufacturingAgentPage() {
                 }}
                 placeholder={diagSession ? '回答诊断问题或输入补充信息…' : '描述设备故障现象…'}
                 rows={2}
-                className="flex-1 px-4 py-3 rounded-xl border border-warm-200 text-sm bg-white resize-none
+                className="flex-1 px-4 py-3 rounded-xl border border-cloud-300 text-sm bg-white resize-none
                   focus:outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50 transition-all" />
               <button onClick={() => diagSession ? continueDiagnosis(diagInput) : startDiagnosis()}
                 disabled={loading || !diagInput.trim()}
