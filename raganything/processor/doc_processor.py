@@ -539,6 +539,105 @@ class DocProcessorMixin:
         if len(content_list) == 0:
             raise ValueError("Parsing failed: No content was extracted")
 
+        # ── OCR Quality Check + Auto-Retry (Phase 3) ──
+        if getattr(self.config, "ocr_quality_check_enabled", True):
+            from raganything.utils._quality import validate_and_suggest
+
+            quality_threshold = getattr(self.config, "ocr_quality_threshold", 0.7)
+            max_retries = getattr(self.config, "ocr_max_retries", 1)
+
+            for retry_num in range(max_retries + 1):
+                quality_result = validate_and_suggest(
+                    content_list,
+                    current_method=parse_method,
+                    quality_threshold=quality_threshold,
+                )
+
+                self.logger.info(
+                    "OCR quality: score=%.2f label=%s chars=%d pages=%d",
+                    quality_result["quality_score"],
+                    quality_result["quality_label"],
+                    quality_result["diagnostics"].get("total_chars", 0),
+                    quality_result["diagnostics"].get("total_pages", 0),
+                )
+
+                # Log any issues found
+                issues = quality_result["diagnostics"].get("issues", [])
+                if issues:
+                    for issue in issues:
+                        self.logger.warning("OCR quality issue: %s", issue)
+
+                # If quality is good or no more retries, stop
+                if not quality_result["needs_retry"] or retry_num >= max_retries:
+                    break
+
+                # ── Retry with suggested method ──
+                suggestion = quality_result["suggestion"]
+                retry_method = suggestion["method"]
+                retry_reason = suggestion.get("reason", "unknown")
+
+                # Don't retry with the same method
+                if retry_method == parse_method:
+                    self.logger.warning(
+                        "Parse retry skipped: suggested method '%s' is the same as current",
+                        retry_method,
+                    )
+                    break
+
+                self.logger.warning(
+                    "Parse quality is low (%.2f < %.2f), retrying with method '%s' (attempt %d/%d): %s",
+                    quality_result["quality_score"],
+                    quality_threshold,
+                    retry_method,
+                    retry_num + 1,
+                    max_retries,
+                    retry_reason,
+                )
+
+                # Build retry kwargs — add language hint if detected
+                retry_kwargs = dict(kwargs)
+                detected_lang = suggestion.get("language")
+                if detected_lang and detected_lang != "unknown":
+                    retry_kwargs.setdefault("lang", detected_lang)
+
+                try:
+                    # Re-parse with the suggested method
+                    ext = file_path.suffix.lower()
+                    if ext in [".pdf"]:
+                        content_list = await asyncio.to_thread(
+                            doc_parser.parse_pdf,
+                            pdf_path=file_path,
+                            output_dir=output_dir,
+                            method=retry_method,
+                            **retry_kwargs,
+                        )
+                    else:
+                        content_list = await asyncio.to_thread(
+                            doc_parser.parse_document,
+                            file_path=file_path,
+                            method=retry_method,
+                            output_dir=output_dir,
+                            **retry_kwargs,
+                        )
+
+                    if len(content_list) == 0:
+                        self.logger.error("Retry with '%s' produced no content", retry_method)
+                        continue
+
+                    parse_method = retry_method  # update for cache key
+                    self.logger.info(
+                        "Retry successful: extracted %d blocks with method '%s'",
+                        len(content_list), retry_method,
+                    )
+
+                except Exception as retry_exc:
+                    self.logger.error(
+                        "Parse retry with '%s' failed: %s. Keeping original result.",
+                        retry_method, retry_exc,
+                    )
+                    # Keep original content_list, don't retry further
+                    break
+
         # Generate doc_id based on content
         doc_id = self._generate_content_based_doc_id(content_list)
 

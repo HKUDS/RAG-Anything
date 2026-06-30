@@ -92,11 +92,16 @@ async def init_db() -> None:
     """Initialize PostgreSQL: idempotent schema + default admin + key persistence.
 
     Schema DDL is handled by migrations/001_pg_schema.sql. This function
-    handles runtime initialization: default roles, admin user, and key persistence.
+    handles runtime initialization: default 5-level RBAC v2 roles,
+    admin user, and key persistence.
+
+    Uses ON CONFLICT DO UPDATE to refresh permissions on every startup,
+    preventing stale permissions when new resources (e.g. manufacturing)
+    are added to role definitions after initial role creation.
     """
     pool = _get_pool()
     async with pool.acquire() as conn:
-        # Default roles (ON CONFLICT DO NOTHING ensures idempotence)
+        # Default roles (ON CONFLICT DO UPDATE ensures idempotence + permission refresh)
         default_roles = {
             "super_admin": {
                 "desc": "超级管理员，拥有全部权限（信息中心/IT运维）",
@@ -152,7 +157,9 @@ async def init_db() -> None:
                 """
                 INSERT INTO roles (name, description, permissions)
                 VALUES ($1, $2, $3::jsonb)
-                ON CONFLICT (name) DO NOTHING
+                ON CONFLICT (name) DO UPDATE SET
+                    description = EXCLUDED.description,
+                    permissions = EXCLUDED.permissions
                 """,
                 role_name, role_cfg["desc"], json.dumps(role_cfg["perms"]),
             )
@@ -222,12 +229,9 @@ async def init_db() -> None:
     # Ensure default admin exists
     admin = await get_user_by_username(DEFAULT_ADMIN_USERNAME)
     if not admin:
-        await create_user(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, is_admin=True)
-        async with pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE users SET must_change_password = 1 WHERE username = $1",
-                DEFAULT_ADMIN_USERNAME,
-            )
+        super_admin_role = await get_role_by_name("super_admin")
+        await create_user(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD,
+                          role_id=super_admin_role["id"] if super_admin_role else None, must_change_password=True)
         print(f"[PG-AUTH] 默认管理员已创建: {DEFAULT_ADMIN_USERNAME} (首次登录需修改密码)")
     else:
         print(f"[PG-AUTH] 管理员账号已存在: {DEFAULT_ADMIN_USERNAME}")
@@ -257,7 +261,7 @@ async def get_user_by_id(user_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-async def create_user(username: str, email: str, password: str, is_admin: bool = False) -> dict:
+async def create_user(username: str, email: str, password: str, role_id: int | None = None, must_change_password: bool = False) -> dict:
     import re as _re_pw
 
     if len(password) < 8:
@@ -279,25 +283,39 @@ async def create_user(username: str, email: str, password: str, is_admin: bool =
         raise ValueError("密码需包含大写字母、小写字母、数字、特殊字符中的至少三类")
 
     password_hash = pwd_context.hash(password)
-    role_name = "super_admin" if is_admin else "student"
+
+    # Default role: student
+    if role_id is None:
+        role_name = "student"
+    else:
+        role_name = None  # Use role_id directly
 
     pool = _get_pool()
     async with pool.acquire() as conn:
-        role_row = await conn.fetchrow(
-            "SELECT id FROM roles WHERE name = $1", role_name
-        )
-        if not role_row:
-            raise ValueError(f"角色 '{role_name}' 不存在，请先初始化默认角色")
-        role_id = role_row["id"]
+        if role_name is not None:
+            role_row = await conn.fetchrow(
+                "SELECT id FROM roles WHERE name = $1", role_name
+            )
+            if not role_row:
+                raise ValueError(f"角色 '{role_name}' 不存在，请先初始化默认角色")
+            role_id = role_row["id"]
+        else:
+            # Validate the explicit role_id exists
+            role_row = await conn.fetchrow(
+                "SELECT id FROM roles WHERE id = $1", role_id
+            )
+            if not role_row:
+                raise ValueError(f"角色 ID {role_id} 不存在")
 
         try:
             row = await conn.fetchrow(
                 """
-                INSERT INTO users (username, email, password_hash, role_id)
-                VALUES ($1, $2, $3, $4)
+                INSERT INTO users (username, email, password_hash, role_id, must_change_password)
+                VALUES ($1, $2, $3, $4, $5)
                 RETURNING *
                 """,
                 username.strip(), email.strip(), password_hash, role_id,
+                1 if must_change_password else 0,
             )
         except asyncpg.UniqueViolationError:
             # Check which field caused the conflict
@@ -315,8 +333,8 @@ async def create_user(username: str, email: str, password: str, is_admin: bool =
 
 
 async def update_user(user_id: int, data: dict) -> dict | None:
-    allowed_fields = {"username", "email", "role_id", "is_active"}
-    security_sensitive_fields = {"is_admin", "password_hash", "failed_login_attempts",
+    allowed_fields = {"username", "email", "role_id", "is_active", "must_change_password"}
+    security_sensitive_fields = {"password_hash", "failed_login_attempts",
                                   "locked_until", "created_at", "updated_at"}
 
     rejected = {k for k in data if k in security_sensitive_fields}
@@ -379,6 +397,44 @@ async def list_users() -> list[dict]:
     return [_sanitize_user(dict(r)) for r in rows]
 
 
+async def update_last_login_at(user_id: int) -> None:
+    """Update the last_login_at timestamp for a user."""
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE users SET last_login_at = NOW() WHERE id = $1",
+            user_id,
+        )
+
+
+async def get_role_by_name(role_name: str) -> dict | None:
+    """Look up a role by its name."""
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM roles WHERE name = $1", role_name
+        )
+        return dict(row) if row else None
+
+
+async def list_roles() -> list[dict]:
+    """List all roles."""
+    import json as _json
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("SELECT * FROM roles ORDER BY id")
+        roles = []
+        for r in rows:
+            role = dict(r)
+            try:
+                if isinstance(role.get("permissions"), str):
+                    role["permissions"] = _json.loads(role["permissions"])
+            except (_json.JSONDecodeError, TypeError):
+                role["permissions"] = []
+            roles.append(role)
+        return roles
+
+
 # ═══════════════════════════════════════════════════════════════
 # Role & Permission Helpers
 # ═══════════════════════════════════════════════════════════════
@@ -409,7 +465,7 @@ async def has_permission(user_id: int, permission: str) -> bool:
 
 async def user_is_admin(user_id: int) -> bool:
     role = await get_user_role(user_id)
-    return role is not None and role.get("name") in ("super_admin", "admin")
+    return role is not None and role.get("name") == "super_admin"
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -526,6 +582,224 @@ def decode_refresh_token(token: str) -> dict | None:
         return payload
     except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
         return None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Token Blacklist (PG-backed — replaces token_blacklist.py SQLite)
+# ═══════════════════════════════════════════════════════════════
+
+async def pg_revoke_token(
+    jti: str,
+    expires_at: datetime,
+    family_id: str | None = None,
+) -> None:
+    """Revoke a token by JTI. Replaces TokenBlacklist.revoke().
+
+    Uses INSERT ... ON CONFLICT DO UPDATE for idempotent upsert.
+    Includes optional family_id for refresh token family tracking.
+    """
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO token_revocations (jti, expires_at, family_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (jti) DO UPDATE SET
+                expires_at = EXCLUDED.expires_at,
+                family_id = COALESCE(EXCLUDED.family_id, token_revocations.family_id),
+                revoked_at = NOW()
+            """,
+            jti, expires_at, family_id,
+        )
+
+
+async def pg_is_token_revoked(jti: str) -> bool:
+    """Check if a token has been revoked. Replaces TokenBlacklist.is_revoked().
+
+    Returns True if the token JTI exists in the revocations table
+    and has not yet expired.
+    """
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT 1 FROM token_revocations WHERE jti = $1 AND expires_at > NOW()",
+            jti,
+        )
+        return row is not None
+
+
+async def pg_revoke_refresh_family(family_id: str) -> int:
+    """Revoke all tokens in a refresh token family. Replaces TokenBlacklist.revoke_refresh_family().
+
+    Sets expires_at far in the future for all tokens in the family to ensure
+    they remain revoked indefinitely (effectively permanent revocation).
+
+    Returns the count of tokens revoked.
+    """
+    if not family_id:
+        return 0
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            """
+            UPDATE token_revocations
+            SET expires_at = '9999-12-31 23:59:59+00'::TIMESTAMPTZ,
+                revoked_at = NOW()
+            WHERE family_id = $1
+            """,
+            family_id,
+        )
+        # Also mark all tokens with this family_id that aren't yet in the table
+        revoked_count = int(result.split()[-1]) if result else 0
+        return revoked_count
+
+
+async def pg_register_refresh_family(family_id: str, jti: str) -> None:
+    """Register a JTI into a refresh token family. Replaces TokenBlacklist.register_refresh_family().
+
+    Updates the existing token_revocations row (if any) to set its family_id,
+    or creates a placeholder row. The actual revocation happens later via
+    pg_revoke_token or pg_revoke_refresh_family.
+    """
+    if not family_id or not jti:
+        return
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO token_revocations (jti, expires_at, family_id)
+            VALUES ($1, NOW() + INTERVAL '30 days', $2)
+            ON CONFLICT (jti) DO UPDATE SET
+                family_id = EXCLUDED.family_id
+            """,
+            jti, family_id,
+        )
+
+
+async def pg_cleanup_expired_tokens() -> int:
+    """Remove expired token revocations from the table.
+
+    Returns the count of rows deleted.
+    """
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM token_revocations WHERE expires_at < NOW()"
+        )
+        deleted = int(result.split()[-1]) if result else 0
+        return deleted
+
+
+# ═══════════════════════════════════════════════════════════════
+# Audit Log (PG-backed — replaces audit.py SQLite AuditLogger)
+# ═══════════════════════════════════════════════════════════════
+
+async def pg_audit_log(
+    actor_id: int,
+    action: str,
+    target_user_id: int | None = None,
+    details: dict | None = None,
+    ip_address: str | None = None,
+) -> None:
+    """Write an audit log entry directly to PostgreSQL.
+
+    Replaces AuditLogger.log() when PG is available.
+    No background thread needed — asyncpg handles connection pooling.
+
+    Args:
+        actor_id: User ID performing the action
+        action: Action type (e.g. 'user.create', 'permission.denied')
+        target_user_id: User ID affected by the action
+        details: Arbitrary JSON-serializable detail dict
+        ip_address: Client IP address
+    """
+    import json as _json
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO audit_logs (actor_id, action, target_user_id, details, ip_address)
+            VALUES ($1, $2, $3, $4::jsonb, $5)
+            """,
+            actor_id,
+            action,
+            target_user_id,
+            _json.dumps(details or {}, ensure_ascii=False),
+            ip_address,
+        )
+
+
+async def pg_query_audit_logs(
+    page: int = 1,
+    page_size: int = 20,
+    actor_id: int | None = None,
+    action: str | None = None,
+) -> dict:
+    """Paginated query of audit logs from PostgreSQL.
+
+    Replaces audit.query_audit_logs() when PG is available.
+
+    Returns:
+        {"logs": [...], "total": N, "page": N, "page_size": N, "total_pages": N}
+    """
+    import json as _json
+
+    where_clauses: list[str] = []
+    params: list = []
+
+    if actor_id is not None:
+        where_clauses.append(f"actor_id = ${len(params) + 1}")
+        params.append(actor_id)
+    if action:
+        where_clauses.append(f"action = ${len(params) + 1}")
+        params.append(action)
+
+    where_sql = " AND ".join(where_clauses)
+    if where_sql:
+        where_sql = " WHERE " + where_sql
+
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        # Count
+        count_sql = f"SELECT COUNT(*) as cnt FROM audit_logs {where_sql}"
+        total = await conn.fetchval(count_sql, *params)
+
+        # Page query (newest first)
+        offset = (page - 1) * page_size
+        query_sql = f"""
+            SELECT * FROM audit_logs
+            {where_sql}
+            ORDER BY created_at DESC
+            LIMIT ${len(params) + 1} OFFSET ${len(params) + 2}
+        """
+        rows = await conn.fetch(query_sql, *params, page_size, offset)
+
+        logs = []
+        for r in rows:
+            log = dict(r)
+            # Parse details from JSONB (may already be a dict from asyncpg)
+            if isinstance(log.get("details"), str):
+                try:
+                    log["details"] = _json.loads(log["details"])
+                except (_json.JSONDecodeError, TypeError):
+                    log["details"] = {}
+            elif log.get("details") is None:
+                log["details"] = {}
+            # Convert datetime objects to ISO strings for JSON serialization
+            for key in ("created_at",):
+                val = log.get(key)
+                if isinstance(val, datetime):
+                    log[key] = val.isoformat()
+            logs.append(log)
+
+    total_pages = max(1, (total + page_size - 1) // page_size)
+    return {
+        "logs": logs,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": total_pages,
+    }
 
 
 # ═══════════════════════════════════════════════════════════════

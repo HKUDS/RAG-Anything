@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-06-29T00:00:00.000Z",
+  "title": "Design System: RAG-Anything",
+  "extensions": {
+    "colorMeta": {
+      "sky-primary": {
+        "role": "primary",
+        "displayName": "Sky Blue",
+        "canonical": "oklch(62% 0.1 250)",
+        "tonalRamp": [
+          "#f4f8fc", "#e3eef7", "#c7ddf0", "#9dc6e5",
+          "#6da9d7", "#5b9bd5", "#3f7db8", "#366596",
+          "#30567a", "#2b4966"
+        ]
+      },
+      "cloud-bg": {
+        "role": "neutral",
+        "displayName": "Cloud White",
+        "canonical": "oklch(97% 0.005 240)",
+        "tonalRamp": [
+          "#f8fafd", "#f4f8fc", "#f0f5fa", "#e3eef7",
+          "#c7ddf0", "#9dc6e5", "#6b8aaa", "#3a5a78",
+          "#30567a", "#1e3a54"
+        ]
+      },
+      "warm-accent": {
+        "role": "accent",
+        "displayName": "Warm Coral",
+        "canonical": "oklch(65% 0.17 35)",
+        "tonalRamp": [
+          "#fef7f4", "#fde9e0", "#fbd3c1", "#f7b398",
+          "#f08f6d", "#e8734a", "#cd5a34", "#a8472a",
+          "#863a24", "#662c1c"
+        ]
+      },
+      "sage-success": {
+        "role": "semantic",
+        "displayName": "Sage Success",
+        "canonical": "oklch(62% 0.08 150)",
+        "tonalRamp": [
+          "#f5f8f3", "#e7efe2", "#d0e0c6", "#adc9a0",
+          "#89b07a", "#6b9e7a", "#548063", "#43664f",
+          "#385340", "#2f4436"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "body": { "displayName": "Body", "purpose": "正文、描述、表单标签。整个产品的基础字号。" },
+      "title": { "displayName": "Title", "purpose": "区块标题、卡片头、表单段标题。" },
+      "heading": { "displayName": "Page Heading", "purpose": "每页唯一的主标题。只在页面顶部使用。" },
+      "label": { "displayName": "Label", "purpose": "统计标签、表格头、徽章文字。Uppercase tracking-wider。" },
+      "mono": { "displayName": "Mono", "purpose": "代码片段、API 响应、技术标识符。" }
+    },
+    "shadows": [
+      { "name": "cloud-sm", "value": "0 1px 3px rgba(48,86,122,0.04), 0 1px 2px rgba(48,86,122,0.03)", "purpose": "卡片和面板的默认阴影——极轻的云层叠透感。" },
+      { "name": "cloud", "value": "0 4px 16px rgba(48,86,122,0.06), 0 2px 4px rgba(48,86,122,0.03)", "purpose": "悬浮卡片、下拉面板、主按钮 hover。" },
+      { "name": "cloud-md", "value": "0 8px 30px rgba(48,86,122,0.08), 0 3px 8px rgba(48,86,122,0.04)", "purpose": "模态弹窗、用户菜单。" },
+      { "name": "cloud-lg", "value": "0 16px 48px rgba(48,86,122,0.10), 0 4px 12px rgba(48,86,122,0.04)", "purpose": "最高层级覆盖层（极少使用）。" }
+    ],
+    "motion": [
+      { "name": "ease-standard", "value": "cubic-bezier(0.4, 0, 0.2, 1)", "purpose": "状态过渡（hover、focus、active、selected）。150-250ms。" },
+      { "name": "ease-out", "value": "cubic-bezier(0, 0, 0.2, 1)", "purpose": "元素出现/展开（toast、dropdown、tooltip）。" },
+      { "name": "ease-out-expo", "value": "cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "slide-up / slide-in-right / scale-in framer-motion 动画。" }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" },
+      { "name": "xl", "value": "1280px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "主操作按钮。每屏最多一个，Sky Blue 全色背景。hover 时向上微移 1px。",
+      "html": "<button class=\"ds-btn-primary\">保存更改</button>",
+      "css": ".ds-btn-primary {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.5rem;\n  background: #5b9bd5;\n  color: #ffffff;\n  font-family: \"IBM Plex Sans\", \"PingFang SC\", \"Microsoft YaHei\", system-ui, sans-serif;\n  font-size: 0.875rem;\n  font-weight: 600;\n  line-height: 1;\n  padding: 0.625rem 1.25rem;\n  border: none;\n  border-radius: 0.75rem;\n  box-shadow: 0 1px 3px rgba(48,86,122,0.04), 0 1px 2px rgba(48,86,122,0.03);\n  cursor: pointer;\n  transition: background 0.2s, box-shadow 0.2s, transform 0.2s;\n}\n.ds-btn-primary:hover {\n  background: #3f7db8;\n  box-shadow: 0 4px 16px rgba(48,86,122,0.06), 0 2px 4px rgba(48,86,122,0.03);\n  transform: translateY(-1px);\n}\n.ds-btn-primary:focus-visible {\n  outline: 2px solid rgba(91,155,213,0.6);\n  outline-offset: 2px;\n}\n.ds-btn-primary:active {\n  background: #366596;\n  transform: translateY(0);\n}\n.ds-btn-primary:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n  transform: none;\n}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "次要操作。cloud-well 背景 + 细边框。",
+      "html": "<button class=\"ds-btn-secondary\">取消</button>",
+      "css": ".ds-btn-secondary {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.5rem;\n  background: #f0f5fa;\n  color: #30567a;\n  font-family: \"IBM Plex Sans\", \"PingFang SC\", \"Microsoft YaHei\", system-ui, sans-serif;\n  font-size: 0.875rem;\n  font-weight: 600;\n  line-height: 1;\n  padding: 0.625rem 1.25rem;\n  border: 1px solid #e3eef7;\n  border-radius: 0.75rem;\n  cursor: pointer;\n  transition: background 0.2s;\n}\n.ds-btn-secondary:hover {\n  background: #e3eef7;\n}\n.ds-btn-secondary:focus-visible {\n  outline: 2px solid rgba(91,155,213,0.6);\n  outline-offset: 2px;\n}\n.ds-btn-secondary:active {\n  background: #c7ddf0;\n}\n.ds-btn-secondary:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "最低优先级的操作。透明背景，hover 时 cloud-well 出现。",
+      "html": "<button class=\"ds-btn-ghost\">\n  <svg width=\"16\" height=\"16\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><circle cx=\"11\" cy=\"11\" r=\"8\"/><path d=\"m21 21-4.3-4.3\"/></svg>\n  搜索\n</button>",
+      "css": ".ds-btn-ghost {\n  display: inline-flex;\n  align-items: center;\n  justify-content: center;\n  gap: 0.5rem;\n  background: transparent;\n  color: #3a5a78;\n  font-family: \"IBM Plex Sans\", \"PingFang SC\", \"Microsoft YaHei\", system-ui, sans-serif;\n  font-size: 0.875rem;\n  font-weight: 500;\n  line-height: 1;\n  padding: 0.5rem 0.75rem;\n  border: none;\n  border-radius: 0.75rem;\n  cursor: pointer;\n  transition: background 0.2s, color 0.2s;\n}\n.ds-btn-ghost:hover {\n  background: #f0f5fa;\n  color: #30567a;\n}\n.ds-btn-ghost:focus-visible {\n  outline: 2px solid rgba(91,155,213,0.6);\n  outline-offset: 2px;\n}\n.ds-btn-ghost:active {\n  background: #e3eef7;\n}"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "通用内容容器。白色 + 云阴影 + 细边框。",
+      "html": "<div class=\"ds-card\">\n  <h3 class=\"ds-card-title\">知识库概览</h3>\n  <p class=\"ds-card-body\">已上传 12 个文档，覆盖 3 个学科领域。</p>\n</div>",
+      "css": ".ds-card {\n  background: #ffffff;\n  border: 1px solid rgba(227,238,247,0.5);\n  border-radius: 1rem;\n  padding: 1.25rem;\n  box-shadow: 0 1px 3px rgba(48,86,122,0.04), 0 1px 2px rgba(48,86,122,0.03);\n  transition: box-shadow 0.3s, border-color 0.3s;\n}\n.ds-card:hover {\n  box-shadow: 0 8px 30px rgba(48,86,122,0.08), 0 3px 8px rgba(48,86,122,0.04);\n  border-color: rgba(199,221,240,0.6);\n}\n.ds-card-title {\n  font-family: \"IBM Plex Sans\", \"PingFang SC\", \"Microsoft YaHei\", system-ui, sans-serif;\n  font-size: 0.875rem;\n  font-weight: 600;\n  color: #30567a;\n  line-height: 1.375;\n  margin: 0 0 0.25rem 0;\n}\n.ds-card-body {\n  font-family: \"IBM Plex Sans\", \"PingFang SC\", \"Microsoft YaHei\", system-ui, sans-serif;\n  font-size: 0.9375rem;\n  font-weight: 400;\n  color: #3a5a78;\n  line-height: 1.625;\n  margin: 0;\n}"
+    },
+    {
+      "name": "Input Field",
+      "kind": "input",
+      "refersTo": "input-field",
+      "description": "文本输入框。cloud-well 凹陷背景 + 细边框。focus 时升至白色 + Sky Blue 光环。",
+      "html": "<input class=\"ds-input\" type=\"text\" placeholder=\"输入知识库名称…\" />",
+      "css": ".ds-input {\n  width: 100%;\n  background: #f0f5fa;\n  border: 1px solid rgba(199,221,240,0.6);\n  border-radius: 0.75rem;\n  padding: 0.625rem 1rem;\n  font-family: \"IBM Plex Sans\", \"PingFang SC\", \"Microsoft YaHei\", system-ui, sans-serif;\n  font-size: 0.875rem;\n  color: #30567a;\n  line-height: 1.5;\n  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;\n  box-sizing: border-box;\n}\n.ds-input::placeholder {\n  color: #6b8aaa;\n}\n.ds-input:focus {\n  outline: none;\n  border-color: #5b9bd5;\n  background: #ffffff;\n  box-shadow: 0 0 0 4px rgba(91,155,213,0.08);\n}\n.ds-input:disabled {\n  opacity: 0.4;\n  cursor: not-allowed;\n}"
+    },
+    {
+      "name": "Info Badge",
+      "kind": "chip",
+      "refersTo": "badge-info",
+      "description": "信息状态徽章。sky-50 背景 + Sky Blue 文字。",
+      "html": "<span class=\"ds-badge ds-badge-info\">进行中</span>",
+      "css": ".ds-badge {\n  display: inline-flex;\n  align-items: center;\n  padding: 0.25rem 0.625rem;\n  border-radius: 9999px;\n  font-family: \"IBM Plex Sans\", \"PingFang SC\", \"Microsoft YaHei\", system-ui, sans-serif;\n  font-size: 0.6875rem;\n  font-weight: 500;\n  line-height: 1;\n}\n.ds-badge-info {\n  background: #f4f8fc;\n  color: #3f7db8;\n  border: 1px solid #e3eef7;\n}"
+    },
+    {
+      "name": "Navigation Link (Active)",
+      "kind": "nav",
+      "refersTo": "topnav-link-active",
+      "description": "顶部导航链接的 active 态。sky-50 背景 + Sky Blue 文字。",
+      "html": "<a class=\"ds-nav-link ds-nav-link-active\">\n  <svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><ellipse cx=\"12\" cy=\"5\" rx=\"9\" ry=\"3\"/><path d=\"M21 12c0 1.66-4 3-9 3s-9-1.34-9-3\"/><path d=\"M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5\"/></svg>\n  <span>知识库</span>\n</a>",
+      "css": ".ds-nav-link {\n  display: flex;\n  align-items: center;\n  gap: 0.5rem;\n  padding: 0.375rem 0.75rem;\n  border-radius: 0.5rem;\n  font-family: \"IBM Plex Sans\", \"PingFang SC\", \"Microsoft YaHei\", system-ui, sans-serif;\n  font-size: 0.75rem;\n  font-weight: 500;\n  color: #3a5a78;\n  text-decoration: none;\n  transition: color 0.2s, background 0.2s;\n  cursor: pointer;\n}\n.ds-nav-link:hover {\n  color: #30567a;\n  background: #f0f5fa;\n}\n.ds-nav-link-active {\n  background: #f4f8fc;\n  color: #5b9bd5;\n}\n.ds-nav-link-active:hover {\n  background: #f4f8fc;\n  color: #5b9bd5;\n}"
+    },
+    {
+      "name": "Skeleton Loader",
+      "kind": "custom",
+      "refersTo": "skeleton",
+      "description": "内容加载占位。shimmer 动画从 cloud-border → cloud-well → cloud-border。",
+      "html": "<div class=\"ds-skeleton\" style=\"width: 200px; height: 16px;\"></div>",
+      "css": ".ds-skeleton {\n  background: linear-gradient(90deg, #e3eef7 0%, #f0f5fa 50%, #e3eef7 100%);\n  background-size: 200% 100%;\n  border-radius: 0.5rem;\n  animation: ds-shimmer 2s ease-in-out infinite;\n}\n@keyframes ds-shimmer {\n  0% { background-position: -200% 0; }\n  100% { background-position: 200% 0; }\n}"
+    }
+  ],
+  "narrative": {
+    "northStar": "云端学阁 (The Cloud Academy)",
+    "overview": "RAG-Anything 的设计系统以天空蓝与云白色为基调——明亮、通透、轻盈，像一缕晴空透过玻璃窗照进教室。它表达的是「科技即清晰」：不是冰冷的服务器机房，而是云端的知识随时随地触手可及。\n\n这是一个 Restrained 策略的产品系统。天空蓝（Sky Blue #5b9bd5）是唯一强调色，仅用于主操作、当前选中态和状态指示器。淡蓝白（Cloud White #f4f8fc）作为全局背景——比纯白多一丝空气感，比暖色少一度体温，恰好让界面呼吸而不分心。活力珊瑚（Warm Coral #e8734a）保留为第二点缀，仅在需要传递「温暖提示」的微交互中出现。\n\nPhysical scene: 一个教师在清晨的办公室，窗外是淡蓝的天空，屏幕上的界面应该像云一样安静地承载信息——不抢夺注意力，但每个按钮和链接都清晰可辨。一个学生在晚自习用平板打开 AI 助手——界面的蓝白调在暖色灯光下仍然保持清爽。",
+    "keyCharacteristics": [
+      "天空蓝 + 云白色基调——轻盈、通透、科技感",
+      "单一 Sky Blue 强调色 + Warm Coral 微交互点缀（Restrained 策略）",
+      "阴影柔软且稀薄，仅用于区分层级",
+      "一个字体族（IBM Plex Sans），靠字重大小区分层级",
+      "圆角统一在 0.75rem，比传统产品 UI 更柔和"
+    ],
+    "rules": [
+      { "name": "The One Blue Rule", "body": "Sky Blue (#5b9bd5) 是系统唯一的强调色。不在 UI 中引入第二个装饰色——sage/amber/rose 仅用于语义状态。Warm Coral 是情感点缀，不作为功能性强调色。", "section": "colors" },
+      { "name": "The Cloud-Not-Cream Rule", "body": "页面背景 cloud-bg (#f4f8fc) 的色度偏向蓝色（OKLCH hue ≈ 240），不是暖色（hue 40-100）。这主动拒绝了 AI 生成设计的「奶油色/沙色/羊皮纸」默认。它就是一个有空气感的淡蓝白——「云」不是「暖」。", "section": "colors" },
+      { "name": "The Coral Thermometer Rule", "body": "Warm Coral 的出现频率 = 界面的「体温」。通知红点用 coral、hover 光泽用 coral、友好提醒用 coral。但按钮、链接、选中态、进度条只用 Sky Blue。Coral 是情绪信号，不是功能信号。", "section": "colors" },
+      { "name": "The Cloud Shadow Rule", "body": "所有阴影使用 ink-primary (#30567a) 作为阴影色——不是纯黑 rgba(0,0,0,...)。这保持阴影的蓝色调，让它们在云白背景上像真正的云影。", "section": "elevation" },
+      { "name": "The Flat-By-Default Rule", "body": "静态表面平坦。阴影只在状态变化时出现：hover、focus、modal open。", "section": "elevation" },
+      { "name": "The Single Voice Rule", "body": "整个产品使用一个字体族（IBM Plex Sans），不引入 display/body 配对。", "section": "typography" },
+      { "name": "The Fixed Scale Rule", "body": "不使用 clamp() 流体字号。产品 UI 在一致的 DPI 下被查看。", "section": "typography" }
+    ],
+    "dos": [
+      "使用 Cloud BG (#f4f8fc) 作为所有页面的统一背景——不引入第二个页面背景色。",
+      "将 Sky Blue (#5b9bd5) 的使用限制在 ≤10% 的屏幕面积——主按钮、当前选中态、链接、焦点环。",
+      "保留 Warm Coral (#e8734a) 仅用于情感微交互——通知红点、hover 光泽、友好提醒。",
+      "使用 0.75rem border-radius 作为按钮和输入框的统一圆角。",
+      "在 hover/focus 时增加阴影（cloud-sm → cloud），但静态表面保持平坦。",
+      "使用 ink-primary (#30567a) 作为阴影色，而非纯黑 rgba(0,0,0,...)。",
+      "为每个交互组件实现完整的状态集：default、hover、focus、active、disabled。"
+    ],
+    "donts": [
+      "使用传统企业软件式的密集数据表格、无尽的表单字段、灰上加灰的菜单。",
+      "采用过度游戏化的少儿教育产品风格。不要卡通化、不要过度 gamification。",
+      "使用暖色调奶油色/沙色/羊皮纸色作为背景——这是 AI 生成设计的默认。Cloud BG 是淡蓝白，不是暖白。",
+      "在 body text 上使用亮灰色「为了优雅」——当对比度接近边界时，将 body color 向 ink-primary 方向推。",
+      "在任何上下文中使用 border-left 或 border-right 大于 1px 的彩色侧边条。",
+      "使用 gradient text (background-clip: text)。",
+      "把玻璃态（glassmorphism）作为默认。",
+      "引入第二个功能性强调色——Sky Blue 是唯一。Warm Coral 是情绪点缀，不是功能色。",
+      "在不同屏幕间使用不一致的组件词汇。",
+      "默认使用 modal——先穷尽 inline / progressive 替代方案。",
+      "使用纯黑色或纯灰色阴影——始终从 ink-primary (#30567a) 取色。"
+    ]
+  }
+}

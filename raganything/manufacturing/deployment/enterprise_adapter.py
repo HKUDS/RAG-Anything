@@ -19,7 +19,7 @@ class EnterpriseAdapter:
         self.fault_case_library = fault_case_library
         self.deployment_config = deployment_config
 
-    def adapt(self, enterprise_id: str, enterprise_name: str,
+    async def adapt(self, enterprise_id: str, enterprise_name: str,
               process_docs_dir: str = "",
               fault_data_dir: str = "") -> dict:
         """适配企业场景。
@@ -58,7 +58,7 @@ class EnterpriseAdapter:
                 doc_dir = Path(process_docs_dir)
                 for doc_file in doc_dir.glob("*"):
                     try:
-                        self.process_library.ingest_document(doc_file)
+                        await self.process_library.ingest_document(doc_file)
                         result["process_docs_imported"] += 1
                     except Exception as e:
                         result["errors"].append(f"工艺文档 {doc_file.name}: {e}")
@@ -77,7 +77,7 @@ class EnterpriseAdapter:
                         for case_data in cases_data:
                             from ..knowledge_graph.models import FaultCase
                             case = FaultCase(**case_data)
-                            self.fault_case_library.add_case(case)
+                            await self.fault_case_library.add_case(case)
                             result["fault_cases_imported"] += 1
                     except Exception as e:
                         result["errors"].append(f"故障案例 {json_file.name}: {e}")
@@ -86,7 +86,7 @@ class EnterpriseAdapter:
 
         return result
 
-    def validate_adaptation(self, enterprise_id: str) -> dict:
+    async def validate_adaptation(self, enterprise_id: str) -> dict:
         """验证企业场景适配效果。
 
         检查项：数据完整性、检索可用性、配置正确性。
@@ -96,13 +96,13 @@ class EnterpriseAdapter:
 
         # 检查工艺库
         if self.process_library:
-            stats = self.process_library.list_by_category()
+            stats = await self.process_library.list_by_category()
             if not stats:
                 issues.append("工艺库为空 — 未导入任何工艺文档")
 
         # 检查故障案例库
         if self.fault_case_library:
-            case_stats = self.fault_case_library.get_statistics()
+            case_stats = await self.fault_case_library.get_statistics()
             if case_stats["total_cases"] < 5:
                 warnings.append(f"故障案例仅 {case_stats['total_cases']} 条，建议至少 20 条")
         else:

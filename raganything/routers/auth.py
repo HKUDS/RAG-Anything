@@ -13,18 +13,28 @@ from raganything.services.auth import (
     decode_refresh_token,
     decode_token,
     delete_user,
+    get_role_by_name,
     get_user_by_id,
     get_user_by_username,
     get_user_role as _auth_get_user_role,
+    list_roles,
     list_users,
     record_failed_login,
     reset_failed_logins,
+    update_last_login_at,
     update_user,
     verify_password,
     DB_PATH,
+    # Token blacklist dispatch (Phase 1 PG migration)
+    is_token_revoked,
+    revoke_token,
+    revoke_refresh_family,
+    register_refresh_family,
+    # Audit log dispatch (Phase 1 PG migration)
+    audit_log,
+    query_audit_logs as _dispatch_query_audit_logs,
 )
-from raganything.services.token_blacklist import get_token_blacklist
-from raganything.services.audit import get_audit_logger, query_audit_logs
+from raganything.services.audit import get_audit_logger  # fallback: health check only
 from raganything.dependencies import (
     get_current_user,
     get_admin_user,
@@ -52,14 +62,14 @@ class AdminCreateUserRequest(BaseModel):
     username: str
     email: str
     password: str
-    role_id: int = 3  # 默认 viewer
+    role_id: int = None  # 默认由 create_user 分配 student 角色
 
 
 class AdminUpdateUserRequest(BaseModel):
     username: Optional[str] = None
     email: Optional[str] = None
     password: Optional[str] = None
-    is_admin: Optional[int] = None   # deprecated, retained for backward compat
+    is_admin: Optional[int] = None   # no-op: 已废弃，使用 role_id 代替，前端兼容保留
     is_active: Optional[int] = None
     role_id: Optional[int] = None
 
@@ -102,26 +112,20 @@ async def login(request: Request, req: AuthLoginRequest):
 
     await reset_failed_logins(user["id"])
 
-    # 更新最后登录时间 (Task 4.9)
-    import aiosqlite
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        await db.execute(
-            "UPDATE users SET last_login_at = ? WHERE id = ?",
-            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user["id"]),
-        )
-        await db.commit()
+    # 更新最后登录时间（使用派发函数，支持 PG/SQLite）
+    await update_last_login_at(user["id"])
 
     # Fetch role for embedding in JWT
     role = await _auth_get_user_role(user["id"])
-    is_admin = role is not None and role.get("name") in ("super_admin", "admin")
+    is_admin = role is not None and role.get("name") == "super_admin"
     token = create_token(user["id"], user["username"], is_admin, role)
     refresh = create_refresh_token(user["id"], user["username"], is_admin, role)
 
-    # 注册 refresh token 到 family
+    # 注册 refresh token 到 family (PG-first dispatch)
     import jwt as _pyjwt
     try:
         r_payload = _pyjwt.decode(refresh, options={"verify_signature": False})
-        get_token_blacklist().register_refresh_family(r_payload.get("rfam", ""), r_payload.get("jti", ""))
+        await register_refresh_family(r_payload.get("rfam", ""), r_payload.get("jti", ""))
     except Exception:
         pass
 
@@ -145,39 +149,38 @@ async def refresh(request: Request, req: RefreshRequest):
     if payload is None:
         raise HTTPException(401, "Refresh Token 无效或已过期")
 
-    # 检查 refresh token 是否已被撤销（重放检测）
+    # 检查 refresh token 是否已被撤销（重放检测，PG-first dispatch）
     jti = payload.get("jti")
-    blacklist = get_token_blacklist()
-    if jti and blacklist.is_revoked(jti):
+    if jti and await is_token_revoked(jti):
         # 重放攻击检测：撤销该用户整个 refresh family
         rfam = payload.get("rfam", "")
         if rfam:
-            blacklist.revoke_refresh_family(rfam)
+            await revoke_refresh_family(rfam)
         raise HTTPException(401, "Refresh Token 已被使用过，请重新登录")
 
     user = await get_user_by_id(payload["user_id"])
     if not user or not user.get("is_active"):
         raise HTTPException(401, "用户不存在或已禁用")
 
-    # 撤销旧的 refresh token
+    # 撤销旧的 refresh token (PG-first dispatch)
     if jti:
         from datetime import timedelta as _td
-        blacklist.revoke(jti, datetime.now(timezone.utc) + _td(days=30))
+        await revoke_token(jti, datetime.now(timezone.utc) + _td(days=30))
 
     # 颁发新 token 对（嵌入角色信息）
     role = await _auth_get_user_role(user["id"])
-    is_admin = role is not None and role.get("name") in ("super_admin", "admin")
+    is_admin = role is not None and role.get("name") == "super_admin"
     token = create_token(user["id"], user["username"], is_admin, role)
     new_refresh = create_refresh_token(user["id"], user["username"], is_admin, role)
 
-    # 注册新 refresh token（保持同一 family）
+    # 注册新 refresh token（保持同一 family，PG-first dispatch）
     import jwt as _pyjwt
     try:
         r_payload = _pyjwt.decode(new_refresh, options={"verify_signature": False})
         new_jti = r_payload.get("jti", "")
         rfam = payload.get("rfam", "")  # 使用原始 family
         if rfam and new_jti:
-            blacklist.register_refresh_family(rfam, new_jti)
+            await register_refresh_family(rfam, new_jti)
     except Exception:
         pass
 
@@ -223,7 +226,7 @@ async def logout(
                         expires_at = _dt.fromtimestamp(exp, tz=_tz.utc)
                     else:
                         expires_at = datetime.now(timezone.utc) + _td(hours=24)
-                    get_token_blacklist().revoke(jti, expires_at)
+                    await revoke_token(jti, expires_at)
         except Exception:
             pass
 
@@ -241,12 +244,12 @@ async def logout(
                 rfam = r_payload.get("rfam")
                 r_jti = r_payload.get("jti")
                 if r_jti:
-                    get_token_blacklist().revoke(
+                    await revoke_token(
                         r_jti,
                         datetime.now(timezone.utc) + timedelta(days=30)
                     )
                 if rfam:
-                    get_token_blacklist().revoke_refresh_family(rfam)
+                    await revoke_refresh_family(rfam)
         except Exception:
             pass
 
@@ -262,7 +265,6 @@ async def change_password(
     current_user: dict = Depends(get_current_user),
 ):
     """当前用户修改密码"""
-    import aiosqlite
     import re as _re_pw
 
     # 从 body 解析（用原生 request 避免额外 pydantic model）
@@ -300,14 +302,14 @@ async def change_password(
     if complexity < 3:
         raise HTTPException(422, "密码需包含大写字母、小写字母、数字、特殊字符中的至少三类")
 
-    # 更新密码
-    new_hash = pwd_context.hash(new_password)
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        await db.execute(
-            "UPDATE users SET password_hash = ?, must_change_password = 0, updated_at = ? WHERE id = ?",
-            (new_hash, datetime.now().strftime("%Y-%m-%d %H:%M:%S"), current_user["id"]),
-        )
-        await db.commit()
+    # 更新密码（使用派发函数，支持 PG/SQLite）
+    try:
+        await update_user(current_user["id"], {
+            "password": new_password,
+            "must_change_password": 0,
+        })
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
     return {"status": "ok", "message": "密码修改成功"}
 
@@ -331,23 +333,7 @@ async def admin_list_roles(
     user: dict = Depends(require_permission(Permission.USERS_READ)),
 ):
     """返回所有角色列表"""
-    import aiosqlite
-    from raganything.services.auth import DB_PATH
-
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute("SELECT * FROM roles ORDER BY id")
-        rows = await cursor.fetchall()
-        roles = []
-        import json as _json
-        for r in rows:
-            role = dict(r)
-            try:
-                role["permissions"] = _json.loads(role.get("permissions", "[]"))
-            except (_json.JSONDecodeError, TypeError):
-                role["permissions"] = []
-            roles.append(role)
-
+    roles = await list_roles()
     return {"status": "ok", "roles": roles}
 
 
@@ -364,72 +350,46 @@ async def admin_list_users(
     role: str = QueryParam("", description="按角色名筛选"),
     status: str = QueryParam("", description="按状态筛选: active/inactive"),
 ):
-    """管理员获取用户列表（分页、搜索、筛选）。无分页参数时返回全部用户（向后兼容）。"""
-    import aiosqlite
-    from raganything.services.auth import DB_PATH
+    """管理员获取用户列表（分页、搜索、筛选）。使用派发函数，支持 PG/SQLite。"""
+    # Fetch all users and roles via dispatched functions
+    all_users = await list_users()
+    all_roles = await list_roles()
+    role_map = {r["id"]: r for r in all_roles}
 
-    # 检查是否使用了分页参数
-    has_pagination = page > 1 or page_size != 20 or search or role or status or (
-        "page" in str(user)  # crude check, always paginate if called with params
-    )
+    # Enrich users with role info
+    for u in all_users:
+        r = role_map.get(u.get("role_id"))
+        u["role_name"] = r["name"] if r else None
+        u["role_permissions"] = r.get("permissions", []) if r else []
+        u["is_admin"] = (u["role_name"] == "super_admin")
 
-    # 构建查询
-    where_clauses = []
-    params_list = []
-
+    # Filter
+    filtered = all_users
     if search:
-        where_clauses.append("(u.username LIKE ? OR u.email LIKE ?)")
-        params_list.extend([f"%{search}%", f"%{search}%"])
-
+        search_lower = search.lower()
+        filtered = [
+            u for u in filtered
+            if search_lower in (u.get("username", "") or "").lower()
+            or search_lower in (u.get("email", "") or "").lower()
+        ]
     if role:
-        where_clauses.append("r.name = ?")
-        params_list.append(role)
-
+        filtered = [u for u in filtered if u.get("role_name") == role]
     if status == "active":
-        where_clauses.append("u.is_active = 1")
+        filtered = [u for u in filtered if u.get("is_active")]
     elif status == "inactive":
-        where_clauses.append("u.is_active = 0")
+        filtered = [u for u in filtered if not u.get("is_active")]
 
-    where_sql = " AND ".join(where_clauses)
-    if where_sql:
-        where_sql = " WHERE " + where_sql
+    total = len(filtered)
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
+    # Paginate
+    offset = (page - 1) * page_size
+    paged = filtered[offset:offset + page_size]
 
-        # 计数
-        count_sql = f"""
-            SELECT COUNT(*) as cnt FROM users u
-            LEFT JOIN roles r ON u.role_id = r.id
-            {where_sql}
-        """
-        cursor = await db.execute(count_sql, params_list)
-        total = (await cursor.fetchone())["cnt"]
-
-        # 查询
-        offset = (page - 1) * page_size
-        query_sql = f"""
-            SELECT u.*, r.name as role_name, r.permissions as role_permissions
-            FROM users u
-            LEFT JOIN roles r ON u.role_id = r.id
-            {where_sql}
-            ORDER BY u.id
-            LIMIT ? OFFSET ?
-        """
-        cursor = await db.execute(query_sql, params_list + [page_size, offset])
-        rows = await cursor.fetchall()
-
-        users = []
-        for r in rows:
-            u = {k: r[k] for k in r.keys() if k != "password_hash"}
-            # 向后兼容: is_admin 字段
-            if "role_name" in u and u["role_name"] is not None:
-                u["is_admin"] = (u["role_name"] in ("super_admin", "admin"))
-            else:
-                u["is_admin"] = bool(u.get("is_admin", 0))
-            # 清理内部字段
-            u.pop("role_permissions", None)
-            users.append(u)
+    # Clean up internal fields for response
+    users = []
+    for u in paged:
+        clean = {k: v for k, v in u.items() if k not in ("password_hash", "role_permissions")}
+        users.append(clean)
 
     total_pages = max(1, (total + page_size - 1) // page_size)
     return {
@@ -450,74 +410,32 @@ async def admin_create_user(
     user: dict = Depends(require_permission(Permission.USERS_WRITE)),
 ):
     """管理员创建新用户"""
-    import aiosqlite
-    from raganything.services.auth import DB_PATH, pwd_context
+    try:
+        new_user = await create_user(
+            req.username, req.email, req.password,
+            role_id=req.role_id, must_change_password=True,
+        )
+    except ValueError as e:
+        msg = str(e)
+        if "用户名已被占用" in msg or "邮箱已被占用" in msg:
+            raise HTTPException(409, msg)
+        elif "角色" in msg:
+            raise HTTPException(400, msg)
+        else:
+            raise HTTPException(422, msg)
 
-    # 密码复杂度校验
-    import re as _re_pw
-    import sqlite3 as _sqlite3
+    new_id = new_user["id"]
 
-    if len(req.password) < 8:
-        raise HTTPException(422, "密码至少需要 8 位")
-    if len(req.password) > 128:
-        raise HTTPException(422, "密码不能超过 128 位")
-    if len(req.username) < 2:
-        raise HTTPException(422, "用户名至少需要 2 个字符")
-
-    complexity = 0
-    if _re_pw.search(r'[A-Z]', req.password):
-        complexity += 1
-    if _re_pw.search(r'[a-z]', req.password):
-        complexity += 1
-    if _re_pw.search(r'[0-9]', req.password):
-        complexity += 1
-    if _re_pw.search(r'[^A-Za-z0-9]', req.password):
-        complexity += 1
-    if complexity < 3:
-        raise HTTPException(422, "密码需包含大写字母、小写字母、数字、特殊字符中的至少三类")
-
-    # 验证角色存在
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
-        role_row = await (await db.execute(
-            "SELECT id FROM roles WHERE id = ?", (req.role_id,)
-        )).fetchone()
-        if not role_row:
-            raise HTTPException(400, "指定角色不存在")
-
-        password_hash = pwd_context.hash(req.password)
-        try:
-            cursor = await db.execute(
-                """INSERT INTO users (username, email, password_hash, role_id, must_change_password)
-                   VALUES (?, ?, ?, ?, 1)""",
-                (req.username.strip(), req.email.strip(), password_hash, req.role_id),
-            )
-            await db.commit()
-            new_id = cursor.lastrowid
-        except _sqlite3.IntegrityError as e:
-            msg = str(e).lower()
-            if "username" in msg:
-                raise HTTPException(409, "用户名已被占用")
-            elif "email" in msg:
-                raise HTTPException(409, "邮箱已被占用")
-            else:
-                raise HTTPException(400, "创建失败，请重试")
-
-    new_user = await get_user_by_id(new_id)
-
-    # 审计日志 — 包含角色名称
-    audit = get_audit_logger()
-    # 解析角色名称
+    # 审计日志 — 包含角色名称（PG-first dispatch）
     role_name = "unknown"
-    async with aiosqlite.connect(str(DB_PATH)) as _db:
-        _db.row_factory = aiosqlite.Row
-        _row = await (await _db.execute(
-            "SELECT name FROM roles WHERE id = ?", (req.role_id,)
-        )).fetchone()
-        if _row:
-            role_name = _row["name"]
+    try:
+        role = await _auth_get_user_role(new_id)
+        if role:
+            role_name = role.get("name", "unknown")
+    except Exception:
+        pass
 
-    await audit.log(
+    await audit_log(
         actor_id=user["id"],
         action="user.create",
         target_user_id=new_id,
@@ -540,31 +458,18 @@ async def admin_get_user(
     user: dict = Depends(require_permission(Permission.USERS_READ)),
 ):
     """管理员获取用户详情"""
-    import aiosqlite
-    from raganything.services.auth import DB_PATH
+    u = await get_user_by_id(user_id)
+    if not u:
+        raise HTTPException(404, "用户不存在")
 
-    async with aiosqlite.connect(str(DB_PATH)) as db:
-        db.row_factory = aiosqlite.Row
-        cursor = await db.execute("""
-            SELECT u.*, r.name as role_name, r.permissions as role_permissions
-            FROM users u
-            LEFT JOIN roles r ON u.role_id = r.id
-            WHERE u.id = ?
-        """, (user_id,))
-        row = await cursor.fetchone()
-        if not row:
-            raise HTTPException(404, "用户不存在")
-
-        u = {k: row[k] for k in row.keys() if k != "password_hash"}
-        u["is_admin"] = (u.get("role_name") in ("super_admin", "admin"))
-
-        import json as _json
-        perms_raw = u.pop("role_permissions", "[]")
-        try:
-            perms = _json.loads(perms_raw) if perms_raw else []
-        except (_json.JSONDecodeError, TypeError):
-            perms = []
-        u["role"] = {"id": row["role_id"], "name": u.pop("role_name", None), "permissions": perms}
+    # Fetch role info
+    role = await _auth_get_user_role(user_id)
+    if role:
+        u["role"] = {"id": role["id"], "name": role["name"], "permissions": role.get("permissions", [])}
+        u["is_admin"] = role.get("name") == "super_admin"
+    else:
+        u["role"] = {"id": None, "name": None, "permissions": []}
+        u["is_admin"] = False
 
     return {"status": "ok", "user": u}
 
@@ -581,34 +486,19 @@ async def admin_update_user(
     if not update_data:
         raise HTTPException(400, "无更新内容")
 
-    # 兼容: is_admin → role_id 映射
-    if "is_admin" in update_data:
-        import aiosqlite
-        from raganything.services.auth import DB_PATH
-        is_admin_val = update_data.pop("is_admin")
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
-            role_name = "super_admin" if is_admin_val else "student"
-            role_row = await (await db.execute(
-                "SELECT id FROM roles WHERE name = ?", (role_name,)
-            )).fetchone()
-            if role_row:
-                update_data["role_id"] = role_row["id"]
+    # is_admin 已废弃，忽略此字段（使用 role_id 代替）
+    update_data.pop("is_admin", None)
 
-    # 防自降级
+    # 防自降级（使用派发函数）
     if "role_id" in update_data and user_id == user["id"]:
-        import aiosqlite
-        from raganything.services.auth import DB_PATH
-        async with aiosqlite.connect(str(DB_PATH)) as db:
-            db.row_factory = aiosqlite.Row
-            admin_role = await (await db.execute(
-                "SELECT id FROM roles WHERE name IN ('super_admin', 'admin')"
-            )).fetchone()
-            if admin_role and update_data["role_id"] != admin_role["id"]:
+        my_role = await _auth_get_user_role(user_id)
+        if my_role and my_role.get("name") == "super_admin":
+            if update_data["role_id"] != my_role["id"]:
                 raise HTTPException(403, "不能取消自己的管理员权限")
 
-    # 获取更新前的用户信息用于审计
+    # 获取更新前的用户信息和角色用于审计
     before_user = await get_user_by_id(user_id)
+    before_role = await _auth_get_user_role(user_id) if before_user else None
 
     try:
         updated = await update_user(user_id, update_data)
@@ -618,8 +508,10 @@ async def admin_update_user(
     if updated is None:
         raise HTTPException(404, "用户不存在")
 
-    # 审计日志 — 角色变更时解析角色名称
-    audit = get_audit_logger()
+    # 获取更新后的角色
+    after_role = await _auth_get_user_role(user_id)
+
+    # 审计日志 — 角色变更时解析角色名称（PG-first dispatch）
     action = "user.role_change" if "role_id" in update_data else "user.update"
     # 记录变更字段
     changed_fields = list(update_data.keys())
@@ -636,25 +528,13 @@ async def admin_update_user(
 
     # 角色变更时，附加角色名称以便审计可读性
     if "role_id" in update_data:
-        import aiosqlite as _aio
-        async with _aio.connect(str(DB_PATH)) as _db:
-            _db.row_factory = _aio.Row
-            # 解析变更前后的角色名称
-            old_role_id = before_user.get("role_id") if before_user else None
-            new_role_id = update_data["role_id"]
-            for _rid, _key in [(old_role_id, "before_role_name"), (new_role_id, "after_role_name")]:
-                if _rid:
-                    _row = await (await _db.execute(
-                        "SELECT name FROM roles WHERE id = ?", (_rid,)
-                    )).fetchone()
-                    if _row:
-                        audit_details[_key] = _row["name"]
-            # 同时记录操作人的角色
-            actor_role = user.get("role", {}).get("name", "unknown")
-            audit_details["actor_role"] = actor_role
-        # _aio 连接在此退出上下文管理器时关闭
+        if before_role:
+            audit_details["before_role_name"] = before_role.get("name", "unknown")
+        if after_role:
+            audit_details["after_role_name"] = after_role.get("name", "unknown")
+        audit_details["actor_role"] = user.get("role", {}).get("name", "unknown")
 
-    await audit.log(
+    await audit_log(
         actor_id=user["id"],
         action=action,
         target_user_id=user_id,
@@ -682,9 +562,8 @@ async def admin_delete_user(
     if not success:
         raise HTTPException(404, "用户不存在")
 
-    # 审计日志
-    audit = get_audit_logger()
-    await audit.log(
+    # 审计日志（PG-first dispatch）
+    await audit_log(
         actor_id=user["id"],
         action="user.delete",
         target_user_id=user_id,
@@ -712,9 +591,8 @@ async def admin_audit_logs(
     action: Optional[str] = QueryParam(None, description="按操作类型筛选"),
     user: dict = Depends(require_permission(Permission.AUDIT_READ)),
 ):
-    """管理员查询审计日志（分页 + 筛选）"""
-    result = await query_audit_logs(
-        str(DB_PATH),
+    """管理员查询审计日志（分页 + 筛选）- PG-first dispatch"""
+    result = await _dispatch_query_audit_logs(
         page=page,
         page_size=page_size,
         actor_id=actor_id,

@@ -478,7 +478,7 @@ def create_vision_embed_func(
 
     host = os.getenv("VISION_EMBEDDING_HOST", _DEFAULT_HOST)
     dim = int(os.getenv("VISION_EMBEDDING_DIM", "0"))
-    max_async = int(os.getenv("VISION_EMBEDDING_MAX_ASYNC", "2"))
+    max_async = int(os.getenv("VISION_EMBEDDING_MAX_ASYNC", "4"))
 
     # Check disk cache first
     if dim <= 0:

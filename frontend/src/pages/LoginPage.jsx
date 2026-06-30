@@ -235,7 +235,7 @@ export default function LoginPage() {
           </p>
         </div>
 
-        <p className="text-center text-[11px] text-ink-muted mt-6">
+        <p className="text-center text-2xs text-ink-muted mt-6">
           📚 让知识管理变得温暖有序
         </p>
       </motion.div>

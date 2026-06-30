@@ -35,8 +35,8 @@ from raganything.services.auth import (
     get_user_by_id,
     check_account_locked,
     has_permission as _auth_has_permission,
+    is_token_revoked as _auth_is_token_revoked,
 )
-from raganything.services.token_blacklist import get_token_blacklist
 
 router = APIRouter(tags=["admin"])
 
@@ -72,17 +72,55 @@ class WorkflowRunRequest(BaseModel):
 
 
 # ════════════════════════════════════════════════════════
-# 工作流编排 API
+# 工作流编排 API — PG-backed (Phase 3 migration)
 # ════════════════════════════════════════════════════════
 
+def _wf_pg_ready() -> bool:
+    """Return True if PG pool is available for workflow CRUD."""
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        get_pg_pool()
+        return True
+    except RuntimeError:
+        return False
+
+
+async def _wf_pg_pool():
+    from raganything.services.pg_state_repo import get_pg_pool
+    return get_pg_pool()
+
+
 @router.get("/workflows")
-async def list_workflows(_perm: None = Depends(require_permission(Permission.WORKFLOW_READ)), current_user: dict = Depends(get_current_user)):
-    """列出所有工作流"""
+async def list_workflows(
+    _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
+    current_user: dict = Depends(get_current_user),
+):
+    """列出所有工作流 — PG-first with file fallback"""
+    if _wf_pg_ready():
+        pool = await _wf_pg_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT id, name, created_at, updated_at "
+                "FROM workflow_definitions ORDER BY updated_at DESC"
+            )
+        def _fmt(t):
+            return t.isoformat() if hasattr(t, 'isoformat') else str(t)
+        return {
+            "workflows": [
+                {"id": r["id"], "name": r["name"],
+                 "created_at": _fmt(r["created_at"]),
+                 "updated_at": _fmt(r["updated_at"])}
+                for r in rows
+            ]
+        }
+
+    # File fallback
     workflows = []
     for f in sorted(shared.WORKFLOW_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         try:
             wf = json.loads(f.read_text(encoding="utf-8"))
-            workflows.append({"id": wf.get("id"), "name": wf.get("name"), "created_at": wf.get("created_at"), "updated_at": wf.get("updated_at")})
+            workflows.append({"id": wf.get("id"), "name": wf.get("name"),
+                            "created_at": wf.get("created_at"), "updated_at": wf.get("updated_at")})
         except Exception:
             pass
     return {"workflows": workflows}
@@ -156,8 +194,34 @@ async def get_workflow_models(
 
 
 @router.get("/workflows/{workflow_id}")
-async def get_workflow(workflow_id: str, _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)), current_user: dict = Depends(get_current_user)):
-    """获取单个工作流"""
+async def get_workflow(
+    workflow_id: str,
+    _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
+    current_user: dict = Depends(get_current_user),
+):
+    """获取单个工作流 — PG-first with file fallback"""
+    user_id = current_user.get("id", 0)
+
+    if _wf_pg_ready():
+        pool = await _wf_pg_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT id, name, definition, created_at, updated_at "
+                "FROM workflow_definitions WHERE id = $1",
+                workflow_id,
+            )
+        if row:
+            return {
+                "id": row["id"],
+                "name": row["name"],
+                "created_at": row["created_at"].isoformat(),
+                "updated_at": row["updated_at"].isoformat(),
+                "nodes": row["definition"].get("nodes", []),
+                "edges": row["definition"].get("edges", []),
+            }
+        raise HTTPException(404, "工作流不存在")
+
+    # File fallback
     fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
     if not fpath.exists():
         raise HTTPException(404, "工作流不存在")
@@ -165,48 +229,127 @@ async def get_workflow(workflow_id: str, _perm: None = Depends(require_permissio
 
 
 @router.post("/workflows")
-async def create_workflow(request: Request, _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)), current_user: dict = Depends(get_current_user)):
-    """创建新工作流"""
+async def create_workflow(
+    request: Request,
+    _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    """创建新工作流 — PG-first with file fallback"""
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(400, "无效的请求体")
+
     wf_id = str(uuid.uuid4())
+    user_id = current_user.get("id", 0)
+    nodes = body.get("nodes", [])
+    edges = body.get("edges", [])
+    name = body.get("name", "未命名工作流")
+
+    if _wf_pg_ready():
+        pool = await _wf_pg_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """INSERT INTO workflow_definitions (id, user_id, name, definition)
+                   VALUES ($1, $2, $3, $4::jsonb) RETURNING *""",
+                wf_id, user_id, name, json.dumps({"nodes": nodes, "edges": edges}),
+            )
+        return {
+            "id": row["id"], "name": row["name"],
+            "created_at": row["created_at"].isoformat(),
+            "updated_at": row["updated_at"].isoformat(),
+            "nodes": row["definition"].get("nodes", []),
+            "edges": row["definition"].get("edges", []),
+        }
+
+    # File fallback
     now = datetime.now().isoformat()
-    wf = {
-        "id": wf_id,
-        "name": body.get("name", "未命名工作流"),
-        "created_at": now,
-        "updated_at": now,
-        "nodes": body.get("nodes", []),
-        "edges": body.get("edges", []),
-    }
-    (shared.WORKFLOW_DIR / f"{wf_id}.json").write_text(json.dumps(wf, ensure_ascii=False, indent=2), encoding="utf-8")
+    wf = {"id": wf_id, "name": name, "created_at": now, "updated_at": now,
+          "nodes": nodes, "edges": edges}
+    (shared.WORKFLOW_DIR / f"{wf_id}.json").write_text(
+        json.dumps(wf, ensure_ascii=False, indent=2), encoding="utf-8")
     return wf
 
 
 @router.put("/workflows/{workflow_id}")
-async def update_workflow(workflow_id: str, request: Request, _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)), current_user: dict = Depends(get_current_user)):
-    """更新工作流"""
-    fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
-    if not fpath.exists():
-        raise HTTPException(404, "工作流不存在")
+async def update_workflow(
+    workflow_id: str, request: Request,
+    _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    """更新工作流 — PG-first with file fallback"""
     try:
         body = await request.json()
     except Exception:
         raise HTTPException(400, "无效的请求体")
+
+    nodes = body.get("nodes")
+    edges = body.get("edges")
+    name = body.get("name")
+
+    if _wf_pg_ready():
+        pool = await _wf_pg_pool()
+        async with pool.acquire() as conn:
+            existing = await conn.fetchrow(
+                "SELECT id, name, definition FROM workflow_definitions WHERE id = $1",
+                workflow_id,
+            )
+            if not existing:
+                raise HTTPException(404, "工作流不存在")
+            new_name = name if name is not None else existing["name"]
+            new_def = dict(existing["definition"])
+            if nodes is not None:
+                new_def["nodes"] = nodes
+            if edges is not None:
+                new_def["edges"] = edges
+            row = await conn.fetchrow(
+                """UPDATE workflow_definitions
+                   SET name = $1, definition = $2::jsonb, updated_at = NOW()
+                   WHERE id = $3 RETURNING *""",
+                new_name, json.dumps(new_def), workflow_id,
+            )
+        return {
+            "id": row["id"], "name": row["name"],
+            "created_at": row["created_at"].isoformat(),
+            "updated_at": row["updated_at"].isoformat(),
+            "nodes": row["definition"].get("nodes", []),
+            "edges": row["definition"].get("edges", []),
+        }
+
+    # File fallback
+    fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
+    if not fpath.exists():
+        raise HTTPException(404, "工作流不存在")
     existing = json.loads(fpath.read_text(encoding="utf-8"))
-    existing["name"] = body.get("name", existing["name"])
-    existing["nodes"] = body.get("nodes", existing["nodes"])
-    existing["edges"] = body.get("edges", existing["edges"])
+    existing["name"] = name if name is not None else existing["name"]
+    if nodes is not None:
+        existing["nodes"] = nodes
+    if edges is not None:
+        existing["edges"] = edges
     existing["updated_at"] = datetime.now().isoformat()
     fpath.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
     return existing
 
 
 @router.delete("/workflows/{workflow_id}")
-async def delete_workflow(workflow_id: str, _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)), current_user: dict = Depends(get_current_user)):
-    """删除工作流"""
+async def delete_workflow(
+    workflow_id: str,
+    _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    """删除工作流 — PG-first with file fallback (CASCADE deletes runs)"""
+    if _wf_pg_ready():
+        pool = await _wf_pg_pool()
+        async with pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM workflow_definitions WHERE id = $1", workflow_id,
+            )
+        deleted = result and "DELETE 0" not in result
+        if not deleted:
+            raise HTTPException(404, "工作流不存在")
+        return {"status": "ok"}
+
+    # File fallback
     fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
     if not fpath.exists():
         raise HTTPException(404, "工作流不存在")
@@ -249,9 +392,9 @@ async def _authenticate_ws(ws: WebSocket, required_permission: str | None = None
         await ws.close(code=4001, reason="Token missing user identity")
         return None
 
-    # 检查 Token 是否已被撤销
+    # 检查 Token 是否已被撤销（PG-first dispatch）
     jti = payload.get("jti")
-    if jti and get_token_blacklist().is_revoked(jti):
+    if jti and await _auth_is_token_revoked(jti):
         await ws.close(code=4001, reason="Token has been revoked")
         return None
 
@@ -337,6 +480,7 @@ async def run_workflow(workflow_id: str, body: WorkflowRunRequest = WorkflowRunR
         upload_dir=Path("./uploads"),
         openai_complete_func=openai_complete_if_cache,
         openai_embed_func=openai_embed,
+        user_id=current_user.get("id", 0),
     )
 
     async def status_cb(node_id, status, data=None):
@@ -353,8 +497,34 @@ async def run_workflow(workflow_id: str, body: WorkflowRunRequest = WorkflowRunR
 
 
 @router.get("/workflows/{workflow_id}/runs")
-async def list_workflow_runs(workflow_id: str, _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)), current_user: dict = Depends(get_current_user)):
-    """列出工作流的所有运行记录"""
+async def list_workflow_runs(
+    workflow_id: str,
+    _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
+    current_user: dict = Depends(get_current_user),
+):
+    """列出工作流的所有运行记录 — PG-first with file fallback"""
+    if _wf_pg_ready():
+        pool = await _wf_pg_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT run_id, status, started_at, completed_at, workflow_name "
+                "FROM workflow_runs WHERE workflow_id = $1 "
+                "ORDER BY started_at DESC LIMIT 100",
+                workflow_id,
+            )
+        def _fmt(t):
+            return t.isoformat() if hasattr(t, 'isoformat') else str(t) if t else None
+        return {
+            "runs": [
+                {"run_id": r["run_id"], "status": r["status"],
+                 "started_at": _fmt(r["started_at"]),
+                 "completed_at": _fmt(r["completed_at"]),
+                 "workflow_name": r["workflow_name"]}
+                for r in rows
+            ]
+        }
+
+    # File fallback
     runs = []
     for f in sorted(RUNS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
         try:
@@ -371,8 +541,28 @@ async def list_workflow_runs(workflow_id: str, _perm: None = Depends(require_per
 
 
 @router.get("/workflows/{workflow_id}/runs/{run_id}")
-async def get_workflow_run(workflow_id: str, run_id: str, _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)), current_user: dict = Depends(get_current_user)):
-    """获取单次运行详情"""
+async def get_workflow_run(
+    workflow_id: str, run_id: str,
+    _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
+    current_user: dict = Depends(get_current_user),
+):
+    """获取单次运行详情 — PG-first with file fallback"""
+    if _wf_pg_ready():
+        pool = await _wf_pg_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT * FROM workflow_runs WHERE run_id = $1", run_id,
+            )
+        if row:
+            r = dict(row)
+            def _fmt(t):
+                return t.isoformat() if hasattr(t, 'isoformat') else str(t) if t else None
+            r["started_at"] = _fmt(r["started_at"])
+            r["completed_at"] = _fmt(r["completed_at"])
+            return r
+        raise HTTPException(404, "运行记录不存在")
+
+    # File fallback
     fpath = RUNS_DIR / f"{run_id}.json"
     if not fpath.exists():
         raise HTTPException(404, "运行记录不存在")
@@ -625,7 +815,7 @@ async def health():
 
     # 检查 KB 存储状态
     try:
-        meta = shared.load_kb_meta()
+        meta = await shared.load_kb_meta()
         components["kb_count"] = len(meta)
     except Exception as e:
         components["kb_meta"] = f"error: {e}"

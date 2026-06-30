@@ -172,21 +172,21 @@ export default function AdminUsersPage() {
                 <tr key={u.id} className="border-b border-cloud-200 hover:bg-cloud-200/50 transition-colors">
                   <td className="py-2 px-3 text-xs text-ink-muted font-mono">{u.id}</td>
                   <td className="py-2 px-3 text-ink-body flex items-center gap-1.5 font-medium">
-                    {(u.role_name === 'super_admin' || u.role_name === 'admin') ? <Shield size={12} className="text-rose-500" />
+                    {u.role_name === 'super_admin' ? <Shield size={12} className="text-rose-500" />
                       : u.role_name === 'dept_admin' ? <Shield size={12} className="text-amber-500" />
                       : u.role_name === 'teacher' ? <Edit3 size={12} className="text-sky-500" />
                       : <User size={12} className="text-ink-muted" />}
                     {u.username}
-                    {u.id === me?.id && <span className="text-[10px] text-sky-500 ml-1">(我)</span>}
+                    {u.id === me?.id && <span className="text-2xs text-sky-500 ml-1">(我)</span>}
                   </td>
                   <td className="py-2 px-3 text-xs text-ink-muted">{u.email}</td>
                   <td className="py-2 px-3">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-lg border ${ROLE_COLORS[u.role_name] || ROLE_COLORS.student}`}>
+                    <span className={`text-2xs px-1.5 py-0.5 rounded-lg border ${ROLE_COLORS[u.role_name] || ROLE_COLORS.student}`}>
                       {ROLE_LABELS[u.role_name] || '只读'}
                     </span>
                   </td>
                   <td className="py-2 px-3">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-lg ${u.is_active ? 'bg-sage-50 text-sage-600 border border-sage-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>
+                    <span className={`text-2xs px-1.5 py-0.5 rounded-lg ${u.is_active ? 'bg-sage-50 text-sage-600 border border-sage-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>
                       {u.is_active ? '启用' : '禁用'}
                     </span>
                   </td>

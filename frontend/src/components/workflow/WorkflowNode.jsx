@@ -34,7 +34,7 @@ export default memo(function WorkflowNode({ data, selected }) {
     >
       <div
         className="flex items-center gap-2 px-3 py-2.5 rounded-[11px] min-w-[140px]"
-        style={{ background: def?.bgColor || '#fff', border: `1px solid ${def?.borderColor || '#e3eef7'}` }}
+        style={{ background: def?.bgColor || '#fff', border: `1px solid ${def?.borderColor || '#d6e5f2'}` }}
       >
         {/* Input handle */}
         {(def?.inputs ?? 1) > 0 && (
@@ -42,7 +42,7 @@ export default memo(function WorkflowNode({ data, selected }) {
             type="target"
             position={Position.Left}
             className="workflow-handle"
-            style={{ ...handleStyle, background: def?.color || '#6b8aaa' }}
+            style={{ ...handleStyle, background: def?.color || '#557a95' }}
           />
         )}
 
@@ -67,7 +67,7 @@ export default memo(function WorkflowNode({ data, selected }) {
             type="source"
             position={Position.Right}
             className="workflow-handle"
-            style={{ ...handleStyle, background: def?.color || '#6b8aaa' }}
+            style={{ ...handleStyle, background: def?.color || '#557a95' }}
           />
         )}
       </div>

@@ -334,3 +334,244 @@ def get_agent_manager() -> AgentManager:
     if agent_manager is None:
         return init_agent_manager()
     return agent_manager
+
+
+# ═══════════════════════════════════════════════════════════
+# PG Dispatch Layer — async functions that auto-detect PG
+# ═══════════════════════════════════════════════════════════
+#
+# Pattern (matches auth.py):
+#   - PG available → use pg_agent_repo (PostgreSQL)
+#   - PG unavailable → use AgentManager singleton (JSON file)
+#
+# All functions are async-safe. Sync AgentManager calls run via
+# run_in_executor to avoid blocking the event loop.
+
+def _pg_agent_ready() -> bool:
+    """Check if PG agent backend is available."""
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        get_pg_pool()
+        return True
+    except (RuntimeError, ImportError):
+        return False
+
+
+# ── Agent CRUD ──────────────────────────────────────────
+
+async def dispatch_list_agents(
+    user_id: int | None = None,
+    is_admin: bool = False,
+) -> list[dict]:
+    """List agents — PG-dispatched. Returns list of agent dicts."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_list_agents
+            return await pg_list_agents(user_id=user_id, is_admin=is_admin)
+        except Exception:
+            pass
+
+    # File fallback
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    def _fn():
+        agents = mgr.list_agents(user_id=user_id, is_admin=is_admin)
+        return [a.model_dump() for a in agents]
+    return await _asyncio.get_running_loop().run_in_executor(None, _fn)
+
+
+async def dispatch_get_agent(agent_id: str) -> dict | None:
+    """Get a single agent by ID — PG-dispatched."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_get_agent
+            result = await pg_get_agent(agent_id)
+            if result:
+                return result
+        except Exception:
+            pass
+
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    def _fn():
+        agent = mgr.get_agent(agent_id)
+        return agent.model_dump() if agent else None
+    return await _asyncio.get_running_loop().run_in_executor(None, _fn)
+
+
+async def dispatch_create_agent(
+    config: dict,
+    owner_id: int = 0,
+    owner_username: str = "",
+) -> dict:
+    """Create an agent — PG-dispatched. Returns created agent dict."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_create_agent
+            return await pg_create_agent(
+                config, owner_id=owner_id, owner_username=owner_username,
+            )
+        except Exception:
+            pass
+
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    def _fn():
+        agent = mgr.create_agent(config, owner_id=owner_id, owner_username=owner_username)
+        return agent.model_dump()
+    return await _asyncio.get_running_loop().run_in_executor(None, _fn)
+
+
+async def dispatch_update_agent(agent_id: str, updates: dict) -> dict | None:
+    """Update an agent — PG-dispatched. Returns updated agent dict or None."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_update_agent
+            return await pg_update_agent(agent_id, updates)
+        except Exception:
+            pass
+
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    def _fn():
+        agent = mgr.update_agent(agent_id, updates)
+        return agent.model_dump() if agent else None
+    return await _asyncio.get_running_loop().run_in_executor(None, _fn)
+
+
+async def dispatch_delete_agent(agent_id: str) -> bool:
+    """Delete an agent — PG-dispatched. Returns True if deleted."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_delete_agent
+            return await pg_delete_agent(agent_id)
+        except Exception:
+            pass
+
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    return await _asyncio.get_running_loop().run_in_executor(
+        None, mgr.delete_agent, agent_id,
+    )
+
+
+# ── Conversation CRUD ────────────────────────────────────
+
+async def dispatch_list_conversations(
+    agent_id: str,
+    user_id: int | None = None,
+    is_admin: bool = False,
+) -> list[dict]:
+    """List conversation threads — PG-dispatched."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_list_conversations
+            return await pg_list_conversations(
+                agent_id, user_id=user_id, is_admin=is_admin,
+            )
+        except Exception:
+            pass
+
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    def _fn():
+        threads = mgr.list_conversations(
+            agent_id, user_id=user_id, is_admin=is_admin,
+        )
+        return [t.model_dump() for t in threads]
+    return await _asyncio.get_running_loop().run_in_executor(None, _fn)
+
+
+async def dispatch_get_conversation(
+    agent_id: str, thread_id: str,
+) -> dict | None:
+    """Get a conversation thread with messages — PG-dispatched."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_get_conversation
+            return await pg_get_conversation(agent_id, thread_id)
+        except Exception:
+            pass
+
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    def _fn():
+        thread = mgr.get_conversation(agent_id, thread_id)
+        return thread.model_dump() if thread else None
+    return await _asyncio.get_running_loop().run_in_executor(None, _fn)
+
+
+async def dispatch_create_conversation(
+    agent_id: str,
+    title: str = "新对话",
+    owner_id: int = 0,
+) -> dict:
+    """Create a conversation thread — PG-dispatched."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_create_conversation
+            return await pg_create_conversation(agent_id, title=title, owner_id=owner_id)
+        except Exception:
+            pass
+
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    def _fn():
+        thread = mgr.create_conversation(agent_id, title=title, owner_id=owner_id)
+        return thread.model_dump()
+    return await _asyncio.get_running_loop().run_in_executor(None, _fn)
+
+
+async def dispatch_add_message(
+    agent_id: str, thread_id: str, message: dict,
+) -> bool:
+    """Add a message to a conversation — PG-dispatched."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_add_message
+            return await pg_add_message(agent_id, thread_id, message)
+        except Exception:
+            pass
+
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    return await _asyncio.get_running_loop().run_in_executor(
+        None, mgr.add_message, agent_id, thread_id, message,
+    )
+
+
+async def dispatch_delete_conversation(
+    agent_id: str, thread_id: str,
+) -> bool:
+    """Delete a conversation — PG-dispatched."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_delete_conversation
+            return await pg_delete_conversation(agent_id, thread_id)
+        except Exception:
+            pass
+
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    return await _asyncio.get_running_loop().run_in_executor(
+        None, mgr.delete_conversation, agent_id, thread_id,
+    )
+
+
+async def dispatch_update_conversation(
+    agent_id: str, thread_id: str, updates: dict,
+) -> dict | None:
+    """Update a conversation — PG-dispatched."""
+    if _pg_agent_ready():
+        try:
+            from raganything.services.pg_agent_repo import pg_update_conversation
+            return await pg_update_conversation(agent_id, thread_id, updates)
+        except Exception:
+            pass
+
+    import asyncio as _asyncio
+    mgr = get_agent_manager()
+    def _fn():
+        thread = mgr.update_conversation(agent_id, thread_id, updates)
+        return thread.model_dump() if thread else None
+    return await _asyncio.get_running_loop().run_in_executor(None, _fn)

@@ -10,9 +10,11 @@ Key Dependencies: lightrag (LightRAG, compute_mdhash_id), PIL, raganything.promp
 """
 
 import asyncio
+import hashlib
 import json
 import base64
-from typing import Dict, Any, Tuple
+import os
+from typing import Dict, Any, Tuple, Optional
 from pathlib import Path
 
 from lightrag.utils import logger, compute_mdhash_id
@@ -23,8 +25,28 @@ from raganything.modalprocessors.context import ContextExtractor
 from raganything.prompt import PROMPTS
 
 
+# ── Image type classification constants ──────────────────────
+# Lightweight heuristics for routing images to type-specific VLM prompts
+_IMAGE_TYPE_PROMPTS = {
+    "chart": "vision_prompt_chart",       # bar/line/pie charts, data viz
+    "diagram": "vision_prompt_diagram",   # flowcharts, architecture, block diagrams
+    "photo": "vision_prompt",             # natural photographs (default prompt)
+    "screenshot": "vision_prompt_screenshot",  # UI screenshots, app interfaces
+    "table_image": "vision_prompt_table_image",  # images that are actually tables
+}
+
+# Vision embedding cache: {sha256_hex → np.ndarray}
+# Module-level for cross-document reuse within the same process lifetime.
+_vision_embed_cache: dict[str, "np.ndarray"] = {}
+_VISION_CACHE_MAX_SIZE = int(os.getenv("VISION_EMBED_CACHE_SIZE", "5000"))
+
+
 class ImageModalProcessor(BaseModalProcessor):
     """Processor specialized for image content"""
+
+    # ── Image dedup cache (content hash → VLM result) ──────
+    _vlm_result_cache: dict[str, tuple[str, dict]] = {}
+    _VLM_CACHE_MAX = int(os.getenv("IMAGE_VLM_CACHE_SIZE", "2000"))
 
     def __init__(
         self,
@@ -44,6 +66,8 @@ class ImageModalProcessor(BaseModalProcessor):
         """
         super().__init__(lightrag, modal_caption_func, context_extractor)
         self.vision_embed_func = vision_embed_func
+        # Track pending vision embedding tasks for reliable completion
+        self._pending_vision_tasks: list[asyncio.Task] = []
 
     # Minimum image dimension in pixels; any side smaller → skip VLM call.
     _MIN_IMAGE_DIM = 14
@@ -51,6 +75,81 @@ class ImageModalProcessor(BaseModalProcessor):
     _MAX_ASPECT_RATIO = 50
     # Fewer unique colors → solid/decorative fill, not meaningful content.
     _MIN_UNIQUE_COLORS = 5
+    # Minimum dimensions for meaningful type classification
+    _MIN_CLASSIFY_DIM = 50
+
+    # ── Image content hash & dedup ──────────────────────────
+
+    @staticmethod
+    def _get_image_content_hash(image_path: "Path") -> str:
+        """Full-file SHA256 for exact image dedup across documents.
+
+        Returns hex digest string (64 chars). Uses streaming read
+        to handle large images without MemoryError.
+        """
+        h = hashlib.sha256()
+        with open(str(image_path), "rb") as f:
+            for chunk in iter(lambda: f.read(65536), b""):
+                h.update(chunk)
+        return h.hexdigest()
+
+    # ── Image type classification ───────────────────────────
+
+    @staticmethod
+    def _classify_image_type(image_path: "Path") -> str:
+        """Lightweight image type classification for prompt routing.
+
+        Returns one of: "chart", "diagram", "photo", "screenshot",
+        "table_image", or "photo" (fallback).
+
+        Uses cheap heuristics (dimensions, aspect ratio, color palette)
+        — no ML model needed. Goal: route to the best VLM prompt.
+        """
+        try:
+            from PIL import Image as PILImage
+            with PILImage.open(str(image_path)) as img:
+                w, h = img.size
+                if w < 50 or h < 50:
+                    return "photo"  # too small to classify
+
+                ratio = max(w, h) / max(min(w, h), 1)
+
+                # Convert to RGB for color analysis
+                if img.mode not in ("RGB", "RGBA"):
+                    img = img.convert("RGB")
+
+                # Sample colors (resize small for speed)
+                small = img.resize((min(w, 200), min(h, 200)), PILImage.NEAREST)
+                colors = small.getcolors(maxcolors=256)
+                if not colors:
+                    return "photo"
+
+                unique_colors = len(colors)
+                total_pixels = small.size[0] * small.size[1]
+
+                # Dominant color ratio (how much the top color dominates)
+                dominant_ratio = max(c[0] for c in colors) / total_pixels
+
+                # Heuristic: screenshots have many colors + typical aspect ratios
+                if 1.3 <= ratio <= 2.5 and unique_colors > 100:
+                    return "screenshot"
+
+                # Heuristic: charts/diagrams have fewer unique colors
+                # and often have white/light backgrounds
+                if unique_colors < 60 and dominant_ratio > 0.3:
+                    # Check for table-like grid patterns (many horizontal/vertical lines)
+                    return "chart"
+
+                if unique_colors < 80 and dominant_ratio > 0.15:
+                    return "diagram"
+
+                # Heuristic: table images are often very wide or tall text-heavy images
+                if ratio > 5 and unique_colors < 200:
+                    return "table_image"
+
+                return "photo"
+        except Exception:
+            return "photo"  # fallback
 
     def _check_image_skippable(self, image_path: "Path") -> tuple:
         """Return (reason, label) if the image should skip the VLM, else None.
@@ -112,6 +211,12 @@ class ImageModalProcessor(BaseModalProcessor):
         Generate image description and entity info only, without entity relation extraction.
         Used for batch processing stage 1.
 
+        Includes:
+        - Content-hash dedup (skip VLM if identical image already processed)
+        - Image type classification for prompt routing
+        - Reliable vision embedding (tracked for await on completion)
+        - Vision embedding cache (reuse across documents)
+
         Args:
             modal_content: Image content to process
             content_type: Type of modal content ("image")
@@ -151,6 +256,26 @@ class ImageModalProcessor(BaseModalProcessor):
             if not image_path_obj.exists():
                 raise FileNotFoundError(f"Image file not found: {image_path}")
 
+            # ── Content-hash dedup: skip VLM if identical image already processed ──
+            image_hash = self._get_image_content_hash(image_path_obj)
+            cached_vlm = self._vlm_result_cache.get(image_hash)
+            if cached_vlm is not None:
+                logger.info(
+                    f"VLM cache HIT for image {image_path} (hash={image_hash[:12]}...)"
+                )
+                enhanced_caption, entity_info = cached_vlm
+                # Still need to schedule vision embedding for THIS document
+                await self._schedule_vision_embed(
+                    image_path=image_path,
+                    entity_name=entity_info.get("entity_name", ""),
+                    entity_type=entity_info.get("entity_type", "image"),
+                    description=enhanced_caption,
+                    doc_id=doc_id,
+                    file_path=file_path,
+                    image_hash=image_hash,
+                )
+                return enhanced_caption, entity_info
+
             # Pre-filter: skip tiny/decorative images (<14px any side) before
             # wasting a VLM API call. Docx parsers often emit separator lines,
             # bullets, and other rendering artifacts as standalone images.
@@ -180,10 +305,21 @@ class ImageModalProcessor(BaseModalProcessor):
                     fallback_entity,
                 )
 
+            # ── Image type classification for prompt routing ──
+            image_type = self._classify_image_type(image_path_obj)
+            logger.info(
+                f"Image type classified as '{image_type}' for: {image_path}"
+            )
+
             # Extract context for current item
             context = ""
             if item_info:
                 context = self._get_context_for_item(item_info)
+
+            # ── Select type-specific prompt ──
+            prompt_key = _IMAGE_TYPE_PROMPTS.get(image_type, "vision_prompt")
+            # Fall back to default if type-specific prompt doesn't exist
+            vision_prompt_template = PROMPTS.get(prompt_key, PROMPTS["vision_prompt"])
 
             # Build detailed visual analysis prompt with context
             if context:
@@ -200,7 +336,7 @@ class ImageModalProcessor(BaseModalProcessor):
                     footnotes=footnotes if footnotes else "None",
                 )
             else:
-                vision_prompt = PROMPTS["vision_prompt"].format(
+                vision_prompt = vision_prompt_template.format(
                     section_path=section_path if section_path else "None",
                     entity_name=entity_name
                     if entity_name
@@ -225,28 +361,25 @@ class ImageModalProcessor(BaseModalProcessor):
             # Parse response (reuse existing logic)
             enhanced_caption, entity_info = self._parse_response(response, entity_name)
 
+            # ── Cache VLM result for cross-document dedup ──
+            if len(self._vlm_result_cache) >= self._VLM_CACHE_MAX:
+                # Evict oldest entry (FIFO)
+                oldest = next(iter(self._vlm_result_cache))
+                del self._vlm_result_cache[oldest]
+            self._vlm_result_cache[image_hash] = (enhanced_caption, entity_info)
+
             # ── Vision embedding (doubao-embedding-vision) ──
-            # Fire-and-forget: vision embedding runs concurrently with the next
-            # image's VLM analysis. Registered as a background task so the
-            # worker subprocess waits for all vision embeddings to complete
-            # before calling finalize_storages() and exiting.
-            if self.vision_embed_func is not None:
-                try:
-                    from raganything.processor.batch_processor import register_background_task
-                    _vision_task = asyncio.create_task(
-                        self._compute_and_store_vision(
-                            image_path=image_path,
-                            entity_name=entity_info.get("entity_name", ""),
-                            entity_type=entity_info.get("entity_type", "image"),
-                            description=enhanced_caption,
-                            doc_id=doc_id,
-                            file_path=file_path,
-                        )
-                    )
-                    register_background_task(_vision_task)
-                    logger.info("[VISION] Scheduled async embedding for %s", entity_info.get('entity_name', ''))
-                except Exception as e:
-                    logger.warning("[VISION] Failed to schedule embedding for %s: %s", entity_info.get("entity_name",""), e)
+            # Tracked for reliable completion: all pending vision tasks are
+            # awaited when the document processor calls finalize.
+            await self._schedule_vision_embed(
+                image_path=image_path,
+                entity_name=entity_info.get("entity_name", ""),
+                entity_type=entity_info.get("entity_type", "image"),
+                description=enhanced_caption,
+                doc_id=doc_id,
+                file_path=file_path,
+                image_hash=image_hash,
+            )
 
             return enhanced_caption, entity_info
 
@@ -261,6 +394,88 @@ class ImageModalProcessor(BaseModalProcessor):
                 "summary": f"Image content: {str(modal_content)[:100]}",
             }
             return str(modal_content), fallback_entity
+
+    async def _schedule_vision_embed(
+        self,
+        image_path: str,
+        entity_name: str,
+        entity_type: str = "image",
+        description: str = "",
+        doc_id: str = "",
+        file_path: str = "",
+        image_hash: str = "",
+    ) -> None:
+        """Schedule a tracked vision embedding task.
+
+        Unlike the old fire-and-forget pattern, tasks are tracked in
+        ``self._pending_vision_tasks`` so the document processor can
+        await their completion before finalizing.
+        """
+        if self.vision_embed_func is None:
+            return
+        try:
+            from raganything.processor.batch_processor import register_background_task
+            _vision_task = asyncio.create_task(
+                self._compute_and_store_vision(
+                    image_path=image_path,
+                    entity_name=entity_name,
+                    entity_type=entity_type,
+                    description=description,
+                    doc_id=doc_id,
+                    file_path=file_path,
+                    image_hash=image_hash,
+                )
+            )
+            register_background_task(_vision_task)
+            self._pending_vision_tasks.append(_vision_task)
+            # Clean up completed tasks to prevent unbounded growth
+            self._pending_vision_tasks = [
+                t for t in self._pending_vision_tasks if not t.done()
+            ]
+            logger.info(
+                "[VISION] Scheduled tracked embedding for %s (pending=%d)",
+                entity_name, len(self._pending_vision_tasks),
+            )
+        except Exception as e:
+            logger.warning(
+                "[VISION] Failed to schedule embedding for %s: %s",
+                entity_name, e,
+            )
+
+    async def await_pending_vision_tasks(self, timeout: float = 120.0) -> int:
+        """Wait for all pending vision embedding tasks to complete.
+
+        Called by the document processor before finalizing storages.
+        Returns the number of tasks that were awaited.
+        """
+        pending = [t for t in self._pending_vision_tasks if not t.done()]
+        if not pending:
+            return 0
+        logger.info(
+            "[VISION] Waiting for %d pending vision embedding tasks (timeout=%ds)...",
+            len(pending), timeout,
+        )
+        try:
+            done, _pending = await asyncio.wait(pending, timeout=timeout)
+            # Collect exceptions (don't crash — vision embedding is enhancement)
+            for task in done:
+                try:
+                    task.result()
+                except Exception as exc:
+                    logger.warning("[VISION] Background task failed: %s", exc)
+            self._pending_vision_tasks.clear()
+            logger.info(
+                "[VISION] Completed %d/%d vision embedding tasks",
+                len(done), len(pending),
+            )
+            return len(done)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "[VISION] Timed out after %ds — %d tasks still pending",
+                timeout, len(_pending) if _pending else 0,
+            )
+            self._pending_vision_tasks = list(_pending) if _pending else []
+            return len(pending) - len(self._pending_vision_tasks)
 
     async def process_multimodal_content(
         self,
@@ -359,23 +574,54 @@ class ImageModalProcessor(BaseModalProcessor):
         description: str = "",
         doc_id: str = "",
         file_path: str = "",
+        image_hash: str = "",
     ) -> None:
         """Background task: compute vision embedding and store in ``image_vision_repo``.
 
         This runs asynchronously after VLM description generation completes.
         Failures are silently logged — vision embedding is an enhancement,
         not a requirement for document processing.
+
+        Uses an in-memory cache (``_vision_embed_cache``) keyed by image content
+        hash to avoid redundant API calls for identical images across documents.
         """
         try:
             # Gate: only if vision_embed_func and image_vision_repo are available
             if self.vision_embed_func is None:
-                logger.warning("[VISION] vision_embed_func is None, skipping vision embedding for %s", entity_name)
                 return
             repo = getattr(self.lightrag, 'image_vision_repo', None)
             if repo is None:
-                logger.warning("[VISION] image_vision_repo is None, skipping vision embedding for %s", entity_name)
                 return
 
+            # ── Compute content hash if not provided ──
+            if not image_hash:
+                image_hash = self._get_image_content_hash(Path(image_path))
+
+            # ── Check in-memory cache first ──
+            cached_vec = _vision_embed_cache.get(image_hash)
+            if cached_vec is not None:
+                logger.info(
+                    "[VISION] Cache HIT for %s (hash=%s...)",
+                    entity_name, image_hash[:12],
+                )
+                # Store cached vector under this document's entity
+                await repo.upsert(
+                    image_hash=image_hash,
+                    vector=cached_vec,
+                    metadata={
+                        "entity_name": entity_name,
+                        "entity_type": entity_type,
+                        "image_path": image_path,
+                        "description": description,
+                        "vision_model": self.vision_embed_func.model,
+                        "doc_id": doc_id,
+                        "file_path": file_path,
+                    },
+                )
+                await repo.flush()
+                return
+
+            # ── Compute fresh embedding ──
             logger.info("[VISION] Computing embedding for %s", entity_name)
             vec = await self.vision_embed_func.embed_image(
                 image_path, caption_text=description[:500]
@@ -384,13 +630,14 @@ class ImageModalProcessor(BaseModalProcessor):
                 logger.warning("[VISION] embed_image returned None for %s", entity_name)
                 return  # embed_image logged the reason
 
-            # Compute content hash for dedup + idempotent upsert
-            import hashlib
-            h = hashlib.sha256()
-            with open(image_path, "rb") as f:
-                h.update(f.read(65536))
-            image_hash = h.hexdigest()[:16]
+            # ── Cache for cross-document reuse ──
+            if len(_vision_embed_cache) >= _VISION_CACHE_MAX_SIZE:
+                # Evict oldest (FIFO via dict ordering since Python 3.7)
+                oldest = next(iter(_vision_embed_cache))
+                del _vision_embed_cache[oldest]
+            _vision_embed_cache[image_hash] = vec
 
+            # ── Store in image_vision_repo ──
             await repo.upsert(
                 image_hash=image_hash,
                 vector=vec,
@@ -406,7 +653,10 @@ class ImageModalProcessor(BaseModalProcessor):
             )
             await repo.flush()
 
-            logger.info("[VISION] SUCCESS: Stored embedding for %s (hash=%s)", entity_name, image_hash)
+            logger.info(
+                "[VISION] SUCCESS: Stored embedding for %s (hash=%s)",
+                entity_name, image_hash[:12],
+            )
         except Exception as e:
             logger.warning("[VISION] FAILED for %s: %s", image_path, e)
 

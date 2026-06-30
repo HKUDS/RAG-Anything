@@ -3,6 +3,7 @@ from pathlib import Path
 import asyncio
 import sys
 import types
+from unittest.mock import ANY
 
 
 class FakeLogger:
@@ -138,11 +139,10 @@ def test_insert_content_list_defers_status_until_after_text_insert():
         )
     )
 
-    assert processor.events[0] == (
-        "ainsert",
-        "doc-content-list",
-        "hello from content list",
-    )
+    # ainsert is called before doc_status transitions
+    assert processor.events[0][0] == "ainsert"
+    assert processor.events[0][1] == "doc-content-list"
+    assert "hello from content list" in processor.events[0][2]
     assert processor.lightrag.doc_status.records["doc-content-list"]["status"] == (
         DocStatus.PROCESSED
     )
@@ -162,11 +162,10 @@ def test_process_document_complete_defers_status_until_after_text_insert():
 
     asyncio.run(processor.process_document_complete("/tmp/source.pdf"))
 
-    assert processor.events[0] == (
-        "ainsert",
-        "doc-complete",
-        "hello from parsed document",
-    )
+    # ainsert is called before doc_status transitions
+    assert processor.events[0][0] == "ainsert"
+    assert processor.events[0][1] == "doc-complete"
+    assert "hello from parsed document" in processor.events[0][2]
     assert processor.lightrag.doc_status.records["doc-complete"]["status"] == (
         DocStatus.PROCESSED
     )
@@ -184,13 +183,14 @@ def test_process_document_complete_keeps_status_for_multimodal_only_content():
 
     asyncio.run(processor.process_document_complete("/tmp/source.pdf"))
 
-    assert processor.events[0] == ("doc_status", "doc-complete", DocStatus.READY)
-    assert processor.events[1] == (
-        "doc_status",
-        "doc-complete",
-        DocStatus.HANDLING,
-    )
-    assert processor.events[2] == ("multimodal", "doc-complete", "source.pdf")
+    # Structured format: inline image refs make text non-empty,
+    # so ainsert() runs. FakeLightRAG.ainsert sets PROCESSED,
+    # then _upsert_doc_status transitions to HANDLING,
+    # then multimodal processing runs.
+    assert processor.events[0] == ("ainsert", "doc-complete", ANY)
+    assert processor.events[1] == ("doc_status", "doc-complete", DocStatus.PROCESSED)
+    assert processor.events[2] == ("doc_status", "doc-complete", DocStatus.HANDLING)
+    assert processor.events[3] == ("multimodal", "doc-complete", "source.pdf")
 
 
 def test_insert_content_list_keeps_status_for_multimodal_only_content():
@@ -203,21 +203,19 @@ def test_insert_content_list_keeps_status_for_multimodal_only_content():
         )
     )
 
-    assert processor.events[0] == (
-        "doc_status",
-        "doc-content-list",
-        DocStatus.READY,
-    )
+    # Structured format: inline references mean text IS present,
+    # so ainsert() runs, then status transitions directly to PROCESSED
+    # (multimodal is backgrounded). This makes image-only documents
+    # searchable by their inline references.
+    assert processor.events[0] == ("ainsert", "doc-content-list", ANY)
     assert processor.events[1] == (
         "doc_status",
         "doc-content-list",
-        DocStatus.HANDLING,
-    )
-    # When an event loop is available, multimodal processing is scheduled as a
-    # background task and doc_status transitions to PROCESSED immediately so
-    # text chunks are searchable without waiting for VLM/LLM calls.
-    assert processor.events[2] == (
-        "doc_status",
-        "doc-content-list",
         DocStatus.PROCESSED,
+    )
+    assert (
+        processor.lightrag.doc_status.records["doc-content-list"][
+            "multimodal_processed"
+        ]
+        is True
     )

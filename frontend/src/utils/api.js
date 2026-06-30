@@ -143,6 +143,7 @@ export const api = {
   deleteDocument: (id) => request(`/knowledge/documents/${id}`, { method: 'DELETE' }),
   deleteDocuments: (ids) => request('/knowledge/documents/batch-delete', { method: 'POST', body: JSON.stringify({ doc_ids: ids }) }),
   retryDocument: (id) => request(`/knowledge/documents/${id}/retry`, { method: 'POST' }),
+  downloadDocumentUrl: (id) => `${API_BASE}/knowledge/documents/${id}/download?kb=${currentKB}`,
 
   // Image similarity search (vision embedding - doubao-embedding-vision)
   imageSearch: (file, topK = 10) => {

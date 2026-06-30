@@ -18,8 +18,8 @@ const nodeTypes = { custom: WorkflowNode }
 const defaultEdgeOptions = {
   type: 'smoothstep',
   animated: true,
-  style: { stroke: '#c7ddf0', strokeWidth: 2 },
-  markerEnd: { type: MarkerType.ArrowClosed, color: '#c7ddf0', width: 16, height: 16 },
+  style: { stroke: '#bcd3e8', strokeWidth: 2 },
+  markerEnd: { type: MarkerType.ArrowClosed, color: '#bcd3e8', width: 16, height: 16 },
 }
 
 function EmptyState() {
@@ -78,7 +78,7 @@ export default function WorkflowCanvas({
         nodeTypes={nodeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
         deleteKeyCode={['Delete', 'Backspace']}
-        connectionLineStyle={{ stroke: '#c7ddf0', strokeWidth: 2, strokeDasharray: '6 4' }}
+        connectionLineStyle={{ stroke: '#bcd3e8', strokeWidth: 2, strokeDasharray: '6 4' }}
         fitView
         className="bg-cloud-200"
       >
@@ -86,10 +86,10 @@ export default function WorkflowCanvas({
         {hasNodes && (
           <MiniMap
             className="!rounded-xl !shadow-cloud-md"
-            nodeColor={(n) => getNodeType(n.data?.nodeType)?.color || '#6b8aaa'}
+            nodeColor={(n) => getNodeType(n.data?.nodeType)?.color || '#557a95'}
           />
         )}
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#e3eef7" />
+        <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="#d6e5f2" />
       </ReactFlow>
     </div>
   )

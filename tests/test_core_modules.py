@@ -141,10 +141,23 @@ class TestSeparateContent:
             {"type": "table", "table_body": "col1|col2"},
         ]
         text, multimodal = separate_content(content)
-        assert text == ""
+        # Structured format includes inline references to multimodal items
+        assert "图片" in text  # image reference marker
+        assert "/path/to/image.png" in text
+        assert "表格" in text  # table reference marker
         assert len(multimodal) == 2
         assert multimodal[0]["type"] == "image"
         assert multimodal[1]["type"] == "table"
+
+    def test_multimodal_only_legacy_flat(self):
+        """Legacy flat-join mode keeps text empty for multimodal-only content."""
+        content = [
+            {"type": "image", "img_path": "/path/to/image.png"},
+            {"type": "table", "table_body": "col1|col2"},
+        ]
+        text, multimodal = separate_content(content, preserve_structure=False)
+        assert text == ""
+        assert len(multimodal) == 2
 
     def test_mixed_content(self):
         content = [
@@ -167,7 +180,8 @@ class TestSeparateContent:
         ]
         text, multimodal = separate_content(content)
         assert "Valid text" in text
-        assert "   " not in text.split("\n\n")
+        # Whitespace-only text items are stripped and skipped
+        assert "   " not in text
 
     def test_missing_type_defaults_to_text(self):
         content = [{"text": "no type field"}]

@@ -154,9 +154,9 @@ export default function UploadPage({ onToast }) {
         <p className="text-ink-muted dark:text-cloud-500 text-sm mt-2">支持 PDF、Word、PPT、Excel、图片、文本</p>
         <div className="flex flex-wrap justify-center gap-1.5 mt-3">
           {SUPPORTED.slice(0, 8).map(ext => (
-            <span key={ext} className="text-[11px] px-2 py-0.5 rounded-lg bg-cloud-100 dark:bg-sky-900/30 text-ink-muted dark:text-cloud-500 font-mono">{ext}</span>
+            <span key={ext} className="text-2xs px-2 py-0.5 rounded-lg bg-cloud-100 dark:bg-sky-900/30 text-ink-muted dark:text-cloud-500 font-mono">{ext}</span>
           ))}
-          <span className="text-[11px] px-2 py-0.5 rounded-lg bg-cloud-100 dark:bg-sky-900/30 text-ink-muted dark:text-cloud-500">+9 more</span>
+          <span className="text-2xs px-2 py-0.5 rounded-lg bg-cloud-100 dark:bg-sky-900/30 text-ink-muted dark:text-cloud-500">+9 more</span>
         </div>
       </motion.div>
 
@@ -177,7 +177,7 @@ export default function UploadPage({ onToast }) {
                       : 'border-cloud-300 dark:border-sky-800/30 text-ink-muted dark:text-cloud-500 hover:border-cloud-400 dark:hover:border-sky-700 hover:text-ink-body dark:hover:text-cloud-300'
                   }`}>
                   <span className="font-medium">{meta.name}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full border ${COST_COLORS[meta.cost_level] || COST_COLORS.free}`}>
+                  <span className={`text-2xs px-1.5 py-0.5 rounded-full border ${COST_COLORS[meta.cost_level] || COST_COLORS.free}`}>
                     {meta.cost}
                   </span>
                 </button>

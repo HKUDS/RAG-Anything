@@ -138,6 +138,12 @@ async def init_db():
                     "INSERT INTO roles (name, description, permissions) VALUES (?, ?, ?)",
                     (role_name, role_cfg["desc"], _json_rbac.dumps(role_cfg["perms"])),
                 )
+            else:
+                # UPDATE existing role to pick up new permissions (e.g. manufacturing:read)
+                await db.execute(
+                    "UPDATE roles SET description = ?, permissions = ? WHERE name = ?",
+                    (role_cfg["desc"], _json_rbac.dumps(role_cfg["perms"]), role_name),
+                )
 
         await db.execute("""
             CREATE TABLE IF NOT EXISTS users (
@@ -146,7 +152,6 @@ async def init_db():
                 email       TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
                 role_id     INTEGER REFERENCES roles(id) DEFAULT NULL,
-                is_admin    INTEGER DEFAULT 0,
                 is_active   INTEGER DEFAULT 1,
                 failed_login_attempts INTEGER DEFAULT 0,
                 locked_until TEXT DEFAULT NULL,
@@ -204,27 +209,6 @@ async def init_db():
                     raise
         await db.commit()
 
-        # Migrate existing users: if role_id is NULL, assign from is_admin
-        admin_role = await (await db.execute(
-            "SELECT id FROM roles WHERE name IN ('super_admin', 'admin') ORDER BY id LIMIT 1"
-        )).fetchone()
-        student_role = await (await db.execute(
-            "SELECT id FROM roles WHERE name IN ('student', 'viewer') ORDER BY id LIMIT 1"
-        )).fetchone()
-        if admin_role and student_role:
-            admin_id = admin_role[0]
-            student_id = student_role[0]
-            # Assign role to users with NULL role_id based on legacy is_admin flag
-            await db.execute(
-                "UPDATE users SET role_id = ? WHERE role_id IS NULL AND is_admin = 1",
-                (admin_id,),
-            )
-            await db.execute(
-                "UPDATE users SET role_id = ? WHERE role_id IS NULL AND is_admin = 0",
-                (student_id,),
-            )
-            await db.commit()
-
         # Load or persist JWT keys (env var takes priority; serialized via SQLite lock)
         # In multi-worker deployments, the first worker persists its key; subsequent
         # workers load the persisted key to ensure consistency across workers.
@@ -277,7 +261,9 @@ async def init_db():
     # Ensure default admin exists
     admin = await get_user_by_username(DEFAULT_ADMIN_USERNAME)
     if not admin:
-        await create_user(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD, is_admin=True)
+        super_admin_role = await get_role_by_name("super_admin")
+        await create_user(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD,
+                          role_id=super_admin_role["id"] if super_admin_role else None, must_change_password=True)
         # Force password change on first login for auto-created default admin
         async with aiosqlite.connect(str(get_db_path())) as db:
             await db.execute(
@@ -314,13 +300,8 @@ async def get_user_by_id(user_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-async def create_user(username: str, email: str, password: str, is_admin: bool = False) -> dict:
-    """Create a new user. Returns user dict without password hash.
-
-    .. deprecated::
-        `is_admin` 参数已弃用，请使用 `role_id` 代替。
-        此处保留仅为向后兼容。
-    """
+async def create_user(username: str, email: str, password: str, role_id: int | None = None, must_change_password: bool = False) -> dict:
+    """Create a new user. Returns user dict without password hash."""
     import aiosqlite, re as _re_pw
 
     if len(password) < 8:
@@ -346,19 +327,27 @@ async def create_user(username: str, email: str, password: str, is_admin: bool =
 
     async with aiosqlite.connect(str(get_db_path())) as db:
         db.row_factory = aiosqlite.Row
-        # Resolve role_id from is_admin parameter (backward-compatible)
-        role_name = "super_admin" if is_admin else "student"
-        role_row = await (await db.execute(
-            "SELECT id FROM roles WHERE name = ?", (role_name,)
-        )).fetchone()
-        if not role_row:
-            raise ValueError(f"角色 '{role_name}' 不存在，请先初始化默认角色")
-        role_id = role_row[0]
+        # Default role: student
+        if role_id is None:
+            role_name = "student"
+            role_row = await (await db.execute(
+                "SELECT id FROM roles WHERE name = ?", (role_name,)
+            )).fetchone()
+            if not role_row:
+                raise ValueError(f"角色 '{role_name}' 不存在，请先初始化默认角色")
+            role_id = role_row[0]
+        else:
+            # Validate the explicit role_id exists
+            role_row = await (await db.execute(
+                "SELECT id FROM roles WHERE id = ?", (role_id,)
+            )).fetchone()
+            if not role_row:
+                raise ValueError(f"角色 ID {role_id} 不存在")
 
         try:
             cursor = await db.execute(
-                "INSERT INTO users (username, email, password_hash, role_id) VALUES (?, ?, ?, ?)",
-                (username.strip(), email.strip(), password_hash, role_id),
+                "INSERT INTO users (username, email, password_hash, role_id, must_change_password) VALUES (?, ?, ?, ?, ?)",
+                (username.strip(), email.strip(), password_hash, role_id, 1 if must_change_password else 0),
             )
             await db.commit()
             user_id = cursor.lastrowid
@@ -388,8 +377,8 @@ async def update_user(user_id: int, data: dict) -> dict | None:
     _logger = _logging.getLogger("rag_server.auth")
 
     # role_id is canonical; is_admin is rejected (must be translated upstream)
-    allowed_fields = {"username", "email", "role_id", "is_active"}
-    security_sensitive_fields = {"is_admin", "password_hash", "failed_login_attempts",
+    allowed_fields = {"username", "email", "role_id", "is_active", "must_change_password"}
+    security_sensitive_fields = {"password_hash", "failed_login_attempts",
                                   "locked_until", "created_at", "updated_at"}
 
     # Log + reject security-sensitive fields that bypass the allowlist
@@ -437,6 +426,36 @@ async def update_user(user_id: int, data: dict) -> dict | None:
 
 # ── Role & Permission Helpers ────────────────────────────────
 
+async def get_role_by_name(role_name: str) -> dict | None:
+    """Look up a role by its name."""
+    import aiosqlite
+    async with aiosqlite.connect(str(get_db_path())) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM roles WHERE name = ?", (role_name,)
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def list_roles() -> list[dict]:
+    """List all roles."""
+    import aiosqlite, json as _json
+    async with aiosqlite.connect(str(get_db_path())) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute("SELECT * FROM roles ORDER BY id")
+        rows = await cursor.fetchall()
+        roles = []
+        for r in rows:
+            role = dict(r)
+            try:
+                role["permissions"] = _json.loads(role.get("permissions", "[]"))
+            except (_json.JSONDecodeError, TypeError):
+                role["permissions"] = []
+            roles.append(role)
+        return roles
+
+
 async def get_user_role(user_id: int) -> dict | None:
     """Get the role assigned to a user. Returns role dict or None."""
     import aiosqlite
@@ -465,9 +484,21 @@ async def has_permission(user_id: int, permission: str) -> bool:
 
 
 async def user_is_admin(user_id: int) -> bool:
-    """Backward-compatible: check if user role is 'super_admin' or 'admin'."""
+    """Backward-compatible: check if user role is 'super_admin'."""
     role = await get_user_role(user_id)
-    return role is not None and role.get("name") in ("super_admin", "admin")
+    return role is not None and role.get("name") == "super_admin"
+
+
+async def update_last_login_at(user_id: int) -> None:
+    """Update the last_login_at timestamp for a user."""
+    import aiosqlite
+    from datetime import datetime
+    async with aiosqlite.connect(str(get_db_path())) as db:
+        await db.execute(
+            "UPDATE users SET last_login_at = ? WHERE id = ?",
+            (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), user_id),
+        )
+        await db.commit()
 
 
 async def delete_user(user_id: int) -> bool:
@@ -651,6 +682,10 @@ if _USE_PG:
     _pg_logger = _logging.getLogger("rag_server.auth")
     _pg_logger.info("检测到 PostgreSQL 配置，激活 PG 后端（带 SQLite 回退）")
 
+    # Lazy imports for fallback paths (avoid circular import at module level)
+    from raganything.services.token_blacklist import get_token_blacklist
+    from raganything.services.audit import get_audit_logger
+
     # Save original SQLite implementations for fallback
     _sqlite_init_db = init_db
     _sqlite_get_user_by_username = get_user_by_username
@@ -660,11 +695,14 @@ if _USE_PG:
     _sqlite_delete_user = delete_user
     _sqlite_list_users = list_users
     _sqlite_get_user_role = get_user_role
+    _sqlite_get_role_by_name = get_role_by_name
+    _sqlite_list_roles = list_roles
     _sqlite_has_permission = has_permission
     _sqlite_user_is_admin = user_is_admin
     _sqlite_check_account_locked = check_account_locked
     _sqlite_record_failed_login = record_failed_login
     _sqlite_reset_failed_logins = reset_failed_logins
+    _sqlite_update_last_login_at = update_last_login_at
 
     from raganything.services.pg_auth_repo import (
         init_db as _pg_init_db,
@@ -680,6 +718,18 @@ if _USE_PG:
         check_account_locked as _pg_check_account_locked,
         record_failed_login as _pg_record_failed_login,
         reset_failed_logins as _pg_reset_failed_logins,
+        update_last_login_at as _pg_update_last_login_at,
+        get_role_by_name as _pg_get_role_by_name,
+        list_roles as _pg_list_roles,
+        # Token blacklist (PG-backed)
+        pg_revoke_token as _pg_revoke_token,
+        pg_is_token_revoked as _pg_is_token_revoked,
+        pg_revoke_refresh_family as _pg_revoke_refresh_family,
+        pg_register_refresh_family as _pg_register_refresh_family,
+        # Audit log (PG-backed)
+        pg_audit_log as _pg_audit_log,
+        pg_query_audit_logs as _pg_query_audit_logs,
+        # Constants
         SECRET_KEY as _PG_SECRET_KEY,
         REFRESH_SECRET_KEY as _PG_REFRESH_SECRET_KEY,
         SERVER_START_ID as _PG_SERVER_START_ID,
@@ -724,8 +774,8 @@ if _USE_PG:
     async def get_user_by_id(user_id: int):
         return await _pg_get_user_by_id(user_id) if _pg_ready() else await _sqlite_get_user_by_id(user_id)
 
-    async def create_user(username: str, email: str, password: str, is_admin: bool = False):
-        return await _pg_create_user(username, email, password, is_admin) if _pg_ready() else await _sqlite_create_user(username, email, password, is_admin)
+    async def create_user(username: str, email: str, password: str, role_id: int | None = None, must_change_password: bool = False):
+        return await _pg_create_user(username, email, password, role_id, must_change_password) if _pg_ready() else await _sqlite_create_user(username, email, password, role_id, must_change_password)
 
     async def update_user(user_id: int, data: dict):
         return await _pg_update_user(user_id, data) if _pg_ready() else await _sqlite_update_user(user_id, data)
@@ -738,6 +788,12 @@ if _USE_PG:
 
     async def get_user_role(user_id: int):
         return await _pg_get_user_role(user_id) if _pg_ready() else await _sqlite_get_user_role(user_id)
+
+    async def get_role_by_name(role_name: str):
+        return await _pg_get_role_by_name(role_name) if _pg_ready() else await _sqlite_get_role_by_name(role_name)
+
+    async def list_roles():
+        return await _pg_list_roles() if _pg_ready() else await _sqlite_list_roles()
 
     async def has_permission(user_id: int, permission: str):
         return await _pg_has_permission(user_id, permission) if _pg_ready() else await _sqlite_has_permission(user_id, permission)
@@ -754,6 +810,69 @@ if _USE_PG:
     async def reset_failed_logins(user_id: int):
         return await _pg_reset_failed_logins(user_id) if _pg_ready() else await _sqlite_reset_failed_logins(user_id)
 
+    async def update_last_login_at(user_id: int):
+        if _pg_ready():
+            await _pg_update_last_login_at(user_id)
+        else:
+            await _sqlite_update_last_login_at(user_id)
+
+    # ── Token Blacklist Dispatch (Phase 1 PG migration) ──────
+
+    async def is_token_revoked(jti: str) -> bool:
+        """Check if a token JTI is revoked. PG-first with SQLite fallback."""
+        if _pg_ready():
+            return await _pg_is_token_revoked(jti)
+        return get_token_blacklist().is_revoked(jti)
+
+    async def revoke_token(jti: str, expires_at, family_id: str | None = None):
+        """Revoke a token. PG-first with SQLite fallback."""
+        if _pg_ready():
+            await _pg_revoke_token(jti, expires_at, family_id)
+        else:
+            get_token_blacklist().revoke(jti, expires_at)
+
+    async def revoke_refresh_family(family_id: str):
+        """Revoke all tokens in a refresh family. PG-first with SQLite fallback."""
+        if _pg_ready():
+            await _pg_revoke_refresh_family(family_id)
+        else:
+            get_token_blacklist().revoke_refresh_family(family_id)
+
+    async def register_refresh_family(family_id: str, jti: str):
+        """Register a JTI into a refresh family. PG-first with SQLite fallback."""
+        if _pg_ready():
+            await _pg_register_refresh_family(family_id, jti)
+        else:
+            get_token_blacklist().register_refresh_family(family_id, jti)
+
+    # ── Audit Log Dispatch (Phase 1 PG migration) ─────────────
+
+    async def audit_log(
+        actor_id: int,
+        action: str,
+        target_user_id: int | None = None,
+        details: dict | None = None,
+        ip_address: str | None = None,
+    ):
+        """Write audit log. PG-first (direct write) with SQLite fallback."""
+        if _pg_ready():
+            await _pg_audit_log(actor_id, action, target_user_id, details, ip_address)
+        else:
+            audit = get_audit_logger()
+            await audit.log(actor_id, action, target_user_id, details, ip_address)
+
+    async def query_audit_logs(
+        page: int = 1,
+        page_size: int = 20,
+        actor_id: int | None = None,
+        action: str | None = None,
+    ):
+        """Query audit logs with pagination. PG-first with SQLite fallback."""
+        if _pg_ready():
+            return await _pg_query_audit_logs(page, page_size, actor_id, action)
+        from raganything.services.audit import query_audit_logs as _sqlite_query
+        return await _sqlite_query(str(DB_PATH), page, page_size, actor_id, action)
+
     # Sync module-level constants so JWT functions use the PG-backed values
     SECRET_KEY = _PG_SECRET_KEY
     REFRESH_SECRET_KEY = _PG_REFRESH_SECRET_KEY
@@ -762,3 +881,42 @@ if _USE_PG:
     DEFAULT_ADMIN_EMAIL = _PG_DEFAULT_ADMIN_EMAIL
     DEFAULT_ADMIN_PASSWORD = _PG_DEFAULT_ADMIN_PASSWORD
     _pg_logger.info("PG 后端已激活（带 SQLite 运行时回退）")
+
+else:
+    # ── No PG configured — define direct SQLite dispatch functions ──
+    # These have the same names/signatures as the PG dispatch wrappers above,
+    # so callers can import them unconditionally regardless of PG availability.
+
+    from raganything.services.token_blacklist import get_token_blacklist
+
+    async def is_token_revoked(jti: str) -> bool:
+        return get_token_blacklist().is_revoked(jti)
+
+    async def revoke_token(jti: str, expires_at, family_id: str | None = None):
+        get_token_blacklist().revoke(jti, expires_at)
+
+    async def revoke_refresh_family(family_id: str):
+        get_token_blacklist().revoke_refresh_family(family_id)
+
+    async def register_refresh_family(family_id: str, jti: str):
+        get_token_blacklist().register_refresh_family(family_id, jti)
+
+    async def audit_log(
+        actor_id: int,
+        action: str,
+        target_user_id: int | None = None,
+        details: dict | None = None,
+        ip_address: str | None = None,
+    ):
+        from raganything.services.audit import get_audit_logger as _audit
+        audit = _audit()
+        await audit.log(actor_id, action, target_user_id, details, ip_address)
+
+    async def query_audit_logs(
+        page: int = 1,
+        page_size: int = 20,
+        actor_id: int | None = None,
+        action: str | None = None,
+    ):
+        from raganything.services.audit import query_audit_logs as _sqlite_query
+        return await _sqlite_query(str(DB_PATH), page, page_size, actor_id, action)

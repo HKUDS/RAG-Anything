@@ -20,8 +20,8 @@ const API = '/api/workflows'
 const defaultEdgeOptions = {
   type: 'smoothstep',
   animated: true,
-  style: { stroke: '#9aaec5', strokeWidth: 2 },
-  markerEnd: { type: MarkerType.ArrowClosed, color: '#9aaec5', width: 16, height: 16 },
+  style: { stroke: '#8da3bb', strokeWidth: 2 },
+  markerEnd: { type: MarkerType.ArrowClosed, color: '#8da3bb', width: 16, height: 16 },
 }
 
 function getToken() {

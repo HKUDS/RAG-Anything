@@ -93,11 +93,12 @@ class RAGAnythingConfig:
     # Vision Embedding Configuration (doubao-embedding-vision)
     # ---
     enable_vision_embedding: bool = field(
-        default=get_env_value("ENABLE_VISION_EMBEDDING", False, bool)
+        default=get_env_value("ENABLE_VISION_EMBEDDING", True, bool)
     )
     """Enable vision embedding for image-to-image similarity search.
     When True and ``vision_embedding_model`` is configured, images are embedded
-    via the vision model in addition to VLM text description."""
+    via the vision model in addition to VLM text description.
+    Default True — auto-enables when VISION_EMBEDDING_MODEL is set."""
 
     vision_embedding_model: str = field(
         default=get_env_value("VISION_EMBEDDING_MODEL", "", str)
@@ -112,11 +113,11 @@ class RAGAnythingConfig:
     Set explicitly to skip the discovery probe and avoid a startup API cost."""
 
     vision_search_enabled: bool = field(
-        default=get_env_value("VISION_SEARCH_ENABLED", False, bool)
+        default=get_env_value("VISION_SEARCH_ENABLED", True, bool)
     )
-    """Feature gate for vision search API and UI. When False (default),
-    image-to-image similarity search is disabled regardless of
-    ``vision_embedding_model`` configuration."""
+    """Feature gate for vision search API and UI. When True (default),
+    image-to-image similarity search is enabled when ``vision_embedding_model``
+    is configured. Set to "false" to explicitly disable the vision search endpoint."""
 
     video_sample_rate: float = field(
         default=get_env_value("VIDEO_SAMPLE_RATE", 1.0, float)
@@ -180,6 +181,26 @@ class RAGAnythingConfig:
     When False, falls back to the lighter INLINE_QUOTE_INSTRUCTION.
     Maps to environment variable RAG_ENFORCE_CITATION."""
 
+    # OCR Quality & Parse-Method Auto-Selection
+    # ---
+    ocr_quality_check_enabled: bool = field(
+        default=get_env_value("OCR_QUALITY_CHECK_ENABLED", True, bool)
+    )
+    """Enable OCR quality validation after parsing. When True, extracted text
+    is scored and a parse-method retry is triggered if quality is low."""
+
+    ocr_quality_threshold: float = field(
+        default=get_env_value("OCR_QUALITY_THRESHOLD", 0.7, float)
+    )
+    """Minimum quality score (0.0–1.0) to accept a parse result.
+    Below this threshold, an automatic retry with a better method is attempted."""
+
+    ocr_max_retries: int = field(
+        default=get_env_value("OCR_MAX_RETRIES", 1, int)
+    )
+    """Maximum number of parse-method retries when quality is low.
+    Each retry tries a different method (auto → ocr → auto with lang hint)."""
+
     # Batch Processing Configuration
     # ---
     max_concurrent_files: int = field(
@@ -206,16 +227,17 @@ class RAGAnythingConfig:
 
     # Context Extraction Configuration
     # ---
-    context_window: int = field(default=get_env_value("CONTEXT_WINDOW", 1, int))
-    """Number of pages/chunks to include before and after current item for context."""
+    context_window: int = field(default=get_env_value("CONTEXT_WINDOW", 2, int))
+    """Number of pages/chunks to include before and after current item for context.
+    Default 2 provides ~5 pages of context for VLM image analysis."""
 
     context_mode: str = field(default=get_env_value("CONTEXT_MODE", "page", str))
     """Context extraction mode: 'page' for page-based, 'chunk' for chunk-based."""
 
     max_context_tokens: int = field(
-        default=get_env_value("MAX_CONTEXT_TOKENS", 2000, int)
+        default=get_env_value("MAX_CONTEXT_TOKENS", 3000, int)
     )
-    """Maximum number of tokens in extracted context."""
+    """Maximum number of tokens in extracted context. Default 3000 for richer context."""
 
     include_headers: bool = field(default=get_env_value("INCLUDE_HEADERS", True, bool))
     """Whether to include document headers and titles in context."""

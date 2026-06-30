@@ -128,14 +128,6 @@ DEFAULT_ROLES: Dict[str, Dict] = {
     },
 }
 
-# 保留旧角色名映射，确保向后兼容
-ROLE_ALIASES = {
-    "admin": "super_admin",
-    "editor": "teacher",
-    "viewer": "student",
-}
-
-
 # ── 权限工具函数 ────────────────────────────────────────────
 
 def get_role_permissions(role_permissions_json: str) -> List[str]:

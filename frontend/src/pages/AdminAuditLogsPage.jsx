@@ -145,7 +145,7 @@ export default function AdminAuditLogsPage() {
                   <td className="py-2 px-3 text-xs text-ink-muted font-mono">{l.id}</td>
                   <td className="py-2 px-3 text-xs text-ink-body font-medium">#{l.actor_id}</td>
                   <td className="py-2 px-3">
-                    <span className={`text-[10px] px-1.5 py-0.5 rounded-lg border inline-flex items-center gap-1 ${meta.color}`}>
+                    <span className={`text-2xs px-1.5 py-0.5 rounded-lg border inline-flex items-center gap-1 ${meta.color}`}>
                       {ActionIcon && <ActionIcon size={10} />}
                       {ACTION_LABELS[l.action] || l.action}
                     </span>

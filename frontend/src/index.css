@@ -16,9 +16,9 @@
   body {
     @apply bg-cloud-100 text-ink-body font-body leading-relaxed;
     background-image:
-      radial-gradient(ellipse at 20% 50%, rgba(91, 155, 213, 0.02) 0%, transparent 55%),
-      radial-gradient(ellipse at 85% 15%, rgba(91, 155, 213, 0.015) 0%, transparent 55%),
-      radial-gradient(ellipse at 50% 90%, rgba(107, 158, 122, 0.01) 0%, transparent 50%);
+      radial-gradient(ellipse at 20% 50%, rgba(91, 155, 213, 0.025) 0%, transparent 55%),
+      radial-gradient(ellipse at 85% 15%, rgba(91, 155, 213, 0.02) 0%, transparent 55%),
+      radial-gradient(ellipse at 50% 90%, rgba(107, 158, 122, 0.015) 0%, transparent 50%);
     background-attachment: fixed;
   }
 
@@ -119,19 +119,19 @@
 @layer components {
   /* ========== Card System ========== */
   .card {
-    @apply bg-white rounded-2xl border border-cloud-300/50 shadow-cloud-sm
+    @apply bg-white rounded-2xl border border-cloud-300/70 shadow-cloud-sm
            transition-shadow duration-300;
   }
   .card-hover {
-    @apply card hover:shadow-cloud-md hover:border-cloud-400/60;
+    @apply card hover:shadow-cloud-md hover:border-cloud-400/70;
   }
   .card-well {
-    @apply bg-cloud-200/80 rounded-2xl border border-cloud-300/40;
+    @apply bg-cloud-200/90 rounded-2xl border border-cloud-300/50;
   }
 
   /* Content panel */
   .panel {
-    @apply bg-white rounded-2xl border border-cloud-300/50 shadow-cloud-sm;
+    @apply bg-white rounded-2xl border border-cloud-300/70 shadow-cloud-sm;
   }
 
   /* ========== Page Header ========== */
@@ -142,7 +142,7 @@
     @apply text-xl font-semibold text-ink-primary tracking-tight;
   }
   .page-subtitle {
-    @apply text-sm text-ink-muted mt-1 font-normal;
+    @apply text-sm text-ink-body mt-1 font-normal;
   }
   .page-header-divider {
     @apply border-b border-cloud-300/60 pb-5 mb-6;
@@ -153,7 +153,7 @@
     @apply text-sm font-semibold text-ink-body tracking-tight mb-3;
   }
   .section-subtitle {
-    @apply text-xs text-ink-muted;
+    @apply text-xs text-ink-body;
   }
 
   /* ========== Stat Card ========== */
@@ -161,13 +161,13 @@
     @apply card p-5 flex flex-col gap-1;
   }
   .stat-label {
-    @apply text-2xs font-medium text-ink-muted uppercase tracking-wider;
+    @apply text-2xs font-semibold text-ink-body uppercase tracking-wider;
   }
   .stat-value {
     @apply text-2xl font-semibold tracking-tight;
   }
   .stat-hint {
-    @apply text-2xs text-cloud-500 mt-0.5;
+    @apply text-2xs text-ink-muted mt-0.5;
   }
 
   /* ========== Buttons ========== */
@@ -204,8 +204,8 @@
 
   /* ========== Input ========== */
   .input-field {
-    @apply w-full bg-cloud-200 border border-cloud-400/60 rounded-xl
-           px-4 py-2.5 text-ink-body placeholder-ink-body/60
+    @apply w-full bg-cloud-200 border border-cloud-400/70 rounded-xl
+           px-4 py-2.5 text-ink-body placeholder-ink-body/70
            transition-all duration-200 text-sm
            focus:outline-none focus:border-sky-400 focus:bg-white;
   }
@@ -270,7 +270,7 @@
     @apply text-5xl mb-5 opacity-50 select-none;
   }
   .empty-state-title {
-    @apply text-sm font-medium text-ink-muted mb-1.5;
+    @apply text-sm font-medium text-ink-body mb-1.5;
   }
   .empty-state-desc {
     @apply text-xs text-ink-muted max-w-xs leading-relaxed;

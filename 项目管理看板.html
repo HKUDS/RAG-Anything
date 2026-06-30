@@ -12,8 +12,12 @@
   --c-progress: #3b82f6; --c-progress-bg: #eff6ff; --c-progress-bar: #bfd6fe;
   --c-planned: #f59e0b; --c-planned-bg: #fffbeb; --c-planned-bar: #fde68a;
   --c-pending: #e5e7eb;
-  --c-explore: #7c5cfc; --c-design: #f59e0b; --c-build: #3b82f6;
+  --c-explore: #7c5cfc; --c-explore-bg: #f7f5ff; --c-explore-border: #7c5cfc;
+  --c-design: #f59e0b; --c-design-bg: #fffdf5; --c-design-border: #f59e0b;
+  --c-build: #3b82f6;  --c-build-bg: #f5f8ff;  --c-build-border: #3b82f6;
+  --c-security: #10b981; --c-security-bg: #f4fbf8; --c-security-border: #10b981;
   --c-ms: #f43f5e; --c-today: #ef4444;
+  --c-past: #ef4444; --c-past-bg: rgba(239,68,68,0.08);
   --radius: 10px; --shadow: 0 1px 3px rgba(0,0,0,0.04);
 }
 [data-theme="dark"] {
@@ -21,6 +25,9 @@
   --text3: #6b7280; --border: #374151; --border2: #283040;
   --c-done-bg: #064e3b; --c-progress-bg: #1e3a5f; --c-planned-bg: #78350f;
   --c-pending: #374151;
+  --c-explore-bg: #1e1b4b; --c-build-bg: #172554;
+  --c-design-bg: #451a03; --c-security-bg: #052e16;
+  --c-past-bg: rgba(239,68,68,0.12);
 }
 *{margin:0;padding:0;box-sizing:border-box}
 body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;min-height:100vh;-webkit-font-smoothing:antialiased}
@@ -79,14 +86,14 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .mod-bar.collapsed .arrow{transform:rotate(-90deg)}
 .mod-bar .dot{width:8px;height:8px;border-radius:2px;flex-shrink:0}
 .mod-bar .cnt{font-size:0.6rem;font-weight:400;color:var(--text3);margin-left:auto}
-.mod-c1 .mod-bar{border-left:4px solid #7c5cfc;background:#f7f5ff}
-.mod-c2 .mod-bar{border-left:4px solid #3b82f6;background:#f5f8ff}
-.mod-c3 .mod-bar{border-left:4px solid #f59e0b;background:#fffdf5}
-.mod-c4 .mod-bar{border-left:4px solid #10b981;background:#f4fbf8}
-[data-theme="dark"] .mod-c1 .mod-bar{background:#1e1b4b}
-[data-theme="dark"] .mod-c2 .mod-bar{background:#172554}
-[data-theme="dark"] .mod-c3 .mod-bar{background:#451a03}
-[data-theme="dark"] .mod-c4 .mod-bar{background:#052e16}
+.mod-c1 .mod-bar{border-left:4px solid var(--c-explore-border);background:var(--c-explore-bg)}
+.mod-c2 .mod-bar{border-left:4px solid var(--c-build-border);background:var(--c-build-bg)}
+.mod-c3 .mod-bar{border-left:4px solid var(--c-design-border);background:var(--c-design-bg)}
+.mod-c4 .mod-bar{border-left:4px solid var(--c-security-border);background:var(--c-security-bg)}
+[data-theme="dark"] .mod-c1 .mod-bar{background:color-mix(in srgb, var(--c-explore-bg) 40%, var(--bg))}
+[data-theme="dark"] .mod-c2 .mod-bar{background:color-mix(in srgb, var(--c-build-bg) 40%, var(--bg))}
+[data-theme="dark"] .mod-c3 .mod-bar{background:color-mix(in srgb, var(--c-design-bg) 40%, var(--bg))}
+[data-theme="dark"] .mod-c4 .mod-bar{background:color-mix(in srgb, var(--c-security-bg) 40%, var(--bg))}
 
 /* Task cells */
 .task-name{padding:4px 12px;font-size:0.68rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:flex;align-items:center;gap:5px}
@@ -102,7 +109,6 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 .day-cell.done{background:var(--c-done-bg)}
 .day-cell.done:hover{background:rgba(16,185,129,0.12)}
 .day-cell.today-col{background:rgba(239,68,68,0.03)}
-.day-cell.past{background:rgba(239,68,68,0.08);border-left:2px solid rgba(239,68,68,0.3)}
 .day-cell .check{font-size:0.75rem;color:var(--c-done);font-weight:700}
 
 /* Progress bar */
@@ -182,7 +188,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   <span class="sep"></span>
   <span style="display:flex;align-items:center;gap:6px;font-size:0.65rem;color:var(--text2)" id="weekSummary"></span>
   <span class="sep"></span>
-  <span style="font-size:0.62rem;color:var(--text3)">⌨ 1-4周 | Ctrl+Z撤销 | Ctrl+N添加 | Esc关闭</span>
+  <span style="font-size:0.62rem;color:var(--text3)">⌨ 1-6周 | Ctrl+Z撤销 | Ctrl+N添加 | Esc关闭</span>
 </div>
 
 <!-- Bulk Action Bar -->
@@ -221,6 +227,8 @@ const WEEKS = [
   {id:2, label:'第 2 周', date:'6.23 — 6.29', status:'current', days:['6.23 周一','6.24 周二','6.25 周三','6.26 周四','6.27 周五']},
   {id:3, label:'第 3 周', date:'6.30 — 7.06', status:'future', days:['6.30 周一','7.01 周二','7.02 周三','7.03 周四','7.04 周五']},
   {id:4, label:'第 4 周', date:'7.07 — 7.13', status:'future', days:['7.07 周一','7.08 周二','7.09 周三','7.10 周四','7.11 周五']},
+  {id:5, label:'第 5 周', date:'7.14 — 7.20', status:'future', days:['7.14 周一','7.15 周二','7.16 周三','7.17 周四','7.18 周五']},
+  {id:6, label:'第 6 周', date:'7.21 — 7.27', status:'future', days:['7.21 周一','7.22 周二','7.23 周三','7.24 周四','7.25 周五']},
 ];
 
 const MODULES = [
@@ -272,14 +280,14 @@ const MODULES = [
 
 // ═══════════════════ STATE ═══════════════════
 const STORAGE_KEY = 'raganything_pm_data';
-let appData = loadData();
+let appData;
 let currentWeek = 2; // Default to Week 2 (current)
 let undoStack = [];
 let collapsedModules = new Set();
 let lastToggledCell = null; // For click animation {taskId, weekId, dayIdx}
 
 function getDefaultData() {
-  const data = { completions: {}, notes: {} };
+  const data = { completions: {}, notes: {}, deletedTasks: [], customTasks: [] };
   // Auto-populate completions for all tasks with status 'done' based on their planned week+day
   MODULES.forEach(m => m.tasks.forEach(t => {
     if (t.status === 'done' && t.week >= 1 && t.day >= 1) {
@@ -293,14 +301,54 @@ function getDefaultData() {
   return data;
 }
 
+// ═══════════════════ HASH STORAGE ═══════════════════
+// 主要存储：URL hash（刷新不丢失）。localStorage 作为辅助同步。
+function hashSave(data) {
+  try {
+    const json = JSON.stringify(data);
+    const encoded = btoa(unescape(encodeURIComponent(json)));
+    // 静默更新 hash，不触发 hashchange 事件
+    history.replaceState(null, '', '#' + encoded);
+    return true;
+  } catch(e) {
+    console.error('Hash 保存失败:', e);
+    return false;
+  }
+}
+
+function hashLoad() {
+  try {
+    const hash = location.hash.slice(1); // 去掉开头的 #
+    if (!hash) return null;
+    const json = decodeURIComponent(escape(atob(hash)));
+    return JSON.parse(json);
+  } catch(e) {
+    console.error('Hash 数据解析失败:', e);
+    return null;
+  }
+}
+
 function loadData() {
+  // 1. 优先从 localStorage 加载
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const data = JSON.parse(raw);
       return normalizeData(data);
     }
-  } catch(e) {}
+  } catch(e) {
+    console.error('localStorage 数据加载失败:', e);
+    try { localStorage.removeItem(STORAGE_KEY); } catch(ignore) {}
+  }
+
+  // 2. 从 URL hash 加载
+  const hashData = hashLoad();
+  if (hashData && hashData.completions) {
+    console.log('从 URL hash 恢复数据');
+    return normalizeData(hashData);
+  }
+
+  // 3. 返回默认数据
   return getDefaultData();
 }
 
@@ -308,7 +356,9 @@ function normalizeData(data) {
   // 仅在数据为空（首次使用）时，为 status='done' 的任务填充完成记录
   // 已有数据时尊重用户手工调整，不强制覆写
   data.completions = data.completions || {};
-  const hasExistingData = Object.keys(data.completions).length > 0;
+  data.deletedTasks = data.deletedTasks || [];
+  data.customTasks = data.customTasks || [];
+  const hasExistingData = Object.keys(data.completions).length > 0 || data.customTasks.length > 0;
   if (!hasExistingData) {
     MODULES.forEach(m => m.tasks.forEach(t => {
       if (t.status === 'done' && t.week >= 1 && t.day >= 1) {
@@ -321,18 +371,46 @@ function normalizeData(data) {
     }));
   }
   data.notes = data.notes || {};
+  // 恢复自定义任务到模块中（刷新后 MODULES 被重建，需从持久化数据恢复）
+  (data.customTasks || []).forEach(ct => {
+    const mod = MODULES.find(m => m.id === ct.modId);
+    if (mod && !mod.tasks.find(t => t.id === ct.id)) {
+      mod.tasks.push({
+        id: ct.id, name: ct.name, desc: ct.desc || '',
+        deps: ct.deps || [], week: ct.week, day: ct.day,
+        status: ct.status, custom: true
+      });
+    }
+  });
   return data;
 }
 
+let saveFailedShown = false;
 function saveData() {
+  // 主存储：URL hash（刷新不丢失）
+  const ok = hashSave(appData);
+
+  // 辅助存储：localStorage
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
     document.getElementById('saveIndicator').textContent = '💾 已自动保存 ' + new Date().toLocaleTimeString();
+    saveFailedShown = false;
   } catch(e) {
-    document.getElementById('saveIndicator').textContent = '⚠️ 保存失败: ' + (e.message || '存储异常');
-    console.warn('保存数据失败:', e);
+    if (ok) {
+      document.getElementById('saveIndicator').textContent = '💾 已保存(hash) ' + new Date().toLocaleTimeString();
+    } else {
+      document.getElementById('saveIndicator').textContent = '⚠️ 保存失败: ' + (e.message || '存储异常');
+      console.error('保存数据失败:', e);
+      if (!saveFailedShown) {
+        saveFailedShown = true;
+        showToast('⚠️ 自动保存失败！请检查浏览器存储空间');
+      }
+    }
   }
 }
+
+// 初始化数据（在所有存储函数定义之后）
+appData = loadData();
 
 // ═══════════════════ DATE HELPERS ═══════════════════
 function parseWeekDate(weekId, dayIdx) {
@@ -455,11 +533,12 @@ function render() {
   }));
   const total = totalDone + totalProgress + totalPlanned + totalPending;
 
+  const activeStatus = document.getElementById('filterStatus').value;
   document.getElementById('statsRow').innerHTML = `
-    <div class="stat" onclick="setFilter('status','done')"><div class="n" style="color:var(--c-done)">${totalDone}</div><div class="l">✅ 已完成</div></div>
-    <div class="stat" onclick="setFilter('status','progress')"><div class="n" style="color:var(--c-progress)">${totalProgress}</div><div class="l">🔄 进行中</div></div>
-    <div class="stat" onclick="setFilter('status','planned')"><div class="n" style="color:var(--c-planned)">${totalPlanned}</div><div class="l">🎯 计划中</div></div>
-    <div class="stat" onclick="setFilter('status','pending')"><div class="n" style="color:var(--text3)">${totalPending}</div><div class="l">⬜ 未开始</div></div>
+    <div class="stat ${activeStatus==='done'?'sel':''}" onclick="setFilter('status','done')"><div class="n" style="color:var(--c-done)">${totalDone}</div><div class="l">✅ 已完成</div></div>
+    <div class="stat ${activeStatus==='progress'?'sel':''}" onclick="setFilter('status','progress')"><div class="n" style="color:var(--c-progress)">${totalProgress}</div><div class="l">🔄 进行中</div></div>
+    <div class="stat ${activeStatus==='planned'?'sel':''}" onclick="setFilter('status','planned')"><div class="n" style="color:var(--c-planned)">${totalPlanned}</div><div class="l">🎯 计划中</div></div>
+    <div class="stat ${activeStatus==='pending'?'sel':''}" onclick="setFilter('status','pending')"><div class="n" style="color:var(--text3)">${totalPending}</div><div class="l">⬜ 未开始</div></div>
     <div class="stat"><div class="n">${total}</div><div class="l">📊 总任务</div>
       <div class="prog-wrap"><div class="prog-bar done" style="width:${total?(totalDone/total*100):0}%"></div></div></div>
   `;
@@ -474,7 +553,7 @@ function render() {
   const todayWeek = getTodayWeekId();
   document.getElementById('weekTabs').innerHTML = WEEKS.map(w => `
     <div class="week-tab ${w.id===currentWeek?'act':''}" onclick="switchWeek(${w.id})">
-      ${w.label}${w.id===todayWeek?' 📍':''}<br><span class="wk-label">${w.date}</span>
+      ${w.label}${w.id===todayWeek?' 📍':''}
     </div>
   `).join('');
 
@@ -482,6 +561,7 @@ function render() {
   let html = '';
   MODULES.forEach(mod => {
     const visibleTasks = mod.tasks.filter(t => {
+      if (appData.deletedTasks.includes(t.id)) return false;
       if (search && !t.name.toLowerCase().includes(search) && !t.desc.toLowerCase().includes(search)) return false;
       if (filterMod && mod.id !== filterMod) return false;
       if (filterStat) {
@@ -507,17 +587,16 @@ function render() {
 
     visibleTasks.forEach(t => {
       const comps = getTaskCompletion(t.id);
-      const effectiveStatus = comps.length > 0 ? 'done' : t.status;
+      const effectiveStatus = comps.length > 0 ? 'done' : (t.status === 'done' ? 'progress' : t.status);
       const statusCls = effectiveStatus === 'done' ? 's-done' : effectiveStatus === 'progress' ? 's-progress' : effectiveStatus === 'planned' ? 's-planned' : 's-pending';
       const note = getTaskNote(t.id);
       const hasNote = note ? ' 📝' : '';
       const isSelected = bulkMode && selectedTasks.has(t.id);
       const isCustom = t.custom;
       html += `<tr class="task-row" data-task="${t.id}" data-mod="${mod.id}" style="${isSelected?'outline:2px solid var(--c-progress);outline-offset:-2px;background:var(--c-progress-bg)':''}">
-        <td class="task-name" onclick="${bulkMode?`toggleTaskSelect('${t.id}')`:`openTaskDetail('${t.id}')`}" title="${t.desc}${isCustom?' [自定义任务-右键删除]':''}">
+        <td class="task-name" onclick="${bulkMode?`toggleTaskSelect('${t.id}')`:`openTaskDetail('${t.id}')`}" title="${t.desc}">
           ${bulkMode?`<input type="checkbox" ${isSelected?'checked':''} style="pointer-events:none;margin-right:4px">`:''}
-          <span class="status-dot ${statusCls}"></span>${t.name}${hasNote}${isCustom?' 🏷️':' '}
-          ${isCustom?`<button class="btn sm danger" style="margin-left:auto;font-size:0.55rem;padding:1px 5px" onclick="event.stopPropagation();deleteCustomTask('${t.id}')">✕</button>`:''}
+          <span class="status-dot ${statusCls}"></span>${t.name}${hasNote}${isCustom?' 🏷️':''}
         </td>`;
       for (let d = 1; d <= 5; d++) {
         const done = isCompleted(t.id, currentWeek, d);
@@ -529,7 +608,7 @@ function render() {
           html += `<td class="day-cell" style="cursor:default;opacity:0.3" title="远期规划，暂无排期">—</td>`;
         } else {
           const isPopping = lastToggledCell && lastToggledCell.taskId === t.id && lastToggledCell.weekId === currentWeek && lastToggledCell.dayIdx === d;
-          html += `<td class="day-cell ${done?'done':''} ${isPast&&!done?'past':''} ${isToday?'today-col':''} ${isPopping?'popping':''}
+          html += `<td class="day-cell ${done?'done':''} ${isPast&&!done?'past':''} ${isToday?'today-col':''} ${isPopping?'popping':''}"
             onclick="toggleCompletion('${t.id}',${currentWeek},${d})"
             oncontextmenu="event.preventDefault();openNoteModal('${t.id}')"
             title="${isToday?'📍 今天 · ':''}点击标记完成 · 右键添加备注${ms?' · 🏁 '+ms.label:''}">${done?'✅':''}${ms?'<span style="font-size:0.55rem;color:var(--c-ms);font-weight:700">🏁</span>':''}</td>`;
@@ -569,7 +648,12 @@ function switchWeek(wid) { currentWeek = wid; render(); }
 function toggleModule(mid) { collapsedModules.has(mid) ? collapsedModules.delete(mid) : collapsedModules.add(mid); render(); }
 
 function setFilter(type, val) {
-  if (type === 'status') document.getElementById('filterStatus').value = val;
+  if (type === 'status') {
+    const sel = document.getElementById('filterStatus');
+    // Toggle: clicking the active filter clears it
+    if (sel.value === val) { sel.value = ''; }
+    else { sel.value = val; }
+  }
   render();
 }
 
@@ -590,6 +674,8 @@ function openTaskDetail(taskId) {
     <label>备注</label>
     <textarea id="noteText" placeholder="添加备注...">${note}</textarea>
     <div class="btn-row">
+      <button class="btn danger" onclick="deleteTask('${taskId}')">🗑 删除任务</button>
+      <span style="flex:1"></span>
       <button class="btn" onclick="closeModal()">关闭</button>
       <button class="btn ac" onclick="saveNote('${taskId}')">💾 保存备注</button>
     </div>
@@ -693,6 +779,8 @@ document.addEventListener('keydown', e => {
   if (e.key === '2') switchWeek(2);
   if (e.key === '3') switchWeek(3);
   if (e.key === '4') switchWeek(4);
+  if (e.key === '5') switchWeek(5);
+  if (e.key === '6') switchWeek(6);
   if (e.key === 'f' && e.ctrlKey) { e.preventDefault(); document.getElementById('searchInput').focus(); }
   if (e.key === 'n' && e.ctrlKey) { e.preventDefault(); openAddTaskModal(); }
 });
@@ -781,6 +869,8 @@ function addCustomTask() {
   };
   if (!mod) return;
   mod.tasks.push(newTask);
+  // 持久化自定义任务，刷新后自动恢复
+  appData.customTasks.push({...newTask, modId: modId});
   if (status === 'done') {
     appData.completions[newTask.id] = [`${week}-${day}`];
   }
@@ -790,17 +880,26 @@ function addCustomTask() {
   showToast('✅ 自定义任务已添加: ' + name);
 }
 
-function deleteCustomTask(taskId) {
-  if (!confirm('确定删除此自定义任务？')) return;
+function deleteTask(taskId) {
+  const task = findTask(taskId);
+  if (!task) return;
+  if (!confirm(`确定删除任务「${task.name}」？此操作不可撤销。`)) return;
   MODULES.forEach(m => {
     const idx = m.tasks.findIndex(t => t.id === taskId);
-    if (idx >= 0 && m.tasks[idx].custom) m.tasks.splice(idx, 1);
+    if (idx >= 0) m.tasks.splice(idx, 1);
   });
+  // 持久化删除记录，刷新后不再复活
+  if (!appData.deletedTasks.includes(taskId)) {
+    appData.deletedTasks.push(taskId);
+  }
+  // 如果是自定义任务，也从持久化列表中移除
+  appData.customTasks = appData.customTasks.filter(ct => ct.id !== taskId);
   delete appData.completions[taskId];
   delete appData.notes[taskId];
+  closeModal();
   render();
   saveData();
-  showToast('已删除');
+  showToast('已删除: ' + task.name);
 }
 
 // ═══════════════════ EXTENDED: Milestone Markers ═══════════════════
@@ -835,11 +934,19 @@ function exportMarkdown() {
 
 // ═══════════════════ INIT ═══════════════════
 document.addEventListener('DOMContentLoaded', () => {
-  const saved = localStorage.getItem('raganything_pm_theme');
-  if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
-  if (!localStorage.getItem(STORAGE_KEY)) { appData = getDefaultData(); saveData(); }
+  // 主题恢复
+  try {
+    const saved = localStorage.getItem('raganything_pm_theme');
+    if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+  } catch(e) {}
+
+  // 首次使用：将默认数据写入 hash
+  if (!location.hash.slice(1)) {
+    hashSave(appData);
+  }
+
   render();
-  // Auto-save every 30 seconds
+  // Auto-save every 30 seconds（hash 存储总是可用）
   setInterval(() => { saveData(); }, 30000);
 });
 </script>

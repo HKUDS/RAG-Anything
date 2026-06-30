@@ -125,7 +125,7 @@ export default function AgentsPage() {
                 <span className="text-3xl">{agent.icon || '🤖'}</span>
                 <div>
                   <h3 className="font-medium text-ink-body text-sm">{agent.name}</h3>
-                  <p className="text-[11px] text-ink-muted font-mono">ID: {agent.id}</p>
+                  <p className="text-2xs text-ink-muted font-mono">ID: {agent.id}</p>
                 </div>
               </div>
               <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
@@ -289,12 +289,12 @@ export default function AgentsPage() {
                 <div>
                   <div className="flex justify-between">
                     <label className="text-xs text-ink-muted mb-1 block">回复温度</label>
-                    <span className="text-[10px] font-mono text-sky-500">{form.temperature.toFixed(1)}</span>
+                    <span className="text-2xs font-mono text-sky-500">{form.temperature.toFixed(1)}</span>
                   </div>
                   <input type="range" min="0" max="1.5" step="0.1" value={form.temperature}
                     onChange={e => setForm({ ...form, temperature: parseFloat(e.target.value) })}
                     className="w-full accent-sky-500" />
-                  <div className="flex justify-between text-[10px] text-ink-muted">
+                  <div className="flex justify-between text-2xs text-ink-muted">
                     <span>严谨 (0)</span><span>平衡</span><span>创意 (1.5)</span>
                   </div>
                 </div>

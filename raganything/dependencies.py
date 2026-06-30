@@ -18,8 +18,8 @@ from raganything.services.auth import (
     check_account_locked,
     has_permission as _auth_has_permission,
     get_user_role as _auth_get_user_role,
+    is_token_revoked as _auth_is_token_revoked,
 )
-from raganything.services.token_blacklist import get_token_blacklist
 
 security = HTTPBearer()
 
@@ -56,9 +56,9 @@ async def get_current_user(
     if not user_id:
         raise HTTPException(401, "Token 无效或已过期")
 
-    # 检查 Token 是否已被撤销（黑名单）
+    # 检查 Token 是否已被撤销（黑名单）— PG-first dispatch
     jti = payload.get("jti")
-    if jti and get_token_blacklist().is_revoked(jti):
+    if jti and await _auth_is_token_revoked(jti):
         raise HTTPException(401, "Token 已被撤销，请重新登录")
 
     user = await get_user_by_id(user_id)
@@ -72,9 +72,9 @@ async def get_current_user(
     if lock_error:
         raise HTTPException(403, lock_error)
 
-    # 获取角色信息 — is_admin 从 super_admin 或 admin 角色派生
+    # 获取角色信息 — is_admin 从 super_admin 角色派生
     role = await _auth_get_user_role(user_id)
-    is_admin = role is not None and role.get("name") in ("super_admin", "admin")
+    is_admin = role is not None and role.get("name") == "super_admin"
 
     return {
         "id": user_id,
@@ -133,12 +133,11 @@ def require_permission(permission: str):
         if await _auth_has_permission(user_id, permission):
             return current_user
 
-        # ── 审计日志：记录权限拒绝事件 ──────────────────────
+        # ── 审计日志：记录权限拒绝事件（PG-first dispatch）─────
         try:
-            from raganything.services.audit import get_audit_logger
+            from raganything.services.auth import audit_log as _dispatch_audit_log
 
-            audit = get_audit_logger()
-            await audit.log(
+            await _dispatch_audit_log(
                 actor_id=user_id,
                 action="permission.denied",
                 details={
@@ -227,7 +226,7 @@ async def verify_kb_access(
     """
     from raganything.services.kb_service import load_kb_meta
 
-    kb_meta = load_kb_meta()
+    kb_meta = await load_kb_meta()
 
     if kb not in kb_meta:
         raise HTTPException(404, f"知识库 '{kb}' 不存在")

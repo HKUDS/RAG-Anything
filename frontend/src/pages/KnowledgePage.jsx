@@ -1,30 +1,14 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import {
-  Search, Eye, Trash2, X, FileText, Clock, Filter, ZoomIn, ZoomOut, RotateCcw,
-  Plus, Layers, Database, Upload, Globe, FolderOpen, ClipboardPaste,
-  Loader2, CheckCircle2, XCircle, Scissors, ChevronDown, ChevronUp, Zap, Image
-} from 'lucide-react'
-import * as d3 from 'd3'
+import { Plus, Layers, Trash2, Clock, Database, FileText, Hash } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { useNavigate } from 'react-router-dom'
 import { api, setCurrentKB, getCurrentKB } from '../utils/api'
 
-const SUPPORTED = '.pdf .jpg .jpeg .png .bmp .tiff .gif .webp .doc .docx .ppt .pptx .xls .xlsx .txt .md'.split(' ')
-const STATUS = { processed: 'badge-success', processing: 'badge-warning', handling: 'badge-info', failed: 'badge-error' }
-const STATUS_CN = { processed: '已完成', processing: '处理中', handling: '入库中', failed: '失败' }
-const PHASE_CN = { parsing: '解析文档', 'entity-extraction': '抽取实体', embedding: '向量化', 'graph-building': '构建图谱', 'multimodal-tasks': '多模态处理' }
-// Brand palette for D3 knowledge graph entity types — all from DESIGN.md color ramps
-const NODE_COLORS = ['#e8734a', '#5b9bd5', '#6b9e7a', '#d4a853', '#c9707e', '#366596', '#6da9d7', '#f08f6d']
-
-const COST_COLORS = {
-  free: 'text-sage-600 bg-sage-50 border-sage-200',
-  medium: 'text-amber-600 bg-amber-50 border-amber-200',
-  high: 'text-rose-600 bg-rose-50 border-rose-200',
-}
-
-// ====================== KB Manager Bar ======================
-function KBSelector({ kbs, activeKB, onSwitch, onCreate, onDelete, deletingKB }) {
+// ====================== KB Selector (Card Grid) ======================
+function KBSelector({ kbs, activeKB, kbStats, onSwitch, onCreate, onDelete, deletingKB }) {
   const [showCreate, setShowCreate] = useState(false)
   const [showDelete, setShowDelete] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const [newKBName, setNewKBName] = useState('')
   const inputRef = useRef()
 
@@ -37,28 +21,105 @@ function KBSelector({ kbs, activeKB, onSwitch, onCreate, onDelete, deletingKB })
     setShowCreate(false)
   }
 
+  const handleDeleteClick = (e, kb) => {
+    e.stopPropagation()
+    setDeleteTarget(kb)
+    setShowDelete(true)
+  }
+
+  const formatDate = (iso) => {
+    if (!iso) return ''
+    try {
+      const d = new Date(iso)
+      return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
+    } catch { return iso.slice(0, 10) }
+  }
+
   return (
-    <div className="flex items-center gap-3">
-      <div className="flex items-center gap-2">
-        <Layers size={16} className="text-ink-muted" />
-        <select
-          className="rounded-xl border border-cloud-400 bg-cloud-200 text-sm text-ink-body px-3 py-2 focus:outline-none focus:border-sky-400 transition-colors cursor-pointer min-w-[160px]"
-          value={activeKB}
-          onChange={e => onSwitch(e.target.value)}
+    <div className="space-y-4">
+      {/* KB Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        {kbs.map(kb => {
+          const isActive = kb.name === activeKB
+          const stats = kbStats[kb.name]
+          return (
+            <motion.button
+              key={kb.name}
+              layout
+              onClick={() => onSwitch(kb.name)}
+              className={`relative text-left group rounded-xl p-5 transition-all duration-200 border cursor-pointer
+                ${isActive
+                  ? 'bg-sky-50 border-sky-400 shadow-cloud-sm ring-1 ring-sky-400/40'
+                  : 'bg-white border-cloud-200 shadow-cloud-sm hover:shadow-cloud-md hover:border-sky-300 hover:-translate-y-0.5'
+                }`}
+            >
+              {/* Active indicator */}
+              {isActive && (
+                <span className="absolute top-3 right-3 flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-sky-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-sky-500" />
+                </span>
+              )}
+
+              {/* Icon */}
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3.5 transition-colors
+                ${isActive ? 'bg-sky-200/60 text-sky-600' : 'bg-cloud-200 text-ink-muted group-hover:bg-sky-100 group-hover:text-sky-500'}`}
+              >
+                <Database size={20} />
+              </div>
+
+              {/* Name */}
+              <h3 className={`text-sm font-semibold mb-1 truncate pr-6 transition-colors
+                ${isActive ? 'text-sky-700' : 'text-ink-primary group-hover:text-ink-primary'}`}
+              >
+                {kb.label || kb.name}
+              </h3>
+              <p className="text-2xs text-ink-muted mb-3 truncate">{kb.name}</p>
+
+              {/* Stats preview */}
+              <div className="flex items-center gap-4 text-2xs text-ink-muted mb-2">
+                {stats !== undefined ? (
+                  <>
+                    <span className="flex items-center gap-1" title="文档数"><FileText size={10} />{stats.documents || 0}</span>
+                    <span className="flex items-center gap-1" title="实体数"><Hash size={10} />{stats.entities || 0}</span>
+                  </>
+                ) : (
+                  <span className="text-ink-muted/60">加载中…</span>
+                )}
+              </div>
+
+              {/* Meta */}
+              <div className="flex items-center gap-3 text-2xs text-ink-muted">
+                {kb.created && <span className="flex items-center gap-1"><Clock size={10} />{formatDate(kb.created)}</span>}
+                {kb.owner_username && <span className="truncate">@{kb.owner_username}</span>}
+              </div>
+
+              {/* Delete (non-default KBs only) — show on hover */}
+              {kb.name !== 'default' && (
+                <button
+                  onClick={(e) => handleDeleteClick(e, kb)}
+                  className="absolute bottom-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded-lg text-ink-muted hover:text-rose-500 hover:bg-rose-50"
+                  title="删除知识库"
+                >
+                  <Trash2 size={13} />
+                </button>
+              )}
+            </motion.button>
+          )
+        })}
+
+        {/* Create New KB Card */}
+        <motion.button
+          layout
+          onClick={() => setShowCreate(!showCreate)}
+          className="rounded-xl border-2 border-dashed border-cloud-300 hover:border-sky-300 bg-transparent hover:bg-sky-50/50 p-5 flex flex-col items-center justify-center gap-2.5 text-ink-muted hover:text-sky-600 transition-all duration-200 min-h-[185px] cursor-pointer"
         >
-          {kbs.map(kb => <option key={kb.name} value={kb.name}>{kb.label}</option>)}
-        </select>
+          <div className="w-10 h-10 rounded-xl bg-cloud-200 flex items-center justify-center transition-colors">
+            <Plus size={20} />
+          </div>
+          <span className="text-sm font-medium">新建知识库</span>
+        </motion.button>
       </div>
-
-      <button onClick={() => setShowCreate(!showCreate)} className="btn-secondary text-xs py-2">
-        <Plus size={14} /> 新建知识库
-      </button>
-
-      {activeKB !== 'default' && (
-        <button onClick={() => setShowDelete(true)} className="btn-ghost text-xs py-2 text-rose-500 hover:text-rose-600 hover:bg-rose-50">
-          <Trash2 size={14} /> 删除
-        </button>
-      )}
 
       {/* Create popover */}
       <AnimatePresence>
@@ -67,7 +128,7 @@ function KBSelector({ kbs, activeKB, onSwitch, onCreate, onDelete, deletingKB })
             initial={{ opacity: 0, y: -8, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -8, scale: 0.95 }}
-            className="absolute top-full left-0 mt-2 w-72 card p-4 shadow-cloud-md z-50"
+            className="card p-4 shadow-cloud-md max-w-sm"
           >
             <p className="text-sm font-medium text-ink-primary mb-3">新建知识库</p>
             <div className="space-y-3">
@@ -94,13 +155,13 @@ function KBSelector({ kbs, activeKB, onSwitch, onCreate, onDelete, deletingKB })
 
       {/* Delete confirm */}
       <AnimatePresence>
-        {showDelete && (
+        {showDelete && deleteTarget && (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-sky-900/20"
-            onClick={() => setShowDelete(false)}
+            onClick={() => { setShowDelete(false); setDeleteTarget(null) }}
             role="dialog"
             aria-modal="true"
             aria-label="确认删除知识库"
@@ -109,15 +170,15 @@ function KBSelector({ kbs, activeKB, onSwitch, onCreate, onDelete, deletingKB })
               <Trash2 size={32} className="mx-auto mb-3 text-rose-500" />
               <p className="text-ink-primary font-medium text-center mb-1">确认删除知识库</p>
               <p className="text-sm text-ink-muted text-center mb-2">
-                「{activeKB}」
+                「{deleteTarget.label || deleteTarget.name}」
               </p>
               <p className="text-xs text-rose-500 text-center mb-4">将清除所有文档、实体和向量数据，不可恢复</p>
               <div className="flex gap-3 justify-center">
-                <button className="btn-secondary text-sm" onClick={() => setShowDelete(false)}>取消</button>
+                <button className="btn-secondary text-sm" onClick={() => { setShowDelete(false); setDeleteTarget(null) }}>取消</button>
                 <button
                   className="btn-danger text-sm"
                   disabled={deletingKB}
-                  onClick={() => onDelete(activeKB, () => setShowDelete(false))}
+                  onClick={() => onDelete(deleteTarget.name, () => { setShowDelete(false); setDeleteTarget(null) })}
                 >
                   {deletingKB ? '删除中…' : '确认删除'}
                 </button>
@@ -130,289 +191,16 @@ function KBSelector({ kbs, activeKB, onSwitch, onCreate, onDelete, deletingKB })
   )
 }
 
-// ====================== Upload Section ======================
-function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strategies, onUploaded,
-  multimodal, setMultimodal }) {
-  const [dragOver, setDragOver] = useState(false)
-  const [files, setFiles] = useState([])
-  const [urlInput, setUrlInput] = useState('')
-  const [urlLoading, setUrlLoading] = useState(false)
-  const [pasteContent, setPasteContent] = useState('')
-  const [pasteTitle, setPasteTitle] = useState('')
-  const [folderPath, setFolderPath] = useState('')
-  const [folderLoading, setFolderLoading] = useState(false)
-  const [showUpload, setShowUpload] = useState(false)
-
-  const addFile = useCallback((file) => {
-    setFiles(prev => [...prev, { name: file.name, size: file.size, file, status: 'pending' }])
-  }, [])
-
-  const processFile = async (idx) => {
-    setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'uploading' } : f))
-    try {
-      await api.uploadFile(files[idx].file, chunkingStrategy, multimodal)
-      setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'done' } : f))
-      onToast?.(`${files[idx].name} 上传成功 ✨`, 'success')
-      onUploaded?.()
-    } catch (e) {
-      setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'error', error: e.message } : f))
-      onToast?.(`${files[idx].name} 失败: ${e.message}`, 'error')
-    }
-  }
-
-  const processAllFiles = async () => {
-    const pending = files.map((f, i) => ({ ...f, idx: i })).filter(f => f.status === 'pending')
-    if (pending.length === 0) return
-    setFiles(prev => prev.map(f => f.status === 'pending' ? { ...f, status: 'uploading' } : f))
-    let ok = 0, fail = 0
-    for (const { idx } of pending) {
-      try {
-        await api.uploadFile(files[idx].file, chunkingStrategy, multimodal)
-        setFiles(prev => prev.map((x, i) => i === idx ? { ...x, status: 'done' } : x))
-        ok++
-      } catch (e) {
-        setFiles(prev => prev.map((x, i) => i === idx ? { ...x, status: 'error', error: e.message } : x))
-        fail++
-      }
-    }
-    onToast?.(`批量上传: ${ok} 成功, ${fail} 失败`, fail > 0 ? 'error' : 'success')
-    if (ok > 0) onUploaded?.()
-  }
-
-  const handleDrop = useCallback((e) => {
-    e.preventDefault(); setDragOver(false)
-    Array.from(e.dataTransfer.files).forEach(addFile)
-  }, [addFile])
-
-  const handlePaste = async () => {
-    if (!pasteContent.trim()) return
-    try {
-      await api.uploadContent(pasteContent, pasteTitle || '粘贴内容', chunkingStrategy, multimodal)
-      onToast?.('内容已入库 📝', 'success')
-      setPasteContent(''); setPasteTitle('')
-      onUploaded?.()
-    } catch (e) { onToast?.(e.message, 'error') }
-  }
-
-  const handleUrlImport = async () => {
-    if (!urlInput.trim()) return
-    setUrlLoading(true)
-    try {
-      const params = new URLSearchParams({ url: urlInput })
-      if (chunkingStrategy) params.set('chunking_strategy', chunkingStrategy)
-      if (multimodal.enable_image !== undefined) params.set('enable_image', multimodal.enable_image)
-      if (multimodal.enable_table !== undefined) params.set('enable_table', multimodal.enable_table)
-      if (multimodal.enable_equation !== undefined) params.set('enable_equation', multimodal.enable_equation)
-      if (multimodal.enable_video !== undefined) params.set('enable_video', multimodal.enable_video)
-      const res = await fetch(`/api/upload/url?${params.toString()}`, { method: 'POST' })
-      if (!res.ok) throw new Error((await res.json()).detail || '导入失败')
-      onToast?.('URL 导入成功 🌐', 'success')
-      setUrlInput('')
-      onUploaded?.()
-    } catch (e) { onToast?.(`URL 导入失败: ${e.message}`, 'error') }
-    setUrlLoading(false)
-  }
-
-  const handleFolderUpload = async () => {
-    if (!folderPath.trim()) return
-    setFolderLoading(true)
-    try {
-      await api.uploadFolder(folderPath, chunkingStrategy, multimodal)
-      onToast?.('文件夹处理完成 📂', 'success')
-      onUploaded?.()
-    } catch (e) { onToast?.(`处理失败: ${e.message}`, 'error') }
-    setFolderLoading(false)
-  }
-
-  return (
-    <div className="space-y-4">
-      <button
-        onClick={() => setShowUpload(!showUpload)}
-        className="flex items-center gap-2 text-sm font-medium text-ink-body hover:text-sky-500 transition-colors"
-      >
-        {showUpload ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        <Upload size={16} />
-        上传文档到当前知识库
-        {files.length > 0 && <span className="text-xs text-ink-muted">({files.length} 个文件)</span>}
-      </button>
-
-      <AnimatePresence>
-        {showUpload && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            className="overflow-hidden space-y-4"
-          >
-            {/* Drag & Drop */}
-            <div
-              onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-              onDragLeave={() => setDragOver(false)}
-              onDrop={handleDrop}
-              className={`card border-dashed p-8 text-center cursor-pointer transition-all ${
-                dragOver ? 'border-sky-400 bg-sky-50/50 scale-[1.01] shadow-cloud-md' : 'border-cloud-400/70'
-              }`}
-              onClick={() => document.getElementById('kb-file-input').click()}
-            >
-              <input id="kb-file-input" type="file" multiple className="hidden"
-                onChange={(e) => Array.from(e.target.files).forEach(addFile)} />
-              <Upload size={36} className="mx-auto mb-3 text-ink-muted" />
-              <p className="text-ink-body font-medium text-sm">拖拽文件到此处，或点击选择</p>
-              <p className="text-ink-muted text-xs mt-1">PDF · Word · PPT · Excel · 图片 · 文本 · 视频</p>
-            </div>
-
-            {/* Chunking Strategy */}
-            <div className="flex gap-2 flex-wrap items-center">
-              <span className="text-xs text-ink-muted flex items-center gap-1"><Scissors size={12}/> 分块策略:</span>
-              {Object.entries(strategies).length > 0 ? (
-                Object.entries(strategies).map(([key, meta]) => {
-                  const isActive = (chunkingStrategy || 'recursive') === key
-                  return (
-                    <button key={key}
-                      onClick={() => setChunkingStrategy(key)}
-                      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs border transition-all ${
-                        isActive
-                          ? 'border-sky-300 bg-sky-50 text-sky-600'
-                          : 'border-cloud-300 text-ink-muted hover:border-cloud-400'
-                      }`}>
-                      {meta.name}
-                      <span className={`text-[9px] px-1 py-0.5 rounded-full border ${COST_COLORS[meta.cost_level] || COST_COLORS.free}`}>
-                        {meta.cost}
-                      </span>
-                    </button>
-                  )
-                })
-              ) : (
-                <span className="text-xs text-ink-muted">加载中...</span>
-              )}
-            </div>
-
-            {/* Multimodal Toggles */}
-            <div className="flex gap-2 flex-wrap items-center">
-              <span className="text-xs text-ink-muted flex items-center gap-1"><Zap size={12}/> 多模态处理:</span>
-              {[
-                { key: 'enable_image', label: '图片', desc: 'VLM 分析图片' },
-                { key: 'enable_table', label: '表格', desc: '提取表格数据' },
-                { key: 'enable_equation', label: '公式', desc: 'LaTeX 转换' },
-                { key: 'enable_video', label: '视频', desc: '提取帧+音频' },
-              ].map(({ key, label, desc }) => (
-                <button key={key}
-                  onClick={() => setMultimodal(prev => ({ ...prev, [key]: !prev[key] }))}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs border transition-all ${
-                    multimodal[key]
-                      ? 'border-sky-300 bg-sky-50 text-sky-600'
-                      : 'border-cloud-300 text-ink-muted hover:border-cloud-400'
-                  }`}
-                  title={desc}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {/* URL / Folder / Paste */}
-            <div className="grid grid-cols-3 gap-4">
-              <div className="card p-3 space-y-2">
-                <p className="text-xs font-medium text-ink-body flex items-center gap-1"><Globe size={12}/> URL 导入</p>
-                <input className="input-field text-xs py-1.5" placeholder="https://..." value={urlInput}
-                  onChange={e => setUrlInput(e.target.value)} maxLength={2048}
-                  onKeyDown={e => e.key === 'Enter' && handleUrlImport()} />
-                <button className="btn-primary text-xs w-full py-1.5" onClick={handleUrlImport} disabled={!urlInput || urlLoading}>
-                  {urlLoading ? '导入中…' : '导入'}
-                </button>
-              </div>
-              <div className="card p-3 space-y-2">
-                <p className="text-xs font-medium text-ink-body flex items-center gap-1"><FolderOpen size={12}/> 文件夹</p>
-                <input className="input-field text-xs py-1.5" placeholder="D:\文档" value={folderPath}
-                  onChange={e => setFolderPath(e.target.value)} />
-                <button className="btn-primary text-xs w-full py-1.5" onClick={handleFolderUpload} disabled={!folderPath || folderLoading}>
-                  {folderLoading ? '处理中…' : '处理'}
-                </button>
-              </div>
-              <div className="card p-3 space-y-2">
-                <p className="text-xs font-medium text-ink-body flex items-center gap-1"><ClipboardPaste size={12}/> 粘贴</p>
-                <input className="input-field text-xs py-1.5" placeholder="标题" value={pasteTitle}
-                  onChange={e => setPasteTitle(e.target.value)} maxLength={128} />
-                <textarea className="input-field text-xs h-16 resize-none" placeholder="内容…" value={pasteContent}
-                  onChange={e => setPasteContent(e.target.value)} />
-                <button className="btn-primary text-xs w-full py-1.5" onClick={handlePaste} disabled={!pasteContent.trim()}>提交</button>
-              </div>
-            </div>
-
-            {/* File list */}
-            {files.length > 0 && (
-              <div className="card p-3 space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs font-medium text-ink-body">文件列表 ({files.length})</p>
-                  {files.some(f => f.status === 'pending') && (
-                    <button className="btn-primary text-xs py-1 px-3" onClick={processAllFiles}>
-                      全部上传 ({files.filter(f => f.status === 'pending').length})
-                    </button>
-                  )}
-                </div>
-                {files.map((f, i) => (
-                  <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-cloud-200 rounded-lg text-xs">
-                    <div className="flex items-center gap-2">
-                      {f.status === 'uploading' ? <Loader2 size={14} className="animate-spin text-sky-500" />
-                        : f.status === 'done' ? <CheckCircle2 size={14} className="text-sage-500" />
-                        : f.status === 'error' ? <XCircle size={14} className="text-rose-500" />
-                        : <FileText size={14} className="text-ink-muted" />}
-                      <span className="text-ink-body truncate max-w-[200px]">{f.name}</span>
-                      {f.error && <span className="text-rose-500">{f.error}</span>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-ink-muted font-mono">{(f.size / 1024).toFixed(0)} KB</span>
-                      {f.status === 'pending' && <button className="btn-primary text-xs py-0.5 px-2" onClick={() => processFile(i)}>上传</button>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  )
-}
-
 // ====================== MAIN PAGE ======================
 export default function KnowledgePage() {
+  const navigate = useNavigate()
   const [kbs, setKBs] = useState([])
   const [activeKB, setActiveKB] = useState(null)
   const [kbsLoaded, setKbsLoaded] = useState(false)
-  const [docs, setDocs] = useState([])
-  const [entities, setEntities] = useState([])
-  const [stats, setStats] = useState({})
-  const [graph, setGraph] = useState({ nodes: [], edges: [] })
-  const [filter, setFilter] = useState('')
-  const [graphSearch, setGraphSearch] = useState('')
-  const [detailDoc, setDetailDoc] = useState(null)
-  const [deleteConfirm, setDeleteConfirm] = useState(null)
-  const [deleting, setDeleting] = useState(false)
-  const [selectedIds, setSelectedIds] = useState(new Set())
-  const [batchDeleting, setBatchDeleting] = useState(false)
-  const [selectedNode, setSelectedNode] = useState(null)
-  const [nodeDetails, setNodeDetails] = useState(null)
   const [deletingKB, setDeletingKB] = useState(false)
   const [toast, setToast] = useState(null)
-  const [chunkingStrategy, setChunkingStrategy] = useState('')
-  const [strategies, setStrategies] = useState({})
-  const [multimodal, setMultimodal] = useState({
-    enable_image: true, enable_table: true, enable_equation: true, enable_video: false
-  })
-  const [activeTab, setActiveTab] = useState('documents')
-  const [visionSearching, setVisionSearching] = useState(false)
-  const [visionResults, setVisionResults] = useState(null)
-  const visionInputRef = useRef()
-  const svgRef = useRef()
-  const graphContainerRef = useRef()
-  const zoomRef = useRef(null)
-  const prevGraphFingerprint = useRef('')
-  const prevGraphSearch = useRef('')
-  const genRef = useRef(0)  // generation counter: discard stale API responses on KB switch
-  const selectedNodeRef = useRef(null)  // always-current, avoids stale closure in D3 callback
-  selectedNodeRef.current = selectedNode  // keep ref synced with state on every render
-  const simRef = useRef(null)  // current force simulation (lifecycle managed manually)
+  const [kbStats, setKbStats] = useState({})
+  const genRef = useRef(0)
 
   const showToast = (msg, type = 'info') => {
     setToast({ msg, type })
@@ -428,659 +216,87 @@ export default function KnowledgePage() {
       const current = getCurrentKB()
       if (current && kbList.some(kb => kb.name === current)) {
         setActiveKB(current)
-        // currentKB 模块变量已正确，无需更新
       } else if (r.active && kbList.some(kb => kb.name === r.active)) {
-        // 仅当服务端 active_kb 属于当前用户时才使用
         setActiveKB(r.active)
         setCurrentKB(r.active)
       } else if (kbList.length > 0) {
-        // 回退到用户自己的第一个 KB
         setActiveKB(kbList[0].name)
         setCurrentKB(kbList[0].name)
       }
-      // 如果没有可用的 active KB，保持 null，不设无效默认值
+      // Fetch stats for all KBs sequentially (avoids race on module-level currentKB)
+      const gen = ++genRef.current
+      const statsMap = {}
+      const prevKB = getCurrentKB()
+      for (const kb of kbList) {
+        try {
+          setCurrentKB(kb.name)
+          const s = await api.getStats()
+          if (gen === genRef.current) statsMap[kb.name] = s
+        } catch { /* skip KBs that fail */ }
+      }
+      setCurrentKB(prevKB)
+      if (gen === genRef.current) setKbStats(statsMap)
     }
     setKbsLoaded(true)
   }, [])
 
-  // Load data for selected KB (with stale-request cancellation)
-  const loadKBData = useCallback(() => {
-    const gen = ++genRef.current
-    api.getDocuments().then(r => { if (gen === genRef.current) setDocs(r.documents || []) }).catch(err => console.error(err))
-    api.getStats().then(r => { if (gen === genRef.current) setStats(r) }).catch(err => console.error(err))
-    api.getEntities(200).then(r => { if (gen === genRef.current) setEntities(r.entities || []) }).catch(err => console.error(err))
-    api.getGraph().then(r => {
-      if (gen !== genRef.current) return
-      const degree = {}
-      ;(r.edges || []).forEach(e => {
-        degree[e.source] = (degree[e.source] || 0) + 1
-        degree[e.target] = (degree[e.target] || 0) + 1
-      })
-      const nodes = (r.nodes || []).map(n => ({ ...n, degree: degree[n.id] || 0 }))
-      nodes.sort((a, b) => b.degree - a.degree)
-      setGraph({ nodes, edges: r.edges || [] })
-    }).catch(err => console.error(err))
-  }, [])
-
-  // Load strategies
-  useEffect(() => {
-    api.getSettings().then(s => {
-      if (s.chunking_strategies) setStrategies(s.chunking_strategies)
-      if (s.chunking_strategy) setChunkingStrategy(s.chunking_strategy)
-    }).catch(err => console.error(err))
-  }, [])
-
-  // Init
   useEffect(() => { loadKBs() }, [loadKBs])
-  useEffect(() => {
-    if (!kbsLoaded || !activeKB) return
-    loadKBData()
-    const t = setInterval(loadKBData, 8000)
-    return () => clearInterval(t)
-  }, [activeKB, kbsLoaded, loadKBData])
 
-  // Switch KB — clear stale state immediately to prevent flash of wrong data
-  const switchKB = async (name) => {
-    // Immediately clear all data from previous KB
-    setDocs([])
-    setEntities([])
-    setStats({})
-    setGraph({ nodes: [], edges: [] })
-    setSelectedNode(null)
-    setNodeDetails(null)
-    setVisionResults(null)
-    setSelectedIds(new Set())
-
-    await api.switchKB(name)
-    setCurrentKB(name)
+  // Navigate to KB detail page
+  const switchKB = useCallback((name) => {
     setActiveKB(name)
-    loadKBs()
-  }
+    setCurrentKB(name)
+    navigate(`/knowledge/${name}`)
+  }, [navigate])
 
   // Create KB
-  const createKB = async (name) => {
+  const createKB = useCallback(async (name) => {
     try {
       await api.createKB(name, name)
-      showToast(`知识库「${name}」已创建 ✨`, 'success')
+      showToast(`知识库 "${name}" 创建成功`, 'success')
       loadKBs()
-    } catch (e) {
-      showToast('创建失败: ' + e.message, 'error')
-    }
-  }
+    } catch (e) { showToast('创建失败: ' + e.message, 'error') }
+  }, [loadKBs])
 
   // Delete KB
-  const deleteKB = async (name, onDone) => {
+  const deleteKB = useCallback(async (name, onDone) => {
     setDeletingKB(true)
     try {
       await api.deleteKB(name)
-      showToast(`知识库「${name}」已删除`, 'success')
+      showToast(`知识库 "${name}" 已删除`, 'success')
       onDone?.()
-      // loadKBs() 会从服务端获取正确的 active KB，无需硬编码 'default'
-      await loadKBs()
-    } catch (e) {
-      showToast('删除失败: ' + e.message, 'error')
-    } finally {
-      setDeletingKB(false)
-    }
-  }
-
-  // D3 Graph (fingerprint check is done in the calling useEffect, not here)
-  const drawGraph = useCallback(() => {
-    if (!svgRef.current) return
-    if (!graph.nodes.length) {
-      // 数据为空时清除旧图谱，防止幽灵节点残留
-      d3.select(svgRef.current).selectAll('*').remove()
-      if (simRef.current) { simRef.current.stop(); simRef.current = null }
-      zoomRef.current = null
-      return
-    }
-
-    try {
-      // Stop previous simulation before creating a new one
-      if (simRef.current) { simRef.current.stop(); simRef.current = null }
-
-      const svg = d3.select(svgRef.current)
-
-      // Save current zoom transform before clearing SVG
-      const savedTransform = zoomRef.current
-        ? d3.zoomTransform(svg.node())
-        : d3.zoomIdentity
-
-      svg.selectAll('*').remove()
-
-      let displayNodes = [...graph.nodes]
-      if (graphSearch.trim()) {
-        const q = graphSearch.toLowerCase()
-        displayNodes = displayNodes.filter(n => n.label?.toLowerCase().includes(q) || n.id?.toLowerCase().includes(q))
-        const matchedIds = new Set(displayNodes.map(n => n.id))
-        graph.edges.forEach(e => {
-          if (matchedIds.has(e.source) && !matchedIds.has(e.target)) {
-            const n = graph.nodes.find(x => x.id === e.target)
-            if (n) { displayNodes.push(n); matchedIds.add(n.id) }
-          }
-          if (matchedIds.has(e.target) && !matchedIds.has(e.source)) {
-            const n = graph.nodes.find(x => x.id === e.source)
-            if (n) { displayNodes.push(n); matchedIds.add(n.id) }
-          }
-        })
-      } else {
-        displayNodes = displayNodes.slice(0, 60)
-      }
-      const displayIds = new Set(displayNodes.map(n => n.id))
-      const displayEdges = graph.edges.filter(e => displayIds.has(e.source) && displayIds.has(e.target))
-
-      const W = graphContainerRef.current?.clientWidth || 600
-      const H = 420
-      const svgEl = svg.attr('viewBox', `0 0 ${W} ${H}`).attr('width', '100%').attr('height', H)
-      const g = svgEl.append('g')
-      const zoom = d3.zoom().scaleExtent([0.3, 4]).on('zoom', (e) => g.attr('transform', e.transform))
-      svgEl.call(zoom)
-      // Restore saved zoom/pan position so graph doesn't jump on data update
-      svgEl.call(zoom.transform, savedTransform)
-      zoomRef.current = zoom
-
-      const colorScale = d3.scaleOrdinal(NODE_COLORS)
-      const sizeScale = d3.scaleSqrt().domain([0, d3.max(displayNodes, d => d.degree) || 1]).range([5, 18])
-
-      const sim = d3.forceSimulation(displayNodes)
-        .force('link', d3.forceLink(displayEdges).id(d => d.id).distance(d => 80 / Math.sqrt((d.source.degree || 1) + 1)))
-        .force('charge', d3.forceManyBody().strength(-200))
-        .force('center', d3.forceCenter(W / 2, H / 2))
-        .force('collision', d3.forceCollide().radius(d => sizeScale(d.degree) + 8))
-      simRef.current = sim
-
-      const link = g.append('g').selectAll('line').data(displayEdges).join('line')
-        .attr('stroke', '#c7ddf0').attr('stroke-width', 0.5).attr('stroke-opacity', 0.6)
-      const edgeLabels = g.append('g').selectAll('text').data(displayEdges.slice(0, 15)).join('text')
-        .text(d => (d.label || '').slice(0, 10)).attr('font-size', 7).attr('fill', '#6b8aaa').attr('text-anchor', 'middle')
-
-      const nodeGroup = g.append('g').selectAll('g').data(displayNodes).join('g').attr('cursor', 'pointer')
-        .call(d3.drag().on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y })
-          .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y })
-          .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null }))
-
-      nodeGroup.append('circle').attr('r', d => sizeScale(d.degree)).attr('fill', d => colorScale(d.id))
-        .attr('stroke', '#e3eef7').attr('stroke-width', 1).attr('opacity', 0.85)
-      nodeGroup.filter(d => d.degree >= 2 || displayNodes.length <= 20).append('text')
-        .text(d => (d.label || d.id || '').slice(0, 10))
-        .attr('font-size', d => Math.max(7, Math.min(11, sizeScale(d.degree) * 0.7)))
-        .attr('fill', '#3a5a78').attr('text-anchor', 'middle').attr('dy', d => sizeScale(d.degree) + 12)
-        .attr('font-family', "'Microsoft YaHei', 'SimHei', sans-serif")
-
-      nodeGroup.on('click', async (e, d) => {
-        e.stopPropagation(); setSelectedNode(d)
-        const connections = graph.edges.filter(e => e.source === d.id || e.target === d.id)
-        const connectedNames = new Set(); const connectionList = []
-        connections.forEach(e => {
-          const other = e.source === d.id ? e.target : e.source
-          connectedNames.add(other)
-          connectionList.push({ other, label: e.label || '', direction: e.source === d.id ? '→' : '←' })
-        })
-        setNodeDetails({
-          node: d, connections: connectionList.slice(0, 30),
-          connectedNodes: graph.nodes.filter(n => connectedNames.has(n.id)).slice(0, 20),
-          totalConnections: connectionList.length,
-        })
-      })
-      svgEl.on('click', () => { setSelectedNode(null); setNodeDetails(null) })
-
-      const selNode = selectedNodeRef.current
-      if (selNode) {
-        nodeGroup.select('circle').attr('opacity', d => d.id === selNode.id ? 1 : 0.3)
-        link.attr('stroke-opacity', d => d.source.id === selNode.id || d.target.id === selNode.id ? 0.9 : 0.15)
-      }
-      sim.on('tick', () => {
-        link.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y)
-        edgeLabels.attr('x', d => (d.source.x + d.target.x) / 2).attr('y', d => (d.source.y + d.target.y) / 2)
-        nodeGroup.attr('transform', d => `translate(${d.x},${d.y})`)
-      })
-    } catch(e) { console.warn('D3 error:', e) }
-  }, [graph, graphSearch])
-
-  // Main graph effect: fingerprint-gated to prevent 8s polling from resetting zoom/simulation.
-  // Simulation lifecycle is managed via simRef — NOT via React effect cleanup —
-  // because React calls the old cleanup before the new effect, which would kill the
-  // simulation even when data hasn't changed.
-  useEffect(() => {
-    if (!graph.nodes.length) {
-      // 数据为空时清除旧图谱，防止幽灵节点残留在 SVG 中
-      if (svgRef.current) d3.select(svgRef.current).selectAll('*').remove()
-      if (simRef.current) { simRef.current.stop(); simRef.current = null }
-      zoomRef.current = null
-      prevGraphFingerprint.current = ''
-      prevGraphSearch.current = ''
-      return
-    }
-
-    const fingerprint = JSON.stringify({
-      ns: graph.nodes.map(n => n.id).sort().join(','),
-      es: graph.edges.map(e => `${e.source}|${e.target}|${e.label || ''}`).sort().join(';'),
-      q: graphSearch.trim(),
-    })
-
-    if (fingerprint === prevGraphFingerprint.current && graphSearch.trim() === prevGraphSearch.current) {
-      return  // data unchanged → simulation keeps running, no cleanup
-    }
-    prevGraphFingerprint.current = fingerprint
-    prevGraphSearch.current = graphSearch.trim()
-
-    drawGraph()
-    // No cleanup returned — sim lifecycle handled manually via simRef
-  }, [graph, graphSearch, drawGraph])
-
-  // Stop simulation on unmount
-  useEffect(() => {
-    return () => { if (simRef.current) { simRef.current.stop(); simRef.current = null } }
-  }, [])
-
-  // Separate effect: update node/link highlighting without full graph rebuild.
-  // When selectedNode changes, we only mutate opacity on existing D3 elements —
-  // no simulation restart, no zoom reset, no SVG clear.
-  useEffect(() => {
-    if (!svgRef.current) return
-    try {
-      const svg = d3.select(svgRef.current)
-      const sid = selectedNode?.id || null
-
-      // Check that D3 elements actually exist (graph has been drawn)
-      const circles = svg.selectAll('circle')
-      if (circles.empty()) return
-
-      circles.attr('opacity', function () {
-        const pg = this.parentNode
-        if (!pg) return 0.85
-        const parentData = d3.select(pg).datum()
-        if (!sid) return 0.85
-        return parentData?.id === sid ? 1 : 0.3
-      })
-
-      svg.selectAll('line').attr('stroke-opacity', function (d) {
-        if (!sid) return 0.6
-        if (!d) return 0.6
-        const sourceId = d.source?.id ?? d.source
-        const targetId = d.target?.id ?? d.target
-        return sourceId === sid || targetId === sid ? 0.9 : 0.15
-      })
-    } catch (_) { /* SVG not yet rendered — safely ignore */ }
-  }, [selectedNode])
-
-  const handleZoom = (dir) => {
-    if (!svgRef.current) return
-    const svg = d3.select(svgRef.current)
-    if (dir === 'in') svg.transition().call(zoomRef.current.scaleBy, 1.5)
-    else if (dir === 'out') svg.transition().call(zoomRef.current.scaleBy, 0.7)
-    else svg.transition().call(zoomRef.current.transform, d3.zoomIdentity)
-  }
-
-  const filteredDocs = docs.filter(d => d.file?.toLowerCase().includes(filter.toLowerCase()))
-
-  const handleDelete = async () => {
-    if (!deleteConfirm) return
-    setDeleting(true)
-    try { await api.deleteDocument(deleteConfirm.id); setDeleteConfirm(null); loadKBData() }
-    catch(e) { showToast('删除失败: ' + e.message, 'error') }
-    setDeleting(false)
-  }
-
-  const toggleSelect = (id) => {
-    setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
-  }
-  const toggleSelectAll = () => {
-    setSelectedIds(prev => prev.size === filteredDocs.length ? new Set() : new Set(filteredDocs.map(d => d.id)))
-  }
-
-  const handleBatchDelete = async () => {
-    setBatchDeleting(true)
-    try {
-      const res = await api.deleteDocuments([...selectedIds])
-      setSelectedIds(new Set()); loadKBData()
-      showToast(`已删除 ${res.total_deleted} 个文档`, 'success')
-    } catch(e) { showToast('批量删除失败: ' + e.message, 'error') }
-    setBatchDeleting(false)
-  }
-
-  // ── Image similarity search (vision embedding) ──
-  const handleImageSearch = async (e) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setVisionSearching(true)
-    setVisionResults(null)
-    try {
-      const res = await api.imageSearch(file, 10)
-      setVisionResults(res)
-      showToast(`找到 ${res.count} 个相似图片`, 'success')
-    } catch (err) {
-      showToast('图片搜索失败: ' + err.message, 'error')
-    } finally {
-      setVisionSearching(false)
-      // Reset file input so the same file can be re-selected
-      if (visionInputRef.current) visionInputRef.current.value = ''
-    }
-  }
+      loadKBs()
+    } catch (e) { showToast('删除失败: ' + e.message, 'error') }
+    setDeletingKB(false)
+  }, [loadKBs])
 
   return (
     <div className="space-y-6">
       {/* Page Header */}
       <div className="page-header page-header-divider">
         <div>
-          <h2 className="page-title">📚 知识库管理</h2>
-          <p className="page-subtitle">管理知识库、上传文档、查看图谱</p>
+          <h2 className="page-title">📚 知识库</h2>
+          <p className="page-subtitle">选择一个知识库查看文档、图谱和实体</p>
         </div>
       </div>
 
-      {/* KB Selector + Create */}
-      <div className="relative">
-        <KBSelector
-          kbs={kbs}
-          activeKB={activeKB}
-          onSwitch={switchKB}
-          onCreate={createKB}
-          onDelete={deleteKB}
-          deletingKB={deletingKB}
-        />
-      </div>
+      {/* KB Cards Grid */}
+      <KBSelector
+        kbs={kbs}
+        activeKB={activeKB}
+        kbStats={kbStats}
+        onSwitch={switchKB}
+        onCreate={createKB}
+        onDelete={deleteKB}
+        deletingKB={deletingKB}
+      />
 
-      {/* Stats for active KB */}
-      <div className="grid grid-cols-4 gap-5">
-        {[
-          { label: '文档总数', val: stats.documents || 0, color: 'text-sky-500' },
-          { label: '实体总数', val: stats.entities || 0, color: 'text-sage-500' },
-          { label: '关系总数', val: stats.relations || 0, color: 'text-amber-500' },
-          { label: '分块总数', val: stats.chunks || 0, color: 'text-sky-500' },
-        ].map(({ label, val, color }) => (
-          <div key={label} className="stat-card">
-            <p className="stat-label">{label}</p>
-            <p className={`stat-value ${color}`}>{val.toLocaleString()}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Tab Bar — splits the page into focused views */}
-      <div className="flex items-center gap-1 p-1 rounded-xl bg-cloud-200 w-fit">
-        {[
-          { key: 'documents', icon: '📄', label: '文档管理' },
-          { key: 'graph', icon: '🔗', label: '知识图谱' },
-          { key: 'entities', icon: '🏷️', label: '实体列表' },
-        ].map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-all ${
-              activeTab === tab.key
-                ? 'bg-white text-ink-primary shadow-cloud-sm'
-                : 'text-ink-muted hover:text-ink-body'
-            }`}>
-            <span>{tab.icon}</span> {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {/* ── Tab: Documents ── */}
-      {activeTab === 'documents' && (
-      <>
-      {/* Upload Section */}
-      <div className="card p-5">
-        <UploadSection
-          onToast={showToast}
-          chunkingStrategy={chunkingStrategy}
-          setChunkingStrategy={setChunkingStrategy}
-          strategies={strategies}
-          onUploaded={loadKBData}
-          multimodal={multimodal}
-          setMultimodal={setMultimodal}
-        />
-      </div>
-
-      {/* Document Table */}
-      <div className="card p-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <h3 className="text-sm font-semibold text-ink-body">文档列表 ({filteredDocs.length})</h3>
-            {selectedIds.size > 0 && (
-              <button
-                className="btn-danger text-xs py-1.5 px-3"
-                onClick={handleBatchDelete} disabled={batchDeleting}
-              >
-                <Trash2 size={12} />
-                {batchDeleting ? '删除中…' : `删除选中 (${selectedIds.size})`}
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Search size={14} className="text-ink-muted"/>
-            <input className="input-field text-xs w-48 py-1.5" placeholder="搜索文档…" value={filter}
-              onChange={e => setFilter(e.target.value)} />
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-cloud-300/60 text-left">
-                <th className="pb-2.5 font-medium text-xs text-ink-muted w-8">
-                  <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredDocs.length}
-                    onChange={toggleSelectAll} className="w-3.5 h-3.5 accent-sky-500" />
-                </th>
-                <th className="pb-2.5 font-medium text-xs text-ink-muted">文件名</th>
-                <th className="pb-2.5 font-medium text-xs text-ink-muted">状态</th>
-                <th className="pb-2.5 font-medium text-xs text-ink-muted">分块</th>
-                <th className="pb-2.5 font-medium text-xs text-ink-muted">字数</th>
-                <th className="pb-2.5 font-medium text-xs text-ink-muted">更新时间</th>
-                <th className="pb-2.5 font-medium text-xs text-ink-muted">操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredDocs.map(doc => (
-                <tr key={doc.id} className="border-b border-cloud-200 hover:bg-cloud-200/50 transition-colors">
-                  <td className="py-2.5">
-                    <input type="checkbox" checked={selectedIds.has(doc.id)}
-                      onChange={() => toggleSelect(doc.id)} className="w-3.5 h-3.5 accent-sky-500" />
-                  </td>
-                  <td className="py-2.5 text-ink-body max-w-40 truncate text-sm" title={doc.file}>{doc.file}</td>
-                  <td className="py-2.5">
-                    <span className={STATUS[doc.status] || 'badge-info'}>
-                      {STATUS_CN[doc.status] || doc.status}
-                      {doc.phase && PHASE_CN[doc.phase] ? <span className="ml-1 text-[10px] opacity-70">({PHASE_CN[doc.phase]})</span> : null}
-                    </span>
-                  </td>
-                  <td className="py-2.5 font-mono text-ink-muted text-sm">{doc.chunks}</td>
-                  <td className="py-2.5 font-mono text-ink-muted text-sm">{(doc.length || 0).toLocaleString()}</td>
-                  <td className="py-2.5 text-xs text-ink-muted">{doc.updated?.slice(0, 16) || '-'}</td>
-                  <td className="py-2.5 flex gap-1">
-                    {doc.status === 'failed' && (
-                      <button className="btn-ghost text-xs py-1 px-2 text-amber-600" onClick={async () => { await api.retryDocument(doc.id); loadKBData() }} title="重试"><RotateCcw size={14}/></button>
-                    )}
-                    <button className="btn-ghost text-xs py-1 px-2" onClick={() => setDetailDoc(doc)} title="详情"><Eye size={14}/></button>
-                    <button className="btn-ghost text-xs py-1 px-2 text-rose-500" onClick={() => setDeleteConfirm(doc)} title="删除"><Trash2 size={14}/></button>
-                  </td>
-                </tr>
-              ))}
-              {filteredDocs.length === 0 && (
-                <tr><td colSpan={7} className="py-12 text-center">
-                  <div className="empty-state py-8">
-                    <div className="empty-state-icon">📄</div>
-                    <p className="empty-state-title">这里还没有文档</p>
-                    <p className="empty-state-desc">在上方展开上传区域，添加第一个文档</p>
-                  </div>
-                </td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-      </>
-      )}
-
-      {/* ── Tab: Knowledge Graph ── */}
-      {activeTab === 'graph' && (
-      <div className="card p-4 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-ink-body flex items-center gap-2">
-              <Filter size={14}/>知识图谱
-              <span className="text-[10px] text-ink-muted font-normal">
-                {graph.nodes.length} 节点 · {graph.edges.length} 边
-              </span>
-            </h3>
-            <div className="flex items-center gap-1.5">
-              <input className="input-field text-xs w-32 py-1.5" placeholder="搜索实体…" value={graphSearch}
-                onChange={e => setGraphSearch(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && drawGraph()} />
-              {/* Vision image search button */}
-              <input ref={visionInputRef} type="file" accept="image/*" className="hidden"
-                onChange={handleImageSearch} />
-              <button className="btn-ghost p-1.5" onClick={() => visionInputRef.current?.click()}
-                title="以图搜图" disabled={visionSearching}>
-                {visionSearching ? <Loader2 size={14} className="animate-spin"/> : <Image size={14}/>}
-              </button>
-              <button className="btn-ghost p-1.5" onClick={() => handleZoom('in')} title="放大"><ZoomIn size={14}/></button>
-              <button className="btn-ghost p-1.5" onClick={() => handleZoom('out')} title="缩小"><ZoomOut size={14}/></button>
-              <button className="btn-ghost p-1.5" onClick={() => handleZoom('reset')} title="重置"><RotateCcw size={14}/></button>
-            </div>
-          </div>
-          <div ref={graphContainerRef} className="relative">
-            <svg ref={svgRef} className="w-full bg-cloud-200/50 rounded-xl cursor-grab active:cursor-grabbing min-h-[420px]" />
-            {selectedNode && (
-              <div className="absolute top-2 left-2 bg-white/95 border border-cloud-300 rounded-xl p-2 text-xs max-w-48 shadow-cloud-md">
-                <p className="text-ink-body font-medium truncate">{selectedNode.label || selectedNode.id}</p>
-                <p className="text-ink-muted">关联: {selectedNode.degree} 条边</p>
-                <p className="text-[10px] text-ink-muted mt-1">点击空白取消选中</p>
-              </div>
-            )}
-          </div>
-          {/* Vision image search results */}
-          {visionResults && (
-            <div className="mt-3 p-3 bg-sage-50/50 border border-sage-200 rounded-xl">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-medium text-sage-700">
-                  🖼️ 相似图片 ({visionResults.count}/{visionResults.repo_count})
-                </span>
-                <button className="btn-ghost p-0.5" onClick={() => setVisionResults(null)} title="关闭">
-                  <X size={12}/>
-                </button>
-              </div>
-              {visionResults.count === 0 ? (
-                <p className="text-xs text-ink-muted">未找到相似图片</p>
-              ) : (
-                <div className="grid grid-cols-3 gap-2 max-h-[200px] overflow-y-auto">
-                  {visionResults.results.map((r, i) => (
-                    <div key={i} className="bg-white rounded-lg p-2 border border-cloud-200 text-[10px]">
-                      <p className="text-ink-body font-medium truncate">{r.entity_name || r.image_path?.split('/').pop()}</p>
-                      <p className="text-sky-500 font-mono">相似度: {(r._score * 100).toFixed(1)}%</p>
-                      <p className="text-ink-muted truncate">{r.description?.slice(0, 60)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Tab: Entities ── */}
-      {activeTab === 'entities' && (
-        <div className="card p-4 space-y-3">
-          {nodeDetails ? (
-            <>
-              <h3 className="text-sm font-semibold text-ink-body">🔗 "{nodeDetails.node.label || nodeDetails.node.id}" 的关联</h3>
-              <div className="space-y-2 max-h-[420px] overflow-y-auto">
-                <p className="text-xs text-ink-muted">共 {nodeDetails.totalConnections} 条关系</p>
-                {nodeDetails.connections.map((c, i) => (
-                  <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-cloud-200 text-xs">
-                    <span className="text-sky-500 font-mono shrink-0">{c.direction}</span>
-                    <span className="text-ink-body truncate flex-1">{c.other}</span>
-                    {c.label && <span className="text-[10px] text-ink-muted shrink-0">{c.label.slice(0, 15)}</span>}
-                  </div>
-                ))}
-                {nodeDetails.connectedNodes.length > 0 && (
-                  <div className="mt-3">
-                    <p className="text-[10px] text-ink-muted mb-1">关联实体:</p>
-                    <div className="flex flex-wrap gap-1">
-                      {nodeDetails.connectedNodes.map(n => (
-                        <span key={n.id} className="px-2 py-0.5 rounded-lg text-[10px] bg-cloud-100 text-ink-body">{n.label || n.id}</span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </>
-          ) : (
-            <>
-              <h3 className="text-sm font-semibold text-ink-body">全部实体 ({entities.length})</h3>
-              <div className="space-y-1 max-h-[420px] overflow-y-auto">
-                {entities.slice(0, 100).map((e, i) => (
-                  <div key={e.id || i}
-                    className="px-3 py-1.5 rounded-xl bg-cloud-200 text-xs flex items-center justify-between hover:bg-cloud-100 cursor-pointer transition-colors"
-                    onClick={() => {
-                      let node = graph.nodes.find(n => n.id === e.name)
-                      if (!node) node = { id: e.name, label: e.name, degree: 0 }
-                      setGraphSearch(e.name); setSelectedNode(node)
-                      const connections = graph.edges.filter(ed => ed.source === node.id || ed.target === node.id)
-                      const connectionList = connections.map(ed => ({
-                        other: ed.source === node.id ? ed.target : ed.source,
-                        label: ed.label || '', direction: ed.source === node.id ? '→' : '←',
-                      }))
-                      setNodeDetails({
-                        node, connections: connectionList.slice(0, 30),
-                        connectedNodes: graph.nodes.filter(n => new Set(connectionList.map(c => c.other)).has(n.id)).slice(0, 20),
-                        totalConnections: connectionList.length,
-                      })
-                    }}>
-                    <span className="text-ink-body truncate flex-1">{e.name}</span>
-                    {e.type && <span className="text-[10px] text-ink-muted ml-2">{e.type}</span>}
-                  </div>
-                ))}
-                {entities.length === 0 && (
-                  <div className="py-8 text-center">
-                    <p className="text-xs text-ink-muted">暂无实体数据</p>
-                    <p className="text-[10px] text-ink-muted mt-1">上传文档后将自动抽取实体 🏷️</p>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Doc Detail Drawer */}
-      {detailDoc && (
-        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setDetailDoc(null)} role="dialog" aria-modal="true" aria-label="文档详情">
-          <div className="absolute inset-0 bg-sky-900/20" />
-          <div className="relative w-96 card m-3 p-6 overflow-y-auto animate-slide-in-right" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-ink-primary">文档详情</h3>
-              <button className="btn-ghost p-1" onClick={() => setDetailDoc(null)} aria-label="关闭文档详情"><X size={16} aria-hidden="true"/></button>
-            </div>
-            <div className="space-y-3 text-sm">
-              {[{ icon: FileText, label: '文件名', val: detailDoc.file },
-                { icon: FileText, label: '状态', val: STATUS_CN[detailDoc.status] || detailDoc.status },
-                { icon: FileText, label: '分块数', val: detailDoc.chunks },
-                { icon: FileText, label: '字数', val: (detailDoc.length || 0).toLocaleString() },
-                { icon: Clock, label: '创建时间', val: detailDoc.created?.slice(0, 19) || '-' },
-                { icon: Clock, label: '更新时间', val: detailDoc.updated?.slice(0, 19) || '-' }]
-                .map(({ icon: Icon, label, val }) => (
-                  <div key={label} className="flex items-center gap-3">
-                    <Icon size={14} className="text-ink-muted shrink-0"/>
-                    <span className="text-ink-muted w-16 shrink-0">{label}</span>
-                    <span className="text-ink-body truncate">{val}</span>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Document Delete Confirm */}
-      {deleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDeleteConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除文档">
-          <div className="absolute inset-0 bg-sky-900/20" />
-          <div className="relative card p-6 w-80 text-center" onClick={e => e.stopPropagation()}>
-            <Trash2 size={32} className="mx-auto mb-3 text-rose-500" />
-            <p className="text-ink-primary font-medium mb-1">确认删除文档</p>
-            <p className="text-xs text-ink-muted mb-4 truncate">{deleteConfirm.file}</p>
-            <div className="flex gap-3 justify-center">
-              <button className="btn-secondary text-sm" onClick={() => setDeleteConfirm(null)}>取消</button>
-              <button className="btn-danger text-sm" onClick={handleDelete} disabled={deleting}>
-                {deleting ? '删除中…' : '确认删除'}
-              </button>
-            </div>
-          </div>
+      {/* Empty state when no KBs loaded yet */}
+      {kbsLoaded && kbs.length === 0 && (
+        <div className="py-16 text-center">
+          <Layers size={48} className="mx-auto mb-4 text-cloud-400" />
+          <p className="text-ink-muted text-sm mb-2">还没有知识库</p>
+          <p className="text-ink-muted text-xs mb-4">点击「新建知识库」卡片开始</p>
         </div>
       )}
 
@@ -1088,10 +304,9 @@ export default function KnowledgePage() {
       <AnimatePresence>
         {toast && (
           <motion.div
-            initial={{ opacity: 0, y: 24, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.95 }}
-            className={`fixed bottom-6 right-6 px-5 py-3.5 rounded-2xl text-sm font-medium z-50 shadow-cloud-md ${
+            initial={{ opacity: 0, y: 24, scale: 0.95 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 24, scale: 0.95 }}
+            role="status" aria-live="polite"
+            className={`fixed bottom-6 right-6 px-5 py-3 rounded-2xl text-sm font-medium z-50 shadow-cloud-md ${
               toast.type === 'error' ? 'toast-error' : toast.type === 'success' ? 'toast-success' : 'toast-info'
             }`}>
             {toast.msg}

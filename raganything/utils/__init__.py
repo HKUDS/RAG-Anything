@@ -47,6 +47,13 @@ from raganything.utils._general import (  # noqa: F401 — re-export
     parse_pagination,
     loguru_warning_context,
 )
+from raganything.utils._quality import (  # noqa: F401 — re-export
+    check_ocr_quality,
+    suggest_parse_method,
+    detect_document_language,
+    is_likely_scanned,
+    validate_and_suggest,
+)
 
 __all__ = [
     # Beijing time
@@ -74,4 +81,10 @@ __all__ = [
     "sse_event",
     "parse_pagination",
     "loguru_warning_context",
+    # OCR quality + parse-method auto-selection
+    "check_ocr_quality",
+    "suggest_parse_method",
+    "detect_document_language",
+    "is_likely_scanned",
+    "validate_and_suggest",
 ]

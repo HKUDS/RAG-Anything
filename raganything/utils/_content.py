@@ -229,16 +229,24 @@ def extract_neighbor_text_from_content_list(
 
 def separate_content(
     content_list: List[Dict[str, Any]],
+    *,
+    preserve_structure: bool = True,
 ) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Separate text content and multimodal content
 
     Args:
         content_list: Content list from MinerU parsing
+        preserve_structure: If True, build structured markdown with heading
+            hierarchy and page markers (default). Set False for legacy flat-join.
 
     Returns:
         (text_content, multimodal_items): Pure text content and multimodal items list
     """
+    if preserve_structure:
+        return _separate_content_structured(content_list)
+
+    # Legacy flat-join path (kept for backward compatibility)
     text_parts = []
     multimodal_items = []
 
@@ -250,33 +258,166 @@ def separate_content(
             if text.strip():
                 text_parts.append(text)
         else:
-            multimodal_item = dict(item)
-            multimodal_item.setdefault("_content_list_index", index)
-            if content_type == "image":
-                multimodal_item.setdefault(
-                    "_section_path",
-                    extract_section_path_from_content_list(content_list, index),
-                )
-                multimodal_item.setdefault(
-                    "_neighbor_text",
-                    extract_neighbor_text_from_content_list(content_list, index),
-                )
-            elif content_type == "video":
-                multimodal_item.setdefault("_content_list_index", index)
+            multimodal_item = _enrich_multimodal_item(item, content_list, index)
             multimodal_items.append(multimodal_item)
 
     text_content = "\n\n".join(text_parts)
 
+    _log_separation_stats(text_content, multimodal_items)
+
+    return text_content, multimodal_items
+
+
+def _enrich_multimodal_item(
+    item: Dict[str, Any],
+    content_list: List[Dict[str, Any]],
+    index: int,
+) -> Dict[str, Any]:
+    """Add section path and neighbor text to a multimodal item."""
+    multimodal_item = dict(item)
+    multimodal_item.setdefault("_content_list_index", index)
+    content_type = item.get("type", "text")
+    if content_type == "image":
+        multimodal_item.setdefault(
+            "_section_path",
+            extract_section_path_from_content_list(content_list, index),
+        )
+        multimodal_item.setdefault(
+            "_neighbor_text",
+            extract_neighbor_text_from_content_list(content_list, index),
+        )
+    elif content_type in ("table", "equation"):
+        multimodal_item.setdefault(
+            "_section_path",
+            extract_section_path_from_content_list(content_list, index),
+        )
+    elif content_type == "video":
+        multimodal_item.setdefault("_content_list_index", index)
+    return multimodal_item
+
+
+def _separate_content_structured(
+    content_list: List[Dict[str, Any]],
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """Build structured markdown preserving heading hierarchy and page markers.
+
+    This is the core accuracy improvement: instead of flattening all text
+    with ``\\n\\n`` joins, we reconstruct a document-order markdown that:
+
+    1. Preserves heading levels (H1-H6 → # through ######)
+    2. Inserts ``[Page N]`` markers at page boundaries
+    3. Replaces image/table blocks with inline references so the
+       surrounding text context is richer for retrieval
+    4. Maintains equation representations inline
+
+    This dramatically improves retrieval accuracy for queries like
+    "What does Section 3.2 say about X?" or "Find the table on page 12."
+    """
+    text_blocks: List[str] = []
+    multimodal_items: List[Dict[str, Any]] = []
+    last_page: int | None = None
+    current_section_path: List[Tuple[int, str]] = []
+
+    for index, item in enumerate(content_list):
+        content_type = item.get("type", "text")
+        page_idx = item.get("page_idx", 0)
+
+        # ── Page boundary marker ──
+        if isinstance(page_idx, int) and page_idx != last_page:
+            last_page = page_idx
+            text_blocks.append(f"\n[第 {page_idx + 1} 页]\n")
+
+        if content_type == "text":
+            text = str(item.get("text", "") or "").strip()
+            if not text:
+                continue
+
+            text_level = item.get("text_level", 0) or 0
+            try:
+                text_level = int(text_level)
+            except (TypeError, ValueError):
+                text_level = 0
+
+            if text_level > 0:
+                # ── Heading: update section path, emit markdown header ──
+                while current_section_path and current_section_path[-1][0] >= text_level:
+                    current_section_path.pop()
+                current_section_path.append((text_level, text))
+
+                # Markdown heading: # for level 1, ## for level 2, etc.
+                level_marker = "#" * min(text_level, 6)
+                text_blocks.append(f"\n{level_marker} {text}\n")
+            else:
+                text_blocks.append(text)
+
+        elif content_type == "image":
+            # ── Inline image reference preserves context ──
+            enriched = _enrich_multimodal_item(item, content_list, index)
+            multimodal_items.append(enriched)
+
+            img_path = item.get("img_path", "")
+            captions = item.get("image_caption", item.get("img_caption", []))
+            caption_str = (
+                f": {captions[0]}" if isinstance(captions, list) and captions
+                else f": {captions}" if captions else ""
+            )
+            section_path = enriched.get("_section_path", "")
+            location_hint = f"（位于：{section_path}）" if section_path else ""
+            text_blocks.append(
+                f"\n[📷 图片{caption_str}]\n[图片路径：{img_path}]{location_hint}\n"
+            )
+
+        elif content_type == "table":
+            enriched = _enrich_multimodal_item(item, content_list, index)
+            multimodal_items.append(enriched)
+
+            captions = item.get("table_caption", [])
+            caption_str = (
+                f": {captions[0]}" if isinstance(captions, list) and captions
+                else f": {captions}" if captions else ""
+            )
+            section_path = enriched.get("_section_path", "")
+            location_hint = f"（位于：{section_path}）" if section_path else ""
+            text_blocks.append(
+                f"\n[📊 表格{caption_str}]{location_hint}\n"
+            )
+
+        elif content_type == "equation":
+            enriched = _enrich_multimodal_item(item, content_list, index)
+            multimodal_items.append(enriched)
+
+            eq_text, eq_format = get_equation_text_and_format(item)
+            text_blocks.append(f"\n[公式：{eq_text}]\n")
+
+        elif content_type == "video":
+            enriched = _enrich_multimodal_item(item, content_list, index)
+            multimodal_items.append(enriched)
+            text_blocks.append(f"\n[🎬 视频：{item.get('video_path', '')}]\n")
+
+        else:
+            # Unknown types → treat as multimodal
+            enriched = _enrich_multimodal_item(item, content_list, index)
+            multimodal_items.append(enriched)
+
+    text_content = "\n".join(text_blocks)
+
+    _log_separation_stats(text_content, multimodal_items)
+
+    return text_content, multimodal_items
+
+
+def _log_separation_stats(
+    text_content: str, multimodal_items: List[Dict[str, Any]]
+) -> None:
+    """Log content separation statistics."""
     logger.info("Content separation complete:")
     logger.info(f"  - Text content length: {len(text_content)} characters")
     logger.info(f"  - Multimodal items count: {len(multimodal_items)}")
 
-    modal_types = {}
+    modal_types: Dict[str, int] = {}
     for item in multimodal_items:
         modal_type = item.get("type", "unknown")
         modal_types[modal_type] = modal_types.get(modal_type, 0) + 1
 
     if modal_types:
         logger.info(f"  - Multimodal type distribution: {modal_types}")
-
-    return text_content, multimodal_items

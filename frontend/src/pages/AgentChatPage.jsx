@@ -54,7 +54,7 @@ const markdownComponents = {
     const match = /language-(\w+)/.exec(className || '')
     return !inline ? (
       <div className="my-3 rounded-xl border border-cloud-200 dark:border-sky-800/30 overflow-hidden">
-        <div className="bg-cloud-100 dark:bg-sky-900/40 px-3 py-1 text-[10px] text-ink-muted dark:text-cloud-500 font-mono">
+        <div className="bg-cloud-100 dark:bg-sky-900/40 px-3 py-1 text-2xs text-ink-muted dark:text-cloud-500 font-mono">
           {match ? match[1] : 'code'}
         </div>
         <pre className="bg-cloud-50 dark:bg-sky-950/60 p-3 overflow-x-auto text-xs">
@@ -563,14 +563,14 @@ export default function AgentChatPage() {
                 <span className="text-2xl shrink-0">{agent.icon || '🤖'}</span>
                 <div className="min-w-0">
                   <p className="text-sm font-semibold text-ink-primary dark:text-cloud-200 truncate">{agent.name}</p>
-                  <p className="text-[10px] text-ink-muted dark:text-cloud-500 truncate">{agent.kb_name}</p>
+                  <p className="text-2xs text-ink-muted dark:text-cloud-500 truncate">{agent.kb_name}</p>
                 </div>
               </div>
             </div>
 
             {/* Thread list header */}
             <div className="flex items-center justify-between mt-3 mb-1.5">
-              <span className="text-[10px] font-medium text-ink-muted dark:text-cloud-500 uppercase tracking-wider">对话</span>
+              <span className="text-2xs font-medium text-ink-muted dark:text-cloud-500 uppercase tracking-wider">对话</span>
               <button
                 onClick={createThread}
                 className="p-1 rounded-lg text-ink-muted dark:text-cloud-500 hover:text-sky-500 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 transition-colors"
@@ -599,7 +599,7 @@ export default function AgentChatPage() {
                 >
                   {renamingThread === t.id ? (
                     <input
-                      className="input-field flex-1 text-[11px] py-0.5 px-1.5"
+                      className="input-field flex-1 text-2xs py-0.5 px-1.5"
                       value={renameTitle}
                       onChange={e => setRenameTitle(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter') renameThread(); if (e.key === 'Escape') setRenamingThread(null) }}
@@ -636,10 +636,10 @@ export default function AgentChatPage() {
 
             {/* Agent info footer */}
             <div className="pt-3 mt-auto border-t border-cloud-200 dark:border-sky-800/30 space-y-1">
-              <p className="text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+              <p className="text-2xs text-ink-muted dark:text-cloud-500 flex items-center gap-1">
                 <Database size={10} className="shrink-0" /> {agent.kb_name}
               </p>
-              <p className="text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+              <p className="text-2xs text-ink-muted dark:text-cloud-500 flex items-center gap-1">
                 <Cpu size={10} className="shrink-0" /> {agent.llm_model}
               </p>
             </div>
@@ -673,7 +673,7 @@ export default function AgentChatPage() {
             <div className="flex items-center gap-1.5">
               {/* Retrieval mode dropdown */}
               <div className="relative group">
-                <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-ink-body dark:text-cloud-300 bg-cloud-50 dark:bg-sky-900/30 border border-cloud-200 dark:border-sky-800/30 hover:border-sky-300 dark:hover:border-sky-700 transition-colors">
+                <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-2xs font-medium text-ink-body dark:text-cloud-300 bg-cloud-50 dark:bg-sky-900/30 border border-cloud-200 dark:border-sky-800/30 hover:border-sky-300 dark:hover:border-sky-700 transition-colors">
                   <Search size={11} className="text-sky-500 dark:text-sky-400" />
                   {currentRetrievalLabel}
                   <ChevronDown size={10} className="text-ink-muted dark:text-cloud-500" />
@@ -692,7 +692,7 @@ export default function AgentChatPage() {
                       <Icon size={13} className={`shrink-0 mt-0.5 ${mode === key ? 'text-sky-500' : 'text-ink-muted dark:text-cloud-500'}`} />
                       <div>
                         <p className="text-xs font-medium">{label}</p>
-                        <p className="text-[10px] text-ink-muted dark:text-cloud-500">{desc}</p>
+                        <p className="text-2xs text-ink-muted dark:text-cloud-500">{desc}</p>
                       </div>
                     </button>
                   ))}
@@ -704,7 +704,7 @@ export default function AgentChatPage() {
 
               {/* Reasoning mode dropdown */}
               <div className="relative group">
-                <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium text-ink-body dark:text-cloud-300 bg-cloud-50 dark:bg-sky-900/30 border border-cloud-200 dark:border-sky-800/30 hover:border-sky-300 dark:hover:border-sky-700 transition-colors">
+                <button className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-2xs font-medium text-ink-body dark:text-cloud-300 bg-cloud-50 dark:bg-sky-900/30 border border-cloud-200 dark:border-sky-800/30 hover:border-sky-300 dark:hover:border-sky-700 transition-colors">
                   <Brain size={11} className="text-sage-500" />
                   {currentReasoningLabel}
                   <ChevronDown size={10} className="text-ink-muted dark:text-cloud-500" />
@@ -723,7 +723,7 @@ export default function AgentChatPage() {
                       <Icon size={13} className={`shrink-0 mt-0.5 ${agentMode === key ? 'text-sky-500' : 'text-ink-muted dark:text-cloud-500'}`} />
                       <div>
                         <p className="text-xs font-medium">{label}</p>
-                        <p className="text-[10px] text-ink-muted dark:text-cloud-500">{desc}</p>
+                        <p className="text-2xs text-ink-muted dark:text-cloud-500">{desc}</p>
                       </div>
                     </button>
                   ))}
@@ -733,7 +733,7 @@ export default function AgentChatPage() {
           ) : (
             /* Student: subtle mode indicator, no controls */
             <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+              <span className="text-2xs text-ink-muted dark:text-cloud-500 flex items-center gap-1">
                 <Sparkles size={11} className="text-sky-400" />
                 AI 助教
               </span>
@@ -760,7 +760,7 @@ export default function AgentChatPage() {
 
               {/* Suggested questions */}
               <div className="w-full space-y-2">
-                <p className="text-[11px] font-medium text-ink-muted dark:text-cloud-500 text-left">💡 试试这些问题</p>
+                <p className="text-2xs font-medium text-ink-muted dark:text-cloud-500 text-left">💡 试试这些问题</p>
                 {suggestions.map((q, i) => (
                   <button
                     key={i}
@@ -781,10 +781,10 @@ export default function AgentChatPage() {
               </div>
 
               {/* Keyboard shortcut hint */}
-              <p className="text-[10px] text-ink-muted dark:text-cloud-500 mt-6">
-                按 <kbd className="px-1 py-0.5 rounded text-[10px] bg-cloud-100 dark:bg-sky-900/40 border border-cloud-200 dark:border-sky-800/30 font-mono">Enter</kbd> 发送 ·
-                按 <kbd className="px-1 py-0.5 rounded text-[10px] bg-cloud-100 dark:bg-sky-900/40 border border-cloud-200 dark:border-sky-800/30 font-mono">Shift + Enter</kbd> 换行 ·
-                按 <kbd className="px-1 py-0.5 rounded text-[10px] bg-cloud-100 dark:bg-sky-900/40 border border-cloud-200 dark:border-sky-800/30 font-mono">Ctrl + Enter</kbd> 新建对话
+              <p className="text-2xs text-ink-muted dark:text-cloud-500 mt-6">
+                按 <kbd className="px-1 py-0.5 rounded text-2xs bg-cloud-100 dark:bg-sky-900/40 border border-cloud-200 dark:border-sky-800/30 font-mono">Enter</kbd> 发送 ·
+                按 <kbd className="px-1 py-0.5 rounded text-2xs bg-cloud-100 dark:bg-sky-900/40 border border-cloud-200 dark:border-sky-800/30 font-mono">Shift + Enter</kbd> 换行 ·
+                按 <kbd className="px-1 py-0.5 rounded text-2xs bg-cloud-100 dark:bg-sky-900/40 border border-cloud-200 dark:border-sky-800/30 font-mono">Ctrl + Enter</kbd> 新建对话
               </p>
             </motion.div>
           )}
@@ -849,12 +849,12 @@ export default function AgentChatPage() {
                             {m.thinkingDone ? '推理过程' : '正在推理…'}
                           </span>
                           {m.thinkingDone ? (
-                            <span className="ml-auto text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                            <span className="ml-auto text-2xs text-ink-muted dark:text-cloud-500 flex items-center gap-1">
                               <Check size={10} className="text-sage-500" />
                               {m.thinking.length} 步
                             </span>
                           ) : (
-                            <span className="ml-auto flex items-center gap-1 text-[10px] text-ink-muted dark:text-cloud-500">
+                            <span className="ml-auto flex items-center gap-1 text-2xs text-ink-muted dark:text-cloud-500">
                               <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse" />
                               {m.thinking.length} 步
                             </span>
@@ -865,22 +865,22 @@ export default function AgentChatPage() {
                           <div className="border-t border-cloud-200 dark:border-sky-800/30 px-3 py-2.5 space-y-2.5 max-h-80 overflow-y-auto">
                             {m.thinking.map((step, j) => (
                               typeof step === 'object' ? (
-                                <div key={j} className="flex gap-2 text-[11px]">
+                                <div key={j} className="flex gap-2 text-2xs">
                                   {/* Step number */}
-                                  <span className="shrink-0 w-5 h-5 rounded-full bg-cloud-100 dark:bg-sky-900/40 flex items-center justify-center text-[10px] font-mono text-ink-muted dark:text-cloud-500 mt-0.5">
+                                  <span className="shrink-0 w-5 h-5 rounded-full bg-cloud-100 dark:bg-sky-900/40 flex items-center justify-center text-2xs font-mono text-ink-muted dark:text-cloud-500 mt-0.5">
                                     {j + 1}
                                   </span>
                                   <div className="flex-1 min-w-0 space-y-1">
                                     {/* Thought */}
                                     <div className="flex items-start gap-1.5">
-                                      <span className="shrink-0 mt-0.5 text-[10px]">💭</span>
+                                      <span className="shrink-0 mt-0.5 text-2xs">💭</span>
                                       <span className="text-ink-body dark:text-cloud-300 leading-relaxed">{step.thought}</span>
                                     </div>
                                     {/* Action */}
                                     {step.action && (
                                       <div className="flex items-start gap-1.5 ml-0.5">
-                                        <span className="shrink-0 mt-0.5 text-[10px]">🔧</span>
-                                        <span className="text-sky-600 dark:text-sky-400 font-medium bg-sky-50 dark:bg-sky-900/30 px-1.5 py-0.5 rounded text-[10px]">
+                                        <span className="shrink-0 mt-0.5 text-2xs">🔧</span>
+                                        <span className="text-sky-600 dark:text-sky-400 font-medium bg-sky-50 dark:bg-sky-900/30 px-1.5 py-0.5 rounded text-2xs">
                                           {step.action}
                                         </span>
                                       </div>
@@ -888,23 +888,23 @@ export default function AgentChatPage() {
                                     {/* Observation */}
                                     {step.observation && (
                                       <div className="flex items-start gap-1.5 ml-0.5">
-                                        <span className="shrink-0 mt-0.5 text-[10px]">📋</span>
-                                        <span className="text-sage-600 dark:text-sage-400 whitespace-pre-wrap break-all text-[10px] leading-relaxed bg-sage-50 dark:bg-sage-900/20 px-1.5 py-1 rounded">
+                                        <span className="shrink-0 mt-0.5 text-2xs">📋</span>
+                                        <span className="text-sage-600 dark:text-sage-400 whitespace-pre-wrap break-all text-2xs leading-relaxed bg-sage-50 dark:bg-sage-900/20 px-1.5 py-1 rounded">
                                           {step.observation}
                                         </span>
                                       </div>
                                     )}
                                     {/* Elapsed */}
                                     {step.elapsed_ms > 0 && (
-                                      <p className="text-[10px] text-ink-muted dark:text-cloud-500 font-mono ml-5">
+                                      <p className="text-2xs text-ink-muted dark:text-cloud-500 font-mono ml-5">
                                         ⏱ {formatElapsed(step.elapsed_ms)}
                                       </p>
                                     )}
                                   </div>
                                 </div>
                               ) : (
-                                <div key={j} className="text-[10px] text-ink-muted dark:text-cloud-500 font-mono flex items-start gap-2">
-                                  <span className="shrink-0 w-5 h-5 rounded-full bg-cloud-100 dark:bg-sky-900/40 flex items-center justify-center text-[10px] mt-0.5">
+                                <div key={j} className="text-2xs text-ink-muted dark:text-cloud-500 font-mono flex items-start gap-2">
+                                  <span className="shrink-0 w-5 h-5 rounded-full bg-cloud-100 dark:bg-sky-900/40 flex items-center justify-center text-2xs mt-0.5">
                                     {j + 1}
                                   </span>
                                   <span className="leading-relaxed">{step}</span>
@@ -938,7 +938,7 @@ export default function AgentChatPage() {
                                 streamQuery(lastUserMsg.content, null)
                               }
                             }}
-                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors"
+                            className="flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors"
                           >
                             <RefreshCw size={10} /> 重试
                           </button>
@@ -947,7 +947,7 @@ export default function AgentChatPage() {
 
                       {/* Cancelled indicator */}
                       {m.cancelled && !m.error && (
-                        <div className="flex items-center gap-2 mb-2 text-[10px] text-ink-muted dark:text-cloud-500">
+                        <div className="flex items-center gap-2 mb-2 text-2xs text-ink-muted dark:text-cloud-500">
                           <StopCircle size={11} />
                           已取消 · 可继续追问或重新提问
                         </div>
@@ -965,7 +965,7 @@ export default function AgentChatPage() {
                       {/* Similar images (vision search) */}
                       {m.similar_images && m.similar_images.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-cloud-200 dark:border-sky-800/30">
-                          <p className="text-[10px] font-medium text-ink-muted dark:text-cloud-500 mb-2 flex items-center gap-1">
+                          <p className="text-2xs font-medium text-ink-muted dark:text-cloud-500 mb-2 flex items-center gap-1">
                             <Image size={10} /> 视觉相似结果 ({m.similar_images.length})
                           </p>
                           <div className="grid grid-cols-2 gap-2">
@@ -979,10 +979,10 @@ export default function AgentChatPage() {
                                     loading="lazy"
                                   />
                                 )}
-                                <p className="text-[10px] text-ink-body dark:text-cloud-300 font-medium truncate">
+                                <p className="text-2xs text-ink-body dark:text-cloud-300 font-medium truncate">
                                   {sim.name || sim.entity_name || sim.image_path?.split('/').pop()}
                                 </p>
-                                <p className="text-[10px] text-sky-500 dark:text-sky-400 font-mono">
+                                <p className="text-2xs text-sky-500 dark:text-sky-400 font-mono">
                                   相似度 {(sim.score * 100).toFixed(1)}%
                                 </p>
                               </div>
@@ -994,7 +994,7 @@ export default function AgentChatPage() {
                       {/* Referenced images from knowledge base */}
                       {m.images && m.images.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-cloud-200 dark:border-sky-800/30">
-                          <p className="text-[10px] font-medium text-ink-muted dark:text-cloud-500 mb-2 flex items-center gap-1">
+                          <p className="text-2xs font-medium text-ink-muted dark:text-cloud-500 mb-2 flex items-center gap-1">
                             <BookOpen size={10} /> 引用来源 ({m.images.length})
                           </p>
                           <div className="grid grid-cols-2 gap-2">
@@ -1020,7 +1020,7 @@ export default function AgentChatPage() {
 
                       {/* Elapsed time */}
                       {m.elapsed && m.done && (
-                        <p className="text-[10px] text-ink-muted dark:text-cloud-500 mt-2 font-mono">
+                        <p className="text-2xs text-ink-muted dark:text-cloud-500 mt-2 font-mono">
                           <Clock size={9} className="inline mr-1" />
                           {m.elapsed}s
                         </p>
@@ -1028,7 +1028,7 @@ export default function AgentChatPage() {
 
                       {/* Cancelled partial elapsed */}
                       {m.cancelled && !m.done && (
-                        <p className="text-[10px] text-ink-muted dark:text-cloud-500 mt-2 italic">
+                        <p className="text-2xs text-ink-muted dark:text-cloud-500 mt-2 italic">
                           已取消 · 部分内容已生成
                         </p>
                       )}
@@ -1160,24 +1160,24 @@ export default function AgentChatPage() {
             <div className="flex items-center gap-3">
               {isTeacher && (
                 <>
-                  <span className="text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                  <span className="text-2xs text-ink-muted dark:text-cloud-500 flex items-center gap-1">
                     <Search size={10} />
                     {currentRetrievalLabel}
                   </span>
-                  <span className="text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                  <span className="text-2xs text-ink-muted dark:text-cloud-500 flex items-center gap-1">
                     <Brain size={10} />
                     {currentReasoningLabel}
                   </span>
                 </>
               )}
               {!isTeacher && (
-                <span className="text-[10px] text-ink-muted dark:text-cloud-500 flex items-center gap-1">
+                <span className="text-2xs text-ink-muted dark:text-cloud-500 flex items-center gap-1">
                   <Sparkles size={10} />
                   AI 助教模式
                 </span>
               )}
             </div>
-            <span className="text-[10px] text-ink-muted dark:text-cloud-500">
+            <span className="text-2xs text-ink-muted dark:text-cloud-500">
               {agent.kb_name} · {agent.llm_model}
             </span>
           </div>

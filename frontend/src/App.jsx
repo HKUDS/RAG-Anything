@@ -8,6 +8,7 @@ import { api } from './utils/api'
 
 // ---- Route-level code splitting ----
 const KnowledgePage               = lazy(() => import('./pages/KnowledgePage'))
+const KnowledgeDetailPage        = lazy(() => import('./pages/KnowledgeDetailPage'))
 const SettingsPage                = lazy(() => import('./pages/SettingsPage'))
 const MonitorPage                 = lazy(() => import('./pages/MonitorPage'))
 const AgentsPage                  = lazy(() => import('./pages/AgentsPage'))
@@ -32,19 +33,27 @@ const PageLoader = () => (
 class LazyErrorBoundary extends Component {
   constructor(props) {
     super(props)
-    this.state = { hasError: false }
+    this.state = { hasError: false, error: null }
   }
-  static getDerivedStateFromError() {
-    return { hasError: true }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error }
+  }
+  componentDidCatch(error, info) {
+    console.error('[LazyErrorBoundary] Route render error:', error, info)
   }
   render() {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center py-20 gap-3">
           <p className="text-ink-muted text-sm">页面加载失败</p>
+          {this.state.error && (
+            <p className="text-xs text-rose-500 max-w-md text-center font-mono break-all">
+              {this.state.error.message || String(this.state.error)}
+            </p>
+          )}
           <button
             className="btn-secondary text-xs"
-            onClick={() => { this.setState({ hasError: false }); window.location.reload() }}
+            onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload() }}
           >
             重新加载
           </button>
@@ -56,8 +65,8 @@ class LazyErrorBoundary extends Component {
 }
 
 const NAV = [
-  { to: '/agents',        icon: Bot,       label: '智能体',     requiredPermission: null },
   { to: '/knowledge',     icon: Database,   label: '知识库',     requiredPermission: null },
+  { to: '/agents',        icon: Bot,       label: '智能体',     requiredPermission: null },
   { to: '/workflow',      icon: GitBranch,  label: '工作流',     requiredPermission: 'workflow:read' },
   { to: '/manufacturing', icon: Factory,    label: '制造智能体', requiredPermission: 'manufacturing:read' },
   { to: '/settings',      icon: Settings,   label: '设置',       requiredPermission: 'settings:read' },
@@ -247,7 +256,7 @@ export default function App() {
       <header className="topnav">
         <div className="topnav-inner">
           {/* Brand */}
-          <NavLink to="/agents" className="topnav-brand">
+          <NavLink to="/knowledge" className="topnav-brand">
             <div className="topnav-brand-icon">
               <BookOpen size={16} className="text-white" />
             </div>
@@ -337,10 +346,11 @@ export default function App() {
                 transition={{ duration: 0.25, ease: 'easeOut' }}
               >
                 <Routes>
-                  <Route path="/" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
+                  <Route path="/" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
                   <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
                   <Route path="/agents/:id" element={<ProtectedRoute><AgentChatPage /></ProtectedRoute>} />
                   <Route path="/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
+                  <Route path="/knowledge/:kbName" element={<ProtectedRoute><KnowledgeDetailPage /></ProtectedRoute>} />
                   <Route path="/workflow" element={<ProtectedRoute requiredPermission="workflow:read"><WorkflowPage /></ProtectedRoute>} />
                   <Route path="/manufacturing" element={<ProtectedRoute requiredPermission="manufacturing:read"><ManufacturingDashboardPage /></ProtectedRoute>} />
                   <Route path="/manufacturing/knowledge" element={<ProtectedRoute requiredPermission="manufacturing:read"><ManufacturingKnowledgePage /></ProtectedRoute>} />

@@ -1,0 +1,200 @@
+[
+  {
+    "category": "short_factoid",
+    "query": "什么是RAG技术？",
+    "expected_s": 5,
+    "weight": 3
+  },
+  {
+    "category": "short_factoid",
+    "query": "知识图谱和向量数据库有什么区别？",
+    "expected_s": 6,
+    "weight": 3
+  },
+  {
+    "category": "short_factoid",
+    "query": "LightRAG支持哪些文档格式？",
+    "expected_s": 4,
+    "weight": 2
+  },
+  {
+    "category": "short_factoid",
+    "query": "如何配置环境变量？",
+    "expected_s": 5,
+    "weight": 2
+  },
+  {
+    "category": "short_factoid",
+    "query": "API的默认端口是多少？",
+    "expected_s": 3,
+    "weight": 2
+  },
+  {
+    "category": "short_factoid",
+    "query": "支持哪些LLM模型？",
+    "expected_s": 4,
+    "weight": 2
+  },
+  {
+    "category": "short_factoid",
+    "query": "如何处理大文件上传？",
+    "expected_s": 5,
+    "weight": 2
+  },
+  {
+    "category": "short_factoid",
+    "query": "用户角色有哪几种？",
+    "expected_s": 3,
+    "weight": 2
+  },
+  {
+    "category": "short_factoid",
+    "query": "什么是多模态处理？",
+    "expected_s": 5,
+    "weight": 2
+  },
+  {
+    "category": "short_factoid",
+    "query": "如何创建知识库？",
+    "expected_s": 4,
+    "weight": 2
+  },
+  {
+    "category": "medium_analytical",
+    "query": "请详细解释知识图谱在RAG系统中的作用和优势",
+    "expected_s": 10,
+    "weight": 4
+  },
+  {
+    "category": "medium_analytical",
+    "query": "对比分析不同的文档分块策略及其对检索效果的影响",
+    "expected_s": 12,
+    "weight": 3
+  },
+  {
+    "category": "medium_analytical",
+    "query": "为什么需要使用混合检索模式？什么场景下用RRF、naive、mix？",
+    "expected_s": 10,
+    "weight": 3
+  },
+  {
+    "category": "medium_analytical",
+    "query": "在构建企业级RAG系统时需要考虑哪些安全因素？",
+    "expected_s": 10,
+    "weight": 3
+  },
+  {
+    "category": "medium_analytical",
+    "query": "比较ReAct和CoT两种推理模式在RAG场景下的优缺点",
+    "expected_s": 12,
+    "weight": 3
+  },
+  {
+    "category": "medium_analytical",
+    "query": "如何处理知识库中的图片和文本混合检索问题？",
+    "expected_s": 10,
+    "weight": 3
+  },
+  {
+    "category": "medium_analytical",
+    "query": "解释向量嵌入模型的选型标准和影响因素",
+    "expected_s": 10,
+    "weight": 3
+  },
+  {
+    "category": "medium_analytical",
+    "query": "RAG系统中的上下文窗口管理策略有哪些？",
+    "expected_s": 8,
+    "weight": 2
+  },
+  {
+    "category": "medium_analytical",
+    "query": "如何评估和优化RAG系统的答案质量？",
+    "expected_s": 10,
+    "weight": 3
+  },
+  {
+    "category": "medium_analytical",
+    "query": "多轮对话中如何保持上下文一致性？",
+    "expected_s": 8,
+    "weight": 2
+  },
+  {
+    "category": "long_generative",
+    "query": "请从零开始设计一个完整的企业知识库RAG系统架构，包括数据采集、处理、存储、检索和生成各个阶段的详细设计方案",
+    "expected_s": 20,
+    "weight": 2
+  },
+  {
+    "category": "long_generative",
+    "query": "详细描述一个基于知识图谱增强的RAG系统的完整工作流程，包括图谱构建、实体链接、多跳推理等环节的具体实现",
+    "expected_s": 18,
+    "weight": 2
+  },
+  {
+    "category": "long_generative",
+    "query": "分析当前主流RAG框架的技术路线差异，并从性能、可扩展性、易用性等维度进行综合评价",
+    "expected_s": 15,
+    "weight": 2
+  },
+  {
+    "category": "long_generative",
+    "query": "如何设计一个支持多模态（文本、图片、表格）的RAG系统？请给出详细的技术方案和实现步骤",
+    "expected_s": 20,
+    "weight": 2
+  },
+  {
+    "category": "long_generative",
+    "query": "请结合LightRAG的架构特点，分析其在处理大规模知识库时的性能优化策略和潜在瓶颈",
+    "expected_s": 15,
+    "weight": 2
+  },
+  {
+    "category": "long_generative",
+    "query": "从系统可靠性角度出发，设计一个RAG API服务的高可用架构方案，包括负载均衡、故障恢复、监控告警等方面",
+    "expected_s": 18,
+    "weight": 2
+  },
+  {
+    "category": "short_factoid",
+    "query": "什么是token？",
+    "expected_s": 4,
+    "weight": 1
+  },
+  {
+    "category": "short_factoid",
+    "query": "系统默认使用什么数据库？",
+    "expected_s": 3,
+    "weight": 1
+  },
+  {
+    "category": "short_factoid",
+    "query": "如何重置密码？",
+    "expected_s": 4,
+    "weight": 1
+  },
+  {
+    "category": "short_factoid",
+    "query": "系统支持哪些语言的文档？",
+    "expected_s": 4,
+    "weight": 1
+  },
+  {
+    "category": "medium_analytical",
+    "query": "怎样通过缓存机制提升RAG系统的查询性能？",
+    "expected_s": 8,
+    "weight": 2
+  },
+  {
+    "category": "medium_analytical",
+    "query": "说明文档解析中OCR和VLM各自的应用场景",
+    "expected_s": 8,
+    "weight": 2
+  },
+  {
+    "category": "long_generative",
+    "query": "请全面分析知识库管理的最佳实践，覆盖知识库创建、文档管理、权限控制、版本管理、质量监控等各个方面",
+    "expected_s": 16,
+    "weight": 1
+  }
+]

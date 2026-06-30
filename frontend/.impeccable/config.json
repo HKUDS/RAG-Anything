@@ -1,0 +1,15 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [
+      "pages/AgentChatPage.jsx"
+    ],
+    "ignoreValues": [
+      {
+        "rule": "rgb(22 30 40)",
+        "value": "rgb(185 198 214) rgb(26 22 19) rgb(196 189 176)",
+        "createdAt": "2026-06-29T08:07:16.894Z"
+      }
+    ]
+  }
+}

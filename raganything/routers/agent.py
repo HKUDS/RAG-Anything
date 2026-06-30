@@ -45,7 +45,20 @@ from raganything.utils.security import validate_query_input, decode_and_validate
 from raganything.dependencies import get_current_user, require_permission
 from raganything.permissions import Permission
 
-from raganything.services.agent_manager import AgentConfig, get_agent_manager
+from raganything.services.agent_manager import (
+    AgentConfig,
+    dispatch_list_agents,
+    dispatch_get_agent,
+    dispatch_create_agent,
+    dispatch_update_agent,
+    dispatch_delete_agent,
+    dispatch_list_conversations,
+    dispatch_get_conversation,
+    dispatch_create_conversation,
+    dispatch_add_message,
+    dispatch_delete_conversation,
+    dispatch_update_conversation,
+)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -150,13 +163,12 @@ async def list_agents(
     _perm: None = Depends(require_permission(Permission.AGENT_READ)),
 ):
     """列出智能体（按用户隔离，管理员看全部）"""
-    mgr = get_agent_manager()
-    agents = mgr.list_agents(
+    agents = await dispatch_list_agents(
         user_id=current_user["id"],
         is_admin=current_user.get("is_admin", False),
     )
     return {
-        "agents": [a.model_dump() for a in agents],
+        "agents": agents,
         "total": len(agents),
     }
 
@@ -186,7 +198,6 @@ async def create_agent(
     """创建新智能体"""
     # 验证 KB 访问权限
     await verify_kb_access(kb=req.kb_name, current_user=current_user)
-    mgr = get_agent_manager()
     config = AgentConfig(
         name=req.name,
         icon=req.icon,
@@ -201,8 +212,12 @@ async def create_agent(
         use_default_prompt=req.use_default_prompt,
         template_id=req.template_id,
     )
-    config = mgr.create_agent(config, owner_id=current_user["id"], owner_username=current_user["username"])
-    return {"status": "ok", "agent": config.model_dump()}
+    agent = await dispatch_create_agent(
+        config.model_dump(),
+        owner_id=current_user["id"],
+        owner_username=current_user["username"],
+    )
+    return {"status": "ok", "agent": agent}
 
 
 @router.put("/agents/{agent_id}")
@@ -212,18 +227,17 @@ async def update_agent(
     _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
 ):
     """更新智能体配置（仅所有者或管理员）"""
-    mgr = get_agent_manager()
-    agent = mgr.get_agent(agent_id)
+    agent = await dispatch_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
-    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+    if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权修改该智能体")
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
-    agent = mgr.update_agent(agent_id, updates)
+    agent = await dispatch_update_agent(agent_id, updates)
     if not agent:
         raise HTTPException(404, "智能体不存在")
-    return {"status": "ok", "agent": agent.model_dump()}
+    return {"status": "ok", "agent": agent}
 
 
 @router.delete("/agents/{agent_id}")
@@ -233,14 +247,13 @@ async def delete_agent(
     _perm: None = Depends(require_permission(Permission.AGENT_DELETE)),
 ):
     """删除智能体（仅所有者或管理员）"""
-    mgr = get_agent_manager()
-    agent = mgr.get_agent(agent_id)
+    agent = await dispatch_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
-    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+    if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权删除该智能体")
-    if not mgr.delete_agent(agent_id):
+    if not await dispatch_delete_agent(agent_id):
         raise HTTPException(404, "智能体不存在")
     return {"status": "ok"}
 
@@ -252,20 +265,19 @@ async def list_conversations(agent_id: str, current_user: dict = Depends(get_cur
     _perm: None = Depends(require_permission(Permission.AGENT_READ)),
 ):
     """列出智能体的对话线程（按用户隔离，管理员看全部）"""
-    mgr = get_agent_manager()
-    agent = mgr.get_agent(agent_id)
+    agent = await dispatch_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
-    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+    if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权访问该智能体")
-    threads = mgr.list_conversations(
+    threads = await dispatch_list_conversations(
         agent_id,
         user_id=current_user["id"],
         is_admin=current_user.get("is_admin", False),
     )
     return {
-        "threads": [t.model_dump() for t in threads],
+        "threads": threads,
         "total": len(threads),
     }
 
@@ -275,15 +287,14 @@ async def create_conversation(agent_id: str, title: str = "新对话", current_u
     _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
 ):
     """创建新对话线程（注入所有权，需校验 Agent 所有权）"""
-    mgr = get_agent_manager()
-    agent = mgr.get_agent(agent_id)
+    agent = await dispatch_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
-    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+    if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权使用该智能体")
-    thread = mgr.create_conversation(agent_id, title, owner_id=current_user["id"])
-    return {"status": "ok", "thread": thread.model_dump()}
+    thread = await dispatch_create_conversation(agent_id, title, owner_id=current_user["id"])
+    return {"status": "ok", "thread": thread}
 
 
 @router.put("/agents/{agent_id}/conversations/{thread_id}")
@@ -291,20 +302,19 @@ async def update_conversation(agent_id: str, thread_id: str, title: str = None, 
     _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
 ):
     """更新对话线程（需校验 Agent 所有权 + 对话所有权）"""
-    mgr = get_agent_manager()
-    agent = mgr.get_agent(agent_id)
+    agent = await dispatch_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
-    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+    if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权访问该智能体")
-    thread = mgr.get_conversation(agent_id, thread_id)
+    thread = await dispatch_get_conversation(agent_id, thread_id)
     if not thread:
         raise HTTPException(404, "对话线程不存在")
-    if thread.owner_id != 0 and thread.owner_id != current_user["id"] and not is_admin:
+    if thread.get("owner_id", 0) != 0 and thread.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权修改该对话")
-    thread = mgr.update_conversation(agent_id, thread_id, {"title": title})
-    return {"status": "ok", "thread": thread.model_dump() if thread else None}
+    thread = await dispatch_update_conversation(agent_id, thread_id, {"title": title})
+    return {"status": "ok", "thread": thread}
 
 
 @router.delete("/agents/{agent_id}/conversations/{thread_id}")
@@ -312,19 +322,18 @@ async def delete_conversation(agent_id: str, thread_id: str, current_user: dict 
     _perm: None = Depends(require_permission(Permission.AGENT_DELETE)),
 ):
     """删除对话线程（需校验 Agent 所有权 + 对话所有权）"""
-    mgr = get_agent_manager()
-    agent = mgr.get_agent(agent_id)
+    agent = await dispatch_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
-    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+    if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权访问该智能体")
-    thread = mgr.get_conversation(agent_id, thread_id)
+    thread = await dispatch_get_conversation(agent_id, thread_id)
     if not thread:
         raise HTTPException(404, "对话线程不存在")
-    if thread.owner_id != 0 and thread.owner_id != current_user["id"] and not is_admin:
+    if thread.get("owner_id", 0) != 0 and thread.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权删除该对话")
-    if not mgr.delete_conversation(agent_id, thread_id):
+    if not await dispatch_delete_conversation(agent_id, thread_id):
         raise HTTPException(404, "对话线程不存在")
     return {"status": "ok"}
 
@@ -336,14 +345,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     _perm: None = Depends(require_permission(Permission.AGENT_READ)),
 ):
     """智能体流式查询：使用智能体配置执行查询"""
-    mgr = get_agent_manager()
-    agent = mgr.get_agent(agent_id)
+    agent = await dispatch_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
 
     # 验证 Agent 所有权（非所有者/管理员不可用）
     is_admin = current_user.get("is_admin", False)
-    if agent.owner_id != 0 and agent.owner_id != current_user["id"] and not is_admin:
+    if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权使用该智能体")
     # 输入校验 — Prompt Injection 防护
     # 当用户仅发送图片而无文字时，自动补全安全占位查询文本，
@@ -353,35 +361,35 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         req.query = "请分析这张图片"
     validate_query_input(req.query, user_id=str(current_user.get("id", "anonymous")))
     # 验证 KB 访问权限（可能自动切换到用户的个人 KB）
-    actual_kb = await verify_kb_access(kb=agent.kb_name, current_user=current_user)
+    actual_kb = await verify_kb_access(kb=agent.get("kb_name", ""), current_user=current_user)
 
     instance = await get_kb(actual_kb)
     # 检索模式（agentic 路径优先 rrf 轻量模式，可被请求级覆盖；普通路径沿用 agent 配置）
-    query_mode = req.mode or agent.query_mode
+    query_mode = req.mode or agent.get("query_mode", "hybrid")
     # 推理模式：请求级覆盖 > 智能体配置 > 默认 none
-    agent_mode = req.agent_mode or getattr(agent, 'agent_mode', 'none')
+    agent_mode = req.agent_mode or agent.get("agent_mode", "none")
     # AgenticRAG 专用检索模式：优先请求级，否则默认 rrf（更快）
     agentic_query_mode = req.mode or "rrf"
 
     # 构建 system_prompt
-    system_prompt = agent.system_prompt
-    if agent.use_default_prompt:
+    system_prompt = agent.get("system_prompt", "")
+    if agent.get("use_default_prompt", True):
         system_prompt = (system_prompt + "\n\n" + QUERY_SYSTEM_PROMPT).strip()
 
     # 确保对话线程存在
     thread_id = req.thread_id
     if not thread_id:
-        thread = mgr.create_conversation(agent_id, title="新对话", owner_id=current_user["id"])
-        thread_id = thread.id
+        thread = await dispatch_create_conversation(agent_id, title="新对话", owner_id=current_user["id"])
+        thread_id = thread["id"]
 
     # ── 多轮对话上下文提取 ──
     conv_history_text = ""
     max_conv_rounds = int(os.getenv("CONVERSATION_MAX_ROUNDS", "3"))
     max_conv_tokens = int(os.getenv("CONVERSATION_MAX_TOKENS", "2000"))
-    conv_thread = mgr.get_conversation(agent_id, thread_id)
-    if conv_thread and conv_thread.messages:
+    conv_thread = await dispatch_get_conversation(agent_id, thread_id)
+    if conv_thread and conv_thread.get("messages"):
         max_msgs = max_conv_rounds * 2
-        recent = conv_thread.messages[-max_msgs:]
+        recent = conv_thread["messages"][-max_msgs:]
         lines = []
         token_est = 0
         for msg in reversed(recent):
@@ -403,7 +411,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         full_answer = ""
 
         try:
-            yield f"data: {json.dumps({'type': 'agent_info', 'agent': agent.name, 'icon': agent.icon, 'thread_id': thread_id}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'agent_info', 'agent': agent.get('name',''), 'icon': agent.get('icon',''), 'thread_id': thread_id}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'🔍 开始查询: {req.query[:80]}...'}, ensure_ascii=False)}\n\n"
 
             # ── 查询改写：基于对话历史消解指代词 ──
@@ -413,7 +421,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     from raganything.query.utils import rewrite_query
                     _history = [
                         {"role": m.get("role"), "content": m.get("content", "")}
-                        for m in (conv_thread.messages[-6:] if conv_thread and conv_thread.messages else [])
+                        for m in (conv_thread["messages"][-6:] if conv_thread and conv_thread.get("messages") else [])
                     ]
                     rewritten = await rewrite_query(
                         req.query,
@@ -623,11 +631,11 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         yield f"data: {json.dumps({'type': 'thinking', 'content': '⚠️ 知识库中暂无相关数据'}, ensure_ascii=False)}\n\n"
                         yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
                         elapsed = round(time.time() - start_time, 2)
-                        mgr.add_message(agent_id, thread_id, {
+                        await dispatch_add_message(agent_id, thread_id, {
                             "role": "user", "content": req.query,
                             "time": datetime.now().isoformat(),
                         })
-                        mgr.add_message(agent_id, thread_id, {
+                        await dispatch_add_message(agent_id, thread_id, {
                             "role": "assistant", "content": full_answer,
                             "elapsed": elapsed, "mode": query_mode,
                             "agent_mode": agent_mode, "trace": [],
@@ -727,11 +735,11 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         yield f"data: {json.dumps({'type': 'token', 'content': _cit_block}, ensure_ascii=False)}\n\n"
 
                 # 保存到对话线程
-                mgr.add_message(agent_id, thread_id, {
+                await dispatch_add_message(agent_id, thread_id, {
                     "role": "user", "content": req.query,
                     "time": datetime.now().isoformat(),
                 })
-                mgr.add_message(agent_id, thread_id, {
+                await dispatch_add_message(agent_id, thread_id, {
                     "role": "assistant", "content": full_answer,
                     "elapsed": elapsed, "mode": query_mode,
                     "agent_mode": agent_mode, "trace": trace_steps,
@@ -810,12 +818,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 full_answer = "抱歉，知识库中暂无与您问题相关的数据，无法回答此问题。请尝试上传相关文档或换个问题。"
 
                 # 保存到对话线程
-                mgr.add_message(agent_id, thread_id, {
+                await dispatch_add_message(agent_id, thread_id, {
                     "role": "user",
                     "content": req.query,
                     "time": datetime.now().isoformat(),
                 })
-                mgr.add_message(agent_id, thread_id, {
+                await dispatch_add_message(agent_id, thread_id, {
                     "role": "assistant",
                     "content": full_answer,
                     "elapsed": round(time.time() - start_time, 2),
@@ -925,12 +933,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 full_answer = "抱歉，知识库中暂无与您问题相关的数据，无法回答此问题。请尝试上传相关文档或换个问题。"
 
                 # 保存到对话线程
-                mgr.add_message(agent_id, thread_id, {
+                await dispatch_add_message(agent_id, thread_id, {
                     "role": "user",
                     "content": req.query,
                     "time": datetime.now().isoformat(),
                 })
-                mgr.add_message(agent_id, thread_id, {
+                await dispatch_add_message(agent_id, thread_id, {
                     "role": "assistant",
                     "content": full_answer,
                     "elapsed": round(time.time() - start_time, 2),
@@ -980,7 +988,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
             # Step 2: 构造 prompt 并使用智能体配置的模型
-            sp = (agent.system_prompt or "") + ("\n你是知识库助手。结合对话历史理解用户上下文和指代关系，但回答中的事实和数据必须来源于检索内容。" if agent.use_default_prompt else "")
+            sp = (agent.get("system_prompt") or "") + ("\n你是知识库助手。结合对话历史理解用户上下文和指代关系，但回答中的事实和数据必须来源于检索内容。" if agent.get("use_default_prompt") else "")
             _conv_part = (
                 f"## 对话历史\n{conv_history_text}\n\n"
                 if conv_history_text else ""
@@ -1051,12 +1059,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             elapsed = round(time.time() - start_time, 2)
 
             # 保存到对话线程
-            mgr.add_message(agent_id, thread_id, {
+            await dispatch_add_message(agent_id, thread_id, {
                 "role": "user",
                 "content": req.query,
                 "time": datetime.now().isoformat(),
             })
-            mgr.add_message(agent_id, thread_id, {
+            await dispatch_add_message(agent_id, thread_id, {
                 "role": "assistant",
                 "content": full_answer,
                 "elapsed": elapsed,

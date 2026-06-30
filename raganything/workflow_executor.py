@@ -39,6 +39,7 @@ class ExecutionContext:
         upload_dir: Path = Path("./uploads"),
         openai_complete_func=None,
         openai_embed_func=None,
+        user_id: int = 0,
     ):
         self.llm_model = llm_model
         self.llm_api_key = llm_api_key
@@ -48,6 +49,7 @@ class ExecutionContext:
         self.embed_api_key = embed_api_key
         self.embed_base_url = embed_base_url
         self.kb_instance = kb_instance
+        self.user_id = user_id
         self.upload_dir = Path(upload_dir)
         self.openai_complete_func = openai_complete_func
         self.openai_embed_func = openai_embed_func
@@ -524,7 +526,28 @@ async def execute_workflow(
         "status": final_status, "started_at": started_at, "completed_at": completed_at,
         "node_results": node_results, "final_output": final_output,
     }
-    (RUNS_DIR / f"{run_id}.json").write_text(json.dumps(run_record, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # ── Persist run record: PG-first, file fallback ──
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        pool = get_pg_pool()
+        user_id = getattr(ctx, 'user_id', 0)
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO workflow_runs
+                   (run_id, workflow_id, user_id, workflow_name, status,
+                    node_results, final_output, started_at, completed_at)
+                   VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9)""",
+                run_id, workflow.get("id", "unknown"), user_id,
+                workflow.get("name", "unnamed"), final_status,
+                json.dumps(node_results, ensure_ascii=False), final_output,
+                started_at, completed_at,
+            )
+    except (RuntimeError, Exception):
+        # PG unavailable — fall back to JSON file
+        (RUNS_DIR / f"{run_id}.json").write_text(
+            json.dumps(run_record, ensure_ascii=False, indent=2), encoding="utf-8")
+
     if status_callback:
         await status_callback(None, "run_complete", {"run_id": run_id, "status": final_status})
     return run_record

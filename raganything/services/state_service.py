@@ -193,6 +193,117 @@ async def cleanup_completed_tasks():
             state_logger.info(f"Cleaned up {len(to_remove)} completed/failed task records")
 
 
+# ── PG-backed Task State ────────────────────────────────────
+
+def _task_pg_ready() -> bool:
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        get_pg_pool()
+        return True
+    except RuntimeError:
+        return False
+
+
+async def _pg_upsert_task(task_id: str, task_data: dict) -> None:
+    """Write task state to PG (upsert)."""
+    from raganything.services.pg_state_repo import get_pg_pool
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """INSERT INTO processing_tasks
+               (task_id, kb_name, file_name, file_hash, user_id,
+                status, progress, phase, phase_status,
+                chunking_strategy, error_message, message, started_at)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW())
+               ON CONFLICT (task_id) DO UPDATE SET
+                status=$6, progress=$7, phase=$8, phase_status=$9,
+                chunking_strategy=$10, error_message=$11, message=$12,
+                updated_at=NOW()""",
+            task_id,
+            task_data.get("kb", task_data.get("kb_name", "default")),
+            task_data.get("file", task_data.get("file_name", "")),
+            task_data.get("file_hash", ""),
+            task_data.get("user_id", 0),
+            task_data.get("status", "pending"),
+            task_data.get("progress", 0),
+            task_data.get("phase", ""),
+            task_data.get("phase_status", ""),
+            task_data.get("chunking_strategy", ""),
+            task_data.get("error", ""),
+            task_data.get("message", ""),
+        )
+
+
+async def _pg_complete_task(task_id: str):
+    """Mark task as completed in PG."""
+    from raganything.services.pg_state_repo import get_pg_pool
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE processing_tasks SET status='completed', completed_at=NOW(), "
+            "updated_at=NOW() WHERE task_id=$1",
+            task_id,
+        )
+
+
+async def _pg_delete_task(task_id: str):
+    """Delete task from PG."""
+    from raganything.services.pg_state_repo import get_pg_pool
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        await conn.execute("DELETE FROM processing_tasks WHERE task_id=$1", task_id)
+
+
+async def upsert_task_state(task_id: str, task_data: dict) -> None:
+    """Update task state — memory dict + optional PG persistence."""
+    async with _get_task_lock():
+        task_data["id"] = task_id
+        processing_tasks[task_id] = task_data
+    if _task_pg_ready():
+        try:
+            await _pg_upsert_task(task_id, task_data)
+        except Exception:
+            pass  # PG write failure is non-fatal
+
+
+async def complete_task(task_id: str) -> None:
+    """Mark task completed — memory dict + optional PG."""
+    async with _get_task_lock():
+        if task_id in processing_tasks:
+            processing_tasks[task_id]["status"] = "completed"
+    if _task_pg_ready():
+        try:
+            await _pg_complete_task(task_id)
+        except Exception:
+            pass
+
+
+async def delete_task(task_id: str) -> None:
+    """Remove task — memory dict + optional PG."""
+    async with _get_task_lock():
+        processing_tasks.pop(task_id, None)
+    if _task_pg_ready():
+        try:
+            await _pg_delete_task(task_id)
+        except Exception:
+            pass
+
+
+async def load_tasks_from_pg() -> list[dict]:
+    """Load active (non-terminal) tasks from PG for crash recovery."""
+    if not _task_pg_ready():
+        return []
+    from raganything.services.pg_state_repo import get_pg_pool
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT * FROM processing_tasks "
+            "WHERE status NOT IN ('completed','failed') "
+            "ORDER BY updated_at DESC"
+        )
+    return [dict(r) for r in rows]
+
+
 __all__ = [
     "processing_tasks",
     "query_history",
@@ -205,4 +316,8 @@ __all__ = [
     "get_task_status",
     "get_all_tasks",
     "cleanup_completed_tasks",
+    "upsert_task_state",
+    "complete_task",
+    "delete_task",
+    "load_tasks_from_pg",
 ]

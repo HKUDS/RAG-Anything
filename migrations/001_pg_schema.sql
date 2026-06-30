@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS users (
     email                  TEXT UNIQUE NOT NULL,
     password_hash          TEXT NOT NULL,
     role_id                INTEGER REFERENCES roles(id) DEFAULT NULL,
-    is_admin               INTEGER DEFAULT 0,
     is_active              INTEGER DEFAULT 1,
     failed_login_attempts  INTEGER DEFAULT 0,
     locked_until           TIMESTAMPTZ DEFAULT NULL,

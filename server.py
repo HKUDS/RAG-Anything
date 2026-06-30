@@ -269,8 +269,14 @@ async def startup():
     try:
         from raganything.services.pg_state_repo import init_pg_pool
         await init_pg_pool()
+        # 验证 P0 数据表（智能体 + KB 元数据）
+        from raganything.services.pg_agent_repo import pg_ensure_agent_tables
+        from raganything.services.pg_kb_meta_repo import pg_ensure_kb_tables
+        await pg_ensure_agent_tables()
+        await pg_ensure_kb_tables()
+        server_logger.info("PG P0 tables (agents, kb_metadata) verified")
     except Exception as _pg_exc:
-        server_logger.warning(f"PostgreSQL 初始化跳过（将使用 SQLite）: {_pg_exc}")
+        server_logger.warning(f"PostgreSQL 初始化跳过（将使用本地存储）: {_pg_exc}")
 
     # 初始化认证数据库
     await init_db()
@@ -289,7 +295,7 @@ async def startup():
     await _shared_state.conversation_manager._load()
     server_logger.info(f"ConversationManager: {_shared_state.conversation_manager.get_stats()}")
     # 加载所有知识库元数据
-    meta = load_kb_meta()
+    meta = await load_kb_meta()
     # 迁移旧知识库：无 owner_id 的 KB 全部归管理员（user_id=1）
     changed = False
     for kb_name, kb_info in meta.items():
@@ -298,7 +304,7 @@ async def startup():
             kb_info["owner_username"] = "admin"
             changed = True
     if changed:
-        save_kb_meta(meta)
+        await save_kb_meta(meta)
         print(f"[KB-MIGRATE] 已将 {sum(1 for v in meta.values() if v.get('owner_id') == 1)} 个知识库分配给管理员", flush=True)
     # 加载查询历史
     load_query_history()

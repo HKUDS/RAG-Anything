@@ -65,7 +65,7 @@ class FaultDiagnosisEngine:
         self.confidence_threshold = confidence_threshold
         self._sessions: dict[str, dict] = {}
 
-    def start_diagnosis(self, session_id: str,
+    async def start_diagnosis(self, session_id: str,
                         fault_description: str) -> dict:
         """开始诊断会话。
 
@@ -85,7 +85,7 @@ class FaultDiagnosisEngine:
         }
 
         # 匹配初始案例
-        cases = self._match_cases(fault_description)
+        cases = await self._match_cases(fault_description)
         self._sessions[session_id]["matched_cases"] = cases
 
         # 生成追问
@@ -98,7 +98,7 @@ class FaultDiagnosisEngine:
             "matched_cases": cases[:3],  # Top 3 for preview
         }
 
-    def continue_diagnosis(self, session_id: str,
+    async def continue_diagnosis(self, session_id: str,
                            user_answer: str) -> dict:
         """继续诊断对话。
 
@@ -118,7 +118,7 @@ class FaultDiagnosisEngine:
 
         # 根据新信息重新匹配案例
         full_context = self._build_context(session)
-        cases = self._match_cases(full_context)
+        cases = await self._match_cases(full_context)
         session["matched_cases"] = cases
 
         # 判断是否可以给出结论
@@ -144,12 +144,12 @@ class FaultDiagnosisEngine:
             "current_confidence": round(confidence, 2),
         }
 
-    def _match_cases(self, query: str) -> list[dict]:
+    async def _match_cases(self, query: str) -> list[dict]:
         """在案例库中匹配案例。"""
         if not self.case_library:
             return []
         try:
-            result = self.case_library.search(query, top_k=10)
+            result = await self.case_library.search(query, top_k=10)
             if not isinstance(result, list):
                 logger.warning(f"案例搜索返回非列表类型 {type(result)}，已忽略")
                 return []

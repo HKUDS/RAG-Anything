@@ -32,7 +32,7 @@ const markdownComponents = {
     const match = /language-(\w+)/.exec(className || '')
     return !inline ? (
       <div className="my-2 rounded-lg border border-cloud-300 overflow-hidden">
-        <div className="bg-cloud-100 px-3 py-1 text-[10px] text-ink-muted font-mono">{match ? match[1] : 'code'}</div>
+        <div className="bg-cloud-100 px-3 py-1 text-2xs text-ink-muted font-mono">{match ? match[1] : 'code'}</div>
         <pre className="bg-cloud-200 p-3 overflow-x-auto text-xs"><code className={className} {...props}>{children}</code></pre>
       </div>
     ) : (

@@ -196,11 +196,11 @@ export default function SettingsPage({ onToast }) {
                       <span className={`text-sm font-medium ${isActive ? 'text-sky-600 dark:text-sky-400' : 'text-ink-body dark:text-cloud-300'}`}>
                         {meta.name}
                       </span>
-                      {isActive && <span className="text-[10px] px-1.5 py-0.5 rounded-lg bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 font-mono">当前</span>}
+                      {isActive && <span className="text-2xs px-1.5 py-0.5 rounded-lg bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 font-mono">当前</span>}
                     </div>
                     <p className="text-xs text-ink-muted dark:text-cloud-500 mt-0.5">{meta.description}</p>
                   </div>
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full border shrink-0 ${costColors[meta.cost_level] || costColors.free}`}>
+                  <span className={`text-2xs px-2 py-0.5 rounded-full border shrink-0 ${costColors[meta.cost_level] || costColors.free}`}>
                     {meta.cost}
                   </span>
                 </div>

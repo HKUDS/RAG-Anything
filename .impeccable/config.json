@@ -1,0 +1,20 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "--design-system-color",
+        "value": "rgb(22 30 40)",
+        "reason": "Dark mode body bg: cool-tinted dark harmonizing with sky-blue palette",
+        "createdAt": "2026-06-29T07:39:19.894Z"
+      },
+      {
+        "rule": "--design-system-color",
+        "value": "rgb(185 198 214)",
+        "reason": "Dark mode body text: light cool gray harmonizing with sky-blue palette",
+        "createdAt": "2026-06-29T07:39:27.098Z"
+      }
+    ]
+  }
+}

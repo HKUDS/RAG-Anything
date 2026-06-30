@@ -5,31 +5,31 @@ export default {
   theme: {
     extend: {
       fontSize: {
-        '2xs':  ['0.6875rem', { lineHeight: '1rem' }],       // 11px
-        'xs':   ['0.75rem',   { lineHeight: '1.125rem' }],    // 12px
-        'sm':   ['0.875rem',  { lineHeight: '1.375rem' }],    // 14px
-        'base': ['0.9375rem', { lineHeight: '1.625rem' }],    // 15px
-        'lg':   ['1.0625rem', { lineHeight: '1.75rem' }],     // 17px
-        'xl':   ['1.25rem',   { lineHeight: '1.75rem' }],     // 20px
-        '2xl':  ['1.5rem',    { lineHeight: '2rem' }],        // 24px
-        '3xl':  ['1.875rem',  { lineHeight: '2.25rem' }],     // 30px
+        '2xs':  ['0.75rem',   { lineHeight: '1rem' }],        // 12px  (was 11px)
+        'xs':   ['0.8125rem', { lineHeight: '1.25rem' }],     // 13px  (was 12px)
+        'sm':   ['0.9375rem', { lineHeight: '1.5rem' }],      // 15px  (was 14px)
+        'base': ['1rem',      { lineHeight: '1.625rem' }],    // 16px  (was 15px) — WCAG minimum
+        'lg':   ['1.125rem',  { lineHeight: '1.75rem' }],     // 18px  (was 17px)
+        'xl':   ['1.375rem',  { lineHeight: '1.875rem' }],    // 22px  (was 20px)
+        '2xl':  ['1.625rem',  { lineHeight: '2.125rem' }],    // 26px  (was 24px)
+        '3xl':  ['2rem',      { lineHeight: '2.5rem' }],      // 32px  (was 30px)
       },
       colors: {
         // === Cloud-Blue Neutral Scale (blue-tinted, replaces warm) ===
         cloud: {
           50:  '#f8fafd',  // surface hover
           100: '#f4f8fc',  // body bg (cloud-bg)
-          200: '#f0f5fa',  // well bg
-          300: '#e3eef7',  // border (cloud-border)
-          400: '#c7ddf0',  // border strong
-          500: '#9aaec5',  // muted icons
+          200: '#edf3f9',  // well bg (was #f0f5fa — slightly defined)
+          300: '#d6e5f2',  // border (was #e3eef7 — strengthened)
+          400: '#bcd3e8',  // border strong (was #c7ddf0)
+          500: '#8da3bb',  // muted icons (was #9aaec5 — darker)
         },
         // === Ink Text Scale (blue-gray, replaces warm text) ===
         ink: {
-          muted:  '#6b8aaa',  // secondary/label/placeholder
-          body:   '#3a5a78',  // body text
-          primary:'#30567a',  // headings (sky-800)
-          deep:   '#1f3d56',  // darkest text (rare)
+          muted:  '#557a95',  // secondary/label/placeholder (was #6b8aaa — 3.3→4.7:1 AA pass)
+          body:   '#2d4d66',  // body text (was #3a5a78 — deepened for readability)
+          primary:'#264860',  // headings (was #30567a — stronger presence)
+          deep:   '#1a3448',  // darkest text (was #1f3d56)
         },
         // === Warm Neutral (legacy, kept for transition) ===
         warm: {
@@ -116,16 +116,16 @@ export default {
         '88':  '22rem',
       },
       boxShadow: {
-        // Cloud shadows — blue-tinted (ink-primary #30567a) not pure black
-        'cloud-sm': '0 1px 3px rgba(48,86,122,0.04), 0 1px 2px rgba(48,86,122,0.03)',
-        'cloud':    '0 4px 16px rgba(48,86,122,0.06), 0 2px 4px rgba(48,86,122,0.03)',
-        'cloud-md': '0 8px 30px rgba(48,86,122,0.08), 0 3px 8px rgba(48,86,122,0.04)',
-        'cloud-lg': '0 16px 48px rgba(48,86,122,0.10), 0 4px 12px rgba(48,86,122,0.04)',
+        // Cloud shadows — blue-tinted (ink-primary #264860) not pure black
+        'cloud-sm': '0 1px 3px rgba(38,72,96,0.06), 0 1px 2px rgba(38,72,96,0.04)',
+        'cloud':    '0 4px 16px rgba(38,72,96,0.08), 0 2px 4px rgba(38,72,96,0.04)',
+        'cloud-md': '0 8px 30px rgba(38,72,96,0.10), 0 3px 8px rgba(38,72,96,0.05)',
+        'cloud-lg': '0 16px 48px rgba(38,72,96,0.12), 0 4px 12px rgba(38,72,96,0.05)',
         // Legacy aliases (transitional)
-        'warm-sm': '0 1px 3px rgba(48,86,122,0.04), 0 1px 2px rgba(48,86,122,0.03)',
-        'warm':    '0 4px 16px rgba(48,86,122,0.06), 0 2px 4px rgba(48,86,122,0.03)',
-        'warm-md': '0 8px 30px rgba(48,86,122,0.08), 0 3px 8px rgba(48,86,122,0.04)',
-        'warm-lg': '0 16px 48px rgba(48,86,122,0.10), 0 4px 12px rgba(48,86,122,0.04)',
+        'warm-sm': '0 1px 3px rgba(38,72,96,0.06), 0 1px 2px rgba(38,72,96,0.04)',
+        'warm':    '0 4px 16px rgba(38,72,96,0.08), 0 2px 4px rgba(38,72,96,0.04)',
+        'warm-md': '0 8px 30px rgba(38,72,96,0.10), 0 3px 8px rgba(38,72,96,0.05)',
+        'warm-lg': '0 16px 48px rgba(38,72,96,0.12), 0 4px 12px rgba(38,72,96,0.05)',
       },
       borderRadius: {
         '2xl': '0.875rem',

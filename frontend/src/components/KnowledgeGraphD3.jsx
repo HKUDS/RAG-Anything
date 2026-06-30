@@ -9,8 +9,8 @@ const COLORS = {
   knowledge_point: '#e8734a', competition_topic: '#5b9bd5',
   skill_point: '#6b9e7a', default: '#d4a853',
 }
-const LINE_STYLES = { requires: '4,2', advances_to: '', related_to: '2,2' }
-const RELATION_LABELS = { requires: '前置', advances_to: '进阶', related_to: '相关' }
+const LINE_STYLES = { requires: '4,2', advances_to: '', related_to: '2,2', evaluates: '6,3', applies_in: '1,3' }
+const RELATION_LABELS = { requires: '前置', advances_to: '进阶', related_to: '相关', evaluates: '评分', applies_in: '应用' }
 const NODE_TYPE_LABEL = {
   knowledge_point: '知识点', competition_topic: '赛题', skill_point: '技能',
 }
@@ -183,6 +183,11 @@ export default function KnowledgeGraphD3({
     const g = svg.append('g')
     const zoom = d3.zoom()
       .scaleExtent([0.2, 4])
+      .filter((event) => {
+        // Allow wheel/dblclick zoom anywhere; only allow mouse-pan on SVG background
+        if (event.type === 'wheel' || event.type === 'dblclick') return true
+        return event.target === svgRef.current
+      })
       .on('zoom', (e) => g.attr('transform', e.transform))
     svg.call(zoom)
     zoomRef.current = zoom
@@ -313,8 +318,20 @@ export default function KnowledgeGraphD3({
     // ---- Click handler ----
     node.on('click', (e, d) => {
       e.stopPropagation()
-      setSelectedNodeId(d.id === selectedNodeIdRef.current ? null : d.id)
+      const isDeselect = d.id === selectedNodeIdRef.current
+      setSelectedNodeId(isDeselect ? null : d.id)
       onNodeClick?.(d)
+
+      // Smoothly center viewport on the clicked node
+      if (!isDeselect && d.x !== undefined && d.y !== undefined) {
+        const currentTransform = d3.zoomTransform(svg.node())
+        const targetX = W / 2 - d.x * currentTransform.k
+        const targetY = H / 2 - d.y * currentTransform.k
+        svg.transition().duration(400).call(
+          zoom.transform,
+          d3.zoomIdentity.translate(targetX, targetY).scale(currentTransform.k)
+        )
+      }
     })
 
     // Click on background deselects
@@ -340,13 +357,14 @@ export default function KnowledgeGraphD3({
         })
         .attr('fill', 'none').attr('stroke', 'none')
 
+      // Edge text labels disabled — legend already indicates line meaning
       edgeLabelG.selectAll('text').data(simEdges).join('text')
         .attr('dy', -3).attr('font-size', 8).attr('fill', '#9ca3af')
         .attr('text-anchor', 'middle')
         .append('textPath')
         .attr('href', (_, i) => `#edge-path-${renderId}-${i}`)
         .attr('startOffset', '50%')
-        .text(d => RELATION_LABELS[d.relation_type] || '')
+        .text('')
     }
 
     // ---- Tick ----

@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-Embedding Cache — local persistent cache for text embedding vectors.
+Embedding Cache — PG-first persistent cache for text embedding vectors.
 
-Avoids redundant API calls by storing (text_hash → embedding_vector) in a
-JSON file under the working directory. Uses atomic writes to prevent
-corruption on abrupt shutdown.
+Avoids redundant API calls by storing (text_hash → embedding_vector).
+When PG is available, uses ``embedding_cache`` table (cross-worker shared).
+Falls back to JSON file when PG is unavailable.
 
 Feature-gated: disabled when ``EMBEDDING_CACHE_ENABLED`` is "false".
 """
@@ -24,11 +24,16 @@ __all__ = ["EmbeddingCache", "make_cached_embed_func"]
 
 logger = logging.getLogger("rag_server.embedding_cache")
 
-# Maximum number of cached embedding entries before eviction kicks in.
-# Each entry is approximately 8 KB (1024-dim float32 → JSON). At 50 000
-# entries the cache file is ~400 MB, which is about the practical limit
-# for single-pass json.load on a machine with 2 GB free RAM.
 _MAX_CACHE_ENTRIES = int(os.getenv("EMBEDDING_CACHE_MAX_ENTRIES", "50000"))
+
+
+def _cache_pg_ready() -> bool:
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        get_pg_pool()
+        return True
+    except RuntimeError:
+        return False
 
 
 class EmbeddingCache:
@@ -42,7 +47,7 @@ class EmbeddingCache:
     """
 
     __slots__ = ("_cache_path", "_model", "_enabled", "_data",
-                 "_loaded", "_dirty", "_max_entries")
+                 "_loaded", "_dirty", "_max_entries", "_use_pg")
 
     def __init__(self, working_dir: str, model: str, enabled: bool = True) -> None:
         self._cache_path = Path(working_dir) / ".embedding_cache.json"
@@ -52,6 +57,12 @@ class EmbeddingCache:
         self._loaded = False
         self._dirty = False
         self._max_entries = _MAX_CACHE_ENTRIES
+        self._use_pg: bool | None = None
+
+    def _pg_ready(self) -> bool:
+        if self._use_pg is None:
+            self._use_pg = _cache_pg_ready()
+        return self._use_pg
 
     # ── public API ─────────────────────────────────────────────
 
@@ -69,24 +80,60 @@ class EmbeddingCache:
     def get(self, text: str) -> Optional[list[float]]:
         """Look up a cached embedding by text content.
 
+        Tries PG first (shared cache), then local memory cache.
         Returns ``None`` on miss.
         """
         if not self._enabled:
             return None
-        self._ensure_loaded()
         key = self._key(text)
+
+        # Try PG shared cache first
+        if self._pg_ready():
+            try:
+                return self._pg_get(key)
+            except Exception:
+                pass
+
+        # Fallback: local memory cache
+        self._ensure_loaded()
         return self._data.get(key)
 
-    def put(self, text: str, embedding: list[float]) -> None:
-        """Store an embedding in the cache and persist immediately.
+    def _pg_get(self, key: str) -> Optional[list[float]]:
+        """Synchronous PG lookup (runs in a dedicated thread)."""
+        try:
+            import asyncio as _asyncio
+            return _asyncio.run(self._pg_get_async(key))
+        except RuntimeError:
+            # Event loop is already running — skip PG (use local cache)
+            return None
+        except Exception:
+            return None
 
-        If the cache exceeds ``_max_entries``, the oldest entries are
-        evicted first (Python 3.7+ dicts preserve insertion order).
-        """
+    async def _pg_get_async(self, key: str) -> Optional[list[float]]:
+        from raganything.services.pg_state_repo import get_pg_pool
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT embedding FROM embedding_cache WHERE cache_key=$1",
+                key,
+            )
+        return list(row["embedding"]) if row else None
+
+    def put(self, text: str, embedding: list[float]) -> None:
+        """Store an embedding — PG shared cache + local memory cache."""
         if not self._enabled:
             return
-        self._ensure_loaded()
         key = self._key(text)
+
+        # Write to PG shared cache
+        if self._pg_ready():
+            try:
+                self._pg_put(key, embedding)
+            except Exception:
+                pass
+
+        # Also write to local memory cache
+        self._ensure_loaded()
         self._data[key] = embedding
         self._dirty = True
 
@@ -103,16 +150,50 @@ class EmbeddingCache:
 
         self._save()
 
+    def _pg_put(self, key: str, embedding: list[float]) -> None:
+        """Write to PG — best-effort (skip if running inside async context)."""
+        try:
+            import asyncio as _asyncio
+            _asyncio.run(self._pg_put_async(key, embedding))
+        except RuntimeError:
+            pass  # Event loop running — PG write skipped (local cache still works)
+        except Exception:
+            pass
+
+    async def _pg_put_async(self, key: str, embedding: list[float]) -> None:
+        from raganything.services.pg_state_repo import get_pg_pool
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
+            await conn.fetchval(
+                "SELECT embedding_cache_upsert($1,$2,$3::double precision[])",
+                key, self._model, embedding,
+            )
+
     def flush(self) -> None:
         """Persist cache to disk (no-op if not dirty)."""
         if self._dirty:
             self._save()
 
     def clear(self) -> None:
-        """Clear all cached entries."""
+        """Clear all cached entries (local + PG)."""
         self._data.clear()
         self._dirty = True
         self._save()
+        if self._pg_ready():
+            try:
+                import asyncio as _asyncio
+                _asyncio.run(self._pg_clear_async())
+            except (RuntimeError, Exception):
+                pass
+
+    async def _pg_clear_async(self) -> None:
+        from raganything.services.pg_state_repo import get_pg_pool
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "DELETE FROM embedding_cache WHERE model=$1",
+                self._model,
+            )
 
     # ── internal helpers ───────────────────────────────────────
 

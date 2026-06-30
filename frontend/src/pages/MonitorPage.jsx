@@ -4,13 +4,13 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recha
 import { api } from '../utils/api'
 
 // Chart colors — literal hex values required by Recharts; all drawn from DESIGN.md
-const CHART_INK = '#6b8aaa'       // ink-muted
+const CHART_INK = '#557a95'       // ink-muted
 const CHART_SKY = '#5b9bd5'       // sky-500
 const CHART_CORAL = '#e8734a'     // coral-500 (warm accent for data viz)
 const CHART_SURFACE = '#ffffff'   // cloud-surface
-const CHART_BORDER = '#e3eef7'    // cloud-border
-const CHART_TEXT = '#3a5a78'      // ink-body
-const CHART_SHADOW = 'rgba(48,86,122,0.06)' // ink-primary at 0.06
+const CHART_BORDER = '#d6e5f2'    // cloud-border
+const CHART_TEXT = '#2d4d66'      // ink-body
+const CHART_SHADOW = 'rgba(38,72,96,0.06)' // ink-primary at 0.06
 
 export default function MonitorPage() {
   const [status, setStatus] = useState({ tasks: [], events: [] })
@@ -69,9 +69,9 @@ export default function MonitorPage() {
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData}>
               <XAxis dataKey="name"
-                tick={{ fill: CHART_INK, fontSize: 12, fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif" }} />
+                tick={{ fill: CHART_INK, fontSize: 13, fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif" }} />
               <YAxis
-                tick={{ fill: CHART_INK, fontSize: 12, fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif" }} />
+                tick={{ fill: CHART_INK, fontSize: 13, fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif" }} />
               <Tooltip contentStyle={{
                 background: CHART_SURFACE,
                 border: `1px solid ${CHART_BORDER}`,

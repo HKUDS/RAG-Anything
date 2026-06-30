@@ -233,7 +233,7 @@ async def mfg_kg_lineage(node_id: str, upstream: int = 3, downstream: int = 3,
 async def mfg_process_search(q: str = "", category: str = "", limit: int = 20, _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """企业工艺库检索。"""
     m = _get_manufacturing()
-    results = m["process_library"].search(q, category=category, limit=limit)
+    results = await m["process_library"].search(q, category=category, limit=limit)
     return {"total": len(results), "results": results}
 
 
@@ -241,14 +241,14 @@ async def mfg_process_search(q: str = "", category: str = "", limit: int = 20, _
 async def mfg_process_categories(_perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """工艺类别统计。"""
     m = _get_manufacturing()
-    return m["process_library"].list_by_category()
+    return await m["process_library"].list_by_category()
 
 
 @router.get("/manufacturing/process-library/documents/{doc_id}")
 async def mfg_process_get(doc_id: str, _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """获取单个工艺文档。"""
     m = _get_manufacturing()
-    doc = m["process_library"].get_document(doc_id)
+    doc = await m["process_library"].get_document(doc_id)
     if not doc:
         raise HTTPException(404, "工艺文档不存在")
     return {
@@ -267,7 +267,7 @@ async def mfg_process_create(body: ProcessDocCreate,
                              _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """创建工艺文档。"""
     m = _get_manufacturing()
-    doc_id = m["process_library"].add_document({
+    doc_id = await m["process_library"].add_document({
         "title": body.title,
         "text": body.text,
         "category": body.category,
@@ -292,7 +292,7 @@ async def mfg_process_update(doc_id: str, body: ProcessDocUpdate,
         internal_updates["title"] = updates["title"]
     if "category" in updates:
         internal_updates["category"] = updates["category"]
-    ok = m["process_library"].update_document(doc_id, internal_updates)
+    ok = await m["process_library"].update_document(doc_id, internal_updates)
     if not ok:
         raise HTTPException(404, "工艺文档不存在")
     return {"status": "updated"}
@@ -302,7 +302,7 @@ async def mfg_process_update(doc_id: str, body: ProcessDocUpdate,
 async def mfg_process_delete(doc_id: str, _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """删除工艺文档。"""
     m = _get_manufacturing()
-    ok = m["process_library"].delete_document(doc_id)
+    ok = await m["process_library"].delete_document(doc_id)
     if not ok:
         raise HTTPException(404, "工艺文档不存在")
     return {"status": "deleted"}
@@ -314,7 +314,7 @@ async def mfg_process_delete(doc_id: str, _perm: None = Depends(require_permissi
 async def mfg_fault_search(q: str = "", top_k: int = 10, _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """故障案例检索。"""
     m = _get_manufacturing()
-    results = m["fault_case_library"].search(q, top_k=top_k)
+    results = await m["fault_case_library"].search(q, top_k=top_k)
     return {"total": len(results), "results": results}
 
 
@@ -322,14 +322,14 @@ async def mfg_fault_search(q: str = "", top_k: int = 10, _perm: None = Depends(r
 async def mfg_fault_stats(_perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """故障案例统计。"""
     m = _get_manufacturing()
-    return m["fault_case_library"].get_statistics()
+    return await m["fault_case_library"].get_statistics()
 
 
 @router.get("/manufacturing/fault-cases/{case_id}")
 async def mfg_fault_get(case_id: str, _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """获取单个故障案例。"""
     m = _get_manufacturing()
-    case = m["fault_case_library"].get_case(case_id)
+    case = await m["fault_case_library"].get_case(case_id)
     if not case:
         raise HTTPException(404, "故障案例不存在")
     return {
@@ -365,7 +365,7 @@ async def mfg_fault_create(body: FaultCaseCreate,
         severity=body.severity,
     )
     m = _get_manufacturing()
-    case_id = m["fault_case_library"].add_case(case)
+    case_id = await m["fault_case_library"].add_case(case)
     return {"status": "created", "id": case_id}
 
 
@@ -377,7 +377,7 @@ async def mfg_fault_update(case_id: str, body: FaultCaseUpdate,
     updates = {k: v for k, v in body.model_dump().items() if v is not None}
     if not updates:
         raise HTTPException(400, "无更新字段")
-    ok = m["fault_case_library"].update_case(case_id, updates)
+    ok = await m["fault_case_library"].update_case(case_id, updates)
     if not ok:
         raise HTTPException(404, "故障案例不存在")
     return {"status": "updated"}
@@ -387,7 +387,7 @@ async def mfg_fault_update(case_id: str, body: FaultCaseUpdate,
 async def mfg_fault_delete(case_id: str, _perm: None = Depends(require_permission(Permission.MANUFACTURING_WRITE)), current_user: dict = Depends(get_current_user)):
     """删除故障案例。"""
     m = _get_manufacturing()
-    ok = m["fault_case_library"].delete_case(case_id)
+    ok = await m["fault_case_library"].delete_case(case_id)
     if not ok:
         raise HTTPException(404, "故障案例不存在")
     return {"status": "deleted"}
@@ -409,7 +409,7 @@ async def mfg_code_parse(body: ManufacturingQuery, _perm: None = Depends(require
 async def mfg_dashboard(kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.MANUFACTURING_READ)), current_user: dict = Depends(get_current_user)):
     """制造智能体数据看板（按 KB 过滤图谱数据）。"""
     m = _get_manufacturing()
-    return m["dashboard"].get_snapshot(
+    return await m["dashboard"].get_snapshot(
         knowledge_graph_api=_get_mfg_graph(kb),
         process_library=m.get("process_library"),
         fault_case_library=m.get("fault_case_library"),
@@ -436,7 +436,7 @@ async def mfg_qa(body: MfgAgentQuery, kb: str = QueryParam("default"),
     engine = await _get_mfg_qa_engine(kb)
     response = await engine.answer(body.query, context=body.context)
     m = _get_manufacturing()
-    m["dashboard"].log_query(
+    await m["dashboard"].log_query(
         user_id=str(current_user["id"]),
         institution_id="default",
         query=body.query,
@@ -495,7 +495,7 @@ async def mfg_qa_stream(body: MfgAgentQuery, kb: str = QueryParam("default"),
                     try:
                         m = _get_manufacturing()
                         response_ms = event_data.get("elapsed_ms", (_time.time() - start_time) * 1000)
-                        m["dashboard"].log_query(
+                        await m["dashboard"].log_query(
                             user_id=str(current_user["id"]),
                             institution_id="default",
                             query=body.query,
@@ -541,7 +541,7 @@ async def mfg_diagnosis_start(body: MfgDiagnosisStart, kb: str = QueryParam("def
     validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     m = await _get_mfg_agent_components(kb=kb)
     sid = str(_uuid.uuid4())[:8]
-    result = m["fault_diagnosis"].start_diagnosis(sid, body.query)
+    result = await m["fault_diagnosis"].start_diagnosis(sid, body.query)
     return result
 
 
@@ -550,7 +550,7 @@ async def mfg_diagnosis_continue(body: MfgDiagnosisContinue, kb: str = QueryPara
     """故障诊断 — 继续会话。"""
     validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     m = await _get_mfg_agent_components(kb=kb)
-    result = m["fault_diagnosis"].continue_diagnosis(body.session_id, body.query)
+    result = await m["fault_diagnosis"].continue_diagnosis(body.session_id, body.query)
     return result
 
 
@@ -564,19 +564,19 @@ async def mfg_kb_list(_perm: None = Depends(require_permission(Permission.MANUFA
     )
 
     # Filter to manufacturing-domain KBs only
-    mfg_kbs = list_kbs_by_domain("manufacturing")
+    mfg_kbs = await list_kbs_by_domain("manufacturing")
 
     # Auto-create manufacturing KB on first access if none exists
     if not mfg_kbs:
         kb_name = "manufacturing"
         label = "制造知识库"
-        meta = load_kb_meta()
+        meta = await load_kb_meta()
         meta[kb_name] = {
             "name": label,
             "created": datetime.now().isoformat(),
             "domain": "manufacturing",
         }
-        save_kb_meta(meta)
+        await save_kb_meta(meta)
         await get_kb(kb_name)  # initialize storage directory
         mfg_kbs = {kb_name: meta[kb_name]}
 

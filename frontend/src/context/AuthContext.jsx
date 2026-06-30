@@ -151,7 +151,7 @@ export function AuthProvider({ children }) {
     return false
   }, [token, clearAuth])
 
-  const isAdmin = user?.is_admin === true || user?.is_admin === 1
+  const isAdmin = user?.role?.name === 'super_admin'
 
   // 权限集（从 JWT/role 中解析）
   const permissions = user?.role?.permissions || []

@@ -1,0 +1,18 @@
+{
+  "ttft_p50": 3.2340000000003783,
+  "ttft_p95": 4.859000000000378,
+  "ttft_p99": 10.031000000000859,
+  "ttft_avg": 3.4162444444444393,
+  "token_rate_p50": 9.57052278980696,
+  "token_rate_p95": 16.01830663615934,
+  "token_rate_avg": 26.696501154229082,
+  "total_time_p50": 10.46,
+  "total_time_p95": 15.43,
+  "total_time_p99": 19.18,
+  "total_time_avg": 9.84809523809524,
+  "success": 42,
+  "errors": 0,
+  "timeouts": 0,
+  "rate_limits": 0,
+  "total_requests": 42
+}

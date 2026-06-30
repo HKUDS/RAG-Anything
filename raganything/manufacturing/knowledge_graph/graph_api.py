@@ -322,10 +322,120 @@ class InMemoryGraphStore:
 
 
 class LightRAGGraphStore:
-    """从 LightRAG 实际存储读取的图存储后端。"""
+    """从 LightRAG 实际存储读取的图存储后端。
+
+    PG-first: 当 PostgreSQL 可用时，优先从 LIGHTRAG_FULL_ENTITIES 和
+    LIGHTRAG_FULL_RELATIONS 表读取；PG 不可用时回退到 JSON 文件。
+    读取结果缓存到 ``_entities_cache`` / ``_relations_cache`` 中，
+    后续调用（如 get_node / get_edges / lineage）直接使用缓存数据。
+    """
 
     def __init__(self, working_dir: str = "./rag_storage"):
         self._working_dir = Path(working_dir)
+        self._entities_cache: dict | None = None
+        self._relations_cache: dict | None = None
+        self._pg_checked: bool = False
+
+    def _pg_ready(self) -> bool:
+        try:
+            from raganything.services.pg_state_repo import get_pg_pool
+            get_pg_pool()
+            return True
+        except RuntimeError:
+            return False
+
+    def _ensure_loaded(self) -> None:
+        """Lazy-load entities + relations data, PG-first with JSON fallback.
+
+        When PG is available, runs the async load in a dedicated thread
+        with its own event loop and a fresh connection (avoids event-loop
+        and pool conflicts with the caller's context).
+        """
+        if self._entities_cache is not None or self._relations_cache is not None:
+            return
+
+        # Try PG — fresh connection in a separate thread
+        if not self._pg_checked and self._pg_ready():
+            self._pg_checked = True
+            try:
+                import os as _os
+                import asyncio as _asyncio
+                import concurrent.futures
+
+                dsn = _os.getenv("DATABASE_URL", "")
+                if not dsn:
+                    dsn = (
+                        f"postgresql://"
+                        f"{_os.getenv('POSTGRES_USER', 'raganything')}:"
+                        f"{_os.getenv('POSTGRES_PASSWORD', 'raganything')}@"
+                        f"{_os.getenv('POSTGRES_HOST', 'localhost')}:"
+                        f"{_os.getenv('POSTGRES_PORT', '5432')}/"
+                        f"{_os.getenv('POSTGRES_DATABASE', _os.getenv('POSTGRES_DB', 'raganything'))}"
+                    )
+
+                def _pg_load_thread():
+                    _asyncio.run(self._pg_load_with_dsn(dsn))
+
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(_pg_load_thread)
+                    future.result(timeout=30)
+            except Exception:
+                pass  # Fall through to JSON
+
+        # Fallback to JSON if PG didn't populate caches
+        if self._entities_cache is None:
+            self._entities_cache = self._read_kv_json("kv_store_full_entities.json")
+        if self._relations_cache is None:
+            self._relations_cache = self._read_kv_json("kv_store_full_relations.json")
+
+    async def _pg_load_with_dsn(self, dsn: str) -> None:
+        """Load entities and relations from PG using a fresh connection."""
+        import asyncpg as _asyncpg
+        workspace = str(self._working_dir)
+
+        conn = await _asyncpg.connect(dsn)
+        try:
+            # Load entities
+            rows = await conn.fetch(
+                """SELECT id, entity_names, count
+                   FROM LIGHTRAG_FULL_ENTITIES WHERE workspace=$1""",
+                workspace,
+            )
+            entities = {}
+            for row in rows:
+                entity_names = row["entity_names"]
+                if isinstance(entity_names, str):
+                    try:
+                        entity_names = json.loads(entity_names)
+                    except json.JSONDecodeError:
+                        entity_names = []
+                entities[row["id"]] = {
+                    "entity_names": entity_names or [],
+                    "count": row["count"] or len(entity_names or []),
+                }
+            self._entities_cache = entities
+
+            # Load relations
+            rows = await conn.fetch(
+                """SELECT id, relation_pairs, count
+                   FROM LIGHTRAG_FULL_RELATIONS WHERE workspace=$1""",
+                workspace,
+            )
+            relations = {}
+            for row in rows:
+                relation_pairs = row["relation_pairs"]
+                if isinstance(relation_pairs, str):
+                    try:
+                        relation_pairs = json.loads(relation_pairs)
+                    except json.JSONDecodeError:
+                        relation_pairs = []
+                relations[row["id"]] = {
+                    "relation_pairs": relation_pairs or [],
+                    "count": row["count"] or len(relation_pairs or []),
+                }
+            self._relations_cache = relations
+        finally:
+            await conn.close()
 
     def _read_kv_json(self, filename: str) -> dict:
         path = self._working_dir / filename
@@ -337,13 +447,12 @@ class LightRAGGraphStore:
         return {}
 
     def list_nodes(self, track=None, node_type=None) -> list:
-        """从 LightRAG entities 和 graph 节点读取。"""
-        # 从 full_entities 获取实体名称计数
-        full_entities = self._read_kv_json("kv_store_full_entities.json")
-        # 从 graph pickle 邻接表估算（如果可用）
+        """从 LightRAG entities 获取节点列表 — PG-first with JSON fallback。"""
+        self._ensure_loaded()
+        entities = self._entities_cache or {}
         nodes = []
         seen = set()
-        for doc_id, data in full_entities.items():
+        for doc_id, data in entities.items():
             entity_names = data.get("entity_names", [])
             for name in entity_names:
                 if name not in seen:
@@ -358,10 +467,11 @@ class LightRAGGraphStore:
         })() for n in seen]
 
     def list_edges(self, source_id=None, relation_type=None) -> list:
-        """从 LightRAG full_relations 获取关系计数。"""
-        full_relations = self._read_kv_json("kv_store_full_relations.json")
+        """从 LightRAG full_relations 获取边列表 — PG-first with JSON fallback。"""
+        self._ensure_loaded()
+        relations = self._relations_cache or {}
         edges = []
-        for doc_id, data in full_relations.items():
+        for doc_id, data in relations.items():
             pairs = data.get("relation_pairs", data.get("relations", []))
             for p in pairs:
                 edges.append(type('_Edge', (), {
@@ -373,10 +483,38 @@ class LightRAGGraphStore:
         return edges
 
     def get_node(self, node_id: str):
+        """从缓存中查找节点 — PG-first with JSON fallback。"""
+        self._ensure_loaded()
+        entities = self._entities_cache or {}
+        # 尝试通过 entity_name 匹配
+        for doc_id, data in entities.items():
+            for name in data.get("entity_names", []):
+                if name == node_id or name[:25] == node_id:
+                    return type('_Node', (), {
+                        'id': name, 'name': name, 'node_type': 'entity',
+                        'description': '', 'competition_track': '',
+                        'difficulty_level': 1, 'estimated_hours': 0,
+                        'metadata': {},
+                    })()
         return None
 
     def get_edges(self, node_id: str) -> list:
-        return self.list_edges()
+        """从缓存中获取节点关联边 — PG-first with JSON fallback。"""
+        self._ensure_loaded()
+        relations = self._relations_cache or {}
+        edges = []
+        for doc_id, data in relations.items():
+            pairs = data.get("relation_pairs", data.get("relations", []))
+            for p in pairs:
+                src = str(p[0]) if isinstance(p, (list, tuple)) else ''
+                tgt = str(p[1]) if isinstance(p, (list, tuple)) and len(p) > 1 else ''
+                if src == node_id or tgt == node_id:
+                    edges.append(type('_Edge', (), {
+                        'id': '', 'source_id': src, 'target_id': tgt,
+                        'relation_type': RelationType.RELATED_TO,
+                        'weight': 1.0, 'description': '',
+                    })())
+        return edges
 
     def save_node(self, node) -> None: pass
     def delete_node(self, node_id: str) -> bool: return False

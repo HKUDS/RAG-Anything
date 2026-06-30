@@ -1,5 +1,8 @@
 """
-企业工艺库 — 工艺文档自动分类、参数提取、多维检索。
+企业工艺库 — PG-backed (Phase 3 migration).
+
+Primary: PostgreSQL ``process_documents`` table.
+Fallback: JSON file (``_index.json``) when PG not configured.
 """
 
 import json
@@ -30,100 +33,187 @@ PARAM_PATTERNS = [
 ]
 
 
+def _pg_available() -> bool:
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        get_pg_pool()
+        return True
+    except RuntimeError:
+        return False
+
+
+async def _pg_pool():
+    from raganything.services.pg_state_repo import get_pg_pool
+    return get_pg_pool()
+
+
 class ProcessLibrary:
-    """企业工艺知识库。"""
+    """企业工艺知识库 — PG-first with JSON file fallback."""
 
     def __init__(self, storage_path: str | Path = "./data/manufacturing_kb/processes"):
         self.storage_path = Path(storage_path)
         self.storage_path.mkdir(parents=True, exist_ok=True)
         self._index: dict[str, dict] = {}
-        self._load_index()
+        self._use_pg: bool | None = None
 
-    def ingest_document(self, file_path: str | Path) -> dict:
-        """录入工艺文档。
+    async def _ensure_init(self):
+        if self._use_pg is not None:
+            return
+        self._use_pg = _pg_available()
+        if not self._use_pg:
+            self._load_index()
+        logger.info(f"[process-lib] {'PG' if self._use_pg else 'File'} backend active")
 
-        Returns:
-            处理结果: {"id", "category", "parameters", "metadata"}
-        """
+    # ── CRUD ──────────────────────────────────────────
+
+    async def ingest_document(self, file_path: str | Path) -> dict:
+        """录入工艺文档。"""
         file_path = Path(file_path)
         text = file_path.read_text(encoding="utf-8")
-
         category = self._classify_process(text)
         params = self._extract_parameters(text)
         doc_id = f"proc_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file_path.stem}"
 
+        await self._ensure_init()
+
         entry = {
-            "id": doc_id,
-            "title": file_path.stem,
-            "category": category,
-            "parameters": params,
-            "file_path": str(file_path.absolute()),
+            "id": doc_id, "title": file_path.stem, "category": category,
+            "parameters": params, "file_path": str(file_path.absolute()),
             "file_size_bytes": file_path.stat().st_size,
             "ingested_at": datetime.now().isoformat(),
-            "text_preview": text[:500],
+            "text_preview": text[:500], "full_text": text,
         }
+
+        if self._use_pg:
+            pool = await _pg_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO process_documents
+                       (id, title, category, parameters, file_path,
+                        file_size_bytes, text_preview, full_text)
+                       VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8)""",
+                    doc_id, entry["title"], category,
+                    json.dumps(params, ensure_ascii=False),
+                    str(file_path.absolute()), file_path.stat().st_size,
+                    text[:500], text,
+                )
+            return entry
 
         self._index[doc_id] = entry
         self._persist_index()
         return entry
 
-    def search(self, query: str, category: str = "",
-               limit: int = 20) -> list[dict]:
-        """多维检索工艺文档。
+    async def search(self, query: str, category: str = "", limit: int = 20) -> list[dict]:
+        """多维检索工艺文档。"""
+        await self._ensure_init()
 
-        Args:
-            query: 搜索关键词
-            category: 按工艺类别筛选
-            limit: 返回数量
+        if self._use_pg:
+            pool = await _pg_pool()
+            q = f"%{query}%"
+            async with pool.acquire() as conn:
+                if category:
+                    rows = await conn.fetch(
+                        """SELECT id, title, category, parameters, text_preview,
+                           file_path, file_size_bytes, ingested_at
+                           FROM process_documents
+                           WHERE category = $1
+                             AND (title ILIKE $2 OR text_preview ILIKE $2)
+                           ORDER BY ingested_at DESC LIMIT $3""",
+                        category, q, limit,
+                    )
+                else:
+                    rows = await conn.fetch(
+                        """SELECT id, title, category, parameters, text_preview,
+                           file_path, file_size_bytes, ingested_at
+                           FROM process_documents
+                           WHERE title ILIKE $1 OR text_preview ILIKE $1
+                           ORDER BY ingested_at DESC LIMIT $2""",
+                        q, limit,
+                    )
+            results = []
+            for r in rows:
+                params = r["parameters"]
+                if isinstance(params, str):
+                    try:
+                        params = json.loads(params)
+                    except Exception:
+                        params = []
+                results.append({
+                    "id": r["id"], "title": r["title"],
+                    "category": r["category"], "parameters": params,
+                    "text_preview": r["text_preview"],
+                    "file_path": r.get("file_path", ""),
+                    "file_size_bytes": r.get("file_size_bytes", 0),
+                    "ingested_at": r["ingested_at"].isoformat()
+                        if hasattr(r["ingested_at"], 'isoformat')
+                        else str(r.get("ingested_at", "")),
+                    "relevance_score": 10,
+                })
+            return results
 
-        Returns:
-            匹配的工艺条目列表
-        """
+        # File fallback
         results = []
         query_lower = query.lower()
-
         for entry in self._index.values():
             if category and entry.get("category") != category:
                 continue
-
             score = 0
-            # 标题匹配
             if query_lower in entry.get("title", "").lower():
                 score += 10
-            # 文本匹配
             text = entry.get("text_preview", "")
             if query_lower in text.lower():
                 score += 5
-            # 参数匹配
             for param in entry.get("parameters", []):
                 if query_lower in param.get("name", "").lower():
                     score += 3
-
             if score > 0:
                 results.append({**entry, "relevance_score": score})
-
         results.sort(key=lambda x: x["relevance_score"], reverse=True)
         return results[:limit]
 
-    def list_by_category(self) -> dict[str, int]:
+    async def list_by_category(self) -> dict[str, int]:
         """按工艺类别统计文档数量。"""
+        await self._ensure_init()
+        if self._use_pg:
+            pool = await _pg_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT category, count(*) as cnt FROM process_documents "
+                    "GROUP BY category"
+                )
+            return {r["category"]: r["cnt"] for r in rows}
+
         counts: dict[str, int] = {}
         for entry in self._index.values():
             cat = entry.get("category", "unknown")
             counts[cat] = counts.get(cat, 0) + 1
         return counts
 
-    # ── CRUD ──────────────────────────────────────────
-
-    def get_document(self, doc_id: str) -> dict | None:
+    async def get_document(self, doc_id: str) -> dict | None:
         """获取单个工艺文档。"""
+        await self._ensure_init()
+        if self._use_pg:
+            pool = await _pg_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT * FROM process_documents WHERE id = $1", doc_id,
+                )
+            if row:
+                r = dict(row)
+                params = r.get("parameters")
+                if isinstance(params, str):
+                    try:
+                        r["parameters"] = json.loads(params)
+                    except Exception:
+                        r["parameters"] = []
+                if hasattr(r.get("ingested_at"), 'isoformat'):
+                    r["ingested_at"] = r["ingested_at"].isoformat()
+                return r
+            return None
         return self._index.get(doc_id)
 
-    def add_document(self, data: dict) -> str:
-        """从结构化数据添加工艺文档（不从文件读取）。
-
-        ``data`` 必须包含 ``title`` 和 ``text`` 字段。
-        """
+    async def add_document(self, data: dict) -> str:
+        """从结构化数据添加工艺文档。"""
         title = data.get("title", "").strip()
         text = data.get("text", "").strip()
         if not title:
@@ -135,39 +225,89 @@ class ProcessLibrary:
         params = self._extract_parameters(text)
         doc_id = f"proc_{datetime.now().strftime('%Y%m%d%H%M%S')}_{title[:20]}"
 
+        await self._ensure_init()
+
         entry = {
-            "id": doc_id,
-            "title": title,
-            "category": category,
-            "parameters": params,
-            "file_path": data.get("file_path", ""),
+            "id": doc_id, "title": title, "category": category,
+            "parameters": params, "file_path": data.get("file_path", ""),
             "file_size_bytes": data.get("file_size_bytes", 0),
             "ingested_at": datetime.now().isoformat(),
-            "text_preview": text[:500],
-            "full_text": text,
+            "text_preview": text[:500], "full_text": text,
         }
+
+        if self._use_pg:
+            pool = await _pg_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """INSERT INTO process_documents
+                       (id, title, category, parameters, file_path,
+                        file_size_bytes, text_preview, full_text)
+                       VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8)""",
+                    doc_id, title, category,
+                    json.dumps(params, ensure_ascii=False),
+                    data.get("file_path", ""), data.get("file_size_bytes", 0),
+                    text[:500], text,
+                )
+            return doc_id
+
         self._index[doc_id] = entry
         self._persist_index()
         return doc_id
 
-    def update_document(self, doc_id: str, updates: dict) -> bool:
-        """更新工艺文档。返回是否成功。"""
+    async def update_document(self, doc_id: str, updates: dict) -> bool:
+        """更新工艺文档。"""
+        await self._ensure_init()
+        if self._use_pg:
+            pool = await _pg_pool()
+            async with pool.acquire() as conn:
+                existing = await conn.fetchrow(
+                    "SELECT * FROM process_documents WHERE id = $1", doc_id,
+                )
+                if not existing:
+                    return False
+                new_title = updates.get("title", existing["title"])
+                new_full_text = updates.get("full_text", existing["full_text"])
+                new_category = self._classify_process(new_full_text) \
+                    if "full_text" in updates else existing["category"]
+                new_params = self._extract_parameters(new_full_text) \
+                    if "full_text" in updates else existing["parameters"]
+                new_text_preview = new_full_text[:500] \
+                    if "full_text" in updates else existing["text_preview"]
+
+                await conn.execute(
+                    """UPDATE process_documents SET
+                       title=$1, category=$2, parameters=$3::jsonb,
+                       text_preview=$4, full_text=$5, updated_at=NOW()
+                       WHERE id=$6""",
+                    new_title, new_category,
+                    json.dumps(new_params, ensure_ascii=False),
+                    new_text_preview, new_full_text, doc_id,
+                )
+            return True
+
         entry = self._index.get(doc_id)
         if not entry:
             return False
-        # Allowed update fields
         for field in ("title", "category", "text_preview", "full_text"):
             if field in updates and updates[field] is not None:
                 entry[field] = updates[field]
-        # Re-classify if text content changed
         if "full_text" in updates and updates["full_text"]:
             entry["category"] = self._classify_process(updates["full_text"])
             entry["parameters"] = self._extract_parameters(updates["full_text"])
         self._persist_index()
         return True
 
-    def delete_document(self, doc_id: str) -> bool:
-        """删除工艺文档。返回是否成功。"""
+    async def delete_document(self, doc_id: str) -> bool:
+        """删除工艺文档。"""
+        await self._ensure_init()
+        if self._use_pg:
+            pool = await _pg_pool()
+            async with pool.acquire() as conn:
+                result = await conn.execute(
+                    "DELETE FROM process_documents WHERE id = $1", doc_id,
+                )
+            return result and "DELETE 0" not in result
+
         if doc_id not in self._index:
             return False
         del self._index[doc_id]
@@ -177,7 +317,6 @@ class ProcessLibrary:
     # ── Internal ──────────────────────────────────────
 
     def _classify_process(self, text: str) -> str:
-        """根据关键词自动分类工艺类型。"""
         scores = {}
         for cat, keywords in PROCESS_CATEGORIES.items():
             scores[cat] = sum(1 for kw in keywords if kw in text)
@@ -186,7 +325,6 @@ class ProcessLibrary:
         return max(scores, key=scores.get)
 
     def _extract_parameters(self, text: str) -> list[dict]:
-        """从工艺文本中提取参数表。"""
         params = []
         for pattern in PARAM_PATTERNS:
             matches = pattern.findall(text)
@@ -200,7 +338,6 @@ class ProcessLibrary:
         return params
 
     def _persist_index(self) -> None:
-        """持久化索引。"""
         index_path = self.storage_path / "_index.json"
         index_path.write_text(
             json.dumps(list(self._index.values()), ensure_ascii=False, indent=2),
@@ -208,7 +345,6 @@ class ProcessLibrary:
         )
 
     def _load_index(self) -> None:
-        """从磁盘加载已有索引（防止重启丢数据）。"""
         index_path = self.storage_path / "_index.json"
         if not index_path.exists():
             return

@@ -58,8 +58,8 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
       const form = {
         username: user.username || '',
         email: user.email || '',
-        role_id: user.role?.id || (user.is_admin
-          ? ((roles || []).find(r => r.name === 'super_admin')?.id || (roles || []).find(r => r.name === 'admin')?.id)
+        role_id: user.role?.id || (user.role?.name === 'super_admin'
+          ? ((roles || []).find(r => r.name === 'super_admin')?.id)
           : ((roles || []).find(r => r.name === 'student')?.id)),
         is_active: user.is_active !== false,
         password: '',
@@ -131,8 +131,8 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
   if (!isOpen || !user) return null
 
   const isEditingSelf = me?.id === user.id
-  const adminRoleIds = (roles || []).filter(r => r.name === 'super_admin' || r.name === 'admin').map(r => r.id)
-  const isAdminSelf = isEditingSelf && (user.role?.name === 'super_admin' || user.role?.name === 'admin' || user.is_admin)
+  const adminRoleIds = (roles || []).filter(r => r.name === 'super_admin').map(r => r.id)
+  const isAdminSelf = isEditingSelf && user.role?.name === 'super_admin'
 
   const handleSubmit = async (e) => {
     e.preventDefault()
@@ -209,7 +209,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
             <Edit3 size={18} className="text-amber-500" aria-hidden="true" />
             编辑用户 — {user.username}
             {isEditingSelf && (
-              <span className="text-[10px] font-normal text-sky-500 bg-sky-50 px-1.5 py-0.5 rounded-lg border border-coral-200 ml-1">
+              <span className="text-2xs font-normal text-sky-500 bg-sky-50 px-1.5 py-0.5 rounded-lg border border-coral-200 ml-1">
                 自己
               </span>
             )}
@@ -275,7 +275,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
               minLength={2}
             />
             {fieldErrors.username && (
-              <p className="text-[11px] text-rose-500 mt-1">{fieldErrors.username}</p>
+              <p className="text-2xs text-rose-500 mt-1">{fieldErrors.username}</p>
             )}
           </div>
 
@@ -297,7 +297,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
               placeholder="user@example.com"
             />
             {fieldErrors.email && (
-              <p className="text-[11px] text-rose-500 mt-1">{fieldErrors.email}</p>
+              <p className="text-2xs text-rose-500 mt-1">{fieldErrors.email}</p>
             )}
           </div>
 
@@ -306,7 +306,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
             <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="edit-role">
               角色
               {isAdminSelf && (
-                <span className="ml-2 text-[10px] text-amber-500 font-normal">⚠ 谨慎更改</span>
+                <span className="ml-2 text-2xs text-amber-500 font-normal">⚠ 谨慎更改</span>
               )}
             </label>
             <select
@@ -346,7 +346,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
               <option value="0">🚫 禁用</option>
             </select>
             {isEditingSelf && !editForm.is_active && (
-              <p className="text-[11px] text-rose-500 mt-1">⚠️ 禁用自己将导致无法登录</p>
+              <p className="text-2xs text-rose-500 mt-1">⚠️ 禁用自己将导致无法登录</p>
             )}
           </div>
 
@@ -369,7 +369,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
               autoComplete="new-password"
             />
             {fieldErrors.password && (
-              <p className="text-[11px] text-rose-500 mt-1">{fieldErrors.password}</p>
+              <p className="text-2xs text-rose-500 mt-1">{fieldErrors.password}</p>
             )}
 
             {/* 密码强度指示器（与 CreateUserModal 保持一致） */}

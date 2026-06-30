@@ -416,9 +416,9 @@ class MultimodalProcessorMixin:
             existing_chunks_count = 0
 
         # Concurrency control for VLM/LLM description generation.
-        # Uses MULTIMODAL_MAX_CONCURRENT env var (default 8), capped by
+        # Uses MULTIMODAL_MAX_CONCURRENT env var (default 16), capped by
         # LightRAG's llm_model_max_async so we don't overwhelm the HTTP pool.
-        _mm_concurrency = int(os.getenv("MULTIMODAL_MAX_CONCURRENT", "8"))
+        _mm_concurrency = int(os.getenv("MULTIMODAL_MAX_CONCURRENT", "16"))
         _llm_max_async = getattr(self.lightrag, "llm_model_max_async", None)
         if _llm_max_async is not None and _llm_max_async > 0:
             _mm_concurrency = max(1, min(_mm_concurrency, _llm_max_async))

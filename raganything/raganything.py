@@ -586,6 +586,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         and persist any cached data. It will finalize both the parse cache and LightRAG's
         internal storages.
 
+        Before finalizing, waits for any pending vision embedding tasks to complete
+        so image vectors are not lost on shutdown.
+
         Example usage:
             try:
                 rag_anything = RAGAnything(...)
@@ -602,6 +605,20 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             - All finalization tasks run concurrently for better performance
         """
         try:
+            # ── Await pending vision embedding tasks (P0-2 fix) ──
+            # Ensures image vectors are computed and stored before
+            # storages are finalized. Without this, fire-and-forget
+            # vision tasks could be silently dropped on shutdown.
+            image_processor = self.modal_processors.get("image")
+            if image_processor is not None and hasattr(image_processor, "await_pending_vision_tasks"):
+                pending_count = len(image_processor._pending_vision_tasks)
+                if pending_count > 0:
+                    self.logger.info(
+                        "Awaiting %d pending vision embedding tasks before finalize...",
+                        pending_count,
+                    )
+                    await image_processor.await_pending_vision_tasks()
+
             tasks = []
 
             # Finalize parse cache if it exists

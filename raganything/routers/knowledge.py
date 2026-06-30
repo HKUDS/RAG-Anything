@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 # Import shared module-level state (for read access)
+from raganything.services.state_service import upsert_task_state, complete_task
 from .shared import (
     limiter,
     verify_kb_access,
@@ -45,6 +46,94 @@ from raganything.chunking import build_chunking_func, STRATEGY_META as CHUNKING_
 
 # Module reference for writing to shared mutable state (active_kb)
 from . import shared as _shared
+
+# ── PG Graph Helpers: read knowledge graph data from LightRAG PG tables ──
+# When PG storage backends (PGKVStorage + PGDocStatusStorage) are active,
+# LightRAG stores entities/relations/doc_status in PG tables instead of JSON
+# files. These helpers dispatch PG-first with JSON file fallback, ensuring
+# the frontend graph visualization reads from the same source that LightRAG
+# writes to.
+
+def _graph_pg_ready() -> bool:
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        get_pg_pool()
+        return True
+    except RuntimeError:
+        return False
+
+
+async def _pg_fetch_graph_entities(workspace: str) -> dict[str, dict]:
+    """Fetch full entity records for a workspace from PG LIGHTRAG_FULL_ENTITIES.
+
+    Returns:
+        dict keyed by doc_id, values like {"entity_names": [...], "count": int}
+    """
+    from raganything.services.pg_state_repo import get_pg_pool
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, entity_names, count
+               FROM LIGHTRAG_FULL_ENTITIES
+               WHERE workspace=$1""",
+            workspace,
+        )
+    result = {}
+    for row in rows:
+        entity_names = row["entity_names"]
+        if isinstance(entity_names, str):
+            try:
+                entity_names = json.loads(entity_names)
+            except json.JSONDecodeError:
+                entity_names = []
+        result[row["id"]] = {
+            "entity_names": entity_names or [],
+            "count": row["count"] or len(entity_names or []),
+        }
+    return result
+
+
+async def _pg_fetch_graph_relations(workspace: str) -> dict[str, dict]:
+    """Fetch full relation records for a workspace from PG LIGHTRAG_FULL_RELATIONS.
+
+    Returns:
+        dict keyed by doc_id, values like {"relation_pairs": [...], "count": int}
+    """
+    from raganything.services.pg_state_repo import get_pg_pool
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """SELECT id, relation_pairs, count
+               FROM LIGHTRAG_FULL_RELATIONS
+               WHERE workspace=$1""",
+            workspace,
+        )
+    result = {}
+    for row in rows:
+        relation_pairs = row["relation_pairs"]
+        if isinstance(relation_pairs, str):
+            try:
+                relation_pairs = json.loads(relation_pairs)
+            except json.JSONDecodeError:
+                relation_pairs = []
+        result[row["id"]] = {
+            "relation_pairs": relation_pairs or [],
+            "count": row["count"] or len(relation_pairs or []),
+        }
+    return result
+
+
+async def _pg_fetch_doc_ids(workspace: str) -> set[str]:
+    """Fetch valid document IDs from PG LIGHTRAG_DOC_STATUS for a workspace."""
+    from raganything.services.pg_state_repo import get_pg_pool
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1",
+            workspace,
+        )
+    return {row["id"] for row in rows}
+
 
 router = APIRouter(tags=["knowledge"])
 
@@ -220,10 +309,12 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
     try:
         task_id = str(uuid.uuid4())[:8]
         instance = await get_kb(kb)
-        processing_tasks[task_id] = {
+        task_data = {
             "id": task_id, "file": folder_path, "status": "processing",
             "started_at": datetime.now().isoformat(), "kb": kb, "user_id": current_user["id"],
         }
+        processing_tasks[task_id] = task_data
+        await upsert_task_state(task_id, task_data)
         # 临时切换分块策略
         original_func = None
         try:
@@ -235,6 +326,7 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
             await instance.process_folder_complete(folder_path, output_dir="./output", recursive=True)
             processing_tasks[task_id]["status"] = "completed"
             processing_tasks[task_id]["chunking_strategy"] = chunking_strategy or CHUNKING_STRATEGY
+            await complete_task(task_id)
         except Exception as e:
             processing_tasks[task_id]["status"] = "failed"
             processing_tasks[task_id]["error"] = str(e)
@@ -503,8 +595,57 @@ async def knowledge_stats(kb: str = Depends(verify_kb_access), current_user: dic
 
     stats = {"documents": 0, "entities": 0, "relations": 0, "chunks": 0}
     base = Path(kb_dir(kb))
+    workspace = str(base)
 
-    # ── 加载 doc_status 作为合法文档白名单 ──
+    # ── PG-first: read doc_status / entities / relations from PG ──
+    if _graph_pg_ready():
+        try:
+            valid_doc_ids = await _pg_fetch_doc_ids(workspace)
+            # Doc status for stats
+            from raganything.services.pg_state_repo import get_pg_pool
+            pool = get_pg_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT id, chunks_count, status
+                       FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1""",
+                    workspace,
+                )
+            doc_data = {r["id"]: {"chunks_count": r.get("chunks_count", 0),
+                                   "status": r.get("status", "")} for r in rows}
+            valid_doc_ids = set(doc_data.keys())
+            stats["documents"] = len(doc_data)
+            stats["chunks"] = sum(v.get("chunks_count", 0) for v in doc_data.values())
+
+            # Entities from PG
+            pg_entities = await _pg_fetch_graph_entities(workspace)
+            _orphan_entities = 0
+            for doc_id, v in pg_entities.items():
+                if doc_id not in valid_doc_ids:
+                    _orphan_entities += v.get("count", len(v.get("entity_names", [])))
+                    continue
+                stats["entities"] += v.get("count", len(v.get("entity_names", [])))
+            if _orphan_entities:
+                lightrag_logger.info(
+                    "[KB-STATS] 过滤孤儿实体: %d (来自 %s)", _orphan_entities, kb,
+                )
+
+            # Relations from PG
+            pg_relations = await _pg_fetch_graph_relations(workspace)
+            _orphan_relations = 0
+            for doc_id, v in pg_relations.items():
+                if doc_id not in valid_doc_ids:
+                    _orphan_relations += v.get("count", len(v.get("relation_pairs", [])))
+                    continue
+                stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
+            if _orphan_relations:
+                lightrag_logger.info(
+                    "[KB-STATS] 过滤孤儿关系: %d (来自 %s)", _orphan_relations, kb,
+                )
+            return stats
+        except Exception:
+            lightrag_logger.warning("[KB-STATS] PG read failed, falling back to JSON")
+
+    # ── JSON fallback ──
     dp = base / "kv_store_doc_status.json"
     doc_data: dict = {}
     valid_doc_ids: set = set()
@@ -644,19 +785,13 @@ async def repair_kb_orphans(
                     pass
             report["orphan_docs"] = len(orphan_doc_keys)
 
-    # ── 4. 扫描 image_vision_repo ──
+    # ── 4. 扫描 image_vision_repo（PG/NVDB 统一接口）──
     if hasattr(_lg, "image_vision_repo") and _lg.image_vision_repo is not None:
         try:
             _repo = _lg.image_vision_repo
-            _orphan_img = 0
-            for _d in list(_repo._vdb._NanoVectorDB__storage.get("data", [])):
-                if _d.get("doc_id") not in valid_doc_ids:
-                    try:
-                        _repo._vdb.delete([_d["__id__"]])
-                        _orphan_img += 1
-                    except Exception:
-                        pass
-            if _orphan_img:
+            _orphan_ids = await _repo.get_orphan_ids(valid_doc_ids)
+            if _orphan_ids:
+                _orphan_img = await _repo.delete_by_ids(_orphan_ids)
                 await _repo.flush()
                 report["orphan_vision_vectors"] = _orphan_img
                 lightrag_logger.info(
@@ -691,42 +826,57 @@ async def repair_kb_orphans(
 
 @router.get("/knowledge/entities")
 async def list_entities(request: Request, limit: int = 50, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
-    """列出知识图谱实体"""
-    p = Path(kb_dir(kb)) / "kv_store_full_entities.json"
-    if not p.exists():
-        return {"entities": []}
-    with open(p, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    entities = []
-    seen = set()
-    # 交叉校验 doc_status，过滤孤儿条目
-    dp = Path(kb_dir(kb)) / "kv_store_doc_status.json"
-    valid_doc_ids: set = set()
-    if dp.exists():
-        with open(dp, "r", encoding="utf-8") as f:
-            doc_data = json.load(f)
-        valid_doc_ids = set(doc_data.keys())
+    """列出知识图谱实体 — PG-first with JSON fallback"""
+    workspace = kb_dir(kb)
+    entities: list[dict] = []
+    seen: set[str] = set()
+    valid_doc_ids: set[str] = set()
+    total = 0
+    data: dict[str, dict] = {}
+
+    # ── PG-first ──
+    if _graph_pg_ready():
+        try:
+            valid_doc_ids = await _pg_fetch_doc_ids(workspace)
+            data = await _pg_fetch_graph_entities(workspace)
+        except Exception:
+            lightrag_logger.warning("[ENTITIES] PG read failed, falling back to JSON")
+            data = {}
+
+    # ── JSON fallback ──
+    if not data:
+        ep = Path(kb_dir(kb)) / "kv_store_full_entities.json"
+        if ep.exists():
+            with open(ep, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        dp = Path(kb_dir(kb)) / "kv_store_doc_status.json"
+        if dp.exists():
+            with open(dp, "r", encoding="utf-8") as f:
+                doc_data = json.load(f)
+            valid_doc_ids = set(doc_data.keys())
+
     for k, v in data.items():
-        if k not in valid_doc_ids:
+        if valid_doc_ids and k not in valid_doc_ids:
             continue
         names = v.get("entity_names", [])
         for name in names:
             if name not in seen and len(entities) < limit:
                 seen.add(name)
                 entities.append({"id": name[:16], "name": name, "type": infer_entity_type(name)})
+        total += v.get("count", len(names))
+
     # 类型筛选
     type_filter = request.query_params.get("type", "")
     if type_filter:
         entities = [e for e in entities if e["type"] == type_filter]
 
-    return {"entities": entities, "total": sum(v.get("count", len(v.get("entity_names", []))) for k, v in data.items() if k in valid_doc_ids)}
+    return {"entities": entities, "total": total}
 
 
 @router.get("/knowledge/graph")
 async def graph_data(kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
-    """返回知识图谱数据(前端可视化用)"""
-    ep = Path(kb_dir(kb)) / "kv_store_full_entities.json"
-    rp = Path(kb_dir(kb)) / "kv_store_full_relations.json"
+    """返回知识图谱数据(前端可视化用) — PG-first with JSON fallback"""
+    workspace = kb_dir(kb)
     nodes, edges = [], []
     node_ids = set()
 
@@ -742,43 +892,232 @@ async def graph_data(kb: str = Depends(verify_kb_access), current_user: dict = D
             return False
         return True
 
-    # 交叉校验 doc_status，过滤已删除文档的孤儿节点/边
-    dp = Path(kb_dir(kb)) / "kv_store_doc_status.json"
-    valid_doc_ids: set = set()
-    if dp.exists():
-        with open(dp, "r", encoding="utf-8") as f:
-            doc_data = json.load(f)
-        valid_doc_ids = set(doc_data.keys())
+    entities_data: dict[str, dict] = {}
+    relations_data: dict[str, dict] = {}
+    valid_doc_ids: set[str] = set()
 
+    # ── PG-first ──
+    if _graph_pg_ready():
+        try:
+            valid_doc_ids = await _pg_fetch_doc_ids(workspace)
+            entities_data = await _pg_fetch_graph_entities(workspace)
+            relations_data = await _pg_fetch_graph_relations(workspace)
+        except Exception:
+            lightrag_logger.warning("[GRAPH] PG read failed, falling back to JSON")
+
+    # ── JSON fallback (when PG unavailable or PG read failed) ──
+    if not entities_data and not relations_data:
+        ep = Path(kb_dir(kb)) / "kv_store_full_entities.json"
+        rp = Path(kb_dir(kb)) / "kv_store_full_relations.json"
+        dp = Path(kb_dir(kb)) / "kv_store_doc_status.json"
+        if dp.exists():
+            with open(dp, "r", encoding="utf-8") as f:
+                doc_data = json.load(f)
+            valid_doc_ids = set(doc_data.keys())
+        if ep.exists():
+            with open(ep, "r", encoding="utf-8") as f:
+                entities_data = json.load(f)
+        if rp.exists():
+            with open(rp, "r", encoding="utf-8") as f:
+                relations_data = json.load(f)
+
+    # 交叉校验 doc_status，过滤已删除文档的孤儿节点/边
     # 从 entities 建节点
-    if ep.exists():
-        with open(ep, "r", encoding="utf-8") as f:
-            for k, v in json.load(f).items():
-                if k not in valid_doc_ids:
-                    continue
-                for name in v.get("entity_names", []):
-                    if is_valid_node(name) and name not in node_ids:
-                        node_ids.add(name)
-                        nodes.append({"id": name, "label": name[:25]})
+    for k, v in entities_data.items():
+        if valid_doc_ids and k not in valid_doc_ids:
+            continue
+        for name in v.get("entity_names", []):
+            if is_valid_node(name) and name not in node_ids:
+                node_ids.add(name)
+                nodes.append({"id": name, "label": name[:25]})
 
     # 从 relations 建边
-    if rp.exists():
-        with open(rp, "r", encoding="utf-8") as f:
-            for k, v in json.load(f).items():
-                if k not in valid_doc_ids:
-                    continue
-                for src, tgt in v.get("relation_pairs", []):
-                    if not is_valid_node(src) or not is_valid_node(tgt):
-                        continue
-                    if src not in node_ids:
-                        node_ids.add(src)
-                        nodes.append({"id": src, "label": src[:25]})
-                    if tgt not in node_ids:
-                        node_ids.add(tgt)
-                        nodes.append({"id": tgt, "label": tgt[:25]})
-                    edges.append({"source": src, "target": tgt, "label": ""})
+    for k, v in relations_data.items():
+        if valid_doc_ids and k not in valid_doc_ids:
+            continue
+        for src, tgt in v.get("relation_pairs", []):
+            if not is_valid_node(src) or not is_valid_node(tgt):
+                continue
+            if src not in node_ids:
+                node_ids.add(src)
+                nodes.append({"id": src, "label": src[:25]})
+            if tgt not in node_ids:
+                node_ids.add(tgt)
+                nodes.append({"id": tgt, "label": tgt[:25]})
+            edges.append({"source": src, "target": tgt, "label": ""})
 
     return {"nodes": nodes, "edges": edges}
+
+
+# ── File Download Helpers ────────────────────────────────────
+
+def _find_upload_file(file_path_str: str) -> Path | None:
+    """Locate a previously uploaded file on disk using multiple strategies.
+
+    Strategy (tried in order):
+      1. ``file_path_str`` as an absolute path — check directly.
+      2. ``./uploads/{basename}`` — exact filename match.
+      3. ``./uploads/*_{basename}`` — glob for random-prefixed uploads.
+    """
+    if not file_path_str:
+        return None
+
+    # Strategy 1: direct path
+    direct = Path(file_path_str)
+    if direct.is_absolute() and direct.exists():
+        return direct
+
+    # Strategy 2: basename in uploads dir
+    uploads = Path("./uploads")
+    if not uploads.is_dir():
+        return None
+    basename = Path(file_path_str).name
+    exact = uploads / basename
+    if exact.exists():
+        return exact
+
+    # Strategy 3: glob for random-prefixed file (secrets.token_hex(4) + "_" + name)
+    candidates = list(uploads.glob(f"*_{basename}"))
+    # Prefer most recently modified
+    candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return candidates[0] if candidates else None
+
+
+async def _resolve_download_file(kb: str, doc_id: str) -> tuple[Path, str] | None:
+    """Resolve a document ID to a physical file path for download.
+
+    Queries doc_status (PG-first → JSON fallback), extracts the stored
+    ``file_path``, then uses ``_find_upload_file()`` to locate the real file.
+
+    Returns:
+        ``(absolute_path, display_filename)`` or ``None`` if not found.
+    """
+    from raganything.services.kb_service import _load_doc_status_json
+    workspace = kb_dir(kb)
+
+    # ── PG-first: doc_status from LightRAG ──
+    doc_status: dict = {}
+    if _graph_pg_ready():
+        try:
+            from raganything.services.pg_state_repo import get_pg_pool
+            pool = get_pg_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """SELECT file_path, status FROM LIGHTRAG_DOC_STATUS
+                       WHERE workspace=$1 AND id=$2""",
+                    workspace, doc_id,
+                )
+            if row:
+                doc_status = {doc_id: {"file_path": row["file_path"], "status": row["status"]}}
+        except Exception:
+            pass
+
+    # ── PG miss, try prefix match ──
+    if not doc_status and _graph_pg_ready():
+        try:
+            from raganything.services.pg_state_repo import get_pg_pool
+            pool = get_pg_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT id, file_path, status FROM LIGHTRAG_DOC_STATUS
+                       WHERE workspace=$1 AND id LIKE $2 LIMIT 5""",
+                    workspace, f"{doc_id}%",
+                )
+            if rows:
+                doc_status = {rows[0]["id"]: {"file_path": rows[0]["file_path"],
+                                               "status": rows[0]["status"]}}
+        except Exception:
+            pass
+
+    # ── JSON fallback ──
+    if not doc_status:
+        try:
+            doc_status = await _load_doc_status_json(kb)
+        except Exception:
+            doc_status = {}
+        # Try exact match then prefix match
+        if doc_id not in doc_status:
+            for k in doc_status:
+                if k.startswith(doc_id):
+                    doc_id = k
+                    break
+
+    info = doc_status.get(doc_id, {})
+    stored_path = info.get("file_path", "")
+
+    # Also try processing_tasks for in-flight docs
+    if not stored_path:
+        task = processing_tasks.get(doc_id)
+        if task:
+            stored_path = task.get("file_path", task.get("file", ""))
+            if not stored_path:
+                for tid, t in processing_tasks.items():
+                    if tid.startswith(doc_id) or str(t.get("file", "")).startswith(doc_id):
+                        stored_path = t.get("file_path", t.get("file", ""))
+                        break
+
+    if not stored_path:
+        return None
+
+    real_path = _find_upload_file(stored_path)
+    if real_path is None:
+        return None
+
+    display_name = Path(stored_path).name
+    return real_path.resolve(), display_name
+
+
+# ── File Download Endpoint ────────────────────────────────────
+
+@router.get("/knowledge/documents/{doc_id}/download")
+async def download_document(
+    doc_id: str,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+):
+    """下载文档的原始上传文件（PDF / DOCX / PPTX / 视频 等）。
+
+    支持 HTTP Range 请求（视频拖动进度条、断点续传）。
+    Content-Type 根据文件扩展名自动检测。
+    """
+    import mimetypes
+
+    resolved = await _resolve_download_file(kb, doc_id)
+    if resolved is None:
+        raise HTTPException(404, f"文档 {doc_id} 的原始文件未找到，可能已被清理")
+
+    real_path, display_name = resolved
+
+    # 安全检查：确保文件在项目目录内
+    try:
+        real_path.relative_to(Path.cwd())
+    except ValueError:
+        raise HTTPException(403, "不允许访问项目目录外的文件")
+
+    content_type, _encoding = mimetypes.guess_type(str(real_path))
+    if content_type is None:
+        content_type = "application/octet-stream"
+
+    # 对常见文档类型设置 inline 预览（浏览器能处理的话），其他下载
+    inline_types = {
+        "application/pdf", "image/jpeg", "image/png", "image/gif",
+        "image/webp", "image/bmp", "video/mp4", "video/webm",
+        "audio/mpeg", "audio/wav", "text/plain", "text/html",
+    }
+    disposition = "inline" if content_type in inline_types else "attachment"
+
+    lightrag_logger.info(
+        "[DOWNLOAD] doc=%s kb=%s file=%s size=%s type=%s user=%s",
+        doc_id, kb, display_name, real_path.stat().st_size, content_type,
+        current_user.get("id", 0),
+    )
+
+    return FileResponse(
+        str(real_path),
+        media_type=content_type,
+        filename=display_name,
+        content_disposition_type=disposition,
+    )
 
 
 def _cleanup_document_files(kb_name: str, file_path: str, doc_id: str = "") -> None:
@@ -790,13 +1129,13 @@ def _cleanup_document_files(kb_name: str, file_path: str, doc_id: str = "") -> N
     """
     # 1. Delete the original uploaded file from uploads/
     if file_path:
-        upload_file = Path("./uploads") / Path(file_path).name
-        if upload_file.exists():
+        real = _find_upload_file(file_path)
+        if real and real.exists():
             try:
-                upload_file.unlink()
-                lightrag_logger.info(f"[CLEANUP] 已删除上传文件: {upload_file}")
-            except FileNotFoundError:
-                pass  # 已被并发请求删除
+                real.unlink()
+                lightrag_logger.info(f"[CLEANUP] 已删除上传文件: {real}")
+            except (FileNotFoundError, OSError):
+                pass  # 已被并发请求删除或无权限
 
     # 2. Delete the parser output subdirectory for this document
     output_base = "./output" if kb_name == "default" else f"./output_{kb_name}"
@@ -1027,15 +1366,10 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
     if hasattr(_lg, "image_vision_repo") and _lg.image_vision_repo is not None:
         try:
             _repo = _lg.image_vision_repo
-            # 获取当前 VDB 内的所有记录
-            _storage = getattr(_repo._vdb, "_NanoVectorDB__storage", {})
-            _data = _storage.get("data", [])
-            _orphan_ids = [
-                d["__id__"] for d in _data
-                if d.get("doc_id") not in valid_doc_ids
-            ]
+            # 获取当前 VDB 内的所有记录（PG/NVDB 统一接口）
+            _orphan_ids = await _repo.get_orphan_ids(valid_doc_ids)
             if _orphan_ids:
-                _repo._vdb.delete(_orphan_ids)
+                await _repo.delete_by_ids(_orphan_ids)
                 await _repo.flush()
                 report["vision_vectors"] = len(_orphan_ids)
         except Exception:
@@ -1110,14 +1444,29 @@ async def _purge_orphan_vdb_entries(lg, entities_data: dict, relations_data: dic
         for src, tgt in v.get("relation_pairs", []):
             valid_rel_keys.add(f"{src}<SEP>{tgt}")
 
+    # ── Helper: safely enumerate NanoVectorDB data rows ──
+    def _vdb_rows(vdb):
+        """Return list of data rows from a NanoVectorDB instance.
+
+        Uses the private ``_NanoVectorDB__storage`` attribute (name-mangled).
+        Returns empty list if VDB is None or attribute access fails.
+        """
+        if vdb is None:
+            return []
+        storage = getattr(vdb, "_NanoVectorDB__storage", None)
+        if not isinstance(storage, dict):
+            return []
+        data = storage.get("data")
+        if not isinstance(data, list):
+            return []
+        return data
+
     # ── entities_vdb deep scan ──
     if hasattr(lg, "entities_vdb") and lg.entities_vdb is not None:
         try:
             _vdb = lg.entities_vdb
-            _storage = getattr(_vdb, "_NanoVectorDB__storage", {})
-            _data = _storage.get("data", []) if isinstance(_storage, dict) else []
             orphan_names: list[str] = []
-            for _row in _data:
+            for _row in _vdb_rows(_vdb):
                 _name = _row.get("__id__") or _row.get("entity_name") or ""
                 if _name and _name not in valid_ent_names:
                     orphan_names.append(_name)
@@ -1135,10 +1484,8 @@ async def _purge_orphan_vdb_entries(lg, entities_data: dict, relations_data: dic
     if hasattr(lg, "relationships_vdb") and lg.relationships_vdb is not None:
         try:
             _rvdb = lg.relationships_vdb
-            _storage = getattr(_rvdb, "_NanoVectorDB__storage", {})
-            _data = _storage.get("data", []) if isinstance(_storage, dict) else []
             orphan_rel_names: list[str] = []
-            for _row in _data:
+            for _row in _vdb_rows(_rvdb):
                 _name = _row.get("__id__") or _row.get("relation_name") or ""
                 if _name and _name not in valid_rel_keys:
                     orphan_rel_names.append(_name)
@@ -1530,7 +1877,7 @@ async def reprocess_multimodal(
 
 @router.get("/kb/list")
 async def list_kbs(current_user: dict = Depends(get_current_user)):
-    meta = load_kb_meta()
+    meta = await load_kb_meta()
     kbs = []
     is_admin = current_user.get("is_admin", False)
     for name, info in meta.items():
@@ -1555,7 +1902,7 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
             "owner_id": current_user["id"],
             "owner_username": current_user["username"],
         }
-        save_kb_meta(meta)
+        await save_kb_meta(meta)
         _shared.active_kb = personal_kb
         # 初始化存储目录
         await get_kb(personal_kb)
@@ -1572,7 +1919,7 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
 
 @router.post("/kb/create")
 async def create_kb(kb_name: str = QueryParam(...), current_user: dict = Depends(get_current_user), label: str = QueryParam(""), domain: str = QueryParam("general")):
-    meta = load_kb_meta()
+    meta = await load_kb_meta()
     if kb_name in meta:
         raise HTTPException(400, f"知识库 '{kb_name}' 已存在")
     label = label or kb_name
@@ -1582,7 +1929,7 @@ async def create_kb(kb_name: str = QueryParam(...), current_user: dict = Depends
         "owner_username": current_user["username"],
         "domain": domain,
     }
-    save_kb_meta(meta)
+    await save_kb_meta(meta)
     # 预加载
     await get_kb(kb_name)
     return {"status": "created", "name": kb_name, "label": label}
@@ -1590,7 +1937,7 @@ async def create_kb(kb_name: str = QueryParam(...), current_user: dict = Depends
 
 @router.put("/kb/switch")
 async def switch_kb(name: str = QueryParam(...), current_user: dict = Depends(get_current_user)):
-    meta = load_kb_meta()
+    meta = await load_kb_meta()
     if name not in meta:
         raise HTTPException(404, f"知识库 '{name}' 不存在")
     # 权限检查（管理员可切换任意 KB）
@@ -1610,7 +1957,7 @@ async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
     """
     if name == "default":
         raise HTTPException(400, "不能删除默认知识库")
-    meta = load_kb_meta()
+    meta = await load_kb_meta()
     if name not in meta:
         raise HTTPException(404, f"知识库 '{name}' 不存在")
     # 权限检查（仅 KB 所有者和管理员可删除）
