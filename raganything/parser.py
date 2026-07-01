@@ -191,6 +191,46 @@ class Parser:
         return Path(base_dir) / f"{stem}_{path_hash}"
 
     @classmethod
+    def _libreoffice_command_candidates(cls) -> List[str]:
+        """Return LibreOffice executable candidates for office conversion."""
+        command_names = ["libreoffice", "soffice"]
+        candidates: List[str] = []
+
+        for command_name in command_names:
+            resolved = shutil.which(command_name)
+            if resolved:
+                candidates.append(resolved)
+            candidates.append(command_name)
+
+        if _IS_WINDOWS:
+            for command_name in ["soffice.exe", "libreoffice.exe"]:
+                resolved = shutil.which(command_name)
+                if resolved:
+                    candidates.append(resolved)
+                candidates.append(command_name)
+
+            for env_name in ("PROGRAMFILES", "PROGRAMFILES(X86)"):
+                program_files = os.environ.get(env_name)
+                if not program_files:
+                    continue
+
+                libreoffice_program = Path(program_files) / "LibreOffice" / "program"
+                for exe_name in ("soffice.exe", "libreoffice.exe"):
+                    exe_path = libreoffice_program / exe_name
+                    if exe_path.exists():
+                        candidates.append(str(exe_path))
+
+        deduped: List[str] = []
+        seen = set()
+        for candidate in candidates:
+            normalized = os.path.normcase(candidate)
+            if normalized not in seen:
+                seen.add(normalized)
+                deduped.append(candidate)
+
+        return deduped
+
+    @classmethod
     def convert_office_to_pdf(
         cls, doc_path: Union[str, Path], output_dir: Optional[str] = None
     ) -> Path:
@@ -230,9 +270,8 @@ class Parser:
                     f"Converting {doc_path.name} to PDF using LibreOffice..."
                 )
 
-                # Prepare subprocess parameters to hide console window on Windows
                 # Try LibreOffice commands in order of preference
-                commands_to_try = ["libreoffice", "soffice"]
+                commands_to_try = cls._libreoffice_command_candidates()
 
                 conversion_successful = False
                 last_cmd = commands_to_try[-1]

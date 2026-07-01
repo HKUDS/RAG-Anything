@@ -24,7 +24,7 @@ import pytest
 from unittest.mock import patch, MagicMock
 import os
 import re
-from raganything.parser import MineruParser, DoclingParser
+from raganything.parser import MineruParser, DoclingParser, Parser
 import raganything.parser as parser_module
 
 
@@ -155,6 +155,59 @@ def test_invalid_env_contents(mineru_parser, docling_parser, dummy_path, tmp_pat
             file_stem="stem",
             env={"key": 123},
         )
+
+
+def test_windows_libreoffice_candidates_include_standard_install_dir(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(parser_module, "_IS_WINDOWS", True)
+    monkeypatch.setattr(parser_module.shutil, "which", lambda command: None)
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path))
+    monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
+
+    soffice_path = tmp_path / "LibreOffice" / "program" / "soffice.exe"
+    soffice_path.parent.mkdir(parents=True)
+    soffice_path.write_text("", encoding="utf-8")
+
+    candidates = Parser._libreoffice_command_candidates()
+
+    assert str(soffice_path) in candidates
+
+
+def test_convert_office_to_pdf_uses_windows_standard_libreoffice_path(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(parser_module, "_IS_WINDOWS", True)
+    monkeypatch.setattr(parser_module.subprocess, "CREATE_NO_WINDOW", 0, raising=False)
+    monkeypatch.setattr(parser_module.shutil, "which", lambda command: None)
+    monkeypatch.setenv("PROGRAMFILES", str(tmp_path))
+    monkeypatch.delenv("PROGRAMFILES(X86)", raising=False)
+
+    soffice_path = tmp_path / "LibreOffice" / "program" / "soffice.exe"
+    soffice_path.parent.mkdir(parents=True)
+    soffice_path.write_text("", encoding="utf-8")
+
+    doc_path = tmp_path / "sample.docx"
+    doc_path.write_bytes(b"docx")
+    output_dir = tmp_path / "out"
+    captured_commands = []
+
+    def fake_run(cmd, **kwargs):
+        captured_commands.append(cmd)
+        if cmd[0] != str(soffice_path):
+            raise FileNotFoundError(cmd[0])
+
+        pdf_path = Path(cmd[cmd.index("--outdir") + 1]) / "sample.pdf"
+        pdf_path.write_bytes(b"%PDF-1.4\n" + b"0" * 200)
+        return MagicMock(returncode=0, stderr="")
+
+    monkeypatch.setattr(parser_module.subprocess, "run", fake_run)
+
+    pdf_path = Parser.convert_office_to_pdf(doc_path, output_dir)
+
+    assert captured_commands[-1][0] == str(soffice_path)
+    assert pdf_path == output_dir / "sample.pdf"
+    assert pdf_path.exists()
 
 
 def test_mineru_windows_unsafe_pdf_uses_safe_paths(
