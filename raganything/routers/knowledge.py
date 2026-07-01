@@ -17,7 +17,9 @@ from pydantic import BaseModel
 from typing import Optional
 
 # Import shared module-level state (for read access)
-from raganything.services.state_service import upsert_task_state, complete_task
+from raganything.services.state_service import (
+    upsert_task_state, complete_task, delete_task, get_task_status,
+)
 from .shared import (
     limiter,
     verify_kb_access,
@@ -40,6 +42,12 @@ from .shared import (
     kb_instances,
     cleanup_kb_resources,
 )
+from raganything.services.kb_service import (
+    pg_register_upload,
+    pg_update_upload_status,
+    _load_doc_status_json,
+    _load_full_docs_json,
+)
 from raganything.dependencies import get_current_user, get_optional_user, get_current_user_from_token, require_permission
 from raganything.permissions import Permission
 from raganything.chunking import build_chunking_func, STRATEGY_META as CHUNKING_STRATEGY_META
@@ -48,20 +56,8 @@ from raganything.chunking import build_chunking_func, STRATEGY_META as CHUNKING_
 from . import shared as _shared
 
 # ── PG Graph Helpers: read knowledge graph data from LightRAG PG tables ──
-# When PG storage backends (PGKVStorage + PGDocStatusStorage) are active,
-# LightRAG stores entities/relations/doc_status in PG tables instead of JSON
-# files. These helpers dispatch PG-first with JSON file fallback, ensuring
-# the frontend graph visualization reads from the same source that LightRAG
-# writes to.
-
-def _graph_pg_ready() -> bool:
-    try:
-        from raganything.services.pg_state_repo import get_pg_pool
-        get_pg_pool()
-        return True
-    except RuntimeError:
-        return False
-
+# LightRAG stores entities/relations/doc_status in PG tables (PGKVStorage +
+# PGDocStatusStorage). PG is the mandatory sole storage backend — no JSON fallback.
 
 async def _pg_fetch_graph_entities(workspace: str) -> dict[str, dict]:
     """Fetch full entity records for a workspace from PG LIGHTRAG_FULL_ENTITIES.
@@ -167,9 +163,10 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
     upload_dir = Path("./uploads")
     upload_dir.mkdir(exist_ok=True)
     safe_name = os.path.basename(file.filename)
-    file_path = upload_dir / (secrets.token_hex(4) + "_" + safe_name)
+    file_path = upload_dir / safe_name
     content = await file.read()
     file_path.write_bytes(content)
+    file_size = len(content)
 
     # Dedup check: reject if same file content is already being processed in this KB
     file_hash = _compute_file_hash(str(file_path))
@@ -187,6 +184,27 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
         raise HTTPException(
             409,
             f"文件正在处理中 (task_id={existing_task})",
+        )
+
+    # Register file metadata in PG (dedup enforced by UNIQUE on file_hash + kb_name)
+    pg_id = await pg_register_upload(
+        filename=safe_name,
+        file_path=str(file_path.absolute()),
+        file_hash=file_hash,
+        file_size=file_size,
+        kb_name=kb,
+        uploaded_by=current_user.get("id", 0),
+    )
+    if pg_id is None:
+        # PG insert failed — either a true duplicate or PG unavailable.
+        # Clean up the written file and report the conflict.
+        try:
+            file_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(
+            409,
+            f"文件内容重复或上传注册失败: {file.filename}",
         )
 
     lightrag_logger.info(f"[UPLOAD-API] 收到上传请求: file={file.filename} kb={kb} strategy={chunking_strategy}")
@@ -240,6 +258,7 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
         file_path = upload_dir / file.filename
         content = await file.read()
         file_path.write_bytes(content)
+        file_size = len(content)
 
         # Dedup check per file
         file_hash = _compute_file_hash(str(file_path))
@@ -251,6 +270,26 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
             skipped.append(file.filename)
             continue
 
+        # Register file metadata in PG (dedup enforced by UNIQUE on file_hash + kb_name)
+        pg_id = await pg_register_upload(
+            filename=file.filename,
+            file_path=str(file_path.absolute()),
+            file_hash=file_hash,
+            file_size=file_size,
+            kb_name=kb,
+            uploaded_by=current_user.get("id", 0),
+        )
+        if pg_id is None:
+            # PG insert failed — duplicate content hash or PG unavailable
+            lightrag_logger.warning(
+                f"[UPLOAD-BATCH] 注册失败（重复或PG不可用）: file={file.filename} hash={file_hash}"
+            )
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            skipped.append(file.filename)
+            continue
         _register_processing_file(kb, file_hash, task_id)
 
         # Push to per-KB queue (shared with single-file upload endpoint)
@@ -313,7 +352,6 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
             "id": task_id, "file": folder_path, "status": "processing",
             "started_at": datetime.now().isoformat(), "kb": kb, "user_id": current_user["id"],
         }
-        processing_tasks[task_id] = task_data
         await upsert_task_state(task_id, task_data)
         # 临时切换分块策略
         original_func = None
@@ -324,12 +362,12 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
                     original_func = instance.lightrag.chunking_func
                     instance.lightrag.chunking_func = new_func
             await instance.process_folder_complete(folder_path, output_dir="./output", recursive=True)
-            processing_tasks[task_id]["status"] = "completed"
-            processing_tasks[task_id]["chunking_strategy"] = chunking_strategy or CHUNKING_STRATEGY
             await complete_task(task_id)
         except Exception as e:
-            processing_tasks[task_id]["status"] = "failed"
-            processing_tasks[task_id]["error"] = str(e)
+            await upsert_task_state(task_id, {
+                "id": task_id, "status": "failed", "error": str(e),
+                "kb": kb, "file": folder_path, "user_id": current_user["id"],
+            })
             raise HTTPException(500, str(e))
         finally:
             if original_func and instance.lightrag:
@@ -496,21 +534,16 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
         # Clean up completed/failed tasks before building the response
         await cleanup_completed_tasks()
 
-        status_path = Path(kb_dir(kb)) / "kv_store_doc_status.json"
-        data = {}
-        if status_path.exists():
-            try:
-                data = json.loads(status_path.read_text(encoding="utf-8"))
-            except json.JSONDecodeError:
-                lightrag_logger.warning(f"doc_status JSON 损坏，返回空列表: {status_path}")
-                data = {}
+        data = await _load_doc_status_json(kb)
 
         # Deduplicate doc_status entries by original filename: keep only the
         # most recently updated entry per stripped filename.
         best_doc: dict[str, tuple[str, dict]] = {}  # orig_name → (doc_id, info)
         for doc_id, info in data.items():
-            orig = _strip_hash_prefix(info.get("file_path", ""))
-            if orig not in best_doc or info.get("updated_at", "") > best_doc[orig][1].get("updated_at", ""):
+            if not isinstance(info, dict):
+                continue  # skip non-dict entries (corrupted data)
+            orig = _strip_hash_prefix(info.get("file_path", "") or "")
+            if orig not in best_doc or (info.get("updated_at") or "") > (best_doc[orig][1].get("updated_at") or ""):
                 best_doc[orig] = (doc_id, info)
 
         docs = []
@@ -519,175 +552,151 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
             # Check if there's a matching processing task with phase info
             doc_phase = ""
             for tid, task in processing_tasks.items():
-                task_file = _strip_hash_prefix(task.get("file", ""))
+                if not isinstance(task, dict):
+                    continue  # skip non-dict entries
+                task_file = _strip_hash_prefix(task.get("file", "") or "")
                 if task_file == orig_name and task.get("kb", "") == kb:
-                    doc_phase = task.get("phase", "")
+                    doc_phase = task.get("phase", "") or ""
                     break
             docs.append({
-                "id": doc_id[:16],
-                "full_id": doc_id,
-                "file": _strip_hash_prefix(info.get("file_path", "?")),
-                "status": info.get("status", "?"),
-                "chunks": info.get("chunks_count", 0),
-                "length": info.get("content_length", 0),
-                "created": info.get("created_at", ""),
-                "updated": info.get("updated_at", ""),
+                "id": (doc_id or "")[:16],
+                "full_id": doc_id or "",
+                "file": _strip_hash_prefix((info.get("file_path") or "?")),
+                "status": info.get("status") or "?",
+                "chunks": info.get("chunks_count") or 0,
+                "length": info.get("content_length") or 0,
+                "created": info.get("created_at") or "",
+                "updated": info.get("updated_at") or "",
                 "phase": doc_phase,
             })
             seen_files.add(orig_name)
 
         # 合并处理中的任务（还未写入 doc_status），仅限当前 KB
         for tid, task in processing_tasks.items():
+            if not isinstance(task, dict):
+                continue  # skip non-dict entries
             if task.get("kb", "") != kb:
                 continue
-            fn = task.get("file", "")
+            fn = task.get("file") or ""
             if fn and _strip_hash_prefix(fn) not in seen_files:
                 docs.append({
-                    "id": tid,
-                    "full_id": tid,
+                    "id": tid or "",
+                    "full_id": tid or "",
                     "file": fn,
-                    "status": task.get("status", "processing"),
+                    "status": task.get("status") or "processing",
                     "chunks": 0,
                     "length": 0,
-                    "created": task.get("started_at", ""),
-                    "updated": task.get("started_at", ""),
-                    "phase": task.get("phase", ""),
+                    "created": task.get("started_at") or "",
+                    "updated": task.get("started_at") or "",
+                    "phase": task.get("phase") or "",
                 })
-        return {"documents": sorted(docs, key=lambda d: d["updated"], reverse=True), "total": len(docs)}
+
+        # Sort with None-safe key: treat None/empty as empty string
+        def _sort_key(d):
+            return d.get("updated") or ""
+        return {"documents": sorted(docs, key=_sort_key, reverse=True), "total": len(docs)}
     except Exception as e:
+        lightrag_logger.error(f"[list_documents] kb={kb} error: {e}", exc_info=True)
         raise HTTPException(500, str(e))
 
 
 @router.get("/knowledge/stats")
 async def knowledge_stats(kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
-    """知识库总体统计"""
+    """知识库总体统计 — 与 list_documents 使用相同的数据源和去重逻辑"""
 
-    def _safe_load_json(path: Path) -> dict:
-        """安全加载 JSON，文件损坏时返回空 dict 并记录警告。"""
-        try:
-            return json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            lightrag_logger.warning(f"JSON 文件损坏: {path} — {exc}")
-            # 尝试修复：读取原始文本，移除尾部多余的内容后重新解析
-            try:
-                raw = path.read_text(encoding="utf-8")
-                # 找到最后一个合法 JSON 对象的结束位置
-                depth = 0
-                last_valid = 0
-                for i, ch in enumerate(raw):
-                    if ch == '{':
-                        depth += 1
-                    elif ch == '}':
-                        depth -= 1
-                        if depth == 0:
-                            last_valid = i + 1
-                if last_valid > 0:
-                    fixed = raw[:last_valid]
-                    # 验证修复后的 JSON
-                    data = json.loads(fixed)
-                    lightrag_logger.info(f"JSON 修复成功: {path} (截取 {last_valid}/{len(raw)} 字符)")
-                    # 写回修复后的内容
-                    path.write_text(fixed, encoding="utf-8")
-                    return data
-            except Exception:
-                pass
-            return {}
-
+    import json as _json
     stats = {"documents": 0, "entities": 0, "relations": 0, "chunks": 0}
     base = Path(kb_dir(kb))
-    workspace = str(base)
+    # Use raw kb_dir(kb) for workspace matching, NOT str(Path(...)).
+    # On Windows Path("./rag_storage_11") strips the "./" prefix, causing
+    # a mismatch with the workspace value that LightRAG writes to PG tables
+    # (e.g. "./rag_storage_11" vs "rag_storage_11").  The graph endpoint
+    # already uses kb_dir(kb) directly and works correctly.
+    workspace = kb_dir(kb)
 
-    # ── PG-first: read doc_status / entities / relations from PG ──
-    if _graph_pg_ready():
+    # ── doc_status: reuse the same PG→JSON pipeline as list_documents ──
+    data = await _load_doc_status_json(kb)
+
+    # Apply same dedup logic as list_documents (keep most-recent per stripped filename)
+    best_doc: dict[str, tuple[str, dict]] = {}
+    for doc_id, info in data.items():
+        if not isinstance(info, dict):
+            continue
+        orig = _strip_hash_prefix(info.get("file_path", "") or "")
+        if orig not in best_doc or (info.get("updated_at") or "") > (best_doc[orig][1].get("updated_at") or ""):
+            best_doc[orig] = (doc_id, info)
+
+    valid_doc_ids = {doc_id for orig, (doc_id, info) in best_doc.items()}
+    stats["documents"] = len(best_doc)
+    for orig, (doc_id, info) in best_doc.items():
+        stats["chunks"] += info.get("chunks_count", 0) if isinstance(info, dict) else 0
+
+    # ── Entities & Relations: PG first, JSON fallback ──
+    # Determine whether PG graph tables have data; if not, read JSON files.
+    _pg_graph_ok = False
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        _pool = get_pg_pool()
+        async with _pool.acquire() as _conn:
+            await _conn.fetchval("SELECT 1")
+        _pg_graph_ok = True
+    except Exception:
+        pass
+
+    # ── Entities & Relations: count ALL records from PG directly ──
+    # The graph endpoint does NOT filter by doc_id — it reads all entities
+    # and relations from the tables.  We match that behaviour here so the
+    # stats header always agrees with the graph visualization.
+    #
+    # Previous versions filtered by _effective_doc_ids (from
+    # LIGHTRAG_DOC_STATUS), which broke when the cached LightRAG instance
+    # had a stale workspace or doc_status was temporarily out of sync with
+    # full_entities / full_relations.
+
+    _entities_from_pg = False
+    if _pg_graph_ok:
         try:
-            valid_doc_ids = await _pg_fetch_doc_ids(workspace)
-            # Doc status for stats
-            from raganything.services.pg_state_repo import get_pg_pool
-            pool = get_pg_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """SELECT id, chunks_count, status
-                       FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1""",
-                    workspace,
-                )
-            doc_data = {r["id"]: {"chunks_count": r.get("chunks_count", 0),
-                                   "status": r.get("status", "")} for r in rows}
-            valid_doc_ids = set(doc_data.keys())
-            stats["documents"] = len(doc_data)
-            stats["chunks"] = sum(v.get("chunks_count", 0) for v in doc_data.values())
-
-            # Entities from PG
             pg_entities = await _pg_fetch_graph_entities(workspace)
-            _orphan_entities = 0
-            for doc_id, v in pg_entities.items():
-                if doc_id not in valid_doc_ids:
-                    _orphan_entities += v.get("count", len(v.get("entity_names", [])))
-                    continue
-                stats["entities"] += v.get("count", len(v.get("entity_names", [])))
-            if _orphan_entities:
-                lightrag_logger.info(
-                    "[KB-STATS] 过滤孤儿实体: %d (来自 %s)", _orphan_entities, kb,
-                )
-
-            # Relations from PG
-            pg_relations = await _pg_fetch_graph_relations(workspace)
-            _orphan_relations = 0
-            for doc_id, v in pg_relations.items():
-                if doc_id not in valid_doc_ids:
-                    _orphan_relations += v.get("count", len(v.get("relation_pairs", [])))
-                    continue
-                stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
-            if _orphan_relations:
-                lightrag_logger.info(
-                    "[KB-STATS] 过滤孤儿关系: %d (来自 %s)", _orphan_relations, kb,
-                )
-            return stats
+            if pg_entities:
+                _entities_from_pg = True
+                for _doc_id, v in pg_entities.items():
+                    stats["entities"] += v.get("count", len(v.get("entity_names", [])))
         except Exception:
-            lightrag_logger.warning("[KB-STATS] PG read failed, falling back to JSON")
-
-    # ── JSON fallback ──
-    dp = base / "kv_store_doc_status.json"
-    doc_data: dict = {}
-    valid_doc_ids: set = set()
-    if dp.exists():
-        doc_data = _safe_load_json(dp)
-        valid_doc_ids = set(doc_data.keys())
-        stats["documents"] = len(doc_data)
-        stats["chunks"] = sum(v.get("chunks_count", 0) for v in doc_data.values())
-
-    # 实体总数 — 只统计 doc_status 中存在的文档，过滤孤儿条目
-    ep = base / "kv_store_full_entities.json"
-    if ep.exists():
-        _orphan_entities = 0
-        for doc_id, v in _safe_load_json(ep).items():
-            if doc_id not in valid_doc_ids:
-                _orphan_entities += v.get("count", len(v.get("entity_names", [])))
-                continue
-            stats["entities"] += v.get("count", len(v.get("entity_names", [])))
-        if _orphan_entities:
-            lightrag_logger.info(
-                "[KB-STATS] 过滤孤儿实体: %d (来自 %s)", _orphan_entities, kb,
-            )
-            # 自动触发后台清理，防止孤儿数据持续累积
+            pass
+    if not _entities_from_pg:
+        ent_path = base / "kv_store_full_entities.json"
+        if ent_path.exists():
             try:
-                _instance = await get_kb(kb)
-                asyncio.create_task(_purge_all_orphans(_instance, kb))
-            except Exception:
+                entities = _json.loads(ent_path.read_text(encoding="utf-8"))
+                if isinstance(entities, dict):
+                    for _doc_id, v in entities.items():
+                        if isinstance(v, dict):
+                            stats["entities"] += v.get("count", len(v.get("entity_names", [])))
+            except (_json.JSONDecodeError, OSError):
                 pass
 
-    # 关系总数 — 同上，交叉校验 doc_status
-    rp = base / "kv_store_full_relations.json"
-    if rp.exists():
-        _orphan_relations = 0
-        for doc_id, v in _safe_load_json(rp).items():
-            if doc_id not in valid_doc_ids:
-                _orphan_relations += v.get("count", len(v.get("relation_pairs", [])))
-                continue
-            stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
-        if _orphan_relations:
-            lightrag_logger.info(
-                "[KB-STATS] 过滤孤儿关系: %d (来自 %s)", _orphan_relations, kb,
-            )
+    _relations_from_pg = False
+    if _pg_graph_ok:
+        try:
+            pg_relations = await _pg_fetch_graph_relations(workspace)
+            if pg_relations:
+                _relations_from_pg = True
+                for _doc_id, v in pg_relations.items():
+                    stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
+        except Exception:
+            pass
+    if not _relations_from_pg:
+        rel_path = base / "kv_store_full_relations.json"
+        if rel_path.exists():
+            try:
+                relations = _json.loads(rel_path.read_text(encoding="utf-8"))
+                if isinstance(relations, dict):
+                    for _doc_id, v in relations.items():
+                        if isinstance(v, dict):
+                            stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
+            except (_json.JSONDecodeError, OSError):
+                pass
+
     return stats
 
 
@@ -709,21 +718,20 @@ async def repair_kb_orphans(
         raise HTTPException(500, "知识库未初始化")
 
     base = Path(kb_dir(kb))
-    dp = base / "kv_store_doc_status.json"
-    if not dp.exists():
-        return {"status": "ok", "message": "无文档记录，无需修复", "cleaned": {}}
+    workspace = kb_dir(kb)  # raw string for workspace matching (see knowledge_stats)
 
-    # 加载合法文档白名单
-    doc_data = json.loads(dp.read_text(encoding="utf-8"))
+    # 加载合法文档白名单 — PG-backed
+    doc_data = await _load_doc_status_json(kb)
+    if not doc_data:
+        return {"status": "ok", "message": "无文档记录，无需修复", "cleaned": {}}
     valid_doc_ids = set(doc_data.keys())
 
     _lg = instance.lightrag
     report: dict[str, int] = {}
 
     # ── 1. 扫描 full_entities ──
-    ep = base / "kv_store_full_entities.json"
-    if ep.exists():
-        entities_data = json.loads(ep.read_text(encoding="utf-8"))
+    entities_data = await _pg_fetch_graph_entities(workspace)
+    if entities_data:
         orphan_entity_keys = [k for k in entities_data if k not in valid_doc_ids]
         if orphan_entity_keys:
             _ent_names_to_delete: list[str] = []
@@ -757,9 +765,8 @@ async def repair_kb_orphans(
             )
 
     # ── 2. 扫描 full_relations ──
-    rp = base / "kv_store_full_relations.json"
-    if rp.exists():
-        relations_data = json.loads(rp.read_text(encoding="utf-8"))
+    relations_data = await _pg_fetch_graph_relations(workspace)
+    if relations_data:
         orphan_rel_keys = [k for k in relations_data if k not in valid_doc_ids]
         if orphan_rel_keys:
             for _ok in orphan_rel_keys:
@@ -773,9 +780,8 @@ async def repair_kb_orphans(
             )
 
     # ── 3. 扫描 full_docs ──
-    fdp = base / "kv_store_full_docs.json"
-    if fdp.exists():
-        full_docs_data = json.loads(fdp.read_text(encoding="utf-8"))
+    full_docs_data = await _load_full_docs_json(kb)
+    if full_docs_data:
         orphan_doc_keys = [k for k in full_docs_data if k not in valid_doc_ids]
         if orphan_doc_keys:
             for _ok in orphan_doc_keys:
@@ -834,26 +840,9 @@ async def list_entities(request: Request, limit: int = 50, kb: str = Depends(ver
     total = 0
     data: dict[str, dict] = {}
 
-    # ── PG-first ──
-    if _graph_pg_ready():
-        try:
-            valid_doc_ids = await _pg_fetch_doc_ids(workspace)
-            data = await _pg_fetch_graph_entities(workspace)
-        except Exception:
-            lightrag_logger.warning("[ENTITIES] PG read failed, falling back to JSON")
-            data = {}
-
-    # ── JSON fallback ──
-    if not data:
-        ep = Path(kb_dir(kb)) / "kv_store_full_entities.json"
-        if ep.exists():
-            with open(ep, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        dp = Path(kb_dir(kb)) / "kv_store_doc_status.json"
-        if dp.exists():
-            with open(dp, "r", encoding="utf-8") as f:
-                doc_data = json.load(f)
-            valid_doc_ids = set(doc_data.keys())
+    # ── PG-only ──
+    valid_doc_ids = await _pg_fetch_doc_ids(workspace)
+    data = await _pg_fetch_graph_entities(workspace)
 
     for k, v in data.items():
         if valid_doc_ids and k not in valid_doc_ids:
@@ -896,30 +885,10 @@ async def graph_data(kb: str = Depends(verify_kb_access), current_user: dict = D
     relations_data: dict[str, dict] = {}
     valid_doc_ids: set[str] = set()
 
-    # ── PG-first ──
-    if _graph_pg_ready():
-        try:
-            valid_doc_ids = await _pg_fetch_doc_ids(workspace)
-            entities_data = await _pg_fetch_graph_entities(workspace)
-            relations_data = await _pg_fetch_graph_relations(workspace)
-        except Exception:
-            lightrag_logger.warning("[GRAPH] PG read failed, falling back to JSON")
-
-    # ── JSON fallback (when PG unavailable or PG read failed) ──
-    if not entities_data and not relations_data:
-        ep = Path(kb_dir(kb)) / "kv_store_full_entities.json"
-        rp = Path(kb_dir(kb)) / "kv_store_full_relations.json"
-        dp = Path(kb_dir(kb)) / "kv_store_doc_status.json"
-        if dp.exists():
-            with open(dp, "r", encoding="utf-8") as f:
-                doc_data = json.load(f)
-            valid_doc_ids = set(doc_data.keys())
-        if ep.exists():
-            with open(ep, "r", encoding="utf-8") as f:
-                entities_data = json.load(f)
-        if rp.exists():
-            with open(rp, "r", encoding="utf-8") as f:
-                relations_data = json.load(f)
+    # ── PG-only ──
+    valid_doc_ids = await _pg_fetch_doc_ids(workspace)
+    entities_data = await _pg_fetch_graph_entities(workspace)
+    relations_data = await _pg_fetch_graph_relations(workspace)
 
     # 交叉校验 doc_status，过滤已删除文档的孤儿节点/边
     # 从 entities 建节点
@@ -992,55 +961,32 @@ async def _resolve_download_file(kb: str, doc_id: str) -> tuple[Path, str] | Non
     Returns:
         ``(absolute_path, display_filename)`` or ``None`` if not found.
     """
-    from raganything.services.kb_service import _load_doc_status_json
     workspace = kb_dir(kb)
 
-    # ── PG-first: doc_status from LightRAG ──
+    # ── PG-only: doc_status from LightRAG ──
+    from raganything.services.pg_state_repo import get_pg_pool
     doc_status: dict = {}
-    if _graph_pg_ready():
-        try:
-            from raganything.services.pg_state_repo import get_pg_pool
-            pool = get_pg_pool()
-            async with pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """SELECT file_path, status FROM LIGHTRAG_DOC_STATUS
-                       WHERE workspace=$1 AND id=$2""",
-                    workspace, doc_id,
-                )
-            if row:
-                doc_status = {doc_id: {"file_path": row["file_path"], "status": row["status"]}}
-        except Exception:
-            pass
-
-    # ── PG miss, try prefix match ──
-    if not doc_status and _graph_pg_ready():
-        try:
-            from raganything.services.pg_state_repo import get_pg_pool
-            pool = get_pg_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """SELECT id, file_path, status FROM LIGHTRAG_DOC_STATUS
-                       WHERE workspace=$1 AND id LIKE $2 LIMIT 5""",
-                    workspace, f"{doc_id}%",
-                )
-            if rows:
-                doc_status = {rows[0]["id"]: {"file_path": rows[0]["file_path"],
-                                               "status": rows[0]["status"]}}
-        except Exception:
-            pass
-
-    # ── JSON fallback ──
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """SELECT file_path, status FROM LIGHTRAG_DOC_STATUS
+               WHERE workspace=$1 AND id=$2""",
+            workspace, doc_id,
+        )
+    if row:
+        doc_status = {doc_id: {"file_path": row["file_path"], "status": row["status"]}}
+    # Try prefix match on PG miss
     if not doc_status:
-        try:
-            doc_status = await _load_doc_status_json(kb)
-        except Exception:
-            doc_status = {}
-        # Try exact match then prefix match
-        if doc_id not in doc_status:
-            for k in doc_status:
-                if k.startswith(doc_id):
-                    doc_id = k
-                    break
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT id, file_path, status FROM LIGHTRAG_DOC_STATUS
+                   WHERE workspace=$1 AND id LIKE $2 LIMIT 5""",
+                workspace, f"{doc_id}%",
+            )
+        if rows:
+            doc_status = {rows[0]["id"]: {"file_path": rows[0]["file_path"],
+                                           "status": rows[0]["status"]}}
+            doc_id = rows[0]["id"]
 
     info = doc_status.get(doc_id, {})
     stored_path = info.get("file_path", "")
@@ -1269,15 +1215,12 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
     """
     _lg = instance.lightrag
     base = Path(kb_dir(kb))
+    workspace = kb_dir(kb)  # raw string for workspace matching (see knowledge_stats)
     report: dict[str, int] = {}
 
-    # ── 加载 doc_status 白名单 ──
-    dp = base / "kv_store_doc_status.json"
-    if not dp.exists():
-        return report
-    try:
-        doc_data = json.loads(dp.read_text(encoding="utf-8"))
-    except Exception:
+    # ── 加载 doc_status 白名单 — PG-backed ──
+    doc_data = await _load_doc_status_json(kb)
+    if not doc_data:
         return report
     valid_doc_ids = set(doc_data.keys())
     if not valid_doc_ids:
@@ -1285,11 +1228,9 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
         valid_doc_ids = set()
 
     # ── 1. full_entities ──
-    ep = base / "kv_store_full_entities.json"
-    entities_data: dict = {}
-    if ep.exists():
+    entities_data: dict = await _pg_fetch_graph_entities(workspace)
+    if entities_data:
         try:
-            entities_data = json.loads(ep.read_text(encoding="utf-8"))
             orphan_keys = [k for k in entities_data if k not in valid_doc_ids]
             if orphan_keys:
                 _ent_names: list[str] = []
@@ -1318,11 +1259,9 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
             pass
 
     # ── 2. full_relations ──
-    rp = base / "kv_store_full_relations.json"
-    relations_data: dict = {}
-    if rp.exists():
+    relations_data: dict = await _pg_fetch_graph_relations(workspace)
+    if relations_data:
         try:
-            relations_data = json.loads(rp.read_text(encoding="utf-8"))
             orphan_keys = [k for k in relations_data if k not in valid_doc_ids]
             if orphan_keys:
                 # 收集孤儿 relation pairs 用于清理 VDB
@@ -1347,11 +1286,10 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
             pass
 
     # ── 3. full_docs ──
-    fdp = base / "kv_store_full_docs.json"
-    if fdp.exists():
+    full_docs_data = await _load_full_docs_json(kb)
+    if full_docs_data:
         try:
-            docs_data = json.loads(fdp.read_text(encoding="utf-8"))
-            orphan_keys = [k for k in docs_data if k not in valid_doc_ids]
+            orphan_keys = [k for k in full_docs_data if k not in valid_doc_ids]
             if orphan_keys:
                 for _ok in orphan_keys:
                     try:
@@ -1561,12 +1499,10 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
     if not instance.lightrag:
         raise HTTPException(500, "知识库未初始化")
 
-    status_path = Path(kb_dir(kb)) / "kv_store_doc_status.json"
-    if not status_path.exists():
+    # PG-backed doc_status lookup
+    doc_status = await _load_doc_status_json(kb)
+    if not doc_status:
         raise HTTPException(404, "无文档记录")
-
-    with open(status_path, "r", encoding="utf-8") as f:
-        doc_status = json.load(f)
 
     # 通过前缀匹配找到完整 doc_id
     full_id = None
@@ -1577,15 +1513,16 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
 
     if not full_id:
         # 可能是一个处理中/失败的 processing task，尝试从 processing_tasks 中移除
-        if doc_id in processing_tasks:
-            task = processing_tasks.pop(doc_id)
+        task = await get_task_status(doc_id)
+        if task:
             fname = task.get("file", "未知")
+            await delete_task(doc_id)
             await add_event("doc_delete", file=fname, doc_id=doc_id, kb=kb, source="processing_tasks", user_id=current_user["id"])
             return {"status": "deleted", "doc_id": doc_id, "file": fname, "message": "已从处理队列中移除"}
         # 也尝试按 file_path 匹配（前端可能传文件名相关的 ID）
         for tid, task in list(processing_tasks.items()):
             if task.get("kb", "") == kb and task.get("file", "") == doc_id:
-                del processing_tasks[tid]
+                await delete_task(tid)
                 await add_event("doc_delete", file=doc_id, doc_id=tid, kb=kb, source="processing_tasks", user_id=current_user["id"])
                 return {"status": "deleted", "doc_id": tid, "file": doc_id, "message": "已从处理队列中移除"}
         raise HTTPException(404, f"文档 {doc_id} 不存在（知识库: {kb}）")
@@ -1625,17 +1562,18 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
     elif result.status == "not_found":
         # Data may be partially missing (e.g. multimodal processing was
         # killed mid-flight, or LightRAG's internal doc_status is out of
-        # sync with the on-disk kv_store_doc_status.json).
-        # Still remove the doc_status entry so the user isn't stuck with
-        # an undeletable ghost document, AND explicitly purge orphaned
+        # sync with the PG LIGHTRAG_DOC_STATUS table).
+        # Remove the doc_status entry via LightRAG so the user isn't stuck
+        # with an undeletable ghost document, AND explicitly purge orphaned
         # entities/relations/chunks from LightRAG's internal KV stores
         # and vector DBs so KB stats reflect the actual state.
         try:
-            del doc_status[full_id]
-            tmp = status_path.with_suffix(".tmp")
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(doc_status, f, ensure_ascii=False, indent=2)
-            tmp.replace(status_path)
+            # Remove from PG doc_status via LightRAG
+            try:
+                await instance.lightrag.doc_status.delete([full_id])
+                await instance.lightrag.doc_status.index_done_callback()
+            except Exception:
+                pass
             # Clean up file system leftovers and multimodal status cache
             _cleanup_document_files(kb, file_name, full_id)
             if hasattr(instance, "multimodal_status_cache") and instance.multimodal_status_cache is not None:
@@ -1678,12 +1616,10 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
     if not instance.lightrag:
         raise HTTPException(500, "知识库未初始化")
 
-    status_path = Path(kb_dir(kb)) / "kv_store_doc_status.json"
-    if not status_path.exists():
+    # PG-backed doc_status lookup
+    doc_status = await _load_doc_status_json(kb)
+    if not doc_status:
         raise HTTPException(404, "无文档记录")
-
-    with open(status_path, "r", encoding="utf-8") as f:
-        doc_status = json.load(f)
 
     deleted = []
     not_found = []
@@ -1701,8 +1637,9 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
 
         if not full_id:
             # Try processing_tasks
-            if doc_id in processing_tasks:
-                task = processing_tasks.pop(doc_id)
+            task = await get_task_status(doc_id)
+            if task:
+                await delete_task(doc_id)
                 await add_event("doc_delete", file=task.get("file", "?"), doc_id=doc_id, kb=kb, source="processing_tasks", user_id=current_user["id"])
                 deleted.append(doc_id)
             else:
@@ -1720,6 +1657,12 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
                 await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
                 if result.status == "not_found":
                     not_found_full_ids.append(full_id)
+                    # Remove from PG doc_status via LightRAG
+                    try:
+                        await instance.lightrag.doc_status.delete([full_id])
+                        await instance.lightrag.doc_status.index_done_callback()
+                    except Exception:
+                        pass
                 # Also clean up matching processing_tasks entry
                 for tid, task in list(processing_tasks.items()):
                     if task.get("kb", "") == kb and task.get("file", "") == file_name:
@@ -1748,9 +1691,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
         except Exception:
             pass
 
-    # Write doc_status back once
-    with open(status_path, "w", encoding="utf-8") as f:
-        json.dump(doc_status, f, ensure_ascii=False, indent=2)
+    # PG-backed: doc_status is already updated via LightRAG; no JSON file to write
 
     # Force LightRAG storages to persist deletions + invalidate query cache
     if deleted:
@@ -1767,12 +1708,11 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
 
 @router.post("/knowledge/documents/{doc_id}/retry")
 async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user), background_tasks: BackgroundTasks = None):
-    """重试处理失败的文档"""
-    status_path = Path(kb_dir(kb)) / "kv_store_doc_status.json"
-    if not status_path.exists():
+    """重试处理失败的文档 — PG-backed"""
+    # PG-backed doc_status lookup
+    data = await _load_doc_status_json(kb)
+    if not data:
         raise HTTPException(404, "文档不存在")
-    with open(status_path, "r", encoding="utf-8") as f:
-        data = json.load(f)
 
     full_id = None
     file_name = None
@@ -1796,10 +1736,15 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), curre
     if not file_path or not file_path.exists():
         raise HTTPException(404, f"原始文件不存在: {file_name}")
 
-    # 删除旧的失败记录，触发重新处理
+    # 删除旧的失败记录 via LightRAG PG (trigger reprocessing)
+    try:
+        kb_instance = await get_kb(kb)
+        if kb_instance and kb_instance.lightrag:
+            await kb_instance.lightrag.doc_status.delete([full_id])
+            await kb_instance.lightrag.doc_status.index_done_callback()
+    except Exception:
+        pass
     del data[full_id]
-    with open(status_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
 
     # 推入 per-KB 处理队列（统一排队）
     task_id = str(uuid.uuid4())[:8]
@@ -1835,20 +1780,13 @@ async def reprocess_multimodal(
         raise HTTPException(403, "仅管理员可执行此操作")
 
     try:
-        # Scan first to get count
-        import json as _json
-        from pathlib import Path as _Path
-        from raganything.services.kb_service import kb_dir
-        status_path = _Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
-        total = 0
-        if status_path.exists():
-            with open(status_path, "r", encoding="utf-8") as _f:
-                all_docs = _json.load(_f)
-            total = sum(
-                1 for info in all_docs.values()
-                if info.get("status") != "failed"
-                and not info.get("multimodal_processed", False)
-            )
+        # Scan first to get count — PG-backed
+        all_docs = await _load_doc_status_json(kb_name)
+        total = sum(
+            1 for info in all_docs.values()
+            if info.get("status") != "failed"
+            and not info.get("multimodal_processed", False)
+        )
 
         if total == 0:
             return {

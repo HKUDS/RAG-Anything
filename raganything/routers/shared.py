@@ -88,12 +88,13 @@ from raganything.services.ws_service import (  # noqa: F401 — re-export
 from raganything.services.state_service import (  # noqa: F401 — re-export
     processing_tasks,
     query_history,
-    conversation_manager,
     QUERY_HISTORY_FILE,
     load_query_history,
     save_query_history,
     record_query,
+    get_query_history,
     cleanup_completed_tasks,
+    update_task_progress,
 )
 
 # ── Security Utilities (canonical source) ──────────────────
@@ -106,7 +107,7 @@ from raganything.utils.security import (  # noqa: F401 — re-export
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc, logger as lightrag_logger  # noqa: F401
 from raganything import RAGAnything, RAGAnythingConfig
-from raganything.query import ConversationManager
+
 
 _DEGRADED_HINT = (
     "\n\n⚠️ 注意：本次检索未能获取到关联的文档文本内容，"
@@ -443,26 +444,41 @@ async def _bigram_image_scan(kb_dir_path, query: str, ctx: str = "", instance=No
             except Exception:
                 pass  # BM25 failed → fall through to bigram path
 
-    # ── Path 2: Improved bigram scan (last resort) ───────────
-    _chunk_file = Path(kb_dir_path) / 'kv_store_text_chunks.json'
-    if not _chunk_file.exists():
-        return [], ""
-
-    # JSON retry: guard against mid-write by worker subprocess
+    # ── Path 2: PG-based bigram scan (last resort) ───────────
+    # Query PG for all text chunks in this KB workspace
     _all = None
-    for _attempt in range(2):
-        try:
-            _all = _json.loads(_chunk_file.read_text(encoding='utf-8'))
-            break
-        except (_json.JSONDecodeError, UnicodeDecodeError):
-            if _attempt == 0:
-                import asyncio as _asyncio
-                await _asyncio.sleep(0.1)
-            else:
-                lightrag_logger.warning("[IMG-FALLBACK] JSON decode failed after retry")
-                return [], ""
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        workspace = str(kb_dir_path)
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT chunks_list FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1",
+                workspace,
+            )
+        all_chunk_ids = []
+        for row in rows:
+            cl = row["chunks_list"]
+            if isinstance(cl, str):
+                try:
+                    cl = _json.loads(cl)
+                except Exception:
+                    cl = []
+            if cl:
+                all_chunk_ids.extend(cl)
 
-    if _all is None:
+        if all_chunk_ids and instance is not None and instance.lightrag:
+            raw_chunks = await instance.lightrag.text_chunks.get_by_ids(all_chunk_ids)
+            _all = {}
+            for c in raw_chunks:
+                if c:
+                    cid = c.get("id") or c.get("__id__")
+                    if cid:
+                        _all[cid] = {"content": c.get("content", ""), "file_path": c.get("file_path", "")}
+    except Exception as exc:
+        lightrag_logger.warning("[IMG-FALLBACK] PG chunk load failed: %s", exc)
+
+    if _all is None or not _all:
         return [], ""
 
     # Build query bigram set
@@ -822,8 +838,7 @@ __all__ = [
     "ws_clients", "active_ws_connections", "processing_events",
     "ws_broadcast", "push_run_status", "emit_progress", "add_event",
     # State
-    "processing_tasks", "query_history", "conversation_manager",
-    "QUERY_HISTORY_FILE", "load_query_history", "save_query_history",
+    "processing_tasks", "query_history", "QUERY_HISTORY_FILE", "load_query_history", "save_query_history",
     "cleanup_completed_tasks",
     # Security
     "validate_query_input", "PROMPT_INJECTION_REGEX",

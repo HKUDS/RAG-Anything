@@ -16,7 +16,7 @@ class SchoolDeployer:
         self._deployments: dict[str, dict] = {}
         self._feedback: dict[str, list[dict]] = {}
 
-    def deploy(self, school_id: str, school_name: str,
+    async def deploy(self, school_id: str, school_name: str,
                tracks: list[str] | None = None) -> dict:
         """部署到试点院校。
 
@@ -33,7 +33,7 @@ class SchoolDeployer:
         }
 
         try:
-            # 注册机构配置
+            # 注册机构配置 (PG-backed)
             if self.deployment_config:
                 from ..agent.deployment_config import InstitutionConfig
                 config = InstitutionConfig(
@@ -42,7 +42,7 @@ class SchoolDeployer:
                     institution_type="school",
                     enabled_tracks=tracks or [],
                 )
-                self.deployment_config.register_institution(config)
+                await self.deployment_config.register_institution(config)
 
             deployment["status"] = "active"
             deployment["health"] = "healthy"

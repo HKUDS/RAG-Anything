@@ -43,7 +43,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
     if (!f || f.status !== 'pending') return
     setFiles(prev => prev.map((x, i) => i === idx ? { ...x, status: 'uploading' } : x))
     try {
-      await api.uploadDocument(f.file, { strategy: chunkingStrategy, multimodal })
+      await api.uploadFile(f.file, chunkingStrategy, multimodal)
       setFiles(prev => prev.map((x, i) => i === idx ? { ...x, status: 'done' } : x))
       onUploaded?.()
       onToast?.(`${f.name} 上传成功`, 'success')
@@ -286,6 +286,14 @@ export default function KnowledgeDetailPage() {
   selectedNodeRef.current = selectedNode
   const simRef = useRef(null)
 
+  // Helper: D3 forceLink mutates edge source/target from string → node object.
+  // After simulation, edge.source is {id, x, y, ...} not a bare string.
+  // This helper extracts the string ID regardless of mutation state.
+  const _sid = (edge, prop) => {
+    const v = edge[prop]
+    return v && typeof v === 'object' ? v.id : v
+  }
+
   // Set current KB on mount / param change
   useEffect(() => {
     if (kbName) setCurrentKB(kbName)
@@ -419,12 +427,12 @@ export default function KnowledgeDetailPage() {
 
       nodeGroup.on('click', async (e, d) => {
         e.stopPropagation(); setSelectedNode(d)
-        const connections = graph.edges.filter(e => e.source === d.id || e.target === d.id)
+        const connections = graph.edges.filter(e => _sid(e, 'source') === d.id || _sid(e, 'target') === d.id)
         const connectedNames = new Set(); const connectionList = []
         connections.forEach(e => {
-          const other = e.source === d.id ? e.target : e.source
+          const other = _sid(e, 'source') === d.id ? _sid(e, 'target') : _sid(e, 'source')
           connectedNames.add(other)
-          connectionList.push({ other, label: e.label || '', direction: e.source === d.id ? '→' : '←' })
+          connectionList.push({ other, label: e.label || '', direction: _sid(e, 'source') === d.id ? '→' : '←' })
         })
         setNodeDetails({
           node: d, connections: connectionList.slice(0, 30),
@@ -781,10 +789,10 @@ export default function KnowledgeDetailPage() {
                           key={n.id}
                           className="px-2 py-0.5 rounded-md text-2xs bg-cloud-100 text-ink-body hover:bg-sky-100 hover:text-sky-700 transition-colors"
                           onClick={() => {
-                            const connections = graph.edges.filter(ed => ed.source === n.id || ed.target === n.id)
+                            const connections = graph.edges.filter(ed => _sid(ed, 'source') === n.id || _sid(ed, 'target') === n.id)
                             const connectionList = connections.map(ed => ({
-                              other: ed.source === n.id ? ed.target : ed.source,
-                              label: ed.label || '', direction: ed.source === n.id ? '→' : '←',
+                              other: _sid(ed, 'source') === n.id ? _sid(ed, 'target') : _sid(ed, 'source'),
+                              label: ed.label || '', direction: _sid(ed, 'source') === n.id ? '→' : '←',
                             }))
                             setSelectedNode(n)
                             setNodeDetails({
@@ -814,10 +822,10 @@ export default function KnowledgeDetailPage() {
                         let node = graph.nodes.find(n => n.id === e.name)
                         if (!node) node = { id: e.name, label: e.name, degree: 0 }
                         setGraphSearch(e.name); setSelectedNode(node); prevGraphFingerprint.current = ''
-                        const connections = graph.edges.filter(ed => ed.source === node.id || ed.target === node.id)
+                        const connections = graph.edges.filter(ed => _sid(ed, 'source') === node.id || _sid(ed, 'target') === node.id)
                         const connectionList = connections.map(ed => ({
-                          other: ed.source === node.id ? ed.target : ed.source,
-                          label: ed.label || '', direction: ed.source === node.id ? '→' : '←',
+                          other: _sid(ed, 'source') === node.id ? _sid(ed, 'target') : _sid(ed, 'source'),
+                          label: ed.label || '', direction: _sid(ed, 'source') === node.id ? '→' : '←',
                         }))
                         setNodeDetails({
                           node, connections: connectionList.slice(0, 30),

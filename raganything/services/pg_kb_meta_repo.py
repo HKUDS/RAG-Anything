@@ -1,17 +1,64 @@
 # -*- coding: utf-8 -*-
 """
-PostgreSQL-backed KB Metadata Repository.
+═══════════════════════════════════════════════════════════════════════════════
+PostgreSQL 知识库元数据仓库
+═══════════════════════════════════════════════════════════════════════════════
 
-Replaces: raganything/services/kb_service.py load_kb_meta() / save_kb_meta()
-          (JSON file: rag_storage_kb_meta.json)
+【文件作用】
+  知识库元数据的持久化存储。
+  记录每个知识库的名称、标签、领域、创建者等基本信息。
+  通过 pg_state_repo.get_pg_pool() 复用全局连接池。
+  同时写入 JSON 镜像文件（rag_storage_kb_meta.json）作为回退。
 
-Uses the same shared connection pool as pg_state_repo.py and pg_auth_repo.py.
+【管理的数据库表】
+  ┌──────────────────┬──────────────────────────────────────┐
+  │ kb_metadata      │ 知识库元数据                          │
+  │                  │ name（知识库名称，唯一标识）           │
+  │                  │ label（显示标签/中文名）               │
+  │                  │ domain（领域：general/manufacturing/  │
+  │                  │   education/legal/medical/...）       │
+  │                  │ description（描述文本）               │
+  │                  │ created_by（创建者 username）          │
+  │                  │ created_at（创建时间 UTC）             │
+  │                  │ updated_at（最后更新时间 UTC）         │
+  └──────────────────┴──────────────────────────────────────┘
 
-Usage:
-    from raganything.services.pg_kb_meta_repo import (
-        pg_load_kb_meta, pg_save_kb_meta, pg_delete_kb_meta,
-        pg_list_kbs, pg_get_kb_meta,
-    )
+【核心函数】
+  pg_load_kb_meta()                              → 加载所有 KB 元数据（字典）
+  pg_save_kb_meta(name, label, domain, ...)      → 保存/更新单个 KB 元数据（upsert）
+  pg_delete_kb_meta(name)                        → 删除单个 KB 元数据
+  pg_list_kbs()                                  → 列出所有 KB（简化列表）
+  pg_get_kb_meta(name)                           → 获取单个 KB 详细信息
+
+【特殊逻辑】
+  - pg_save_kb_meta() 使用 INSERT ON CONFLICT UPDATE（upsert），不删除已有记录
+  - pg_delete_kb_meta() 只被 cleanup_kb_resources() 调用
+  - kb_service.py 的 load_kb_meta() 先查 PG，查不到回退 JSON 文件
+  - kb_service.py 的 save_kb_meta() 同时写入 PG 和 JSON 镜像
+
+【替换了什么】
+  - raganything/services/kb_service.py 中的 load_kb_meta() / save_kb_meta()
+  - 旧 rag_storage_kb_meta.json（纯 JSON 文件存储）
+
+【与其他文件的关系】
+  使用 pg_state_repo.get_pg_pool() 获取连接
+  被 raganything/services/kb_service.py 的 load_kb_meta/save_kb_meta 调用
+  被 raganything/routers/knowledge.py 的 KB 列表/创建/删除端点调用
+  对应迁移：migrations/003_p0_agent_kb_meta.sql
+
+English:
+  PostgreSQL-backed KB Metadata Repository.
+
+  Replaces: raganything/services/kb_service.py load_kb_meta() / save_kb_meta()
+            (JSON file: rag_storage_kb_meta.json)
+
+  Uses the same shared connection pool as pg_state_repo.py and pg_auth_repo.py.
+
+  Usage:
+      from raganything.services.pg_kb_meta_repo import (
+          pg_load_kb_meta, pg_save_kb_meta, pg_delete_kb_meta,
+          pg_list_kbs, pg_get_kb_meta,
+      )
 """
 
 from __future__ import annotations

@@ -75,16 +75,6 @@ class WorkflowRunRequest(BaseModel):
 # 工作流编排 API — PG-backed (Phase 3 migration)
 # ════════════════════════════════════════════════════════
 
-def _wf_pg_ready() -> bool:
-    """Return True if PG pool is available for workflow CRUD."""
-    try:
-        from raganything.services.pg_state_repo import get_pg_pool
-        get_pg_pool()
-        return True
-    except RuntimeError:
-        return False
-
-
 async def _wf_pg_pool():
     from raganything.services.pg_state_repo import get_pg_pool
     return get_pg_pool()
@@ -95,35 +85,23 @@ async def list_workflows(
     _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
     current_user: dict = Depends(get_current_user),
 ):
-    """列出所有工作流 — PG-first with file fallback"""
-    if _wf_pg_ready():
-        pool = await _wf_pg_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT id, name, created_at, updated_at "
-                "FROM workflow_definitions ORDER BY updated_at DESC"
-            )
-        def _fmt(t):
-            return t.isoformat() if hasattr(t, 'isoformat') else str(t)
-        return {
-            "workflows": [
-                {"id": r["id"], "name": r["name"],
-                 "created_at": _fmt(r["created_at"]),
-                 "updated_at": _fmt(r["updated_at"])}
-                for r in rows
-            ]
-        }
-
-    # File fallback
-    workflows = []
-    for f in sorted(shared.WORKFLOW_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        try:
-            wf = json.loads(f.read_text(encoding="utf-8"))
-            workflows.append({"id": wf.get("id"), "name": wf.get("name"),
-                            "created_at": wf.get("created_at"), "updated_at": wf.get("updated_at")})
-        except Exception:
-            pass
-    return {"workflows": workflows}
+    """列出所有工作流 — PG-backed"""
+    pool = await _wf_pg_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, name, created_at, updated_at "
+            "FROM workflow_definitions ORDER BY updated_at DESC"
+        )
+    def _fmt(t):
+        return t.isoformat() if hasattr(t, 'isoformat') else str(t)
+    return {
+        "workflows": [
+            {"id": r["id"], "name": r["name"],
+             "created_at": _fmt(r["created_at"]),
+             "updated_at": _fmt(r["updated_at"])}
+            for r in rows
+        ]
+    }
 
 
 @router.get("/workflows/files")
@@ -199,33 +177,26 @@ async def get_workflow(
     _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
     current_user: dict = Depends(get_current_user),
 ):
-    """获取单个工作流 — PG-first with file fallback"""
+    """获取单个工作流 — PG-backed"""
     user_id = current_user.get("id", 0)
 
-    if _wf_pg_ready():
-        pool = await _wf_pg_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT id, name, definition, created_at, updated_at "
-                "FROM workflow_definitions WHERE id = $1",
-                workflow_id,
-            )
-        if row:
-            return {
-                "id": row["id"],
-                "name": row["name"],
-                "created_at": row["created_at"].isoformat(),
-                "updated_at": row["updated_at"].isoformat(),
-                "nodes": row["definition"].get("nodes", []),
-                "edges": row["definition"].get("edges", []),
-            }
-        raise HTTPException(404, "工作流不存在")
-
-    # File fallback
-    fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
-    if not fpath.exists():
-        raise HTTPException(404, "工作流不存在")
-    return json.loads(fpath.read_text(encoding="utf-8"))
+    pool = await _wf_pg_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT id, name, definition, created_at, updated_at "
+            "FROM workflow_definitions WHERE id = $1",
+            workflow_id,
+        )
+    if row:
+        return {
+            "id": row["id"],
+            "name": row["name"],
+            "created_at": row["created_at"].isoformat(),
+            "updated_at": row["updated_at"].isoformat(),
+            "nodes": row["definition"].get("nodes", []),
+            "edges": row["definition"].get("edges", []),
+        }
+    raise HTTPException(404, "工作流不存在")
 
 
 @router.post("/workflows")
@@ -234,7 +205,7 @@ async def create_workflow(
     _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)),
     current_user: dict = Depends(get_current_user),
 ):
-    """创建新工作流 — PG-first with file fallback"""
+    """创建新工作流 — PG-backed"""
     try:
         body = await request.json()
     except Exception:
@@ -246,29 +217,20 @@ async def create_workflow(
     edges = body.get("edges", [])
     name = body.get("name", "未命名工作流")
 
-    if _wf_pg_ready():
-        pool = await _wf_pg_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """INSERT INTO workflow_definitions (id, user_id, name, definition)
-                   VALUES ($1, $2, $3, $4::jsonb) RETURNING *""",
-                wf_id, user_id, name, json.dumps({"nodes": nodes, "edges": edges}),
-            )
-        return {
-            "id": row["id"], "name": row["name"],
-            "created_at": row["created_at"].isoformat(),
-            "updated_at": row["updated_at"].isoformat(),
-            "nodes": row["definition"].get("nodes", []),
-            "edges": row["definition"].get("edges", []),
-        }
-
-    # File fallback
-    now = datetime.now().isoformat()
-    wf = {"id": wf_id, "name": name, "created_at": now, "updated_at": now,
-          "nodes": nodes, "edges": edges}
-    (shared.WORKFLOW_DIR / f"{wf_id}.json").write_text(
-        json.dumps(wf, ensure_ascii=False, indent=2), encoding="utf-8")
-    return wf
+    pool = await _wf_pg_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            """INSERT INTO workflow_definitions (id, user_id, name, definition)
+               VALUES ($1, $2, $3, $4::jsonb) RETURNING *""",
+            wf_id, user_id, name, json.dumps({"nodes": nodes, "edges": edges}),
+        )
+    return {
+        "id": row["id"], "name": row["name"],
+        "created_at": row["created_at"].isoformat(),
+        "updated_at": row["updated_at"].isoformat(),
+        "nodes": row["definition"].get("nodes", []),
+        "edges": row["definition"].get("edges", []),
+    }
 
 
 @router.put("/workflows/{workflow_id}")
@@ -277,7 +239,7 @@ async def update_workflow(
     _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)),
     current_user: dict = Depends(get_current_user),
 ):
-    """更新工作流 — PG-first with file fallback"""
+    """更新工作流 — PG-backed"""
     try:
         body = await request.json()
     except Exception:
@@ -287,48 +249,33 @@ async def update_workflow(
     edges = body.get("edges")
     name = body.get("name")
 
-    if _wf_pg_ready():
-        pool = await _wf_pg_pool()
-        async with pool.acquire() as conn:
-            existing = await conn.fetchrow(
-                "SELECT id, name, definition FROM workflow_definitions WHERE id = $1",
-                workflow_id,
-            )
-            if not existing:
-                raise HTTPException(404, "工作流不存在")
-            new_name = name if name is not None else existing["name"]
-            new_def = dict(existing["definition"])
-            if nodes is not None:
-                new_def["nodes"] = nodes
-            if edges is not None:
-                new_def["edges"] = edges
-            row = await conn.fetchrow(
-                """UPDATE workflow_definitions
-                   SET name = $1, definition = $2::jsonb, updated_at = NOW()
-                   WHERE id = $3 RETURNING *""",
-                new_name, json.dumps(new_def), workflow_id,
-            )
-        return {
-            "id": row["id"], "name": row["name"],
-            "created_at": row["created_at"].isoformat(),
-            "updated_at": row["updated_at"].isoformat(),
-            "nodes": row["definition"].get("nodes", []),
-            "edges": row["definition"].get("edges", []),
-        }
-
-    # File fallback
-    fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
-    if not fpath.exists():
-        raise HTTPException(404, "工作流不存在")
-    existing = json.loads(fpath.read_text(encoding="utf-8"))
-    existing["name"] = name if name is not None else existing["name"]
-    if nodes is not None:
-        existing["nodes"] = nodes
-    if edges is not None:
-        existing["edges"] = edges
-    existing["updated_at"] = datetime.now().isoformat()
-    fpath.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
-    return existing
+    pool = await _wf_pg_pool()
+    async with pool.acquire() as conn:
+        existing = await conn.fetchrow(
+            "SELECT id, name, definition FROM workflow_definitions WHERE id = $1",
+            workflow_id,
+        )
+        if not existing:
+            raise HTTPException(404, "工作流不存在")
+        new_name = name if name is not None else existing["name"]
+        new_def = dict(existing["definition"])
+        if nodes is not None:
+            new_def["nodes"] = nodes
+        if edges is not None:
+            new_def["edges"] = edges
+        row = await conn.fetchrow(
+            """UPDATE workflow_definitions
+               SET name = $1, definition = $2::jsonb, updated_at = NOW()
+               WHERE id = $3 RETURNING *""",
+            new_name, json.dumps(new_def), workflow_id,
+        )
+    return {
+        "id": row["id"], "name": row["name"],
+        "created_at": row["created_at"].isoformat(),
+        "updated_at": row["updated_at"].isoformat(),
+        "nodes": row["definition"].get("nodes", []),
+        "edges": row["definition"].get("edges", []),
+    }
 
 
 @router.delete("/workflows/{workflow_id}")
@@ -337,23 +284,15 @@ async def delete_workflow(
     _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)),
     current_user: dict = Depends(get_current_user),
 ):
-    """删除工作流 — PG-first with file fallback (CASCADE deletes runs)"""
-    if _wf_pg_ready():
-        pool = await _wf_pg_pool()
-        async with pool.acquire() as conn:
-            result = await conn.execute(
-                "DELETE FROM workflow_definitions WHERE id = $1", workflow_id,
-            )
-        deleted = result and "DELETE 0" not in result
-        if not deleted:
-            raise HTTPException(404, "工作流不存在")
-        return {"status": "ok"}
-
-    # File fallback
-    fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
-    if not fpath.exists():
+    """删除工作流 — PG-backed (CASCADE deletes runs)"""
+    pool = await _wf_pg_pool()
+    async with pool.acquire() as conn:
+        result = await conn.execute(
+            "DELETE FROM workflow_definitions WHERE id = $1", workflow_id,
+        )
+    deleted = result and "DELETE 0" not in result
+    if not deleted:
         raise HTTPException(404, "工作流不存在")
-    fpath.unlink()
     return {"status": "ok"}
 
 
@@ -451,11 +390,16 @@ async def websocket_workflow_run(ws: WebSocket, run_id: str):
 
 @router.post("/workflows/{workflow_id}/run")
 async def run_workflow(workflow_id: str, body: WorkflowRunRequest = WorkflowRunRequest(), _perm: None = Depends(require_permission(Permission.WORKFLOW_WRITE)), current_user: dict = Depends(get_current_user)):
-    """执行工作流 DAG，支持运行时 query_text 注入到 retriever 节点"""
-    fpath = shared.WORKFLOW_DIR / f"{workflow_id}.json"
-    if not fpath.exists():
+    """执行工作流 DAG，支持运行时 query_text 注入到 retriever 节点 — PG-backed"""
+    pool = await _wf_pg_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT definition FROM workflow_definitions WHERE id = $1",
+            workflow_id,
+        )
+    if not row:
         raise HTTPException(404, "工作流不存在")
-    wf = json.loads(fpath.read_text(encoding="utf-8"))
+    wf = row["definition"]
     nodes = wf.get("nodes", [])
     if not nodes:
         raise HTTPException(400, "工作流没有节点")
@@ -502,42 +446,26 @@ async def list_workflow_runs(
     _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
     current_user: dict = Depends(get_current_user),
 ):
-    """列出工作流的所有运行记录 — PG-first with file fallback"""
-    if _wf_pg_ready():
-        pool = await _wf_pg_pool()
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT run_id, status, started_at, completed_at, workflow_name "
-                "FROM workflow_runs WHERE workflow_id = $1 "
-                "ORDER BY started_at DESC LIMIT 100",
-                workflow_id,
-            )
-        def _fmt(t):
-            return t.isoformat() if hasattr(t, 'isoformat') else str(t) if t else None
-        return {
-            "runs": [
-                {"run_id": r["run_id"], "status": r["status"],
-                 "started_at": _fmt(r["started_at"]),
-                 "completed_at": _fmt(r["completed_at"]),
-                 "workflow_name": r["workflow_name"]}
-                for r in rows
-            ]
-        }
-
-    # File fallback
-    runs = []
-    for f in sorted(RUNS_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
-        try:
-            r = json.loads(f.read_text(encoding="utf-8"))
-            if r.get("workflow_id") == workflow_id:
-                runs.append({
-                    "run_id": r["run_id"], "status": r["status"],
-                    "started_at": r.get("started_at"), "completed_at": r.get("completed_at"),
-                    "workflow_name": r.get("workflow_name"),
-                })
-        except Exception:
-            pass
-    return {"runs": runs}
+    """列出工作流的所有运行记录 — PG-backed"""
+    pool = await _wf_pg_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT run_id, status, started_at, completed_at, workflow_name "
+            "FROM workflow_runs WHERE workflow_id = $1 "
+            "ORDER BY started_at DESC LIMIT 100",
+            workflow_id,
+        )
+    def _fmt(t):
+        return t.isoformat() if hasattr(t, 'isoformat') else str(t) if t else None
+    return {
+        "runs": [
+            {"run_id": r["run_id"], "status": r["status"],
+             "started_at": _fmt(r["started_at"]),
+             "completed_at": _fmt(r["completed_at"]),
+             "workflow_name": r["workflow_name"]}
+            for r in rows
+        ]
+    }
 
 
 @router.get("/workflows/{workflow_id}/runs/{run_id}")
@@ -546,27 +474,20 @@ async def get_workflow_run(
     _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
     current_user: dict = Depends(get_current_user),
 ):
-    """获取单次运行详情 — PG-first with file fallback"""
-    if _wf_pg_ready():
-        pool = await _wf_pg_pool()
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT * FROM workflow_runs WHERE run_id = $1", run_id,
-            )
-        if row:
-            r = dict(row)
-            def _fmt(t):
-                return t.isoformat() if hasattr(t, 'isoformat') else str(t) if t else None
-            r["started_at"] = _fmt(r["started_at"])
-            r["completed_at"] = _fmt(r["completed_at"])
-            return r
-        raise HTTPException(404, "运行记录不存在")
-
-    # File fallback
-    fpath = RUNS_DIR / f"{run_id}.json"
-    if not fpath.exists():
-        raise HTTPException(404, "运行记录不存在")
-    return json.loads(fpath.read_text(encoding="utf-8"))
+    """获取单次运行详情 — PG-backed"""
+    pool = await _wf_pg_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM workflow_runs WHERE run_id = $1", run_id,
+        )
+    if row:
+        r = dict(row)
+        def _fmt(t):
+            return t.isoformat() if hasattr(t, 'isoformat') else str(t) if t else None
+        r["started_at"] = _fmt(r["started_at"])
+        r["completed_at"] = _fmt(r["completed_at"])
+        return r
+    raise HTTPException(404, "运行记录不存在")
 
 
 @router.websocket("/ws")
@@ -655,10 +576,8 @@ async def update_settings(settings: SettingsUpdate,
         _kbs.CHUNKING_STRATEGY = settings.chunking_strategy
         changes["chunking_strategy"] = settings.chunking_strategy
         # 分块策略变更需要重建所有知识库实例
-        from raganything.services.kb_service import _kb_cache_time
         for name in list(shared.kb_instances.keys()):
             del shared.kb_instances[name]
-            _kb_cache_time.pop(name, None)
     if settings.max_async is not None:
         # 硬上限：防止 API 预算被恶意耗尽
         clamped = max(1, min(settings.max_async, 16))
@@ -728,10 +647,8 @@ async def update_settings(settings: SettingsUpdate,
     )
     if need_rebuild:
         # Clear all cached KB instances so they pick up the new config on next access
-        from raganything.services.kb_service import _kb_cache_time
         for name in list(shared.kb_instances.keys()):
             del shared.kb_instances[name]
-            _kb_cache_time.pop(name, None)
     return {"status": "ok", "changes": changes, "note": "配置已更新，下次访问知识库时生效"}
 
 
@@ -754,11 +671,85 @@ async def reload_kb(kb_name: str,
         except Exception:
             pass
         del shared.kb_instances[kb_name]
-        # Also clear cache timestamp so next get_kb() doesn't falsely skip mtime check
-        from raganything.services.kb_service import _kb_cache_time
-        _kb_cache_time.pop(kb_name, None)
         return {"status": "ok", "message": f"KB '{kb_name}' 缓存已清除，下次查询将重新加载"}
     return {"status": "skipped", "message": f"KB '{kb_name}' 不在缓存中"}
+
+
+# ── 📊 KB 缓存管理 ──────────────────────────────────
+
+@router.get("/cache/stats")
+async def cache_stats(
+    _perm: None = Depends(require_permission(Permission.MONITOR_READ)),
+    current_user: dict = Depends(get_current_user),
+):
+    """获取 KB 缓存统计信息。
+
+    返回缓存命中率、已缓存 KB 列表、淘汰次数等。
+
+    权限: monitor:read
+    """
+    return shared.kb_instances.get_stats()
+
+
+@router.post("/cache/evict/{kb_name}")
+async def cache_evict(
+    kb_name: str,
+    _perm: None = Depends(require_permission(Permission.SETTINGS_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    """手动淘汰指定 KB 的内存缓存（持久化后移除）。
+
+    固定 KB 和正在处理中的 KB 无法淘汰。
+
+    权限: settings:write
+    """
+    if kb_name not in shared.kb_instances:
+        return {"status": "skipped", "message": f"KB '{kb_name}' 不在缓存中"}
+
+    if shared.kb_instances.is_pinned(kb_name):
+        return {
+            "status": "skipped",
+            "message": f"KB '{kb_name}' 已固定，不可淘汰。请先取消固定。",
+        }
+
+    if shared.kb_instances.is_dirty(kb_name):
+        return {
+            "status": "skipped",
+            "message": f"KB '{kb_name}' 正在处理中，无法淘汰。",
+        }
+
+    success = await shared.kb_instances.evict(kb_name)
+    if success:
+        return {"status": "ok", "message": f"KB '{kb_name}' 已淘汰"}
+    return {"status": "skipped", "message": f"KB '{kb_name}' 淘汰失败"}
+
+
+@router.post("/cache/pin/{kb_name}")
+async def cache_pin(
+    kb_name: str,
+    _perm: None = Depends(require_permission(Permission.SETTINGS_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    """固定 KB 到缓存中，永不自动淘汰。
+
+    权限: settings:write
+    """
+    shared.kb_instances.pin(kb_name)
+    return {"status": "ok", "message": f"KB '{kb_name}' 已固定"}
+
+
+@router.post("/cache/unpin/{kb_name}")
+async def cache_unpin(
+    kb_name: str,
+    _perm: None = Depends(require_permission(Permission.SETTINGS_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    """取消固定 KB，允许自动淘汰。
+
+    权限: settings:write
+    """
+    shared.kb_instances.unpin(kb_name)
+    return {"status": "ok", "message": f"KB '{kb_name}' 已取消固定"}
 
 
 # ── 📈 监控面板 ─────────────────────────────────────
@@ -820,12 +811,12 @@ async def health():
     except Exception as e:
         components["kb_meta"] = f"error: {e}"
 
-    # 检查认证数据库
+    # 检查认证数据库 (PG)
     try:
-        import sqlite3
-        conn = sqlite3.connect("auth.db")
-        conn.execute("SELECT 1 FROM users LIMIT 1")
-        conn.close()
+        from raganything.services.pg_state_repo import get_pg_pool
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
+            await conn.fetchval("SELECT 1 FROM users LIMIT 1")
         components["auth_db"] = "ok"
     except Exception as e:
         components["auth_db"] = f"error: {e}"

@@ -1,38 +1,91 @@
 # -*- coding: utf-8 -*-
 """
-PostgreSQL-backed state repository for RAG-Anything shared-state.
+═══════════════════════════════════════════════════════════════════════════════
+PostgreSQL 连接池 + 基础状态表 仓库
+═══════════════════════════════════════════════════════════════════════════════
 
-Replaces:
-  - raganything/services/state_service.py (query_history in-memory list + JSON)
-  - raganything/query/conversation.py (ConversationManager in-memory dict + JSON)
+【文件作用】
+  整个系统 PG 数据库的"总入口"。
+  - 管理全局 asyncpg 连接池（进程级单例，所有模块共享）
+  - 提供 query_history / conversations / messages 三张基础表的 CRUD
+  - 其他所有 pg_*_repo.py 都通过本文件的 get_pg_pool() 获取连接
 
-Connection management:
-  Uses a single asyncpg connection pool. The pool is created at FastAPI startup
-  and closed at shutdown. One pool with min_size=2, max_size=10 is ample for
-  the write-light workload (1 INSERT/query, 1 INSERT/message).
+【管理的数据库表】
+  ┌──────────────────┬──────────────────────────────────────┐
+  │ query_history    │ 查询历史（用户提问 + AI 回答）        │
+  │                  │ 不可变审计日志，只 INSERT 不 UPDATE   │
+  │                  │ 按 user_id + 时间排序查询             │
+  ├──────────────────┼──────────────────────────────────────┤
+  │ conversations    │ 多轮对话会话                          │
+  │                  │ 记录 conversation_id、标题、创建者    │
+  ├──────────────────┼──────────────────────────────────────┤
+  │ messages         │ 对话中的每条消息                      │
+  │                  │ 角色（user/assistant/system）、内容   │
+  │                  │ 按 conversation_id 关联，按时间排序   │
+  └──────────────────┴──────────────────────────────────────┘
 
-Usage at app startup (main.py or equivalent):
-    from raganything.services.pg_state_repo import init_pg_pool, close_pg_pool
+【核心函数】
+  init_pg_pool(dsn, min_size=2, max_size=10)  → 启动时创建连接池（幂等）
+  close_pg_pool()                              → 关闭时释放连接池
+  get_pg_pool()                                → 获取连接池（其他模块调用此函数）
+  insert_query_history(record)                  → 写查询历史
+  get_query_history(limit, user_id)             → 读查询历史（支持用户过滤）
+  get_or_create_conversation(...)               → 获取或创建对话
+  add_message(conversation_id, role, content)   → 添加消息
+  get_messages(conversation_id, limit)          → 获取消息列表
+  list_conversations(user_id)                   → 列出用户的所有对话
+  delete_conversation(conversation_id)          → 删除对话及其消息
+  embedding_cache_upsert(key, model, embedding) → 嵌入向量缓存 upsert（PG 函数）
 
-    @app.on_event("startup")
-    async def startup():
-        await init_pg_pool(dsn="postgresql://...")
+【替换了什么】
+  - raganything/services/state_service.py（内存 list + JSON 文件）
+  - raganything/query/conversation.py（内存 dict + JSON 文件）
 
-    @app.on_event("shutdown")
-    async def shutdown():
-        await close_pg_pool()
+【与其他文件的关系】
+  被依赖方 — 所有 pg_*.py 都 import get_pg_pool
+  server.py 在 startup/shutdown 时调用 init_pg_pool / close_pg_pool
+  对应迁移：migrations/001_shared_state_tables.sql
 
-Usage in existing code:
-    # Instead of state_service.record_query(entry):
-    from raganything.services.pg_state_repo import insert_query_history
-    await insert_query_history(record)
+【初始化方式】
+  server.py 启动时自动调用:
+    await init_pg_pool(dsn=os.getenv("DATABASE_URL"))
+  连接参数从环境变量读取:
+    DATABASE_URL 或 POSTGRES_USER/PASSWORD/HOST/PORT/DATABASE
 
-    # Instead of state_service.get_query_history(limit=50, user_id=uid):
-    from raganything.services.pg_state_repo import get_query_history
-    rows = await get_query_history(limit=50, user_id=uid)
+English:
+  PostgreSQL-backed state repository for RAG-Anything shared-state.
 
-    # Instead of ConversationManager:
-    from raganything.services.pg_state_repo import (
+  Replaces:
+    - raganything/services/state_service.py (query_history in-memory list + JSON)
+    - raganything/query/conversation.py (ConversationManager in-memory dict + JSON)
+
+  Connection management:
+    Uses a single asyncpg connection pool. The pool is created at FastAPI startup
+    and closed at shutdown. One pool with min_size=2, max_size=10 is ample for
+    the write-light workload (1 INSERT/query, 1 INSERT/message).
+
+  Usage at app startup (main.py or equivalent):
+      from raganything.services.pg_state_repo import init_pg_pool, close_pg_pool
+
+      @app.on_event("startup")
+      async def startup():
+          await init_pg_pool(dsn="postgresql://...")
+
+      @app.on_event("shutdown")
+      async def shutdown():
+          await close_pg_pool()
+
+  Usage in existing code:
+      # Instead of state_service.record_query(entry):
+      from raganything.services.pg_state_repo import insert_query_history
+      await insert_query_history(record)
+
+      # Instead of state_service.get_query_history(limit=50, user_id=uid):
+      from raganything.services.pg_state_repo import get_query_history
+      rows = await get_query_history(limit=50, user_id=uid)
+
+      # Instead of ConversationManager:
+      from raganything.services.pg_state_repo import (
         get_or_create_thread,
         add_message,
         get_context,
@@ -154,6 +207,19 @@ async def insert_query_history(record: dict[str, Any]) -> None:
     Raises:
         asyncpg.IntegrityConstraintViolationError: if id already exists.
     """
+    # asyncpg requires explicit JSON strings for JSONB columns
+    # (matching pg_agent_repo.py:pg_add_message pattern)
+    import json as _json
+    from datetime import datetime as _datetime
+    reasoning_trace = record.get("reasoning_trace", {})
+    reasoning_trace_str = _json.dumps(reasoning_trace, ensure_ascii=False) if isinstance(reasoning_trace, (dict, list)) else str(reasoning_trace)
+    images = record.get("images", [])
+    images_str = _json.dumps(images, ensure_ascii=False) if isinstance(images, (dict, list)) else str(images)
+    # asyncpg needs a datetime object for timestamptz, not an ISO string
+    _time = record.get("time")
+    if isinstance(_time, str):
+        _time = _datetime.fromisoformat(_time)
+
     pool = _get_pool()
     async with pool.acquire() as conn:
         await conn.execute(
@@ -173,10 +239,9 @@ async def insert_query_history(record: dict[str, Any]) -> None:
             record.get("mode", "text"),
             record.get("agent_mode", "none"),
             record.get("answer", ""),
-            # asyncpg auto-encodes dict/list to JSONB when cast
-            record.get("reasoning_trace", {}),
-            record.get("images", []),
-            record.get("time"),
+            reasoning_trace_str,
+            images_str,
+            _time,
             record.get("elapsed", 0.0),
             record.get("kb", ""),
             record.get("agent_id", ""),

@@ -1,4 +1,20 @@
--- =============================================================================
+-- ══════════════════════════════════════════════════════════════════════════════
+-- RAG-Anything 共享状态表 — 基础表建表迁移
+-- 迁移编号: 001_shared_state_tables
+-- 目标数据库: PostgreSQL 16
+-- 说明: 将原来内存中的 list/dict + JSON 文件替换为 PG 表持久化存储
+--
+-- 【本迁移创建的表】
+--   query_history     查询历史 — 用户提问 + AI 回答的不可变审计日志
+--                     只 INSERT 不 UPDATE，按 user_id + 时间排序
+--   conversations     多轮对话会话 — 会话标题、创建者
+--   messages          对话消息 — 角色(user/assistant/system)、内容、时间戳
+--   update_updated_at_column()  通用触发器函数 — 自动更新记录的 updated_at 字段
+--
+-- 【跨数据库说明】
+--   user_id 引用的是 SQLite auth.db 中 users 表的 INTEGER id
+--   因为跨数据库无法建立外键约束，应用层负责保证数据完整性
+-- ══════════════════════════════════════════════════════════════════════════════
 -- RAG-Anything Shared-State PostgreSQL Migration
 -- Migration: 001_shared_state_tables
 -- Target: PostgreSQL 16 (Docker Compose: postgres:16-alpine, container raganything-pg)

@@ -288,28 +288,47 @@ class HybridSearchEngine:
             return
 
         try:
-            import json
-            from pathlib import Path
+            import json as _json
 
-            # Read chunks from LightRAG's text_chunks KV store JSON
-            chunk_file = Path(self._lightrag.working_dir) / "kv_store_text_chunks.json"
-            if not chunk_file.exists():
-                self._logger.info(f"No existing chunks file at {chunk_file}")
+            # ── PG-only: read chunk IDs from doc_status, fetch via LightRAG KV ──
+            from raganything.services.pg_state_repo import get_pg_pool
+            workspace = str(self._lightrag.working_dir)
+            pool = get_pg_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT chunks_list FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1",
+                    workspace,
+                )
+            all_chunk_ids: list[str] = []
+            for row in rows:
+                chunks_list = row["chunks_list"]
+                if isinstance(chunks_list, str):
+                    try:
+                        chunks_list = _json.loads(chunks_list)
+                    except Exception:
+                        chunks_list = []
+                if chunks_list:
+                    all_chunk_ids.extend(chunks_list)
+
+            if not all_chunk_ids:
+                self._logger.info("No chunks found in PG doc_status for BM25 index build")
                 return
 
-            data = json.loads(chunk_file.read_text(encoding="utf-8"))
-            if not data:
-                return
+            # Fetch chunks from LightRAG's text_chunks KV storage (PG-backed)
+            raw_chunks = await self._lightrag.text_chunks.get_by_ids(all_chunk_ids)
+            chunk_list = []
+            for chunk in raw_chunks:
+                if chunk:
+                    cid = chunk.get("id") or chunk.get("__id__")
+                    content = chunk.get("content", "")
+                    if cid and content:
+                        chunk_list.append({"chunk_id": cid, "content": content})
 
-            chunk_list = [
-                {"chunk_id": cid, "content": c.get("content", "")}
-                for cid, c in data.items()
-            ]
             if chunk_list:
                 await self._bm25.rebuild_index_async(chunk_list)
-                self._logger.info(f"BM25 index built from {len(chunk_list)} existing chunks")
+                self._logger.info(f"BM25 index built from {len(chunk_list)} PG chunks")
         except Exception as exc:
-            self._logger.warning(f"Failed to build BM25 index from existing chunks: {exc}")
+            self._logger.warning(f"Failed to build BM25 index from PG chunks: {exc}")
 
     # ------------------------------------------------------------------
     # Channel Searches

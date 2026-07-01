@@ -113,7 +113,7 @@ def auto_parser(filename: str) -> str:
     return os.getenv("PARSER", "docling")
 
 
-def create_rag(parser=None, working_dir=None, chunking_strategy=None):
+async def create_rag(parser=None, working_dir=None, chunking_strategy=None):
     if parser is None:
         parser = os.getenv("PARSER", "docling")
     if chunking_strategy is None:
@@ -201,6 +201,28 @@ def create_rag(parser=None, working_dir=None, chunking_strategy=None):
     }
     if chosen is not None:
         lightrag_kwargs["chunking_func"] = chosen
+
+    # ── PG Storage Backends (align with kb_service.py create_rag) ──
+    # When PostgreSQL is available, switch LightRAG from file-based
+    # JSON storage to PG-backed storage. This is the P0 fix that ensures
+    # the worker writes to the same PG tables that the server reads from.
+    from raganything.services.kb_service import _pg_storage_ready as _srv_pg_ready
+    from raganything.services.kb_service import _pg_vector_ready, _pg_age_ready
+
+    if _srv_pg_ready():
+        lightrag_kwargs["kv_storage"] = "PGKVStorage"
+        lightrag_kwargs["doc_status_storage"] = "PGDocStatusStorage"
+
+        if await _pg_vector_ready():
+            lightrag_kwargs["vector_storage"] = "PGVectorStorage"
+
+        if await _pg_age_ready():
+            lightrag_kwargs["graph_storage"] = "PGGraphStorage"
+
+    # ── PG workspace isolation ──────────────────────────────
+    # LightRAG defaults workspace=os.getenv("WORKSPACE","") which is "".
+    # Without an explicit workspace, ALL KBs share the same PG tables.
+    lightrag_kwargs["workspace"] = wd
 
     config = RAGAnythingConfig(
         working_dir=wd, parser=parser,
@@ -315,6 +337,18 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
     ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     merge_failed = False  # Track merging/extraction failures
 
+    # ── PG pool init for worker subprocess ─────────────────
+    # The parent server process's PG connection pool is an in-memory
+    # Python object that does NOT survive asyncio.create_subprocess_exec().
+    # Without this init, _pg_storage_ready() returns False in the worker,
+    # causing a storage-backend mismatch: worker writes to JSON files,
+    # server reads from PG tables → documents 2..N become invisible.
+    try:
+        from raganything.services.pg_state_repo import init_pg_pool
+        await init_pg_pool()
+    except Exception:
+        pass  # PG unavailable → worker falls back to JSON (backward compatible)
+
     strategy_name = STRATEGY_META.get(strategy, {}).get("name", strategy)
     print(f"[WORKER] 开始处理: file={filename} kb={kb_name} dir={target_dir} strategy={strategy_name}", flush=True)
 
@@ -377,7 +411,7 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
         sys.exit(3)
 
     # 创建 RAG 实例
-    rag = create_rag(working_dir=target_dir, chunking_strategy=strategy)
+    rag = await create_rag(working_dir=target_dir, chunking_strategy=strategy)
     await rag._ensure_lightrag_initialized()
 
     safe_path = str(Path(file_path).resolve())
@@ -533,6 +567,12 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
     finally:
         if file_lock.is_locked():
             file_lock.release()
+        # Clean up PG pool created by this worker subprocess
+        try:
+            from raganything.services.pg_state_repo import close_pg_pool
+            await close_pg_pool()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

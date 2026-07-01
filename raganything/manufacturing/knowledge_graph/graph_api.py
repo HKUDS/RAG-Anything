@@ -334,67 +334,40 @@ class LightRAGGraphStore:
         self._working_dir = Path(working_dir)
         self._entities_cache: dict | None = None
         self._relations_cache: dict | None = None
-        self._pg_checked: bool = False
-
-    def _pg_ready(self) -> bool:
-        try:
-            from raganything.services.pg_state_repo import get_pg_pool
-            get_pg_pool()
-            return True
-        except RuntimeError:
-            return False
 
     def _ensure_loaded(self) -> None:
-        """Lazy-load entities + relations data, PG-first with JSON fallback.
+        """Lazy-load entities + relations data from PG.
 
-        When PG is available, runs the async load in a dedicated thread
-        with its own event loop and a fresh connection (avoids event-loop
-        and pool conflicts with the caller's context).
+        Uses the shared PG pool. When called from a sync context, runs the
+        async load in a dedicated thread with its own event loop.
         """
         if self._entities_cache is not None or self._relations_cache is not None:
             return
 
-        # Try PG — fresh connection in a separate thread
-        if not self._pg_checked and self._pg_ready():
-            self._pg_checked = True
-            try:
-                import os as _os
-                import asyncio as _asyncio
-                import concurrent.futures
+        import asyncio as _asyncio
+        import concurrent.futures
 
-                dsn = _os.getenv("DATABASE_URL", "")
-                if not dsn:
-                    dsn = (
-                        f"postgresql://"
-                        f"{_os.getenv('POSTGRES_USER', 'raganything')}:"
-                        f"{_os.getenv('POSTGRES_PASSWORD', 'raganything')}@"
-                        f"{_os.getenv('POSTGRES_HOST', 'localhost')}:"
-                        f"{_os.getenv('POSTGRES_PORT', '5432')}/"
-                        f"{_os.getenv('POSTGRES_DATABASE', _os.getenv('POSTGRES_DB', 'raganything'))}"
-                    )
+        def _pg_load_thread():
+            _asyncio.run(self._pg_load())
 
-                def _pg_load_thread():
-                    _asyncio.run(self._pg_load_with_dsn(dsn))
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_pg_load_thread)
+                future.result(timeout=30)
+        except Exception as exc:
+            raise RuntimeError(
+                f"PG load failed for entities/relations in workspace "
+                f"{self._working_dir}: {exc}"
+            ) from exc
 
-                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                    future = executor.submit(_pg_load_thread)
-                    future.result(timeout=30)
-            except Exception:
-                pass  # Fall through to JSON
-
-        # Fallback to JSON if PG didn't populate caches
-        if self._entities_cache is None:
-            self._entities_cache = self._read_kv_json("kv_store_full_entities.json")
-        if self._relations_cache is None:
-            self._relations_cache = self._read_kv_json("kv_store_full_relations.json")
-
-    async def _pg_load_with_dsn(self, dsn: str) -> None:
-        """Load entities and relations from PG using a fresh connection."""
-        import asyncpg as _asyncpg
+    async def _pg_load(self) -> None:
+        """Load entities and relations from the shared PG pool."""
+        import json as _json
+        from raganything.services.pg_state_repo import get_pg_pool
         workspace = str(self._working_dir)
 
-        conn = await _asyncpg.connect(dsn)
-        try:
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
             # Load entities
             rows = await conn.fetch(
                 """SELECT id, entity_names, count
@@ -406,8 +379,8 @@ class LightRAGGraphStore:
                 entity_names = row["entity_names"]
                 if isinstance(entity_names, str):
                     try:
-                        entity_names = json.loads(entity_names)
-                    except json.JSONDecodeError:
+                        entity_names = _json.loads(entity_names)
+                    except _json.JSONDecodeError:
                         entity_names = []
                 entities[row["id"]] = {
                     "entity_names": entity_names or [],
@@ -426,16 +399,14 @@ class LightRAGGraphStore:
                 relation_pairs = row["relation_pairs"]
                 if isinstance(relation_pairs, str):
                     try:
-                        relation_pairs = json.loads(relation_pairs)
-                    except json.JSONDecodeError:
+                        relation_pairs = _json.loads(relation_pairs)
+                    except _json.JSONDecodeError:
                         relation_pairs = []
                 relations[row["id"]] = {
                     "relation_pairs": relation_pairs or [],
                     "count": row["count"] or len(relation_pairs or []),
                 }
             self._relations_cache = relations
-        finally:
-            await conn.close()
 
     def _read_kv_json(self, filename: str) -> dict:
         path = self._working_dir / filename

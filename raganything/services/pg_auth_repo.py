@@ -1,11 +1,73 @@
 # -*- coding: utf-8 -*-
 """
-PostgreSQL-backed auth repository for RAG-Anything.
+═══════════════════════════════════════════════════════════════════════════════
+PostgreSQL 用户认证仓库
+═══════════════════════════════════════════════════════════════════════════════
 
-Replaces: raganything/services/auth.py (SQLite/aiosqlite backend)
-Activated: When DATABASE_URL or POSTGRES_HOST env var is set.
+【文件作用】
+  系统的用户注册、登录、Token 管理、角色权限查询。
+  通过 pg_state_repo.get_pg_pool() 复用全局连接池。
 
-Uses the same connection pool as pg_state_repo.py via get_pg_pool().
+【管理的数据库表】
+  ┌──────────────────┬──────────────────────────────────────┐
+  │ users            │ 用户表                                │
+  │                  │ id, username, email, password_hash    │
+  │                  │ role（admin/editor/viewer/student/    │
+  │                  │ guest）, is_active, created_at        │
+  ├──────────────────┼──────────────────────────────────────┤
+  │ roles            │ 5 级角色定义表                        │
+  │                  │ 1=admin(管理员), 2=editor(编辑),      │
+  │                  │ 3=viewer(只读), 4=student(学生),      │
+  │                  │ 5=guest(访客)                         │
+  │                  │ 每个角色关联一组权限(permissions JSON) │
+  ├──────────────────┼──────────────────────────────────────┤
+  │ token_revocations│ JWT Token 撤销记录                    │
+  │                  │ 用于登出/密码修改后使 Token 失效       │
+  │                  │ family_id 支持 Refresh Token 链撤销   │
+  └──────────────────┴──────────────────────────────────────┘
+
+【核心函数】
+  ── 用户管理 ──
+  pg_create_user(username, email, password, role) → 创建用户
+  pg_authenticate(username, password)              → 验证用户名密码
+  pg_get_user_by_id(user_id)                       → 按 ID 查用户
+  pg_get_user_by_username(username)                → 按用户名查用户
+  pg_list_users(is_active_only)                    → 列出所有用户
+  pg_update_user_role(user_id, new_role)           → 修改用户角色
+  pg_delete_user(user_id)                          → 软删除用户（设 is_active=false）
+
+  ── JWT Token ──
+  create_token(user_id, username, role)            → 签发 Access Token
+  create_refresh_token(user_id, username, role)    → 签发 Refresh Token
+  decode_token(token)                              → 验证并解码 Token
+  revoke_token(jti, family_id, user_id)            → 撤销 Token
+
+  ── 权限查询 ──
+  pg_get_user_roles(user_id)                       → 获取用户角色列表
+  pg_get_user_permissions(user_id)                 → 获取用户所有权限（展开角色）
+  pg_get_all_roles()                               → 列出所有角色定义
+
+【替换了什么】
+  - raganything/services/auth.py（SQLite / aiosqlite 后端）
+  - 旧 auth.db 中的 users 表
+
+【与其他文件的关系】
+  使用 pg_state_repo.get_pg_pool() 获取连接
+  被 raganything/services/auth.py 的 dispatch 层调用（PG优先→SQLite回退）
+  被 raganything/dependencies.py 的 get_current_user / require_permission 调用
+  对应迁移：migrations/002_pg_3to5_roles.sql, migrations/004_token_blacklist_pg.sql
+
+【角色权限模型（RBAC v2）】
+  5 级角色，权限格式 resource:action（如 kb:write, users:read）
+  详见 raganything/permissions.py 中的 Permission 类
+
+English:
+  PostgreSQL-backed auth repository for RAG-Anything.
+
+  Replaces: raganything/services/auth.py (SQLite/aiosqlite backend)
+  Activated: When DATABASE_URL or POSTGRES_HOST env var is set.
+
+  Uses the same connection pool as pg_state_repo.py via get_pg_pool().
 """
 
 from __future__ import annotations

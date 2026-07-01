@@ -1,14 +1,19 @@
 """
 定制化部署配置 — 知识库范围选择、回答风格参数、访问权限控制。
+
+数据存储: PostgreSQL ``institution_configs`` 表 + 内存缓存（唯一后端）
 """
 
-import json
 import logging
-from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass, field
 
 logger = logging.getLogger(__name__)
+
+
+async def _pg_pool():
+    from raganything.services.pg_state_repo import get_pg_pool
+    return get_pg_pool()
 
 
 @dataclass
@@ -42,42 +47,46 @@ class InstitutionConfig:
 
 
 class DeploymentConfig:
-    """多机构部署配置管理器。"""
+    """多机构部署配置管理器 — PG-backed with in-memory cache."""
 
-    def __init__(self, config_path: str | Path = "./config/deployments.json"):
-        self.config_path = Path(config_path)
+    def __init__(self):
         self._configs: dict[str, InstitutionConfig] = {}
-        self._load()
+        self._loaded: bool = False
 
-    def register_institution(self, config: InstitutionConfig) -> str:
-        """注册新的院校/企业配置。"""
-        self._configs[config.institution_id] = config
-        self._save()
-        return config.institution_id
+    async def initialize(self) -> None:
+        """Load all institution configs from PG into memory cache."""
+        if self._loaded:
+            return
+        pool = await _pg_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT institution_id, institution_name, institution_type,
+                          enabled_tracks, enabled_knowledge_types,
+                          answer_style, citation_style, language,
+                          max_concurrent_users, rate_limit_per_minute,
+                          allow_code_parser, allow_video_locator, allow_fault_diagnosis,
+                          theme, custom_logo_url
+                   FROM institution_configs""",
+            )
+        for row in rows:
+            r = dict(row)
+            # Parse JSONB fields
+            for jsonb_field in ("enabled_tracks", "enabled_knowledge_types"):
+                if isinstance(r[jsonb_field], str):
+                    import json
+                    try:
+                        r[jsonb_field] = json.loads(r[jsonb_field])
+                    except Exception:
+                        r[jsonb_field] = []
+            self._configs[r["institution_id"]] = InstitutionConfig(**r)
+        self._loaded = True
+        logger.info("已从 PG 加载 %d 个机构配置", len(self._configs))
+
+    # ── Read methods (sync — from in-memory cache) ──────
 
     def get_config(self, institution_id: str) -> Optional[InstitutionConfig]:
         """获取机构配置。"""
         return self._configs.get(institution_id)
-
-    def update_config(self, institution_id: str,
-                      updates: dict) -> bool:
-        """更新机构配置。"""
-        config = self._configs.get(institution_id)
-        if not config:
-            return False
-        for key, value in updates.items():
-            if hasattr(config, key):
-                setattr(config, key, value)
-        self._save()
-        return True
-
-    def remove_institution(self, institution_id: str) -> bool:
-        """移除机构配置。"""
-        if institution_id in self._configs:
-            del self._configs[institution_id]
-            self._save()
-            return True
-        return False
 
     def list_institutions(self) -> list[dict]:
         """列出所有注册机构。"""
@@ -114,34 +123,79 @@ class DeploymentConfig:
         }
         return feature_flags.get(feature, False)
 
-    def _save(self) -> None:
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        data = {}
-        for iid, config in self._configs.items():
-            data[iid] = {
-                "institution_id": config.institution_id,
-                "institution_name": config.institution_name,
-                "institution_type": config.institution_type,
-                "enabled_tracks": config.enabled_tracks,
-                "enabled_knowledge_types": config.enabled_knowledge_types,
-                "answer_style": config.answer_style,
-                "citation_style": config.citation_style,
-                "language": config.language,
-                "max_concurrent_users": config.max_concurrent_users,
-                "rate_limit_per_minute": config.rate_limit_per_minute,
-                "allow_code_parser": config.allow_code_parser,
-                "allow_video_locator": config.allow_video_locator,
-                "allow_fault_diagnosis": config.allow_fault_diagnosis,
-                "theme": config.theme,
-                "custom_logo_url": config.custom_logo_url,
-            }
-        self.config_path.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2),
-            encoding="utf-8",
-        )
+    # ── Write methods (async — PG + cache) ──────────────
 
-    def _load(self) -> None:
-        if self.config_path.exists():
-            data = json.loads(self.config_path.read_text(encoding="utf-8"))
-            for iid, cfg in data.items():
-                self._configs[iid] = InstitutionConfig(**cfg)
+    async def register_institution(self, config: InstitutionConfig) -> str:
+        """注册新的院校/企业配置。"""
+        self._configs[config.institution_id] = config
+        await self._save_one(config.institution_id)
+        return config.institution_id
+
+    async def update_config(self, institution_id: str,
+                      updates: dict) -> bool:
+        """更新机构配置。"""
+        config = self._configs.get(institution_id)
+        if not config:
+            return False
+        for key, value in updates.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+        await self._save_one(institution_id)
+        return True
+
+    async def remove_institution(self, institution_id: str) -> bool:
+        """移除机构配置。"""
+        if institution_id in self._configs:
+            del self._configs[institution_id]
+            pool = await _pg_pool()
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM institution_configs WHERE institution_id = $1",
+                    institution_id,
+                )
+            return True
+        return False
+
+    # ── Internal ────────────────────────────────────────
+
+    async def _save_one(self, institution_id: str) -> None:
+        """Write one institution config to PG (upsert)."""
+        config = self._configs.get(institution_id)
+        if not config:
+            return
+        import json
+        pool = await _pg_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO institution_configs
+                   (institution_id, institution_name, institution_type,
+                    enabled_tracks, enabled_knowledge_types,
+                    answer_style, citation_style, language,
+                    max_concurrent_users, rate_limit_per_minute,
+                    allow_code_parser, allow_video_locator, allow_fault_diagnosis,
+                    theme, custom_logo_url)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+                   ON CONFLICT (institution_id) DO UPDATE SET
+                    institution_name = EXCLUDED.institution_name,
+                    institution_type = EXCLUDED.institution_type,
+                    enabled_tracks = EXCLUDED.enabled_tracks,
+                    enabled_knowledge_types = EXCLUDED.enabled_knowledge_types,
+                    answer_style = EXCLUDED.answer_style,
+                    citation_style = EXCLUDED.citation_style,
+                    language = EXCLUDED.language,
+                    max_concurrent_users = EXCLUDED.max_concurrent_users,
+                    rate_limit_per_minute = EXCLUDED.rate_limit_per_minute,
+                    allow_code_parser = EXCLUDED.allow_code_parser,
+                    allow_video_locator = EXCLUDED.allow_video_locator,
+                    allow_fault_diagnosis = EXCLUDED.allow_fault_diagnosis,
+                    theme = EXCLUDED.theme,
+                    custom_logo_url = EXCLUDED.custom_logo_url,
+                    updated_at = NOW()""",
+                config.institution_id, config.institution_name, config.institution_type,
+                json.dumps(config.enabled_tracks, ensure_ascii=False),
+                json.dumps(config.enabled_knowledge_types, ensure_ascii=False),
+                config.answer_style, config.citation_style, config.language,
+                config.max_concurrent_users, config.rate_limit_per_minute,
+                config.allow_code_parser, config.allow_video_locator, config.allow_fault_diagnosis,
+                config.theme, config.custom_logo_url,
+            )

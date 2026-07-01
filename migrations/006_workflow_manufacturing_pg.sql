@@ -1,14 +1,17 @@
--- =============================================================================
--- RAG-Anything Phase 3 PG Migration: Workflow + Manufacturing Data
--- Migration: 006_workflow_manufacturing_pg
--- Target: PostgreSQL (existing raganything-pg container)
--- Description:
---   1. workflow_definitions  — replaces ./workflows/{id}.json
---   2. workflow_runs         — replaces ./workflows/runs/{run_id}.json
---   3. fault_cases           — replaces ./data/manufacturing_kb/fault_cases/cases.json
---   4. process_documents     — replaces ./data/manufacturing_kb/processes/_index.json
---   5. dashboard_query_log   — replaces ./data/manufacturing_kb/dashboard/query_log.json
--- =============================================================================
+-- ══════════════════════════════════════════════════════════════════════════════
+-- RAG-Anything 工作流 + 制造知识库数据 — 建表迁移
+-- 迁移编号: 006_workflow_manufacturing_pg
+-- 目标数据库: PostgreSQL
+-- 说明: 将制造模块（Manufacturing）的工作流定义、执行记录、故障案例、
+--       工艺文档和仪表盘查询日志从 JSON 文件迁移到 PG 表
+--
+-- 【本迁移创建的表】
+--   workflow_definitions  工作流定义（名称、步骤、触发条件、JSON 配置）
+--   workflow_runs         工作流执行记录（状态、起止时间、结果、错误信息）
+--   fault_cases           故障案例库（故障描述、根因分析、解决方案、分类标签）
+--   process_documents     工艺文档库（SOP、工艺卡片、操作手册、元数据）
+--   dashboard_query_log   仪表盘查询日志（查询统计、性能监控、使用频率分析）
+-- ══════════════════════════════════════════════════════════════════════════════
 
 BEGIN;
 

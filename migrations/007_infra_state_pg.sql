@@ -1,12 +1,19 @@
--- =============================================================================
--- RAG-Anything Phase 4 PG Migration: Infrastructure State
--- Migration: 007_infra_state_pg
--- Target: PostgreSQL (existing raganything-pg container)
--- Description:
---   1. processing_tasks — replaces in-memory dict for cross-worker visibility
---   2. embedding_cache  — replaces .embedding_cache.json for cross-worker sharing
---   3. Recovery lock already uses pg_advisory_lock() (no table needed)
--- =============================================================================
+-- ══════════════════════════════════════════════════════════════════════════════
+-- RAG-Anything 基础设施状态 — 建表迁移
+-- 迁移编号: 007_infra_state_pg
+-- 目标数据库: PostgreSQL
+-- 说明: 将原来内存中的处理任务状态和嵌入缓存从内存/JSON 迁移到 PG 表
+--
+-- 【本迁移创建的表】
+--   processing_tasks   文档处理任务（多 Worker 共享可见）
+--                      记录每个文档的处理状态、进度、错误信息
+--                      支持跨进程查询：主进程能看到 Worker 子进程的处理进度
+--   embedding_cache    嵌入向量缓存（跨 Worker 共享）
+--                      避免不同 Worker 对相同文本重复调用 Embedding API
+--                      LRU 淘汰，按 model + text_hash 去重
+--
+-- 【说明】recovery lock 已使用 pg_advisory_lock()，不需要额外的表
+-- ══════════════════════════════════════════════════════════════════════════════
 
 BEGIN;
 

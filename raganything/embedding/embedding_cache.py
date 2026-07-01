@@ -1,21 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Embedding Cache — PG-first persistent cache for text embedding vectors.
+Embedding Cache — PG-backed persistent cache for text embedding vectors.
 
-Avoids redundant API calls by storing (text_hash → embedding_vector).
-When PG is available, uses ``embedding_cache`` table (cross-worker shared).
-Falls back to JSON file when PG is unavailable.
+Avoids redundant API calls by storing (text_hash → embedding_vector) in the
+``embedding_cache`` PostgreSQL table (cross-worker shared, LRU-evicted).
 
 Feature-gated: disabled when ``EMBEDDING_CACHE_ENABLED`` is "false".
+PG-unavailable: cache misses silently (fallback is to call the embedding API).
 """
 
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
-from pathlib import Path
+import threading
 from typing import Callable, Optional
 
 import numpy as np
@@ -24,7 +23,46 @@ __all__ = ["EmbeddingCache", "make_cached_embed_func"]
 
 logger = logging.getLogger("rag_server.embedding_cache")
 
-_MAX_CACHE_ENTRIES = int(os.getenv("EMBEDDING_CACHE_MAX_ENTRIES", "50000"))
+
+def _run_async_from_sync(coro):
+    """Safely run an async coroutine from synchronous code.
+
+    Unlike ``asyncio.run()``, this works even when called from within
+    a running event loop (e.g. inside an ``async def`` function). It
+    spawns a daemon thread with its own event loop to execute the
+    coroutine.
+
+    Args:
+        coro: An awaitable (coroutine object).
+
+    Returns:
+        The coroutine's return value, or raises its exception.
+    """
+    import asyncio as _asyncio
+
+    result = None
+    exc: Optional[Exception] = None
+
+    def _target() -> None:
+        nonlocal result, exc
+        loop = None
+        try:
+            loop = _asyncio.new_event_loop()
+            _asyncio.set_event_loop(loop)
+            result = loop.run_until_complete(coro)
+        except Exception as e:
+            exc = e
+        finally:
+            if loop is not None:
+                loop.close()
+
+    t = threading.Thread(target=_target, daemon=True)
+    t.start()
+    t.join()
+
+    if exc is not None:
+        raise exc
+    return result
 
 
 def _cache_pg_ready() -> bool:
@@ -37,26 +75,20 @@ def _cache_pg_ready() -> bool:
 
 
 class EmbeddingCache:
-    """Persistent key-value cache for text embedding vectors.
+    """PG-backed key-value cache for text embedding vectors.
 
     Keys are MD5 hashes of ``(text, model_name)``.
-    Values are ``list[float]`` for JSON serialization.
+    Values are ``double precision[]`` vectors stored in PostgreSQL.
 
-    Capped at ``EMBEDDING_CACHE_MAX_ENTRIES`` (default 50 000) to prevent
-    unbounded growth and MemoryError on save/load.
+    When PG is unavailable, ``get()`` returns ``None`` (cache miss → API call)
+    and ``put()`` is a silent no-op.  No JSON-file or in-memory fallback.
     """
 
-    __slots__ = ("_cache_path", "_model", "_enabled", "_data",
-                 "_loaded", "_dirty", "_max_entries", "_use_pg")
+    __slots__ = ("_model", "_enabled", "_use_pg")
 
     def __init__(self, working_dir: str, model: str, enabled: bool = True) -> None:
-        self._cache_path = Path(working_dir) / ".embedding_cache.json"
         self._model = model
         self._enabled = enabled
-        self._data: dict[str, list[float]] = {}
-        self._loaded = False
-        self._dirty = False
-        self._max_entries = _MAX_CACHE_ENTRIES
         self._use_pg: bool | None = None
 
     def _pg_ready(self) -> bool:
@@ -70,9 +102,8 @@ class EmbeddingCache:
     def stats(self) -> dict:
         """Return cache statistics for diagnostics."""
         return {
-            "path": str(self._cache_path),
-            "entries": len(self._data),
-            "size_bytes": self._cache_path.stat().st_size if self._cache_path.exists() else 0,
+            "backend": "postgresql" if self._pg_ready() else "unavailable",
+            "entries": "N/A (PG-backed)",
             "enabled": self._enabled,
             "model": self._model,
         }
@@ -80,32 +111,23 @@ class EmbeddingCache:
     def get(self, text: str) -> Optional[list[float]]:
         """Look up a cached embedding by text content.
 
-        Tries PG first (shared cache), then local memory cache.
-        Returns ``None`` on miss.
+        Returns ``None`` on miss or if PG is unavailable (cache-passthrough).
         """
         if not self._enabled:
             return None
         key = self._key(text)
 
-        # Try PG shared cache first
         if self._pg_ready():
             try:
                 return self._pg_get(key)
             except Exception:
-                pass
-
-        # Fallback: local memory cache
-        self._ensure_loaded()
-        return self._data.get(key)
+                return None
+        return None
 
     def _pg_get(self, key: str) -> Optional[list[float]]:
         """Synchronous PG lookup (runs in a dedicated thread)."""
         try:
-            import asyncio as _asyncio
-            return _asyncio.run(self._pg_get_async(key))
-        except RuntimeError:
-            # Event loop is already running — skip PG (use local cache)
-            return None
+            return _run_async_from_sync(self._pg_get_async(key))
         except Exception:
             return None
 
@@ -120,45 +142,23 @@ class EmbeddingCache:
         return list(row["embedding"]) if row else None
 
     def put(self, text: str, embedding: list[float]) -> None:
-        """Store an embedding — PG shared cache + local memory cache."""
+        """Store an embedding in PG. Silent no-op if PG is unavailable."""
         if not self._enabled:
             return
         key = self._key(text)
 
-        # Write to PG shared cache
         if self._pg_ready():
             try:
                 self._pg_put(key, embedding)
             except Exception:
-                pass
-
-        # Also write to local memory cache
-        self._ensure_loaded()
-        self._data[key] = embedding
-        self._dirty = True
-
-        # Evict oldest entries if over the cap
-        excess = len(self._data) - self._max_entries
-        if excess > 0:
-            victims = list(self._data.keys())[:excess]
-            for k in victims:
-                del self._data[k]
-            logger.info(
-                "Embedding cache evicted %d oldest entries "
-                "(now %d/%d)", excess, len(self._data), self._max_entries,
-            )
-
-        self._save()
+                pass  # PG write failure → cache miss on next get()
 
     def _pg_put(self, key: str, embedding: list[float]) -> None:
-        """Write to PG — best-effort (skip if running inside async context)."""
+        """Write to PG — best-effort."""
         try:
-            import asyncio as _asyncio
-            _asyncio.run(self._pg_put_async(key, embedding))
-        except RuntimeError:
-            pass  # Event loop running — PG write skipped (local cache still works)
+            _run_async_from_sync(self._pg_put_async(key, embedding))
         except Exception:
-            pass
+            pass  # PG write failure → cache miss on next get()
 
     async def _pg_put_async(self, key: str, embedding: list[float]) -> None:
         from raganything.services.pg_state_repo import get_pg_pool
@@ -170,20 +170,14 @@ class EmbeddingCache:
             )
 
     def flush(self) -> None:
-        """Persist cache to disk (no-op if not dirty)."""
-        if self._dirty:
-            self._save()
+        """No-op: PG writes are synchronous (no local buffer to flush)."""
 
     def clear(self) -> None:
-        """Clear all cached entries (local + PG)."""
-        self._data.clear()
-        self._dirty = True
-        self._save()
+        """Clear all cached entries for this model from PG."""
         if self._pg_ready():
             try:
-                import asyncio as _asyncio
-                _asyncio.run(self._pg_clear_async())
-            except (RuntimeError, Exception):
+                _run_async_from_sync(self._pg_clear_async())
+            except Exception:
                 pass
 
     async def _pg_clear_async(self) -> None:
@@ -202,67 +196,18 @@ class EmbeddingCache:
         raw = f"{text}||{self._model}".encode("utf-8")
         return hashlib.md5(raw, usedforsecurity=False).hexdigest()
 
-    def _ensure_loaded(self) -> None:
-        """Lazy-load cache from disk on first access."""
-        if self._loaded:
-            return
-        self._loaded = True
-        if not self._cache_path.exists():
-            return
-        try:
-            with open(self._cache_path, "r", encoding="utf-8") as fh:
-                self._data = json.load(fh)
-            logger.debug("Embedding cache loaded: %d entries from %s",
-                         len(self._data), self._cache_path)
-        except MemoryError:
-            logger.warning(
-                "Embedding cache file too large to load (%s), "
-                "starting fresh.  Consider reducing MAX_CACHE_ENTRIES.",
-                self._cache_path.stat().st_size if self._cache_path.exists() else 0,
-            )
-            self._data = {}
-        except (json.JSONDecodeError, OSError) as exc:
-            logger.warning(
-                "Embedding cache file corrupt (%s), starting fresh", exc
-            )
-            self._data = {}
-
-    def _save(self) -> None:
-        """Atomically write cache to disk (tmp → rename).
-
-        Uses atomic-write pattern: write to .tmp, then os.replace().
-        No verification load — that would double memory pressure and
-        cause MemoryError on large caches.  If json.dump succeeds the
-        output is valid JSON; the only failure mode is a disk-full or
-        kernel crash mid-write, which would leave the stale-but-valid
-        original file untouched.
-        """
-        tmp_path = self._cache_path.with_suffix(".tmp")
-        try:
-            with open(tmp_path, "w", encoding="utf-8") as fh:
-                json.dump(self._data, fh, ensure_ascii=False, separators=(",", ":"))
-            os.replace(tmp_path, self._cache_path)
-            self._dirty = False
-        except (OSError, MemoryError, json.JSONDecodeError) as exc:
-            logger.error("Failed to save embedding cache: %s", exc)
-            # Don't leave a corrupt tmp file behind
-            try:
-                tmp_path.unlink(missing_ok=True)
-            except OSError:
-                pass
-
 
 def make_cached_embed_func(
     raw_embed_func: Callable,
     working_dir: str,
     model: str,
 ) -> Callable:
-    """Wrap an async embedding function with local persistent caching.
+    """Wrap an async embedding function with PG-backed caching.
 
     Args:
         raw_embed_func: The underlying embedding function
             (``openai_embed.func`` wrapped with ``partial``).
-        working_dir: KB working directory where the cache file will live.
+        working_dir: KB working directory (unused — kept for API compatibility).
         model: Embedding model name (used to namespace cache keys).
 
     Returns:
@@ -286,7 +231,7 @@ def make_cached_embed_func(
     )
 
     async def cached_embed(texts: list[str], **kwargs) -> np.ndarray:
-        """Embed texts with local cache.
+        """Embed texts with PG cache.
 
         For each text, check cache → return hit immediately.
         Batch API call for misses only.
@@ -324,7 +269,6 @@ def make_cached_embed_func(
 
         # Assembly: results should never have None at this point
         out = np.stack([r for r in results if r is not None])
-        # Pedantic: if all texts were empty strings, we might get empty
         return out
 
     # Attach cache reference so callers can inspect/flush

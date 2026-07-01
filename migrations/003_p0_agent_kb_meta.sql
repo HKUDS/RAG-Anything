@@ -1,14 +1,19 @@
--- =============================================================================
--- RAG-Anything P0 PG Migration: Agents + KB Metadata
--- Migration: 003_p0_agent_kb_meta
--- Target: PostgreSQL (existing raganything-pg container)
--- Description: Replace agent_meta.json, agent_conversations/*.json,
---              and rag_storage_kb_meta.json with proper PG tables.
+-- ══════════════════════════════════════════════════════════════════════════════
+-- RAG-Anything AI 智能体 + 知识库元数据 — 建表迁移
+-- 迁移编号: 003_p0_agent_kb_meta
+-- 目标数据库: PostgreSQL
+-- 说明: 将 agent_meta.json、agent_conversations/*.json、rag_storage_kb_meta.json
+--       替换为 PG 表持久化存储
 --
--- Cross-DB note: owner_id / user_id references users(id). No FK possible
---   across databases (users table is in SQLite auth.db when PG auth not used,
---   or in PG when DATABASE_URL is set). Application-layer integrity enforced.
--- =============================================================================
+-- 【本迁移创建的表】
+--   agents              智能体定义（名称、系统提示词、LLM 配置、关联 KB、所有者）
+--   kb_metadata         知识库元数据（名称、标签、领域、创建者、时间戳）
+--   agent_conversations 智能体会话线程（agent_id + thread_id 组合标识）
+--   agent_messages      会话消息（角色 user/assistant/system/tool、内容、时间）
+--
+-- 【跨数据库说明】
+--   owner_id / user_id 引用 users(id)，跨数据库无 FK，应用层保证完整性
+-- ══════════════════════════════════════════════════════════════════════════════
 
 BEGIN;
 

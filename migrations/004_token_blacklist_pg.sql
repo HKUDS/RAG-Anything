@@ -1,11 +1,15 @@
--- =============================================================================
--- RAG-Anything Phase 1 PG Migration: Token Blacklist + Audit Log PG Path
--- Migration: 004_token_blacklist_pg
--- Target: PostgreSQL (existing raganything-pg container)
--- Description:
---   1. Add family_id column to token_revocations for refresh family tracking
---   2. Ensure audit_logs table is ready for PG writes (already created by 001)
--- =============================================================================
+-- ══════════════════════════════════════════════════════════════════════════════
+-- RAG-Anything Token 黑名单 + 审计日志 — 建表迁移
+-- 迁移编号: 004_token_blacklist_pg
+-- 目标数据库: PostgreSQL
+--
+-- 【本迁移操作的表】
+--   token_revocations  已撤销的 JWT Token 记录
+--                      family_id — Refresh Token 家族标识，支持整链撤销
+--                      当用户登出或修改密码时，同 family 的所有 Token 一并失效
+--   audit_logs         审计日志（001 迁移已创建，本迁移确保 PG 路径就绪）
+--                      记录敏感操作：创建/删除 KB、修改权限、删除文档等
+-- ══════════════════════════════════════════════════════════════════════════════
 
 BEGIN;
 

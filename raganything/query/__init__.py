@@ -1,14 +1,10 @@
 """
 RAG-Anything Query Sub-Package.
 
-Provides query pipeline, conversation management, and query utilities.
+Provides query pipeline and query utilities.
+Conversation management has been migrated to PostgreSQL (pg_agent_repo.py).
 """
 
-from .conversation import (
-    ConversationContext,
-    ConversationManager,
-    ThreadSummary,
-)
 from .pipeline import QueryMixin
 from .utils import (
     DEGRADED_CONTEXT_HINT,
@@ -17,11 +13,8 @@ from .utils import (
 )
 
 __all__ = [
-    "ConversationContext",
-    "ConversationManager",
     "DEGRADED_CONTEXT_HINT",
     "QueryMixin",
     "rerank_chunks",
     "rewrite_query",
-    "ThreadSummary",
 ]

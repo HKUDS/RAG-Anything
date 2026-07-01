@@ -89,18 +89,17 @@ async def push_run_status(
 async def emit_progress(task_id: str, progress: int, msg: str = "") -> None:
     """Emit a progress update for a processing task.
 
-    Updates state_service.processing_tasks and broadcasts to all WS clients.
+    Updates PG + local cache via ``update_task_progress()`` and broadcasts
+    to all WS clients.
 
     Args:
         task_id: Processing task identifier
         progress: Progress percentage (0-100)
         msg: Human-readable progress message
     """
-    from raganything.services.state_service import processing_tasks
+    from raganything.services.state_service import update_task_progress
 
-    if task_id in processing_tasks:
-        processing_tasks[task_id]["progress"] = progress
-        processing_tasks[task_id]["message"] = msg
+    await update_task_progress(task_id, progress, message=msg)
     await ws_broadcast({
         "type": "progress",
         "task_id": task_id,

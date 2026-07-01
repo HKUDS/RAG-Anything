@@ -50,7 +50,7 @@ class EnterpriseAdapter:
                 institution_name=enterprise_name,
                 institution_type="enterprise",
             )
-            self.deployment_config.register_institution(config)
+            await self.deployment_config.register_institution(config)
 
         # 导入工艺文档
         if process_docs_dir and self.process_library:

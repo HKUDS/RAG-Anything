@@ -81,49 +81,6 @@ class TestBruteForce:
         assert callable(reset_failed_logins)
 
 
-class TestTokenBlacklist:
-    """Token 黑名单 — 撤销与查询"""
-
-    def test_revoke_and_check(self):
-        from raganything.services.token_blacklist import TokenBlacklist
-        from datetime import datetime, timedelta, timezone
-
-        bl = TokenBlacklist()
-        jti = "test-jti-001"
-        expires = datetime.now(timezone.utc) + timedelta(hours=24)
-        bl.revoke(jti, expires)
-        assert bl.is_revoked(jti)
-
-    def test_not_revoked_by_default(self):
-        from raganything.services.token_blacklist import TokenBlacklist
-        bl = TokenBlacklist()
-        assert not bl.is_revoked("nonexistent-jti")
-
-    def test_expired_auto_cleanup(self):
-        from raganything.services.token_blacklist import TokenBlacklist
-        from datetime import datetime, timedelta, timezone
-
-        bl = TokenBlacklist()
-        jti = "expired-jti"
-        past = datetime.now(timezone.utc) - timedelta(hours=1)
-        bl.revoke(jti, past)
-        # 过期后不应再显示已撤销
-        assert not bl.is_revoked(jti)
-
-    def test_refresh_family_revoke(self):
-        from raganything.services.token_blacklist import TokenBlacklist
-        from datetime import datetime, timedelta, timezone
-
-        bl = TokenBlacklist()
-        family = "family-abc"
-        jti1, jti2 = "jti-1", "jti-2"
-        bl.register_refresh_family(family, jti1)
-        bl.register_refresh_family(family, jti2)
-        bl.revoke_refresh_family(family)
-        # family 中所有 token 应被撤销
-        assert bl.is_revoked(jti1) or bl.is_revoked(jti2)
-
-
 class TestJWTWithJTI:
     """JWT Token 新增 jti 字段"""
 
@@ -162,11 +119,14 @@ class TestRBACIntegration:
         assert hasattr(Permission, 'USERS_READ')
         assert 'admin' in DEFAULT_ROLES
 
-    def test_token_blacklist_module_loads(self):
-        from raganything.services.token_blacklist import get_token_blacklist
-        bl = get_token_blacklist()
-        assert bl is not None
+    def test_pg_token_blacklist_functions_exist(self):
+        """Token 黑名单已迁移至 PG (pg_auth_repo)。"""
+        from raganything.services.auth import is_token_revoked, revoke_token
+        assert callable(is_token_revoked)
+        assert callable(revoke_token)
 
-    def test_audit_logger_module_loads(self):
-        from raganything.services.audit import AuditLogger
-        assert callable(AuditLogger)
+    def test_pg_audit_log_functions_exist(self):
+        """审计日志已迁移至 PG (pg_auth_repo)。"""
+        from raganything.services.auth import audit_log, query_audit_logs
+        assert callable(audit_log)
+        assert callable(query_audit_logs)

@@ -1,15 +1,19 @@
--- =============================================================================
--- RAG-Anything Phase 2 PG Migration: Image Vision Vectors
--- Migration: 005_image_vision_vectors_pg
--- Target: PostgreSQL (existing raganything-pg container)
--- Description:
---   1. Create image_vision_vectors table using native double precision[] arrays
---      (NO pgvector extension required).
---   2. Add PL/pgSQL cosine similarity function for vector search.
---   3. Add utility functions for common operations.
+-- ══════════════════════════════════════════════════════════════════════════════
+-- RAG-Anything 图片视觉向量存储 — 建表迁移
+-- 迁移编号: 005_image_vision_vectors_pg
+-- 目标数据库: PostgreSQL
+-- 说明: 使用原生 double precision[] 数组存储图片视觉嵌入向量（不需要 pgvector 扩展）
+--       同时创建余弦相似度 PL/pgSQL 函数，支持"以图搜图"功能
 --
--- Note: When pgvector extension becomes available, migration to vector(N) type:
+-- 【本迁移创建的表和函数】
+--   image_vision_vectors            图片视觉向量表
+--                                   kb_name, file_name, embedding(double[]), metadata(JSON)
+--   cosine_similarity(a, b)        余弦相似度计算函数（PL/pgSQL）
+--   image_vision_vectors_upsert(...)  向量 upsert 工具函数
+--
+-- 【说明】当 pgvector 扩展可用时，可迁移为 vector(N) 类型：
 --   ALTER TABLE image_vision_vectors ALTER COLUMN embedding TYPE vector(2048)
+-- ══════════════════════════════════════════════════════════════════════════════
 --     USING embedding::vector;
 --   CREATE INDEX ... USING ivfflat (embedding vector_cosine_ops);
 -- =============================================================================

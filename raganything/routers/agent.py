@@ -45,19 +45,19 @@ from raganything.utils.security import validate_query_input, decode_and_validate
 from raganything.dependencies import get_current_user, require_permission
 from raganything.permissions import Permission
 
-from raganything.services.agent_manager import (
-    AgentConfig,
-    dispatch_list_agents,
-    dispatch_get_agent,
-    dispatch_create_agent,
-    dispatch_update_agent,
-    dispatch_delete_agent,
-    dispatch_list_conversations,
-    dispatch_get_conversation,
-    dispatch_create_conversation,
-    dispatch_add_message,
-    dispatch_delete_conversation,
-    dispatch_update_conversation,
+from raganything.services.agent_manager import AgentConfig
+from raganything.services.pg_agent_repo import (
+    pg_list_agents,
+    pg_get_agent,
+    pg_create_agent,
+    pg_update_agent,
+    pg_delete_agent,
+    pg_list_conversations,
+    pg_get_conversation,
+    pg_create_conversation,
+    pg_add_message,
+    pg_delete_conversation,
+    pg_update_conversation,
 )
 
 
@@ -163,7 +163,7 @@ async def list_agents(
     _perm: None = Depends(require_permission(Permission.AGENT_READ)),
 ):
     """列出智能体（按用户隔离，管理员看全部）"""
-    agents = await dispatch_list_agents(
+    agents = await pg_list_agents(
         user_id=current_user["id"],
         is_admin=current_user.get("is_admin", False),
     )
@@ -212,7 +212,7 @@ async def create_agent(
         use_default_prompt=req.use_default_prompt,
         template_id=req.template_id,
     )
-    agent = await dispatch_create_agent(
+    agent = await pg_create_agent(
         config.model_dump(),
         owner_id=current_user["id"],
         owner_username=current_user["username"],
@@ -227,14 +227,14 @@ async def update_agent(
     _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
 ):
     """更新智能体配置（仅所有者或管理员）"""
-    agent = await dispatch_get_agent(agent_id)
+    agent = await pg_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
     if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权修改该智能体")
     updates = {k: v for k, v in req.model_dump().items() if v is not None}
-    agent = await dispatch_update_agent(agent_id, updates)
+    agent = await pg_update_agent(agent_id, updates)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     return {"status": "ok", "agent": agent}
@@ -247,13 +247,13 @@ async def delete_agent(
     _perm: None = Depends(require_permission(Permission.AGENT_DELETE)),
 ):
     """删除智能体（仅所有者或管理员）"""
-    agent = await dispatch_get_agent(agent_id)
+    agent = await pg_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
     if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权删除该智能体")
-    if not await dispatch_delete_agent(agent_id):
+    if not await pg_delete_agent(agent_id):
         raise HTTPException(404, "智能体不存在")
     return {"status": "ok"}
 
@@ -265,13 +265,13 @@ async def list_conversations(agent_id: str, current_user: dict = Depends(get_cur
     _perm: None = Depends(require_permission(Permission.AGENT_READ)),
 ):
     """列出智能体的对话线程（按用户隔离，管理员看全部）"""
-    agent = await dispatch_get_agent(agent_id)
+    agent = await pg_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
     if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权访问该智能体")
-    threads = await dispatch_list_conversations(
+    threads = await pg_list_conversations(
         agent_id,
         user_id=current_user["id"],
         is_admin=current_user.get("is_admin", False),
@@ -287,13 +287,13 @@ async def create_conversation(agent_id: str, title: str = "新对话", current_u
     _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
 ):
     """创建新对话线程（注入所有权，需校验 Agent 所有权）"""
-    agent = await dispatch_get_agent(agent_id)
+    agent = await pg_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
     if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权使用该智能体")
-    thread = await dispatch_create_conversation(agent_id, title, owner_id=current_user["id"])
+    thread = await pg_create_conversation(agent_id, title, owner_id=current_user["id"])
     return {"status": "ok", "thread": thread}
 
 
@@ -302,18 +302,18 @@ async def update_conversation(agent_id: str, thread_id: str, title: str = None, 
     _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
 ):
     """更新对话线程（需校验 Agent 所有权 + 对话所有权）"""
-    agent = await dispatch_get_agent(agent_id)
+    agent = await pg_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
     if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权访问该智能体")
-    thread = await dispatch_get_conversation(agent_id, thread_id)
+    thread = await pg_get_conversation(agent_id, thread_id)
     if not thread:
         raise HTTPException(404, "对话线程不存在")
     if thread.get("owner_id", 0) != 0 and thread.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权修改该对话")
-    thread = await dispatch_update_conversation(agent_id, thread_id, {"title": title})
+    thread = await pg_update_conversation(agent_id, thread_id, {"title": title})
     return {"status": "ok", "thread": thread}
 
 
@@ -322,18 +322,18 @@ async def delete_conversation(agent_id: str, thread_id: str, current_user: dict 
     _perm: None = Depends(require_permission(Permission.AGENT_DELETE)),
 ):
     """删除对话线程（需校验 Agent 所有权 + 对话所有权）"""
-    agent = await dispatch_get_agent(agent_id)
+    agent = await pg_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
     is_admin = current_user.get("is_admin", False)
     if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权访问该智能体")
-    thread = await dispatch_get_conversation(agent_id, thread_id)
+    thread = await pg_get_conversation(agent_id, thread_id)
     if not thread:
         raise HTTPException(404, "对话线程不存在")
     if thread.get("owner_id", 0) != 0 and thread.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权删除该对话")
-    if not await dispatch_delete_conversation(agent_id, thread_id):
+    if not await pg_delete_conversation(agent_id, thread_id):
         raise HTTPException(404, "对话线程不存在")
     return {"status": "ok"}
 
@@ -345,7 +345,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     _perm: None = Depends(require_permission(Permission.AGENT_READ)),
 ):
     """智能体流式查询：使用智能体配置执行查询"""
-    agent = await dispatch_get_agent(agent_id)
+    agent = await pg_get_agent(agent_id)
     if not agent:
         raise HTTPException(404, "智能体不存在")
 
@@ -379,14 +379,14 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     # 确保对话线程存在
     thread_id = req.thread_id
     if not thread_id:
-        thread = await dispatch_create_conversation(agent_id, title="新对话", owner_id=current_user["id"])
+        thread = await pg_create_conversation(agent_id, title="新对话", owner_id=current_user["id"])
         thread_id = thread["id"]
 
     # ── 多轮对话上下文提取 ──
     conv_history_text = ""
     max_conv_rounds = int(os.getenv("CONVERSATION_MAX_ROUNDS", "3"))
     max_conv_tokens = int(os.getenv("CONVERSATION_MAX_TOKENS", "2000"))
-    conv_thread = await dispatch_get_conversation(agent_id, thread_id)
+    conv_thread = await pg_get_conversation(agent_id, thread_id)
     if conv_thread and conv_thread.get("messages"):
         max_msgs = max_conv_rounds * 2
         recent = conv_thread["messages"][-max_msgs:]
@@ -631,11 +631,11 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         yield f"data: {json.dumps({'type': 'thinking', 'content': '⚠️ 知识库中暂无相关数据'}, ensure_ascii=False)}\n\n"
                         yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
                         elapsed = round(time.time() - start_time, 2)
-                        await dispatch_add_message(agent_id, thread_id, {
+                        await pg_add_message(agent_id, thread_id, {
                             "role": "user", "content": req.query,
                             "time": datetime.now().isoformat(),
                         })
-                        await dispatch_add_message(agent_id, thread_id, {
+                        await pg_add_message(agent_id, thread_id, {
                             "role": "assistant", "content": full_answer,
                             "elapsed": elapsed, "mode": query_mode,
                             "agent_mode": agent_mode, "trace": [],
@@ -735,11 +735,11 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         yield f"data: {json.dumps({'type': 'token', 'content': _cit_block}, ensure_ascii=False)}\n\n"
 
                 # 保存到对话线程
-                await dispatch_add_message(agent_id, thread_id, {
+                await pg_add_message(agent_id, thread_id, {
                     "role": "user", "content": req.query,
                     "time": datetime.now().isoformat(),
                 })
-                await dispatch_add_message(agent_id, thread_id, {
+                await pg_add_message(agent_id, thread_id, {
                     "role": "assistant", "content": full_answer,
                     "elapsed": elapsed, "mode": query_mode,
                     "agent_mode": agent_mode, "trace": trace_steps,
@@ -818,12 +818,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 full_answer = "抱歉，知识库中暂无与您问题相关的数据，无法回答此问题。请尝试上传相关文档或换个问题。"
 
                 # 保存到对话线程
-                await dispatch_add_message(agent_id, thread_id, {
+                await pg_add_message(agent_id, thread_id, {
                     "role": "user",
                     "content": req.query,
                     "time": datetime.now().isoformat(),
                 })
-                await dispatch_add_message(agent_id, thread_id, {
+                await pg_add_message(agent_id, thread_id, {
                     "role": "assistant",
                     "content": full_answer,
                     "elapsed": round(time.time() - start_time, 2),
@@ -933,12 +933,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 full_answer = "抱歉，知识库中暂无与您问题相关的数据，无法回答此问题。请尝试上传相关文档或换个问题。"
 
                 # 保存到对话线程
-                await dispatch_add_message(agent_id, thread_id, {
+                await pg_add_message(agent_id, thread_id, {
                     "role": "user",
                     "content": req.query,
                     "time": datetime.now().isoformat(),
                 })
-                await dispatch_add_message(agent_id, thread_id, {
+                await pg_add_message(agent_id, thread_id, {
                     "role": "assistant",
                     "content": full_answer,
                     "elapsed": round(time.time() - start_time, 2),
@@ -998,10 +998,20 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
                 else INLINE_QUOTE_INSTRUCTION
             )
-            # Detect degraded context (text chunks exist but may be thin)
+            # Detect degraded context (text chunks exist but may be thin).
             # Uses enriched ctx — may include backfilled chunks.
             # When backfill was applied, we KNOW valid text chunks exist, so bypass the length check.
-            _has_chunks = ("[来源 " in ctx and len(ctx.strip()) > 200) or bool(backfill_text)
+            #
+            # Two context formats are currently in use:
+            #   RRF pipeline → "[来源 文档名]\nchunk内容"
+            #   Native LightRAG → {"reference_id": N, "content": "..."}
+            # The RRF check uses the "[来源 " marker; native mode is detected via
+            # the JSON chunk envelope ("reference_id" + "content" keys).
+            _has_chunks = (
+                ("[来源 " in ctx and len(ctx.strip()) > 200)          # RRF pipeline
+                or bool(backfill_text)                                 # image backfill
+                or ('"reference_id"' in ctx and '"content"' in ctx)    # native LightRAG
+            )
             # Build image context section for the prompt
             _img_section = ""
             if image_description:
@@ -1027,12 +1037,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             )
 
             # 使用智能体配置的模型，而非 .env 全局模型
-            use_model = agent.llm_model or LLM_MODEL
+            use_model = agent.get("llm_model") or LLM_MODEL
             llm_response = await openai_complete_if_cache(
                 use_model, final_prompt, system_prompt=sp,
                 api_key=API_KEY, base_url=BASE_URL,
                 max_tokens=int(os.getenv("MAX_TOKENS", "8192")),
-                temperature=agent.temperature, stream=True,
+                temperature=agent.get("temperature", 0.7), stream=True,
             )
 
             if llm_response is None:
@@ -1059,12 +1069,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             elapsed = round(time.time() - start_time, 2)
 
             # 保存到对话线程
-            await dispatch_add_message(agent_id, thread_id, {
+            await pg_add_message(agent_id, thread_id, {
                 "role": "user",
                 "content": req.query,
                 "time": datetime.now().isoformat(),
             })
-            await dispatch_add_message(agent_id, thread_id, {
+            await pg_add_message(agent_id, thread_id, {
                 "role": "assistant",
                 "content": full_answer,
                 "elapsed": elapsed,

@@ -26,16 +26,13 @@ from slowapi.errors import RateLimitExceeded
 from starlette.middleware.base import BaseHTTPMiddleware
 import uvicorn
 
-from raganything.query import ConversationManager
+
 
 # Hint appended to LLM prompt when context has no text chunks (only entities/relations)
 _DEGRADED_HINT = (
     "\n\n⚠️ 注意：本次检索未能获取到关联的文档文本内容，"
     "以下回答仅基于实体名称和关系路径，可能不够详细。"
     "如果信息不足，请如实说明。"
-)
-from raganything.services.agent_manager import (
-    init_agent_manager,
 )
 from raganything.services.auth import (
     init_db,
@@ -238,8 +235,7 @@ from raganything.services.ws_service import (
     ws_clients, processing_events, ws_broadcast, emit_progress, add_event,
 )
 from raganything.services.state_service import (
-    processing_tasks, query_history, load_query_history, save_query_history,
-    QUERY_HISTORY_FILE,
+    processing_tasks, load_tasks_from_pg,
 )
 from raganything.routers.shared import (
     get_current_user, get_admin_user, verify_kb_access,
@@ -247,10 +243,7 @@ from raganything.routers.shared import (
     _is_thinking_msg, _translate_thinking_msg,
     QUERY_SYSTEM_PROMPT, THINKING_PATTERNS, server_logger,
 )
-# Keep reference for ConversationManager init in startup
-from raganything.routers import shared as _shared_state
-
-# ── Router 注册 ───────────────────────────────────────
+# Router 注册
 from raganything.routers.auth import router as auth_router
 from raganything.routers.knowledge import router as knowledge_router
 from raganything.routers.agent import router as agent_router
@@ -265,35 +258,18 @@ app.include_router(manufacturing_router, prefix="/api")
 
 @app.on_event("startup")
 async def startup():
-    # 初始化 PostgreSQL 连接池（若 DATABASE_URL 已配置）
-    try:
-        from raganything.services.pg_state_repo import init_pg_pool
-        await init_pg_pool()
-        # 验证 P0 数据表（智能体 + KB 元数据）
-        from raganything.services.pg_agent_repo import pg_ensure_agent_tables
-        from raganything.services.pg_kb_meta_repo import pg_ensure_kb_tables
-        await pg_ensure_agent_tables()
-        await pg_ensure_kb_tables()
-        server_logger.info("PG P0 tables (agents, kb_metadata) verified")
-    except Exception as _pg_exc:
-        server_logger.warning(f"PostgreSQL 初始化跳过（将使用本地存储）: {_pg_exc}")
+    # 初始化 PostgreSQL 连接池（必需 — 无 SQLite 回退）
+    from raganything.services.pg_state_repo import init_pg_pool
+    await init_pg_pool()
+    # 验证 P0 数据表（智能体 + KB 元数据）
+    from raganything.services.pg_agent_repo import pg_ensure_agent_tables
+    from raganything.services.pg_kb_meta_repo import pg_ensure_kb_tables
+    await pg_ensure_agent_tables()
+    await pg_ensure_kb_tables()
+    server_logger.info("PG P0 tables (agents, kb_metadata) verified")
 
     # 初始化认证数据库
     await init_db()
-    # 初始化 ConversationManager（多轮对话上下文记忆）
-    # 初始化 ConversationManager（多轮对话上下文记忆）
-    conversations_file = os.getenv("CONVERSATIONS_FILE", "./conversations.json")
-    max_rounds = int(os.getenv("CONVERSATION_MAX_ROUNDS", "3"))
-    max_tokens = int(os.getenv("CONVERSATION_MAX_TOKENS", "2000"))
-    max_per_user = int(os.getenv("CONVERSATION_MAX_PER_USER", "50"))
-    _shared_state.conversation_manager = ConversationManager(
-        storage_path=conversations_file,
-        max_rounds=max_rounds,
-        max_tokens=max_tokens,
-        max_per_user=max_per_user,
-    )
-    await _shared_state.conversation_manager._load()
-    server_logger.info(f"ConversationManager: {_shared_state.conversation_manager.get_stats()}")
     # 加载所有知识库元数据
     meta = await load_kb_meta()
     # 迁移旧知识库：无 owner_id 的 KB 全部归管理员（user_id=1）
@@ -306,17 +282,36 @@ async def startup():
     if changed:
         await save_kb_meta(meta)
         print(f"[KB-MIGRATE] 已将 {sum(1 for v in meta.values() if v.get('owner_id') == 1)} 个知识库分配给管理员", flush=True)
-    # 加载查询历史
-    load_query_history()
-    # 初始化智能体管理器
-    mgr = init_agent_manager(".")
-    # 迁移旧智能体和对话：无 owner_id 的归管理员
-    mgr.migrate_agents()
-    # 确保默认智能体存在（迁移旧查询历史）
-    default_agent, _ = mgr.ensure_default_agent(
-        llm_model=LLM_MODEL,
-        query_history=query_history,
+    # 从 PG 恢复处理中任务（崩溃恢复）
+    await load_tasks_from_pg()
+    # 初始化智能体（PG）
+    from raganything.services.pg_agent_repo import (
+        pg_list_agents, pg_create_agent,
     )
+    agents = await pg_list_agents(is_admin=True)
+    # 迁移旧智能体和对话：无 owner_id 的归管理员
+    from raganything.services.pg_state_repo import get_pg_pool
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "UPDATE agents SET owner_id=1, owner_username='admin' WHERE owner_id=0"
+        )
+        await conn.execute(
+            "UPDATE agent_conversations SET owner_id=1 WHERE owner_id=0"
+        )
+    # 确保默认智能体存在
+    has_default = any(
+        a.get("kb_name") == "default" and a.get("name") in ("通用助手", "default")
+        for a in agents
+    )
+    if not has_default:
+        await pg_create_agent({
+            "name": "通用助手", "icon": "🤖",
+            "description": "默认智能体，关联默认知识库",
+            "welcome_message": "你好！我是通用助手，可以回答知识库中的任何问题。",
+            "kb_name": "default", "llm_model": LLM_MODEL,
+            "system_prompt": "", "use_default_prompt": True,
+        }, owner_id=1, owner_username="admin")
     # 启动时扫描所有 KB，智能修复卡在 handling 的文档
     # 文档若 processing_end_time 已写入 → 标记 completed（处理实际已完成）
     # 文档若 processing_end_time 未写入 → 标记 failed（处理被中断）
@@ -328,17 +323,10 @@ async def startup():
     asyncio.create_task(_disk_monitor_loop(DISK_CHECK_INTERVAL))
     # 预加载默认知识库
     kb = await get_kb("default")
-    server_logger.info(f"RAG-Anything 服务器已启动，智能体: {len(mgr.agents)}个, 知识库: {list(meta.keys())}")
+    server_logger.info(f"RAG-Anything 服务器已启动，智能体: {len(agents)}个, 知识库: {list(meta.keys())}")
 
 @app.on_event("shutdown")
 async def shutdown():
-    # Flush pending audit logs before exit
-    try:
-        from raganything.services.audit import get_audit_logger
-        audit = get_audit_logger()
-        audit.shutdown()
-    except Exception:
-        pass
     for name, kb in kb_instances.items():
         try: await kb.finalize_storages()
         except: pass

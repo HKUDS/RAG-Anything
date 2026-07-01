@@ -1,3 +1,27 @@
+-- ══════════════════════════════════════════════════════════════════════════════
+-- RAG-Anything LightRAG 知识图谱存储表 — 核心 Schema 迁移
+-- 迁移编号: 001_pg_schema
+-- 目标数据库: PostgreSQL 16
+-- 执行方式: psql -U raganything -d raganything -f migrations/001_pg_schema.sql
+-- 验证方式: psql -U raganything -d raganything -c "\dt"
+--
+-- 【本迁移创建的表（LightRAG 知识图谱核心存储）】
+--   ┌─ 文档层 ──────────────────────────────────────────────────┐
+--   │ LIGHTRAG_DOC_STATUS   文档处理状态（上传→处理中→完成/失败） │
+--   │ LIGHTRAG_DOC_FULL     文档全量内容（原始文本）              │
+--   │ LIGHTRAG_TEXT_CHUNKS  文本分块内容（用于向量检索的片段）    │
+--   ├─ 图谱层 ──────────────────────────────────────────────────┤
+--   │ LIGHTRAG_FULL_ENTITIES   实体全量（知识图谱节点）           │
+--   │ LIGHTRAG_FULL_RELATIONS  关系全量（知识图谱边）             │
+--   │ LIGHTRAG_ENTITY_CHUNKS   实体→文本块映射                    │
+--   │ LIGHTRAG_RELATION_CHUNKS 关系→文本块映射                    │
+--   ├─ 向量层 ──────────────────────────────────────────────────┤
+--   │ LIGHTRAG_VDB_ENTITY    实体向量索引（pgvector）             │
+--   │ LIGHTRAG_VDB_RELATION  关系向量索引（pgvector）             │
+--   │ LIGHTRAG_VDB_CHUNKS    文本块向量索引（pgvector, 语义搜索） │
+--   └─ 缓存层 ──────────────────────────────────────────────────┘
+--   │ LIGHTRAG_LLM_CACHE     LLM 调用缓存（避免重复调用大模型）   │
+-- ══════════════════════════════════════════════════════════════════════════════
 -- RAG-Anything PostgreSQL Schema Migration
 -- Version: 001
 -- Apply:  psql -U raganything -d raganything -f migrations/001_pg_schema.sql

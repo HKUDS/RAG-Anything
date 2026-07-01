@@ -24,17 +24,15 @@ from raganything.services.auth import (
     update_last_login_at,
     update_user,
     verify_password,
-    DB_PATH,
     # Token blacklist dispatch (Phase 1 PG migration)
     is_token_revoked,
     revoke_token,
     revoke_refresh_family,
     register_refresh_family,
-    # Audit log dispatch (Phase 1 PG migration)
+    # Audit log dispatch (PG-backed)
     audit_log,
     query_audit_logs as _dispatch_query_audit_logs,
 )
-from raganything.services.audit import get_audit_logger  # fallback: health check only
 from raganything.dependencies import (
     get_current_user,
     get_admin_user,
@@ -609,6 +607,9 @@ async def admin_audit_health(
     request: Request,
     user: dict = Depends(require_permission(Permission.AUDIT_READ)),
 ):
-    """检查审计日志子系统健康状态"""
-    audit = get_audit_logger()
-    return {"status": "ok", **audit.health_check()}
+    """检查审计日志子系统健康状态（PG-backed）。"""
+    try:
+        result = await _dispatch_query_audit_logs(page=1, page_size=1)
+        return {"status": "ok", "total_records": result.get("total", 0), "backend": "postgresql"}
+    except Exception as e:
+        return {"status": "degraded", "error": str(e)}

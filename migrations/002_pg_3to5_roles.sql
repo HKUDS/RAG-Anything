@@ -1,3 +1,21 @@
+-- ══════════════════════════════════════════════════════════════════════════════
+-- RAG-Anything RBAC 角色升级: 3→5 角色体系
+-- 迁移编号: 002_pg_3to5_roles
+-- 前置条件: 已运行 001_pg_schema.sql 创建基础表结构
+-- 执行方式: psql -U raganything -d raganything -f migrations/002_pg_3to5_roles.sql
+-- 安全特性: 使用事务包裹，失败自动回滚；旧角色不删除（向后兼容）
+--
+-- 【5 级角色体系】
+--   1 = admin  (管理员)    — 全部权限
+--   2 = editor (编辑)      — 读写知识库和智能体
+--   3 = viewer (只读)      — 只能查看
+--   4 = student(学生)      — 受限访问
+--   5 = guest  (访客)      — 最小权限
+--
+-- 【本迁移操作的表】
+--   roles    角色定义表（id, name, permissions JSON）
+--   users    用户表（username, email, password_hash, role 关联）
+-- ══════════════════════════════════════════════════════════════════════════════
 -- RAG-Anything PostgreSQL 角色升级: 3→5 角色体系
 -- Version: 002
 -- Apply:  psql -U raganything -d raganything -f migrations/002_pg_3to5_roles.sql

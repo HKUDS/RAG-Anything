@@ -19,6 +19,7 @@ import sys
 import re
 import asyncio
 import logging
+from collections import OrderedDict
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -51,13 +52,229 @@ EMB_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
 EMB_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
 WORKING_DIR = os.getenv("WORKING_DIR", "./rag_storage")
 CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
+MAX_CACHED_KBS = int(os.getenv("MAX_CACHED_KBS", "16"))
 
 # ── KB State ──────────────────────────────────────────────
-kb_instances: dict[str, RAGAnything] = {}
 _kb_locks: dict[str, asyncio.Lock] = {}
-_kb_cache_time: dict[str, float] = {}
+
+
+class KBCache:
+    """LRU-evicting cache for RAGAnything KB instances.
+
+    Replaces the plain ``kb_instances`` dict.  Follows the QueryCache
+    pattern (OrderedDict + LRU) from ``raganything/query_cache.py``,
+    adapted for async eviction of heavyweight (~2 GB) KB instances.
+
+    Dict-like interface preserved for backward compatibility with
+    existing callers in ``admin.py``, ``server.py``, and internal helpers.
+    """
+
+    def __init__(self, max_size: int = 16) -> None:
+        self._max_size = 0 if max_size < 0 else max_size
+        self._store: OrderedDict[str, RAGAnything] = OrderedDict()
+        self._cache_time: dict[str, float] = {}
+        self._pinned: set[str] = set()
+        self._eviction_lock = asyncio.Lock()
+        # -- stats --
+        self.hits: int = 0
+        self.misses: int = 0
+        self.evictions: int = 0
+        self._total_loads: int = 0
+
+    # ── Dict-like interface (synchronous / backward compat) ──
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._store
+
+    def __getitem__(self, name: str) -> RAGAnything:
+        val = self._store[name]
+        self._store.move_to_end(name)  # LRU: mark recently used
+        self.hits += 1
+        return val
+
+    def __delitem__(self, name: str) -> None:
+        """Remove an entry WITHOUT calling finalize_storages().
+
+        Caller is responsible for calling finalize_storages() first
+        when needed (e.g. reload-kb, cleanup_kb_resources).
+        """
+        self._store.pop(name, None)
+        self._cache_time.pop(name, None)
+
+    def __len__(self) -> int:
+        return len(self._store)
+
+    def keys(self):
+        return self._store.keys()
+
+    def items(self):
+        return self._store.items()
+
+    def values(self):
+        return self._store.values()
+
+    def get(self, name: str, default=None):
+        """Safe access with default.  LRU touch on hit."""
+        if name in self._store:
+            self._store.move_to_end(name)
+            self.hits += 1
+            return self._store[name]
+        self.misses += 1
+        return default
+
+    # ── Cache-time accessors (replaces _kb_cache_time dict) ──
+
+    def get_cache_time(self, name: str) -> float:
+        return self._cache_time.get(name, 0.0)
+
+    def set_cache_time(self, name: str, t: float) -> None:
+        self._cache_time[name] = t
+
+    def remove_cache_time(self, name: str) -> None:
+        self._cache_time.pop(name, None)
+
+    # ── Async store + evict ─────────────────────────────────
+
+    async def put_and_evict(self, name: str, instance: RAGAnything,
+                            cache_time: float) -> None:
+        """Store a KB instance and evict LRU entries if over capacity.
+
+        When ``max_size`` is 0 (unlimited), eviction is skipped entirely
+        (backward-compatible with the old plain-dict behaviour).
+        """
+        self._store[name] = instance
+        self._cache_time[name] = cache_time
+        self._store.move_to_end(name)
+        self._total_loads += 1
+        await self._evict_if_needed()
+
+    async def evict(self, name: str) -> bool:
+        """Safely evict a single KB: persist first, then remove.
+
+        Returns False if the KB is pinned or not found.
+        """
+        if name not in self._store:
+            return False
+        if name in self._pinned:
+            kb_logger.info(f"[KB-CACHE] 跳过淘汰（已固定）: {name}")
+            return False
+        await self._evict_one(name)
+        return True
+
+    async def clear(self) -> None:
+        """Clear all entries (persist each first, then clear)."""
+        async with self._eviction_lock:
+            for name in list(self._store.keys()):
+                try:
+                    await self._store[name].finalize_storages()
+                except Exception:
+                    pass
+            self._store.clear()
+            self._cache_time.clear()
+
+    # ── Pin management ──────────────────────────────────────
+
+    def pin(self, name: str) -> None:
+        self._pinned.add(name)
+
+    def unpin(self, name: str) -> None:
+        self._pinned.discard(name)
+
+    def is_pinned(self, name: str) -> bool:
+        return name in self._pinned
+
+    # ── Dirty check ─────────────────────────────────────────
+
+    def is_dirty(self, name: str) -> bool:
+        """Return True if the KB has active processing — do NOT evict."""
+        # Active worker subprocesses
+        if name in _kb_worker_procs and _kb_worker_procs[name]:
+            return True
+        # Queue drain in progress
+        import raganything.routers.shared as _rshared
+        if _rshared._kb_draining.get(name):
+            return True
+        # File processing in flight
+        for (kb_n, _fh) in _processing_files:
+            if kb_n == name:
+                return True
+        # Mid-deletion
+        if name in _kbs_being_deleted:
+            return True
+        return False
+
+    # ── Stats ───────────────────────────────────────────────
+
+    def get_stats(self) -> dict:
+        return {
+            "total_cached": len(self._store),
+            "max_size": self._max_size,
+            "pinned": sorted(self._pinned),
+            "pinned_count": len(self._pinned),
+            "hits": self.hits,
+            "misses": self.misses,
+            "evictions": self.evictions,
+            "total_loads": self._total_loads,
+            "cached_kbs": list(self._store.keys()),
+            "hit_rate": round(
+                self.hits / max(self.hits + self.misses, 1), 3
+            ),
+        }
+
+    # ── Internal ────────────────────────────────────────────
+
+    def _find_eviction_victim(self) -> str | None:
+        """Find oldest entry that is not pinned and not dirty."""
+        for name in self._store:
+            if name in self._pinned:
+                continue
+            if self.is_dirty(name):
+                continue
+            return name
+        return None
+
+    async def _evict_one(self, name: str) -> None:
+        kb_logger.info(
+            f"[KB-CACHE] 淘汰 KB 实例: {name} "
+            f"(缓存={len(self._store)}/{self._max_size})"
+        )
+        try:
+            await self._store[name].finalize_storages()
+        except Exception as exc:
+            kb_logger.warning(
+                f"[KB-CACHE] finalize_storages 失败（淘汰）: {name}: {exc}"
+            )
+        del self._store[name]
+        self._cache_time.pop(name, None)
+        self.evictions += 1
+
+    async def _evict_if_needed(self) -> None:
+        """Evict LRU entries until we are within max_size.
+
+        Acquires internal ``_eviction_lock`` to serialize with
+        concurrent evictions.  Does NOT hold any per-KB ``_kb_locks``,
+        so it cannot deadlock with ``get_kb()`` on other KBs.
+        """
+        if self._max_size == 0:
+            return  # unlimited — backward-compatible old behaviour
+        async with self._eviction_lock:
+            while len(self._store) > self._max_size:
+                victim = self._find_eviction_victim()
+                if victim is None:
+                    kb_logger.warning(
+                        f"[KB-CACHE] 超出容量但无可淘汰 KB "
+                        f"(全部固定或处理中): "
+                        f"cached={len(self._store)} max={self._max_size}"
+                    )
+                    break
+                await self._evict_one(victim)
+
+
+# ── KB Instances ──────────────────────────────────────────
+kb_instances = KBCache(max_size=MAX_CACHED_KBS)
+kb_instances.pin("default")
 active_kb: str = "default"
-KB_META_FILE = Path("./rag_storage_kb_meta.json")
+KB_META_FILE = None  # Deprecated: KB metadata is now PG-backed
 
 kb_logger = logging.getLogger("rag_server.kb")
 
@@ -112,25 +329,145 @@ def _unregister_processing_file(kb_name: str, file_hash: str) -> None:
     _processing_files.pop((kb_name, file_hash), None)
 
 
-# ── KB Metadata Persistence ────────────────────────────────
-#
-# Dispatch architecture (matches auth.py pattern):
-#   - PG available → load/save from kb_metadata table
-#   - PG unavailable → load/save from rag_storage_kb_meta.json (legacy)
-#
-# Both paths are async-safe. PG operations use the shared pool from
-# pg_state_repo.py. File operations run via run_in_executor to avoid
-# blocking the event loop on disk I/O.
+# ── Uploaded File Metadata (PG) ───────────────────────────
 
+async def pg_register_upload(
+    filename: str,
+    file_path: str,
+    file_hash: str,
+    file_size: int,
+    kb_name: str,
+    uploaded_by: int,
+) -> int | None:
+    """Insert uploaded file metadata into PG.
 
-def _pg_kb_meta_ready() -> bool:
-    """Check if PG KB metadata backend is available."""
+    Returns:
+        The new row id, or None if a duplicate hash+kb_name exists.
+    """
     try:
         from raganything.services.pg_state_repo import get_pg_pool
-        get_pg_pool()
-        return True
-    except (RuntimeError, ImportError):
+        pool = get_pg_pool()
+        row = await pool.fetchrow(
+            """INSERT INTO uploaded_files
+               (filename, file_path, file_hash, file_size, kb_name, uploaded_by)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (file_hash, kb_name) DO NOTHING
+               RETURNING id""",
+            filename, file_path, file_hash, file_size, kb_name, uploaded_by,
+        )
+        return row["id"] if row else None
+    except Exception:
+        kb_logger.warning("PG uploaded_files insert failed", exc_info=True)
+        return None
+
+
+async def pg_update_upload_status(
+    file_hash: str,
+    kb_name: str,
+    status: str,
+    task_id: str | None = None,
+) -> bool:
+    """Update the status (and optionally task_id) of an uploaded file."""
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        pool = get_pg_pool()
+        result = await pool.execute(
+            """UPDATE uploaded_files
+               SET status = $1, task_id = COALESCE($2, task_id), updated_at = NOW()
+               WHERE file_hash = $3 AND kb_name = $4""",
+            status, task_id, file_hash, kb_name,
+        )
+        # Parse "UPDATE N" output safely — "UPDATE 0" substring would
+        # false-match "UPDATE 10", "UPDATE 100", etc.
+        try:
+            return int(result.split()[-1]) > 0 if result else False
+        except (ValueError, IndexError):
+            return False
+    except Exception:
+        kb_logger.warning("PG uploaded_files status update failed", exc_info=True)
         return False
+
+
+async def pg_list_uploads(
+    kb_name: str = "",
+    uploaded_by: int | None = None,
+    is_admin: bool = False,
+    limit: int = 50,
+    offset: int = 0,
+) -> list[dict]:
+    """List uploaded files from PG with optional filters.
+
+    Args:
+        kb_name: Filter by KB name (empty = all KBs)
+        uploaded_by: Filter by uploader (non-admin: forced to self)
+        is_admin: If True, sees all; if False, sees own + system
+        limit: Page size
+        offset: Page offset
+
+    Returns:
+        List of uploaded file metadata dicts.
+    """
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        pool = get_pg_pool()
+
+        conditions = []
+        params: list = []
+        idx = 1
+
+        if kb_name:
+            conditions.append(f"kb_name = ${idx}")
+            params.append(kb_name)
+            idx += 1
+
+        if not is_admin and uploaded_by is not None:
+            conditions.append(f"(uploaded_by = ${idx} OR uploaded_by = 0)")
+            params.append(uploaded_by)
+            idx += 1
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+        params.extend([limit, offset])
+        sql = (
+            f"SELECT id, filename, file_path, file_hash, file_size, "
+            f"       kb_name, uploaded_by, task_id, status, created_at, updated_at "
+            f"FROM uploaded_files {where} "
+            f"ORDER BY created_at DESC "
+            f"LIMIT ${idx} OFFSET ${idx + 1}"
+        )
+
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(sql, *params)
+            total_row = await conn.fetchrow(
+                f"SELECT count(*) as total FROM uploaded_files {where}",
+                *params[:idx - 1],
+            )
+            total = total_row["total"] if total_row else 0
+
+        return [
+            {
+                "id": r["id"],
+                "filename": r["filename"],
+                "file_path": r["file_path"],
+                "file_hash": r["file_hash"],
+                "file_size": r["file_size"],
+                "kb_name": r["kb_name"],
+                "uploaded_by": r["uploaded_by"],
+                "task_id": r["task_id"],
+                "status": r["status"],
+                "created_at": r["created_at"].isoformat() if hasattr(r["created_at"], "isoformat") else str(r["created_at"]),
+                "updated_at": r["updated_at"].isoformat() if hasattr(r["updated_at"], "isoformat") else str(r["updated_at"]),
+            }
+            for r in rows
+        ], total
+
+    except Exception:
+        kb_logger.warning("PG uploaded_files list failed", exc_info=True)
+        return [], 0
+
+
+# ── KB Metadata Persistence ────────────────────────────────
+# KB metadata is stored exclusively in PostgreSQL (kb_metadata table).
+# See raganything/services/pg_kb_meta_repo.py for the implementation.
 
 
 # ── PG Storage Backend Helpers ──────────────────────────────
@@ -237,59 +574,62 @@ async def _pg_age_ready() -> bool:
         return False
 
 
-def _load_kb_meta_file() -> dict[str, Any]:
-    """Load KB metadata from JSON file (sync, for internal use)."""
-    if KB_META_FILE.exists():
-        with open(KB_META_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {}
-
-
-def _save_kb_meta_file(meta: dict[str, Any]) -> None:
-    """Persist KB metadata to JSON file atomically (sync, for internal use)."""
-    tmp = KB_META_FILE.with_suffix(".tmp")
-    tmp.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
-    tmp.replace(KB_META_FILE)
+# ── KB Metadata JSON fallback file ──────────────────────
+KB_META_JSON = Path("rag_storage_kb_meta.json")
 
 
 async def load_kb_meta() -> dict[str, Any]:
-    """Load KB metadata — dispatched to PG when available, file fallback.
+    """Load KB metadata — PG first, JSON fallback.
 
     Returns:
         Dict keyed by KB name: {name: {name, created, domain, ...}, ...}
         Empty dict if no KBs exist (caller should create default if needed).
     """
-    if _pg_kb_meta_ready():
-        try:
-            from raganything.services.pg_kb_meta_repo import pg_load_kb_meta
-            result = await pg_load_kb_meta()
-            if result:
-                return result
-        except Exception:
-            kb_logger.warning("PG KB meta load failed, falling back to file")
+    # ── Path 1: PG ──────────────────────────────────────
+    try:
+        from raganything.services.pg_kb_meta_repo import pg_load_kb_meta
+        result = await pg_load_kb_meta()
+        if result:
+            return result
+    except Exception:
+        kb_logger.debug("PG kb_meta load failed, trying JSON fallback")
 
-    # File fallback — run blocking I/O in thread pool
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _load_kb_meta_file)
+    # ── Path 2: JSON file fallback ──────────────────────
+    if KB_META_JSON.exists():
+        try:
+            import json as _json
+            data = _json.loads(KB_META_JSON.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data:
+                kb_logger.info("[KB-META] 从 JSON 文件加载了 %d 个知识库", len(data))
+                return data
+        except (_json.JSONDecodeError, OSError):
+            pass
+
+    return {}
 
 
 async def save_kb_meta(meta: dict[str, Any]) -> None:
-    """Persist KB metadata — PG + file dual-write when PG available.
+    """Persist KB metadata — PG + JSON mirror.
 
     Args:
         meta: Full KB metadata dict: {name: {name, created, ...}, ...}
     """
-    # Always write to file first (safe, atomic, always works)
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, _save_kb_meta_file, meta)
+    # ── PG ──────────────────────────────────────────────
+    try:
+        from raganything.services.pg_kb_meta_repo import pg_save_all_kb_meta
+        await pg_save_all_kb_meta(meta)
+    except Exception:
+        kb_logger.warning("PG kb_meta save failed, only JSON will be updated")
 
-    # If PG available, also write to PG (shadow write, best-effort)
-    if _pg_kb_meta_ready():
-        try:
-            from raganything.services.pg_kb_meta_repo import pg_save_all_kb_meta
-            await pg_save_all_kb_meta(meta)
-        except Exception:
-            kb_logger.warning("PG KB meta save failed, file saved successfully")
+    # ── JSON mirror ─────────────────────────────────────
+    try:
+        import json as _json
+        KB_META_JSON.write_text(
+            _json.dumps(meta, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+    except OSError:
+        kb_logger.warning("JSON kb_meta write failed")
 
 
 def kb_dir(name: str) -> str:
@@ -306,15 +646,18 @@ def kb_dir(name: str) -> str:
 
 
 async def _load_doc_status_json(kb_name: str) -> dict[str, Any]:
-    """Load doc_status data for a KB, dispatching PG → LightRAG API or file.
+    """Load doc_status data for a KB, dispatching PG → LightRAG API → JSON fallback.
 
     Returns a dict with the same shape as kv_store_doc_status.json:
         {doc_id: {file_path, status, metadata, chunks_list, ...}, ...}
 
-    When PG storage is active, queries LightRAG's PGDocStatusStorage.
-    Otherwise reads the JSON file directly.
+    Query order:
+      1. PG via LightRAG's PGDocStatusStorage (if PG is ready)
+      2. JSON file fallback (for data created before PG migration or when PG is empty)
     """
-    # Try PG path — try kb_instances first, then get_kb()
+    import json as _json
+
+    # ── Path 1: PG via LightRAG doc_status ─────────────────
     if _pg_storage_ready():
         rag = kb_instances.get(kb_name)
         if rag is None:
@@ -326,7 +669,6 @@ async def _load_doc_status_json(kb_name: str) -> dict[str, Any]:
             try:
                 from raganything.base import DocStatus as RAGDocStatus
                 ds = rag.lightrag.doc_status
-                # Fetch all statuses we know about
                 all_statuses = [
                     RAGDocStatus.PENDING,
                     RAGDocStatus.READY,
@@ -363,68 +705,58 @@ async def _load_doc_status_json(kb_name: str) -> dict[str, Any]:
                     return result
             except Exception:
                 kb_logger.warning(
-                    "PG doc_status load failed for KB %s, falling back to file",
+                    "PG doc_status load failed for KB %s",
                     kb_name, exc_info=True,
                 )
 
-    # File fallback
-    status_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
-    if status_path.exists():
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: json.loads(status_path.read_text("utf-8"))
-        )
+    # ── Path 2: JSON file fallback ─────────────────────────
+    json_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+    if json_path.exists():
+        try:
+            data = _json.loads(json_path.read_text(encoding="utf-8"))
+            if data:
+                kb_logger.info(
+                    "[DOC-STATUS] KB=%s 从 JSON 备份加载了 %d 条记录",
+                    kb_name, len(data),
+                )
+                return data
+        except (_json.JSONDecodeError, OSError):
+            kb_logger.warning(
+                "JSON doc_status load failed for KB %s",
+                kb_name, exc_info=True,
+            )
+
     return {}
 
 
 async def _save_doc_status_json(kb_name: str, data: dict[str, Any]) -> None:
-    """Save doc_status data for a KB, dispatching PG → LightRAG API or file.
-
-    When PG storage is active, writes via LightRAG's PGDocStatusStorage.upsert().
-    Also writes to the JSON file as a safety fallback (dual-write pattern).
-    """
-    # Always write to file first (safety net)
-    status_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
-    loop = asyncio.get_running_loop()
-
-    def _write_file():
-        status_path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = status_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(status_path)
-
-    await loop.run_in_executor(None, _write_file)
-
-    # PG shadow write — try kb_instances first, then get_kb()
-    if _pg_storage_ready():
-        rag = kb_instances.get(kb_name)
-        if rag is None:
-            try:
-                rag = await get_kb(kb_name)
-            except Exception:
-                pass
-        if rag is not None and rag.lightrag and hasattr(rag.lightrag, "doc_status"):
-            try:
-                # Convert flat dict values to DocProcessingStatus-compatible dicts
-                upsert_data: dict[str, dict[str, Any]] = {}
-                for doc_id, info in data.items():
-                    upsert_data[doc_id] = {
-                        "content_summary": info.get("content_summary", ""),
-                        "content_length": info.get("content_length", 0),
-                        "file_path": info.get("file_path", ""),
-                        "status": info.get("status", "pending"),
-                        "chunks_count": info.get("chunks_count", 0),
-                        "chunks_list": info.get("chunks_list", []),
-                        "metadata": info.get("metadata", {}),
-                        "error_msg": info.get("error_msg"),
-                        "track_id": info.get("track_id"),
-                    }
-                await rag.lightrag.doc_status.upsert(upsert_data)
-            except Exception:
-                kb_logger.warning(
-                    "PG doc_status save failed for KB %s, file saved",
-                    kb_name, exc_info=True,
-                )
+    """Save doc_status data for a KB via LightRAG's PGDocStatusStorage (PG only)."""
+    rag = kb_instances.get(kb_name)
+    if rag is None:
+        try:
+            rag = await get_kb(kb_name)
+        except Exception:
+            pass
+    if rag is not None and rag.lightrag and hasattr(rag.lightrag, "doc_status"):
+        try:
+            upsert_data: dict[str, dict[str, Any]] = {}
+            for doc_id, info in data.items():
+                upsert_data[doc_id] = {
+                    "content_summary": info.get("content_summary", ""),
+                    "content_length": info.get("content_length", 0),
+                    "file_path": info.get("file_path", ""),
+                    "status": info.get("status", "pending"),
+                    "chunks_count": info.get("chunks_count", 0),
+                    "chunks_list": info.get("chunks_list", []),
+                    "metadata": info.get("metadata", {}),
+                    "error_msg": info.get("error_msg"),
+                    "track_id": info.get("track_id"),
+                }
+            await rag.lightrag.doc_status.upsert(upsert_data)
+        except Exception:
+            kb_logger.warning(
+                "PG doc_status save failed for KB %s", kb_name, exc_info=True,
+            )
 
 
 async def _load_text_chunks_json(kb_name: str) -> dict[str, Any]:
@@ -465,26 +797,25 @@ async def _load_text_chunks_json(kb_name: str) -> dict[str, Any]:
                         return result
             except Exception:
                 kb_logger.warning(
-                    "PG text_chunks load failed for KB %s, falling back to file",
+                    "PG text_chunks load failed for KB %s",
                     kb_name, exc_info=True,
                 )
 
-    # File fallback
-    chunks_path = Path(kb_dir(kb_name)) / "kv_store_text_chunks.json"
-    if chunks_path.exists():
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: json.loads(chunks_path.read_text("utf-8"))
-        )
     return {}
 
 
 async def _load_full_docs_json(kb_name: str) -> dict[str, Any]:
-    """Load full_docs data for a KB, dispatching PG → LightRAG API or file.
+    """Load full_docs data for a KB, dispatching PG → LightRAG API → JSON fallback.
 
     Returns a dict with the same shape as kv_store_full_docs.json.
+
+    Query order:
+      1. PG via LightRAG's full_docs KV storage (if PG is ready)
+      2. JSON file fallback (for data created before PG migration or when PG is empty)
     """
-    # Try PG path — try kb_instances first, then get_kb()
+    import json as _json
+
+    # ── Path 1: PG via LightRAG full_docs ─────────────────
     if _pg_storage_ready():
         rag = kb_instances.get(kb_name)
         if rag is None:
@@ -508,17 +839,27 @@ async def _load_full_docs_json(kb_name: str) -> dict[str, Any]:
                         return result
             except Exception:
                 kb_logger.warning(
-                    "PG full_docs load failed for KB %s, falling back to file",
+                    "PG full_docs load failed for KB %s",
                     kb_name, exc_info=True,
                 )
 
-    # File fallback
-    fdp = Path(kb_dir(kb_name)) / "kv_store_full_docs.json"
-    if fdp.exists():
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(
-            None, lambda: json.loads(fdp.read_text("utf-8"))
-        )
+    # ── Path 2: JSON file fallback ─────────────────────────
+    json_path = Path(kb_dir(kb_name)) / "kv_store_full_docs.json"
+    if json_path.exists():
+        try:
+            data = _json.loads(json_path.read_text(encoding="utf-8"))
+            if data:
+                kb_logger.info(
+                    "[FULL-DOCS] KB=%s 从 JSON 备份加载了 %d 条记录",
+                    kb_name, len(data),
+                )
+                return data
+        except (_json.JSONDecodeError, OSError):
+            kb_logger.warning(
+                "JSON full_docs load failed for KB %s",
+                kb_name, exc_info=True,
+            )
+
     return {}
 
 
@@ -552,7 +893,7 @@ async def get_kb(name: str = None) -> RAGAnything:
                 if doc_status_path.exists():
                     try:
                         disk_mtime = doc_status_path.stat().st_mtime
-                        cache_time = _kb_cache_time.get(name, 0)
+                        cache_time = kb_instances.get_cache_time(name)
                         if disk_mtime > cache_time:
                             kb_logger.info(
                                 f"[KB] 缓存过期重建: {name} "
@@ -574,8 +915,7 @@ async def get_kb(name: str = None) -> RAGAnything:
             # Lower vector retrieval cosine threshold for broader semantic recall
             if instance.lightrag and hasattr(instance.lightrag, 'chunks_vdb'):
                 instance.lightrag.chunks_vdb.cosine_better_than_threshold = 0.0
-            kb_instances[name] = instance
-            _kb_cache_time[name] = _time.time()
+            await kb_instances.put_and_evict(name, instance, _time.time())
             kb_logger.info(f"[KB] 初始化知识库实例: {name} workspace={target}")
     return kb_instances[name]
 
@@ -628,11 +968,11 @@ async def cleanup_kb_resources(name: str) -> None:
         kb_logger.info(f"[cleanup] 已清理 {dedup_removed} 个去重记录: {name}")
 
     # ── 4. Clean processing_tasks entries ────────────────
-    from raganything.services.state_service import processing_tasks
+    from raganything.services.state_service import processing_tasks, delete_task
     tasks_removed = 0
     for tid in list(processing_tasks.keys()):
         if processing_tasks[tid].get("kb", "") == name:
-            del processing_tasks[tid]
+            await delete_task(tid)
             tasks_removed += 1
     if tasks_removed:
         kb_logger.info(f"[cleanup] 已清理 {tasks_removed} 个处理中任务记录: {name}")
@@ -644,7 +984,6 @@ async def cleanup_kb_resources(name: str) -> None:
         except Exception as exc:
             kb_logger.warning(f"[cleanup] finalize_storages 失败 ({name}): {exc}")
         del kb_instances[name]
-    _kb_cache_time.pop(name, None)
 
     # ── 6. Collect upload files BEFORE deleting dir ──────
     _found_files: set = set()
@@ -681,17 +1020,89 @@ async def cleanup_kb_resources(name: str) -> None:
             except OSError:
                 pass
 
-    # ── 9. Remove metadata ───────────────────────────────
+    # ── 9. Remove metadata (PG + in-memory) ──────────────
     meta = await load_kb_meta()
     if name in meta:
         del meta[name]
         await save_kb_meta(meta)
+    # Explicitly delete the PG row — pg_save_all_kb_meta only upserts,
+    # it does NOT delete entries removed from the dict.
+    try:
+        from raganything.services.pg_kb_meta_repo import pg_delete_kb_meta
+        await pg_delete_kb_meta(name)
+    except Exception:
+        pass
 
-    # ── 10. Reset active KB if needed ────────────────────
+    # ── 10. Clean ALL PG LightRAG tables for this workspace ──
+    # LightRAG's postgres_impl.py creates 11+ tables (LIGHTRAG_DOC_STATUS,
+    # LIGHTRAG_DOC_FULL, LIGHTRAG_VDB_*, LIGHTRAG_LLM_CACHE, etc.).
+    # Hardcoding table names is fragile — new LightRAG versions may add or
+    # rename tables.  Instead, query information_schema for all LIGHTRAG%
+    # tables that have a 'workspace' column, and DELETE from each.
+    wd = kb_dir(name)
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
+            # Discover all LightRAG tables with workspace-based isolation
+            lightrag_tables = await conn.fetch(
+                """SELECT table_name
+                   FROM information_schema.columns
+                   WHERE table_schema = 'public'
+                     AND column_name = 'workspace'
+                     AND table_name LIKE 'lightrag%'
+                   ORDER BY table_name"""
+            )
+            for row in lightrag_tables:
+                tbl = row["table_name"]
+                try:
+                    result = await conn.execute(
+                        f"DELETE FROM {tbl} WHERE workspace=$1", wd,
+                    )
+                    # Parse deleted row count from command tag
+                    try:
+                        deleted = int(str(result).split()[-1])
+                    except (ValueError, IndexError):
+                        deleted = 0
+                    if deleted:
+                        kb_logger.info(
+                            f"[cleanup] PG {tbl}: 已删除 {deleted} 行 (workspace={wd})"
+                        )
+                except Exception:
+                    pass
+                # Also clean rows written with empty workspace by pre-fix workers.
+                # Before the set_default_workspace() fix, worker subprocesses
+                # wrote all data with workspace="" (LightRAG default).
+                try:
+                    result2 = await conn.execute(
+                        f"DELETE FROM {tbl} WHERE workspace=''"
+                    )
+                    try:
+                        deleted2 = int(str(result2).split()[-1])
+                    except (ValueError, IndexError):
+                        deleted2 = 0
+                    if deleted2:
+                        kb_logger.info(
+                            f"[cleanup] PG {tbl}: 已删除 {deleted2} 行 (workspace='', 修复前残留)"
+                        )
+                except Exception:
+                    pass
+            # Clean uploaded_files for this KB
+            try:
+                await conn.execute(
+                    "DELETE FROM uploaded_files WHERE kb_name=$1", name,
+                )
+            except Exception:
+                pass
+        kb_logger.info(f"[cleanup] 已清理 PG 表数据: {name}")
+    except Exception:
+        kb_logger.warning(f"[cleanup] PG 表清理失败: {name}", exc_info=True)
+
+    # ── 11. Reset active KB if needed ────────────────────
     if _rshared.active_kb == name:
         _rshared.active_kb = "default"
 
-    # ── 11. Invalidate query cache ───────────────────────
+    # ── 12. Invalidate query cache ───────────────────────
     try:
         from raganything.query_cache import get_query_cache
         get_query_cache().invalidate()
@@ -722,19 +1133,13 @@ async def delete_kb(name: str) -> bool:
 
 
 async def list_kbs() -> dict[str, Any]:
-    """List all KB metadata entries — PG-dispatched."""
-    if _pg_kb_meta_ready():
-        try:
-            from raganything.services.pg_kb_meta_repo import pg_load_kb_meta
-            return await pg_load_kb_meta()
-        except Exception:
-            kb_logger.warning("PG list_kbs failed, falling back to file")
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _load_kb_meta_file)
+    """List all KB metadata entries from PostgreSQL."""
+    from raganything.services.pg_kb_meta_repo import pg_load_kb_meta
+    return await pg_load_kb_meta()
 
 
 async def list_kbs_by_domain(domain: str) -> dict[str, Any]:
-    """List KB metadata entries filtered by domain.
+    """List KB metadata entries filtered by domain from PostgreSQL.
 
     Args:
         domain: Domain filter value (e.g. ``"manufacturing"``, ``"general"``).
@@ -744,31 +1149,20 @@ async def list_kbs_by_domain(domain: str) -> dict[str, Any]:
         KBs without a ``domain`` field are treated as ``"general"`` for
         backward compatibility with KBs created before this field existed.
     """
-    if _pg_kb_meta_ready():
-        try:
-            from raganything.services.pg_kb_meta_repo import pg_list_kbs_by_domain
-            rows = await pg_list_kbs_by_domain(domain)
-            # Convert list response back to dict for backward compatibility
-            return {
-                r["name"]: {
-                    "name": r.get("display_name", r["name"]),
-                    "created": r.get("created_at", ""),
-                    "domain": r.get("domain", "general"),
-                    "description": r.get("description", ""),
-                    "owner_id": r.get("owner_id", 0),
-                    "owner_username": r.get("owner_username", ""),
-                    "status": r.get("status", "ready"),
-                    "document_count": r.get("document_count", 0),
-                }
-                for r in rows
-            }
-        except Exception:
-            kb_logger.warning("PG list_kbs_by_domain failed, falling back to file")
-    loop = asyncio.get_running_loop()
-    meta = await loop.run_in_executor(None, _load_kb_meta_file)
+    from raganything.services.pg_kb_meta_repo import pg_list_kbs_by_domain
+    rows = await pg_list_kbs_by_domain(domain)
     return {
-        name: info for name, info in meta.items()
-        if info.get("domain", "general") == domain
+        r["name"]: {
+            "name": r.get("display_name", r["name"]),
+            "created": r.get("created_at", ""),
+            "domain": r.get("domain", "general"),
+            "description": r.get("description", ""),
+            "owner_id": r.get("owner_id", 0),
+            "owner_username": r.get("owner_username", ""),
+            "status": r.get("status", "ready"),
+            "document_count": r.get("document_count", 0),
+        }
+        for r in rows
     }
 
 
@@ -927,7 +1321,46 @@ async def create_rag(
     #
     # LightRAG auto-creates required tables on first use. Each KB is
     # isolated via the workspace (set by set_default_workspace() above).
+    #
+    # ⚠️  Data-aware dispatch: if the worker wrote data to JSON files
+    # (pre-PG-migration) but PG tables are empty, stay on JSON so
+    # queries can find the existing data.  New uploads with the fixed
+    # worker will write to both JSON and PG, enabling future migration.
+    _use_pg_backends = False
     if _pg_storage_ready():
+        import json as _json_check
+        _json_ds = Path(wd) / "kv_store_doc_status.json"
+        _json_has_data = False
+        if _json_ds.exists():
+            try:
+                _json_has_data = bool(_json_check.loads(_json_ds.read_text(encoding="utf-8")))
+            except Exception:
+                pass
+
+        _pg_has_data = False
+        try:
+            from raganything.services.pg_state_repo import get_pg_pool
+            _pool = get_pg_pool()
+            async with _pool.acquire() as _conn:
+                _row = await _conn.fetchrow(
+                    "SELECT 1 FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1 LIMIT 1",
+                    wd,
+                )
+                _pg_has_data = _row is not None
+        except Exception:
+            pass
+
+        if _pg_has_data or not _json_has_data:
+            # PG has data → use PG.  OR  Fresh KB (no JSON data) → use PG.
+            _use_pg_backends = True
+        else:
+            kb_logger.info(
+                "JSON data exists but PG tables empty — keeping JSON storage "
+                "for KB at %s (queries would return 0 results otherwise)",
+                wd,
+            )
+
+    if _use_pg_backends:
         lightrag_kwargs["kv_storage"] = "PGKVStorage"
         lightrag_kwargs["doc_status_storage"] = "PGDocStatusStorage"
         backends = ["PGKVStorage", "PGDocStatusStorage"]
@@ -950,6 +1383,14 @@ async def create_rag(
     else:
         kb_logger.debug("PG storage backends not available, using JSON files")
 
+    # ── PG workspace isolation ──────────────────────────────
+    # LightRAG defaults workspace=os.getenv("WORKSPACE","") which is "".
+    # Without an explicit workspace, ALL KBs share the same PG tables,
+    # causing data leaks between KBs and 0 entity/relation counts.
+    # Pass the working directory as the workspace so each KB has its
+    # own isolated PG data partition.
+    lightrag_kwargs["workspace"] = wd
+
     return RAGAnything(config=config, llm_model_func=llm_func,
                        vision_model_func=vision_func, embedding_func=embedding_func,
                        vision_embed_func=vision_embed_func,
@@ -964,35 +1405,12 @@ import tempfile
 import time as _time_module
 
 
-def _acquire_recovery_lock(timeout_sec: float = 30.0) -> bool:
-    """Attempt to acquire a PG advisory lock for recovery.
-
-    When PG is available, uses ``pg_try_advisory_lock()`` which
-    auto-releases on connection close. Falls back to file lock.
-
-    Returns True if the lock was acquired.
-    """
-    # File-based fallback (sync, runs before async path is available)
-    lock_path = Path(WORKING_DIR) / ".recovery.lock"
-    lock_path.parent.mkdir(parents=True, exist_ok=True)
-    now = _time_module.time()
-    try:
-        if lock_path.exists():
-            content = lock_path.read_text(encoding="utf-8").strip()
-            try:
-                lock_time = float(content)
-                if now - lock_time < timeout_sec:
-                    return False  # another process is actively recovering
-            except ValueError:
-                pass  # corrupt lock file, overwrite
-        lock_path.write_text(str(now), encoding="utf-8")
-        return True
-    except Exception:
-        return False
-
-
 async def _acquire_recovery_lock_pg() -> bool:
-    """Acquire a PG advisory lock (async, preferred)."""
+    """Acquire a PG advisory lock for recovery.
+
+    Uses ``pg_try_advisory_lock(987654)`` which auto-releases on
+    connection close. No file-based fallback.
+    """
     try:
         from raganything.services.pg_state_repo import get_pg_pool
         pool = get_pg_pool()
@@ -1001,16 +1419,6 @@ async def _acquire_recovery_lock_pg() -> bool:
             return bool(locked)
     except Exception:
         return False
-
-
-def _release_recovery_lock() -> None:
-    """Release the recovery lock. PG advisory lock auto-releases on connection close."""
-    lock_path = Path(WORKING_DIR) / ".recovery.lock"
-    try:
-        if lock_path.exists():
-            lock_path.unlink()
-    except Exception:
-        pass
 
 
 async def _fix_stuck_doc_status(kb_name: str, filename: str):
@@ -1061,7 +1469,7 @@ async def _recover_stuck_documents():
     Uses a file-based lock (``.recovery.lock``) so only one worker runs
     recovery at a time in multi-worker deployments.
     """
-    locked = await _acquire_recovery_lock_pg() or _acquire_recovery_lock()
+    locked = await _acquire_recovery_lock_pg()
     if not locked:
         kb_logger.debug("[Recovery] 另一进程正在执行恢复，跳过")
         return
@@ -1093,7 +1501,6 @@ async def _recover_stuck_documents():
                     # Clear cached instance so next query reloads from storage.
                     if kb_name in kb_instances:
                         del kb_instances[kb_name]
-                        _kb_cache_time.pop(kb_name, None)
             except Exception as e:
                 kb_logger.warning(f"[Recovery] 扫描 KB '{kb_name}' 异常: {e}")
 
@@ -1104,9 +1511,10 @@ async def _recover_stuck_documents():
                 if not doc_data:
                     continue
                 valid_ids = set(doc_data.keys())
-                ep = Path(kb_dir(kb_name)) / "kv_store_full_entities.json"
-                if ep.exists():
-                    entities_data = json.loads(ep.read_text(encoding="utf-8"))
+                workspace = str(Path(kb_dir(kb_name)))
+                from raganything.routers.knowledge import _pg_fetch_graph_entities
+                entities_data = await _pg_fetch_graph_entities(workspace)
+                if entities_data:
                     orphan_count = sum(1 for k in entities_data if k not in valid_ids)
                     if orphan_count > 0:
                         try:
@@ -1115,13 +1523,12 @@ async def _recover_stuck_documents():
                             await _purge_all_orphans(_inst, kb_name)
                             if kb_name in kb_instances:
                                 del kb_instances[kb_name]
-                                _kb_cache_time.pop(kb_name, None)
                         except Exception:
                             pass
             except Exception:
                 pass
     finally:
-        _release_recovery_lock()
+        pass  # PG advisory lock auto-releases on connection close
 
 
 async def _stuck_recovery_loop(interval_sec: int = 300):
@@ -1200,14 +1607,15 @@ async def _process_uploaded_file(
         user_id: Owner user ID
     """
     from raganything.services.ws_service import ws_broadcast, emit_progress, add_event
-    from raganything.services.state_service import processing_tasks, upsert_task_state
+    from raganything.services.state_service import (
+        processing_tasks, upsert_task_state, update_task_progress, complete_task,
+    )
 
     task_data = {
         "id": task_id, "file": filename, "status": "processing",
         "started_at": datetime.now().isoformat(), "progress": 0,
         "kb": kb_name, "user_id": user_id,
     }
-    processing_tasks[task_id] = task_data
     await upsert_task_state(task_id, task_data)
     await add_event("upload_start", file=filename, task_id=task_id, user_id=user_id)
     actual_strategy = chunking_strategy or CHUNKING_STRATEGY
@@ -1218,6 +1626,9 @@ async def _process_uploaded_file(
         # Compute file hash and register for dedup (may fail if file was removed)
         file_hash = _compute_file_hash(file_path)
         _register_processing_file(kb_name, file_hash, task_id)
+
+        # Update PG uploaded_files status → processing
+        await pg_update_upload_status(file_hash, kb_name, "processing", task_id)
 
         await emit_progress(task_id, 5, f"子进程处理: {filename}")
         kb_logger.info(f"[UPLOAD] 任务={task_id} 文件={filename} KB={kb_name} 策略={actual_strategy}")
@@ -1286,9 +1697,8 @@ async def _process_uploaded_file(
                             pct = phase_map[phase][1] if status == "done" else phase_map[phase][0]
                         else:
                             pct = processing_tasks[task_id].get("progress", 0)
-                        processing_tasks[task_id]["progress"] = pct
-                        processing_tasks[task_id]["phase"] = phase
-                        processing_tasks[task_id]["phase_status"] = status
+                        await update_task_progress(task_id, pct,
+                                                   phase=phase, phase_status=status)
                         await ws_broadcast({
                             "type": "progress", "task_id": task_id,
                             "progress": pct, "phase": phase, "phase_status": status,
@@ -1348,14 +1758,15 @@ async def _process_uploaded_file(
         # holds PRE-WORKER state and would overwrite fresh data.
         if kb_name in kb_instances:
             del kb_instances[kb_name]
-            _kb_cache_time.pop(kb_name, None)
             kb_logger.info(f"[KB] 清除缓存实例: {kb_name}（子进程写入新数据）")
 
         await emit_progress(task_id, 100, "处理完成")
-        processing_tasks[task_id]["status"] = "completed"
+        await complete_task(task_id)
         processing_tasks[task_id]["chunking_strategy"] = actual_strategy
         await add_event("upload_complete", file=filename, task_id=task_id, kb=kb_name, user_id=user_id)
         await ws_broadcast({"type": "upload_done", "task_id": task_id, "filename": filename, "kb": kb_name})
+        # Update PG uploaded_files status → completed
+        await pg_update_upload_status(file_hash, kb_name, "completed")
         _unregister_processing_file(kb_name, file_hash)
 
     except Exception as e:
@@ -1375,11 +1786,15 @@ async def _process_uploaded_file(
             )
             return
 
-        processing_tasks[task_id]["status"] = "failed"
-        processing_tasks[task_id]["error"] = str(e)
+        await upsert_task_state(task_id, {
+            "id": task_id, "status": "failed", "error": str(e),
+            "kb": kb_name, "file": filename, "user_id": user_id,
+        })
         await add_event("upload_error", file=filename, task_id=task_id, error=str(e), user_id=user_id)
         await _fix_stuck_doc_status(kb_name, filename)
         if file_hash is not None:
+            # Update PG uploaded_files status → failed
+            await pg_update_upload_status(file_hash, kb_name, "failed")
             _unregister_processing_file(kb_name, file_hash)
 
 
@@ -1402,14 +1817,22 @@ async def _drain_kb_queue(kb_name: str) -> None:
 
     queue = _rshared._kb_queues.setdefault(kb_name, asyncio.Queue())
 
+    # Track whether we have a pre-fetched task (avoids TOCTOU on empty check)
+    _next_task = None
+
     try:
         kb_logger.info(f"[QUEUE] 开始 drain: {kb_name}")
         while True:
-            try:
-                # Block until a task is available
-                task_info = await queue.get()
-            except Exception:
-                break
+            # ── Fetch next task (with timeout to avoid empty() race) ──
+            if _next_task is not None:
+                task_info = _next_task
+                _next_task = None
+            else:
+                try:
+                    task_info = await asyncio.wait_for(queue.get(), timeout=2.0)
+                except asyncio.TimeoutError:
+                    kb_logger.info(f"[QUEUE] 队列已空 (超时): {kb_name}")
+                    break
 
             # Sentinel — KB was deleted, exit immediately
             if task_info is _QUEUE_SENTINEL:
@@ -1442,8 +1865,11 @@ async def _drain_kb_queue(kb_name: str) -> None:
                     f"file={task_info.get('filename', '?')} error={exc}"
                 )
 
-            # Exit if the queue is now empty
-            if queue.empty():
+            # Pre-fetch next task to avoid the unreliable queue.empty() race.
+            # If nothing arrives within 1.0s, the drain exits cleanly.
+            try:
+                _next_task = await asyncio.wait_for(queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
                 kb_logger.info(f"[QUEUE] 队列已空: {kb_name}")
                 break
     finally:
@@ -1470,7 +1896,13 @@ async def _ensure_queue_draining(kb_name: str) -> tuple:
         qsize = queue.qsize()
 
         if not _rshared._kb_draining.get(kb_name):
-            asyncio.ensure_future(_drain_kb_queue(kb_name))
+            task = asyncio.create_task(_drain_kb_queue(kb_name))
+            task.add_done_callback(
+                lambda t: kb_logger.error(
+                    f"[QUEUE] Drain 异常崩溃: {kb_name}",
+                    exc_info=t.exception(),
+                ) if t.exception() else None
+            )
 
     return queue, qsize
 

@@ -1,24 +1,90 @@
 # -*- coding: utf-8 -*-
 """
-PostgreSQL-backed Agent Repository.
+═══════════════════════════════════════════════════════════════════════════════
+PostgreSQL AI 智能体仓库
+═══════════════════════════════════════════════════════════════════════════════
 
-Replaces: raganything/services/agent_manager.py AgentManager JSON persistence
-          (agent_meta.json + agent_conversations/<agent_id>/<thread_id>.json)
+【文件作用】
+  AI 智能体（Agent）的完整生命周期管理，包括智能体 CRUD 和多轮对话会话管理。
+  通过 pg_state_repo.get_pg_pool() 复用全局连接池。
+  PG 查询失败时自动回退 JSON 文件（兼容旧数据）。
 
-Uses the same shared connection pool as pg_state_repo.py and pg_auth_repo.py.
+【管理的数据库表】
+  ┌─────────────────────┬───────────────────────────────────┐
+  │ agents              │ 智能体定义                         │
+  │                     │ id, name, system_prompt（系统提示词）│
+  │                     │ llm_config（JSON: 模型/温度等配置） │
+  │                     │ kb_names（关联的知识库列表）        │
+  │                     │ created_by（创建者 user_id）        │
+  │                     │ is_public（是否公开）               │
+  ├─────────────────────┼───────────────────────────────────┤
+  │ agent_conversations │ 智能体会话线程                     │
+  │                     │ agent_id（关联智能体）              │
+  │                     │ thread_id（会话标识）               │
+  │                     │ title（会话标题）                   │
+  │                     │ created_by（创建者）                │
+  ├─────────────────────┼───────────────────────────────────┤
+  │ agent_messages      │ 会话中的每条消息                   │
+  │                     │ conversation_id（关联会话）         │
+  │                     │ role（user/assistant/system/tool） │
+  │                     │ content（消息内容）                 │
+  │                     │ created_at（时间戳）                │
+  └─────────────────────┴───────────────────────────────────┘
 
-Usage (async, direct):
-    from raganything.services.pg_agent_repo import (
-        pg_list_agents, pg_get_agent, pg_create_agent,
-        pg_update_agent, pg_delete_agent,
-        pg_list_conversations, pg_get_conversation,
-        pg_create_conversation, pg_add_message,
-        pg_update_conversation, pg_delete_conversation,
-    )
+【核心函数】
+  ── 智能体 CRUD ──
+  pg_create_agent(data)                              → 创建智能体
+  pg_get_agent(agent_id)                             → 获取单个智能体（PG→JSON回退）
+  pg_list_agents(user_id, is_admin)                  → 列出智能体（PG→JSON合并去重）
+  pg_update_agent(agent_id, data)                    → 更新智能体
+  pg_delete_agent(agent_id)                          → 删除智能体及关联数据
 
-Middleware layer (in agent_manager.py):
-    Uses _pg_agent_ready() to auto-dispatch between PG and file-based
-    AgentManager, matching the auth.py dispatch pattern.
+  ── 会话管理 ──
+  pg_list_conversations(agent_id, user_id)           → 列出智能体的所有会话
+  pg_get_conversation(agent_id, thread_id)           → 获取单个会话（含消息）
+  pg_create_conversation(agent_id, data)             → 创建新会话
+  pg_add_message(agent_id, thread_id, data)          → 添加消息到会话
+  pg_update_conversation(agent_id, thread_id, data)  → 更新会话（如重命名）
+  pg_delete_conversation(agent_id, thread_id)        → 删除会话及关联消息
+
+【特殊逻辑】
+  - _load_json_agents()      → 读取 agent_meta.json（旧数据回退）
+  - _json_get_agent(id)      → 从 JSON 按 ID 查找
+  - _json_list_agents(...)   → 从 JSON 列出智能体
+  - pg_get_agent() 先查 PG，查不到自动回退 JSON
+  - pg_list_agents() 查 PG + JSON 合并（按 id 去重）
+
+【替换了什么】
+  - raganything/services/agent_manager.py 的 JSON 持久化层
+  - agent_meta.json（智能体元数据）
+  - agent_conversations/<agent_id>/<thread_id>.json（会话消息）
+
+【与其他文件的关系】
+  使用 pg_state_repo.get_pg_pool() 获取连接
+  被 raganything/services/agent_manager.py 调用（dispatch 层）
+  被 raganything/routers/agent.py 调用（REST API 端点）
+  对应迁移：migrations/003_p0_agent_kb_meta.sql
+
+English:
+  PostgreSQL-backed Agent Repository.
+
+  Replaces: raganything/services/agent_manager.py AgentManager JSON persistence
+            (agent_meta.json + agent_conversations/<agent_id>/<thread_id>.json)
+
+  Uses the same shared connection pool as pg_state_repo.py and pg_auth_repo.py.
+
+  Usage (async, direct):
+      from raganything.services.pg_agent_repo import (
+          pg_list_agents, pg_get_agent, pg_create_agent,
+          pg_update_agent, pg_delete_agent,
+          pg_list_conversations, pg_get_conversation,
+          pg_create_conversation, pg_add_message,
+          pg_update_conversation, pg_delete_conversation,
+      )
+
+  Middleware layer (in agent_manager.py):
+      Uses _pg_agent_ready() to auto-dispatch between PG and file-based
+      AgentManager, matching the auth.py dispatch pattern.
 """
 
 from __future__ import annotations
@@ -26,6 +92,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Optional
 
 logger = logging.getLogger("rag_server.pg_agent")
@@ -35,6 +102,47 @@ def _get_pool():
     """Get the shared PG pool. Raises RuntimeError if not initialized."""
     from raganything.services.pg_state_repo import get_pg_pool
     return get_pg_pool()
+
+
+# ── JSON file fallback (agents created before PG migration) ──
+
+_AGENT_META_PATH = Path("agent_meta.json")
+
+
+def _load_json_agents() -> list[dict[str, Any]]:
+    """Load agents from the JSON fallback file.
+
+    Returns an empty list if the file doesn't exist or is unreadable.
+    """
+    try:
+        if not _AGENT_META_PATH.exists():
+            return []
+        data = json.loads(_AGENT_META_PATH.read_text(encoding="utf-8"))
+        return data.get("agents", []) if isinstance(data, dict) else []
+    except (json.JSONDecodeError, OSError):
+        return []
+
+
+def _json_get_agent(agent_id: str) -> Optional[dict[str, Any]]:
+    """Look up a single agent in the JSON fallback file."""
+    for agent in _load_json_agents():
+        if agent.get("id") == agent_id:
+            return agent
+    return None
+
+
+def _json_list_agents(
+    user_id: Optional[int] = None,
+    is_admin: bool = False,
+) -> list[dict[str, Any]]:
+    """List agents from the JSON fallback file (user-isolated)."""
+    agents = _load_json_agents()
+    if is_admin or user_id is None:
+        return agents
+    return [
+        a for a in agents
+        if a.get("owner_id", 0) in (0, user_id)
+    ]
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -49,34 +157,59 @@ async def pg_list_agents(
 
     Replaces: AgentManager.list_agents()
 
+    Query order: PG first → merge JSON fallback (dedup by id).
+
     Returns:
         List of agent dicts sorted by updated_at DESC.
     """
-    pool = _get_pool()
-    if is_admin or user_id is None:
-        rows = await pool.fetch(
-            "SELECT * FROM agents ORDER BY updated_at DESC"
-        )
-    else:
-        rows = await pool.fetch(
-            "SELECT * FROM agents WHERE owner_id = $1 OR owner_id = 0 "
-            "ORDER BY updated_at DESC",
-            user_id,
-        )
-    return [_agent_row_to_dict(r) for r in rows]
+    result: list[dict[str, Any]] = []
+    try:
+        pool = _get_pool()
+        if is_admin or user_id is None:
+            rows = await pool.fetch(
+                "SELECT * FROM agents ORDER BY updated_at DESC"
+            )
+        else:
+            rows = await pool.fetch(
+                "SELECT * FROM agents WHERE owner_id = $1 OR owner_id = 0 "
+                "ORDER BY updated_at DESC",
+                user_id,
+            )
+        result = [_agent_row_to_dict(r) for r in rows]
+    except Exception:
+        logger.debug("PG list_agents failed, using JSON fallback")
+
+    # Merge JSON fallback agents not already in PG
+    pg_ids = {a["id"] for a in result}
+    json_agents = _json_list_agents(user_id=user_id, is_admin=is_admin)
+    for ja in json_agents:
+        if ja.get("id") not in pg_ids:
+            result.append(ja)
+
+    result.sort(key=lambda a: a.get("updated_at", ""), reverse=True)
+    return result
 
 
 async def pg_get_agent(agent_id: str) -> Optional[dict[str, Any]]:
     """Get a single agent by ID.
 
     Replaces: AgentManager.get_agent()
+
+    Query order: PG first → JSON file fallback.
     """
-    pool = _get_pool()
-    row = await pool.fetchrow(
-        "SELECT * FROM agents WHERE id = $1",
-        agent_id,
-    )
-    return _agent_row_to_dict(row) if row else None
+    try:
+        pool = _get_pool()
+        row = await pool.fetchrow(
+            "SELECT * FROM agents WHERE id = $1",
+            agent_id,
+        )
+        if row:
+            return _agent_row_to_dict(row)
+    except Exception:
+        logger.debug("PG get_agent failed for %s, trying JSON fallback", agent_id)
+
+    # JSON fallback — agents created before PG migration
+    return _json_get_agent(agent_id)
 
 
 async def pg_create_agent(
@@ -521,6 +654,101 @@ async def pg_ensure_agent_tables() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════
+# Migration Helpers (PG equivalents of AgentManager migration methods)
+# ═══════════════════════════════════════════════════════════════
+
+async def pg_ensure_default_agent(
+    llm_model: str = "qwen-plus",
+    query_history: list[dict] | None = None,
+) -> tuple[Optional[dict], Optional[dict]]:
+    """Ensure a default agent exists; optionally migrate legacy query_history.
+
+    Replaces: AgentManager.ensure_default_agent()
+
+    Returns:
+        (agent_dict, thread_dict) if a new default agent was created,
+        (None, None) if one already existed.
+    """
+    pool = _get_pool()
+    existing = await pool.fetchval(
+        "SELECT count(*) FROM agents WHERE kb_name = 'default' AND name IN ('通用助手', 'default')",
+    )
+    if existing:
+        return None, None
+
+    agent = await pg_create_agent(
+        config={
+            "name": "通用助手",
+            "icon": "🤖",
+            "description": "默认智能体，关联默认知识库",
+            "welcome_message": "你好！我是通用助手，可以回答知识库中的任何问题。",
+            "kb_name": "default",
+            "llm_model": llm_model,
+            "system_prompt": "",
+            "use_default_prompt": True,
+        },
+        owner_id=1,
+        owner_username="admin",
+    )
+    agent_id = agent["id"]
+
+    if query_history:
+        thread = await pg_create_conversation(agent_id, title="旧查询记录", owner_id=1)
+        thread_id = thread["id"]
+        for record in reversed(query_history):
+            await pg_add_message(agent_id, thread_id, {
+                "role": "user",
+                "content": record.get("query", ""),
+                "time": record.get("time", ""),
+            })
+            await pg_add_message(agent_id, thread_id, {
+                "role": "assistant",
+                "content": record.get("answer", ""),
+                "elapsed": record.get("elapsed", 0),
+                "kb": record.get("kb", ""),
+                "mode": record.get("mode", ""),
+            })
+        thread = await pg_get_conversation(agent_id, thread_id)
+        return agent, thread
+
+    return agent, None
+
+
+async def pg_migrate_agents() -> int:
+    """Migrate owner_id=0 agents and conversations to admin (user_id=1).
+
+    Replaces: AgentManager.migrate_agents()
+
+    Returns:
+        Number of agents migrated.
+    """
+    pool = _get_pool()
+    now = datetime.now(timezone.utc)
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            # Migrate agents
+            agent_result = await conn.execute(
+                "UPDATE agents SET owner_id = 1, owner_username = 'admin', updated_at = $1 "
+                "WHERE owner_id = 0",
+                now,
+            )
+            agent_count = int(agent_result.split()[-1]) if agent_result else 0
+
+            # Migrate conversations
+            await conn.execute(
+                "UPDATE agent_conversations SET owner_id = 1, updated_at = $1 "
+                "WHERE owner_id = 0",
+                now,
+            )
+
+    if agent_count:
+        logger.info("已将 %d 个智能体及其对话分配给管理员", agent_count)
+
+    return agent_count
+
+
+# ═══════════════════════════════════════════════════════════════
 # PG availability check (matches auth.py pattern)
 # ═══════════════════════════════════════════════════════════════
 
@@ -548,6 +776,9 @@ __all__ = [
     "pg_add_message",
     "pg_update_conversation",
     "pg_delete_conversation",
+    # Migration
+    "pg_ensure_default_agent",
+    "pg_migrate_agents",
     # Setup
     "pg_ensure_agent_tables",
     "_pg_agent_ready",

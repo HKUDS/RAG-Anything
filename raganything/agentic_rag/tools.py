@@ -13,11 +13,8 @@ async execute(input) -> str.
 
 from __future__ import annotations
 
-import json
 import math as _math
-import os
 import time
-from pathlib import Path
 from typing import Any
 
 from raganything.agentic_rag.tool_base import Tool
@@ -180,102 +177,142 @@ class DatabaseQueryTool(Tool):
     async def execute(self, input: dict) -> str:
         query_text = input.get("query", "").strip()
         try:
-            return self._query_stats(query_text)
+            return await self._query_stats_async(query_text)
         except Exception as e:
             return f"数据库查询出错: {str(e)}"
 
-    def _query_stats(self, query: str) -> str:
+    @staticmethod
+    def _pg_available() -> bool:
+        try:
+            from raganything.services.pg_state_repo import get_pg_pool
+            get_pg_pool()
+            return True
+        except RuntimeError:
+            return False
+
+    async def _query_stats_async(self, query: str) -> str:
+        if not self._pg_available():
+            return "数据库不可用：PostgreSQL 连接池未初始化，请在服务器启动后重试。"
         results: list[str] = []
         if any(kw in query for kw in ("文档", "doc", "全部", "总览", "存储")):
-            results.append(self._doc_stats())
+            results.append(await self._doc_stats_async())
         if any(kw in query for kw in ("知识库", "kb", "全部", "总览", "存储")):
-            results.append(self._kb_list())
+            results.append(await self._kb_list_async())
         if any(kw in query for kw in ("实体", "关系", "块", "entity", "relation", "chunk", "全部", "总览", "存储")):
-            results.append(self._entity_stats())
+            results.append(await self._entity_stats_async())
         if any(kw in query for kw in ("智能体", "agent", "全部", "总览", "存储")):
-            results.append(self._agent_stats())
+            results.append(await self._agent_stats_async())
         if not results:
-            results = [self._doc_stats(), self._kb_list(), self._agent_stats()]
+            results = [await self._doc_stats_async(), await self._kb_list_async(), await self._agent_stats_async()]
         return "\n\n".join(results)
 
-    def _safe_read_json(self, path: str) -> dict:
-        try:
-            p = Path(path)
-            if p.exists():
-                return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
-            pass
-        return {}
+    # ── PG-backed stat methods ──────────────────────────
 
-    def _doc_stats(self) -> str:
+    async def _doc_stats_async(self) -> str:
+        from raganything.services.pg_state_repo import get_pg_pool
+        workspace = self.kb_dir
         lines = ["## 文档统计"]
-        ds = self._safe_read_json(f"{self.kb_dir}/kv_store_doc_status.json")
-        if ds:
-            total = len(ds)
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT id, file_path, status, chunks_count, updated_at
+                   FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1""",
+                workspace,
+            )
+        if rows:
+            total = len(rows)
             by_status: dict[str, int] = {}
             total_chunks = 0
-            for info in ds.values():
-                st = info.get("status", "unknown")
+            for r in rows:
+                st = r.get("status", "unknown") or "unknown"
                 by_status[st] = by_status.get(st, 0) + 1
-                total_chunks += info.get("chunks_count", 0)
+                total_chunks += r.get("chunks_count", 0) or 0
             lines.append(f"- 总文档数: {total}")
             lines.append(f"- 总块数: {total_chunks}")
             for st, cnt in by_status.items():
                 lines.append(f"  - {st}: {cnt} 个")
-            sorted_docs = sorted(
-                ds.items(),
-                key=lambda x: x[1].get("updated_at", ""),
-                reverse=True,
-            )
+            sorted_docs = sorted(rows, key=lambda r: r.get("updated_at") or "", reverse=True)
             lines.append("- 最近文档:")
-            for doc_id, info in sorted_docs[:5]:
-                fname = info.get("file_path", "?")
-                st = info.get("status", "?")
-                chunks = info.get("chunks_count", 0)
+            for r in sorted_docs[:5]:
+                fname = r.get("file_path", "?") or "?"
+                st = r.get("status", "?") or "?"
+                chunks = r.get("chunks_count", 0) or 0
                 lines.append(f"  - {fname} [{st}, {chunks} chunks]")
-        fd = self._safe_read_json(f"{self.kb_dir}/kv_store_full_docs.json")
-        if fd:
-            lines.append(f"- 全量文档记录: {len(fd)} 条")
+        else:
+            lines.append("- 无文档记录")
         return "\n".join(lines)
 
-    def _kb_list(self) -> str:
+    async def _kb_list_async(self) -> str:
+        from raganything.services.pg_kb_meta_repo import pg_load_kb_meta
         lines = ["## 知识库列表"]
-        kb_meta = self._safe_read_json("rag_storage_kb_meta.json")
+        kb_meta = await pg_load_kb_meta()
         if kb_meta:
             lines.append(f"- 总数: {len(kb_meta)}")
             for name, info in kb_meta.items():
-                created = info.get("created", "")[:10]
+                created = (info.get("created") or "")[:10]
                 display = info.get("name", name)
                 lines.append(f"  - {name}: {display} (创建于 {created})")
+        else:
+            lines.append("- 无知识库记录")
         return "\n".join(lines)
 
-    def _entity_stats(self) -> str:
+    async def _entity_stats_async(self) -> str:
+        from raganything.services.pg_state_repo import get_pg_pool
+        import json as _json
+        workspace = self.kb_dir
         lines = ["## 实体与关系统计"]
-        entities = self._safe_read_json(f"{self.kb_dir}/kv_store_full_entities.json")
-        relations = self._safe_read_json(f"{self.kb_dir}/kv_store_full_relations.json")
-        chunks = self._safe_read_json(f"{self.kb_dir}/vdb_chunks.json")
-        if entities:
-            total_names = sum(
-                len(v.get("entity_names", [])) for v in entities.values()
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
+            ent_rows = await conn.fetch(
+                """SELECT entity_names FROM LIGHTRAG_FULL_ENTITIES
+                   WHERE workspace=$1""",
+                workspace,
             )
-            lines.append(f"- 实体类型数: {len(entities)}, 实体名称数: {total_names}")
-        if relations:
-            total_pairs = sum(
-                len(v.get("relation_pairs", [])) for v in relations.values()
+            rel_rows = await conn.fetch(
+                """SELECT relation_pairs FROM LIGHTRAG_FULL_RELATIONS
+                   WHERE workspace=$1""",
+                workspace,
             )
-            lines.append(f"- 关系类型数: {len(relations)}, 关系对数: {total_pairs}")
-        if chunks:
-            lines.append(f"- 向量块数: {len(chunks)}")
+            chunk_count = await conn.fetchval(
+                """SELECT coalesce(sum(chunks_count), 0)
+                   FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1""",
+                workspace,
+            )
+        total_entities = 0
+        for row in ent_rows:
+            entity_names = row["entity_names"]
+            if isinstance(entity_names, str):
+                try:
+                    entity_names = _json.loads(entity_names)
+                except Exception:
+                    entity_names = []
+            total_entities += len(entity_names) if entity_names else 0
+        total_relations = 0
+        for row in rel_rows:
+            relation_pairs = row["relation_pairs"]
+            if isinstance(relation_pairs, str):
+                try:
+                    relation_pairs = _json.loads(relation_pairs)
+                except Exception:
+                    relation_pairs = []
+            total_relations += len(relation_pairs) if relation_pairs else 0
+        lines.append(f"- 实体名称总数: {total_entities}")
+        lines.append(f"- 关系对总数: {total_relations}")
+        lines.append(f"- 向量块数: {chunk_count or 0}")
         return "\n".join(lines)
 
-    def _agent_stats(self) -> str:
+    async def _agent_stats_async(self) -> str:
+        from raganything.services.pg_agent_repo import pg_list_agents
         lines = ["## 智能体统计"]
-        agent_meta = self._safe_read_json("agent_meta.json")
-        if agent_meta:
-            agents = agent_meta.get("agents", [])
+        agents = await pg_list_agents(is_admin=True)
+        if agents:
             lines.append(f"- 总数: {len(agents)}")
             for a in agents[:10]:
-                lines.append(f"  - {a.get('name','?')} (模型: {a.get('llm_model','?')}, KB: {a.get('kb_name','?')})")
+                lines.append(
+                    f"  - {a.get('name','?')} (模型: {a.get('llm_model','?')}, KB: {a.get('kb_name','?')})"
+                )
+        else:
+            lines.append("- 无智能体记录")
         return "\n".join(lines)
 
 
