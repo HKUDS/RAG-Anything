@@ -134,8 +134,30 @@ python -m raganything.batch_parser examples/sample_docs/ --output ./output --no-
 # Dry run (list supported files without processing)
 python -m raganything.batch_parser examples/sample_docs/ --output ./output --dry-run
 
+# Incremental run (skip files unchanged since the last successful batch)
+python -m raganything.batch_parser examples/sample_docs/ --output ./output --incremental
+
 # Help
 python -m raganything.batch_parser --help
+```
+
+### Incremental Folder Scans
+
+Use `incremental=True` when repeatedly processing the same folder. RAG-Anything
+stores a manifest at `.raganything_batch_manifest.json` inside the output
+directory and skips files whose size, modification time, and MD5 hash match the
+last successful run.
+
+```python
+result = batch_parser.process_batch(
+    file_paths=["./documents"],
+    output_dir="./output",
+    recursive=True,
+    incremental=True,
+)
+
+print(f"Processed: {len(result.successful_files)}")
+print(f"Skipped unchanged: {len(result.skipped_files)}")
 ```
 
 ## Configuration
@@ -179,6 +201,7 @@ class BatchProcessingResult:
     errors: Dict[str, str]           # Error messages for failed files
     output_dir: str                  # Output directory used
     dry_run: bool                    # True if run was a dry-run
+    skipped_files: List[str]         # Unchanged files skipped in incremental mode
 
     def summary(self) -> str:        # Human-readable summary
     def success_rate(self) -> float: # Success rate as percentage

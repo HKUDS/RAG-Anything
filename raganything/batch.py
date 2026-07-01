@@ -182,6 +182,7 @@ class BatchMixin:
         max_workers: Optional[int] = None,
         recursive: Optional[bool] = None,
         show_progress: bool = True,
+        incremental: bool = False,
         **kwargs,
     ) -> BatchProcessingResult:
         """
@@ -194,6 +195,7 @@ class BatchMixin:
             max_workers: Maximum number of workers for parallel processing
             recursive: Whether to process directories recursively
             show_progress: Whether to show progress bar
+            incremental: Whether to skip files unchanged since the last successful batch run
             **kwargs: Additional arguments passed to the parser
 
         Returns:
@@ -223,6 +225,7 @@ class BatchMixin:
             output_dir=output_dir,
             parse_method=parse_method,
             recursive=recursive,
+            incremental=incremental,
             **kwargs,
         )
 
@@ -234,6 +237,7 @@ class BatchMixin:
         max_workers: Optional[int] = None,
         recursive: Optional[bool] = None,
         show_progress: bool = True,
+        incremental: bool = False,
         **kwargs,
     ) -> BatchProcessingResult:
         """
@@ -246,6 +250,7 @@ class BatchMixin:
             max_workers: Maximum number of workers for parallel processing
             recursive: Whether to process directories recursively
             show_progress: Whether to show progress bar
+            incremental: Whether to skip files unchanged since the last successful batch run
             **kwargs: Additional arguments passed to the parser
 
         Returns:
@@ -275,6 +280,7 @@ class BatchMixin:
             output_dir=output_dir,
             parse_method=parse_method,
             recursive=recursive,
+            incremental=incremental,
             **kwargs,
         )
 
@@ -310,6 +316,7 @@ class BatchMixin:
         max_workers: Optional[int] = None,
         recursive: Optional[bool] = None,
         show_progress: bool = True,
+        incremental: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
         """
@@ -326,6 +333,7 @@ class BatchMixin:
             max_workers: Maximum number of workers for parallel processing
             recursive: Whether to process directories recursively
             show_progress: Whether to show progress bar
+            incremental: Whether to skip files unchanged since the last successful batch run
             **kwargs: Additional arguments passed to the parser
 
         Returns:
@@ -361,6 +369,7 @@ class BatchMixin:
             max_workers=max_workers,
             recursive=recursive,
             show_progress=show_progress,
+            incremental=incremental,
             **kwargs,
         )
 
