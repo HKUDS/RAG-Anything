@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Search, Eye, Trash2, X, FileText, Clock, Filter, ZoomIn, ZoomOut, RotateCcw,
   Plus, Layers, Upload, Globe, FolderOpen, ClipboardPaste,
@@ -305,7 +305,7 @@ export default function KnowledgeDetailPage() {
       await api.createGraphNode(newNodeForm)
       setShowCreateNodeModal(false)
       setNewNodeForm({ name: '', entity_type: '', description: '' })
-      loadKBData()
+      await loadKBData()
       showToast(`✅ 实体 "${newNodeForm.name}" 已创建`, 'success')
     } catch (e) { showToast('创建失败: ' + e.message, 'error') }
   }
@@ -317,7 +317,7 @@ export default function KnowledgeDetailPage() {
     try {
       await api.renameGraphNode(oldName, renameValue.trim())
       setRenamingNode(null); setSelectedNode(null); setNodeDetails(null)
-      loadKBData()
+      await loadKBData()
       showToast(`✅ 已重命名为 "${renameValue.trim()}"`, 'success')
     } catch (e) { showToast('重命名失败: ' + e.message, 'error') }
   }
@@ -326,7 +326,7 @@ export default function KnowledgeDetailPage() {
     try {
       await api.deleteGraphNode(name)
       setShowDeleteNodeConfirm(null); setSelectedNode(null); setNodeDetails(null)
-      loadKBData()
+      await loadKBData()
       showToast(`🗑️ 实体 "${name}" 已删除`, 'success')
     } catch (e) { showToast('删除失败: ' + e.message, 'error') }
   }
@@ -337,7 +337,7 @@ export default function KnowledgeDetailPage() {
       await api.createGraphEdge(newEdgeForm)
       setShowCreateEdgeModal(false)
       setNewEdgeForm({ source_entity: '', target_entity: '', relation_type: 'related_to', description: '' })
-      loadKBData()
+      await loadKBData()
       showToast('✅ 关系已创建', 'success')
     } catch (e) { showToast('创建关系失败: ' + e.message, 'error') }
   }
@@ -345,7 +345,7 @@ export default function KnowledgeDetailPage() {
   const handleDeleteEdge = async (edgeId) => {
     try {
       await api.deleteGraphEdge(edgeId)
-      loadKBData()
+      await loadKBData()
       showToast('🗑️ 关系已删除', 'success')
     } catch (e) { showToast('删除关系失败: ' + e.message, 'error') }
   }
@@ -384,13 +384,13 @@ export default function KnowledgeDetailPage() {
     }).catch(() => {})
   }, [])
 
-  // Load data for this KB
+  // Load data for this KB — returns a Promise that resolves when graph data is loaded
   const loadKBData = useCallback(() => {
     const gen = ++genRef.current
     api.getDocuments().then(r => { if (gen === genRef.current) setDocs(r.documents || []) }).catch(err => console.error(err))
     api.getStats().then(r => { if (gen === genRef.current) setStats(r) }).catch(err => console.error(err))
     api.getEntities(200).then(r => { if (gen === genRef.current) setEntities(r.entities || []) }).catch(err => console.error(err))
-    api.getGraph().then(r => {
+    return api.getGraph().then(r => {
       if (gen !== genRef.current) return
       const degree = {}
       ;(r.edges || []).forEach(e => {
@@ -403,6 +403,14 @@ export default function KnowledgeDetailPage() {
       })
     }).catch(err => console.error(err))
   }, [])
+
+  // Combined entity name list for edge-creation autocomplete (deduplicates graph.nodes + entities)
+  const allEntityNames = useMemo(() => {
+    const nameSet = new Set()
+    entities.forEach(e => { if (e.name) nameSet.add(e.name) })
+    graph.nodes.forEach(n => { if (n.id) nameSet.add(n.id) })
+    return [...nameSet].sort()
+  }, [entities, graph.nodes])
 
   // Load data on mount + poll
   useEffect(() => {
@@ -448,7 +456,8 @@ export default function KnowledgeDetailPage() {
           }
         })
       } else {
-        displayNodes = displayNodes.slice(0, 60)
+        displayNodes.sort((a, b) => (b.degree || 0) - (a.degree || 0))
+        displayNodes = displayNodes.slice(0, 200)
       }
       const displayIds = new Set(displayNodes.map(n => n.id))
       const displayEdges = graph.edges.filter(e => displayIds.has(e.source) && displayIds.has(e.target))
@@ -491,9 +500,9 @@ export default function KnowledgeDetailPage() {
 
       nodeGroup.append('circle').attr('r', d => sizeScale(d.degree)).attr('fill', d => colorScale(d.id))
         .attr('stroke', '#d6e5f2').attr('stroke-width', 1).attr('opacity', 0.85)
-      nodeGroup.filter(d => d.degree >= 2 || displayNodes.length <= 20).append('text')
+      nodeGroup.append('text')
         .text(d => (d.label || d.id || '').slice(0, 10))
-        .attr('font-size', d => Math.max(7, Math.min(11, sizeScale(d.degree) * 0.7)))
+        .attr('font-size', d => Math.max(7, Math.min(11, (sizeScale(d.degree) || 5) * 0.7)))
         .attr('fill', '#2d4d66').attr('text-anchor', 'middle').attr('dy', d => sizeScale(d.degree) + 12)
         .attr('font-family', "'Microsoft YaHei', 'SimHei', sans-serif")
 
@@ -1116,12 +1125,12 @@ export default function KnowledgeDetailPage() {
                   onChange={e => setNewEdgeForm(p => ({ ...p, target_entity: e.target.value }))}
                   list="entity-datalist-tgt" />
               </div>
-              {/* datalist with existing entities */}
+              {/* datalist with all known entities (auto-extracted + user-created) */}
               <datalist id="entity-datalist-src">
-                {graph.nodes.slice(0, 100).map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+                {allEntityNames.map(name => <option key={name} value={name} />)}
               </datalist>
               <datalist id="entity-datalist-tgt">
-                {graph.nodes.slice(0, 100).map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+                {allEntityNames.map(name => <option key={name} value={name} />)}
               </datalist>
               <div>
                 <label className="text-xs text-ink-muted mb-1 block">关系类型</label>

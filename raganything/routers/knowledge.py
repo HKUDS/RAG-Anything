@@ -939,7 +939,12 @@ async def graph_data(kb: str = Depends(verify_kb_access), current_user: dict = D
         # Rebuild node_ids from merged result
         node_ids = {n["id"] for n in nodes}
     except Exception:
-        pass  # graceful degradation if user_entities table doesn't exist yet
+        lightrag_logger.warning(
+            "[GRAPH] apply_user_edits_to_graph failed for kb=%s — "
+            "user-created entities/relations will not appear in graph",
+            kb,
+            exc_info=True,
+        )
 
     return {"nodes": nodes, "edges": edges}
 
@@ -1153,7 +1158,7 @@ async def graph_node_detail(
     return {
         "name": entity_name,
         "entity_type": infer_entity_type(entity_name),
-        "source_doc_count": len(source_docs),+
+        "source_doc_count": len(source_docs),
         
         "source_docs": [d[:16] for d in source_docs[:10]],
         "connected_entities": sorted(connected_entities),
