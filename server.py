@@ -266,7 +266,9 @@ async def startup():
     from raganything.services.pg_kb_meta_repo import pg_ensure_kb_tables
     await pg_ensure_agent_tables()
     await pg_ensure_kb_tables()
-    server_logger.info("PG P0 tables (agents, kb_metadata) verified")
+    from raganything.services.pg_graph_edit_repo import ensure_graph_edit_tables
+    await ensure_graph_edit_tables()
+    server_logger.info("PG P0 tables (agents, kb_metadata, graph_edit) verified")
 
     # 初始化认证数据库
     await init_db()

@@ -518,6 +518,10 @@ async def has_permission(user_id: int, permission: str) -> bool:
     role = await get_user_role(user_id)
     if not role:
         return False
+    # super_admin 动态拥有全部权限 — 即使 roles 表 JSON 是旧版本，
+    # 新增权限也自动生效，无需迁移数据库
+    if role.get("name") == "super_admin":
+        return True
     try:
         perms = json.loads(role.get("permissions", "[]"))
         return permission in perms

@@ -149,6 +149,23 @@ class BatchDeleteRequest(BaseModel):
     enable_video: Optional[bool] = None
 
 
+class CreateEntityRequest(BaseModel):
+    name: str
+    entity_type: str = ""
+    description: str = ""
+
+
+class RenameEntityRequest(BaseModel):
+    new_name: str
+
+
+class CreateRelationRequest(BaseModel):
+    source_entity: str
+    target_entity: str
+    relation_type: str = "related_to"
+    description: str = ""
+
+
 # ── Upload handlers ────────────────────────────────────
 
 @router.post("/upload")
@@ -915,7 +932,423 @@ async def graph_data(kb: str = Depends(verify_kb_access), current_user: dict = D
                 nodes.append({"id": tgt, "label": tgt[:25]})
             edges.append({"source": src, "target": tgt, "label": ""})
 
+    # ── Apply user edits (renames, additions, deletions, manual relations) ──
+    try:
+        from raganything.services.pg_graph_edit_repo import apply_user_edits_to_graph
+        nodes, edges = await apply_user_edits_to_graph(workspace, nodes, edges)
+        # Rebuild node_ids from merged result
+        node_ids = {n["id"] for n in nodes}
+    except Exception:
+        pass  # graceful degradation if user_entities table doesn't exist yet
+
     return {"nodes": nodes, "edges": edges}
+
+
+# ═══════════════════════════════════════════════════════════════
+# Retrieval-layer sync — Propagate user edits into LightRAG's
+# chunk_entity_relation_graph so that renames, additions, and
+# deletions visibly affect entity matching during retrieval.
+# ═══════════════════════════════════════════════════════════════
+
+async def _sync_entity_to_retrieval_graph(
+    kb: str,
+    operation: str,  # "rename", "delete", "create"
+    entity_name: str,
+    new_name: str = "",
+    entity_type: str = "",
+) -> None:
+    """Propagate an entity edit into LightRAG's in-memory graph so that
+    the retrieval pipeline (GraphRetriever._match_entities) sees the change.
+
+    This is the critical bridge between the user_entities PG table
+    (visualization layer) and chunk_entity_relation_graph (retrieval layer).
+    """
+    try:
+        instance = await get_kb(kb)
+        if not instance or not instance.lightrag:
+            return
+        graph = getattr(instance.lightrag, "chunk_entity_relation_graph", None)
+        if graph is None:
+            return
+
+        if operation == "delete":
+            await graph.delete_node(entity_name)
+            lightrag_logger.info(
+                "[GRAPH-SYNC] Deleted entity from retrieval graph: %s", entity_name,
+            )
+
+        elif operation == "rename":
+            # ⚠️  delete_node() cascades to remove all edges in NetworkX.
+            # Save edges BEFORE deleting, re-create them under the new name.
+            old_edges: list[tuple[str, str, dict]] = []
+            try:
+                raw_edges = await graph.get_node_edges(entity_name)
+                if raw_edges:
+                    for src, tgt in (raw_edges or []):
+                        # Collect edge data to preserve
+                        edge_data = {}
+                        try:
+                            ed = await graph.get_edge(src, tgt)
+                            if ed:
+                                edge_data = ed
+                        except Exception:
+                            pass
+                        old_edges.append((src, tgt, edge_data))
+            except Exception:
+                pass
+
+            # Read old node data, delete old node, upsert new node
+            old_data = await graph.get_node(entity_name)
+            node_data = old_data or {"entity_type": infer_entity_type(new_name)}
+            await graph.delete_node(entity_name)
+            await graph.upsert_node(new_name, node_data)
+
+            # Re-create edges with renamed references
+            for src, tgt, edata in old_edges:
+                new_src = new_name if src == entity_name else src
+                new_tgt = new_name if tgt == entity_name else tgt
+                try:
+                    await graph.upsert_edge(new_src, new_tgt, edata)
+                except Exception:
+                    pass
+
+            lightrag_logger.info(
+                "[GRAPH-SYNC] Renamed entity in retrieval graph: %s → %s (preserved %d edges)",
+                entity_name, new_name, len(old_edges),
+            )
+
+        elif operation == "create":
+            await graph.upsert_node(
+                entity_name,
+                {"entity_type": entity_type or infer_entity_type(entity_name)},
+            )
+            lightrag_logger.info(
+                "[GRAPH-SYNC] Created entity in retrieval graph: %s", entity_name,
+            )
+
+        # Persist the graph mutation to disk
+        try:
+            await graph.index_done_callback()
+        except Exception:
+            pass
+
+    except Exception as e:
+        lightrag_logger.warning(
+            "[GRAPH-SYNC] Failed to sync '%s' op='%s': %s",
+            entity_name, operation, e,
+        )
+
+
+async def _sync_edge_to_retrieval_graph(
+    kb: str,
+    operation: str,  # "create", "delete"
+    source_entity: str,
+    target_entity: str,
+    relation_type: str = "related_to",
+) -> None:
+    """Propagate a user-created/deleted edge into LightRAG's
+    chunk_entity_relation_graph so that BFS traversal during retrieval
+    follows user-defined relations.
+    """
+    try:
+        instance = await get_kb(kb)
+        if not instance or not instance.lightrag:
+            return
+        graph = getattr(instance.lightrag, "chunk_entity_relation_graph", None)
+        if graph is None:
+            return
+
+        if operation == "create":
+            edge_data = {"relation_type": relation_type, "source": "manual"}
+            await graph.upsert_edge(source_entity, target_entity, edge_data)
+            lightrag_logger.info(
+                "[GRAPH-SYNC] Created edge in retrieval graph: %s → %s",
+                source_entity, target_entity,
+            )
+
+        elif operation == "delete":
+            try:
+                await graph.remove_edges([(source_entity, target_entity)])
+            except Exception:
+                pass
+            lightrag_logger.info(
+                "[GRAPH-SYNC] Deleted edge from retrieval graph: %s → %s",
+                source_entity, target_entity,
+            )
+
+        try:
+            await graph.index_done_callback()
+        except Exception:
+            pass
+
+    except Exception as e:
+        lightrag_logger.warning(
+            "[GRAPH-SYNC] Failed to sync edge '%s'→'%s' op='%s': %s",
+            source_entity, target_entity, operation, e,
+        )
+
+
+# ═══════════════════════════════════════════════════════════════
+# Graph Editing API — Manual entity / relation CRUD
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/knowledge/graph/nodes/{entity_name:path}")
+async def graph_node_detail(
+    entity_name: str,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+):
+    """Get details for a single graph entity (auto-extracted + user-edited)."""
+    from raganything.services.pg_graph_edit_repo import (
+        get_user_relations_for_entity,
+    )
+
+    workspace = kb_dir(kb)
+
+    # Fetch auto-extracted data
+    entities_data = await _pg_fetch_graph_entities(workspace)
+    relations_data = await _pg_fetch_graph_relations(workspace)
+    valid_doc_ids = await _pg_fetch_doc_ids(workspace)
+
+    # Find which documents contain this entity
+    source_docs: list[str] = []
+    for doc_id, v in entities_data.items():
+        if valid_doc_ids and doc_id not in valid_doc_ids:
+            continue
+        if entity_name in v.get("entity_names", []):
+            source_docs.append(doc_id)
+
+    # Find auto-extracted relations involving this entity
+    auto_relations: list[dict] = []
+    connected_entities: set[str] = set()
+    for k, v in relations_data.items():
+        if valid_doc_ids and k not in valid_doc_ids:
+            continue
+        for src, tgt in v.get("relation_pairs", []):
+            if src == entity_name and tgt != entity_name:
+                auto_relations.append({"source": src, "target": tgt, "type": "auto"})
+                connected_entities.add(tgt)
+            elif tgt == entity_name and src != entity_name:
+                auto_relations.append({"source": src, "target": tgt, "type": "auto"})
+                connected_entities.add(src)
+
+    # Fetch user-edited relations involving this entity
+    try:
+        user_rels = await get_user_relations_for_entity(workspace, entity_name)
+        for ur in user_rels:
+            auto_relations.append({
+                "source": ur["source_entity"],
+                "target": ur["target_entity"],
+                "type": "manual",
+                "relation_type": ur.get("relation_type", ""),
+                "relation_id": ur.get("id", ""),
+            })
+            if ur["source_entity"] != entity_name:
+                connected_entities.add(ur["source_entity"])
+            if ur["target_entity"] != entity_name:
+                connected_entities.add(ur["target_entity"])
+    except Exception:
+        pass
+
+    return {
+        "name": entity_name,
+        "entity_type": infer_entity_type(entity_name),
+        "source_doc_count": len(source_docs),+
+        
+        "source_docs": [d[:16] for d in source_docs[:10]],
+        "connected_entities": sorted(connected_entities),
+        "relation_count": len(auto_relations),
+        "relations": auto_relations[:50],
+    }
+
+
+async def _ensure_edit_tables() -> None:
+    """Eagerly ensure user_entities / user_relations tables exist.
+
+    Called at the top of every graph-edit endpoint so that even if the
+    server hasn't been restarted since the migration was added, the
+    tables are created on first use.
+    """
+    from raganything.services.pg_graph_edit_repo import ensure_graph_edit_tables
+    await ensure_graph_edit_tables()
+
+
+@router.post("/knowledge/graph/nodes")
+async def create_graph_node(
+    req: CreateEntityRequest,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.GRAPH_WRITE)),
+):
+    """Manually create a new entity node in the knowledge graph."""
+    await _ensure_edit_tables()
+    from raganything.services.pg_graph_edit_repo import create_user_entity
+
+    name = req.name.strip()
+    if not name:
+        raise HTTPException(400, "实体名称不能为空")
+
+    result = await create_user_entity(
+        kb_name=kb_dir(kb),
+        name=name,
+        entity_type=req.entity_type,
+        description=req.description,
+        created_by=current_user.get("id", 0),
+    )
+    if not result:
+        raise HTTPException(500, "创建实体失败，请检查数据库连接")
+    # Sync to retrieval graph (best-effort, won't fail the request)
+    await _sync_entity_to_retrieval_graph(
+        kb, "create", name, entity_type=req.entity_type,
+    )
+    await add_event("graph_entity_create", entity=name, kb=kb, user_id=current_user.get("id", 0))
+    return {"status": "created", "entity": result}
+
+
+@router.put("/knowledge/graph/nodes/{entity_name:path}")
+async def rename_graph_node(
+    entity_name: str,
+    req: RenameEntityRequest,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.GRAPH_WRITE)),
+):
+    """Rename a graph entity node."""
+    await _ensure_edit_tables()
+    from raganything.services.pg_graph_edit_repo import rename_user_entity
+
+    new_name = req.new_name.strip()
+    if not new_name:
+        raise HTTPException(400, "新名称不能为空")
+    if new_name == entity_name:
+        raise HTTPException(400, "新名称与旧名称相同")
+
+    result = await rename_user_entity(
+        kb_name=kb_dir(kb),
+        old_name=entity_name,
+        new_name=new_name,
+        created_by=current_user.get("id", 0),
+    )
+    if not result:
+        raise HTTPException(500, "重命名实体失败，请检查数据库连接")
+    # Sync to retrieval graph (best-effort, won't fail the request)
+    await _sync_entity_to_retrieval_graph(
+        kb, "rename", entity_name, new_name=new_name,
+    )
+    await add_event("graph_entity_rename", old=entity_name, new=new_name, kb=kb, user_id=current_user.get("id", 0))
+    return {"status": "renamed", "entity": result}
+
+
+@router.delete("/knowledge/graph/nodes/{entity_name:path}")
+async def delete_graph_node(
+    entity_name: str,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.GRAPH_WRITE)),
+):
+    """Soft-delete a graph entity node."""
+    await _ensure_edit_tables()
+    from raganything.services.pg_graph_edit_repo import delete_user_entity
+
+    ok = await delete_user_entity(
+        kb_name=kb_dir(kb),
+        name=entity_name,
+        created_by=current_user.get("id", 0),
+    )
+    if not ok:
+        raise HTTPException(404, f"实体 '{entity_name}' 不存在或已删除")
+    # Sync to retrieval graph (best-effort, won't fail the request)
+    await _sync_entity_to_retrieval_graph(kb, "delete", entity_name)
+    await add_event("graph_entity_delete", entity=entity_name, kb=kb, user_id=current_user.get("id", 0))
+    return {"status": "deleted", "entity": entity_name}
+
+
+@router.post("/knowledge/graph/edges")
+async def create_graph_edge(
+    req: CreateRelationRequest,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.GRAPH_WRITE)),
+):
+    """Manually create a relation (edge) between two entities."""
+    await _ensure_edit_tables()
+    from raganything.services.pg_graph_edit_repo import create_user_relation
+
+    source = req.source_entity.strip()
+    target = req.target_entity.strip()
+
+    if source == target:
+        raise HTTPException(400, "源实体和目标实体不能相同")
+
+    # Validate both entities exist (check auto-extracted + user-created)
+    workspace = kb_dir(kb)
+    entities_data = await _pg_fetch_graph_entities(workspace)
+    auto_names: set[str] = set()
+    for v in entities_data.values():
+        auto_names.update(v.get("entity_names", []))
+
+    from raganything.services.pg_graph_edit_repo import list_user_entities, get_deleted_entity_names
+    user_ents = await list_user_entities(workspace)
+    deleted_names = await get_deleted_entity_names(workspace)
+    user_names = {ue["name"] for ue in user_ents}
+
+    all_valid = (auto_names | user_names) - deleted_names
+    missing = []
+    if source not in all_valid:
+        missing.append(f"源实体 '{source}'")
+    if target not in all_valid:
+        missing.append(f"目标实体 '{target}'")
+    if missing:
+        raise HTTPException(400, f"实体不存在: {', '.join(missing)}。请先创建实体或确认名称正确。")
+
+    result = await create_user_relation(
+        kb_name=workspace,
+        source_entity=source,
+        target_entity=target,
+        relation_type=req.relation_type,
+        description=req.description,
+        created_by=current_user.get("id", 0),
+    )
+    if not result:
+        raise HTTPException(500, "创建关系失败")
+    # Sync edge to retrieval graph for BFS traversal
+    await _sync_edge_to_retrieval_graph(
+        kb, "create", source, target, req.relation_type,
+    )
+    await add_event("graph_edge_create", source=source, target=target, kb=kb, user_id=current_user.get("id", 0))
+    return {"status": "created", "relation": result}
+
+
+@router.delete("/knowledge/graph/edges/{relation_id}")
+async def delete_graph_edge(
+    relation_id: str,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.GRAPH_WRITE)),
+):
+    """Delete a manual relation (edge) by ID."""
+    await _ensure_edit_tables()
+    from raganything.services.pg_graph_edit_repo import delete_user_relation
+
+    # Fetch relation info before deletion (for graph sync)
+    from raganything.services.pg_graph_edit_repo import list_user_relations
+    workspace = kb_dir(kb)
+    all_rels = await list_user_relations(workspace)
+    rel_info = next((r for r in all_rels if r.get("id") == relation_id), None)
+
+    ok = await delete_user_relation(
+        relation_id=relation_id,
+        kb_name=workspace,
+    )
+    if not ok:
+        raise HTTPException(404, f"关系 '{relation_id}' 不存在")
+    # Sync edge removal to retrieval graph
+    if rel_info:
+        await _sync_edge_to_retrieval_graph(
+            kb, "delete", rel_info["source_entity"], rel_info["target_entity"],
+        )
+    await add_event("graph_edge_delete", relation_id=relation_id, kb=kb, user_id=current_user.get("id", 0))
+    return {"status": "deleted", "relation_id": relation_id}
 
 
 # ── File Download Helpers ────────────────────────────────────
@@ -1015,18 +1448,51 @@ async def _resolve_download_file(kb: str, doc_id: str) -> tuple[Path, str] | Non
 
 # ── File Download Endpoint ────────────────────────────────────
 
+
+async def _verify_kb_access_for_download(kb: str, current_user: dict) -> None:
+    """验证用户对指定知识库的访问权限（下载端点专用，不通过 FastAPI 依赖注入）。
+
+    与 dependencies.verify_kb_access 逻辑一致，但作为普通函数调用而非 FastAPI 依赖，
+    从而避免其内部的 get_current_user → HTTPBearer() 阻断 ?token=xxx 回退认证路径。
+    """
+    from raganything.services.kb_service import load_kb_meta
+    from fastapi import HTTPException as _HTTPException
+
+    kb_meta = await load_kb_meta()
+    if kb not in kb_meta:
+        raise _HTTPException(404, f"知识库 '{kb}' 不存在")
+    if current_user.get("is_admin"):
+        return
+    allowed_kbs = current_user.get("allowed_kbs", [])
+    if kb not in allowed_kbs:
+        raise _HTTPException(403, "无权访问该知识库")
+
+
 @router.get("/knowledge/documents/{doc_id}/download")
 async def download_document(
     doc_id: str,
-    kb: str = Depends(verify_kb_access),
-    current_user: dict = Depends(get_current_user),
+    kb: str = QueryParam("default"),
+    token: Optional[str] = QueryParam(None, description="认证 Token（用于 a 标签等无法设置 Header 的场景）"),
+    current_user: Optional[dict] = Depends(get_optional_user),
 ):
     """下载文档的原始上传文件（PDF / DOCX / PPTX / 视频 等）。
 
     支持 HTTP Range 请求（视频拖动进度条、断点续传）。
     Content-Type 根据文件扩展名自动检测。
+    支持 Authorization header 和 ?token=xxx query 参数两种认证方式。
+    KB 访问验证在双模式认证完成后执行，避免 HTTPBearer 依赖链阻断 ?token 回退。
     """
     import mimetypes
+
+    # 双模式认证：header 优先，query 参数回退（用于 <a> 标签下载）
+    if current_user is None and token:
+        current_user = await get_current_user_from_token(token=token)
+    if current_user is None:
+        raise HTTPException(401, "请提供有效的认证 Token（query 参数 ?token= 或 Authorization header）")
+
+    # KB 访问验证（必须在认证后执行，不能用 FastAPI 依赖注入 — 否则 verify_kb_access
+    # 内部会触发 get_current_user → HTTPBearer() 在无 Authorization header 时直接报 401）
+    await _verify_kb_access_for_download(kb, current_user)
 
     resolved = await _resolve_download_file(kb, doc_id)
     if resolved is None:
@@ -1183,7 +1649,7 @@ async def _force_cleanup_lightrag_orphans(instance, full_id: str) -> list[str]:
             if _graph is not None:
                 for _src, _tgt in _rel_pairs:
                     try:
-                        await _graph.delete_edge(_src, _tgt)
+                        await _graph.remove_edges([(_src, _tgt)])
                     except Exception:
                         pass
         except Exception:

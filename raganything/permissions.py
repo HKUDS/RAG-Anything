@@ -47,6 +47,10 @@ class Permission:
     WORKFLOW_READ = "workflow:read"
     WORKFLOW_WRITE = "workflow:write"
 
+    # 知识图谱编辑
+    GRAPH_READ = "graph:read"
+    GRAPH_WRITE = "graph:write"
+
     # 制造智能体
     MANUFACTURING_READ = "manufacturing:read"
     MANUFACTURING_WRITE = "manufacturing:write"
@@ -92,6 +96,8 @@ DEFAULT_ROLES: Dict[str, Dict] = {
             Permission.WORKFLOW_WRITE,
             Permission.MANUFACTURING_READ,
             Permission.MANUFACTURING_WRITE,
+            Permission.GRAPH_READ,
+            Permission.GRAPH_WRITE,
         ],
     },
     "teacher": {
@@ -106,6 +112,8 @@ DEFAULT_ROLES: Dict[str, Dict] = {
             Permission.WORKFLOW_READ,
             Permission.MANUFACTURING_READ,
             Permission.MANUFACTURING_WRITE,
+            Permission.GRAPH_READ,
+            Permission.GRAPH_WRITE,
         ],
     },
     "assistant": {
@@ -116,6 +124,8 @@ DEFAULT_ROLES: Dict[str, Dict] = {
             Permission.AGENT_READ,
             Permission.MONITOR_READ,
             Permission.MANUFACTURING_READ,
+            Permission.GRAPH_READ,
+            Permission.GRAPH_WRITE,
         ],
     },
     "student": {
@@ -124,6 +134,7 @@ DEFAULT_ROLES: Dict[str, Dict] = {
             Permission.KB_READ,
             Permission.AGENT_READ,
             Permission.MANUFACTURING_READ,
+            Permission.GRAPH_READ,
         ],
     },
 }

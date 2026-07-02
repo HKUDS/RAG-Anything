@@ -3,7 +3,7 @@ import {
   Search, Eye, Trash2, X, FileText, Clock, Filter, ZoomIn, ZoomOut, RotateCcw,
   Plus, Layers, Upload, Globe, FolderOpen, ClipboardPaste,
   Loader2, CheckCircle2, XCircle, Scissors, ChevronDown, ChevronUp, Zap, Image,
-  ArrowLeft
+  ArrowLeft, Download, Pencil, Link2, Save
 } from 'lucide-react'
 import * as d3 from 'd3'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -269,6 +269,17 @@ export default function KnowledgeDetailPage() {
   const [toast, setToast] = useState(null)
   const [chunkingStrategy, setChunkingStrategy] = useState('')
   const [strategies, setStrategies] = useState({})
+  // Graph editing states
+  const [showCreateNodeModal, setShowCreateNodeModal] = useState(false)
+  const [showCreateEdgeModal, setShowCreateEdgeModal] = useState(false)
+  const [showDeleteNodeConfirm, setShowDeleteNodeConfirm] = useState(null)
+  const [renamingNode, setRenamingNode] = useState(null)
+  const [renameValue, setRenameValue] = useState('')
+  const [graphNodeDetail, setGraphNodeDetail] = useState(null)
+  // Create-node form
+  const [newNodeForm, setNewNodeForm] = useState({ name: '', entity_type: '', description: '' })
+  // Create-edge form
+  const [newEdgeForm, setNewEdgeForm] = useState({ source_entity: '', target_entity: '', relation_type: 'related_to', description: '' })
   const [multimodal, setMultimodal] = useState({
     enable_image: true, enable_table: true, enable_equation: true, enable_video: false
   })
@@ -285,6 +296,67 @@ export default function KnowledgeDetailPage() {
   const selectedNodeRef = useRef(null)
   selectedNodeRef.current = selectedNode
   const simRef = useRef(null)
+
+  // ── Graph Editing Handlers ──
+
+  const handleCreateNode = async () => {
+    if (!newNodeForm.name.trim()) return
+    try {
+      await api.createGraphNode(newNodeForm)
+      setShowCreateNodeModal(false)
+      setNewNodeForm({ name: '', entity_type: '', description: '' })
+      loadKBData()
+      showToast(`✅ 实体 "${newNodeForm.name}" 已创建`, 'success')
+    } catch (e) { showToast('创建失败: ' + e.message, 'error') }
+  }
+
+  const handleRenameNode = async (oldName) => {
+    if (!renameValue.trim() || renameValue.trim() === oldName) {
+      setRenamingNode(null); return
+    }
+    try {
+      await api.renameGraphNode(oldName, renameValue.trim())
+      setRenamingNode(null); setSelectedNode(null); setNodeDetails(null)
+      loadKBData()
+      showToast(`✅ 已重命名为 "${renameValue.trim()}"`, 'success')
+    } catch (e) { showToast('重命名失败: ' + e.message, 'error') }
+  }
+
+  const handleDeleteNode = async (name) => {
+    try {
+      await api.deleteGraphNode(name)
+      setShowDeleteNodeConfirm(null); setSelectedNode(null); setNodeDetails(null)
+      loadKBData()
+      showToast(`🗑️ 实体 "${name}" 已删除`, 'success')
+    } catch (e) { showToast('删除失败: ' + e.message, 'error') }
+  }
+
+  const handleCreateEdge = async () => {
+    if (!newEdgeForm.source_entity.trim() || !newEdgeForm.target_entity.trim()) return
+    try {
+      await api.createGraphEdge(newEdgeForm)
+      setShowCreateEdgeModal(false)
+      setNewEdgeForm({ source_entity: '', target_entity: '', relation_type: 'related_to', description: '' })
+      loadKBData()
+      showToast('✅ 关系已创建', 'success')
+    } catch (e) { showToast('创建关系失败: ' + e.message, 'error') }
+  }
+
+  const handleDeleteEdge = async (edgeId) => {
+    try {
+      await api.deleteGraphEdge(edgeId)
+      loadKBData()
+      showToast('🗑️ 关系已删除', 'success')
+    } catch (e) { showToast('删除关系失败: ' + e.message, 'error') }
+  }
+
+  // Fetch detailed node info from API
+  const fetchNodeDetail = async (nodeName) => {
+    try {
+      const detail = await api.getGraphNode(nodeName)
+      setGraphNodeDetail(detail)
+    } catch { setGraphNodeDetail(null) }
+  }
 
   // Helper: D3 forceLink mutates edge source/target from string → node object.
   // After simulation, edge.source is {id, x, y, ...} not a bare string.
@@ -432,13 +504,15 @@ export default function KnowledgeDetailPage() {
         connections.forEach(e => {
           const other = _sid(e, 'source') === d.id ? _sid(e, 'target') : _sid(e, 'source')
           connectedNames.add(other)
-          connectionList.push({ other, label: e.label || '', direction: _sid(e, 'source') === d.id ? '→' : '←' })
+          connectionList.push({ other, label: e.label || '', direction: _sid(e, 'source') === d.id ? '→' : '←', _userRelationId: e._user_relation_id || '' })
         })
         setNodeDetails({
           node: d, connections: connectionList.slice(0, 30),
           connectedNodes: graph.nodes.filter(n => connectedNames.has(n.id)).slice(0, 20),
           totalConnections: connectionList.length,
         })
+        // Fetch richer detail from backend
+        fetchNodeDetail(d.id)
 
         // Smoothly center viewport on the clicked node
         if (d.x !== undefined && d.y !== undefined) {
@@ -674,7 +748,13 @@ export default function KnowledgeDetailPage() {
                       <input type="checkbox" checked={selectedIds.has(doc.id)}
                         onChange={() => toggleSelect(doc.id)} className="w-3.5 h-3.5 accent-sky-500" />
                     </td>
-                    <td className="py-2.5 text-ink-body max-w-40 truncate text-sm" title={doc.file}>{doc.file}</td>
+                    <td className="py-2.5 max-w-40 truncate text-sm" title={doc.file}>
+                      {doc.file !== '?' ? (
+                        <a href={api.downloadDocumentUrl(doc.full_id)} className="text-ink-body hover:text-sky-600 transition-colors" download>{doc.file}</a>
+                      ) : (
+                        <span className="text-ink-body">{doc.file}</span>
+                      )}
+                    </td>
                     <td className="py-2.5">
                       <span className={STATUS[doc.status] || 'badge-info'}>
                         {STATUS_CN[doc.status] || doc.status}
@@ -685,6 +765,9 @@ export default function KnowledgeDetailPage() {
                     <td className="py-2.5 font-mono text-ink-muted text-sm">{(doc.length || 0).toLocaleString()}</td>
                     <td className="py-2.5 text-xs text-ink-muted">{doc.updated?.slice(0, 16) || '-'}</td>
                     <td className="py-2.5 flex gap-1">
+                      {doc.file !== '?' && (
+                        <a href={api.downloadDocumentUrl(doc.full_id)} className="btn-ghost text-xs py-1 px-2 text-sky-600" title="下载" download><Download size={14}/></a>
+                      )}
                       {doc.status === 'failed' && (
                         <button className="btn-ghost text-xs py-1 px-2 text-amber-600" onClick={async () => { await api.retryDocument(doc.id); loadKBData() }} title="重试"><RotateCcw size={14}/></button>
                       )}
@@ -727,6 +810,14 @@ export default function KnowledgeDetailPage() {
                 <button className="btn-ghost text-xs py-1.5 px-2.5" onClick={() => handleZoom('in')} title="放大"><ZoomIn size={14}/></button>
                 <button className="btn-ghost text-xs py-1.5 px-2.5" onClick={() => handleZoom('out')} title="缩小"><ZoomOut size={14}/></button>
                 <button className="btn-ghost text-xs py-1.5 px-2.5" onClick={() => handleZoom('reset')} title="重置"><RotateCcw size={14}/></button>
+                {/* ── Graph edit buttons ── */}
+                <span className="w-px h-5 bg-cloud-300 mx-0.5" />
+                <button className="btn-primary text-xs py-1.5 px-2.5" onClick={() => setShowCreateNodeModal(true)} title="新增实体">
+                  <Plus size={13}/><span className="ml-1 hidden sm:inline">新增</span>
+                </button>
+                <button className="btn-ghost text-xs py-1.5 px-2.5 text-sky-600" onClick={() => setShowCreateEdgeModal(true)} title="创建连线">
+                  <Link2 size={13}/><span className="ml-1 hidden sm:inline">连线</span>
+                </button>
                 <label className="btn-ghost text-xs py-1.5 px-2.5 cursor-pointer" title="以图搜图">
                   <Image size={14} />
                   <input type="file" accept="image/*" className="hidden" ref={visionInputRef} onChange={handleImageSearch} />
@@ -759,26 +850,75 @@ export default function KnowledgeDetailPage() {
             {nodeDetails ? (
               <>
                 <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-semibold text-ink-body truncate flex-1">
-                    🔗 "{nodeDetails.node.label || nodeDetails.node.id}"
-                  </h3>
+                  {renamingNode === nodeDetails.node.id ? (
+                    <div className="flex items-center gap-1.5 flex-1">
+                      <input
+                        className="input-field text-xs flex-1 py-1"
+                        value={renameValue}
+                        onChange={e => setRenameValue(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') handleRenameNode(nodeDetails.node.id); if (e.key === 'Escape') setRenamingNode(null) }}
+                        autoFocus
+                        placeholder="新名称..."
+                      />
+                      <button className="btn-primary text-xs py-1 px-2" onClick={() => handleRenameNode(nodeDetails.node.id)} title="保存"><Save size={12}/></button>
+                      <button className="btn-ghost text-xs py-1 px-1.5" onClick={() => setRenamingNode(null)} title="取消"><X size={12}/></button>
+                    </div>
+                  ) : (
+                    <h3 className="text-sm font-semibold text-ink-body truncate flex-1">
+                      🔗 "{nodeDetails.node.label || nodeDetails.node.id}"
+                    </h3>
+                  )}
                   <button
                     className="btn-ghost p-1 text-ink-muted hover:text-ink-body"
-                    onClick={() => { setSelectedNode(null); setNodeDetails(null) }}
+                    onClick={() => { setSelectedNode(null); setNodeDetails(null); setGraphNodeDetail(null); setRenamingNode(null) }}
                     title="返回实体列表"
                   >
                     <X size={14} />
                   </button>
                 </div>
+
+                {/* ── Node actions ── */}
+                <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                  <button
+                    className="btn-ghost text-2xs py-0.5 px-1.5 text-ink-muted hover:text-sky-600"
+                    onClick={() => { setRenamingNode(nodeDetails.node.id); setRenameValue(nodeDetails.node.label || nodeDetails.node.id) }}
+                    title="重命名"
+                  ><Pencil size={10}/> <span className="ml-0.5">重命名</span></button>
+                  <button
+                    className="btn-ghost text-2xs py-0.5 px-1.5 text-ink-muted hover:text-rose-500"
+                    onClick={() => setShowDeleteNodeConfirm(nodeDetails.node)}
+                    title="删除实体"
+                  ><Trash2 size={10}/> <span className="ml-0.5">删除</span></button>
+                </div>
+
+                {/* ── API detail info ── */}
+                {graphNodeDetail && (
+                  <div className="mb-2 px-2 py-1.5 bg-sky-50/50 rounded-lg text-xs space-y-0.5">
+                    <div className="flex justify-between"><span className="text-ink-muted">类型</span><span>{graphNodeDetail.entity_type || '—'}</span></div>
+                    <div className="flex justify-between"><span className="text-ink-muted">来源文档</span><span>{graphNodeDetail.source_doc_count}</span></div>
+                    <div className="flex justify-between"><span className="text-ink-muted">关系数</span><span>{graphNodeDetail.relation_count}</span></div>
+                  </div>
+                )}
+
                 <p className="text-xs text-ink-muted mb-2">共 {nodeDetails.totalConnections} 条关系</p>
-                <div className="space-y-1.5 flex-1 overflow-y-auto">
+                <div className="space-y-1 flex-1 overflow-y-auto">
                   {nodeDetails.connections.map((c, i) => (
-                    <div key={i} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-cloud-100 text-xs">
+                    <div key={i} className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-cloud-100 text-xs group">
                       <span className="text-sky-500 font-mono shrink-0 text-2xs">{c.direction}</span>
                       <span className="text-ink-body truncate flex-1">{c.other}</span>
                       {c.label && <span className="text-2xs text-ink-muted shrink-0">{c.label.slice(0, 12)}</span>}
+                      {c._userRelationId && (
+                        <button
+                          className="opacity-0 group-hover:opacity-100 text-rose-400 hover:text-rose-600 shrink-0 transition-opacity"
+                          onClick={() => handleDeleteEdge(c._userRelationId)}
+                          title="删除此关系"
+                        ><X size={10}/></button>
+                      )}
                     </div>
                   ))}
+                  {nodeDetails.connections.length === 0 && (
+                    <p className="text-2xs text-ink-muted text-center py-4">暂无关系，可以手动创建连线</p>
+                  )}
                 </div>
                 {nodeDetails.connectedNodes.length > 0 && (
                   <div className="mt-3 pt-3 border-t border-cloud-200">
@@ -792,7 +932,7 @@ export default function KnowledgeDetailPage() {
                             const connections = graph.edges.filter(ed => _sid(ed, 'source') === n.id || _sid(ed, 'target') === n.id)
                             const connectionList = connections.map(ed => ({
                               other: _sid(ed, 'source') === n.id ? _sid(ed, 'target') : _sid(ed, 'source'),
-                              label: ed.label || '', direction: _sid(ed, 'source') === n.id ? '→' : '←',
+                              label: ed.label || '', direction: _sid(ed, 'source') === n.id ? '→' : '←', _userRelationId: ed._user_relation_id || '',
                             }))
                             setSelectedNode(n)
                             setNodeDetails({
@@ -800,6 +940,7 @@ export default function KnowledgeDetailPage() {
                               connectedNodes: graph.nodes.filter(nd => new Set(connectionList.map(c => c.other)).has(nd.id)).slice(0, 20),
                               totalConnections: connectionList.length,
                             })
+                            fetchNodeDetail(n.id)
                           }}
                         >
                           {n.label || n.id}
@@ -832,6 +973,7 @@ export default function KnowledgeDetailPage() {
                           connectedNodes: graph.nodes.filter(n => new Set(connectionList.map(c => c.other)).has(n.id)).slice(0, 20),
                           totalConnections: connectionList.length,
                         })
+                        fetchNodeDetail(node.id)
                       }}>
                       <span className="text-ink-body truncate flex-1">{e.name}</span>
                       {e.type && <span className="text-2xs text-ink-muted ml-1.5 shrink-0">{e.type}</span>}
@@ -876,6 +1018,16 @@ export default function KnowledgeDetailPage() {
                   </div>
                 ))}
             </div>
+            {detailDoc.file !== '?' && (
+              <div className="mt-4 pt-3 border-t border-cloud-200">
+                <a href={api.downloadDocumentUrl(detailDoc.full_id)}
+                   className="btn-primary text-sm flex items-center justify-center gap-2 w-full"
+                   download>
+                  <Download size={16} />
+                  下载原始文件
+                </a>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -893,6 +1045,124 @@ export default function KnowledgeDetailPage() {
               <button className="btn-danger text-sm" onClick={handleDelete} disabled={deleting}>
                 {deleting ? '删除中…' : '确认删除'}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Create Node Modal ── */}
+      {showCreateNodeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowCreateNodeModal(false)} role="dialog" aria-modal="true" aria-label="新增实体">
+          <div className="absolute inset-0 bg-sky-900/20" />
+          <div className="relative card p-6 w-96" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-ink-primary">➕ 新增实体</h3>
+              <button className="btn-ghost p-1" onClick={() => setShowCreateNodeModal(false)}><X size={16}/></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-ink-muted mb-1 block">实体名称 <span className="text-rose-500">*</span></label>
+                <input className="input-field text-sm w-full" placeholder="输入实体名称…" value={newNodeForm.name}
+                  onChange={e => setNewNodeForm(p => ({ ...p, name: e.target.value }))}
+                  onKeyDown={e => e.key === 'Enter' && handleCreateNode()} autoFocus />
+              </div>
+              <div>
+                <label className="text-xs text-ink-muted mb-1 block">类型（可选）</label>
+                <select className="input-field text-sm w-full" value={newNodeForm.entity_type}
+                  onChange={e => setNewNodeForm(p => ({ ...p, entity_type: e.target.value }))}>
+                  <option value="">自动推断</option>
+                  <option value="person">人物</option>
+                  <option value="organization">组织/机构</option>
+                  <option value="technology">技术/工具</option>
+                  <option value="concept">概念/理论</option>
+                  <option value="event">事件</option>
+                  <option value="location">地点</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-ink-muted mb-1 block">描述（可选）</label>
+                <textarea className="input-field text-sm w-full h-16 resize-none" placeholder="简短描述…" value={newNodeForm.description}
+                  onChange={e => setNewNodeForm(p => ({ ...p, description: e.target.value }))} />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-4 justify-end">
+              <button className="btn-secondary text-sm" onClick={() => setShowCreateNodeModal(false)}>取消</button>
+              <button className="btn-primary text-sm" onClick={handleCreateNode} disabled={!newNodeForm.name.trim()}>创建</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Create Edge Modal ── */}
+      {showCreateEdgeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowCreateEdgeModal(false)} role="dialog" aria-modal="true" aria-label="创建连线">
+          <div className="absolute inset-0 bg-sky-900/20" />
+          <div className="relative card p-6 w-96" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-ink-primary">🔗 创建连线</h3>
+              <button className="btn-ghost p-1" onClick={() => setShowCreateEdgeModal(false)}><X size={16}/></button>
+            </div>
+            <div className="space-y-3">
+              <div>
+                <label className="text-xs text-ink-muted mb-1 block">源实体 <span className="text-rose-500">*</span></label>
+                <input className="input-field text-sm w-full" placeholder="实体名称…" value={newEdgeForm.source_entity}
+                  onChange={e => setNewEdgeForm(p => ({ ...p, source_entity: e.target.value }))}
+                  list="entity-datalist-src" autoFocus />
+              </div>
+              <div>
+                <label className="text-xs text-ink-muted mb-1 block">目标实体 <span className="text-rose-500">*</span></label>
+                <input className="input-field text-sm w-full" placeholder="实体名称…" value={newEdgeForm.target_entity}
+                  onChange={e => setNewEdgeForm(p => ({ ...p, target_entity: e.target.value }))}
+                  list="entity-datalist-tgt" />
+              </div>
+              {/* datalist with existing entities */}
+              <datalist id="entity-datalist-src">
+                {graph.nodes.slice(0, 100).map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+              </datalist>
+              <datalist id="entity-datalist-tgt">
+                {graph.nodes.slice(0, 100).map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+              </datalist>
+              <div>
+                <label className="text-xs text-ink-muted mb-1 block">关系类型</label>
+                <select className="input-field text-sm w-full" value={newEdgeForm.relation_type}
+                  onChange={e => setNewEdgeForm(p => ({ ...p, relation_type: e.target.value }))}>
+                  <option value="related_to">关联</option>
+                  <option value="requires">依赖/需要</option>
+                  <option value="advances_to">进阶</option>
+                  <option value="evaluates">评估</option>
+                  <option value="applies_in">应用</option>
+                  <option value="part_of">组成</option>
+                  <option value="instance_of">实例</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-xs text-ink-muted mb-1 block">描述（可选）</label>
+                <input className="input-field text-sm w-full" placeholder="关系描述…" value={newEdgeForm.description}
+                  onChange={e => setNewEdgeForm(p => ({ ...p, description: e.target.value }))} />
+              </div>
+            </div>
+            <div className="flex gap-3 mt-4 justify-end">
+              <button className="btn-secondary text-sm" onClick={() => setShowCreateEdgeModal(false)}>取消</button>
+              <button className="btn-primary text-sm" onClick={handleCreateEdge}
+                disabled={!newEdgeForm.source_entity.trim() || !newEdgeForm.target_entity.trim()}>创建连线</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Delete Node Confirm ── */}
+      {showDeleteNodeConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowDeleteNodeConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除实体">
+          <div className="absolute inset-0 bg-sky-900/20" />
+          <div className="relative card p-6 w-80 text-center" onClick={e => e.stopPropagation()}>
+            <Trash2 size={32} className="mx-auto mb-3 text-rose-500" />
+            <p className="text-ink-primary font-medium mb-1">确认删除实体</p>
+            <p className="text-xs text-ink-muted mb-1 truncate">"{showDeleteNodeConfirm.label || showDeleteNodeConfirm.id}"</p>
+            <p className="text-2xs text-rose-500 mb-4">删除后可从图谱中移除该实体</p>
+            <div className="flex gap-3 justify-center">
+              <button className="btn-secondary text-sm" onClick={() => setShowDeleteNodeConfirm(null)}>取消</button>
+              <button className="btn-danger text-sm" onClick={() => handleDeleteNode(showDeleteNodeConfirm.id)}>确认删除</button>
             </div>
           </div>
         </div>

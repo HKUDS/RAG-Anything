@@ -140,10 +140,20 @@ export const api = {
   getStats: () => request('/knowledge/stats'),
   getEntities: (limit = 50) => request(`/knowledge/entities?limit=${limit}`),
   getGraph: () => request('/knowledge/graph'),
+  getGraphNode: (name) => request(`/knowledge/graph/nodes/${encodeURIComponent(name)}`),
+  createGraphNode: (data) => request('/knowledge/graph/nodes', { method: 'POST', body: JSON.stringify(data) }),
+  renameGraphNode: (name, newName) => request(`/knowledge/graph/nodes/${encodeURIComponent(name)}`, { method: 'PUT', body: JSON.stringify({ new_name: newName }) }),
+  deleteGraphNode: (name) => request(`/knowledge/graph/nodes/${encodeURIComponent(name)}`, { method: 'DELETE' }),
+  createGraphEdge: (data) => request('/knowledge/graph/edges', { method: 'POST', body: JSON.stringify(data) }),
+  deleteGraphEdge: (id) => request(`/knowledge/graph/edges/${id}`, { method: 'DELETE' }),
   deleteDocument: (id) => request(`/knowledge/documents/${id}`, { method: 'DELETE' }),
   deleteDocuments: (ids) => request('/knowledge/documents/batch-delete', { method: 'POST', body: JSON.stringify({ doc_ids: ids }) }),
   retryDocument: (id) => request(`/knowledge/documents/${id}/retry`, { method: 'POST' }),
-  downloadDocumentUrl: (id) => `${API_BASE}/knowledge/documents/${id}/download?kb=${currentKB}`,
+  downloadDocumentUrl: (id) => {
+    const token = getToken()
+    const tokenParam = token ? `&token=${encodeURIComponent(token)}` : ''
+    return `${API_BASE}/knowledge/documents/${id}/download?kb=${encodeURIComponent(currentKB)}${tokenParam}`
+  },
 
   // Image similarity search (vision embedding - doubao-embedding-vision)
   imageSearch: (file, topK = 10) => {
