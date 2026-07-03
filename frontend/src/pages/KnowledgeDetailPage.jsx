@@ -3,12 +3,13 @@ import {
   Search, Eye, Trash2, X, FileText, Clock, Filter, ZoomIn, ZoomOut, RotateCcw,
   Plus, Layers, Upload, Globe, FolderOpen, ClipboardPaste,
   Loader2, CheckCircle2, XCircle, Scissors, ChevronDown, ChevronUp, Zap, Image,
-  ArrowLeft, Download, Pencil, Link2, Save
+  ArrowLeft, Download, Pencil, Link2, Save, Table, Sigma, Video, ImageIcon
 } from 'lucide-react'
 import * as d3 from 'd3'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useParams, useNavigate } from 'react-router-dom'
-import { api, setCurrentKB } from '../utils/api'
+import { api, setCurrentKB, getToken } from '../utils/api'
+import ChunkDetailDrawer from '../components/ChunkDetailDrawer'
 
 const STATUS = { processed: 'badge-success', processing: 'badge-warning', handling: 'badge-info', failed: 'badge-error' }
 const STATUS_CN = { processed: '已完成', processing: '处理中', handling: '入库中', failed: '失败' }
@@ -281,8 +282,14 @@ export default function KnowledgeDetailPage() {
   // Create-edge form
   const [newEdgeForm, setNewEdgeForm] = useState({ source_entity: '', target_entity: '', relation_type: 'related_to', description: '' })
   const [multimodal, setMultimodal] = useState({
-    enable_image: true, enable_table: true, enable_equation: true, enable_video: false
+    enable_image: true, enable_table: true, enable_equation: true, enable_video: true
   })
+  // Chunk detail panel states
+  const [chunkPanelDoc, setChunkPanelDoc] = useState(null)
+  const [chunksData, setChunksData] = useState([])
+  const [chunksLoading, setChunksLoading] = useState(false)
+  const [expandedChunks, setExpandedChunks] = useState({})
+  const [chunkFilterText, setChunkFilterText] = useState('')
   const [activeTab, setActiveTab] = useState('documents')
   const [visionSearching, setVisionSearching] = useState(false)
   const [visionResults, setVisionResults] = useState(null)
@@ -375,6 +382,50 @@ export default function KnowledgeDetailPage() {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
   }
+
+  // ── Chunk Detail Panel Handlers ──
+  const openChunkPanel = async (doc) => {
+    setChunkPanelDoc(doc)
+    setChunkFilterText('')
+    setChunksLoading(true)
+    setChunksData([])
+    setExpandedChunks({ 0: true }) // default: expand first chunk
+    try {
+      const result = await api.getDocumentChunks(doc.full_id)
+      setChunksData(result.chunks || [])
+    } catch (e) {
+      showToast('加载分块失败: ' + e.message, 'error')
+      setChunkPanelDoc(null)
+    } finally {
+      setChunksLoading(false)
+    }
+  }
+
+  const closeChunkPanel = () => {
+    setChunkPanelDoc(null)
+    setChunksData([])
+    setChunkFilterText('')
+    setExpandedChunks({})
+  }
+
+  const toggleChunk = (idx) => {
+    setExpandedChunks(prev => ({ ...prev, [idx]: !prev[idx] }))
+  }
+
+  const expandAll = () => {
+    const all = {}
+    chunksData.forEach((_, i) => { all[i] = true })
+    setExpandedChunks(all)
+  }
+
+  const collapseAll = () => {
+    setExpandedChunks({})
+  }
+
+  // Filtered chunks based on search text
+  const filteredChunks = chunkFilterText.trim()
+    ? chunksData.filter(c => (c.content || '').toLowerCase().includes(chunkFilterText.toLowerCase()))
+    : chunksData
 
   // Load settings (chunking strategies) once
   useEffect(() => {
@@ -770,7 +821,20 @@ export default function KnowledgeDetailPage() {
                         {doc.phase && PHASE_CN[doc.phase] ? <span className="ml-1 text-2xs opacity-70">({PHASE_CN[doc.phase]})</span> : null}
                       </span>
                     </td>
-                    <td className="py-2.5 font-mono text-ink-muted text-sm">{doc.chunks}</td>
+                    <td className="py-2.5">
+                      {doc.chunks > 0 ? (
+                        <button
+                          className="font-mono text-sm text-sky-600 hover:text-sky-700 hover:underline cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300 rounded px-1 -mx-1 transition-colors"
+                          onClick={(e) => { e.preventDefault(); openChunkPanel(doc) }}
+                          title={`查看 ${doc.file} 的切块详情`}
+                          aria-label={`查看 ${doc.file} 的 ${doc.chunks} 个切块`}
+                        >
+                          {doc.chunks}
+                        </button>
+                      ) : (
+                        <span className="font-mono text-ink-muted text-sm">{doc.chunks}</span>
+                      )}
+                    </td>
                     <td className="py-2.5 font-mono text-ink-muted text-sm">{(doc.length || 0).toLocaleString()}</td>
                     <td className="py-2.5 text-xs text-ink-muted">{doc.updated?.slice(0, 16) || '-'}</td>
                     <td className="py-2.5 flex gap-1">
@@ -1176,6 +1240,23 @@ export default function KnowledgeDetailPage() {
           </div>
         </div>
       )}
+
+      {/* ── Chunk Detail Drawer ── */}
+      <AnimatePresence>
+        {chunkPanelDoc && <ChunkDetailDrawer
+          doc={chunkPanelDoc}
+          chunksData={chunksData}
+          chunksLoading={chunksLoading}
+          expandedChunks={expandedChunks}
+          chunkFilterText={chunkFilterText}
+          filteredChunks={filteredChunks}
+          onClose={closeChunkPanel}
+          onToggleChunk={toggleChunk}
+          onExpandAll={expandAll}
+          onCollapseAll={collapseAll}
+          onFilterChange={setChunkFilterText}
+        />}
+      </AnimatePresence>
 
       {/* Toast */}
       <AnimatePresence>

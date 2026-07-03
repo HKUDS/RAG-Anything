@@ -118,6 +118,8 @@ class BaseModalProcessor:
         content_type: str,
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
+        doc_id: str = None,
+        file_path: str = "",
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Generate text description and entity info only, without entity relation extraction.
@@ -128,6 +130,8 @@ class BaseModalProcessor:
             content_type: Type of modal content
             item_info: Item information for context extraction
             entity_name: Optional predefined entity name
+            doc_id: Optional document ID for entity association
+            file_path: Optional source file path for citation
 
         Returns:
             Tuple of (description, entity_info)

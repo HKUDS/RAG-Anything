@@ -29,6 +29,8 @@ class EquationModalProcessor(BaseModalProcessor):
         content_type: str,
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
+        doc_id: str = None,
+        file_path: str = "",
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Generate equation description and entity info only, without entity relation extraction.

@@ -33,6 +33,8 @@ class TableModalProcessor(BaseModalProcessor):
         content_type: str,
         item_info: Dict[str, Any] = None,
         entity_name: str = None,
+        doc_id: str = None,
+        file_path: str = "",
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Generate table description and entity info only, without entity relation extraction.

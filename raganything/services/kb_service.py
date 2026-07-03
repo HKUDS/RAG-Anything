@@ -669,40 +669,48 @@ async def _load_doc_status_json(kb_name: str) -> dict[str, Any]:
             try:
                 from raganything.base import DocStatus as RAGDocStatus
                 ds = rag.lightrag.doc_status
-                all_statuses = [
-                    RAGDocStatus.PENDING,
-                    RAGDocStatus.READY,
-                    RAGDocStatus.HANDLING,
-                    RAGDocStatus.PROCESSING,
-                    RAGDocStatus.PROCESSED,
-                    RAGDocStatus.FAILED,
-                ]
-                result: dict[str, Any] = {}
-                for status in all_statuses:
-                    page = 1
-                    while True:
-                        docs, total = await ds.get_docs_paginated(
-                            status_filter=status, page=page, page_size=200,
-                        )
-                        for doc_id, dps in docs:
-                            result[doc_id] = {
-                                "file_path": dps.file_path,
-                                "status": dps.status.value if hasattr(dps.status, "value") else dps.status,
-                                "content_summary": dps.content_summary,
-                                "content_length": dps.content_length,
-                                "chunks_count": dps.chunks_count,
-                                "chunks_list": dps.chunks_list or [],
-                                "metadata": dps.metadata or {},
-                                "error_msg": dps.error_msg,
-                                "created_at": dps.created_at,
-                                "updated_at": dps.updated_at,
-                                "track_id": dps.track_id,
-                            }
-                        if len(docs) < 200:
-                            break
-                        page += 1
-                if result:
-                    return result
+                # Guard: PG storage may not be initialized (e.g. after finalize()
+                # in worker subprocess, or when ClientManager returns None).
+                if getattr(ds, "db", None) is None:
+                    kb_logger.debug(
+                        "PG doc_status.db is None for KB %s, falling back to JSON",
+                        kb_name,
+                    )
+                else:
+                    all_statuses = [
+                        RAGDocStatus.PENDING,
+                        RAGDocStatus.READY,
+                        RAGDocStatus.HANDLING,
+                        RAGDocStatus.PROCESSING,
+                        RAGDocStatus.PROCESSED,
+                        RAGDocStatus.FAILED,
+                    ]
+                    result: dict[str, Any] = {}
+                    for status in all_statuses:
+                        page = 1
+                        while True:
+                            docs, total = await ds.get_docs_paginated(
+                                status_filter=status, page=page, page_size=200,
+                            )
+                            for doc_id, dps in docs:
+                                result[doc_id] = {
+                                    "file_path": dps.file_path,
+                                    "status": dps.status.value if hasattr(dps.status, "value") else dps.status,
+                                    "content_summary": dps.content_summary,
+                                    "content_length": dps.content_length,
+                                    "chunks_count": dps.chunks_count,
+                                    "chunks_list": dps.chunks_list or [],
+                                    "metadata": dps.metadata or {},
+                                    "error_msg": dps.error_msg,
+                                    "created_at": dps.created_at,
+                                    "updated_at": dps.updated_at,
+                                    "track_id": dps.track_id,
+                                }
+                            if len(docs) < 200:
+                                break
+                            page += 1
+                    if result:
+                        return result
             except Exception:
                 kb_logger.warning(
                     "PG doc_status load failed for KB %s",
@@ -1559,9 +1567,24 @@ async def _verify_document_persisted(kb_name: str, filename: str) -> None:
 
     Raises RuntimeError if the document is missing from doc_status or has
     zero chunks after worker subprocess reports success.
+
+    When PG doc_status is temporarily unreadable (e.g. after subprocess
+    finalization), the check is skipped with a warning instead of failing
+    — the worker independently persisted data to PG.
     """
     data = await _load_doc_status_json(kb_name)
     if not data:
+        # Distinguish: PG unreadable vs truly missing data
+        if _pg_storage_ready():
+            rag = kb_instances.get(kb_name)
+            if rag is not None and hasattr(rag, "lightrag") and rag.lightrag:
+                ds = getattr(rag.lightrag, "doc_status", None)
+                if ds is not None and getattr(ds, "db", None) is None:
+                    kb_logger.warning(
+                        "[VERIFY] PG doc_status 暂时不可用，跳过验证 (KB=%s, file=%s)",
+                        kb_name, filename,
+                    )
+                    return
         raise RuntimeError(
             f"文档处理异常：doc_status 无数据 (KB={kb_name})"
         )
