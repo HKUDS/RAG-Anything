@@ -210,7 +210,7 @@ class RequestSizeMiddleware(BaseHTTPMiddleware):
                     {"detail": f"文件超过最大限制 {os.getenv('MAX_UPLOAD_SIZE_MB','500')}MB"},
                     status_code=413,
                 )
-            elif cl > MAX_BODY_SIZE:
+            elif not request.url.path.startswith("/api/upload") and cl > MAX_BODY_SIZE:
                 return JSONResponse(
                     {"detail": f"请求体超过最大限制 {os.getenv('MAX_BODY_SIZE_MB','10')}MB"},
                     status_code=413,
