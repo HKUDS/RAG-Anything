@@ -280,8 +280,12 @@ class BatchMixin:
 
     def get_supported_file_extensions(self) -> List[str]:
         """Get list of supported file extensions for batch processing"""
-        batch_parser = BatchParser(parser_type=self.config.parser)
-        return batch_parser.get_supported_extensions()
+        try:
+            batch_parser = BatchParser(parser_type=self.config.parser)
+            return batch_parser.get_supported_extensions()
+        except Exception as e:
+            logger.exception("Failed to get list of supported file extensions")
+            return []
 
     def filter_supported_files(
         self, file_paths: List[str], recursive: Optional[bool] = None
