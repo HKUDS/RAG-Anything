@@ -1,4 +1,5 @@
 const API_BASE = '/api'
+const UPLOAD_TIMEOUT_MS = 600_000 // 600s — aligned with nginx proxy_read_timeout
 
 let currentKB = ''
 export function setCurrentKB(name) { currentKB = name }
@@ -24,6 +25,13 @@ function authHeaders(extra = {}) {
   return h
 }
 
+function _uploadErrorMsg(status, detail) {
+  if (status === 413) return '文件过大：超过服务器上传限制，请压缩后重试'
+  if (status === 409) return '文件重复：该文件已存在或正在处理中'
+  if (status >= 500) return '服务器错误：上传失败，请稍后重试'
+  return detail || `上传失败 (HTTP ${status})`
+}
+
 function kbUrl(path) {
   const sep = path.includes('?') ? '&' : '?'
   return `${path}${sep}kb=${currentKB}`
@@ -42,7 +50,11 @@ async function request(url, options = {}) {
   if (res.status === 401) { handleAuthError(); throw new Error('登录已过期，请重新登录') }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || `HTTP ${res.status}`)
+    throw new Error(
+        typeof err.detail === 'string' ? err.detail
+        : Array.isArray(err.detail) ? err.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+        : `HTTP ${res.status}`
+      )
   }
   return res.json()
 }
@@ -56,7 +68,11 @@ async function fetchJson(url, options = {}) {
   if (res.status === 401) { handleAuthError(); throw new Error('登录已过期，请重新登录') }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(err.detail || `HTTP ${res.status}`)
+    throw new Error(
+        typeof err.detail === 'string' ? err.detail
+        : Array.isArray(err.detail) ? err.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+        : `HTTP ${res.status}`
+      )
   }
   return res.json()
 }
@@ -89,11 +105,19 @@ export const api = {
     if (multimodal.enable_equation !== undefined) params.set('enable_equation', multimodal.enable_equation)
     if (multimodal.enable_video !== undefined) params.set('enable_video', multimodal.enable_video)
     const qs = params.toString()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
     return fetch(`${API_BASE}/upload?kb=${currentKB}${qs ? '&' + qs : ''}`, {
-      method: 'POST', body: fd, headers: authHeaders()
+      method: 'POST', body: fd, headers: authHeaders(), signal: controller.signal
     }).then(r => {
-      if (!r.ok) return r.json().then(e => { throw new Error(e.detail || r.statusText) })
+      clearTimeout(timeoutId)
+      if (!r.ok) return r.json().then(e => { throw new Error(_uploadErrorMsg(r.status, e.detail)) })
       return r.json()
+    }).catch(err => {
+      clearTimeout(timeoutId)
+      if (err.name === 'AbortError') throw new Error('上传超时：文件过大或网络较慢，请重试')
+      if (err.message === 'Failed to fetch') throw new Error('网络错误：上传中断，请检查网络连接后重试')
+      throw err
     })
   },
   uploadFiles: (files, chunking_strategy = '', multimodal = {}) => {
@@ -107,11 +131,19 @@ export const api = {
     if (multimodal.enable_equation !== undefined) params.set('enable_equation', multimodal.enable_equation)
     if (multimodal.enable_video !== undefined) params.set('enable_video', multimodal.enable_video)
     const qs = params.toString()
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), UPLOAD_TIMEOUT_MS)
     return fetch(`${API_BASE}/upload/batch?kb=${currentKB}${qs ? '&' + qs : ''}`, {
-      method: 'POST', body: fd, headers: authHeaders()
+      method: 'POST', body: fd, headers: authHeaders(), signal: controller.signal
     }).then(r => {
-      if (!r.ok) return r.json().then(e => { throw new Error(e.detail || r.statusText) })
+      clearTimeout(timeoutId)
+      if (!r.ok) return r.json().then(e => { throw new Error(_uploadErrorMsg(r.status, e.detail)) })
       return r.json()
+    }).catch(err => {
+      clearTimeout(timeoutId)
+      if (err.name === 'AbortError') throw new Error('上传超时：文件过大或网络较慢，请重试')
+      if (err.message === 'Failed to fetch') throw new Error('网络错误：上传中断，请检查网络连接后重试')
+      throw err
     })
   },
   uploadFolder: (path, chunking_strategy = '', multimodal = {}) => {
@@ -146,6 +178,7 @@ export const api = {
   deleteGraphNode: (name) => request(`/knowledge/graph/nodes/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   createGraphEdge: (data) => request('/knowledge/graph/edges', { method: 'POST', body: JSON.stringify(data) }),
   deleteGraphEdge: (id) => request(`/knowledge/graph/edges/${id}`, { method: 'DELETE' }),
+  getDocumentChunks: (docId) => request(`/knowledge/documents/${docId}/chunks`),
   deleteDocument: (id) => request(`/knowledge/documents/${id}`, { method: 'DELETE' }),
   deleteDocuments: (ids) => request('/knowledge/documents/batch-delete', { method: 'POST', body: JSON.stringify({ doc_ids: ids }) }),
   retryDocument: (id) => request(`/knowledge/documents/${id}/retry`, { method: 'POST' }),
@@ -188,6 +221,12 @@ export const api = {
   listConversations: (agentId) => fetchJson(`/agents/${agentId}/conversations`),
   createConversation: (agentId, title) => fetchJson(`/agents/${agentId}/conversations?title=${encodeURIComponent(title)}`, { method: 'POST' }),
   updateConversation: (agentId, threadId, title) => fetchJson(`/agents/${agentId}/conversations/${threadId}?title=${encodeURIComponent(title)}`, { method: 'PUT' }),
+  getConversation: (agentId, threadId) => fetchJson(`/agents/${agentId}/conversations/${threadId}`),
   deleteConversation: (agentId, threadId) => fetchJson(`/agents/${agentId}/conversations/${threadId}`, { method: 'DELETE' }),
+
+  // Message editing
+  updateMessage: (agentId, threadId, messageId, content) =>
+    fetchJson(`/agents/${agentId}/conversations/${threadId}/messages/${messageId}`,
+      { method: 'PUT', body: JSON.stringify({ content }) }),
 
 }

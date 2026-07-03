@@ -181,9 +181,20 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
     upload_dir.mkdir(exist_ok=True)
     safe_name = os.path.basename(file.filename)
     file_path = upload_dir / safe_name
-    content = await file.read()
-    file_path.write_bytes(content)
-    file_size = len(content)
+
+    # Stream write to disk (avoid loading full file into memory)
+    try:
+        with open(file_path, 'wb') as dest:
+            shutil.copyfileobj(file.file, dest)
+    except Exception:
+        # Clean up partial file on write failure
+        try:
+            file_path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise HTTPException(507, "存储空间不足或写入失败，请稍后重试")
+
+    file_size = file_path.stat().st_size
 
     # Dedup check: reject if same file content is already being processed in this KB
     file_hash = _compute_file_hash(str(file_path))
@@ -273,9 +284,21 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
     for file in files:
         task_id = str(uuid.uuid4())[:8]
         file_path = upload_dir / file.filename
-        content = await file.read()
-        file_path.write_bytes(content)
-        file_size = len(content)
+
+        # Stream write to disk (avoid loading full file into memory)
+        try:
+            with open(file_path, 'wb') as dest:
+                shutil.copyfileobj(file.file, dest)
+        except Exception:
+            try:
+                file_path.unlink(missing_ok=True)
+            except OSError:
+                pass
+            lightrag_logger.error(f"[UPLOAD-BATCH] 写入失败: file={file.filename}")
+            skipped.append(file.filename)
+            continue
+
+        file_size = file_path.stat().st_size
 
         # Dedup check per file
         file_hash = _compute_file_hash(str(file_path))
@@ -615,6 +638,130 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
     except Exception as e:
         lightrag_logger.error(f"[list_documents] kb={kb} error: {e}", exc_info=True)
         raise HTTPException(500, str(e))
+
+
+@router.get("/knowledge/documents/{doc_id}/chunks")
+async def get_document_chunks(
+    doc_id: str,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+):
+    """返回文档的所有切块详情（排序后的 chunk 列表）。"""
+    try:
+        instance = await get_kb(kb)
+        if not instance or not instance.lightrag:
+            raise HTTPException(500, "知识库未初始化")
+
+        _lg = instance.lightrag
+        doc_status = await _load_doc_status_json(kb)
+        if not doc_status or doc_id not in doc_status:
+            raise HTTPException(404, f"文档 {doc_id} 不存在")
+
+        status_info = doc_status[doc_id]
+        if not isinstance(status_info, dict):
+            raise HTTPException(404, f"文档 {doc_id} 状态数据异常")
+
+        chunks_list = status_info.get("chunks_list", [])
+        chunk_data_list = []
+
+        if chunks_list:
+            chunk_data_list = await _lg.text_chunks.get_by_ids(chunks_list)
+        else:
+            chunks_count = status_info.get("chunks_count", 0)
+            if chunks_count and chunks_count > 0:
+                chunk_data_list = await _query_chunks_by_doc_id(_lg, doc_id, kb)
+
+        if not chunk_data_list:
+            return {"doc_id": doc_id, "chunks": [], "total": 0}
+
+        chunks = []
+        for chunk_data in chunk_data_list:
+            if not chunk_data or not isinstance(chunk_data, dict):
+                continue
+            media_path = _extract_media_path(chunk_data)
+            media_url = None
+            if media_path:
+                base_url = os.environ.get("RAGANYTHING_PUBLIC_ASSET_BASE_URL", "").strip()
+                strip_prefix = os.environ.get("RAGANYTHING_PUBLIC_ASSET_STRIP_PREFIX", "").strip()
+                if base_url and strip_prefix:
+                    from raganything.asset_urls import public_url_for_local_path
+                    media_url = public_url_for_local_path(
+                        media_path, base_url=base_url, strip_prefix=strip_prefix
+                    )
+            chunks.append({
+                "chunk_id": chunk_data.get("chunk_id", ""),
+                "content": chunk_data.get("content", ""),
+                "tokens": chunk_data.get("tokens", 0),
+                "chunk_order_index": chunk_data.get("chunk_order_index", 0),
+                "file_path": chunk_data.get("file_path", ""),
+                "is_multimodal": chunk_data.get("is_multimodal", False),
+                "original_type": chunk_data.get("original_type"),
+                "modal_entity_name": chunk_data.get("modal_entity_name"),
+                "page_idx": chunk_data.get("page_idx"),
+                "media_path": media_path,
+                "media_url": media_url,
+            })
+
+        chunks.sort(key=lambda c: c["chunk_order_index"])
+        return {"doc_id": doc_id, "chunks": chunks, "total": len(chunks)}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        lightrag_logger.error(f"[get_document_chunks] doc_id={doc_id} kb={kb} error: {e}", exc_info=True)
+        raise HTTPException(500, str(e))
+
+
+async def _query_chunks_by_doc_id(_lg, doc_id: str, kb: str) -> list[dict]:
+    """Fallback: query lightrag_doc_chunks PG table for chunks by full_doc_id."""
+    try:
+        from lightrag.kg.postgres_impl import PGKVStorage, namespace_to_table_name
+        tc_store = _lg.text_chunks
+        if not isinstance(tc_store, PGKVStorage):
+            return []
+        workspace = tc_store.workspace
+        table_name = namespace_to_table_name(tc_store.namespace)
+        sql = (
+            f"SELECT id, content, tokens, chunk_order_index, file_path,"
+            f" full_doc_id, llm_cache_list"
+            f" FROM {table_name}"
+            f" WHERE workspace = $1 AND full_doc_id = $2"
+            f" ORDER BY chunk_order_index"
+        )
+        rows = await tc_store.db.query(sql, [workspace, doc_id], multirows=True)
+        if not rows:
+            return []
+        chunk_data_list = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            chunk = dict(row)
+            llm_cache = chunk.get("llm_cache_list")
+            if isinstance(llm_cache, str):
+                import json as _json
+                try:
+                    chunk["llm_cache_list"] = _json.loads(llm_cache)
+                except _json.JSONDecodeError:
+                    chunk["llm_cache_list"] = []
+            chunk_data_list.append(chunk)
+        return chunk_data_list
+    except Exception:
+        return []
+
+
+def _extract_media_path(chunk_data: dict) -> str | None:
+    """从 chunk content 文本中提取媒体文件路径。"""
+    content = chunk_data.get("content", "")
+    if not content:
+        return None
+    import re as _re
+    for pattern in (r"Image Path:\s*(\S+)", r"Table Image Path:\s*(\S+)"):
+        match = _re.search(pattern, content)
+        if match:
+            path_str = match.group(1).strip()
+            if path_str and Path(path_str).exists():
+                return path_str
+    return None
 
 
 @router.get("/knowledge/stats")
