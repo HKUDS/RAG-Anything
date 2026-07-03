@@ -1142,7 +1142,7 @@ async def list_kbs_by_domain(domain: str) -> dict[str, Any]:
     """List KB metadata entries filtered by domain from PostgreSQL.
 
     Args:
-        domain: Domain filter value (e.g. ``"manufacturing"``, ``"general"``).
+        domain: Domain filter value (e.g. ``"autorepair"``, ``"general"``).
 
     Returns:
         Dict of KB name → metadata for KBs matching the domain.

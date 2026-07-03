@@ -158,7 +158,7 @@ async def init_db() -> None:
     admin user, and key persistence.
 
     Uses ON CONFLICT DO UPDATE to refresh permissions on every startup,
-    preventing stale permissions when new resources (e.g. manufacturing)
+    preventing stale permissions when new resources (e.g. autorepair)
     are added to role definitions after initial role creation.
     """
     pool = _get_pool()
@@ -175,7 +175,7 @@ async def init_db() -> None:
                     "audit:read", "monitor:read",
                     "analytics:read",
                     "workflow:read", "workflow:write",
-                    "manufacturing:read", "manufacturing:write",
+                    "autorepair:read", "autorepair:write",
                 ],
             },
             "dept_admin": {
@@ -187,7 +187,7 @@ async def init_db() -> None:
                     "settings:read", "audit:read", "monitor:read",
                     "analytics:read",
                     "workflow:read", "workflow:write",
-                    "manufacturing:read", "manufacturing:write",
+                    "autorepair:read", "autorepair:write",
                 ],
             },
             "teacher": {
@@ -197,7 +197,7 @@ async def init_db() -> None:
                     "agent:read", "agent:write",
                     "monitor:read", "analytics:read",
                     "workflow:read",
-                    "manufacturing:read", "manufacturing:write",
+                    "autorepair:read", "autorepair:write",
                 ],
             },
             "assistant": {
@@ -206,12 +206,12 @@ async def init_db() -> None:
                     "kb:read", "kb:write",
                     "agent:read",
                     "monitor:read",
-                    "manufacturing:read",
+                    "autorepair:read",
                 ],
             },
             "student": {
                 "desc": "学生，可查看知识库并使用智能体问答（各年级学生）",
-                "perms": ["kb:read", "agent:read", "manufacturing:read"],
+                "perms": ["kb:read", "agent:read", "autorepair:read"],
             },
         }
         for role_name, role_cfg in default_roles.items():

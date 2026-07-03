@@ -654,6 +654,103 @@ async def pg_ensure_agent_tables() -> None:
 
 
 # ═══════════════════════════════════════════════════════════════
+# Conversation Summary (Phase 3)
+# ═══════════════════════════════════════════════════════════════
+
+async def pg_get_summary(thread_id: str) -> Optional[str]:
+    """Get the conversation summary for a thread.
+
+    Returns:
+        Summary text or None if no summary exists.
+    """
+    pool = _get_pool()
+    row = await pool.fetchrow(
+        "SELECT summary FROM agent_conversations WHERE id = $1",
+        thread_id,
+    )
+    if row and row["summary"]:
+        return row["summary"]
+    return None
+
+
+async def pg_update_summary(thread_id: str, summary_text: str) -> bool:
+    """Update the conversation summary for a thread.
+
+    Updates both ``summary`` and ``summary_updated_at`` in a single query.
+
+    Args:
+        thread_id: The conversation thread ID.
+        summary_text: The new (or updated) summary text.
+
+    Returns:
+        True if the thread was found and updated, False otherwise.
+    """
+    pool = _get_pool()
+    now = datetime.now(timezone.utc)
+    result = await pool.execute(
+        "UPDATE agent_conversations "
+        "SET summary = $1, summary_updated_at = $2, updated_at = $2 "
+        "WHERE id = $3",
+        summary_text, now, thread_id,
+    )
+    updated = int(result.split()[-1]) if result else 0
+    return updated > 0
+
+
+async def pg_get_messages_since(thread_id: str, since: datetime | None) -> list[dict[str, Any]]:
+    """Get messages added after a given timestamp.
+
+    Used by the summary pipeline to identify new messages since the last summary.
+
+    Args:
+        thread_id: The conversation thread ID.
+        since: Timestamp to filter by. If None, returns all messages.
+
+    Returns:
+        List of message dicts with role, content, and created_at.
+    """
+    pool = _get_pool()
+    if since is not None:
+        rows = await pool.fetch(
+            "SELECT role, content, created_at FROM agent_messages "
+            "WHERE thread_id = $1 AND created_at > $2 "
+            "ORDER BY created_at ASC",
+            thread_id, since,
+        )
+    else:
+        rows = await pool.fetch(
+            "SELECT role, content, created_at FROM agent_messages "
+            "WHERE thread_id = $1 "
+            "ORDER BY created_at ASC",
+            thread_id,
+        )
+    return [
+        {
+            "role": r["role"],
+            "content": r["content"],
+            "created_at": r["created_at"].isoformat() if isinstance(r["created_at"], datetime) else r["created_at"],
+        }
+        for r in rows
+    ]
+
+
+async def pg_get_summary_updated_at(thread_id: str) -> Optional[datetime]:
+    """Get the timestamp of the last summary update.
+
+    Returns:
+        Datetime or None if no summary has been generated.
+    """
+    pool = _get_pool()
+    row = await pool.fetchrow(
+        "SELECT summary_updated_at FROM agent_conversations WHERE id = $1",
+        thread_id,
+    )
+    if row and row["summary_updated_at"]:
+        return row["summary_updated_at"]
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════
 # Migration Helpers (PG equivalents of AgentManager migration methods)
 # ═══════════════════════════════════════════════════════════════
 
@@ -776,6 +873,11 @@ __all__ = [
     "pg_add_message",
     "pg_update_conversation",
     "pg_delete_conversation",
+    # Summary
+    "pg_get_summary",
+    "pg_update_summary",
+    "pg_get_messages_since",
+    "pg_get_summary_updated_at",
     # Migration
     "pg_ensure_default_agent",
     "pg_migrate_agents",

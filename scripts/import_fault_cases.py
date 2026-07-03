@@ -3,7 +3,7 @@
 故障案例批量导入脚本 — 从 JSON 文件批量导入故障案例。
 
 用法:
-    python scripts/import_fault_cases.py --input ./data/manufacturing_kb/fault_cases/sample.json
+    python scripts/import_fault_cases.py --input ./data/autorepair_kb/fault_cases/sample.json
     python scripts/import_fault_cases.py --input ./faults/batch1.json --dry-run
 """
 
@@ -14,8 +14,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from raganything.manufacturing.knowledge_pipeline.fault_case_library import FaultCaseLibrary
-from raganything.manufacturing.knowledge_graph.models import FaultCase
+from raganything.autorepair.knowledge_pipeline.fault_case_library import FaultCaseLibrary
+from raganything.autorepair.knowledge_graph.models import FaultCase
 
 
 def validate_case(case_data: dict) -> list[str]:
@@ -27,7 +27,7 @@ def validate_case(case_data: dict) -> list[str]:
 def main():
     parser = argparse.ArgumentParser(description="故障案例批量导入工具")
     parser.add_argument("--input", required=True, help="JSON 文件路径（包含案例数组）")
-    parser.add_argument("--storage", default="./data/manufacturing_kb/fault_cases", help="案例库存储路径")
+    parser.add_argument("--storage", default="./data/autorepair_kb/fault_cases", help="案例库存储路径")
     parser.add_argument("--dry-run", action="store_true", help="仅校验，不入库")
     args = parser.parse_args()
 

@@ -58,12 +58,29 @@ export default function KnowledgeGraphD3({
     if (searchTerm.trim()) {
       const term = searchTerm.trim().toLowerCase()
       result = result.filter(n => n.name?.toLowerCase().includes(term))
+      // Expand to include direct neighbors of matched nodes
+      const matchedIds = new Set(result.map(n => n.id))
+      const adjacency = new Map()
+      edges.forEach(e => {
+        const sid = e.source_id ?? e.source?.id ?? e.source
+        const tid = e.target_id ?? e.target?.id ?? e.target
+        if (!adjacency.has(sid)) adjacency.set(sid, new Set())
+        if (!adjacency.has(tid)) adjacency.set(tid, new Set())
+        adjacency.get(sid).add(tid)
+        adjacency.get(tid).add(sid)
+      })
+      const expanded = new Set(matchedIds)
+      matchedIds.forEach(id => {
+        const neighbors = adjacency.get(id)
+        if (neighbors) neighbors.forEach(nid => expanded.add(nid))
+      })
+      result = nodes.filter(n => expanded.has(n.id))
     }
     if (typeFilter) {
       result = result.filter(n => n.node_type === typeFilter)
     }
     return result
-  }, [nodes, searchTerm, typeFilter])
+  }, [nodes, searchTerm, typeFilter, edges])
 
   const filteredNodeIds = useMemo(() => new Set(filteredNodes.map(n => n.id)), [filteredNodes])
 
@@ -150,10 +167,6 @@ export default function KnowledgeGraphD3({
     const svg = d3.select(svgRef.current)
     svg.selectAll('*').remove()
 
-    // Bump render counter for cleanup tracking
-    renderRef.current += 1
-    const renderId = renderRef.current
-
     const containerW = containerRef.current?.clientWidth || 700
     const W = containerW
     const H = Math.max(350, containerRef.current?.clientHeight || 450)
@@ -164,7 +177,7 @@ export default function KnowledgeGraphD3({
     const defs = svg.append('defs')
 
     // Drop shadow for drag
-    const dragFilter = defs.append('filter').attr('id', `drag-shadow-${renderId}`)
+    const dragFilter = defs.append('filter').attr('id', 'drag-shadow')
       .attr('x', '-50%').attr('y', '-50%').attr('width', '200%').attr('height', '200%')
     dragFilter.append('feDropShadow').attr('dx', 1).attr('dy', 2)
       .attr('stdDeviation', 2).attr('flood-opacity', 0.3)
@@ -244,7 +257,7 @@ export default function KnowledgeGraphD3({
         d.fx = d.x; d.fy = d.y
         d3.select(this).select('circle')
           .transition().duration(100)
-          .attr('r', 10.4).attr('filter', `url(#drag-shadow-${renderId})`)
+          .attr('r', 10.4).attr('filter', 'url(#drag-shadow)')
       })
       .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y })
       .on('end', function (e, d) {
@@ -340,33 +353,6 @@ export default function KnowledgeGraphD3({
       updateSelectionHighlight()
     })
 
-    // ---- Edge labels ----
-    let edgeLabelsDrawn = false
-    const drawEdgeLabels = () => {
-      if (edgeLabelsDrawn || simEdges.length === 0) return
-      edgeLabelsDrawn = true
-
-      const edgeLabelG = g.append('g').attr('class', 'edge-labels')
-
-      edgeLabelG.selectAll('path').data(simEdges).join('path')
-        .attr('id', (_, i) => `edge-path-${renderId}-${i}`)
-        .attr('d', e => {
-          const sx = e.source.x, sy = e.source.y
-          const tx = e.target.x, ty = e.target.y
-          return `M${sx},${sy}L${tx},${ty}`
-        })
-        .attr('fill', 'none').attr('stroke', 'none')
-
-      // Edge text labels disabled — legend already indicates line meaning
-      edgeLabelG.selectAll('text').data(simEdges).join('text')
-        .attr('dy', -3).attr('font-size', 8).attr('fill', '#9ca3af')
-        .attr('text-anchor', 'middle')
-        .append('textPath')
-        .attr('href', (_, i) => `#edge-path-${renderId}-${i}`)
-        .attr('startOffset', '50%')
-        .text('')
-    }
-
     // ---- Tick ----
     sim.on('tick', () => {
       link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
@@ -387,7 +373,6 @@ export default function KnowledgeGraphD3({
         initialTransform.current = d3.zoomIdentity.translate(tx, ty).scale(scale)
         svg.transition().duration(500).call(zoom.transform, initialTransform.current)
       }
-      drawEdgeLabels()
     })
 
     // ---- Cleanup on re-render: stop old simulation to prevent CPU leak ----

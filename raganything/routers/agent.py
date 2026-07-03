@@ -58,7 +58,11 @@ from raganything.services.pg_agent_repo import (
     pg_add_message,
     pg_delete_conversation,
     pg_update_conversation,
+    pg_get_summary,
+    pg_update_summary,
+    pg_get_summary_updated_at,
 )
+from raganything.services.prompt_builder import PromptBuilder, ContextLayer
 
 
 # ═══════════════════════════════════════════════════════════
@@ -105,8 +109,193 @@ def _is_empty_context(ctx: str | None) -> bool:
 
 
 # ═══════════════════════════════════════════════════════════
-# Pydantic Models
+# Prompt builder helpers (deduplicated across modes)
 # ═══════════════════════════════════════════════════════════
+
+def _build_image_section(image_description: str = "", similar_image_urls: list = None) -> str:
+    """Build image context section string.
+
+    Used by all three modes (RAG/ReAct/CoT) to eliminate the duplicated
+    image-description + visual-similar-images concatenation.
+    """
+    parts = []
+    if image_description:
+        parts.append(f"## 用户上传图片的视觉描述\n{image_description}\n\n")
+    if similar_image_urls:
+        parts.append("## 知识库中找到的视觉相似图片\n")
+        for si in similar_image_urls[:5]:
+            parts.append(
+                f"![{si['name']}]({si['url']})\n"
+                f"*{si['name']} (视觉相似度: {si['score']})*\n\n"
+            )
+    return "".join(parts)
+
+
+def _build_layered_query(
+    query: str,
+    conv_history_text: str = "",
+    image_description: str = "",
+    similar_image_urls: list = None,
+    summary_text: str = "",
+    extra_context: str = "",
+    citation_instruction: str = "",
+    degraded_hint: str = "",
+) -> str:
+    """Build a layered prompt string using PromptBuilder.
+
+    Returns the combined prompt body as a single string.
+    For modes that need separate system_prompt, use PromptBuilder directly.
+    """
+    builder = PromptBuilder(max_total_tokens=int(os.getenv("MAX_TOKENS", "8192")))
+
+    img_section = _build_image_section(image_description, similar_image_urls)
+    if img_section:
+        builder.add_image_context(img_section)
+
+    if summary_text:
+        builder.add_summary(summary_text)
+
+    if conv_history_text:
+        builder.add_recent_history(conv_history_text)
+
+    if extra_context:
+        builder.retrieval_context(extra_context)
+
+    if degraded_hint:
+        builder.degraded_hint(degraded_hint)
+
+    builder.user_query(query, citation_instruction)
+    prompt, _ = builder.build()
+    return prompt
+
+
+async def _maybe_generate_summary(
+    agent_id: str,
+    thread_id: str,
+    conv_thread: dict | None,
+) -> str | None:
+    """Trigger conversation summary generation if threshold is met.
+
+    Called after each message exchange. Checks:
+    1. CONVERSATION_SUMMARY_ENABLED is true
+    2. Message count exceeds CONVERSATION_SUMMARY_TRIGGER_ROUNDS * 2
+    3. New messages exist since last summary update
+
+    Returns the new summary text if generated, None otherwise.
+    Runs asynchronously — does not block the user response.
+    """
+    if os.getenv("CONVERSATION_SUMMARY_ENABLED", "false").lower() != "true":
+        return None
+
+    trigger_rounds = int(os.getenv("CONVERSATION_SUMMARY_TRIGGER_ROUNDS", "5"))
+    trigger_messages = trigger_rounds * 2
+
+    messages = conv_thread.get("messages", []) if conv_thread else []
+    if len(messages) <= trigger_messages:
+        return None
+
+    # Get last summary update time
+    try:
+        last_summary_at = await pg_get_summary_updated_at(thread_id)
+    except Exception:
+        last_summary_at = None
+
+    # If summary exists and no new messages since, skip
+    if last_summary_at:
+        try:
+            from raganything.services.pg_agent_repo import pg_get_messages_since
+            new_msgs = await pg_get_messages_since(thread_id, last_summary_at)
+        except Exception:
+            new_msgs = []
+        if len(new_msgs) < trigger_messages:
+            return None
+
+    # Generate summary (fire-and-forget)
+    existing_summary = None
+    try:
+        existing_summary = await pg_get_summary(thread_id)
+    except Exception:
+        pass
+
+    summary_model = os.getenv("CONVERSATION_SUMMARY_LLM_MODEL", LLM_MODEL)
+
+    try:
+        new_summary = await _call_summary_llm(
+            messages=messages,
+            existing_summary=existing_summary,
+            model=summary_model,
+        )
+        if new_summary:
+            await pg_update_summary(thread_id, new_summary)
+            return new_summary
+    except Exception as e:
+        lightrag_logger.warning(f"[SUMMARY] Generation failed: {e}")
+
+    return None
+
+
+async def _call_summary_llm(
+    messages: list[dict],
+    existing_summary: str | None = None,
+    model: str = "qwen-plus",
+) -> str | None:
+    """Call LLM to generate or update conversation summary.
+
+    Args:
+        messages: Full message list for the thread.
+        existing_summary: Previous summary (for incremental update).
+        model: LLM model to use.
+
+    Returns:
+        Summary string (2-5 sentences in the conversation language), or None on failure.
+    """
+    # Build the conversation transcript
+    transcript_lines = []
+    for msg in messages:
+        role_label = "用户" if msg.get("role") == "user" else "助手"
+        content = (msg.get("content", "") or "")[:500]
+        transcript_lines.append(f"{role_label}: {content}")
+    transcript = "\n".join(transcript_lines)
+
+    if existing_summary:
+        summary_prompt = (
+            "你是一个对话摘要助手。下面是已有的对话摘要和新增的对话内容。"
+            "请将新增内容融入已有摘要，生成更新后的摘要。"
+            "保持 2-5 句话，只总结事实和关键结论，不添加新信息，不编造内容。\n\n"
+            f"## 已有摘要\n{existing_summary}\n\n"
+            f"## 完整对话记录\n{transcript}\n\n"
+            "## 更新后的摘要"
+        )
+    else:
+        summary_prompt = (
+            "你是一个对话摘要助手。请用 2-5 句话总结以下对话的核心内容和关键结论。"
+            "只总结事实，不添加新信息，不编造内容。使用对话中使用的语言回复。\n\n"
+            f"## 对话记录\n{transcript}\n\n"
+            "## 摘要"
+        )
+
+    try:
+        response = await openai_complete_if_cache(
+            model,
+            summary_prompt,
+            system_prompt="你是一个精确的对话摘要助手。只输出摘要文本，不加前缀或标记。",
+            api_key=API_KEY,
+            base_url=BASE_URL,
+            max_tokens=500,
+            temperature=0.3,
+            stream=False,
+        )
+        if response and len(response.strip()) > 10:
+            return response.strip()
+    except Exception as e:
+        lightrag_logger.warning(f"[SUMMARY] LLM call failed: {e}")
+
+    return None
+
+
+# ═══════════════════════════════════════════════════════════════
+# Pydantic Models
+# ═══════════════════════════════════════════════════════════════
 
 class AgentCreateRequest(BaseModel):
     name: str = "新智能体"
@@ -557,26 +746,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 trace_steps = []
 
                 if agent_mode == "react":
-                    # ReAct 流式路径 — 注入对话历史 + 图片上下文
-                    react_query = rewritten_query
-                    # Prepend image context if available
-                    _img_ctx = ""
-                    if image_description:
-                        _img_ctx += f"## 用户上传图片的视觉描述\n{image_description}\n\n"
-                    if _similar_image_urls:
-                        _img_ctx += "## 知识库中找到的视觉相似图片\n"
-                        for _si in _similar_image_urls[:5]:
-                            _img_ctx += (
-                                f"![{_si['name']}]({_si['url']})\n"
-                                f"*{_si['name']} (视觉相似度: {_si['score']})*\n\n"
-                            )
-                    if _img_ctx:
-                        react_query = f"{_img_ctx}## 用户问题\n{rewritten_query}"
-                    if conv_history_text:
-                        react_query = (
-                            f"## 对话历史\n{conv_history_text}\n\n"
-                            f"{react_query}"
-                        )
+                    # ReAct 流式路径 — 通过 PromptBuilder 注入分层上下文
+                    react_query = _build_layered_query(
+                        rewritten_query,
+                        conv_history_text=conv_history_text,
+                        image_description=image_description,
+                        similar_image_urls=_similar_image_urls,
+                    )
                     async for event in agentic.run_stream(react_query):
                         if event.type == "thinking":
                             sd = {
@@ -609,18 +785,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         ) or ""
                     except Exception:
                         pass
-                    # Prepend image context before conversation history
-                    _img_cot_ctx = ""
-                    if image_description:
-                        _img_cot_ctx += f"## 用户上传图片的视觉描述\n{image_description}\n\n"
-                    if _similar_image_urls:
-                        _img_cot_ctx += "## 知识库中找到的视觉相似图片\n"
-                        for _si in _similar_image_urls[:5]:
-                            _img_cot_ctx += (
-                                f"![{_si['name']}]({_si['url']})\n"
-                                f"*{_si['name']} (视觉相似度: {_si['score']})*\n\n"
-                            )
-                    # Inject conversation history
+                    # Build image + history context via unified helpers
+                    _img_cot_ctx = _build_image_section(image_description, _similar_image_urls)
                     if conv_history_text:
                         _img_cot_ctx += f"## 对话历史\n{conv_history_text}\n\n"
                     if _img_cot_ctx and cot_context:
@@ -757,6 +923,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "user_id": current_user["id"], "username": current_user["username"],
                 }
                 await record_query(record, max_history=100)
+
+                # Trigger summary generation (fire-and-forget)
+                try:
+                    _full_agentic_thread = await pg_get_conversation(agent_id, thread_id)
+                    asyncio.create_task(_maybe_generate_summary(agent_id, thread_id, _full_agentic_thread))
+                except Exception:
+                    pass
 
                 _done_agentic = {'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': agent_images}
                 if image_description:
@@ -987,32 +1160,23 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             yield f"data: {json.dumps({'type': 'thinking', 'content': _ctx_think_msg}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
-            # Step 2: 构造 prompt 并使用智能体配置的模型
+            # Step 2: 使用 PromptBuilder 构造分层 prompt
             sp = (agent.get("system_prompt") or "") + ("\n你是知识库助手。结合对话历史理解用户上下文和指代关系，但回答中的事实和数据必须来源于检索内容。" if agent.get("use_default_prompt") else "")
-            _conv_part = (
-                f"## 对话历史\n{conv_history_text}\n\n"
-                if conv_history_text else ""
-            )
             # Select citation instruction based on config (same as non-agent endpoints)
             _cit_inst = (
                 ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
                 else INLINE_QUOTE_INSTRUCTION
             )
             # Detect degraded context (text chunks exist but may be thin).
-            # Uses enriched ctx — may include backfilled chunks.
-            # When backfill was applied, we KNOW valid text chunks exist, so bypass the length check.
-            #
-            # Two context formats are currently in use:
-            #   RRF pipeline → "[来源 文档名]\nchunk内容"
-            #   Native LightRAG → {"reference_id": N, "content": "..."}
-            # The RRF check uses the "[来源 " marker; native mode is detected via
-            # the JSON chunk envelope ("reference_id" + "content" keys).
             _has_chunks = (
                 ("[来源 " in ctx and len(ctx.strip()) > 200)          # RRF pipeline
                 or bool(backfill_text)                                 # image backfill
                 or ('"reference_id"' in ctx and '"content"' in ctx)    # native LightRAG
             )
-            # Build image context section for the prompt
+            if not _has_chunks and ctx.strip():
+                lightrag_logger.warning("agent_query_stream: context has no text chunks.")
+
+            # Build RAG-mode image context (uses graph-discovered similar_images, not auth URLs)
             _img_section = ""
             if image_description:
                 _img_section += f"## 用户上传图片的视觉分析\n{image_description}\n\n"
@@ -1024,17 +1188,21 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         _img_section += f"  描述: {_si['description'][:200]}\n"
                 _img_section += "\n"
 
-            if not _has_chunks and ctx.strip():
-                lightrag_logger.warning("agent_query_stream: context has no text chunks.")
-            final_prompt = (
-                f"对话历史用于理解用户上下文。以下是知识库检索内容，回答中的事实必须基于以下检索内容，不得编造。\n\n"
-                f"{_img_section}"
-                f"{_conv_part}"
-                f"## 检索内容\n{ctx}\n\n"
-                f"## 问题\n{req.query}\n\n"
-                f"{_cit_inst}"
-                f"{'' if _has_chunks else _DEGRADED_HINT}"
-            )
+            # Use PromptBuilder for layered prompt construction
+            _pb = PromptBuilder(max_total_tokens=int(os.getenv("MAX_TOKENS", "8192")))
+            if _img_section:
+                _pb.add_context_layer(ContextLayer(
+                    name="image_context", content=_img_section,
+                    priority=25, max_tokens=2000, enabled=True, label="",
+                ))
+            if conv_history_text:
+                _pb.add_recent_history(conv_history_text)
+            _pb.retrieval_context(ctx)
+            _pb.degraded_hint("" if _has_chunks else _DEGRADED_HINT)
+            _pb.user_query(req.query, _cit_inst)
+            final_prompt, _final_sp = _pb.build()
+            # Preserve original system prompt logic
+            sp = sp
 
             # 使用智能体配置的模型，而非 .env 全局模型
             use_model = agent.get("llm_model") or LLM_MODEL
@@ -1100,6 +1268,14 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 "fallback": is_fallback,
             }
             await record_query(record, max_history=100)
+
+            # Trigger summary generation if threshold met (fire-and-forget)
+            # Load full thread for message count check
+            try:
+                _full_thread = await pg_get_conversation(agent_id, thread_id)
+                asyncio.create_task(_maybe_generate_summary(agent_id, thread_id, _full_thread))
+            except Exception:
+                pass
 
             _done_data = {
                 'type': 'done', 'id': query_id, 'elapsed': elapsed,

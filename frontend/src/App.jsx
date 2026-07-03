@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense, Component } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, BarChart3, Wrench, GitBranch, ScrollText } from 'lucide-react'
+import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, BarChart3, Wrench, GitBranch, ScrollText, AlertTriangle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -17,9 +17,9 @@ const LoginPage                   = lazy(() => import('./pages/LoginPage'))
 const RegisterPage                = lazy(() => import('./pages/RegisterPage'))
 const AdminUsersPage              = lazy(() => import('./pages/AdminUsersPage'))
 const AdminAuditLogsPage          = lazy(() => import('./pages/AdminAuditLogsPage'))
-const ManufacturingDashboardPage  = lazy(() => import('./pages/ManufacturingDashboardPage'))
-const ManufacturingKnowledgePage  = lazy(() => import('./pages/ManufacturingKnowledgePage'))
-const ManufacturingAgentPage      = lazy(() => import('./pages/ManufacturingAgentPage'))
+const AutoRepairDashboardPage  = lazy(() => import('./pages/AutoRepairDashboardPage'))
+const AutoRepairKnowledgePage  = lazy(() => import('./pages/AutoRepairKnowledgePage'))
+const AutoRepairAgentPage      = lazy(() => import('./pages/AutoRepairAgentPage'))
 const WorkflowPage                = lazy(() => import('./pages/WorkflowPage'))
 
 // ---- Route-level loading skeleton ----
@@ -64,11 +64,55 @@ class LazyErrorBoundary extends Component {
   }
 }
 
+// ---- Suspense with timeout: prevents infinite hang on lazy chunk load ----
+// Uses an inner LoadDetector component that only renders when Suspense
+// resolves, so the timer is cancelled on successful page load.
+const SUSPENSE_TIMEOUT_MS = 30000
+
+const ChunkTimeoutFallback = () => (
+  <div className="flex flex-col items-center justify-center py-20 gap-3">
+    <AlertTriangle size={32} className="text-amber-400" />
+    <p className="text-sm font-medium text-ink-body">页面加载超时</p>
+    <p className="text-xs text-ink-muted">请检查网络连接后重试</p>
+    <button onClick={() => window.location.reload()}
+      className="px-4 py-2 text-xs font-medium text-white bg-sky-500 rounded-lg hover:bg-sky-600 transition-colors">
+      重新加载
+    </button>
+  </div>
+)
+
+// Renders nothing, but its useEffect fires only after Suspense resolves,
+// signalling that lazy chunks have loaded and the timeout can be cancelled.
+function LoadDetector({ onLoad }) {
+  useEffect(() => { onLoad() }, [onLoad])
+  return null
+}
+
+function SuspenseWithTimeout({ children, fallback, timeout = SUSPENSE_TIMEOUT_MS }) {
+  const [state, setState] = useState('loading') // 'loading' | 'loaded' | 'timeout'
+  const markLoaded = useCallback(() => setState('loaded'), [])
+
+  useEffect(() => {
+    if (state !== 'loading') return
+    const timer = setTimeout(() => setState('timeout'), timeout)
+    return () => clearTimeout(timer)
+  }, [timeout, state])
+
+  if (state === 'timeout') return <ChunkTimeoutFallback />
+
+  return (
+    <Suspense fallback={fallback}>
+      <LoadDetector onLoad={markLoaded} />
+      {children}
+    </Suspense>
+  )
+}
+
 const NAV = [
   { to: '/knowledge',     icon: Database,   label: '知识库',     requiredPermission: null },
   { to: '/agents',        icon: Bot,       label: '智能体',     requiredPermission: null },
   { to: '/workflow',      icon: GitBranch,  label: '工作流',     requiredPermission: 'workflow:read' },
-  { to: '/manufacturing', icon: Factory,    label: '制造智能体', requiredPermission: 'manufacturing:read' },
+  { to: '/autorepair', icon: Factory,    label: '汽修智能助手', requiredPermission: 'autorepair:read' },
   { to: '/settings',      icon: Settings,   label: '设置',       requiredPermission: 'settings:read' },
   { to: '/monitor',       icon: Activity,   label: '监控',       requiredPermission: 'monitor:read' },
 ]
@@ -237,13 +281,13 @@ export default function App() {
     return (
       <div className="min-h-screen bg-cloud-100">
         <LazyErrorBoundary>
-          <Suspense fallback={<PageLoader />}>
+          <SuspenseWithTimeout fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
               <Route path="*" element={<LoginPage />} />
             </Routes>
-          </Suspense>
+          </SuspenseWithTimeout>
         </LazyErrorBoundary>
       </div>
     )
@@ -336,7 +380,7 @@ export default function App() {
       <main className="pt-14">
         <div className="max-w-7xl mx-auto px-6 py-8">
           <LazyErrorBoundary>
-            <Suspense fallback={<PageLoader />}>
+            <SuspenseWithTimeout fallback={<PageLoader />}>
               <AnimatePresence mode="wait">
               <motion.div
                 key={location.pathname}
@@ -352,9 +396,9 @@ export default function App() {
                   <Route path="/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
                   <Route path="/knowledge/:kbName" element={<ProtectedRoute><KnowledgeDetailPage /></ProtectedRoute>} />
                   <Route path="/workflow" element={<ProtectedRoute requiredPermission="workflow:read"><WorkflowPage /></ProtectedRoute>} />
-                  <Route path="/manufacturing" element={<ProtectedRoute requiredPermission="manufacturing:read"><ManufacturingDashboardPage /></ProtectedRoute>} />
-                  <Route path="/manufacturing/knowledge" element={<ProtectedRoute requiredPermission="manufacturing:read"><ManufacturingKnowledgePage /></ProtectedRoute>} />
-                  <Route path="/manufacturing/agent" element={<ProtectedRoute requiredPermission="manufacturing:read"><ManufacturingAgentPage /></ProtectedRoute>} />
+                  <Route path="/autorepair" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairDashboardPage /></ProtectedRoute>} />
+                  <Route path="/autorepair/knowledge" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairKnowledgePage /></ProtectedRoute>} />
+                  <Route path="/autorepair/agent" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairAgentPage /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute requiredPermission="settings:read"><SettingsPage onToast={showToast} /></ProtectedRoute>} />
                   <Route path="/monitor" element={<ProtectedRoute requiredPermission="monitor:read"><MonitorPage /></ProtectedRoute>} />
                   <Route path="/admin/users" element={<ProtectedRoute requiredPermission="users:read"><AdminUsersPage /></ProtectedRoute>} />
@@ -362,7 +406,7 @@ export default function App() {
                 </Routes>
               </motion.div>
             </AnimatePresence>
-            </Suspense>
+            </SuspenseWithTimeout>
           </LazyErrorBoundary>
         </div>
       </main>

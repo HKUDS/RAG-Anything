@@ -51,9 +51,9 @@ class Permission:
     GRAPH_READ = "graph:read"
     GRAPH_WRITE = "graph:write"
 
-    # 制造智能体
-    MANUFACTURING_READ = "manufacturing:read"
-    MANUFACTURING_WRITE = "manufacturing:write"
+    # 汽修智能助手
+    AUTOREPAIR_READ = "autorepair:read"
+    AUTOREPAIR_WRITE = "autorepair:write"
 
     @classmethod
     def all_permissions(cls) -> List[str]:
@@ -94,8 +94,8 @@ DEFAULT_ROLES: Dict[str, Dict] = {
             Permission.ANALYTICS_READ,
             Permission.WORKFLOW_READ,
             Permission.WORKFLOW_WRITE,
-            Permission.MANUFACTURING_READ,
-            Permission.MANUFACTURING_WRITE,
+            Permission.AUTOREPAIR_READ,
+            Permission.AUTOREPAIR_WRITE,
             Permission.GRAPH_READ,
             Permission.GRAPH_WRITE,
         ],
@@ -110,8 +110,8 @@ DEFAULT_ROLES: Dict[str, Dict] = {
             Permission.MONITOR_READ,
             Permission.ANALYTICS_READ,
             Permission.WORKFLOW_READ,
-            Permission.MANUFACTURING_READ,
-            Permission.MANUFACTURING_WRITE,
+            Permission.AUTOREPAIR_READ,
+            Permission.AUTOREPAIR_WRITE,
             Permission.GRAPH_READ,
             Permission.GRAPH_WRITE,
         ],
@@ -123,7 +123,7 @@ DEFAULT_ROLES: Dict[str, Dict] = {
             Permission.KB_WRITE,
             Permission.AGENT_READ,
             Permission.MONITOR_READ,
-            Permission.MANUFACTURING_READ,
+            Permission.AUTOREPAIR_READ,
             Permission.GRAPH_READ,
             Permission.GRAPH_WRITE,
         ],
@@ -133,7 +133,7 @@ DEFAULT_ROLES: Dict[str, Dict] = {
         "permissions": [
             Permission.KB_READ,
             Permission.AGENT_READ,
-            Permission.MANUFACTURING_READ,
+            Permission.AUTOREPAIR_READ,
             Permission.GRAPH_READ,
         ],
     },

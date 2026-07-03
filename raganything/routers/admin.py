@@ -1,6 +1,6 @@
 """
 Admin Router — /api/settings, /api/monitor, /api/health,
-/api/workflows, /api/manufacturing/*, WebSocket endpoints.
+/api/workflows, /api/autorepair/*, WebSocket endpoints.
 Extracted from server.py.
 """
 import json

@@ -42,15 +42,27 @@ export function AuthProvider({ children }) {
                 const refreshed = await refreshRes.json()
                 if (!cancelled) {
                   setToken(refreshed.access_token)
-                  // refresh 接口不返回 user，保留原有 user（若存在）
-                  const existingUser = (() => {
-                    try { const s = localStorage.getItem(AUTH_KEY); return s ? JSON.parse(s).user : null } catch { return null }
-                  })()
-                  setUser(existingUser)
+                  // 刷新后调用 /auth/me 获取完整用户信息（含 role + permissions），
+                  // 避免 user 为 null 导致 hasPermission 误判为 403
+                  let fullUser = null
+                  try {
+                    const meRes = await fetch('/api/auth/me', {
+                      headers: { 'Authorization': `Bearer ${refreshed.access_token}` },
+                    })
+                    if (meRes.ok) {
+                      const meData = await meRes.json()
+                      fullUser = meData.user
+                    }
+                  } catch (_) {}
+                  // Fallback: /me 失败时尝试从 localStorage 恢复（向后兼容）
+                  if (!fullUser) {
+                    try { const s = localStorage.getItem(AUTH_KEY); fullUser = s ? JSON.parse(s).user : null } catch { fullUser = null }
+                  }
+                  setUser(fullUser)
                   localStorage.setItem(AUTH_KEY, JSON.stringify({
                     token: refreshed.access_token,
                     refreshToken: refreshed.refresh_token,
-                    user: existingUser,
+                    user: fullUser,
                   }))
                 }
               }

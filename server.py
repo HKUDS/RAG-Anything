@@ -248,13 +248,13 @@ from raganything.routers.auth import router as auth_router
 from raganything.routers.knowledge import router as knowledge_router
 from raganything.routers.agent import router as agent_router
 from raganything.routers.admin import router as admin_router
-from raganything.routers.manufacturing import router as manufacturing_router
+from raganything.routers.autorepair import router as autorepair_router
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(knowledge_router, prefix="/api")
 app.include_router(agent_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
-app.include_router(manufacturing_router, prefix="/api")
+app.include_router(autorepair_router, prefix="/api")
 
 @app.on_event("startup")
 async def startup():

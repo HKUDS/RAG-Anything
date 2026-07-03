@@ -102,7 +102,7 @@ class TestAgenticRAGReasoning:
 
     def test_qa_engine_agentic_rag_creation(self):
         """验证 QAEngine 创建 AgenticRAG 实例。"""
-        from raganything.manufacturing.agent.qa_engine import QAEngine
+        from raganything.autorepair.agent.qa_engine import QAEngine
 
         async def dummy_llm(prompt, system_prompt=None, history_messages=None, **kw):
             return "test response"
@@ -120,7 +120,7 @@ class TestAgenticRAGReasoning:
 
     def test_agent_response_has_trace_field(self):
         """验证 AgentResponse 模型包含 trace 字段。"""
-        from raganything.manufacturing.knowledge_graph.models import AgentResponse
+        from raganything.autorepair.knowledge_graph.models import AgentResponse
 
         resp = AgentResponse(
             query="test",

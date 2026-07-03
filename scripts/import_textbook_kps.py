@@ -15,15 +15,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from raganything.manufacturing.knowledge_pipeline.textbook_aligner import TextbookAligner
-from raganything.manufacturing.knowledge_graph.graph_api import KnowledgeGraphAPI
+from raganything.autorepair.knowledge_pipeline.textbook_aligner import TextbookAligner
+from raganything.autorepair.knowledge_graph.graph_api import KnowledgeGraphAPI
 
 
 def main():
     parser = argparse.ArgumentParser(description="教材知识点导入工具")
     parser.add_argument("--csv", required=True, help="CSV 文件路径 (columns: chapter, knowledge_point, description)")
     parser.add_argument("--track", default="machining", help="目标赛项标识")
-    parser.add_argument("--output", default="./data/manufacturing_kb/textbooks/aligned.json", help="对齐结果输出路径")
+    parser.add_argument("--output", default="./data/autorepair_kb/textbooks/aligned.json", help="对齐结果输出路径")
     parser.add_argument("--threshold", type=float, default=0.65, help="相似度阈值")
     args = parser.parse_args()
 

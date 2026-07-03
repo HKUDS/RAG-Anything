@@ -15,17 +15,17 @@ from pathlib import Path
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from raganything.manufacturing.knowledge_graph.parser import ExamParser
-from raganything.manufacturing.knowledge_pipeline.exam_structurer import ExamStructurer
-from raganything.manufacturing.knowledge_graph.graph_api import KnowledgeGraphAPI
-from raganything.manufacturing.knowledge_graph.models import KnowledgeNode
+from raganything.autorepair.knowledge_graph.parser import ExamParser
+from raganything.autorepair.knowledge_pipeline.exam_structurer import ExamStructurer
+from raganything.autorepair.knowledge_graph.graph_api import KnowledgeGraphAPI
+from raganything.autorepair.knowledge_graph.models import KnowledgeNode
 
 
 def main():
     parser = argparse.ArgumentParser(description="赛题批量导入工具")
     parser.add_argument("--input", required=True, help="赛题文档目录路径")
     parser.add_argument("--track", default="machining", help="赛项标识 (machining/electrical/robot/digital_design/integration)")
-    parser.add_argument("--output", default="./data/manufacturing_kb/exams/structured.json", help="结构化输出路径")
+    parser.add_argument("--output", default="./data/autorepair_kb/exams/structured.json", help="结构化输出路径")
     parser.add_argument("--dry-run", action="store_true", help="仅预览，不入库")
     args = parser.parse_args()
 

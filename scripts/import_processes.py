@@ -3,7 +3,7 @@
 工艺文档导入脚本 — 遍历目录，自动分类入库。
 
 用法:
-    python scripts/import_processes.py --input ./data/manufacturing_kb/processes/
+    python scripts/import_processes.py --input ./data/autorepair_kb/processes/
     python scripts/import_processes.py --file process_001.docx
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from raganything.manufacturing.knowledge_pipeline.process_library import ProcessLibrary
+from raganything.autorepair.knowledge_pipeline.process_library import ProcessLibrary
 
 
 def main():
@@ -21,7 +21,7 @@ def main():
     group = parser.add_mutually_exclusive_group(required=True)
     group.add_argument("--input", help="工艺文档目录路径")
     group.add_argument("--file", help="单个工艺文档路径")
-    parser.add_argument("--storage", default="./data/manufacturing_kb/processes", help="工艺库存储路径")
+    parser.add_argument("--storage", default="./data/autorepair_kb/processes", help="工艺库存储路径")
     args = parser.parse_args()
 
     library = ProcessLibrary(storage_path=args.storage)

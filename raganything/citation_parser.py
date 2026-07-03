@@ -6,7 +6,7 @@
 - 引用来源块: 📚 参考来源\n[来源 文档名] — "原文摘录..."
 - 旧格式兼容: [来源 N]
 
-该模块从 manufacturing/agent/source_tracer.py 提炼而来，
+该模块从 autorepair/agent/source_tracer.py 提炼而来，
 为通用 RAG 管线提供统一的引用解析能力。
 """
 
@@ -414,5 +414,5 @@ def extract_citations(
     return result
 
 
-# Backward compatibility alias matching the manufacturing module's API
+# Backward compatibility alias matching the autorepair module's API
 extract_citations_from_answer = extract_citations

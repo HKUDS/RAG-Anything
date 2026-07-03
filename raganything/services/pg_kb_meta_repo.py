@@ -15,7 +15,7 @@ PostgreSQL 知识库元数据仓库
   │ kb_metadata      │ 知识库元数据                          │
   │                  │ name（知识库名称，唯一标识）           │
   │                  │ label（显示标签/中文名）               │
-  │                  │ domain（领域：general/manufacturing/  │
+  │                  │ domain（领域：general/autorepair/  │
   │                  │   education/legal/medical/...）       │
   │                  │ description（描述文本）               │
   │                  │ created_by（创建者 username）          │
@@ -181,7 +181,7 @@ async def pg_save_kb_meta(name: str, meta: dict[str, Any]) -> None:
     """Save or update metadata for a single KB (upsert).
 
     Args:
-        name: KB identifier (e.g. "default", "manufacturing")
+        name: KB identifier (e.g. "default", "autorepair")
         meta: KB metadata dict with legacy JSON keys:
               {name, created, domain, description, owner_id,
                owner_username, status, document_count, extra, ...}
@@ -327,7 +327,7 @@ async def pg_delete_kb_meta(name: str) -> bool:
 
 
 async def pg_list_kbs_by_domain(domain: str = "general") -> list[dict[str, Any]]:
-    """List KBs filtered by domain (used by manufacturing KB discovery)."""
+    """List KBs filtered by domain (used by autorepair KB discovery)."""
     pool = _get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch(
