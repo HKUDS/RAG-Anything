@@ -60,7 +60,7 @@ logger = logging.getLogger("rag_server.prompt_builder")
 
 _DEFAULT_LAYER_CONFIG = {
     "user_profile":       {"priority": 10, "max_tokens": 500,  "enabled": False},
-    "conversation_summary": {"priority": 20, "max_tokens": 1000, "enabled": False},
+    "conversation_summary": {"priority": 20, "max_tokens": 1000, "enabled": True},
     "image_context":      {"priority": 25, "max_tokens": 2000, "enabled": True},
     "recent_history":     {"priority": 30, "max_tokens": 2000, "enabled": True},
     "retrieval_context":  {"priority": 50, "max_tokens": None, "enabled": True},
@@ -303,7 +303,7 @@ class PromptBuilder:
     def add_summary(self, summary_text: str) -> "PromptBuilder":
         """Add conversation summary layer (priority=20)."""
         enabled = (
-            os.getenv("CONVERSATION_SUMMARY_ENABLED", "false").lower() == "true"
+            os.getenv("CONVERSATION_SUMMARY_ENABLED", "true").lower() == "true"
             and bool(summary_text)
         )
         self.add_context_layer(ContextLayer(

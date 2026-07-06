@@ -72,9 +72,9 @@
 系统 SHALL 通过环境变量控制注入 prompt 的历史轮数、token 上限，以及新增的摘要相关配置。
 
 #### Scenario: 历史轮数限制
-- **WHEN** 会话有 10 轮对话历史
-- **AND** `CONVERSATION_MAX_ROUNDS` 设为 3
-- **THEN** 仅最近 3 轮未包含在摘要中的消息注入近期对话层
+- **WHEN** 会话有 20 轮对话历史
+- **AND** `CONVERSATION_MAX_ROUNDS` 设为 10
+- **THEN** 仅最近 10 轮未包含在摘要中的消息注入近期对话层
 
 #### Scenario: Token 预算限制
 - **WHEN** 近期对话层文本估算超过 `CONVERSATION_MAX_TOKENS`（默认 2000）
@@ -92,7 +92,7 @@
 
 #### Scenario: 环境变量默认值
 - **WHEN** 上述环境变量未设置
-- **THEN** 系统使用默认值：`CONVERSATION_MAX_ROUNDS=3`，`CONVERSATION_MAX_TOKENS=2000`，`CONVERSATION_SUMMARY_MAX_TOKENS=1000`
+- **THEN** 系统使用默认值：`CONVERSATION_MAX_ROUNDS=10`，`CONVERSATION_MAX_TOKENS=2000`，`CONVERSATION_SUMMARY_MAX_TOKENS=1000`
 
 ### Requirement: 持久化存储
 

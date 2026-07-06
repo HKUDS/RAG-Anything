@@ -56,6 +56,7 @@ from raganything.services.pg_agent_repo import (
     pg_get_conversation,
     pg_create_conversation,
     pg_add_message,
+    pg_update_message,
     pg_delete_conversation,
     pg_update_conversation,
     pg_get_summary,
@@ -184,10 +185,10 @@ async def _maybe_generate_summary(
     Returns the new summary text if generated, None otherwise.
     Runs asynchronously — does not block the user response.
     """
-    if os.getenv("CONVERSATION_SUMMARY_ENABLED", "false").lower() != "true":
+    if os.getenv("CONVERSATION_SUMMARY_ENABLED", "true").lower() != "true":
         return None
 
-    trigger_rounds = int(os.getenv("CONVERSATION_SUMMARY_TRIGGER_ROUNDS", "5"))
+    trigger_rounds = int(os.getenv("CONVERSATION_SUMMARY_TRIGGER_ROUNDS", "3"))
     trigger_messages = trigger_rounds * 2
 
     messages = conv_thread.get("messages", []) if conv_thread else []
@@ -218,12 +219,16 @@ async def _maybe_generate_summary(
         pass
 
     summary_model = os.getenv("CONVERSATION_SUMMARY_LLM_MODEL", LLM_MODEL)
+    comp_ratio = float(os.getenv("CONVERSATION_COMPRESSION_RATIO", "0.60"))
+    comp_max_retries = int(os.getenv("CONVERSATION_COMPRESSION_MAX_RETRIES", "2"))
 
     try:
         new_summary = await _call_summary_llm(
             messages=messages,
             existing_summary=existing_summary,
             model=summary_model,
+            compression_ratio=comp_ratio,
+            max_retries=comp_max_retries,
         )
         if new_summary:
             await pg_update_summary(thread_id, new_summary)
@@ -238,16 +243,24 @@ async def _call_summary_llm(
     messages: list[dict],
     existing_summary: str | None = None,
     model: str = "qwen-plus",
+    compression_ratio: float = 0.60,
+    max_retries: int = 2,
 ) -> str | None:
-    """Call LLM to generate or update conversation summary.
+    """Call LLM to generate or update conversation summary with compression ratio guarantee.
+
+    After LLM returns, computes compression_ratio = 1 - len(summary)/len(transcript).
+    If the ratio falls below the target, retries with progressively stricter compression
+    instructions (up to max_retries times). On total failure, returns the best attempt.
 
     Args:
         messages: Full message list for the thread.
         existing_summary: Previous summary (for incremental update).
         model: LLM model to use.
+        compression_ratio: Target compression ratio (default 0.60 = 60%).
+        max_retries: Maximum retry attempts if compression ratio not met (default 2).
 
     Returns:
-        Summary string (2-5 sentences in the conversation language), or None on failure.
+        Summary string, or None on failure.
     """
     # Build the conversation transcript
     transcript_lines = []
@@ -256,9 +269,11 @@ async def _call_summary_llm(
         content = (msg.get("content", "") or "")[:500]
         transcript_lines.append(f"{role_label}: {content}")
     transcript = "\n".join(transcript_lines)
+    transcript_len = len(transcript)
 
+    # Base prompt (same as before)
     if existing_summary:
-        summary_prompt = (
+        base_prompt = (
             "你是一个对话摘要助手。下面是已有的对话摘要和新增的对话内容。"
             "请将新增内容融入已有摘要，生成更新后的摘要。"
             "保持 2-5 句话，只总结事实和关键结论，不添加新信息，不编造内容。\n\n"
@@ -267,30 +282,76 @@ async def _call_summary_llm(
             "## 更新后的摘要"
         )
     else:
-        summary_prompt = (
+        base_prompt = (
             "你是一个对话摘要助手。请用 2-5 句话总结以下对话的核心内容和关键结论。"
             "只总结事实，不添加新信息，不编造内容。使用对话中使用的语言回复。\n\n"
             f"## 对话记录\n{transcript}\n\n"
             "## 摘要"
         )
 
-    try:
-        response = await openai_complete_if_cache(
-            model,
-            summary_prompt,
-            system_prompt="你是一个精确的对话摘要助手。只输出摘要文本，不加前缀或标记。",
-            api_key=API_KEY,
-            base_url=BASE_URL,
-            max_tokens=500,
-            temperature=0.3,
-            stream=False,
-        )
-        if response and len(response.strip()) > 10:
-            return response.strip()
-    except Exception as e:
-        lightrag_logger.warning(f"[SUMMARY] LLM call failed: {e}")
+    # Progressive retry hints for stronger compression
+    retry_hints = [
+        "\n\n请大幅压缩摘要，目标是将原始对话压缩至 40% 以下长度。只保留最关键的事实和结论。",
+        "\n\n极限压缩模式：每条信息不超过 10 个字，只输出核心结论。",
+    ]
 
-    return None
+    best_summary = None
+    best_ratio = float('-inf')  # ensure any real ratio (even negative) is captured
+    total_attempts = max(1, max_retries + 1)  # guarantee at least 1 attempt
+
+    for attempt in range(total_attempts):
+        prompt = base_prompt
+        if attempt > 0:
+            hint_idx = min(attempt - 1, len(retry_hints) - 1)
+            prompt += retry_hints[hint_idx]
+
+        try:
+            response = await openai_complete_if_cache(
+                model,
+                prompt,
+                system_prompt="你是一个精确的对话摘要助手。只输出摘要文本，不加前缀或标记。",
+                api_key=API_KEY,
+                base_url=BASE_URL,
+                max_tokens=500,
+                temperature=0.3,
+                stream=False,
+            )
+        except Exception as e:
+            lightrag_logger.warning(
+                f"[SUMMARY-COMPRESSION] LLM call failed (attempt {attempt+1}/{total_attempts}): {e}"
+            )
+            continue
+
+        if not response or len(response.strip()) <= 10:
+            continue
+
+        summary = response.strip()
+        summary_len = len(summary)
+        ratio = 1.0 - (summary_len / max(transcript_len, 1))
+        passed = ratio >= compression_ratio
+
+        lightrag_logger.info(
+            f"[SUMMARY-COMPRESSION] input_chars={transcript_len}, "
+            f"output_chars={summary_len}, ratio={ratio:.1%}, "
+            f"attempt={attempt+1}/{total_attempts}, pass={str(passed).lower()}"
+        )
+
+        if passed:
+            return summary
+
+        # Track best result for graceful degradation
+        if ratio > best_ratio:
+            best_ratio = ratio
+            best_summary = summary
+
+    # All retries exhausted — graceful degradation
+    if best_summary:
+        lightrag_logger.warning(
+            f"[SUMMARY-COMPRESSION] All retries exhausted. "
+            f"Best ratio: {best_ratio:.1%}, accepting degraded result."
+        )
+
+    return best_summary
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -335,6 +396,10 @@ class AgentQueryRequest(BaseModel):
     agent_mode: Optional[str] = None  # 空则使用智能体默认的 agent_mode
     vlm_enhanced: bool = False
     image: Optional[str] = None  # base64 data URI of user-uploaded query image (e.g. data:image/jpeg;base64,...)
+
+
+class MessageUpdateRequest(BaseModel):
+    content: str  # 新的消息内容（Markdown，≤10000 字符）
 
 
 # ═══════════════════════════════════════════════════════════
@@ -471,6 +536,28 @@ async def list_conversations(agent_id: str, current_user: dict = Depends(get_cur
     }
 
 
+@router.get("/agents/{agent_id}/conversations/{thread_id}")
+async def get_conversation(
+    agent_id: str,
+    thread_id: str,
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_READ)),
+):
+    """获取单个对话线程（含完整消息列表，每条消息带 msg_id）"""
+    agent = await pg_get_agent(agent_id)
+    if not agent:
+        raise HTTPException(404, "智能体不存在")
+    is_admin = current_user.get("is_admin", False)
+    if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权访问该智能体")
+    thread = await pg_get_conversation(agent_id, thread_id)
+    if not thread:
+        raise HTTPException(404, "对话线程不存在")
+    if thread.get("owner_id", 0) != 0 and thread.get("owner_id") != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权访问该对话")
+    return {"thread": thread}
+
+
 @router.post("/agents/{agent_id}/conversations")
 async def create_conversation(agent_id: str, title: str = "新对话", current_user: dict = Depends(get_current_user),
     _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
@@ -527,6 +614,54 @@ async def delete_conversation(agent_id: str, thread_id: str, current_user: dict 
     return {"status": "ok"}
 
 
+# ── ✏️ 消息编辑 ──────────────────────────────────────
+
+
+@router.put("/agents/{agent_id}/conversations/{thread_id}/messages/{message_id}")
+async def update_message(
+    agent_id: str,
+    thread_id: str,
+    message_id: int,
+    req: MessageUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+    _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
+):
+    """编辑对话中的单条消息（仅 conversation owner 或 admin）"""
+    # 权限：仅 conversation owner 或 admin 可编辑
+    is_admin = current_user.get("is_admin", False)
+
+    # 验证 agent 存在 + 所有权
+    agent = await pg_get_agent(agent_id)
+    if not agent:
+        raise HTTPException(404, "智能体不存在")
+    if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权修改该智能体的消息")
+
+    # 验证 thread 存在 + 所有权
+    thread = await pg_get_conversation(agent_id, thread_id)
+    if not thread:
+        raise HTTPException(404, "对话线程不存在")
+    if thread.get("owner_id", 0) != 0 and thread.get("owner_id") != current_user["id"] and not is_admin:
+        raise HTTPException(403, "无权修改该对话的消息")
+
+    # 输入校验
+    if not req.content or not req.content.strip():
+        raise HTTPException(422, "消息内容不能为空")
+    if len(req.content) > 10000:
+        raise HTTPException(422, "消息内容不能超过 10000 字符")
+
+    # 更新消息
+    try:
+        result = await pg_update_message(thread_id, message_id, req.content)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+    if not result:
+        raise HTTPException(404, "消息不存在")
+
+    return {"status": "ok", "message": result}
+
+
 # ── 🔍 智能查询（智能体增强）─────────────────────────────
 
 @router.post("/agents/{agent_id}/query/stream")
@@ -573,7 +708,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
 
     # ── 多轮对话上下文提取 ──
     conv_history_text = ""
-    max_conv_rounds = int(os.getenv("CONVERSATION_MAX_ROUNDS", "3"))
+    max_conv_rounds = int(os.getenv("CONVERSATION_MAX_ROUNDS", "10"))
     max_conv_tokens = int(os.getenv("CONVERSATION_MAX_TOKENS", "2000"))
     conv_thread = await pg_get_conversation(agent_id, thread_id)
     if conv_thread and conv_thread.get("messages"):

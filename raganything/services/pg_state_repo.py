@@ -444,7 +444,7 @@ async def _estimate_tokens(text: str) -> int:
 async def get_context(
     thread_id: str,
     current_query: str = "",
-    max_rounds: int = 3,
+    max_rounds: int = 10,
     max_tokens: int = 2000,
 ) -> dict[str, Any]:
     """Extract conversation context for LLM prompt injection.
