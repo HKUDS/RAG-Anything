@@ -127,6 +127,22 @@ def _build_image_section(image_description: str = "", similar_image_urls: list =
     return "".join(parts)
 
 
+def _assistant_message_media(
+    images: list[str] | None = None,
+    similar_images: list[dict] | None = None,
+    image_description: str | None = None,
+) -> dict:
+    """Persist media fields with assistant messages so conversation reloads keep them."""
+    payload: dict = {}
+    if images is not None:
+        payload["images"] = images
+    if similar_images is not None:
+        payload["similar_images"] = similar_images
+    if image_description:
+        payload["image_description"] = image_description
+    return payload
+
+
 def _build_layered_query(
     query: str,
     conv_history_text: str = "",
@@ -369,7 +385,7 @@ class AgentCreateRequest(BaseModel):
     include_references: bool = True
     system_prompt: str = ""
     use_default_prompt: bool = True
-    welcome_message: str = ""
+    welcome_message: Optional[str] = None
     template_id: str = ""
 
 
@@ -460,6 +476,57 @@ def _agent_runtime_config(agent: dict) -> dict:
         "include_references": agent.get("include_references", True),
     })
 
+
+def _build_agent_system_prompt(agent: dict) -> str:
+    system_prompt = (agent.get("system_prompt") or "").strip()
+    if agent.get("use_default_prompt", True):
+        parts = [part for part in (system_prompt, QUERY_SYSTEM_PROMPT) if part]
+        return "\n\n".join(parts).strip()
+    return system_prompt
+
+
+def _build_effective_agent_runtime(agent: dict, req: AgentQueryRequest) -> dict:
+    query_mode = req.mode or agent.get("query_mode") or "hybrid"
+    agent_mode = req.agent_mode or agent.get("agent_mode", "none")
+    runtime_config = _agent_runtime_config(agent)
+    runtime_config.update({
+        "llm_model": agent.get("llm_model") or LLM_MODEL,
+        "temperature": float(agent.get("temperature", 0.0) or 0.0),
+        "system_prompt": _build_agent_system_prompt(agent),
+        "query_mode": query_mode,
+        "agent_mode": agent_mode,
+        # Agentic paths should honor the saved/default retrieval mode when available.
+        "agentic_query_mode": req.mode or agent.get("query_mode") or "rrf",
+    })
+    return runtime_config
+
+
+def _build_agent_llm(runtime_config: dict):
+    async def _agent_llm(
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        history_messages: Optional[list[dict]] = None,
+        **kwargs,
+    ):
+        call_kwargs = dict(kwargs)
+        max_tokens = call_kwargs.pop("max_tokens", runtime_config["max_response_tokens"])
+        call_kwargs.pop("temperature", None)
+        stream = call_kwargs.pop("stream", False)
+        return await openai_complete_if_cache(
+            runtime_config["llm_model"],
+            prompt,
+            system_prompt=runtime_config["system_prompt"] if system_prompt is None else system_prompt,
+            history_messages=history_messages or [],
+            api_key=API_KEY,
+            base_url=BASE_URL,
+            max_tokens=max_tokens,
+            temperature=runtime_config["temperature"],
+            stream=stream,
+            **call_kwargs,
+        )
+
+    return _agent_llm
+
 # Router
 # ═══════════════════════════════════════════════════════════
 
@@ -513,7 +580,7 @@ async def create_agent(
         name=req.name,
         icon=req.icon,
         description=req.description,
-        welcome_message=req.welcome_message or f"你好！我是{req.name}，有什么可以帮你的？",
+        welcome_message=req.welcome_message if req.welcome_message is not None else "",
         kb_name=req.kb_name,
         llm_model=req.llm_model,
         temperature=req.temperature,
@@ -549,8 +616,11 @@ async def update_agent(
     is_admin = current_user.get("is_admin", False)
     if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权修改该智能体")
+    raw_updates = req.model_dump(exclude_unset=True)
+    if "kb_name" in raw_updates:
+        await verify_kb_access(kb=raw_updates["kb_name"], current_user=current_user)
     updates = _normalise_agent_config_values(
-        {k: v for k, v in req.model_dump().items() if v is not None}
+        {k: v for k, v in raw_updates.items() if v is not None}
     )
     agent = await pg_update_agent(agent_id, updates)
     if not agent:
@@ -752,23 +822,20 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     actual_kb = await verify_kb_access(kb=agent.get("kb_name", ""), current_user=current_user)
 
     instance = await get_kb(actual_kb)
+    runtime_config = _build_effective_agent_runtime(agent, req)
     # 检索模式（agentic 路径优先 rrf 轻量模式，可被请求级覆盖；普通路径沿用 agent 配置）
-    query_mode = req.mode or agent.get("query_mode", "hybrid")
+    query_mode = runtime_config["query_mode"]
     # 推理模式：请求级覆盖 > 智能体配置 > 默认 none
-    agent_mode = req.agent_mode or agent.get("agent_mode", "none")
+    agent_mode = runtime_config["agent_mode"]
     # AgenticRAG 专用检索模式：优先请求级，否则默认 rrf（更快）
-    agentic_query_mode = req.mode or "rrf"
-    runtime_config = _agent_runtime_config(agent)
+    agentic_query_mode = runtime_config["agentic_query_mode"]
     max_response_tokens = runtime_config["max_response_tokens"]
     retrieval_top_k = runtime_config["retrieval_top_k"]
     chunk_top_k = runtime_config["chunk_top_k"]
     enable_rerank = runtime_config["enable_rerank"]
     include_references = runtime_config["include_references"]
-
-    # 构建 system_prompt
-    system_prompt = agent.get("system_prompt", "")
-    if agent.get("use_default_prompt", True):
-        system_prompt = (system_prompt + "\n\n" + QUERY_SYSTEM_PROMPT).strip()
+    system_prompt = runtime_config["system_prompt"]
+    agent_llm = _build_agent_llm(runtime_config)
 
     # 确保对话线程存在
     thread_id = req.thread_id
@@ -934,6 +1001,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     # Emit similar image URLs for frontend rendering
                     if _similar_image_urls:
                         yield f"data: {json.dumps({'type': 'image_results', 'images': _similar_image_urls}, ensure_ascii=False)}\n\n"
+            _display_similar_images = _similar_image_urls or similar_images
 
             # ═══ AgenticRAG 推理路径（ReAct / CoT） ═══
             if agent_mode in ("react", "cot"):
@@ -941,10 +1009,11 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 from raganything.agentic_rag import AgenticRAG, SearchTool
 
                 agentic = AgenticRAG(
-                    llm_func=instance.llm_model_func,
+                    llm_func=agent_llm,
                     max_steps=int(os.getenv("AGENT_MAX_STEPS", "5")),
                     mode=agent_mode,
                     max_response_tokens=max_response_tokens,
+                    system_prompt_override=system_prompt,
                 )
                 agentic.register_tool(SearchTool(
                     instance,
@@ -993,7 +1062,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     cot_context = ""
                     try:
                         cot_context = await instance.aquery(
-                            _cot_search_query, mode="rrf", only_need_context=True,
+                            _cot_search_query, mode=agentic_query_mode, only_need_context=True,
                             top_k=retrieval_top_k, chunk_top_k=chunk_top_k,
                             enable_rerank=enable_rerank,
                             include_references=include_references,
@@ -1023,6 +1092,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                             "agent_mode": agent_mode, "trace": [],
                             "fallback": True,
                             "time": datetime.now().isoformat(),
+                            **_assistant_message_media([], _display_similar_images, image_description),
                         })
                         record = {
                             "id": query_id, "query": req.query, "mode": query_mode,
@@ -1038,8 +1108,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         _done_cot_empty = {'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': [], 'fallback': True}
                         if image_description:
                             _done_cot_empty['image_description'] = image_description
-                        if similar_images:
-                            _done_cot_empty['similar_images'] = similar_images
+                        if _display_similar_images:
+                            _done_cot_empty['similar_images'] = _display_similar_images
                         yield f"data: {json.dumps(_done_cot_empty, ensure_ascii=False)}\n\n"
                         lightrag_logger.removeHandler(handler)
                         return
@@ -1129,6 +1199,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "elapsed": elapsed, "mode": query_mode,
                     "agent_mode": agent_mode, "trace": trace_steps,
                     "time": datetime.now().isoformat(),
+                    **_assistant_message_media(agent_images, _display_similar_images, image_description),
                 })
 
                 # 记录全局查询历史
@@ -1153,8 +1224,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 _done_agentic = {'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': agent_images}
                 if image_description:
                     _done_agentic['image_description'] = image_description
-                if similar_images:
-                    _done_agentic['similar_images'] = similar_images
+                if _display_similar_images:
+                    _done_agentic['similar_images'] = _display_similar_images
                 yield f"data: {json.dumps(_done_agentic, ensure_ascii=False)}\n\n"
                 return
 
@@ -1223,6 +1294,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "mode": query_mode,
                     "fallback": True,
                     "time": datetime.now().isoformat(),
+                    **_assistant_message_media(agent_images, _display_similar_images, image_description),
                 })
 
                 # 记录全局查询历史
@@ -1252,8 +1324,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 }
                 if image_description:
                     _done_data['image_description'] = image_description
-                if similar_images:
-                    _done_data['similar_images'] = similar_images
+                if _display_similar_images:
+                    _done_data['similar_images'] = _display_similar_images
                 yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
                 # 提前返回，不走到下方的通用 LLM 调用路径
                 lightrag_logger.removeHandler(handler)
@@ -1341,6 +1413,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "mode": query_mode,
                     "fallback": True,
                     "time": datetime.now().isoformat(),
+                    **_assistant_message_media(agent_images, _display_similar_images, image_description),
                 })
 
                 # 记录全局查询历史
@@ -1370,8 +1443,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 }
                 if image_description:
                     _done_data['image_description'] = image_description
-                if similar_images:
-                    _done_data['similar_images'] = similar_images
+                if _display_similar_images:
+                    _done_data['similar_images'] = _display_similar_images
                 yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
                 lightrag_logger.removeHandler(handler)
                 return
@@ -1384,7 +1457,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             yield f"data: {json.dumps({'type': 'thinking', 'content': '💬 正在生成回答...'}, ensure_ascii=False)}\n\n"
 
             # Step 2: 使用 PromptBuilder 构造分层 prompt
-            sp = (agent.get("system_prompt") or "") + ("\n你是知识库助手。结合对话历史理解用户上下文和指代关系，但回答中的事实和数据必须来源于检索内容。" if agent.get("use_default_prompt") else "")
+            sp = system_prompt
             # Select citation instruction based on config (same as non-agent endpoints)
             if include_references:
                 _cit_inst = (
@@ -1427,16 +1500,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             _pb.degraded_hint("" if _has_chunks else _DEGRADED_HINT)
             _pb.user_query(req.query, _cit_inst)
             final_prompt, _final_sp = _pb.build()
-            # Preserve original system prompt logic
-            sp = sp
-
-            # 使用智能体配置的模型，而非 .env 全局模型
-            use_model = agent.get("llm_model") or LLM_MODEL
-            llm_response = await openai_complete_if_cache(
-                use_model, final_prompt, system_prompt=sp,
-                api_key=API_KEY, base_url=BASE_URL,
+            llm_response = await agent_llm(
+                prompt=final_prompt,
+                system_prompt=sp,
                 max_tokens=max_response_tokens,
-                temperature=agent.get("temperature", 0.7), stream=True,
+                temperature=runtime_config["temperature"],
+                stream=True,
             )
 
             if llm_response is None:
@@ -1475,6 +1544,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 "mode": query_mode,
                 "fallback": is_fallback,
                 "time": datetime.now().isoformat(),
+                **_assistant_message_media(agent_images, _display_similar_images, image_description),
             })
 
             # 记录全局查询历史
@@ -1511,8 +1581,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 _done_data['fallback'] = True
             if image_description:
                 _done_data['image_description'] = image_description
-            if similar_images:
-                _done_data['similar_images'] = similar_images
+            if _display_similar_images:
+                _done_data['similar_images'] = _display_similar_images
             yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
 
         except Exception as exc:

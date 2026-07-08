@@ -145,6 +145,105 @@ def _json_list_agents(
     ]
 
 
+def _coerce_timestamp(value: Any) -> datetime:
+    if isinstance(value, datetime):
+        dt = value
+    elif isinstance(value, str) and value:
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            dt = datetime.now(timezone.utc)
+    else:
+        dt = datetime.now(timezone.utc)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt
+
+
+def _coerce_bool(value: Any, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+async def _promote_legacy_json_agent(
+    agent_id: str,
+    legacy_agent: Optional[dict[str, Any]] = None,
+) -> Optional[dict[str, Any]]:
+    """Promote a JSON-only legacy agent into PG and return the PG row."""
+    legacy_agent = legacy_agent or _json_get_agent(agent_id)
+    if not legacy_agent:
+        return None
+
+    created_at = _coerce_timestamp(legacy_agent.get("created_at"))
+    updated_at = _coerce_timestamp(legacy_agent.get("updated_at"))
+    owner_id = legacy_agent.get("owner_id", 0)
+    try:
+        owner_id = int(owner_id)
+    except (TypeError, ValueError):
+        owner_id = 0
+
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            INSERT INTO agents (
+                id, name, icon, description, welcome_message,
+                kb_name, llm_model, temperature, max_response_tokens,
+                query_mode, agent_mode, retrieval_top_k, chunk_top_k,
+                enable_rerank, include_references,
+                system_prompt, use_default_prompt,
+                owner_id, owner_username, template_id,
+                created_at, updated_at
+            ) VALUES (
+                $1, $2, $3, $4, $5,
+                $6, $7, $8, $9,
+                $10, $11, $12, $13,
+                $14, $15,
+                $16, $17,
+                $18, $19, $20,
+                $21, $22
+            )
+            ON CONFLICT (id) DO NOTHING
+            """,
+            legacy_agent.get("id") or agent_id,
+            legacy_agent.get("name") or "新智能体",
+            legacy_agent.get("icon") or "🤖",
+            legacy_agent.get("description") or "",
+            legacy_agent.get("welcome_message") or "",
+            legacy_agent.get("kb_name") or "default",
+            legacy_agent.get("llm_model") or "qwen-plus",
+            legacy_agent.get("temperature", 0.0) or 0.0,
+            legacy_agent.get("max_response_tokens", 4096) or 4096,
+            legacy_agent.get("query_mode") or "hybrid",
+            legacy_agent.get("agent_mode") or "none",
+            legacy_agent.get("retrieval_top_k", 40) or 40,
+            legacy_agent.get("chunk_top_k", 20) or 20,
+            _coerce_bool(legacy_agent.get("enable_rerank"), False),
+            _coerce_bool(legacy_agent.get("include_references"), True),
+            legacy_agent.get("system_prompt") or "",
+            _coerce_bool(legacy_agent.get("use_default_prompt"), True),
+            owner_id,
+            legacy_agent.get("owner_username") or "",
+            legacy_agent.get("template_id") or "",
+            created_at,
+            updated_at,
+        )
+        row = await conn.fetchrow(
+            "SELECT * FROM agents WHERE id = $1",
+            legacy_agent.get("id") or agent_id,
+        )
+
+    if row:
+        logger.info("Promoted legacy JSON agent %s into PostgreSQL", agent_id)
+        return _agent_row_to_dict(row)
+    return None
+
+
 # ═══════════════════════════════════════════════════════════════
 # Agent CRUD
 # ═══════════════════════════════════════════════════════════════
@@ -298,7 +397,6 @@ async def pg_update_agent(
     Returns:
         Updated agent dict or None if not found.
     """
-    # Build SET clause from non-None updates
     allowed_fields = {
         "name", "icon", "description", "welcome_message",
         "kb_name", "llm_model", "temperature", "max_response_tokens",
@@ -321,23 +419,38 @@ async def pg_update_agent(
         # No valid fields to update — still return current agent
         return await pg_get_agent(agent_id)
 
-    # updated_at is auto-set by trigger, but we update it explicitly
-    # in case the trigger isn't present
-    now = datetime.now(timezone.utc)
-    set_parts.append(f"updated_at = ${idx}")
-    values.append(now)
-    idx += 1
-
-    values.append(agent_id)
-    sql = (
-        f"UPDATE agents SET {', '.join(set_parts)} "
-        f"WHERE id = ${idx} "
-        f"RETURNING *"
-    )
-
     pool = _get_pool()
-    row = await pool.fetchrow(sql, *values)
-    return _agent_row_to_dict(row) if row else None
+
+    async def _run_update() -> Optional[dict[str, Any]]:
+        update_values = list(values)
+        update_parts = list(set_parts)
+        update_idx = idx
+        now = datetime.now(timezone.utc)
+        update_parts.append(f"updated_at = ${update_idx}")
+        update_values.append(now)
+        update_idx += 1
+        update_values.append(agent_id)
+        sql = (
+            f"UPDATE agents SET {', '.join(update_parts)} "
+            f"WHERE id = ${update_idx} "
+            f"RETURNING *"
+        )
+        row = await pool.fetchrow(sql, *update_values)
+        return _agent_row_to_dict(row) if row else None
+
+    updated_agent = await _run_update()
+    if updated_agent:
+        return updated_agent
+
+    legacy_agent = _json_get_agent(agent_id)
+    if not legacy_agent:
+        return None
+
+    promoted_agent = await _promote_legacy_json_agent(agent_id, legacy_agent=legacy_agent)
+    if not promoted_agent:
+        return None
+
+    return await _run_update()
 
 
 async def pg_delete_agent(agent_id: str) -> bool:

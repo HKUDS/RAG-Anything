@@ -104,17 +104,37 @@ function formatElapsed(ms) {
   return `${(ms / 1000).toFixed(1)}s`
 }
 
-export default function AgentChatPage() {
+function mapThreadMessages(threadId, messages = []) {
+  return messages.map((message, index) => ({
+    ...message,
+    id: `${threadId}-${index}`,
+    thinking: [],
+    thinkingDone: true,
+    done: true,
+  }))
+}
+
+async function readStreamErrorMessage(res) {
+  const fallback = res.statusText || `HTTP ${res.status}`
+  const text = await res.text().catch(() => '')
+  if (!text.trim()) return fallback
+  try {
+    const parsed = JSON.parse(text)
+    if (typeof parsed?.detail === 'string') return parsed.detail
+  } catch {
+    return text
+  }
+  return fallback
+}
+
+export default function AgentChatPage({ onToast }) {
   const { id: agentId } = useParams()
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { hasPermission } = useAuth()
   const chatRef = useRef()
   const abortRef = useRef(null)
   const inputRef = useRef(null)
-
-  // ── 用户角色 ───────────────────────────────────────────────
-  const userRole = user?.role?.name || 'student'
-  const isTeacher = userRole === 'super_admin' || userRole === 'dept_admin' || userRole === 'teacher' || userRole === 'assistant'
+  const activeThreadIdRef = useRef('')
 
   // ── 状态 ────────────────────────────────────────────────────
   const [agent, setAgent] = useState(null)
@@ -122,8 +142,8 @@ export default function AgentChatPage() {
   const [activeThreadId, setActiveThreadId] = useState('')
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
-  const [mode, setMode] = useState('')
-  const [agentMode, setAgentMode] = useState('none')
+  const [modeOverride, setModeOverride] = useState(null)
+  const [agentModeOverride, setAgentModeOverride] = useState(null)
   const [loading, setLoading] = useState(false)
   const [expandedThinking, setExpandedThinking] = useState({})
   const [renamingThread, setRenamingThread] = useState(null)
@@ -140,6 +160,9 @@ export default function AgentChatPage() {
   // ── Blob URL 生命周期追踪 ──────────────────────────────
   const blobUrlsRef = useRef(new Set())
   const prevMessagesRef = useRef([])
+  const canAdjustModes = hasPermission('agent:read')
+  const effectiveMode = modeOverride ?? agent?.query_mode ?? 'hybrid'
+  const effectiveAgentMode = agentModeOverride ?? agent?.agent_mode ?? 'none'
 
   const trackBlobUrl = useCallback((url) => {
     if (url && url.startsWith('blob:')) {
@@ -184,68 +207,142 @@ export default function AgentChatPage() {
     }
   }, [])
 
+  useEffect(() => {
+    activeThreadIdRef.current = activeThreadId
+  }, [activeThreadId])
+
+  const loadAgent = useCallback(async ({ silent = false } = {}) => {
+    try {
+      const response = await api.listAgents()
+      const nextAgent = (response.agents || []).find(item => item.id === agentId)
+      if (!nextAgent) {
+        if (!silent) {
+          onToast?.('未找到该智能体，或当前账号已无访问权限。', 'error')
+          navigate('/agents')
+        }
+        return null
+      }
+      setAgent(nextAgent)
+      return nextAgent
+    } catch (e) {
+      if (!silent) {
+        onToast?.(e.message || '加载智能体失败', 'error')
+      }
+      console.warn('[AgentChat] Failed to load agent:', e.message)
+      return null
+    }
+  }, [agentId, navigate, onToast])
+
   // ── 智能体加载 ────────────────────────────────────────────
   useEffect(() => {
-    api.listAgents().then(r => {
-      const a = (r.agents || []).find(x => x.id === agentId)
-      if (a) {
-        setAgent(a)
-        setMode(a.query_mode || 'hybrid')
-        setAgentMode(a.agent_mode || 'none')
-      }
-    }).catch(e => console.warn('[AgentChat] Failed to load agent:', e.message))
+    setModeOverride(null)
+    setAgentModeOverride(null)
+    loadAgent()
     loadThreads(true)
-  }, [agentId])
+  }, [agentId, loadAgent])
+
+  useEffect(() => {
+    const handleFocus = () => {
+      loadAgent({ silent: true })
+    }
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        loadAgent({ silent: true })
+      }
+    }
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => {
+      window.removeEventListener('focus', handleFocus)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+    }
+  }, [loadAgent])
 
   // ── 会话线程管理 ────────────────────────────────────────
-  const loadThreads = (autoSelect = false) => {
-    api.listConversations(agentId).then(r => {
-      setThreads(r.threads || [])
-      if (r.threads?.length > 0 && autoSelect) {
-        loadThread(r.threads[0].id)
+  const loadThreads = async (autoSelect = false) => {
+    try {
+      const response = await api.listConversations(agentId)
+      const nextThreads = response.threads || []
+      setThreads(nextThreads)
+      if (nextThreads.length > 0 && autoSelect) {
+        await loadThread(nextThreads[0].id)
       }
-    }).catch(e => console.warn('[AgentChat] Failed to load conversations:', e.message))
+    } catch (e) {
+      console.warn('[AgentChat] Failed to load conversations:', e.message)
+    }
   }
 
-  const loadThread = (threadId) => {
+  const loadThread = async (threadId) => {
+    if (abortRef.current && activeThreadIdRef.current && activeThreadIdRef.current !== threadId) {
+      abortRef.current.abort()
+    }
+    activeThreadIdRef.current = threadId
     setActiveThreadId(threadId)
     setMessages([])
     cleanupMessageBlobUrls([])
     // 获取带消息的会话线程（包含 msg_id，用于支持编辑）
-    api.getConversation(agentId, threadId).then(r => {
-      const thread = r.thread
+    try {
+      const response = await api.getConversation(agentId, threadId)
+      const thread = response.thread
       if (thread?.messages) {
-        const mapped = thread.messages.map((m, i) => ({
-          ...m, id: `${threadId}-${i}`, thinking: [], thinkingDone: true, done: true,
-        }))
+        const mapped = mapThreadMessages(threadId, thread.messages)
         setMessages(mapped)
         cleanupMessageBlobUrls(mapped)
       }
       // 同步刷新会话线程列表
       loadThreads()
-    }).catch(e => console.warn('[AgentChat] Failed to load thread:', e.message))
+    } catch (e) {
+      console.warn('[AgentChat] Failed to load thread:', e.message)
+      onToast?.(e.message || '加载会话失败', 'error')
+    }
   }
 
   const createThread = async () => {
-    const res = await api.createConversation(agentId, '新对话')
-    setActiveThreadId(res.thread.id)
-    setMessages([])
-    cleanupMessageBlobUrls([])
-    // 新建会话线程后聚焦输入框
-    setTimeout(() => inputRef.current?.focus(), 100)
+    try {
+      const res = await api.createConversation(agentId, '新对话')
+      activeThreadIdRef.current = res.thread.id
+      setActiveThreadId(res.thread.id)
+      setMessages([])
+      cleanupMessageBlobUrls([])
+      loadThreads()
+      // 新建会话线程后聚焦输入框
+      setTimeout(() => inputRef.current?.focus(), 100)
+      return res.thread.id
+    } catch (e) {
+      onToast?.(e.message || '创建会话失败', 'error')
+      throw e
+    }
   }
 
   const deleteThread = async (threadId) => {
-    await api.deleteConversation(agentId, threadId)
-    if (activeThreadId === threadId) { setActiveThreadId(''); setMessages([]); cleanupMessageBlobUrls([]) }
-    loadThreads()
+    try {
+      if (activeThreadIdRef.current === threadId && abortRef.current) {
+        abortRef.current.abort()
+      }
+      await api.deleteConversation(agentId, threadId)
+      if (activeThreadIdRef.current === threadId) {
+        activeThreadIdRef.current = ''
+        setActiveThreadId('')
+        setMessages([])
+        cleanupMessageBlobUrls([])
+      }
+      loadThreads()
+      onToast?.('会话已删除', 'success')
+    } catch (e) {
+      onToast?.(e.message || '删除会话失败', 'error')
+    }
   }
 
   const renameThread = async () => {
     if (!renameTitle.trim()) return
-    await api.updateConversation(agentId, renamingThread, renameTitle)
-    setRenamingThread(null)
-    loadThreads()
+    try {
+      await api.updateConversation(agentId, renamingThread, renameTitle)
+      setRenamingThread(null)
+      loadThreads()
+      onToast?.('会话名称已更新', 'success')
+    } catch (e) {
+      onToast?.(e.message || '重命名会话失败', 'error')
+    }
   }
 
   // ── 消息编辑处理 ──────────────────────────────────
@@ -272,16 +369,19 @@ export default function AgentChatPage() {
       ))
       setEditingMsgId(null)
       setEditContent('')
+      onToast?.('消息已更新', 'success')
     } catch (e) {
-      alert('保存失败：' + e.message)
+      onToast?.(e.message || '保存消息失败', 'error')
     }
   }
 
   // ── SSE 事件处理 ────────────────────────────────────────
-  const handleSSEEvent = (msgId, event) => {
-    const { type, content, id: resultId, elapsed, images } = event
+  const handleSSEEvent = (msgId, event, threadId) => {
+    const { type, content, elapsed, images } = event
+    const isVisibleThread = !threadId || activeThreadIdRef.current === threadId
     switch (type) {
       case 'thinking':
+        if (!isVisibleThread) break
         if (event.thought) {
           setMessages(prev => prev.map(m =>
             m.id === msgId ? { ...m, thinking: [...(m.thinking || []), {
@@ -299,11 +399,13 @@ export default function AgentChatPage() {
         }
         break
       case 'token':
+        if (!isVisibleThread) break
         setMessages(prev => prev.map(m =>
           m.id === msgId ? { ...m, content: m.content + content } : m
         ))
         break
       case 'image_analysis':
+        if (!isVisibleThread) break
         setMessages(prev => prev.map(m => {
           if (m.id !== msgId) return m
           if (event.status === 'done') {
@@ -313,39 +415,44 @@ export default function AgentChatPage() {
         }))
         break
       case 'image_results':
+        if (!isVisibleThread) break
         setMessages(prev => prev.map(m =>
           m.id === msgId ? { ...m, similar_images: event.images || [] } : m
         ))
         break
       case 'done':
-        setMessages(prev => prev.map(m =>
-          m.id === msgId ? {
-            ...m, done: true, thinkingDone: true, elapsed,
-            images: images || [],
-            image_description: event.image_description || m.image_description || null,
-            similar_images: event.similar_images || [],
-          } : m
-        ))
-        // 完成 2 秒后自动折叠思考过程
-        setTimeout(() => setExpandedThinking(prev => ({ ...prev, [msgId]: false })), 2000)
+        if (isVisibleThread) {
+          setMessages(prev => prev.map(m =>
+            m.id === msgId ? {
+              ...m, done: true, thinkingDone: true, elapsed,
+              images: images || [],
+              image_description: event.image_description || m.image_description || null,
+              similar_images: event.similar_images || [],
+            } : m
+          ))
+          // 完成 2 秒后自动折叠思考过程
+          setTimeout(() => setExpandedThinking(prev => ({ ...prev, [msgId]: false })), 2000)
+        }
         setLoading(false)
         abortRef.current = null
         loadThreads()
         // 重新加载会话消息，从后端获取真实 msg_id 以支持编辑
-        if (activeThreadId) {
-          api.getConversation(agentId, activeThreadId).then(r => {
+        if (threadId && activeThreadIdRef.current === threadId) {
+          api.getConversation(agentId, threadId).then(r => {
             if (r.thread?.messages) {
-              setMessages(r.thread.messages.map((m, i) => ({
-                ...m, id: `${activeThreadId}-${i}`, thinking: [], thinkingDone: true, done: true,
-              })))
+              const mapped = mapThreadMessages(threadId, r.thread.messages)
+              setMessages(mapped)
+              cleanupMessageBlobUrls(mapped)
             }
           }).catch(() => {})
         }
         break
       case 'error':
-        setMessages(prev => prev.map(m =>
-          m.id === msgId ? { ...m, content: content, done: true, error: true } : m
-        ))
+        if (isVisibleThread) {
+          setMessages(prev => prev.map(m =>
+            m.id === msgId ? { ...m, content: content, done: true, error: true } : m
+          ))
+        }
         setLoading(false)
         abortRef.current = null
         break
@@ -354,22 +461,34 @@ export default function AgentChatPage() {
   }
 
   // ── 流式查询 ─────────────────────────────────────────────
-  const streamQuery = useCallback(async (query, imageFile) => {
+  const streamQuery = useCallback(async (query, imageFile, threadId) => {
     const controller = new AbortController()
     abortRef.current = controller
+    activeThreadIdRef.current = threadId
 
     const msgId = Date.now().toString()
-    setMessages(prev => [...prev, {
-      id: msgId, role: 'assistant', content: '',
-      thinking: [], thinkingDone: false, done: false, elapsed: null,
-      image_description: null, similar_images: [],
-    }])
+    if (activeThreadIdRef.current === threadId) {
+      setMessages(prev => [...prev, {
+        id: msgId, role: 'assistant', content: '',
+        thinking: [], thinkingDone: false, done: false, elapsed: null,
+        image_description: null, similar_images: [],
+      }])
+    }
     setExpandedThinking(prev => ({ ...prev, [msgId]: true }))
 
     try {
       let headers = { 'Content-Type': 'application/json' }
-      try { const t = JSON.parse(localStorage.getItem('raganything_auth') || '{}').token; if (t) headers['Authorization'] = `Bearer ${t}` } catch { /* 无需处理 */ }
-      const body = { query, thread_id: activeThreadId, mode, agent_mode: agentMode }
+      const token = getToken()
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+      const body = { query, thread_id: threadId }
+      if (modeOverride !== null) {
+        body.mode = effectiveMode
+      }
+      if (agentModeOverride !== null) {
+        body.agent_mode = effectiveAgentMode
+      }
       if (imageFile) {
         body.image = await new Promise((resolve, reject) => {
           const reader = new FileReader()
@@ -384,6 +503,10 @@ export default function AgentChatPage() {
         signal: controller.signal,
       })
 
+      if (!res.ok || !res.body) {
+        throw new Error(await readStreamErrorMessage(res))
+      }
+
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
@@ -396,33 +519,38 @@ export default function AgentChatPage() {
         buffer = lines.pop() || ''
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
-          try { handleSSEEvent(msgId, JSON.parse(line.slice(6))) } catch (parseErr) {
+          try { handleSSEEvent(msgId, JSON.parse(line.slice(6)), threadId) } catch (parseErr) {
             console.warn('[AgentChat] SSE parse error:', parseErr.message, 'line:', line.slice(0, 100))
           }
         }
       }
     } catch (e) {
       if (e.name === 'AbortError') {
-        setMessages(prev => prev.map(m =>
-          m.id === msgId ? { ...m, content: m.content || '已取消', done: true, cancelled: true } : m
-        ))
+        if (activeThreadIdRef.current === threadId) {
+          setMessages(prev => prev.map(m =>
+            m.id === msgId ? { ...m, content: m.content || '已取消', done: true, cancelled: true } : m
+          ))
+        }
       } else {
-        setMessages(prev => prev.map(m =>
-          m.id === msgId ? { ...m, content: `请求失败: ${e.message}`, done: true, error: true } : m
-        ))
+        if (activeThreadIdRef.current === threadId) {
+          setMessages(prev => prev.map(m =>
+            m.id === msgId ? { ...m, content: `请求失败: ${e.message}`, done: true, error: true } : m
+          ))
+        }
+        onToast?.(e.message || '发送请求失败', 'error')
       }
       setLoading(false)
       abortRef.current = null
     }
-  }, [agentId, activeThreadId, mode, agentMode])
+  }, [agentId, agentModeOverride, effectiveAgentMode, effectiveMode, modeOverride, onToast])
 
   // ── 发送消息 ─────────────────────────────────────────────
   const send = async () => {
     if ((!input.trim() && !selectedImage) || loading) return
     // 如果没有活动会话线程，则先创建一个
     if (!activeThreadId) {
-      const res = await api.createConversation(agentId, '新对话')
-      setActiveThreadId(res.thread.id)
+      const newThreadId = await createThread()
+      if (!newThreadId) return
       setMessages([])
       cleanupMessageBlobUrls([])
       const q = input.trim()
@@ -439,7 +567,7 @@ export default function AgentChatPage() {
         return next
       })
       setLoading(true)
-      await streamQuery(q, img)
+      await streamQuery(q, img, newThreadId)
       return
     }
 
@@ -457,7 +585,7 @@ export default function AgentChatPage() {
       return next
     })
     setLoading(true)
-    await streamQuery(q, img)
+    await streamQuery(q, img, activeThreadId)
   }
 
   const cancelQuery = () => {
@@ -477,11 +605,13 @@ export default function AgentChatPage() {
     const file = e.target.files?.[0]
     if (!file) return
     if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
-      alert('不支持的图片格式，仅支持 PNG、JPEG、WebP、GIF、BMP')
+      e.target.value = ''
+      onToast?.('不支持的图片格式，仅支持 PNG、JPEG、WebP、GIF、BMP', 'error')
       return
     }
     if (file.size > 5 * 1024 * 1024) {
-      alert('图片大小不能超过 5MB')
+      e.target.value = ''
+      onToast?.('图片大小不能超过 5MB', 'error')
       return
     }
     if (imagePreview) revokeBlobUrl(imagePreview)
@@ -505,8 +635,12 @@ export default function AgentChatPage() {
       if (item.type.startsWith('image/')) {
         const file = item.getAsFile()
         if (!file) continue
+        if (!ALLOWED_IMAGE_TYPES.includes(file.type)) {
+          onToast?.('不支持的图片格式，仅支持 PNG、JPEG、WebP、GIF、BMP', 'error')
+          return
+        }
         if (file.size > 5 * 1024 * 1024) {
-          alert('图片大小不能超过 5MB')
+          onToast?.('图片大小不能超过 5MB', 'error')
           return
         }
         e.preventDefault()
@@ -570,8 +704,8 @@ export default function AgentChatPage() {
   )
 
   // ── 获取当前模式标签 ───────────────────────────────────
-  const currentRetrievalLabel = RETRIEVAL_MODES.find(m => m.key === mode)?.label || '智能混合'
-  const currentReasoningLabel = REASONING_MODES.find(m => m.key === agentMode)?.label || '直接回答'
+  const currentRetrievalLabel = RETRIEVAL_MODES.find(m => m.key === effectiveMode)?.label || '智能混合'
+  const currentReasoningLabel = REASONING_MODES.find(m => m.key === effectiveAgentMode)?.label || '直接回答'
 
   return (
     <div className="agent-chat-page flex gap-3 min-h-0 w-full">
@@ -705,7 +839,7 @@ export default function AgentChatPage() {
           </div>
 
           {/* ── 按角色显示的模式控制 ──────────────────────── */}
-          {isTeacher ? (
+          {canAdjustModes ? (
             <div className="flex items-center gap-1.5">
               {/* 检索模式下拉框 */}
               <div className="relative group">
@@ -718,14 +852,14 @@ export default function AgentChatPage() {
                   {RETRIEVAL_MODES.map(({ key, icon: Icon, label, desc }) => (
                     <button
                       key={key}
-                      onClick={() => setMode(key)}
+                      onClick={() => setModeOverride(key)}
                       className={`w-full flex items-start gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
-                        mode === key
+                        effectiveMode === key
                           ? 'bg-sky-50 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400'
                           : 'text-ink-body dark:text-cloud-300 hover:bg-cloud-50 dark:hover:bg-sky-900/20'
                       }`}
                     >
-                      <Icon size={13} className={`shrink-0 mt-0.5 ${mode === key ? 'text-sky-500' : 'text-ink-muted dark:text-cloud-500'}`} />
+                      <Icon size={13} className={`shrink-0 mt-0.5 ${effectiveMode === key ? 'text-sky-500' : 'text-ink-muted dark:text-cloud-500'}`} />
                       <div>
                         <p className="text-xs font-medium">{label}</p>
                         <p className="text-2xs text-ink-muted dark:text-cloud-500">{desc}</p>
@@ -749,14 +883,14 @@ export default function AgentChatPage() {
                   {REASONING_MODES.map(({ key, icon: Icon, label, desc }) => (
                     <button
                       key={key}
-                      onClick={() => setAgentMode(key)}
+                      onClick={() => setAgentModeOverride(key)}
                       className={`w-full flex items-start gap-2 px-2.5 py-2 rounded-lg text-left transition-colors ${
-                        agentMode === key
+                        effectiveAgentMode === key
                           ? 'bg-sky-50 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400'
                           : 'text-ink-body dark:text-cloud-300 hover:bg-cloud-50 dark:hover:bg-sky-900/20'
                       }`}
                     >
-                      <Icon size={13} className={`shrink-0 mt-0.5 ${agentMode === key ? 'text-sky-500' : 'text-ink-muted dark:text-cloud-500'}`} />
+                      <Icon size={13} className={`shrink-0 mt-0.5 ${effectiveAgentMode === key ? 'text-sky-500' : 'text-ink-muted dark:text-cloud-500'}`} />
                       <div>
                         <p className="text-xs font-medium">{label}</p>
                         <p className="text-2xs text-ink-muted dark:text-cloud-500">{desc}</p>
@@ -971,7 +1105,7 @@ export default function AgentChatPage() {
                               const lastUserMsg = [...messages].reverse().find(msg => msg.role === 'user')
                               if (lastUserMsg) {
                                 setLoading(true)
-                                streamQuery(lastUserMsg.content, null)
+                                streamQuery(lastUserMsg.content, null, activeThreadIdRef.current)
                               }
                             }}
                             className="flex items-center gap-1 px-2 py-1 rounded-lg text-2xs font-medium bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 hover:bg-rose-200 dark:hover:bg-rose-900/50 transition-colors"
@@ -1251,7 +1385,7 @@ export default function AgentChatPage() {
           {/* 模式提示（弱化显示，始终可见） */}
           <div className="flex items-center justify-between mt-2">
             <div className="flex items-center gap-3">
-              {isTeacher && (
+              {canAdjustModes && (
                 <>
                   <span className="text-2xs text-ink-muted dark:text-cloud-500 flex items-center gap-1">
                     <Search size={10} />
@@ -1263,7 +1397,7 @@ export default function AgentChatPage() {
                   </span>
                 </>
               )}
-              {!isTeacher && (
+              {!canAdjustModes && (
                 <span className="text-2xs text-ink-muted dark:text-cloud-500 flex items-center gap-1">
                   <Sparkles size={10} />
                   AI 助教模式

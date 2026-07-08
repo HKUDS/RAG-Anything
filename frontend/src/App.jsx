@@ -110,7 +110,7 @@ function SuspenseWithTimeout({ children, fallback, timeout = SUSPENSE_TIMEOUT_MS
 
 const NAV = [
   { to: '/knowledge', icon: Database, label: '知识库', requiredPermission: null },
-  { to: '/agents', icon: Bot, label: '智能体', requiredPermission: null },
+  { to: '/agents', icon: Bot, label: '智能体', requiredPermission: 'agent:read' },
   { to: '/workflow', icon: GitBranch, label: '工作流', requiredPermission: 'workflow:read' },
   { to: '/autorepair', icon: Factory, label: '汽修智能助手', requiredPermission: 'autorepair:read' },
   { to: '/settings', icon: Settings, label: '设置', requiredPermission: 'settings:read' },
@@ -123,7 +123,7 @@ const NAV_GROUPS = [
     eyebrow: '01',
     items: [
       { to: '/knowledge', icon: Database, label: '知识库', desc: '文档 / 实体 / 图谱', requiredPermission: null },
-      { to: '/agents', icon: Bot, label: '智能体', desc: '教学问答与推理', requiredPermission: null },
+      { to: '/agents', icon: Bot, label: '智能体', desc: '教学问答与推理', requiredPermission: 'agent:read' },
       { to: '/workflow', icon: GitBranch, label: '工作流', desc: '编排知识处理链路', requiredPermission: 'workflow:read' },
     ],
   },
@@ -358,6 +358,7 @@ export default function App() {
   const { token, user, isAdmin, roleName: authRoleName, hasPermission, logout, loading: authLoading } = useAuth()
   const [stats, setStats] = useState({ documents: 0, entities: 0, relations: 0 })
   const [toast, setToast] = useState(null)
+  const toastTimerRef = useRef(null)
   const [dark, setDark] = useState(() => {
     const saved = localStorage.getItem('raganything_theme')
     return saved === 'dark'
@@ -384,9 +385,22 @@ export default function App() {
   useEffect(() => { if (token) loadStats() }, [location.pathname, token])
 
   const showToast = (msg, type = 'info') => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+    }
     setToast({ msg, type })
-    setTimeout(() => setToast(null), 3000)
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null)
+      toastTimerRef.current = null
+    }, 3000)
   }
+
+  useEffect(() => () => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current)
+      toastTimerRef.current = null
+    }
+  }, [])
 
   const handleLogout = async () => {
     await logout()
@@ -625,8 +639,8 @@ export default function App() {
               >
                 <Routes>
                   <Route path="/" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
-                  <Route path="/agents" element={<ProtectedRoute><AgentsPage /></ProtectedRoute>} />
-                  <Route path="/agents/:id" element={<ProtectedRoute><AgentChatPage /></ProtectedRoute>} />
+                  <Route path="/agents" element={<ProtectedRoute requiredPermission="agent:read"><AgentsPage onToast={showToast} /></ProtectedRoute>} />
+                  <Route path="/agents/:id" element={<ProtectedRoute requiredPermission="agent:read"><AgentChatPage onToast={showToast} /></ProtectedRoute>} />
                   <Route path="/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
                   <Route path="/knowledge/:kbName" element={<ProtectedRoute><KnowledgeDetailPage /></ProtectedRoute>} />
                   <Route path="/workflow" element={<ProtectedRoute requiredPermission="workflow:read"><WorkflowPage /></ProtectedRoute>} />

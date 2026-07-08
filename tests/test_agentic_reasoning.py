@@ -218,3 +218,18 @@ class TestAgenticRAGReasoning:
             "enable_rerank": True,
             "include_references": False,
         }
+
+    def test_assistant_message_media_persists_images_for_conversation_reload(self):
+        from raganything.routers.agent import _assistant_message_media
+
+        payload = _assistant_message_media(
+            ["C:/tmp/image_1.png"],
+            [{"url": "/api/files/image?path=test", "name": "diagram", "score": 0.9}],
+            "query image summary",
+        )
+
+        assert payload == {
+            "images": ["C:/tmp/image_1.png"],
+            "similar_images": [{"url": "/api/files/image?path=test", "name": "diagram", "score": 0.9}],
+            "image_description": "query image summary",
+        }

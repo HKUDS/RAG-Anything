@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
@@ -8,6 +8,7 @@ import {
 import { api } from '../utils/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import Pagination from '../components/Pagination'
+import { useAuth } from '../context/AuthContext'
 
 const MODE_LABELS = { rrf: '融合', hybrid: '混合', local: '精确', global: '全局', naive: '快速' }
 const AGENT_MODE_LABELS = { none: '普通', react: 'ReAct', cot: 'CoT' }
@@ -67,8 +68,14 @@ const normalizeAgentPayload = (formData) => ({
   include_references: Boolean(formData.include_references),
 })
 
-export default function AgentsPage() {
+const upsertAgent = (agents, nextAgent) => [
+  nextAgent,
+  ...agents.filter(agent => agent.id !== nextAgent.id),
+]
+
+export default function AgentsPage({ onToast }) {
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
   const [agents, setAgents] = useState([])
   const [templates, setTemplates] = useState([])
   const [kbs, setKBs] = useState([])
@@ -79,9 +86,31 @@ export default function AgentsPage() {
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
   const [gridColumns, setGridColumns] = useState(4)
+  const [saving, setSaving] = useState(false)
+  const [formError, setFormError] = useState('')
+  const [nameTouched, setNameTouched] = useState(false)
   const gridRef = useRef(null)
+  const canWrite = hasPermission('agent:write')
+  const canDelete = hasPermission('agent:delete')
 
-  useEffect(() => { loadData() }, [])
+  const loadData = useCallback(async () => {
+    const [agentsResponse, templatesResponse, kbResponse] = await Promise.all([
+      api.listAgents(),
+      api.getAgentTemplates(),
+      api.listKBs(),
+    ])
+    setAgents(agentsResponse.agents || [])
+    setTemplates(templatesResponse.templates || [])
+    setKBs(kbResponse.knowledge_bases || [])
+    return [agentsResponse, templatesResponse, kbResponse]
+  }, [])
+
+  useEffect(() => {
+    loadData().catch(err => {
+      console.error(err)
+      onToast?.(err.message || '加载智能体数据失败', 'error')
+    })
+  }, [loadData, onToast])
   useEffect(() => { setPage(1) }, [search])
   useLayoutEffect(() => {
     const grid = gridRef.current
@@ -145,20 +174,36 @@ export default function AgentsPage() {
     }
   }
 
-  const loadData = () => {
-    api.listAgents().then(r => setAgents(r.agents || [])).catch(err => console.error(err))
-    api.getAgentTemplates().then(r => setTemplates(r.templates || [])).catch(err => console.error(err))
-    api.listKBs().then(r => setKBs(r.knowledge_bases || [])).catch(err => console.error(err))
+  const resetModalState = () => {
+    setEditingAgent(null)
+    setForm(getDefaultForm())
+    setFormError('')
+    setNameTouched(false)
+  }
+
+  const closeModal = () => {
+    if (saving) return
+    setShowModal(false)
+    resetModalState()
   }
 
   const openCreate = () => {
-    setEditingAgent(null)
-    setForm(getDefaultForm())
+    if (!canWrite) {
+      onToast?.('当前账号只能查看智能体，不能创建或编辑。', 'info')
+      return
+    }
+    resetModalState()
     setShowModal(true)
   }
 
   const openEdit = (agent) => {
+    if (!canWrite) {
+      onToast?.('当前账号只能查看智能体，不能创建或编辑。', 'info')
+      return
+    }
     setEditingAgent(agent.id)
+    setFormError('')
+    setNameTouched(false)
     setForm({
       name: agent.name, icon: agent.icon || '', description: agent.description || '',
       kb_name: agent.kb_name, llm_model: agent.llm_model, temperature: agent.temperature || 0,
@@ -210,25 +255,61 @@ export default function AgentsPage() {
   }
 
   const saveAgent = async () => {
-    if (!form.name.trim()) return
+    if (!canWrite) {
+      const message = '当前账号只能查看智能体，不能保存修改。'
+      setFormError(message)
+      onToast?.(message, 'error')
+      return
+    }
+    setNameTouched(true)
+    if (!form.name.trim()) {
+      const message = '请输入智能体名称'
+      setFormError(message)
+      onToast?.(message, 'error')
+      return
+    }
+
     const payload = normalizeAgentPayload(form)
+    setSaving(true)
+    setFormError('')
     try {
-      if (editingAgent) {
-        await api.updateAgent(editingAgent, payload)
-      } else {
-        await api.createAgent(payload)
+      const response = editingAgent
+        ? await api.updateAgent(editingAgent, payload)
+        : await api.createAgent(payload)
+
+      if (response?.agent) {
+        setAgents(prev => upsertAgent(prev, response.agent))
       }
+
+      await loadData()
       setShowModal(false)
-      loadData()
+      resetModalState()
+      onToast?.(editingAgent ? '智能体已保存' : '智能体已创建', 'success')
     } catch (e) {
+      const message = e.message || '保存智能体失败'
       console.error('保存智能体失败:', e)
+      setFormError(message)
+      onToast?.(message, 'error')
+    } finally {
+      setSaving(false)
     }
   }
 
   const deleteAgent = async (id) => {
-    await api.deleteAgent(id)
-    setDeleteConfirm(null)
-    loadData()
+    if (!canDelete) {
+      onToast?.('当前账号没有删除智能体的权限。', 'error')
+      return
+    }
+    try {
+      await api.deleteAgent(id)
+      setAgents(prev => prev.filter(agent => agent.id !== id))
+      setDeleteConfirm(null)
+      await loadData()
+      onToast?.('智能体已删除', 'success')
+    } catch (e) {
+      const message = e.message || '删除智能体失败'
+      onToast?.(message, 'error')
+    }
   }
 
   const startChat = (agent) => {
@@ -272,6 +353,7 @@ export default function AgentsPage() {
   const activeAnswerStyle = ANSWER_STYLE_PRESETS.find(
     preset => normalizePrompt(preset.prompt) === normalizePrompt(form.system_prompt)
   )
+  const nameError = nameTouched && !form.name.trim() ? '请输入智能体名称' : ''
   return (
     <div className="resource-page resource-page-agents">
       {/* 头部 */}
@@ -280,12 +362,21 @@ export default function AgentsPage() {
           <h2 className="page-title">智能体</h2>
           <p className="page-subtitle">每个智能体拥有独立的知识库、模型和对话配置</p>
         </div>
-        <button onClick={openCreate} className="btn-primary">
+        <button
+          onClick={openCreate}
+          className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
+          disabled={!canWrite}
+        >
           <Plus size={16} /> 新建智能体
         </button>
       </div>
 
       <section className="resource-panel">
+        {!canWrite && (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+            当前账号可查看智能体，但没有编辑权限。创建、编辑和删除操作已禁用。
+          </div>
+        )}
         <div className="resource-toolbar">
           <div className="relative w-full lg:max-w-md">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
@@ -323,10 +414,20 @@ export default function AgentsPage() {
                   </div>
                 </div>
                 <div className="resource-card-agent-actions flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                  <button className="p-1.5 rounded-lg text-ink-muted hover:text-sky-500 hover:bg-sky-50 transition-colors" onClick={() => openEdit(agent)} aria-label={`编辑 ${agent.name}`}>
+                  <button
+                    className={`p-1.5 rounded-lg transition-colors ${canWrite ? 'text-ink-muted hover:text-sky-500 hover:bg-sky-50' : 'text-ink-muted/50 cursor-not-allowed'}`}
+                    onClick={() => openEdit(agent)}
+                    aria-label={`编辑 ${agent.name}`}
+                    disabled={!canWrite}
+                  >
                     <Edit3 size={14} aria-hidden="true" />
                   </button>
-                  <button className="p-1.5 rounded-lg text-ink-muted hover:text-rose-500 hover:bg-rose-50 transition-colors" onClick={() => setDeleteConfirm(agent.id)} aria-label={`删除 ${agent.name}`}>
+                  <button
+                    className={`p-1.5 rounded-lg transition-colors ${canDelete ? 'text-ink-muted hover:text-rose-500 hover:bg-rose-50' : 'text-ink-muted/50 cursor-not-allowed'}`}
+                    onClick={() => setDeleteConfirm(agent.id)}
+                    aria-label={`删除 ${agent.name}`}
+                    disabled={!canDelete}
+                  >
                     <Trash2 size={14} aria-hidden="true" />
                   </button>
                 </div>
@@ -369,7 +470,13 @@ export default function AgentsPage() {
             <div className="empty-state-icon"><Bot size={48} className="text-cloud-400" /></div>
             <p className="empty-state-title">这里还没有智能体</p>
             <p className="empty-state-desc">创建智能体以开始使用知识库问答和检索功能</p>
-            <button onClick={openCreate} className="btn-primary mt-6">创建第一个智能体</button>
+            <button
+              onClick={openCreate}
+              className="btn-primary mt-6 disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!canWrite}
+            >
+              创建第一个智能体
+            </button>
           </div>
         )}
 
@@ -386,7 +493,7 @@ export default function AgentsPage() {
       {createPortal(
       <AnimatePresence>
         {showModal && (
-          <div className="agent-config-overlay" onClick={() => setShowModal(false)} role="dialog" aria-modal="true" aria-label={editingAgent ? '编辑智能体' : '新建智能体'}>
+          <div className="agent-config-overlay" onClick={closeModal} role="dialog" aria-modal="true" aria-label={editingAgent ? '编辑智能体' : '新建智能体'}>
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -398,7 +505,7 @@ export default function AgentsPage() {
                   <h3 className="font-display text-lg font-semibold text-ink-primary">
                     {editingAgent ? '编辑智能体' : '新建智能体'}
                   </h3>
-                  <button onClick={() => setShowModal(false)} aria-label="关闭" className="text-ink-muted hover:text-ink-body transition-colors">
+                  <button onClick={closeModal} aria-label="关闭" className="text-ink-muted hover:text-ink-body transition-colors">
                     <X size={20} aria-hidden="true" />
                   </button>
                 </div>
@@ -435,7 +542,14 @@ export default function AgentsPage() {
                   <div className="col-span-3">
                     <label className="text-xs text-ink-muted mb-1 block">名称</label>
                     <input className="input-field" placeholder="智能体名称" value={form.name}
-                      onChange={e => setForm({ ...form, name: e.target.value })} />
+                      onChange={e => {
+                        setNameTouched(true)
+                        setFormError('')
+                        setForm({ ...form, name: e.target.value })
+                      }} />
+                    {nameError && (
+                      <p className="mt-1 text-2xs text-rose-600">{nameError}</p>
+                    )}
                   </div>
                 </div>
 
@@ -602,11 +716,21 @@ export default function AgentsPage() {
                 {/* 操作按钮 */}
                 </div>
 
+                {formError && (
+                  <div className="mx-6 mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
+                    {formError}
+                  </div>
+                )}
+
                 <div className="agent-config-footer flex gap-3">
-                  <button onClick={saveAgent} className="btn-primary flex-1">
-                    {editingAgent ? '保存修改' : '创建智能体'}
+                  <button
+                    onClick={saveAgent}
+                    className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+                    disabled={saving || !form.name.trim()}
+                  >
+                    {saving ? '保存中...' : editingAgent ? '保存修改' : '创建智能体'}
                   </button>
-                  <button onClick={() => setShowModal(false)} className="btn-secondary">取消</button>
+                  <button onClick={closeModal} className="btn-secondary" disabled={saving}>取消</button>
                 </div>
             </motion.div>
           </div>

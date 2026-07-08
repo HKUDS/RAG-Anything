@@ -49,6 +49,28 @@ function clearKBListCache() {
   kbListCacheAt = 0
 }
 
+async function readResponseBody(res, emptyValue = {}) {
+  if (res.status === 204) return emptyValue
+  const text = await res.text()
+  if (!text.trim()) return emptyValue
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
+  }
+}
+
+function buildHttpError(err, status) {
+  if (typeof err === 'string') {
+    return new Error(err || `HTTP ${status}`)
+  }
+  return new Error(
+    typeof err?.detail === 'string' ? err.detail
+    : Array.isArray(err?.detail) ? err.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
+    : `HTTP ${status}`
+  )
+}
+
 async function request(url, options = {}) {
   if (!currentKB) {
     console.warn(`[api] 跳过请求 ${url}：currentKB 未初始化`)
@@ -61,14 +83,14 @@ async function request(url, options = {}) {
   })
   if (res.status === 401) { handleAuthError(); throw new Error('登录已过期，请重新登录') }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(
-        typeof err.detail === 'string' ? err.detail
-        : Array.isArray(err.detail) ? err.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
-        : `HTTP ${res.status}`
-      )
+    const err = await readResponseBody(res, { detail: res.statusText })
+    throw buildHttpError(err, res.status)
   }
-  return res.json()
+  const data = await readResponseBody(res, {})
+  if (typeof data === 'string') {
+    throw new Error('服务器返回了无效的 JSON 响应')
+  }
+  return data
 }
 
 async function fetchJson(url, options = {}) {
@@ -107,14 +129,14 @@ async function fetchJson(url, options = {}) {
   if (signal && abortForwarder) signal.removeEventListener('abort', abortForwarder)
   if (res.status === 401) { handleAuthError(); throw new Error('登录已过期，请重新登录') }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }))
-    throw new Error(
-        typeof err.detail === 'string' ? err.detail
-        : Array.isArray(err.detail) ? err.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
-        : `HTTP ${res.status}`
-      )
+    const err = await readResponseBody(res, { detail: res.statusText })
+    throw buildHttpError(err, res.status)
   }
-  return res.json()
+  const data = await readResponseBody(res, {})
+  if (typeof data === 'string') {
+    throw new Error('服务器返回了无效的 JSON 响应')
+  }
+  return data
 }
 
 export const api = {
