@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import { api } from '../utils/api'
 
 /**
@@ -12,7 +12,7 @@ export function useAutoRepairKB() {
   const [arKb, setArKbRaw] = useState(() => {
     try {
       let stored = localStorage.getItem('autorepair_kb')
-      // Migrate legacy key + value from manufacturing era
+      // 迁移制造场景时期遗留的键和值
       if (!stored) {
         const legacy = localStorage.getItem('mfg_kb')
         if (legacy && legacy !== 'default') {
@@ -21,7 +21,7 @@ export function useAutoRepairKB() {
           localStorage.removeItem('mfg_kb')
         }
       }
-      // Handle legacy value in existing autorepair_kb key
+      // 处理 autorepair_kb 中已有的历史值
       if (stored === 'manufacturing') {
         stored = 'autorepair'
         localStorage.setItem('autorepair_kb', 'autorepair')
@@ -41,7 +41,7 @@ export function useAutoRepairKB() {
     try {
       localStorage.setItem('autorepair_kb', kb)
     } catch {
-      // localStorage full or unavailable — non-critical
+      // 本地存储已满或不可用，不影响主流程
     }
   }
 
@@ -59,13 +59,13 @@ export function useAutoRepairKB() {
         if (!items.length) items = [{ name: 'autorepair', label: '汽修知识库' }]
         const names = items.map(i => i.name)
         setKbList(items)
-        // If the stored KB is no longer in the autorepair list
-        // (e.g. old localStorage value pointing to a general KB),
-        // automatically fall back to the first available autorepair KB.
+        // 如果已存储的知识库不再位于汽修知识库列表中
+        // 例如旧本地存储值指向通用知识库，
+        // 自动回退到第一个可用的汽修知识库。
         setArKbRaw(prev => {
           if (!names.includes(prev)) {
             const fallback = items[0].name
-            try { localStorage.setItem('autorepair_kb', fallback) } catch { /* non-critical */ }
+            try { localStorage.setItem('autorepair_kb', fallback) } catch { /* 非关键错误 */ }
             return fallback
           }
           return prev
@@ -81,7 +81,7 @@ export function useAutoRepairKB() {
       .finally(() => setKbLoading(false))
   }, [])
 
-  /** Create a new autorepair-domain KB and refresh the list. */
+  /** 创建新的汽修领域知识库并刷新列表。 */
   const createArKb = useCallback(async (kbName, label) => {
     setCreating(true)
     try {
@@ -89,7 +89,7 @@ export function useAutoRepairKB() {
       if (label) params.set('label', label)
       await api.post(`/kb/create?${params.toString()}`)
       const items = await refreshKbList()
-      // Auto-select the newly created KB
+      // 自动选中新创建的知识库
       if (items.some(i => i.name === kbName)) {
         setArKb(kbName)
       }
@@ -102,7 +102,7 @@ export function useAutoRepairKB() {
     }
   }, [refreshKbList, setArKb])
 
-  // Initial load
+  // 初始加载
   useEffect(() => {
     refreshKbList()
   }, [refreshKbList])

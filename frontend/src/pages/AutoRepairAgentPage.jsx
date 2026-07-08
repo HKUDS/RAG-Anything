@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, Component } from 'react'
+﻿import { useState, useEffect, useRef, useCallback, Component } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Send, User, Bot, Code2, MessageSquare, Wrench,
@@ -42,7 +42,7 @@ const markdownComponents = {
   table: ({ children }) => <div className="my-2 overflow-x-auto"><table className="min-w-full text-xs border-collapse">{children}</table></div>,
 }
 
-// Simple error boundary to prevent a single crash from blanking the entire page
+// 轻量错误边界，避免单点崩溃导致整页空白
 class ManufacturingAgentErrorBoundary extends Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null } }
   static getDerivedStateFromError(error) { return { hasError: true, error } }
@@ -67,7 +67,7 @@ class ManufacturingAgentErrorBoundary extends Component {
   }
 }
 
-// Thinking step collapsible card
+// 可折叠的思考步骤卡片
 function ThinkingStep({ step, isLast }) {
   const [expanded, setExpanded] = useState(false)
   const isAction = step.action && step.action !== 'FINISH'
@@ -76,7 +76,7 @@ function ThinkingStep({ step, isLast }) {
     : (step.action === 'FINISH' ? '完成推理' : '思考中')
 
   if (step._displayMode === 'status') {
-    // Generic status message (no structured step data)
+    // 通用状态消息（无结构化步骤数据）
     return (
       <div className="flex items-center gap-1.5 text-2xs text-ink-muted">
         <Loader2 size={10} className="animate-spin text-sky-400" />
@@ -138,13 +138,13 @@ export default function AutoRepairAgentPage() {
   const [activeTab, setActiveTab] = useState('qa')
   const [loading, setLoading] = useState(false)
 
-  // QA state
+  // 问答状态
   const [qaMessages, setQaMessages] = useState([])
   const [qaInput, setQaInput] = useState('')
   const qaEndRef = useRef(null)
   const abortRef = useRef(null)
 
-  // Abort streaming on unmount to prevent reader leaks
+  // 卸载时中止流式请求，避免读取器泄漏
   useEffect(() => {
     return () => {
       if (abortRef.current) {
@@ -154,26 +154,33 @@ export default function AutoRepairAgentPage() {
     }
   }, [])
 
-  // KB selector (shared hook)
+  // 知识库选择器（共享 hook）
   const { arKb, setArKb, kbList, kbLoading, creating, createArKb } = useAutoRepairKB()
 
-  // Code parser state
+  // 代码解析状态
   const [codeInput, setCodeInput] = useState('')
   const [codeLang, setCodeLang] = useState('gcode')
   const [codeResult, setCodeResult] = useState(null)
   const [codeCopied, setCodeCopied] = useState(false)
 
-  // Diagnosis state
+  // 诊断状态
   const [diagInput, setDiagInput] = useState('')
   const [diagSession, setDiagSession] = useState(null)
   const [diagMessages, setDiagMessages] = useState([])
   const diagEndRef = useRef(null)
 
-  // Auto-scroll
-  useEffect(() => { qaEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [qaMessages])
-  useEffect(() => { diagEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [diagMessages])
+  // 自动滚动
+  const scrollToMarker = useCallback((ref) => {
+    const marker = ref.current
+    if (!marker?.parentElement) return
+    window.requestAnimationFrame(() => {
+      marker.parentElement.scrollTo({ top: marker.parentElement.scrollHeight, behavior: 'smooth' })
+    })
+  }, [])
+  useEffect(() => { scrollToMarker(qaEndRef) }, [qaMessages, scrollToMarker])
+  useEffect(() => { scrollToMarker(diagEndRef) }, [diagMessages, scrollToMarker])
 
-  // === QA (streaming with AgenticRAG trace) ===
+  // === 问答（带 AgenticRAG 流式轨迹）===
   const cancelQA = () => {
     if (abortRef.current) {
       abortRef.current.abort()
@@ -191,7 +198,7 @@ export default function AutoRepairAgentPage() {
     setQaMessages(prev => [...prev, { role: 'assistant', content: '', _streaming: true, _id: msgId, _thinking: [] }])
     setLoading(true)
 
-    // Cancel any in-flight request
+    // 取消任何进行中的请求
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -222,12 +229,12 @@ export default function AutoRepairAgentPage() {
           try {
             const evt = JSON.parse(line.slice(6))
             if (evt.type === 'thinking' && evt.step) {
-              // AgenticRAG reasoning step
+              // AgenticRAG 推理步骤
               setQaMessages(prev => prev.map(m =>
                 m._id === msgId ? { ...m, _thinking: [...m._thinking, evt] } : m
               ))
             } else if (evt.type === 'thinking' && !evt.step) {
-              // Generic status message (explicit display mode, not sentinel step:0)
+              // 通用状态消息（显式展示模式，不使用 step:0 哨兵值）
               setQaMessages(prev => prev.map(m =>
                 m._id === msgId ? { ...m, _thinking: [...m._thinking, { ...evt, _displayMode: 'status' }] } : m
               ))
@@ -273,7 +280,7 @@ export default function AutoRepairAgentPage() {
     }
   }
 
-  // === Code Parser ===
+  // === 代码解析器 ===
   const handleCodeParse = async () => {
     if (!codeInput.trim() || loading) return
     setLoading(true)
@@ -286,7 +293,7 @@ export default function AutoRepairAgentPage() {
     } finally { setLoading(false) }
   }
 
-  // === Fault Diagnosis ===
+  // === 故障诊断 ===
   const startDiagnosis = async (presetDesc) => {
     const desc = (presetDesc || diagInput).trim()
     if (!desc || loading) return
@@ -319,7 +326,7 @@ export default function AutoRepairAgentPage() {
       })
       const data = res?.data || res
       if (data.diagnosis) {
-        // Final result
+        // 最终结果
         const d = data.diagnosis
         const summary = [
           `### 诊断结论 (置信度: ${(d.confidence * 100).toFixed(0)}%)`,
@@ -329,7 +336,7 @@ export default function AutoRepairAgentPage() {
           '',
           '**建议操作：**',
           ...(d.recommended_actions || []).map(a => `- ${a}`),
-          d.needs_human_review ? '\n⚠️ 置信度较低，建议人工确认' : '',
+          d.needs_human_review ? '\n注意：置信度较低，建议人工确认' : '',
         ].join('\n')
         setDiagMessages(prev => [...prev, { role: 'assistant', content: summary, isFinal: true }])
         setDiagSession(null)
@@ -345,13 +352,13 @@ export default function AutoRepairAgentPage() {
     } finally { setLoading(false) }
   }
 
-  // Quick-reply for diagnosis
+  // 诊断快捷回复
   const quickReply = (text) => continueDiagnosis(text)
 
   return (
     <ManufacturingAgentErrorBoundary>
     <div className="space-y-4 h-[calc(100vh-140px)] flex flex-col">
-      {/* Header */}
+      {/* 头部 */}
       <div className="flex items-center justify-between shrink-0">
         <div>
           <h1 className="text-xl font-semibold text-ink-primary flex items-center gap-2">
@@ -382,7 +389,7 @@ export default function AutoRepairAgentPage() {
         />
       </div>
 
-      {/* Tabs */}
+      {/* 标签页 */}
       <div className="flex gap-1 p-1 bg-cloud-100 rounded-xl w-fit shrink-0">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
@@ -395,11 +402,11 @@ export default function AutoRepairAgentPage() {
       </div>
 
       <AnimatePresence mode="sync">
-        {/* ========== QA TAB ========== */}
+        {/* ========== 问答标签页 ========== */}
         {activeTab === 'qa' && (
           <motion.div key="qa" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="flex-1 flex flex-col min-h-0">
-            {/* Messages */}
+            {/* 消息列表 */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-2 mb-4">
               {qaMessages.length === 0 && (
                 <div className="text-center py-16 text-ink-muted">
@@ -431,7 +438,7 @@ export default function AutoRepairAgentPage() {
                       <p className="text-sm">{msg.content}</p>
                     ) : (
                       <div className="text-sm text-ink-body">
-                        {/* Thinking steps (AgenticRAG trace) */}
+                        {/* 思考步骤（AgenticRAG 轨迹） */}
                         {msg._thinking && msg._thinking.length > 0 && (
                           <div className="mb-3 space-y-1.5">
                             {msg._thinking.map((step, si) => (
@@ -443,13 +450,13 @@ export default function AutoRepairAgentPage() {
                         {msg._streaming && (
                           <span className="inline-block w-1.5 h-4 bg-sky-400 animate-pulse rounded-sm ml-0.5 align-middle" />
                         )}
-                        {/* Matched images */}
+                        {/* 匹配图片 */}
                         {msg._images && msg._images.length > 0 && (
                           <div className="mt-3 space-y-2">
                             {msg._images.map((img, ii) => (
                               <div key={ii} className="rounded-lg overflow-hidden border border-cloud-300">
-                                <img src={img.data_url} alt={img.caption} className="w-full max-h-48 object-contain bg-cloud-200" />
-                                <p className="text-2xs text-ink-muted px-2 py-1">{img.caption} (页 {img.page})</p>
+                                <img src={img.data_url} alt={img.caption || 'Related image'} className="w-full max-h-48 object-contain bg-cloud-200" />
+                                <p className="text-2xs text-ink-muted px-2 py-1">{(img.caption && String(img.caption).trim()) || 'Related image'}{Number.isFinite(img.page) ? ` (page ${img.page})` : ''}</p>
                               </div>
                             ))}
                           </div>
@@ -489,7 +496,7 @@ export default function AutoRepairAgentPage() {
               <div ref={qaEndRef} />
             </div>
 
-            {/* Input */}
+            {/* 输入区 */}
             <div className="shrink-0 flex gap-2">
               <input value={qaInput} onChange={e => setQaInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleQASend()}
@@ -511,7 +518,7 @@ export default function AutoRepairAgentPage() {
           </motion.div>
         )}
 
-        {/* ========== CODE PARSER TAB ========== */}
+        {/* ========== 代码解析标签页 ========== */}
         {activeTab === 'code' && (
           <motion.div key="code" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="flex-1 min-h-0 overflow-y-auto">
@@ -523,7 +530,7 @@ export default function AutoRepairAgentPage() {
               </div>
             )}
             <GCodeEditor onParseResult={(data) => setCodeResult(data)} />
-            {/* IO Signals (PLC) */}
+            {/* 输入输出信号（PLC） */}
             {codeResult?.io_signals && (
               <div className="grid grid-cols-2 gap-3 mt-4">
                 <div className="p-2 rounded-lg bg-sky-50 border border-sky-100 text-xs">
@@ -547,11 +554,11 @@ export default function AutoRepairAgentPage() {
           </motion.div>
         )}
 
-        {/* ========== FAULT DIAGNOSIS TAB ========== */}
+        {/* ========== 故障诊断标签页 ========== */}
         {activeTab === 'diagnosis' && (
           <motion.div key="diagnosis" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="flex-1 flex flex-col min-h-0">
-            {/* Messages */}
+            {/* 消息列表 */}
             <div className="flex-1 overflow-y-auto space-y-4 pr-2 mb-4">
               {diagMessages.length === 0 && (
                 <div className="text-center py-16 text-ink-muted">
@@ -606,11 +613,11 @@ export default function AutoRepairAgentPage() {
                   )}
                 </div>
               ))}
-              {/* Quick reply buttons for active diagnosis */}
+              {/* 当前诊断的快捷回复按钮 */}
               {diagSession && !loading && (
                 <div className="flex flex-wrap gap-2 pl-10">
                   {(() => {
-                    // Use backend-suggested replies when available, fall back to defaults
+                    // 优先使用后端建议回复，不存在时回退到默认回复
                     const lastMsg = diagMessages[diagMessages.length - 1]
                     const replies = lastMsg?.suggested_replies?.length
                       ? lastMsg.suggested_replies
@@ -641,7 +648,7 @@ export default function AutoRepairAgentPage() {
               <div ref={diagEndRef} />
             </div>
 
-            {/* Input — always visible so users can type custom responses */}
+            {/* 输入区：始终可见，便于用户输入自定义回复 */}
             <div className="shrink-0 flex gap-2">
               <textarea value={diagInput} onChange={e => setDiagInput(e.target.value)}
                 onKeyDown={e => {

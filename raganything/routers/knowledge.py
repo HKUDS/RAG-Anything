@@ -7,6 +7,7 @@ import re
 import secrets
 import uuid
 import shutil
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -131,6 +132,122 @@ async def _pg_fetch_doc_ids(workspace: str) -> set[str]:
     return {row["id"] for row in rows}
 
 
+async def _pg_fetch_graph_totals(workspace: str) -> tuple[int, int]:
+    """Fetch aggregated entity/relation totals for a workspace from PG."""
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        entity_total = await conn.fetchval(
+            """SELECT COALESCE(SUM(count), 0)
+               FROM LIGHTRAG_FULL_ENTITIES
+               WHERE workspace=$1""",
+            workspace,
+        )
+        relation_total = await conn.fetchval(
+            """SELECT COALESCE(SUM(count), 0)
+               FROM LIGHTRAG_FULL_RELATIONS
+               WHERE workspace=$1""",
+            workspace,
+        )
+
+    return int(entity_total or 0), int(relation_total or 0)
+
+
+async def _pg_fetch_doc_totals(workspace: str) -> tuple[int, int] | None:
+    """Fetch deduped document and chunk totals directly from PG doc_status."""
+    batch_totals = await _pg_fetch_doc_totals_batch([workspace])
+    return batch_totals.get(workspace, (0, 0))
+
+
+async def _pg_fetch_doc_totals_batch(workspaces: list[str]) -> dict[str, tuple[int, int]]:
+    """Fetch deduped document and chunk totals for multiple workspaces in one query."""
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    if not workspaces:
+        return {}
+
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """WITH ranked_docs AS (
+                   SELECT
+                       workspace,
+                       regexp_replace(
+                           COALESCE(file_path, ''),
+                           '^[0-9a-f]{8}_(.+)$',
+                           '\\1'
+                       ) AS original_name,
+                       COALESCE(chunks_count, 0) AS chunks_count,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY
+                               workspace,
+                               regexp_replace(
+                                   COALESCE(file_path, ''),
+                                   '^[0-9a-f]{8}_(.+)$',
+                                   '\\1'
+                               )
+                           ORDER BY updated_at DESC NULLS LAST, id DESC
+                       ) AS rn
+                   FROM LIGHTRAG_DOC_STATUS
+                   WHERE workspace = ANY($1::text[])
+               )
+               SELECT
+                   workspace,
+                   COUNT(*)::int AS documents,
+                   COALESCE(SUM(chunks_count), 0)::int AS chunks
+               FROM ranked_docs
+               WHERE rn = 1
+               GROUP BY workspace""",
+            workspaces,
+        )
+
+    totals = {workspace: (0, 0) for workspace in workspaces}
+    for row in rows:
+        totals[row["workspace"]] = (
+            int(row["documents"] or 0),
+            int(row["chunks"] or 0),
+        )
+
+    return totals
+
+
+async def _pg_fetch_graph_totals_batch(workspaces: list[str]) -> dict[str, tuple[int, int]]:
+    """Fetch entity/relation totals for multiple workspaces with batched PG queries."""
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    if not workspaces:
+        return {}
+
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        entity_rows = await conn.fetch(
+            """SELECT workspace, COALESCE(SUM(count), 0) AS total
+               FROM LIGHTRAG_FULL_ENTITIES
+               WHERE workspace = ANY($1::text[])
+               GROUP BY workspace""",
+            workspaces,
+        )
+        relation_rows = await conn.fetch(
+            """SELECT workspace, COALESCE(SUM(count), 0) AS total
+               FROM LIGHTRAG_FULL_RELATIONS
+               WHERE workspace = ANY($1::text[])
+               GROUP BY workspace""",
+            workspaces,
+        )
+
+    totals = {workspace: [0, 0] for workspace in workspaces}
+    for row in entity_rows:
+        totals.setdefault(row["workspace"], [0, 0])[0] = int(row["total"] or 0)
+    for row in relation_rows:
+        totals.setdefault(row["workspace"], [0, 0])[1] = int(row["total"] or 0)
+
+    return {
+        workspace: (values[0], values[1])
+        for workspace, values in totals.items()
+    }
+
+
 router = APIRouter(tags=["knowledge"])
 
 # ── Pydantic models ────────────────────────────────────
@@ -164,6 +281,13 @@ class CreateRelationRequest(BaseModel):
     target_entity: str
     relation_type: str = "related_to"
     description: str = ""
+
+
+class KBStatsBatchRequest(BaseModel):
+    kb_names: list[str]
+
+
+KB_STATS_BATCH_TIMEOUT_SECONDS = 6.0
 
 
 # ── Upload handlers ────────────────────────────────────
@@ -764,104 +888,208 @@ def _extract_media_path(chunk_data: dict) -> str | None:
     return None
 
 
-@router.get("/knowledge/stats")
-async def knowledge_stats(kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
-    """知识库总体统计 — 与 list_documents 使用相同的数据源和去重逻辑"""
-
+async def _compute_kb_stats(kb: str) -> dict[str, int]:
+    """Compute KB stats using the same document dedupe logic as list_documents."""
     import json as _json
+
     stats = {"documents": 0, "entities": 0, "relations": 0, "chunks": 0}
     base = Path(kb_dir(kb))
-    # Use raw kb_dir(kb) for workspace matching, NOT str(Path(...)).
-    # On Windows Path("./rag_storage_11") strips the "./" prefix, causing
-    # a mismatch with the workspace value that LightRAG writes to PG tables
-    # (e.g. "./rag_storage_11" vs "rag_storage_11").  The graph endpoint
-    # already uses kb_dir(kb) directly and works correctly.
     workspace = kb_dir(kb)
 
-    # ── doc_status: reuse the same PG→JSON pipeline as list_documents ──
-    data = await _load_doc_status_json(kb)
-
-    # Apply same dedup logic as list_documents (keep most-recent per stripped filename)
-    best_doc: dict[str, tuple[str, dict]] = {}
-    for doc_id, info in data.items():
-        if not isinstance(info, dict):
-            continue
-        orig = _strip_hash_prefix(info.get("file_path", "") or "")
-        if orig not in best_doc or (info.get("updated_at") or "") > (best_doc[orig][1].get("updated_at") or ""):
-            best_doc[orig] = (doc_id, info)
-
-    valid_doc_ids = {doc_id for orig, (doc_id, info) in best_doc.items()}
-    stats["documents"] = len(best_doc)
-    for orig, (doc_id, info) in best_doc.items():
-        stats["chunks"] += info.get("chunks_count", 0) if isinstance(info, dict) else 0
-
-    # ── Entities & Relations: PG first, JSON fallback ──
-    # Determine whether PG graph tables have data; if not, read JSON files.
-    _pg_graph_ok = False
+    pg_graph_ok = False
     try:
         from raganything.services.pg_state_repo import get_pg_pool
-        _pool = get_pg_pool()
-        async with _pool.acquire() as _conn:
-            await _conn.fetchval("SELECT 1")
-        _pg_graph_ok = True
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
+        pg_graph_ok = True
     except Exception:
         pass
 
-    # ── Entities & Relations: count ALL records from PG directly ──
-    # The graph endpoint does NOT filter by doc_id — it reads all entities
-    # and relations from the tables.  We match that behaviour here so the
-    # stats header always agrees with the graph visualization.
-    #
-    # Previous versions filtered by _effective_doc_ids (from
-    # LIGHTRAG_DOC_STATUS), which broke when the cached LightRAG instance
-    # had a stale workspace or doc_status was temporarily out of sync with
-    # full_entities / full_relations.
-
-    _entities_from_pg = False
-    if _pg_graph_ok:
+    pg_doc_totals_loaded = False
+    if pg_graph_ok:
         try:
-            pg_entities = await _pg_fetch_graph_entities(workspace)
-            if pg_entities:
-                _entities_from_pg = True
-                for _doc_id, v in pg_entities.items():
-                    stats["entities"] += v.get("count", len(v.get("entity_names", [])))
+            doc_total, chunk_total = await _pg_fetch_doc_totals(workspace)
+            stats["documents"] = doc_total
+            stats["chunks"] = chunk_total
+            pg_doc_totals_loaded = True
         except Exception:
             pass
-    if not _entities_from_pg:
+
+    if not pg_doc_totals_loaded:
+        data = await _load_doc_status_json(kb)
+        best_doc: dict[str, tuple[str, dict]] = {}
+        for doc_id, info in data.items():
+            if not isinstance(info, dict):
+                continue
+            orig = _strip_hash_prefix(info.get("file_path", "") or "")
+            if orig not in best_doc or (info.get("updated_at") or "") > (best_doc[orig][1].get("updated_at") or ""):
+                best_doc[orig] = (doc_id, info)
+
+        stats["documents"] = len(best_doc)
+        for _, info in best_doc.values():
+            stats["chunks"] += info.get("chunks_count", 0) if isinstance(info, dict) else 0
+
+    pg_totals_loaded = False
+    if pg_graph_ok:
+        try:
+            entity_total, relation_total = await _pg_fetch_graph_totals(workspace)
+            pg_totals_loaded = True
+            stats["entities"] = entity_total
+            stats["relations"] = relation_total
+        except Exception:
+            pass
+
+    if not pg_totals_loaded:
         ent_path = base / "kv_store_full_entities.json"
         if ent_path.exists():
             try:
                 entities = _json.loads(ent_path.read_text(encoding="utf-8"))
                 if isinstance(entities, dict):
-                    for _doc_id, v in entities.items():
-                        if isinstance(v, dict):
-                            stats["entities"] += v.get("count", len(v.get("entity_names", [])))
+                    for _, value in entities.items():
+                        if isinstance(value, dict):
+                            stats["entities"] += value.get("count", len(value.get("entity_names", [])))
             except (_json.JSONDecodeError, OSError):
                 pass
 
-    _relations_from_pg = False
-    if _pg_graph_ok:
-        try:
-            pg_relations = await _pg_fetch_graph_relations(workspace)
-            if pg_relations:
-                _relations_from_pg = True
-                for _doc_id, v in pg_relations.items():
-                    stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
-        except Exception:
-            pass
-    if not _relations_from_pg:
         rel_path = base / "kv_store_full_relations.json"
         if rel_path.exists():
             try:
                 relations = _json.loads(rel_path.read_text(encoding="utf-8"))
                 if isinstance(relations, dict):
-                    for _doc_id, v in relations.items():
-                        if isinstance(v, dict):
-                            stats["relations"] += v.get("count", len(v.get("relation_pairs", [])))
+                    for _, value in relations.items():
+                        if isinstance(value, dict):
+                            stats["relations"] += value.get("count", len(value.get("relation_pairs", [])))
             except (_json.JSONDecodeError, OSError):
                 pass
 
     return stats
+
+
+def _is_kb_visible_to_user(kb_name: str, kb_info: dict, current_user: dict) -> bool:
+    if current_user.get("is_admin"):
+        return True
+
+    allowed_kbs = current_user.get("allowed_kbs", [])
+    if kb_name in allowed_kbs:
+        return True
+
+    owner_id = kb_info.get("owner_id")
+    return owner_id is not None and owner_id == current_user["id"]
+
+
+async def _compute_kb_stats_batch_fast(allowed_names: list[str]) -> dict[str, dict[str, int]]:
+    stats_map: dict[str, dict[str, int]] = {
+        name: {"documents": 0, "entities": 0, "relations": 0, "chunks": 0}
+        for name in allowed_names
+    }
+    if not allowed_names:
+        return stats_map
+
+    workspaces = [kb_dir(name) for name in allowed_names]
+    workspace_to_name = dict(zip(workspaces, allowed_names))
+
+    try:
+        doc_totals_by_workspace, graph_totals_by_workspace = await asyncio.gather(
+            _pg_fetch_doc_totals_batch(workspaces),
+            _pg_fetch_graph_totals_batch(workspaces),
+        )
+    except Exception:
+        return {}
+
+    for workspace, name in workspace_to_name.items():
+        doc_total, chunk_total = doc_totals_by_workspace.get(workspace, (0, 0))
+        entity_total, relation_total = graph_totals_by_workspace.get(workspace, (0, 0))
+        stats_map[name] = {
+            "documents": int(doc_total or 0),
+            "entities": int(entity_total or 0),
+            "relations": int(relation_total or 0),
+            "chunks": int(chunk_total or 0),
+        }
+
+    return stats_map
+
+
+def _stats_unavailable_payload() -> dict[str, int | bool]:
+    return {
+        "documents": 0,
+        "entities": 0,
+        "relations": 0,
+        "chunks": 0,
+        "unavailable": True,
+    }
+
+
+@router.get("/knowledge/stats")
+async def knowledge_stats(kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
+    """知识库总体统计 — 与 list_documents 使用相同的数据源和去重逻辑"""
+    return await _compute_kb_stats(kb)
+
+
+@router.post("/knowledge/stats/batch")
+async def knowledge_stats_batch(
+    req: KBStatsBatchRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    started_at = time.perf_counter()
+    requested_names = [name for name in req.kb_names if isinstance(name, str) and name]
+    unique_names = list(dict.fromkeys(requested_names))
+
+    meta = await load_kb_meta()
+    allowed_names = [
+        name for name in unique_names
+        if name in meta and _is_kb_visible_to_user(name, meta.get(name, {}), current_user)
+    ]
+
+    try:
+        batched_stats = await asyncio.wait_for(
+            _compute_kb_stats_batch_fast(allowed_names),
+            timeout=KB_STATS_BATCH_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        batched_stats = {}
+
+    if batched_stats:
+        elapsed_ms = (time.perf_counter() - started_at) * 1000
+        lightrag_logger.info(
+            "[KB-STATS-BATCH] user=%s requested=%s allowed=%s mode=fast elapsed_ms=%.1f",
+            current_user.get("username", "?"),
+            len(unique_names),
+            len(allowed_names),
+            elapsed_ms,
+        )
+        return {"stats": batched_stats}
+
+    async def _compute_with_timeout(name: str):
+        try:
+            return await asyncio.wait_for(
+                _compute_kb_stats(name),
+                timeout=KB_STATS_BATCH_TIMEOUT_SECONDS,
+            )
+        except Exception as exc:
+            return exc
+
+    results = await asyncio.gather(
+        *[_compute_with_timeout(name) for name in allowed_names],
+        return_exceptions=False,
+    )
+
+    stats_map: dict[str, dict[str, int]] = {}
+    for name, result in zip(allowed_names, results):
+        if isinstance(result, Exception):
+            stats_map[name] = _stats_unavailable_payload()
+            continue
+        stats_map[name] = result
+
+    elapsed_ms = (time.perf_counter() - started_at) * 1000
+    lightrag_logger.info(
+        "[KB-STATS-BATCH] user=%s requested=%s allowed=%s mode=fallback elapsed_ms=%.1f",
+        current_user.get("username", "?"),
+        len(unique_names),
+        len(allowed_names),
+        elapsed_ms,
+    )
+    return {"stats": stats_map}
 
 
 @router.post("/knowledge/repair")
@@ -1616,6 +1844,12 @@ async def _verify_kb_access_for_download(kb: str, current_user: dict) -> None:
     if current_user.get("is_admin"):
         return
     allowed_kbs = current_user.get("allowed_kbs", [])
+    if kb in allowed_kbs:
+        return
+    kb_info = kb_meta.get(kb, {})
+    owner_id = kb_info.get("owner_id")
+    if owner_id is not None and owner_id == current_user["id"]:
+        return
     if kb not in allowed_kbs:
         raise _HTTPException(403, "无权访问该知识库")
 
@@ -2433,6 +2667,7 @@ async def reprocess_multimodal(
 
 @router.get("/kb/list")
 async def list_kbs(current_user: dict = Depends(get_current_user)):
+    started_at = time.perf_counter()
     meta = await load_kb_meta()
     kbs = []
     is_admin = current_user.get("is_admin", False)
@@ -2470,6 +2705,29 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
             "owner_username": current_user["username"],
             "active": True,
         })
+
+    visible_names = [kb["name"] for kb in kbs]
+    stats_by_name: dict[str, dict[str, int]] = {}
+    if visible_names:
+        try:
+            stats_by_name = await asyncio.wait_for(
+                _compute_kb_stats_batch_fast(visible_names),
+                timeout=KB_STATS_BATCH_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            stats_by_name = {}
+
+    for kb in kbs:
+        kb["stats"] = stats_by_name.get(kb["name"], _stats_unavailable_payload())
+
+    elapsed_ms = (time.perf_counter() - started_at) * 1000
+    lightrag_logger.info(
+        "[KB-LIST] user=%s visible_kbs=%s stats_embedded=%s elapsed_ms=%.1f",
+        current_user.get("username", "?"),
+        len(kbs),
+        len(stats_by_name),
+        elapsed_ms,
+    )
     return {"knowledge_bases": kbs, "active": _shared.active_kb}
 
 

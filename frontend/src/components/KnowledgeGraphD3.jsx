@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
+﻿import { useEffect, useRef, useState, useCallback, useMemo } from 'react'
 import * as d3 from 'd3'
 import {
   ZoomIn, ZoomOut, RotateCcw, Search, X, AlertCircle,
@@ -35,13 +35,13 @@ export default function KnowledgeGraphD3({
   const selectedNodeIdRef = useRef(null) // always-current ref to avoid stale closure
 
   const [selectedNodeId, setSelectedNodeId] = useState(null)
-  // Keep ref in sync — used by D3 effect to avoid stale closure
+  // 同步 ref，供 D3 副作用使用以避免闭包过期
   selectedNodeIdRef.current = selectedNodeId
   const [tooltip, setTooltip] = useState(null)
   const [searchTerm, setSearchTerm] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
 
-  // ---- Stable references for data to avoid re-renders breaking D3 ----
+  // ---- 稳定数据引用，避免重新渲染影响 D3 ----
   const nodes = useMemo(() => rawNodes.map(n => ({ ...n })), [rawNodes])
   const edges = useMemo(() => rawEdges.map(e => {
     const sid = e.source_id ?? e.source?.id ?? e.source
@@ -52,13 +52,13 @@ export default function KnowledgeGraphD3({
   const hasData = nodes.length > 0
   const nodeTypeLabel = t => NODE_TYPE_LABEL[t] || t
 
-  // ---- Filter nodes by search term and type ----
+  // ---- 按搜索词和类型筛选节点 ----
   const filteredNodes = useMemo(() => {
     let result = nodes
     if (searchTerm.trim()) {
       const term = searchTerm.trim().toLowerCase()
       result = result.filter(n => n.name?.toLowerCase().includes(term))
-      // Expand to include direct neighbors of matched nodes
+      // 扩展并包含匹配节点的直接邻居
       const matchedIds = new Set(result.map(n => n.id))
       const adjacency = new Map()
       edges.forEach(e => {
@@ -84,9 +84,9 @@ export default function KnowledgeGraphD3({
 
   const filteredNodeIds = useMemo(() => new Set(filteredNodes.map(n => n.id)), [filteredNodes])
 
-  // Filter edges to only include those where both ends are in filtered nodes.
-  // ALWAYS apply this filter — not just when search/filter is active — to prevent
-  // D3 "node not found" errors when edges reference nodes outside the loaded set.
+  // 仅保留两端都位于筛选节点集合中的边。
+  // 始终应用该筛选，而不只是在搜索/筛选启用时应用，以避免
+  // 边引用未加载节点时出现 D3 “node not found”错误。
   const filteredEdges = useMemo(() => {
     return edges.filter(e => {
       const sid = typeof e.source === 'object' ? e.source.id : e.source
@@ -95,13 +95,13 @@ export default function KnowledgeGraphD3({
     })
   }, [edges, filteredNodeIds])
 
-  // ---- Node types present in data ----
+  // ---- 数据中存在的节点类型 ----
   const presentNodeTypes = useMemo(() => {
     const types = new Set(nodes.map(n => n.node_type).filter(Boolean))
     return [...types]
   }, [nodes])
 
-  // ---- Zoom handlers ----
+  // ---- 缩放处理 ----
   const handleZoomIn = useCallback(() => {
     const svg = d3.select(svgRef.current)
     if (!svg.empty() && zoomRef.current) {
@@ -123,18 +123,18 @@ export default function KnowledgeGraphD3({
     }
   }, [])
 
-  // ---- Cleanup simulation on unmount ----
+  // ---- 卸载时清理力导向仿真 ----
   useEffect(() => {
     return () => {
       if (simRef.current) simRef.current.stop()
     }
   }, [])
 
-  // ---- ResizeObserver for responsive SVG ----
+  // ---- 用 ResizeObserver 支持响应式 SVG ----
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
-    // Guard: ResizeObserver may not exist in older browsers / embedded WebViews
+    // 保护逻辑：旧浏览器或嵌入式 WebView 可能没有 ResizeObserver
     if (typeof ResizeObserver === 'undefined') return
     let ro
     try {
@@ -147,20 +147,20 @@ export default function KnowledgeGraphD3({
       })
       ro.observe(container)
     } catch (e) {
-      // ResizeObserver constructor or observe() may throw in restricted environments
+      // 受限环境中 ResizeObserver 构造或 observe() 可能抛错
       return
     }
     return () => { if (ro) ro.disconnect() }
   }, [])
 
-  // ---- Clear selection on Escape ----
+  // ---- 按 Escape 清除选中 ----
   useEffect(() => {
     const handler = (e) => { if (e.key === 'Escape') setSelectedNodeId(null) }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [])
 
-  // ---- D3 rendering ----
+  // ---- D3 渲染 ----
   useEffect(() => {
     if (loading || !hasData) return
 
@@ -173,16 +173,16 @@ export default function KnowledgeGraphD3({
 
     svg.attr('width', W).attr('height', H)
 
-    // ---- SVG defs ----
+    // ---- SVG 定义 ----
     const defs = svg.append('defs')
 
-    // Drop shadow for drag
+    // 拖拽阴影
     const dragFilter = defs.append('filter').attr('id', 'drag-shadow')
       .attr('x', '-50%').attr('y', '-50%').attr('width', '200%').attr('height', '200%')
     dragFilter.append('feDropShadow').attr('dx', 1).attr('dy', 2)
       .attr('stdDeviation', 2).attr('flood-opacity', 0.3)
 
-    // Glow filter for selected node
+    // 选中节点辉光滤镜
     const glowFilter = defs.append('filter').attr('id', SELECTED_GLOW_ID)
       .attr('x', '-100%').attr('y', '-100%').attr('width', '300%').attr('height', '300%')
     glowFilter.append('feGaussianBlur').attr('in', 'SourceGraphic')
@@ -192,12 +192,12 @@ export default function KnowledgeGraphD3({
     merge.append('feMergeNode').attr('in', 'blur')
     merge.append('feMergeNode').attr('in', 'SourceGraphic')
 
-    // ---- Main group + zoom ----
+    // ---- 主分组与缩放 ----
     const g = svg.append('g')
     const zoom = d3.zoom()
       .scaleExtent([0.2, 4])
       .filter((event) => {
-        // Allow wheel/dblclick zoom anywhere; only allow mouse-pan on SVG background
+        // 允许任意位置滚轮/双击缩放，仅允许在 SVG 背景上拖动画布
         if (event.type === 'wheel' || event.type === 'dblclick') return true
         return event.target === svgRef.current
       })
@@ -206,7 +206,7 @@ export default function KnowledgeGraphD3({
     zoomRef.current = zoom
     initialTransform.current = null
 
-    // ---- Force simulation ----
+    // ---- 力导向仿真 ----
     const simNodes = filteredNodes.map(n => ({ ...n }))
     const simEdges = filteredEdges.map(e => ({
       ...e,
@@ -225,7 +225,7 @@ export default function KnowledgeGraphD3({
 
     simRef.current = sim
 
-    // ---- Build adjacency map ----
+    // ---- 构建邻接表 ----
     const adjacency = new Map()
     const connectedEdges = new Map()
     simEdges.forEach((e, i) => {
@@ -241,16 +241,16 @@ export default function KnowledgeGraphD3({
       connectedEdges.get(tid).add(i)
     })
 
-    // ---- Links ----
+    // ---- 连线 ----
     const link = g.append('g').selectAll('line').data(simEdges).join('line')
       .attr('stroke', '#d4d4d8').attr('stroke-width', 1.5)
       .attr('stroke-dasharray', d => LINE_STYLES[d.relation_type] || '')
 
-    // ---- Node groups ----
+    // ---- 节点分组 ----
     const node = g.append('g').selectAll('g').data(simNodes).join('g')
       .attr('cursor', 'pointer')
 
-    // Drag behavior
+    // 拖拽行为
     const dragHandler = d3.drag()
       .on('start', function (e, d) {
         if (!e.active) sim.alphaTarget(0.3).restart()
@@ -270,12 +270,12 @@ export default function KnowledgeGraphD3({
 
     node.call(dragHandler)
 
-    // Node circles
+    // 节点圆形
     node.append('circle').attr('r', 8)
       .attr('fill', d => COLORS[d.node_type] || COLORS.default)
       .attr('stroke', '#fff').attr('stroke-width', 2)
 
-    // Node labels (12 chars max, better than 8)
+    // 节点标签（最多 12 个字符，比 8 个更易读）
     node.append('text').text(d => {
       const name = d.name || ''
       return name.length > 12 ? name.slice(0, 11) + '…' : name
@@ -283,7 +283,7 @@ export default function KnowledgeGraphD3({
       .attr('x', 12).attr('y', 4).attr('font-size', 10)
       .attr('fill', '#5f6570').attr('pointer-events', 'none')
 
-    // ---- Selection highlight (uses ref to avoid stale closure) ----
+    // ---- 选中高亮（使用 ref 避免闭包过期）----
     const updateSelectionHighlight = () => {
       const sid = selectedNodeIdRef.current
       node.selectAll('circle')
@@ -294,10 +294,10 @@ export default function KnowledgeGraphD3({
         .attr('font-weight', d => d.id === sid ? '700' : '400')
         .attr('fill', d => d.id === sid ? '#1e293b' : '#5f6570')
     }
-    // Apply initial selection
+    // 应用初始选中状态
     updateSelectionHighlight()
 
-    // ---- Hover handlers ----
+    // ---- 悬停处理 ----
     node.on('mouseenter', function (e, d) {
       const neighbors = adjacency.get(d.id) || new Set()
       const connected = connectedEdges.get(d.id) || new Set()
@@ -324,18 +324,18 @@ export default function KnowledgeGraphD3({
       link.transition().duration(200).attr('opacity', 1).attr('stroke-width', 1.5)
       d3.select(this).select('circle').transition().duration(200).attr('r', 8)
       setTooltip(null)
-      // Restore selection highlight
+      // 恢复选中高亮
       updateSelectionHighlight()
     })
 
-    // ---- Click handler ----
+    // ---- 点击处理 ----
     node.on('click', (e, d) => {
       e.stopPropagation()
       const isDeselect = d.id === selectedNodeIdRef.current
       setSelectedNodeId(isDeselect ? null : d.id)
       onNodeClick?.(d)
 
-      // Smoothly center viewport on the clicked node
+      // 平滑居中到被点击节点
       if (!isDeselect && d.x !== undefined && d.y !== undefined) {
         const currentTransform = d3.zoomTransform(svg.node())
         const targetX = W / 2 - d.x * currentTransform.k
@@ -347,20 +347,20 @@ export default function KnowledgeGraphD3({
       }
     })
 
-    // Click on background deselects
+    // 点击背景取消选中
     svg.on('click', () => {
       setSelectedNodeId(null)
       updateSelectionHighlight()
     })
 
-    // ---- Tick ----
+    // ---- 每帧更新 ----
     sim.on('tick', () => {
       link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
         .attr('x2', d => d.target.x).attr('y2', d => d.target.y)
       node.attr('transform', d => `translate(${d.x},${d.y})`)
     })
 
-    // ---- End ----
+    // ---- 结束处理 ----
     sim.on('end', () => {
       if (!initialTransform.current && simNodes.length > 0) {
         const xs = simNodes.map(n => n.x), ys = simNodes.map(n => n.y)
@@ -375,13 +375,13 @@ export default function KnowledgeGraphD3({
       }
     })
 
-    // ---- Cleanup on re-render: stop old simulation to prevent CPU leak ----
+    // ---- 重新渲染时清理：停止旧仿真以避免 CPU 泄漏 ----
     return () => { sim.stop() }
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filteredNodes, filteredEdges, loading, hasData])
 
-  // Sync selectedNodeId → D3 highlight when changed programmatically
+  // 当 selectedNodeId 被程序更新时，同步 D3 高亮
   useEffect(() => {
     if (!hasData) return
     const svg = d3.select(svgRef.current)
@@ -398,12 +398,12 @@ export default function KnowledgeGraphD3({
       .attr('fill', d => d.id === selectedNodeId ? '#1e293b' : '#5f6570')
   }, [selectedNodeId, hasData])
 
-  // ---- Render ----
+  // ---- 渲染 ----
   return (
     <div className="relative">
-      {/* ---- Toolbar ---- */}
+      {/* ---- 工具栏 ---- */}
       <div className="flex items-center gap-2 mb-3 flex-wrap">
-        {/* Node type legend */}
+        {/* 节点类型图例 */}
         {Object.entries(COLORS).filter(([k]) => presentNodeTypes.includes(k) || k === 'default').map(([k, c]) => (
           <div key={k} className="flex items-center gap-1 text-2xs text-ink-muted">
             <div className="w-3 h-3 rounded-full" style={{ background: c }} />
@@ -411,7 +411,7 @@ export default function KnowledgeGraphD3({
           </div>
         ))}
 
-        {/* Edge style legend */}
+        {/* 边样式图例 */}
         {edges.length > 0 && (
           <>
             <div className="w-px h-4 bg-cloud-300 mx-1" />
@@ -427,7 +427,7 @@ export default function KnowledgeGraphD3({
 
         <div className="flex-1" />
 
-        {/* Search */}
+        {/* 搜索 */}
         <div className="relative">
           <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted" />
           <input
@@ -445,7 +445,7 @@ export default function KnowledgeGraphD3({
           )}
         </div>
 
-        {/* Type filter */}
+        {/* 类型筛选 */}
         {presentNodeTypes.length > 1 && (
           <select
             value={typeFilter}
@@ -460,13 +460,13 @@ export default function KnowledgeGraphD3({
           </select>
         )}
 
-        {/* Node count */}
+        {/* 节点数量 */}
         <span className="text-2xs text-ink-muted">
           {filteredNodes.length}{nodes.length !== filteredNodes.length && `/${nodes.length}`} 节点
           {edges.length > 0 && ` · ${filteredEdges.length} 边`}
         </span>
 
-        {/* Zoom controls */}
+        {/* 缩放控制 */}
         <button onClick={handleZoomIn} className="p-1.5 rounded-lg hover:bg-cloud-100 text-ink-muted transition-colors" title="放大" aria-label="放大">
           <ZoomIn size={14} />
         </button>
@@ -478,9 +478,9 @@ export default function KnowledgeGraphD3({
         </button>
       </div>
 
-      {/* ---- Graph container ---- */}
+      {/* ---- 图谱容器 ---- */}
       <div ref={containerRef} className="w-full relative">
-        {/* Loading state */}
+        {/* 加载状态 */}
         {loading && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-cloud-200/80 rounded-xl border border-cloud-300">
             <div className="flex flex-col items-center gap-3">
@@ -490,7 +490,7 @@ export default function KnowledgeGraphD3({
           </div>
         )}
 
-        {/* Error state */}
+        {/* 错误状态 */}
         {!loading && error && (
           <div className="absolute inset-0 z-10 flex items-center justify-center bg-cloud-200/80 rounded-xl border border-cloud-300">
             <div className="flex flex-col items-center gap-3 max-w-xs text-center">
@@ -507,7 +507,7 @@ export default function KnowledgeGraphD3({
           </div>
         )}
 
-        {/* Empty state */}
+        {/* 空状态 */}
         {!loading && !error && !hasData && (
           <div className="flex items-center justify-center rounded-xl border border-cloud-300 bg-cloud-200"
             style={{ minHeight: 350, height: 450 }}>
@@ -521,7 +521,7 @@ export default function KnowledgeGraphD3({
           </div>
         )}
 
-        {/* SVG graph */}
+        {/* SVG 图谱 */}
         {hasData && (
           <svg ref={svgRef}
             className="w-full rounded-xl border border-cloud-300 bg-cloud-200"
@@ -532,7 +532,7 @@ export default function KnowledgeGraphD3({
         )}
       </div>
 
-      {/* ---- Tooltip ---- */}
+      {/* ---- 提示浮层 ---- */}
       {tooltip && (
         <div className="fixed z-50 pointer-events-none px-2.5 py-1.5 rounded-lg bg-ink-primary text-white text-xs shadow-lg max-w-56"
           style={{ left: tooltip.x + 14, top: tooltip.y - 10 }}>
@@ -541,7 +541,7 @@ export default function KnowledgeGraphD3({
         </div>
       )}
 
-      {/* ---- Node count notice (when truncated) ---- */}
+      {/* ---- 节点数量提示（截断时显示）---- */}
       {hasData && summary && summary.total_nodes > nodes.length && (
         <p className="mt-2 text-2xs text-ink-muted text-center">
           显示最近 {nodes.length} 个节点（共 {summary.total_nodes} 个）

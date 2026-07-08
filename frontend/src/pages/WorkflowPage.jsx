@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+﻿import { useState, useCallback, useEffect, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   ReactFlowProvider,
@@ -82,14 +82,14 @@ function WorkflowPageInner() {
   const [runs, setRuns] = useState([])
   const [currentRun, setCurrentRun] = useState(null)
 
-  // Confirm dialogs
+  // 确认弹窗
   const [confirm, setConfirm] = useState(null)
 
-  // Mark dirty on changes
+  // 变更时标记为未保存
   const markDirty = useCallback(() => { isDirty.current = true }, [])
   const markClean = useCallback(() => { isDirty.current = false }, [])
 
-  // Toast with cleanup
+  // 带自动清理的提示消息
   useEffect(() => {
     if (!toast) return
     const timer = setTimeout(() => setToast(null), 2500)
@@ -98,7 +98,7 @@ function WorkflowPageInner() {
 
   const showToast = (msg, type = 'info') => setToast({ msg, type })
 
-  // Zoom tracking
+  // 缩放状态追踪
   useEffect(() => {
     const interval = setInterval(() => {
       const z = getZoom()
@@ -107,7 +107,7 @@ function WorkflowPageInner() {
     return () => clearInterval(interval)
   }, [getZoom])
 
-  // beforeunload
+  // 离开页面前确认
   useEffect(() => {
     const handler = (e) => {
       if (isDirty.current) {
@@ -119,15 +119,15 @@ function WorkflowPageInner() {
     return () => window.removeEventListener('beforeunload', handler)
   }, [])
 
-  // Keyboard shortcuts
+  // 键盘快捷键
   useEffect(() => {
     const handler = (e) => {
-      // Ctrl+S → save
+      // Ctrl+S → 保存
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault()
         handleSave()
       }
-      // Escape → close panel
+      // Escape → 关闭面板
       if (e.key === 'Escape') {
         if (selectedNode) { setSelectedNode(null); return }
         if (confirm) { setConfirm(null); return }
@@ -137,7 +137,7 @@ function WorkflowPageInner() {
     return () => window.removeEventListener('keydown', handler)
   }, [selectedNode, confirm, nodes, edges, workflowName, workflowId])
 
-  // Track undo/redo via ReactFlow changes
+  // 通过 ReactFlow 变更追踪撤销/重做
   const wrappedOnNodesChange = useCallback((changes) => {
     onNodesChange(changes)
     markDirty()
@@ -161,7 +161,7 @@ function WorkflowPageInner() {
     [setNodes, markDirty]
   )
 
-  // Save
+  // 保存
   const handleSave = async () => {
     if (!token) { showToast('请先登录', 'error'); return }
     if (nodes.length === 0) { showToast('工作流为空，请先添加节点', 'error'); return }
@@ -183,7 +183,7 @@ function WorkflowPageInner() {
     }
   }
 
-  // New (with confirm)
+  // 新建（带确认）
   const handleNew = () => {
     if (isDirty.current && nodes.length > 0) {
       setConfirm({
@@ -203,7 +203,7 @@ function WorkflowPageInner() {
     }
   }
 
-  // Load list
+  // 加载列表
   const handleOpenLoad = async () => {
     if (!token) { showToast('请先登录', 'error'); return }
     try {
@@ -258,12 +258,12 @@ function WorkflowPageInner() {
     })
   }
 
-  // ── Run workflow ──────────────────────────────
+  // ── 运行工作流 ──────────────────────────────
   const handleRun = async () => {
     if (!workflowId) { showToast('请先保存工作流再运行', 'error'); return }
     setRunning(true)
     setCurrentRun(null)
-    // Reset node run statuses
+    // 重置节点运行状态
     setNodes((nds) => nds.map((n) => ({ ...n, data: { ...n.data, runStatus: 'pending' } })))
     try {
       const body = queryText.trim() ? JSON.stringify({ query_text: queryText.trim() }) : '{}'
@@ -274,7 +274,7 @@ function WorkflowPageInner() {
       const data = await res.json()
       setCurrentRun(data)
       setRuns((prev) => [data.run_id, ...prev])
-      // Apply final node statuses
+      // 应用最终节点状态
       data.node_results?.forEach((nr) => {
         setNodes((nds) => nds.map((n) =>
           n.id === nr.node_id ? { ...n, data: { ...n.data, runStatus: nr.status === 'done' ? 'done' : 'error' } } : n
@@ -295,17 +295,17 @@ function WorkflowPageInner() {
       if (res.ok) {
         const data = await res.json()
         setCurrentRun(data)
-        // Apply historical node statuses
+        // 应用历史节点状态
         data.node_results?.forEach((nr) => {
           setNodes((nds) => nds.map((n) =>
             n.id === nr.node_id ? { ...n, data: { ...n.data, runStatus: nr.status === 'done' ? 'done' : 'error' } } : n
           ))
         })
       }
-    } catch { /* noop */ }
+    } catch { /* 无需处理 */ }
   }
 
-  // Node click
+  // 节点点击
   const handleNodeClick = useCallback((node) => setSelectedNode(node), [])
 
   const handleNodeUpdate = useCallback((nodeId, newData) => {
@@ -314,7 +314,7 @@ function WorkflowPageInner() {
     markDirty()
   }, [setNodes, markDirty])
 
-  // Auto layout
+  // 自动布局
   const handleAutoLayout = () => {
     if (nodes.length === 0) { showToast('没有节点可布局', 'error'); return }
     const GAP_X = 250, GAP_Y = 120
@@ -406,14 +406,14 @@ function WorkflowPageInner() {
         </AnimatePresence>
       </div>
 
-      {/* Output panel */}
+      {/* 输出面板 */}
       <WorkflowRunPanel
         runs={runs}
         currentRun={currentRun}
         onSelectRun={handleSelectRun}
       />
 
-      {/* Load dialog */}
+      {/* 加载弹窗 */}
       <AnimatePresence>
         {showLoadDialog && (
           <motion.div
@@ -454,7 +454,7 @@ function WorkflowPageInner() {
         )}
       </AnimatePresence>
 
-      {/* Confirm dialog */}
+      {/* 确认弹窗 */}
       <AnimatePresence>
         {confirm && (
           <ConfirmDialog
@@ -466,7 +466,7 @@ function WorkflowPageInner() {
         )}
       </AnimatePresence>
 
-      {/* Toast */}
+      {/* 提示消息 */}
       <AnimatePresence>
         {toast && (
           <motion.div

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react'
+﻿import { useState, useCallback, useEffect, useRef } from 'react'
 import { Upload, ClipboardPaste, FileText, Loader2, CheckCircle2, XCircle, FolderOpen, Globe, Scissors } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { api } from '../utils/api'
@@ -41,7 +41,7 @@ export default function UploadPage({ onToast }) {
           data.tasks.forEach(t => { progress[t.id] = t })
           setWsProgress(progress)
         }
-      } catch { /* polling — silent retry on next interval */ }
+      } catch { /* 轮询失败时静默等待下次重试 */ }
     }
     poll()
     const timer = setInterval(poll, 3000)
@@ -57,7 +57,7 @@ export default function UploadPage({ onToast }) {
     try {
       const res = await api.uploadFile(files[idx].file, chunkingStrategy)
       setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'done', taskId: res.task_id } : f))
-      onToast?.(`${files[idx].name} 上传成功 ✨`, 'success')
+      onToast?.(`${files[idx].name} 上传成功`, 'success')
     } catch (e) {
       setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'error', error: e.message } : f))
       onToast?.(`${files[idx].name} 失败: ${e.message}`, 'error')
@@ -97,7 +97,7 @@ export default function UploadPage({ onToast }) {
     if (!pasteContent.trim()) return
     try {
       await api.uploadContent(pasteContent, pasteTitle || '粘贴内容', chunkingStrategy)
-      onToast?.('内容已入库 📝', 'success')
+      onToast?.('内容已入库', 'success')
       setPasteContent(''); setPasteTitle('')
     } catch (e) { onToast?.(e.message, 'error') }
   }
@@ -109,7 +109,7 @@ export default function UploadPage({ onToast }) {
       const strategyParam = chunkingStrategy ? `&chunking_strategy=${chunkingStrategy}` : ''
       const res = await fetch(`/api/upload/url?url=${encodeURIComponent(urlInput)}${strategyParam}`, { method: 'POST' })
       if (!res.ok) throw new Error((await res.json()).detail || '导入失败')
-      onToast?.('URL 文档导入成功 🌐', 'success')
+      onToast?.('URL 文档导入成功', 'success')
       setUrlInput('')
     } catch (e) { onToast?.(`URL 导入失败: ${e.message}`, 'error') }
     setUrlLoading(false)
@@ -120,7 +120,7 @@ export default function UploadPage({ onToast }) {
     setFolderLoading(true)
     try {
       await api.uploadFolder(folderPath, chunkingStrategy)
-      onToast?.('文件夹处理完成 📂', 'success')
+      onToast?.('文件夹处理完成', 'success')
     } catch (e) { onToast?.(`文件夹处理失败: ${e.message}`, 'error') }
     setFolderLoading(false)
   }
@@ -129,19 +129,18 @@ export default function UploadPage({ onToast }) {
     <div className="space-y-8">
       <div className="page-header page-header-divider">
         <div>
-          <h2 className="page-title">📤 文档上传</h2>
+          <h2 className="page-title">文档上传</h2>
           <p className="page-subtitle">支持多种文件格式，拖拽或点击上传</p>
         </div>
       </div>
 
-      {/* Drag & Drop */}
+      {/* 拖拽上传 */}
       <motion.div
-        whileHover={{ scale: 1.005 }}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         className={`card border-dashed p-12 text-center cursor-pointer transition-all dark:bg-sky-900/20 dark:border-sky-800/30 ${
-          dragOver ? 'border-sky-400 bg-sky-50/50 dark:bg-sky-900/40 scale-[1.02] shadow-cloud-md' : 'border-cloud-400/70'
+          dragOver ? 'border-sky-400 bg-sky-50/50 dark:bg-sky-900/40 shadow-cloud-md' : 'border-cloud-400/70'
         }`}
         onClick={() => document.getElementById('file-input').click()}
         role="button"
@@ -160,7 +159,7 @@ export default function UploadPage({ onToast }) {
         </div>
       </motion.div>
 
-      {/* Chunking Strategy Selector */}
+      {/* 分块策略选择器 */}
       <div className="card p-4 space-y-3 dark:bg-sky-900/20 dark:border-sky-800/30">
         <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300"><Scissors size={16}/>分块策略</h3>
         <p className="text-xs text-ink-muted dark:text-cloud-500">选择本次上传的文本切割方式，不同策略影响检索精度和处理成本</p>
@@ -189,7 +188,7 @@ export default function UploadPage({ onToast }) {
         </div>
       </div>
 
-      {/* URL & Folder & Paste Row */}
+      {/* 链接、文件夹与粘贴输入行 */}
       <div className="grid grid-cols-3 gap-5">
         <div className="card p-4 space-y-3 dark:bg-sky-900/20 dark:border-sky-800/30">
           <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300"><Globe size={16}/>URL 导入</h3>
@@ -218,7 +217,7 @@ export default function UploadPage({ onToast }) {
         </div>
       </div>
 
-      {/* File List */}
+      {/* 文件列表 */}
       {files.length > 0 && (
         <div className="card p-4 space-y-2 dark:bg-sky-900/20 dark:border-sky-800/30">
           <div className="flex items-center justify-between">

@@ -1,8 +1,8 @@
-import { useState, useRef, useCallback } from 'react'
+﻿import { useState, useRef, useCallback } from 'react'
 import { Play, AlertTriangle, Copy, Check, Loader2 } from 'lucide-react'
 import { api } from '../utils/api'
 
-// G-code token patterns
+// G-code 词法模式
 const PATTERNS = [
   { regex: /\b[GM]\d{2}(\.\d+)?\b/g, cls: 'text-sky-600 font-semibold' },       // G/M codes
   { regex: /\b[XYZIJKR]\s*-?[\d.]+/g, cls: 'text-amber-600' },                    // Coordinates
@@ -16,7 +16,7 @@ function highlightLine(line) {
   if (!line || line.startsWith('(') || line.startsWith(';') || line.startsWith('%')) {
     return <span className="text-ink-muted italic">{line}</span>
   }
-  // Simple regex-based highlighting
+  // 基于正则的轻量高亮
   let parts = [{ text: line, cls: '' }]
   for (const { regex, cls } of PATTERNS) {
     const newParts = []
@@ -64,7 +64,7 @@ export default function GCodeEditor({ onParseResult }) {
 
   return (
     <div className="space-y-3">
-      {/* Toolbar */}
+      {/* 工具栏 */}
       <div className="flex items-center gap-2">
         <select value={lang} onChange={e => setLang(e.target.value)}
           className="px-3 py-1.5 rounded-lg border border-cloud-300 text-sm bg-white text-ink-body">
@@ -85,10 +85,10 @@ export default function GCodeEditor({ onParseResult }) {
         )}
       </div>
 
-      {/* Editor */}
+      {/* 编辑器 */}
       <div className="relative rounded-xl border border-cloud-300 overflow-hidden bg-cloud-200">
         <div className="flex">
-          {/* Line numbers */}
+          {/* 行号 */}
           <div className="shrink-0 bg-cloud-100 py-3 select-none border-r border-cloud-300">
             {lines.map((_, i) => (
               <div key={i} className="text-right px-2 text-2xs font-mono text-ink-muted leading-5 h-5">
@@ -97,7 +97,7 @@ export default function GCodeEditor({ onParseResult }) {
             ))}
             {lines.length === 0 && <div className="h-5" />}
           </div>
-          {/* Code area with highlighting overlay */}
+          {/* 带高亮叠层的代码区域 */}
           <div className="flex-1 relative">
             <textarea
               ref={textareaRef}
@@ -109,7 +109,7 @@ export default function GCodeEditor({ onParseResult }) {
                 focus:outline-none text-transparent caret-ink-body z-10 relative"
               style={{ lineHeight: '1.25rem' }}
             />
-            {/* Highlighted overlay */}
+            {/* 高亮叠层 */}
             <pre ref={preRef} className="absolute inset-0 p-3 font-mono text-sm pointer-events-none overflow-hidden"
               style={{ lineHeight: '1.25rem' }}>
               <code className="text-ink-body">
@@ -122,7 +122,7 @@ export default function GCodeEditor({ onParseResult }) {
         </div>
       </div>
 
-      {/* Parse result */}
+      {/* 解析结果 */}
       {result && (
         <div className="card p-4 space-y-3 max-h-[300px] overflow-y-auto">
           {result.error ? (

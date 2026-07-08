@@ -1,4 +1,4 @@
-import { Save, FolderOpen, FilePlus, ZoomIn, ZoomOut, Maximize2, LayoutGrid, Undo2, Redo2, Play, Loader2, MessageCircle } from 'lucide-react'
+﻿import { Save, FolderOpen, FilePlus, ZoomIn, ZoomOut, Maximize2, LayoutGrid, Undo2, Redo2, Play, Loader2, MessageCircle } from 'lucide-react'
 
 export default function WorkflowToolbar({
   workflowName, onNameChange, onNew, onSave, onLoad,
@@ -8,7 +8,7 @@ export default function WorkflowToolbar({
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-cloud-300 flex-shrink-0">
-      {/* Workflow name */}
+      {/* 工作流名称 */}
       <div className="flex items-center gap-1.5">
         <input
           type="text"
@@ -25,7 +25,7 @@ export default function WorkflowToolbar({
 
       <div className="w-px h-5 bg-cloud-300" />
 
-      {/* Actions */}
+      {/* 操作 */}
       <button onClick={onNew} title="新建 (未保存时弹出确认)" className="toolbar-btn">
         <FilePlus size={16} />
       </button>
@@ -38,7 +38,7 @@ export default function WorkflowToolbar({
 
       <div className="w-px h-5 bg-cloud-300" />
 
-      {/* Undo/Redo */}
+      {/* 撤销/重做 */}
       <button onClick={onUndo} title="撤销 (Ctrl+Z)" className="toolbar-btn">
         <Undo2 size={15} />
       </button>
@@ -50,7 +50,7 @@ export default function WorkflowToolbar({
 
       <div className="flex-1" />
 
-      {/* Runtime query input */}
+      {/* 运行时问题输入 */}
       {hasNodes && (
         <div className="flex items-center gap-1.5 flex-1 max-w-md">
           <MessageCircle size={14} className="text-ink-muted flex-shrink-0" />
@@ -68,7 +68,7 @@ export default function WorkflowToolbar({
         </div>
       )}
 
-      {/* Run */}
+      {/* 运行 */}
       {hasNodes && (
         <button
           onClick={onRun}
@@ -83,7 +83,7 @@ export default function WorkflowToolbar({
         </button>
       )}
 
-      {/* Layout & View */}
+      {/* 布局与视图 */}
       <button onClick={onAutoLayout} title="自动布局" className="toolbar-btn">
         <LayoutGrid size={16} />
       </button>
@@ -91,7 +91,7 @@ export default function WorkflowToolbar({
         <Maximize2 size={16} />
       </button>
 
-      {/* Zoom group */}
+      {/* 缩放控件组 */}
       <div className="flex items-center gap-1 bg-cloud-200 rounded-lg px-1">
         <button onClick={onZoomOut} title="缩小" className="toolbar-btn !w-7 !h-7">
           <ZoomOut size={15} />

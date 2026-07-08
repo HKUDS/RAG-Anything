@@ -5,110 +5,149 @@ export default {
   theme: {
     extend: {
       fontSize: {
-        '2xs':  ['0.75rem',   { lineHeight: '1rem' }],        // 12px  (was 11px)
-        'xs':   ['0.8125rem', { lineHeight: '1.25rem' }],     // 13px  (was 12px)
-        'sm':   ['0.9375rem', { lineHeight: '1.5rem' }],      // 15px  (was 14px)
-        'base': ['1rem',      { lineHeight: '1.625rem' }],    // 16px  (was 15px) — WCAG minimum
-        'lg':   ['1.125rem',  { lineHeight: '1.75rem' }],     // 18px  (was 17px)
-        'xl':   ['1.375rem',  { lineHeight: '1.875rem' }],    // 22px  (was 20px)
-        '2xl':  ['1.625rem',  { lineHeight: '2.125rem' }],    // 26px  (was 24px)
-        '3xl':  ['2rem',      { lineHeight: '2.5rem' }],      // 32px  (was 30px)
+        '2xs':  ['0.75rem',  { lineHeight: '1rem' }],
+        'xs':   ['0.75rem',  { lineHeight: '1rem' }],
+        'sm':   ['0.875rem', { lineHeight: '1.25rem' }],
+        'base': ['1rem',     { lineHeight: '1.5rem' }],
+        'lg':   ['1.25rem',  { lineHeight: '1.75rem' }],
+        'xl':   ['1.5rem',   { lineHeight: '2rem' }],
+        '2xl':  ['2rem',     { lineHeight: '2.5rem', letterSpacing: '-0.01em' }],
+        '3xl':  ['3rem',     { lineHeight: '3.5rem', letterSpacing: '-0.01em' }],
+        '4xl':  ['4rem',     { lineHeight: '4.5rem', letterSpacing: '-0.01em' }],
       },
       colors: {
-        // === Cloud-Blue Neutral Scale (blue-tinted, replaces warm) ===
+        /*
+         * ═══════════════════════════════════════════════════════════════
+         * Neutral Modern 设计系统色板
+         *
+         * 保留原有 Tailwind 类名（cloud/ink/sky/sage/amber/rose/coral）
+         * 仅替换色值为 Neutral Modern 等价色，确保所有 JSX 页面无需改动。
+         *
+         * 映射关系：
+         *   cloud → 中性灰阶（#FAFAFA → #737373）
+         *   ink   → 前景文字色（#6B6B6B → #111111）
+         *   sky   → 钴蓝强调色（#2F6FEB accent）
+         *   sage  → 成功绿（#17A34A）
+         *   amber → 警告黄（#EAB308）
+         *   rose  → 危险红（#DC2626）
+         *   coral → 暖强调色（保留用于头像/装饰）
+         * ═══════════════════════════════════════════════════════════════
+         */
+
+        // ── 中性灰 Surface（原 cloud）────────────────────────────────
+        // Neutral Modern: bg=#FAFAFA, surface=#FFFFFF, border=#E5E5E5
         cloud: {
-          50:  '#f8fafd',  // surface hover
-          100: '#f4f8fc',  // body bg (cloud-bg)
-          200: '#edf3f9',  // well bg (was #f0f5fa — slightly defined)
-          300: '#d6e5f2',  // border (was #e3eef7 — strengthened)
-          400: '#bcd3e8',  // border strong (was #c7ddf0)
-          500: '#8da3bb',  // muted icons (was #9aaec5 — darker)
+          50:  '#fafafa',  // 页面背景 (--bg)
+          100: '#fafafa',  // body bg 别名
+          200: '#f5f5f5',  // well bg / hover
+          300: '#e5e5e5',  // 边框 (--border)
+          400: '#d4d4d4',  // 边框强色
+          500: '#a3a3a3',  // 静默图标
         },
-        // === Ink Text Scale (blue-gray, replaces warm text) ===
+
+        // ── 前景文字（原 ink）────────────────────────────────────────
+        // Neutral Modern: fg=#111111, muted=#6B6B6B
         ink: {
-          muted:  '#557a95',  // secondary/label/placeholder (was #6b8aaa — 3.3→4.7:1 AA pass)
-          body:   '#2d4d66',  // body text (was #3a5a78 — deepened for readability)
-          primary:'#264860',  // headings (was #30567a — stronger presence)
-          deep:   '#1a3448',  // darkest text (was #1f3d56)
+          muted:   '#6b6b6b',  // 次要文字 / 标签 / 占位符 (--muted)
+          body:    '#404040',  // 正文
+          primary: '#262626',  // 标题
+          deep:    '#111111',  // 最深文字 (--fg)
         },
-        // === Warm Neutral (legacy, kept for transition) ===
-        warm: {
-          50:  '#fefdfb',
-          100: '#faf8f2',
-          200: '#f3efe6',
-          300: '#e8e2d6',
-          400: '#b8b0a3',
-          500: '#8a8276',
-          600: '#6b6359',
-          700: '#4a433b',
-          800: '#2d2823',
-          900: '#1a1613',
-        },
-        coral: {
-          50:  '#fef7f4',
-          100: '#fde9e0',
-          200: '#fbd3c1',
-          300: '#f7b398',
-          400: '#f08f6d',
-          500: '#e8734a',
-          600: '#cd5a34',
-          700: '#a8472a',
-          800: '#863a24',
-          900: '#662c1c',
-        },
-        sage: {
-          50:  '#f5f8f3',
-          100: '#e7efe2',
-          200: '#d0e0c6',
-          300: '#adc9a0',
-          400: '#89b07a',
-          500: '#6b9e7a',
-          600: '#548063',
-          700: '#43664f',
-          800: '#385340',
-          900: '#2f4436',
-        },
+
+        // ── 钴蓝强调色（原 sky）─────────────────────────────────────
+        // Neutral Modern accent: #2F6FEB
         sky: {
-          50:  '#f4f8fc',
-          100: '#e3eef7',
-          200: '#c7ddf0',
-          300: '#9dc6e5',
-          400: '#6da9d7',
-          500: '#5b9bd5',
-          600: '#3f7db8',
-          700: '#366596',
-          800: '#30567a',
-          900: '#2b4966',
+          50:  '#eff6ff',
+          100: '#dbeafe',
+          200: '#bfdbfe',
+          300: '#93c5fd',
+          400: '#60a5fa',
+          500: '#2f6feb',  // 主强调色 (--accent)
+          600: '#2563eb',
+          700: '#1d4ed8',
+          800: '#1e40af',
+          900: '#1e3a8a',
         },
+
+        // ── 成功绿（原 sage）────────────────────────────────────────
+        // Neutral Modern success: #17A34A
+        sage: {
+          50:  '#f0fdf4',
+          100: '#dcfce7',
+          200: '#bbf7d0',
+          300: '#86efac',
+          400: '#4ade80',
+          500: '#22c55e',
+          600: '#17a34a',  // (--success)
+          700: '#15803d',
+          800: '#166534',
+          900: '#14532d',
+        },
+
+        // ── 警告黄（原 amber）────────────────────────────────────────
+        // Neutral Modern warn: #EAB308
         amber: {
-          50:  '#fdfaf3',
-          100: '#faf2e0',
-          200: '#f4e3bf',
-          300: '#eccf93',
-          400: '#e0b86a',
-          500: '#d4a853',
-          600: '#b88c3d',
-          700: '#966f32',
-          800: '#7a5b2d',
-          900: '#644c29',
+          50:  '#fefce8',
+          100: '#fef9c3',
+          200: '#fef08a',
+          300: '#fde047',
+          400: '#facc15',
+          500: '#eab308',  // (--warn)
+          600: '#ca8a04',
+          700: '#a16207',
+          800: '#854d0e',
+          900: '#713f12',
         },
+
+        // ── 危险红（原 rose）────────────────────────────────────────
+        // Neutral Modern danger: #DC2626
         rose: {
-          50:  '#fdf5f6',
-          100: '#fae9ec',
-          200: '#f5d3d9',
-          300: '#ecb0bb',
-          400: '#de8597',
-          500: '#c9707e',
-          600: '#ad5261',
-          700: '#91414f',
-          800: '#783844',
-          900: '#64323c',
+          50:  '#fef2f2',
+          100: '#fee2e2',
+          200: '#fecaca',
+          300: '#fca5a5',
+          400: '#f87171',
+          500: '#ef4444',
+          600: '#dc2626',  // (--danger)
+          700: '#b91c1c',
+          800: '#991b1b',
+          900: '#7f1d1d',
+        },
+
+        // ── 暖强调色（原 coral）─────────────────────────────────────
+        // 保留用于头像、装饰性暖色调点缀（非 Neutral Modern 核心令牌）
+        coral: {
+          50:  '#f5f5f5',
+          100: '#e5e5e5',
+          200: '#d4d4d4',
+          300: '#a3a3a3',
+          400: '#737373',
+          500: '#525252',
+          600: '#404040',
+          700: '#262626',
+          800: '#171717',
+          900: '#111111',
+        },
+
+        // ── 暖中性色（原 warm）─ 保留供过渡使用 ────────────────────
+        warm: {
+          50:  '#fafafa',
+          100: '#f5f5f5',
+          200: '#e5e5e5',
+          300: '#d4d4d4',
+          400: '#a3a3a3',
+          500: '#737373',
+          600: '#525252',
+          700: '#404040',
+          800: '#262626',
+          900: '#171717',
         },
       },
       fontFamily: {
-        display: ['"IBM Plex Sans"', '"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
-        body: ['"IBM Plex Sans"', '"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
-        mono: ['"JetBrains Mono"', '"SF Mono"', '"Cascadia Code"', 'monospace'],
+        // Neutral Modern: Inter 用于展示和正文
+        display: ['"Inter"', '"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
+        body:    ['"Inter"', '"PingFang SC"', '"Microsoft YaHei"', 'system-ui', 'sans-serif'],
+        mono:    ['"JetBrains Mono"', '"SF Mono"', '"Cascadia Code"', 'monospace'],
       },
       spacing: {
         '4.5': '1.125rem',
@@ -116,21 +155,30 @@ export default {
         '88':  '22rem',
       },
       boxShadow: {
-        // Cloud shadows — blue-tinted (ink-primary #264860) not pure black
-        'cloud-sm': '0 1px 3px rgba(38,72,96,0.06), 0 1px 2px rgba(38,72,96,0.04)',
-        'cloud':    '0 4px 16px rgba(38,72,96,0.08), 0 2px 4px rgba(38,72,96,0.04)',
-        'cloud-md': '0 8px 30px rgba(38,72,96,0.10), 0 3px 8px rgba(38,72,96,0.05)',
-        'cloud-lg': '0 16px 48px rgba(38,72,96,0.12), 0 4px 12px rgba(38,72,96,0.05)',
-        // Legacy aliases (transitional)
-        'warm-sm': '0 1px 3px rgba(38,72,96,0.06), 0 1px 2px rgba(38,72,96,0.04)',
-        'warm':    '0 4px 16px rgba(38,72,96,0.08), 0 2px 4px rgba(38,72,96,0.04)',
-        'warm-md': '0 8px 30px rgba(38,72,96,0.10), 0 3px 8px rgba(38,72,96,0.05)',
-        'warm-lg': '0 16px 48px rgba(38,72,96,0.12), 0 4px 12px rgba(38,72,96,0.05)',
+        /*
+         * ═══════════════════════════════════════════════════════════════
+         * Neutral Modern 阴影系统
+         *
+         * 仅两层：flat (none) + raised。
+         * raised: 0 2px 8px rgba(0,0,0,0.08)
+         * 所有阴影使用纯黑透明度，不含蓝色调。
+         * ═══════════════════════════════════════════════════════════════
+         */
+        'cloud-sm': 'none',
+        'cloud':    '0 2px 8px rgba(0,0,0,0.08)',
+        'cloud-md': '0 2px 8px rgba(0,0,0,0.08)',
+        'cloud-lg': '0 2px 8px rgba(0,0,0,0.08)',
+        // 旧别名
+        'warm-sm': 'none',
+        'warm':    '0 2px 8px rgba(0,0,0,0.08)',
+        'warm-md': '0 2px 8px rgba(0,0,0,0.08)',
+        'warm-lg': '0 2px 8px rgba(0,0,0,0.08)',
       },
       borderRadius: {
-        '2xl': '0.875rem',
-        '3xl': '1.25rem',
-        '4xl': '1.75rem',
+        // Neutral Modern: 按钮 8px, 卡片 12px
+        '2xl': '0.75rem',   // 12px — 卡片
+        '3xl': '1rem',      // 16px
+        '4xl': '1.25rem',
       },
       animation: {
         'fade-in':       'fadeIn 0.4s ease-out',

@@ -1,12 +1,12 @@
-import { useState, useEffect, useCallback, useRef, lazy, Suspense, Component } from 'react'
+﻿import { useState, useEffect, useCallback, useRef, lazy, Suspense, Component } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, BarChart3, Wrench, GitBranch, ScrollText, AlertTriangle } from 'lucide-react'
+import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, GitBranch, ScrollText, AlertTriangle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import { api } from './utils/api'
 
-// ---- Route-level code splitting ----
+// ---- 路由级代码拆分 ----
 const KnowledgePage               = lazy(() => import('./pages/KnowledgePage'))
 const KnowledgeDetailPage        = lazy(() => import('./pages/KnowledgeDetailPage'))
 const SettingsPage                = lazy(() => import('./pages/SettingsPage'))
@@ -22,14 +22,14 @@ const AutoRepairKnowledgePage  = lazy(() => import('./pages/AutoRepairKnowledgeP
 const AutoRepairAgentPage      = lazy(() => import('./pages/AutoRepairAgentPage'))
 const WorkflowPage                = lazy(() => import('./pages/WorkflowPage'))
 
-// ---- Route-level loading skeleton ----
+// ---- 路由级加载骨架 ----
 const PageLoader = () => (
   <div className="flex items-center justify-center py-20">
     <div className="skeleton h-6 w-32" />
   </div>
 )
 
-// ---- Error boundary for lazy routes ----
+// ---- 懒加载路由错误边界 ----
 class LazyErrorBoundary extends Component {
   constructor(props) {
     super(props)
@@ -64,9 +64,9 @@ class LazyErrorBoundary extends Component {
   }
 }
 
-// ---- Suspense with timeout: prevents infinite hang on lazy chunk load ----
-// Uses an inner LoadDetector component that only renders when Suspense
-// resolves, so the timer is cancelled on successful page load.
+// ---- 带超时的 Suspense，避免懒加载分块无限等待 ----
+// 使用内部 LoadDetector 组件，它只会在 Suspense
+// 完成后渲染，因此页面成功加载时会取消计时器。
 const SUSPENSE_TIMEOUT_MS = 30000
 
 const ChunkTimeoutFallback = () => (
@@ -81,8 +81,8 @@ const ChunkTimeoutFallback = () => (
   </div>
 )
 
-// Renders nothing, but its useEffect fires only after Suspense resolves,
-// signalling that lazy chunks have loaded and the timeout can be cancelled.
+// 该组件不渲染内容，但 useEffect 只会在 Suspense 完成后触发，
+// 用于标记懒加载分块已完成并取消超时。
 function LoadDetector({ onLoad }) {
   useEffect(() => { onLoad() }, [onLoad])
   return null
@@ -109,22 +109,162 @@ function SuspenseWithTimeout({ children, fallback, timeout = SUSPENSE_TIMEOUT_MS
 }
 
 const NAV = [
-  { to: '/knowledge',     icon: Database,   label: '知识库',     requiredPermission: null },
-  { to: '/agents',        icon: Bot,       label: '智能体',     requiredPermission: null },
-  { to: '/workflow',      icon: GitBranch,  label: '工作流',     requiredPermission: 'workflow:read' },
-  { to: '/autorepair', icon: Factory,    label: '汽修智能助手', requiredPermission: 'autorepair:read' },
-  { to: '/settings',      icon: Settings,   label: '设置',       requiredPermission: 'settings:read' },
-  { to: '/monitor',       icon: Activity,   label: '监控',       requiredPermission: 'monitor:read' },
+  { to: '/knowledge', icon: Database, label: '知识库', requiredPermission: null },
+  { to: '/agents', icon: Bot, label: '智能体', requiredPermission: null },
+  { to: '/workflow', icon: GitBranch, label: '工作流', requiredPermission: 'workflow:read' },
+  { to: '/autorepair', icon: Factory, label: '汽修智能助手', requiredPermission: 'autorepair:read' },
+  { to: '/settings', icon: Settings, label: '设置', requiredPermission: 'settings:read' },
+  { to: '/monitor', icon: Activity, label: '监控', requiredPermission: 'monitor:read' },
 ]
 
-// ---- Role Badge ----
+const NAV_GROUPS = [
+  {
+    label: '知识核心',
+    eyebrow: '01',
+    items: [
+      { to: '/knowledge', icon: Database, label: '知识库', desc: '文档 / 实体 / 图谱', requiredPermission: null },
+      { to: '/agents', icon: Bot, label: '智能体', desc: '教学问答与推理', requiredPermission: null },
+      { to: '/workflow', icon: GitBranch, label: '工作流', desc: '编排知识处理链路', requiredPermission: 'workflow:read' },
+    ],
+  },
+  {
+    label: '场景实验室',
+    eyebrow: '02',
+    items: [
+      { to: '/autorepair', icon: Factory, label: '汽修智能助手', desc: '专业场景工作台', requiredPermission: 'autorepair:read' },
+    ],
+  },
+  {
+    label: '运行管理',
+    eyebrow: '03',
+    items: [
+      { to: '/monitor', icon: Activity, label: '监控', desc: '服务状态与指标', requiredPermission: 'monitor:read' },
+      { to: '/settings', icon: Settings, label: '设置', desc: '模型与系统配置', requiredPermission: 'settings:read' },
+      { to: '/admin/users', icon: Shield, label: '用户管理', desc: '角色与权限', requiredPermission: 'users:read' },
+      { to: '/admin/audit-logs', icon: ScrollText, label: '审计日志', desc: '操作追踪', requiredPermission: 'audit:read' },
+    ],
+  },
+]
+
+const ROUTE_META = [
+  { test: p => p.startsWith('/knowledge/'), kicker: '知识资产', title: '知识资产视图', subtitle: '查看文档、分块、实体关系与知识图谱结构。' },
+  { test: p => p.startsWith('/knowledge'), kicker: '知识核心', title: '知识库中枢', subtitle: '组织多源文档、实体网络和可检索的知识空间。' },
+  { test: p => p.startsWith('/agents/'), kicker: '智能体会话', title: '智能体对话', subtitle: '基于知识库进行检索增强问答、多模态理解与推理。' },
+  { test: p => p.startsWith('/agents'), kicker: '智能体矩阵', title: '智能体矩阵', subtitle: '配置模型、检索模式和专业提示词，构建任务型助手。' },
+  { test: p => p.startsWith('/workflow'), kicker: '工作流引擎', title: '工作流编排', subtitle: '用节点化流程组织文档处理、检索和推理链路。' },
+  { test: p => p.startsWith('/autorepair'), kicker: '场景实验室', title: '汽修智能制造工作台', subtitle: '面向专业教学与竞赛场景的知识图谱和智能问答系统。' },
+  { test: p => p.startsWith('/monitor'), kicker: '运行管理', title: '运行监控', subtitle: '观察服务状态、处理吞吐和知识系统运行指标。' },
+  { test: p => p.startsWith('/settings'), kicker: '系统配置', title: '系统设置', subtitle: '管理模型、接口、检索和平台级配置。' },
+  { test: p => p.startsWith('/admin/users'), kicker: '管理后台', title: '用户与权限', subtitle: '管理账号、角色、部门和访问边界。' },
+  { test: p => p.startsWith('/admin/audit-logs'), kicker: '管理后台', title: '审计日志', subtitle: '追踪关键操作与安全事件。' },
+]
+
+const getRouteMeta = (pathname) =>
+  ROUTE_META.find(item => item.test(pathname)) || {
+    kicker: '知元平台',
+    title: '多模态教学知识服务平台',
+    subtitle: '以课程资源、知识库、智能体和工作流连接教学内容与学习服务。',
+  }
+
+const formatStatValue = (value) => {
+  const n = Number(value || 0)
+  return Number.isFinite(n) ? n.toLocaleString('zh-CN') : '0'
+}
+
+const getCockpitStats = (pathname, stats, hasPermission) => {
+  if (pathname === '/' || pathname.startsWith('/knowledge')) {
+    return [
+      { label: '文档', value: formatStatValue(stats.documents), icon: Zap, tone: 'blue' },
+      { label: '实体', value: formatStatValue(stats.entities), icon: Cpu, tone: 'green' },
+      { label: '关系', value: formatStatValue(stats.relations), icon: Hash, tone: 'amber' },
+    ]
+  }
+
+  if (pathname.startsWith('/agents/')) {
+    return [
+      { label: '助手', value: '会话中', icon: Bot, tone: 'blue' },
+      { label: '检索', value: '增强', icon: Database, tone: 'green' },
+      { label: '回答', value: '在线', icon: Zap, tone: 'amber' },
+    ]
+  }
+
+  if (pathname.startsWith('/agents')) {
+    return [
+      { label: '助手', value: '可配置', icon: Bot, tone: 'blue' },
+      { label: '知识库', value: '可绑定', icon: Database, tone: 'green' },
+      { label: '模板', value: '可复用', icon: BookOpen, tone: 'amber' },
+    ]
+  }
+
+  if (pathname.startsWith('/workflow')) {
+    return [
+      { label: '编排', value: '可用', icon: GitBranch, tone: 'blue' },
+      { label: '链路', value: '节点化', icon: Cpu, tone: 'green' },
+      { label: '权限', value: hasPermission('workflow:read') ? '已授权' : '受限', icon: Shield, tone: 'amber' },
+    ]
+  }
+
+  if (pathname.startsWith('/autorepair')) {
+    return [
+      { label: '场景', value: '汽修', icon: Factory, tone: 'blue' },
+      { label: '图谱', value: '教学', icon: Database, tone: 'green' },
+      { label: '问答', value: '在线', icon: Bot, tone: 'amber' },
+    ]
+  }
+
+  if (pathname.startsWith('/monitor')) {
+    return [
+      { label: '服务', value: '监测中', icon: Activity, tone: 'blue' },
+      { label: '日志', value: '追踪', icon: ScrollText, tone: 'green' },
+      { label: '健康', value: '巡检', icon: Zap, tone: 'amber' },
+    ]
+  }
+
+  if (pathname.startsWith('/settings')) {
+    return [
+      { label: '模型', value: '配置', icon: Settings, tone: 'blue' },
+      { label: '接口', value: '管理', icon: Cpu, tone: 'green' },
+      { label: '权限', value: hasPermission('settings:read') ? '已授权' : '受限', icon: Shield, tone: 'amber' },
+    ]
+  }
+
+  if (pathname.startsWith('/admin/users')) {
+    return [
+      { label: '用户', value: '管理', icon: User, tone: 'blue' },
+      { label: '角色', value: '权限', icon: Shield, tone: 'green' },
+      { label: '审计', value: hasPermission('audit:read') ? '可查' : '受限', icon: ScrollText, tone: 'amber' },
+    ]
+  }
+
+  if (pathname.startsWith('/admin/audit-logs')) {
+    return [
+      { label: '审计', value: '追踪', icon: ScrollText, tone: 'blue' },
+      { label: '用户', value: '关联', icon: User, tone: 'green' },
+      { label: '安全', value: '记录', icon: Shield, tone: 'amber' },
+    ]
+  }
+
+  return [
+    { label: '平台', value: '在线', icon: BookOpen, tone: 'blue' },
+    { label: '教学', value: '服务', icon: Bot, tone: 'green' },
+    { label: '知识', value: '就绪', icon: Database, tone: 'amber' },
+  ]
+}
+
+const STAT_ICON_CLASS = {
+  blue: 'text-sky-400',
+  green: 'text-sage-400',
+  amber: 'text-amber-400',
+}
+
+// ---- 角色徽标 ----
 const ROLE_META = {
   super_admin: { label: '超级管理员', color: 'text-rose-500' },
-  admin:        { label: '管理员',     color: 'text-rose-500' },  // 向后兼容
-  dept_admin:   { label: '系部管理员', color: 'text-amber-600' },
-  teacher:      { label: '主讲教师',   color: 'text-sky-600' },
-  assistant:    { label: '助理教师',   color: 'text-sage-600' },
-  student:      { label: '学生',       color: 'text-ink-muted' },
+  admin: { label: '管理员', color: 'text-rose-500' },
+  dept_admin: { label: '系部管理员', color: 'text-amber-600' },
+  teacher: { label: '主讲教师', color: 'text-sky-600' },
+  assistant: { label: '助理教师', color: 'text-sage-600' },
+  student: { label: '学生', color: 'text-ink-muted' },
 }
 
 function RoleBadge({ roleName, isAdmin }) {
@@ -133,7 +273,7 @@ function RoleBadge({ roleName, isAdmin }) {
   return <span className={`font-medium ${meta.color}`}>{meta.label}</span>
 }
 
-// ---- User Menu Dropdown ----
+// ---- 用户菜单下拉框 ----
 function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
   const [open, setOpen] = useState(false)
   const ref = useRef()
@@ -158,9 +298,9 @@ function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
         className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-cloud-200 transition-colors text-ink-body"
         aria-expanded={open}
         aria-haspopup="true"
-        aria-label={`用户菜单：${user?.username}`}
+        aria-label={`鐢ㄦ埛鑿滃崟锛?{user?.username}`}
       >
-        <div className="w-6 h-6 rounded-full bg-coral-100 flex items-center justify-center">
+        <div className="w-6 h-6 rounded-full bg-cloud-200 ring-1 ring-cloud-300 flex items-center justify-center">
           <User size={11} className="text-sky-500" />
         </div>
         <span className="text-xs font-medium max-w-[80px] truncate hidden sm:inline">{user?.username}</span>
@@ -177,7 +317,7 @@ function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
             className="absolute right-0 top-full mt-1 w-52 card p-1.5 shadow-cloud-md z-50 origin-top-right"
             role="menu"
           >
-            {/* User info */}
+            {/* 用户信息 */}
             <div className="px-3 py-2.5 border-b border-cloud-200 mb-1">
               <p className="text-sm font-medium text-ink-primary truncate">{user?.username}</p>
               <p className="text-2xs text-ink-muted mt-0.5">
@@ -185,7 +325,7 @@ function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
               </p>
             </div>
 
-            {/* Theme toggle */}
+            {/* 主题切换 */}
             <button
               onClick={() => { toggleTheme(); setOpen(false) }}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-ink-body hover:bg-cloud-200 transition-colors"
@@ -195,7 +335,7 @@ function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
               {dark ? '切换到浅色模式' : '切换到深色模式'}
             </button>
 
-            {/* Logout */}
+            {/* 退出登录 */}
             <button
               onClick={() => { onLogout(); setOpen(false) }}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-rose-500 hover:bg-rose-50 transition-colors"
@@ -211,7 +351,7 @@ function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
   )
 }
 
-// ---- Main App ----
+// ---- 主应用 ----
 export default function App() {
   const location = useLocation()
   const navigate = useNavigate()
@@ -225,7 +365,7 @@ export default function App() {
 
   const isAuthPage = location.pathname === '/login' || location.pathname === '/register'
 
-  // Theme
+  // 主题
   useEffect(() => {
     if (dark) {
       document.documentElement.classList.add('dark')
@@ -237,7 +377,7 @@ export default function App() {
 
   const toggleTheme = useCallback(() => setDark(d => !d), [])
 
-  // Load global stats
+  // 加载全局统计
   const loadStats = useCallback(() => {
     api.getStats().then(setStats).catch(err => console.error(err))
   }, [])
@@ -253,30 +393,27 @@ export default function App() {
     navigate('/login')
   }
 
-  // 监听全局认证过期事件（api.js 401 触发）
   useEffect(() => {
     const handler = () => {
-      // clearAuth 已在 api.js 中通过 removeItem 处理
-      // 这里更新 React 状态并跳转登录页
-      window.location.reload() // 硬刷新确保所有状态清除
+      window.location.reload()
     }
     window.addEventListener('raganything:auth-expired', handler)
     return () => window.removeEventListener('raganything:auth-expired', handler)
   }, [])
 
-  // ---- Loading ----
+  // ---- 加载中 ----
   if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-cloud-100">
         <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center space-y-4">
           <BookOpen size={36} className="mx-auto text-sky-300 animate-float" />
-          <p className="text-ink-muted text-sm font-medium">正在准备你的知识空间…</p>
+          <p className="text-ink-muted text-sm font-medium">正在准备知元教学空间...</p>
         </motion.div>
       </div>
     )
   }
 
-  // ---- Not logged in ----
+  // ---- 未登录 ----
   if (!token) {
     return (
       <div className="min-h-screen bg-cloud-100">
@@ -293,23 +430,121 @@ export default function App() {
     )
   }
 
-  // ---- Main Layout ----
+  const visibleNavGroups = NAV_GROUPS
+    .map(group => ({
+      ...group,
+      items: group.items.filter(item => !item.requiredPermission || hasPermission(item.requiredPermission)),
+    }))
+    .filter(group => group.items.length > 0)
+
+  const routeMeta = getRouteMeta(location.pathname)
+  const cockpitStats = getCockpitStats(location.pathname, stats, hasPermission)
+
+  // ---- 主布局 ----
   return (
-    <div className="min-h-screen bg-cloud-100">
-      {/* ========== TOP NAVIGATION BAR ========== */}
+    <div className="min-h-screen bg-cloud-100 app-shell cockpit-shell">
+      <aside className="cockpit-sidebar" aria-label="主导航">
+        <NavLink to="/knowledge" className="cockpit-brand">
+          <div className="cockpit-brand-mark">
+            <BookOpen size={18} />
+          </div>
+          <div className="cockpit-brand-copy">
+            <span>知元</span>
+            <small>多模态教学知识服务平台</small>
+          </div>
+        </NavLink>
+
+        <div className="cockpit-command-panel">
+          <div className="cockpit-command-kicker">实时工作空间</div>
+          <div className="cockpit-command-title">教学知识服务平台</div>
+          <div className="cockpit-command-grid">
+            <span />
+            <span />
+            <span />
+          </div>
+        </div>
+
+        <nav className="cockpit-nav">
+          {visibleNavGroups.map(group => (
+            <section className="cockpit-nav-group" key={group.label}>
+              <div className="cockpit-nav-heading">
+                <span>{group.eyebrow}</span>
+                <strong>{group.label}</strong>
+              </div>
+              <div className="cockpit-nav-items">
+                {group.items.map(({ to, icon: Icon, label, desc }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={to === '/agents'}
+                    className={({ isActive }) => `cockpit-nav-link ${isActive ? 'active' : ''}`}
+                  >
+                    <span className="cockpit-nav-icon"><Icon size={17} /></span>
+                    <span className="cockpit-nav-text">
+                      <span>{label}</span>
+                      <small>{desc}</small>
+                    </span>
+                  </NavLink>
+                ))}
+              </div>
+            </section>
+          ))}
+        </nav>
+
+        <div className="cockpit-sidebar-footer">
+          <div className="cockpit-system-state">
+            <span className="cockpit-pulse" />
+            <div>
+              <strong>知元服务在线</strong>
+              <small>课程 / 图谱 / 智能体就绪</small>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <header className="cockpit-topbar">
+        <div className="cockpit-topbar-copy">
+          <p>{routeMeta.kicker}</p>
+          <h1>{routeMeta.title}</h1>
+          <span>{routeMeta.subtitle}</span>
+        </div>
+        <div className="cockpit-topbar-actions">
+          <div className="cockpit-stat-strip" aria-label="页面状态">
+            {cockpitStats.map(({ label, value, icon: Icon, tone }) => (
+              <div className={`cockpit-stat-chip ${tone}`} key={label}>
+                <span className="cockpit-stat-icon">
+                  <Icon size={15} />
+                </span>
+                <span className="cockpit-stat-label">{label}</span>
+                <strong className="cockpit-stat-value">{value}</strong>
+              </div>
+            ))}
+          </div>
+          <UserMenu
+            user={user}
+            isAdmin={isAdmin}
+            roleName={authRoleName}
+            dark={dark}
+            toggleTheme={toggleTheme}
+            onLogout={handleLogout}
+          />
+        </div>
+      </header>
+
+      {/* ========== 顶部导航栏 ========== */}
       <header className="topnav">
         <div className="topnav-inner">
-          {/* Brand */}
+          {/* 品牌 */}
           <NavLink to="/knowledge" className="topnav-brand">
             <div className="topnav-brand-icon">
               <BookOpen size={16} className="text-white" />
             </div>
             <span className="topnav-brand-text">
-              RAG<span className="text-sky-500">Anything</span>
+              知元
             </span>
           </NavLink>
 
-          {/* Nav Links */}
+          {/* 导航链接 */}
           <nav className="topnav-nav">
             {NAV.filter(item => {
               // 权限过滤：检查每个导航项的 requiredPermission
@@ -352,16 +587,19 @@ export default function App() {
             )}
           </nav>
 
-          {/* Right side: Stats + User */}
+          {/* 右侧：统计与用户 */}
           <div className="topnav-actions">
-            {/* Stats inline */}
+            {/* 行内统计 */}
             <div className="hidden lg:flex items-center gap-3">
-              <span className="text-2xs text-ink-muted flex items-center gap-1"><Zap size={10} className="text-sky-400"/>{stats.documents}</span>
-              <span className="text-2xs text-ink-muted flex items-center gap-1"><Cpu size={10} className="text-sage-400"/>{stats.entities}</span>
-              <span className="text-2xs text-ink-muted flex items-center gap-1"><Hash size={10} className="text-amber-400"/>{stats.relations}</span>
+              {cockpitStats.map(({ label, value, icon: Icon, tone }) => (
+                <span className="text-2xs text-ink-muted flex items-center gap-1" key={label}>
+                  <Icon size={10} className={STAT_ICON_CLASS[tone] || 'text-sky-400'} />
+                  {label} {value}
+                </span>
+              ))}
             </div>
 
-            {/* User */}
+            {/* 用户 */}
             <div className="ml-2">
               <UserMenu
                 user={user}
@@ -376,18 +614,14 @@ export default function App() {
         </div>
       </header>
 
-      {/* ========== MAIN CONTENT ========== */}
-      <main className="pt-14">
-        <div className="max-w-7xl mx-auto px-6 py-8">
+      {/* ========== 主内容 ========== */}
+      <main className="pt-16 app-main cockpit-main">
+        <div className="max-w-[1200px] mx-auto px-4 sm:px-6 py-6 sm:py-8 cockpit-content">
           <LazyErrorBoundary>
             <SuspenseWithTimeout fallback={<PageLoader />}>
-              <AnimatePresence mode="wait">
-              <motion.div
+              <div
                 key={location.pathname}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: -10 }}
-                transition={{ duration: 0.25, ease: 'easeOut' }}
+                className="route-surface"
               >
                 <Routes>
                   <Route path="/" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
@@ -400,18 +634,17 @@ export default function App() {
                   <Route path="/autorepair/knowledge" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairKnowledgePage /></ProtectedRoute>} />
                   <Route path="/autorepair/agent" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairAgentPage /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute requiredPermission="settings:read"><SettingsPage onToast={showToast} /></ProtectedRoute>} />
-                  <Route path="/monitor" element={<ProtectedRoute requiredPermission="monitor:read"><MonitorPage /></ProtectedRoute>} />
+                  <Route path="/monitor" element={<ProtectedRoute requiredPermission="monitor:read"><MonitorPage onToast={showToast} /></ProtectedRoute>} />
                   <Route path="/admin/users" element={<ProtectedRoute requiredPermission="users:read"><AdminUsersPage /></ProtectedRoute>} />
                   <Route path="/admin/audit-logs" element={<ProtectedRoute requiredPermission="audit:read"><AdminAuditLogsPage /></ProtectedRoute>} />
                 </Routes>
-              </motion.div>
-            </AnimatePresence>
+              </div>
             </SuspenseWithTimeout>
           </LazyErrorBoundary>
         </div>
       </main>
 
-      {/* ========== TOAST ========== */}
+      {/* ========== 提示消息 ========== */}
       <AnimatePresence>
         {toast && (
           <motion.div
@@ -420,7 +653,7 @@ export default function App() {
             exit={{ opacity: 0, y: 24, scale: 0.95 }}
             role="status"
             aria-live="polite"
-            className={`fixed bottom-6 right-6 px-5 py-3.5 rounded-2xl text-sm font-medium z-50 shadow-cloud-md backdrop-blur-sm ${
+            className={`fixed bottom-6 right-4 sm:right-6 px-4 py-3 rounded-xl text-sm font-medium z-50 shadow-cloud backdrop-blur-sm ${
               toast.type === 'error' ? 'toast-error' :
               toast.type === 'success' ? 'toast-success' :
               'toast-info'
@@ -432,3 +665,4 @@ export default function App() {
     </div>
   )
 }
+

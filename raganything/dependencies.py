@@ -236,6 +236,14 @@ async def verify_kb_access(
         return kb
 
     allowed_kbs = current_user.get("allowed_kbs", [])
+    if kb in allowed_kbs:
+        return kb
+
+    kb_info = kb_meta.get(kb, {})
+    owner_id = kb_info.get("owner_id")
+    if owner_id is not None and owner_id == current_user["id"]:
+        return kb
+
     if kb not in allowed_kbs:
         raise HTTPException(403, "无权访问该知识库")
 

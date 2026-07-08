@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Search, Eye, Trash2, X, FileText, Clock, Filter, ZoomIn, ZoomOut, RotateCcw,
   Plus, Layers, Upload, Globe, FolderOpen, ClipboardPaste,
@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { useParams, useNavigate } from 'react-router-dom'
 import { api, setCurrentKB, getToken } from '../utils/api'
 import ChunkDetailDrawer from '../components/ChunkDetailDrawer'
+import { useAuth } from '../context/AuthContext'
 
 const STATUS = { processed: 'badge-success', processing: 'badge-warning', handling: 'badge-info', failed: 'badge-error' }
 const STATUS_CN = { processed: '已完成', processing: '处理中', handling: '入库中', failed: '失败' }
@@ -22,7 +23,7 @@ const COST_COLORS = {
   high: 'text-rose-600 bg-rose-50 border-rose-200',
 }
 
-// ====================== Upload Section ======================
+// ====================== 上传区域 ======================
 function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strategies, onUploaded,
   multimodal, setMultimodal }) {
   const [dragOver, setDragOver] = useState(false)
@@ -72,7 +73,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
   const handlePaste = async () => {
     if (!pasteContent.trim()) return
     try {
-      await api.uploadContent(pasteTitle.trim() || '粘贴内容', pasteContent)
+      await api.uploadContent(pasteContent, pasteTitle.trim() || '粘贴内容', chunkingStrategy, multimodal)
       setPasteContent(''); setPasteTitle('')
       onUploaded?.()
       onToast?.('文本已上传', 'success')
@@ -95,7 +96,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
     if (!folderPath.trim()) return
     setFolderLoading(true)
     try {
-      await api.uploadFolder(folderPath.trim(), { strategy: chunkingStrategy, multimodal })
+      await api.uploadFolder(folderPath.trim(), chunkingStrategy, multimodal)
       setFolderPath('')
       onUploaded?.()
       onToast?.('文件夹上传成功', 'success')
@@ -121,7 +122,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
             className="overflow-hidden"
           >
             <div className="space-y-4 pt-4">
-              {/* Drag & drop zone */}
+              {/* 拖拽区域 */}
               <div
                 className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors cursor-pointer ${dragOver ? 'border-sky-400 bg-sky-50' : 'border-cloud-300 hover:border-sky-300'}`}
                 onDragOver={e => { e.preventDefault(); setDragOver(true) }}
@@ -136,7 +137,18 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                   onChange={e => { for (const f of e.target.files) addFile(f); e.target.value = '' }} />
               </div>
 
-              {/* Chunking strategy */}
+              <div className="rounded-xl border border-cloud-300/70 bg-cloud-100/70 p-3 space-y-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium text-ink-body">本次上传配置</p>
+                    <p className="text-2xs text-ink-muted mt-0.5">这些选项只影响本次入库，不会改动平台默认设置。</p>
+                  </div>
+                  <span className="text-2xs px-2 py-0.5 rounded-full border border-sky-200 bg-sky-50 text-sky-600">
+                    上传现场
+                  </span>
+                </div>
+
+              {/* 分块策略 */}
               {Object.keys(strategies).length > 0 && (
                 <div className="flex items-center gap-2 flex-wrap">
                   <Scissors size={13} className="text-ink-muted" />
@@ -161,7 +173,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                 </div>
               )}
 
-              {/* Multimodal toggles */}
+              {/* 多模态开关 */}
               <div className="flex items-center gap-2 flex-wrap">
                 <Zap size={13} className="text-ink-muted" />
                 <span className="text-xs text-ink-muted">多模态:</span>
@@ -183,8 +195,9 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                   </button>
                 ))}
               </div>
+              </div>
 
-              {/* URL / Folder / Paste */}
+              {/* 链接 / 文件夹 / 粘贴 */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="card p-3 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs text-ink-muted"><Globe size={12} /> URL 导入</div>
@@ -212,7 +225,7 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                 </div>
               </div>
 
-              {/* File list */}
+              {/* 文件列表 */}
               {files.length > 0 && (
                 <div className="card p-3 space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -249,10 +262,11 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
   )
 }
 
-// ====================== MAIN DETAIL PAGE ======================
+// ====================== 主详情页 ======================
 export default function KnowledgeDetailPage() {
   const { kbName } = useParams()
   const navigate = useNavigate()
+  const { isAdmin } = useAuth()
 
   const [docs, setDocs] = useState([])
   const [entities, setEntities] = useState([])
@@ -265,26 +279,27 @@ export default function KnowledgeDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [batchDeleting, setBatchDeleting] = useState(false)
+  const [reprocessingMultimodal, setReprocessingMultimodal] = useState(false)
   const [selectedNode, setSelectedNode] = useState(null)
   const [nodeDetails, setNodeDetails] = useState(null)
   const [toast, setToast] = useState(null)
   const [chunkingStrategy, setChunkingStrategy] = useState('')
   const [strategies, setStrategies] = useState({})
-  // Graph editing states
+  // 图谱编辑状态
   const [showCreateNodeModal, setShowCreateNodeModal] = useState(false)
   const [showCreateEdgeModal, setShowCreateEdgeModal] = useState(false)
   const [showDeleteNodeConfirm, setShowDeleteNodeConfirm] = useState(null)
   const [renamingNode, setRenamingNode] = useState(null)
   const [renameValue, setRenameValue] = useState('')
   const [graphNodeDetail, setGraphNodeDetail] = useState(null)
-  // Create-node form
+  // 创建节点表单
   const [newNodeForm, setNewNodeForm] = useState({ name: '', entity_type: '', description: '' })
-  // Create-edge form
+  // 创建边表单
   const [newEdgeForm, setNewEdgeForm] = useState({ source_entity: '', target_entity: '', relation_type: 'related_to', description: '' })
   const [multimodal, setMultimodal] = useState({
     enable_image: true, enable_table: true, enable_equation: true, enable_video: true
   })
-  // Chunk detail panel states
+  // 分块详情面板状态
   const [chunkPanelDoc, setChunkPanelDoc] = useState(null)
   const [chunksData, setChunksData] = useState([])
   const [chunksLoading, setChunksLoading] = useState(false)
@@ -304,7 +319,7 @@ export default function KnowledgeDetailPage() {
   selectedNodeRef.current = selectedNode
   const simRef = useRef(null)
 
-  // ── Graph Editing Handlers ──
+  // ── 图谱编辑处理 ──
 
   const handleCreateNode = async () => {
     if (!newNodeForm.name.trim()) return
@@ -313,7 +328,7 @@ export default function KnowledgeDetailPage() {
       setShowCreateNodeModal(false)
       setNewNodeForm({ name: '', entity_type: '', description: '' })
       await loadKBData()
-      showToast(`✅ 实体 "${newNodeForm.name}" 已创建`, 'success')
+      showToast(`实体 "${newNodeForm.name}" 已创建`, 'success')
     } catch (e) { showToast('创建失败: ' + e.message, 'error') }
   }
 
@@ -325,7 +340,7 @@ export default function KnowledgeDetailPage() {
       await api.renameGraphNode(oldName, renameValue.trim())
       setRenamingNode(null); setSelectedNode(null); setNodeDetails(null)
       await loadKBData()
-      showToast(`✅ 已重命名为 "${renameValue.trim()}"`, 'success')
+      showToast(`已重命名为 "${renameValue.trim()}"`, 'success')
     } catch (e) { showToast('重命名失败: ' + e.message, 'error') }
   }
 
@@ -334,7 +349,7 @@ export default function KnowledgeDetailPage() {
       await api.deleteGraphNode(name)
       setShowDeleteNodeConfirm(null); setSelectedNode(null); setNodeDetails(null)
       await loadKBData()
-      showToast(`🗑️ 实体 "${name}" 已删除`, 'success')
+      showToast(`实体 "${name}" 已删除`, 'success')
     } catch (e) { showToast('删除失败: ' + e.message, 'error') }
   }
 
@@ -345,7 +360,7 @@ export default function KnowledgeDetailPage() {
       setShowCreateEdgeModal(false)
       setNewEdgeForm({ source_entity: '', target_entity: '', relation_type: 'related_to', description: '' })
       await loadKBData()
-      showToast('✅ 关系已创建', 'success')
+      showToast('关系已创建', 'success')
     } catch (e) { showToast('创建关系失败: ' + e.message, 'error') }
   }
 
@@ -353,11 +368,11 @@ export default function KnowledgeDetailPage() {
     try {
       await api.deleteGraphEdge(edgeId)
       await loadKBData()
-      showToast('🗑️ 关系已删除', 'success')
+      showToast('关系已删除', 'success')
     } catch (e) { showToast('删除关系失败: ' + e.message, 'error') }
   }
 
-  // Fetch detailed node info from API
+  // 从接口获取节点详细信息
   const fetchNodeDetail = async (nodeName) => {
     try {
       const detail = await api.getGraphNode(nodeName)
@@ -365,15 +380,15 @@ export default function KnowledgeDetailPage() {
     } catch { setGraphNodeDetail(null) }
   }
 
-  // Helper: D3 forceLink mutates edge source/target from string → node object.
-  // After simulation, edge.source is {id, x, y, ...} not a bare string.
-  // This helper extracts the string ID regardless of mutation state.
+  // 辅助函数：D3 forceLink 会把边的 source/target 从字符串改成节点对象。
+  // 仿真后 edge.source 变为 {id, x, y, ...}，不再是裸字符串。
+  // 该函数无论边处于哪种状态，都能提取字符串 ID。
   const _sid = (edge, prop) => {
     const v = edge[prop]
     return v && typeof v === 'object' ? v.id : v
   }
 
-  // Set current KB on mount / param change
+  // 挂载或参数变化时设置当前知识库
   useEffect(() => {
     if (kbName) setCurrentKB(kbName)
   }, [kbName])
@@ -383,7 +398,7 @@ export default function KnowledgeDetailPage() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  // ── Chunk Detail Panel Handlers ──
+  // ── 分块详情面板处理 ──
   const openChunkPanel = async (doc) => {
     setChunkPanelDoc(doc)
     setChunkFilterText('')
@@ -422,20 +437,26 @@ export default function KnowledgeDetailPage() {
     setExpandedChunks({})
   }
 
-  // Filtered chunks based on search text
+  // 基于搜索文本筛选分块
   const filteredChunks = chunkFilterText.trim()
     ? chunksData.filter(c => (c.content || '').toLowerCase().includes(chunkFilterText.toLowerCase()))
     : chunksData
 
-  // Load settings (chunking strategies) once
+  // 加载设置（分块策略），仅执行一次
   useEffect(() => {
     api.getSettings().then(r => {
       setStrategies(r.chunking_strategies || {})
       setChunkingStrategy(r.chunking_strategy || '')
+      setMultimodal({
+        enable_image: r.enable_image ?? true,
+        enable_table: r.enable_table ?? true,
+        enable_equation: r.enable_equation ?? true,
+        enable_video: r.enable_video ?? false,
+      })
     }).catch(() => {})
   }, [])
 
-  // Load data for this KB — returns a Promise that resolves when graph data is loaded
+  // 加载当前知识库数据，图谱数据加载完成后 Promise resolve
   const loadKBData = useCallback(() => {
     const gen = ++genRef.current
     api.getDocuments().then(r => { if (gen === genRef.current) setDocs(r.documents || []) }).catch(err => console.error(err))
@@ -455,7 +476,7 @@ export default function KnowledgeDetailPage() {
     }).catch(err => console.error(err))
   }, [])
 
-  // Combined entity name list for edge-creation autocomplete (deduplicates graph.nodes + entities)
+  // 合并实体名称列表，用于创建边时自动补全（对 graph.nodes 与 entities 去重）
   const allEntityNames = useMemo(() => {
     const nameSet = new Set()
     entities.forEach(e => { if (e.name) nameSet.add(e.name) })
@@ -463,7 +484,7 @@ export default function KnowledgeDetailPage() {
     return [...nameSet].sort()
   }, [entities, graph.nodes])
 
-  // Load data on mount + poll
+  // 挂载时加载数据并轮询
   useEffect(() => {
     if (!kbName) return
     loadKBData()
@@ -471,7 +492,7 @@ export default function KnowledgeDetailPage() {
     return () => clearInterval(interval)
   }, [kbName, loadKBData])
 
-  // D3 Graph
+  // D3 图谱
   const drawGraph = useCallback(() => {
     if (!svgRef.current) return
     if (!graph.nodes.length) {
@@ -520,7 +541,7 @@ export default function KnowledgeDetailPage() {
       const zoom = d3.zoom()
         .scaleExtent([0.3, 4])
         .filter((event) => {
-          // Allow wheel/dblclick zoom anywhere; only allow mouse-pan on SVG background
+          // 允许任意位置滚轮/双击缩放，仅允许在 SVG 背景上拖动画布
           if (event.type === 'wheel' || event.type === 'dblclick') return true
           return event.target === svgRef.current
         })
@@ -571,10 +592,10 @@ export default function KnowledgeDetailPage() {
           connectedNodes: graph.nodes.filter(n => connectedNames.has(n.id)).slice(0, 20),
           totalConnections: connectionList.length,
         })
-        // Fetch richer detail from backend
+        // 从后端获取更完整的详情
         fetchNodeDetail(d.id)
 
-        // Smoothly center viewport on the clicked node
+        // 平滑居中到被点击节点
         if (d.x !== undefined && d.y !== undefined) {
           const currentTransform = d3.zoomTransform(svg.node())
           const targetX = W / 2 - d.x * currentTransform.k
@@ -600,7 +621,7 @@ export default function KnowledgeDetailPage() {
     } catch(e) { console.warn('D3 error:', e) }
   }, [graph, graphSearch])
 
-  // Graph effect: fingerprint-gated
+  // 图谱副作用：通过指纹控制触发
   useEffect(() => {
     if (activeTab !== 'graph') {
       const svg = svgRef.current
@@ -647,7 +668,7 @@ export default function KnowledgeDetailPage() {
         const targetId = d.target?.id ?? d.target
         return sourceId === selectedNode.id || targetId === selectedNode.id ? 0.9 : 0.15
       })
-    } catch (_) { /* SVG not yet rendered */ }
+    } catch (_) { /* SVG 尚未渲染 */ }
   }, [selectedNode, activeTab])
 
   const handleZoom = (dir) => {
@@ -685,6 +706,20 @@ export default function KnowledgeDetailPage() {
     setBatchDeleting(false)
   }
 
+  const handleReprocessMultimodal = async () => {
+    if (!kbName) return
+    setReprocessingMultimodal(true)
+    try {
+      const result = await api.reprocessMultimodal(kbName)
+      showToast(result.message || '多模态补处理已提交', result.status === 'ok' ? 'success' : 'info')
+      loadKBData()
+    } catch (e) {
+      showToast('多模态补处理失败: ' + e.message, 'error')
+    } finally {
+      setReprocessingMultimodal(false)
+    }
+  }
+
   const handleImageSearch = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -704,7 +739,7 @@ export default function KnowledgeDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Page Header */}
+      {/* 页面头部 */}
       <div className="page-header page-header-divider">
         <div className="flex items-center gap-3">
           <button
@@ -715,13 +750,13 @@ export default function KnowledgeDetailPage() {
             <ArrowLeft size={18} className="text-ink-muted" />
           </button>
           <div>
-            <h2 className="page-title">📚 {kbName}</h2>
+            <h2 className="page-title">{kbName}</h2>
             <p className="page-subtitle">文档管理 · 知识图谱（含实体浏览）</p>
           </div>
         </div>
       </div>
 
-      {/* Stats for this KB */}
+      {/* 当前知识库统计 */}
       <div className="grid grid-cols-4 gap-5">
         {[
           { label: '文档总数', val: stats.documents || 0, color: 'text-sky-500' },
@@ -736,11 +771,11 @@ export default function KnowledgeDetailPage() {
         ))}
       </div>
 
-      {/* Tab Bar */}
+      {/* 标签栏 */}
       <div className="flex items-center gap-1 p-1 rounded-xl bg-cloud-200 w-fit">
         {[
-          { key: 'documents', icon: '📄', label: '文档管理' },
-          { key: 'graph', icon: '🔗', label: '知识图谱' },
+          { key: 'documents', label: '文档管理' },
+          { key: 'graph', label: '知识图谱' },
         ].map(tab => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-all ${
@@ -748,12 +783,12 @@ export default function KnowledgeDetailPage() {
                 ? 'bg-white text-ink-primary shadow-cloud-sm'
                 : 'text-ink-muted hover:text-ink-body'
             }`}>
-            <span>{tab.icon}</span> {tab.label}
+            {tab.label}
           </button>
         ))}
       </div>
 
-      {/* ── Tab: Documents ── */}
+      {/* ── 标签页：文档 ── */}
       {activeTab === 'documents' && (
       <>
         <div className="card p-5">
@@ -767,6 +802,25 @@ export default function KnowledgeDetailPage() {
             setMultimodal={setMultimodal}
           />
         </div>
+
+        {isAdmin && (
+          <div className="card p-4 flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-semibold text-ink-body">知识库处理维护</h3>
+              <p className="text-xs text-ink-muted mt-1">
+                对当前知识库中尚未完成图片、表格、公式等多模态处理的文档执行补处理。
+              </p>
+            </div>
+            <button
+              className="btn-secondary text-xs py-2 px-3 shrink-0"
+              onClick={handleReprocessMultimodal}
+              disabled={reprocessingMultimodal}
+            >
+              {reprocessingMultimodal ? <Loader2 size={13} className="animate-spin" /> : <Zap size={13} />}
+              补处理多模态
+            </button>
+          </div>
+        )}
 
         <div className="card p-4 space-y-3">
           <div className="flex items-center justify-between">
@@ -855,7 +909,7 @@ export default function KnowledgeDetailPage() {
               <div className="py-10 text-center">
                 <FileText size={36} className="mx-auto mb-3 text-cloud-400" />
                 <p className="text-sm text-ink-muted">暂无文档</p>
-                <p className="text-xs text-ink-muted mt-1">上传文档或导入内容开始构建知识库 🚀</p>
+                <p className="text-xs text-ink-muted mt-1">上传文档或导入内容以开始构建知识库</p>
               </div>
             )}
           </div>
@@ -863,10 +917,10 @@ export default function KnowledgeDetailPage() {
       </>
       )}
 
-      {/* ── Tab: Graph + Entities (merged) ── */}
+      {/* ── 标签页：图谱与实体（合并）── */}
       {activeTab === 'graph' && (
         <div className="flex gap-4 h-[520px]">
-          {/* Graph panel */}
+          {/* 图谱面板 */}
           <div className="flex-1 card p-4 flex flex-col min-w-0">
             <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
               <div className="flex items-center gap-2">
@@ -883,7 +937,7 @@ export default function KnowledgeDetailPage() {
                 <button className="btn-ghost text-xs py-1.5 px-2.5" onClick={() => handleZoom('in')} title="放大"><ZoomIn size={14}/></button>
                 <button className="btn-ghost text-xs py-1.5 px-2.5" onClick={() => handleZoom('out')} title="缩小"><ZoomOut size={14}/></button>
                 <button className="btn-ghost text-xs py-1.5 px-2.5" onClick={() => handleZoom('reset')} title="重置"><RotateCcw size={14}/></button>
-                {/* ── Graph edit buttons ── */}
+                {/* ── 图谱编辑按钮 ── */}
                 <span className="w-px h-5 bg-cloud-300 mx-0.5" />
                 <button className="btn-primary text-xs py-1.5 px-2.5" onClick={() => setShowCreateNodeModal(true)} title="新增实体">
                   <Plus size={13}/><span className="ml-1 hidden sm:inline">新增</span>
@@ -918,7 +972,7 @@ export default function KnowledgeDetailPage() {
             </div>
           </div>
 
-          {/* Entity sidebar */}
+          {/* 实体侧栏 */}
           <div className="w-72 shrink-0 card p-4 flex flex-col overflow-hidden">
             {nodeDetails ? (
               <>
@@ -938,7 +992,7 @@ export default function KnowledgeDetailPage() {
                     </div>
                   ) : (
                     <h3 className="text-sm font-semibold text-ink-body truncate flex-1">
-                      🔗 "{nodeDetails.node.label || nodeDetails.node.id}"
+                      "{nodeDetails.node.label || nodeDetails.node.id}"
                     </h3>
                   )}
                   <button
@@ -950,7 +1004,7 @@ export default function KnowledgeDetailPage() {
                   </button>
                 </div>
 
-                {/* ── Node actions ── */}
+                {/* ── 节点操作 ── */}
                 <div className="flex items-center gap-1.5 mb-2 flex-wrap">
                   <button
                     className="btn-ghost text-2xs py-0.5 px-1.5 text-ink-muted hover:text-sky-600"
@@ -964,7 +1018,7 @@ export default function KnowledgeDetailPage() {
                   ><Trash2 size={10}/> <span className="ml-0.5">删除</span></button>
                 </div>
 
-                {/* ── API detail info ── */}
+                {/* ── 接口详情信息 ── */}
                 {graphNodeDetail && (
                   <div className="mb-2 px-2 py-1.5 bg-sky-50/50 rounded-lg text-xs space-y-0.5">
                     <div className="flex justify-between"><span className="text-ink-muted">类型</span><span>{graphNodeDetail.entity_type || '—'}</span></div>
@@ -1026,7 +1080,7 @@ export default function KnowledgeDetailPage() {
             ) : (
               <>
                 <h3 className="text-sm font-semibold text-ink-body mb-3">
-                  🏷️ 全部实体 ({entities.length})
+                  全部实体 ({entities.length})
                 </h3>
                 <div className="space-y-1 flex-1 overflow-y-auto">
                   {entities.slice(0, 200).map((e, i) => (
@@ -1055,7 +1109,7 @@ export default function KnowledgeDetailPage() {
                   {entities.length === 0 && (
                     <div className="py-12 text-center">
                       <p className="text-xs text-ink-muted">暂无实体数据</p>
-                      <p className="text-2xs text-ink-muted mt-1">上传文档后将自动抽取实体 🏷️</p>
+                      <p className="text-2xs text-ink-muted mt-1">上传文档后将自动抽取实体</p>
                     </div>
                   )}
                 </div>
@@ -1065,9 +1119,9 @@ export default function KnowledgeDetailPage() {
         </div>
       )}
 
-      {/* ── Tab: Entities (deprecated — merged into graph tab) ── */}
+      {/* ── 标签页：实体（已弃用，合并至图谱标签页）── */}
 
-      {/* Doc Detail Drawer */}
+      {/* 文档详情抽屉 */}
       {detailDoc && (
         <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setDetailDoc(null)} role="dialog" aria-modal="true" aria-label="文档详情">
           <div className="absolute inset-0 bg-sky-900/20" />
@@ -1105,7 +1159,7 @@ export default function KnowledgeDetailPage() {
         </div>
       )}
 
-      {/* Document Delete Confirm */}
+      {/* 文档删除确认 */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDeleteConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除文档">
           <div className="absolute inset-0 bg-sky-900/20" />
@@ -1123,13 +1177,13 @@ export default function KnowledgeDetailPage() {
         </div>
       )}
 
-      {/* ── Create Node Modal ── */}
+      {/* ── 创建节点弹窗 ── */}
       {showCreateNodeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowCreateNodeModal(false)} role="dialog" aria-modal="true" aria-label="新增实体">
           <div className="absolute inset-0 bg-sky-900/20" />
           <div className="relative card p-6 w-96" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-ink-primary">➕ 新增实体</h3>
+              <h3 className="font-semibold text-ink-primary">新增实体</h3>
               <button className="btn-ghost p-1" onClick={() => setShowCreateNodeModal(false)}><X size={16}/></button>
             </div>
             <div className="space-y-3">
@@ -1167,13 +1221,13 @@ export default function KnowledgeDetailPage() {
         </div>
       )}
 
-      {/* ── Create Edge Modal ── */}
+      {/* ── 创建边弹窗 ── */}
       {showCreateEdgeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowCreateEdgeModal(false)} role="dialog" aria-modal="true" aria-label="创建连线">
           <div className="absolute inset-0 bg-sky-900/20" />
           <div className="relative card p-6 w-96" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-ink-primary">🔗 创建连线</h3>
+              <h3 className="font-semibold text-ink-primary">创建连线</h3>
               <button className="btn-ghost p-1" onClick={() => setShowCreateEdgeModal(false)}><X size={16}/></button>
             </div>
             <div className="space-y-3">
@@ -1189,7 +1243,7 @@ export default function KnowledgeDetailPage() {
                   onChange={e => setNewEdgeForm(p => ({ ...p, target_entity: e.target.value }))}
                   list="entity-datalist-tgt" />
               </div>
-              {/* datalist with all known entities (auto-extracted + user-created) */}
+              {/* 包含全部已知实体的数据列表（自动抽取 + 用户创建） */}
               <datalist id="entity-datalist-src">
                 {allEntityNames.map(name => <option key={name} value={name} />)}
               </datalist>
@@ -1224,7 +1278,7 @@ export default function KnowledgeDetailPage() {
         </div>
       )}
 
-      {/* ── Delete Node Confirm ── */}
+      {/* ── 删除节点确认 ── */}
       {showDeleteNodeConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowDeleteNodeConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除实体">
           <div className="absolute inset-0 bg-sky-900/20" />
@@ -1241,7 +1295,7 @@ export default function KnowledgeDetailPage() {
         </div>
       )}
 
-      {/* ── Chunk Detail Drawer ── */}
+      {/* ── 分块详情抽屉 ── */}
       <AnimatePresence>
         {chunkPanelDoc && <ChunkDetailDrawer
           doc={chunkPanelDoc}
@@ -1258,7 +1312,7 @@ export default function KnowledgeDetailPage() {
         />}
       </AnimatePresence>
 
-      {/* Toast */}
+      {/* 提示消息 */}
       <AnimatePresence>
         {toast && (
           <motion.div

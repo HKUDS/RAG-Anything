@@ -1,8 +1,8 @@
-import { memo } from 'react'
+﻿import { memo } from 'react'
 import { Handle, Position } from '@xyflow/react'
 import { ICON_MAP, getNodeType } from './nodeTypes'
 
-// Brand-aligned run-status colors: sky (running), sage (done), rose (error)
+// 与品牌色保持一致的运行状态颜色：蓝色为运行中，绿色为完成，红色为错误
 const RUN_COLORS = {
   running: { bg: '#f4f8fc', border: '#9dc6e5', text: '#5b9bd5', pulse: true },
   done:    { bg: '#f5f8f3', border: '#adc9a0', text: '#6b9e7a', pulse: false },
@@ -36,7 +36,7 @@ export default memo(function WorkflowNode({ data, selected }) {
         className="flex items-center gap-2 px-3 py-2.5 rounded-[11px] min-w-[140px]"
         style={{ background: def?.bgColor || '#fff', border: `1px solid ${def?.borderColor || '#d6e5f2'}` }}
       >
-        {/* Input handle */}
+        {/* 输入连接点 */}
         {(def?.inputs ?? 1) > 0 && (
           <Handle
             type="target"
@@ -46,7 +46,7 @@ export default memo(function WorkflowNode({ data, selected }) {
           />
         )}
 
-        {/* Icon */}
+        {/* 图标 */}
         {Icon && (
           <div
             className="flex items-center justify-center w-7 h-7 rounded-lg flex-shrink-0"
@@ -56,12 +56,12 @@ export default memo(function WorkflowNode({ data, selected }) {
           </div>
         )}
 
-        {/* Label */}
+        {/* 标签 */}
         <span className="text-xs font-medium text-ink-body truncate max-w-[120px]">
           {data.label || def?.label}
         </span>
 
-        {/* Output handle */}
+        {/* 输出连接点 */}
         {(def?.outputs ?? 1) > 0 && (
           <Handle
             type="source"

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+﻿import { useState, useEffect, useCallback } from 'react'
 import { Trash2, Edit3, Loader2, Shield, User, Users, Search, UserPlus, Filter } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import Pagination from '../components/Pagination'
@@ -41,6 +41,29 @@ const ROLE_LABELS = {
   student:     '学生',
 }
 
+const PERMISSION_LABELS = {
+  'users:read': '用户查看',
+  'users:write': '用户编辑',
+  'users:delete': '用户删除',
+  'kb:read': '知识库查看',
+  'kb:write': '知识库编辑',
+  'kb:delete': '知识库删除',
+  'agent:read': '智能体查看',
+  'agent:write': '智能体编辑',
+  'agent:delete': '智能体删除',
+  'settings:read': '设置查看',
+  'settings:write': '设置编辑',
+  'audit:read': '审计查看',
+  'monitor:read': '监控查看',
+  'analytics:read': '分析查看',
+  'workflow:read': '工作流查看',
+  'workflow:write': '工作流编辑',
+  'graph:read': '图谱查看',
+  'graph:write': '图谱编辑',
+  'autorepair:read': '汽修查看',
+  'autorepair:write': '汽修编辑',
+}
+
 export default function AdminUsersPage() {
   const { user: me } = useAuth()
   const [users, setUsers] = useState([])
@@ -55,7 +78,7 @@ export default function AdminUsersPage() {
   const [roles, setRoles] = useState([])
   const [deletingId, setDeletingId] = useState(null)
 
-  // Modals
+  // 弹窗
   const [showCreate, setShowCreate] = useState(false)
   const [editUser, setEditUser] = useState(null)
 
@@ -110,14 +133,14 @@ export default function AdminUsersPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* 头部 */}
       <div className="page-header page-header-divider">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-amber-50 flex items-center justify-center">
             <Users size={18} className="text-amber-600" />
           </div>
           <div>
-            <h2 className="page-title">👥 用户管理</h2>
+            <h2 className="page-title">用户管理</h2>
             <p className="page-subtitle">共 {total} 个用户</p>
           </div>
         </div>
@@ -130,7 +153,7 @@ export default function AdminUsersPage() {
         <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs">{error}</div>
       )}
 
-      {/* Toolbar */}
+      {/* 工具栏 */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 min-w-[180px] max-w-xs">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
@@ -152,7 +175,44 @@ export default function AdminUsersPage() {
         </select>
       </div>
 
-      {/* Table */}
+      {roles.length > 0 && (
+        <div className="card p-4 space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold text-ink-body">角色权限矩阵</h3>
+            <p className="text-xs text-ink-muted mt-1">查看每个角色可访问的能力边界，用户分配仍在编辑用户弹窗中完成。</p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {roles.map(role => {
+              const permissions = role.permissions || []
+              return (
+                <div key={role.id || role.name} className="rounded-xl border border-cloud-300 bg-cloud-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`text-xs px-2 py-1 rounded-lg border ${ROLE_COLORS[role.name] || ROLE_COLORS.student}`}>
+                      {ROLE_LABELS[role.name] || role.name}
+                    </span>
+                    <span className="text-2xs text-ink-muted">{permissions.length} 项权限</span>
+                  </div>
+                  <p className="text-xs text-ink-muted line-clamp-2">{role.description || '暂无角色说明'}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {permissions.slice(0, 12).map(perm => (
+                      <span key={perm} className="text-2xs px-1.5 py-0.5 rounded-md bg-white border border-cloud-200 text-ink-muted">
+                        {PERMISSION_LABELS[perm] || perm}
+                      </span>
+                    ))}
+                    {permissions.length > 12 && (
+                      <span className="text-2xs px-1.5 py-0.5 rounded-md bg-sky-50 border border-sky-200 text-sky-600">
+                        +{permissions.length - 12}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 表格 */}
       <div className="card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -217,7 +277,7 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      {/* Modals */}
+      {/* 弹窗 */}
       <CreateUserModal isOpen={showCreate} onClose={() => setShowCreate(false)} onCreated={loadUsers} roles={roles} />
       <EditUserModal user={editUser} roles={roles} isOpen={!!editUser} onClose={() => setEditUser(null)} onUpdated={loadUsers} />
     </div>

@@ -425,9 +425,9 @@ async def pg_get_conversation(
 
     thread = _thread_row_to_dict(thread_row)
 
-    # Fetch messages
+    # Fetch messages (including DB id for per-message edit support)
     msg_rows = await pool.fetch(
-        "SELECT role, content, metadata, created_at "
+        "SELECT id, role, content, metadata, created_at "
         "FROM agent_messages "
         "WHERE thread_id = $1 "
         "ORDER BY created_at ASC",
@@ -435,6 +435,7 @@ async def pg_get_conversation(
     )
     thread["messages"] = [
         {
+            "msg_id": r["id"],
             "role": r["role"],
             "content": r["content"],
             **(json.loads(r["metadata"]) if isinstance(r["metadata"], str) else r["metadata"]),
@@ -544,6 +545,59 @@ async def pg_add_message(
                 )
 
     return True
+
+
+async def pg_update_message(
+    thread_id: str,
+    message_id: int,
+    content: str,
+) -> Optional[dict[str, Any]]:
+    """Update a single message's content within a conversation thread.
+
+    This is the core data access function for the "edit agent answer"
+    feature.  It replaces the message content in-place and records
+    an ``edited_at`` timestamp inside the message's metadata JSONB
+    column so the frontend can display an "(已编辑)" indicator.
+
+    Args:
+        thread_id: Conversation thread identifier (double-validation).
+        message_id: The agent_messages.id (BIGSERIAL primary key).
+        content: New message text.  Must be ≤ 10000 chars (DB constraint).
+
+    Returns:
+        Updated message dict with ``msg_id``, or None if not found.
+    """
+    if len(content) > 10000:
+        raise ValueError("消息内容不能超过 10000 字符")
+
+    pool = _get_pool()
+    now = datetime.now(timezone.utc)
+
+    row = await pool.fetchrow(
+        """
+        UPDATE agent_messages
+        SET content = $1,
+            metadata = jsonb_set(
+                COALESCE(metadata, '{}'),
+                '{edited_at}',
+                to_jsonb($2::text),
+                true
+            )
+        WHERE id = $3 AND thread_id = $4
+        RETURNING id, role, content, metadata, created_at
+        """,
+        content, now.isoformat(), message_id, thread_id,
+    )
+
+    if not row:
+        return None
+
+    return {
+        "msg_id": row["id"],
+        "role": row["role"],
+        "content": row["content"],
+        **(json.loads(row["metadata"]) if isinstance(row["metadata"], str) else row["metadata"]),
+    }
 
 
 async def pg_update_conversation(
@@ -871,6 +925,7 @@ __all__ = [
     "pg_get_conversation",
     "pg_create_conversation",
     "pg_add_message",
+    "pg_update_message",
     "pg_update_conversation",
     "pg_delete_conversation",
     # Summary

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { ChevronUp, ChevronDown, Clock, CheckCircle2, XCircle, History } from 'lucide-react'
 
@@ -22,7 +22,7 @@ export default function WorkflowRunPanel({ runs, currentRun, onSelectRun }) {
 
   return (
     <div className="border-t border-cloud-300 bg-white flex-shrink-0">
-      {/* Header bar */}
+      {/* 头部栏 */}
       <button
         onClick={() => setCollapsed(!collapsed)}
         className="w-full flex items-center justify-between px-4 py-2 hover:bg-cloud-200 transition-colors"
@@ -40,7 +40,7 @@ export default function WorkflowRunPanel({ runs, currentRun, onSelectRun }) {
           )}
         </div>
         <div className="flex items-center gap-2">
-          {/* History dropdown */}
+          {/* 历史记录下拉框 */}
           {runs.length > 1 && (
             <select
               value={currentRun?.run_id || ''}
@@ -50,7 +50,7 @@ export default function WorkflowRunPanel({ runs, currentRun, onSelectRun }) {
             >
               {runs.map((r) => (
                 <option key={r.run_id} value={r.run_id}>
-                  {new Date(r.started_at).toLocaleTimeString()} - {r.status === 'completed' ? '✓' : r.status === 'failed' ? '✗' : '…'} {r.workflow_name}
+                  {new Date(r.started_at).toLocaleTimeString()} - {r.status === 'completed' ? '完成' : r.status === 'failed' ? '失败' : '运行中'} {r.workflow_name}
                 </option>
               ))}
             </select>
@@ -59,7 +59,7 @@ export default function WorkflowRunPanel({ runs, currentRun, onSelectRun }) {
         </div>
       </button>
 
-      {/* Panel body */}
+      {/* 面板主体 */}
       <AnimatePresence>
         {!collapsed && currentRun && (
           <motion.div
@@ -70,7 +70,7 @@ export default function WorkflowRunPanel({ runs, currentRun, onSelectRun }) {
             className="overflow-hidden"
           >
             <div className="px-4 pb-4 space-y-3 max-h-60 overflow-y-auto">
-              {/* Node results */}
+              {/* 节点结果 */}
               {currentRun.node_results?.map((nr) => (
                 <div key={nr.node_id} className="flex items-start gap-2 text-xs">
                   <div
@@ -94,7 +94,7 @@ export default function WorkflowRunPanel({ runs, currentRun, onSelectRun }) {
                     {nr.data?.search_mode && (
                       <span className={`ml-2 px-1.5 py-0.5 rounded text-2xs font-medium ${
                         nr.data.search_mode === 'in_memory'
-                          ? 'bg-violet-100 text-violet-600'
+                          ? 'bg-sky-50 text-sky-600'
                           : 'bg-amber-100 text-amber-600'
                       }`}>
                         {nr.data.search_mode === 'in_memory' ? '内存检索' : '知识库'}
@@ -107,7 +107,7 @@ export default function WorkflowRunPanel({ runs, currentRun, onSelectRun }) {
                 </div>
               ))}
 
-              {/* Final output */}
+              {/* 最终输出 */}
               {currentRun.final_output && currentRun.status === 'completed' && (
                 <div className="mt-3 p-3 rounded-xl bg-cloud-200 border border-cloud-200">
                   <pre className="text-xs text-ink-body whitespace-pre-wrap font-sans leading-relaxed">

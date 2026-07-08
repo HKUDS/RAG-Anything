@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Loader2, ScrollText, ShieldOff, UserPlus, UserCog, Trash2, ShieldAlert } from 'lucide-react'
+import { Activity, Database, Loader2, ScrollText, ShieldOff, UserPlus, UserCog, Trash2, ShieldAlert } from 'lucide-react'
 import Pagination from '../components/Pagination'
+import { api } from '../utils/api'
 
 const AUTH_TOKEN = () => {
   const saved = localStorage.getItem('raganything_auth')
@@ -66,6 +67,7 @@ export default function AdminAuditLogsPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [actionFilter, setActionFilter] = useState('')
+  const [auditHealth, setAuditHealth] = useState(null)
 
   const loadLogs = useCallback(async () => {
     try {
@@ -88,6 +90,11 @@ export default function AdminAuditLogsPage() {
   }, [page, actionFilter])
 
   useEffect(() => { loadLogs() }, [loadLogs])
+  useEffect(() => {
+    api.getAuditHealth()
+      .then(setAuditHealth)
+      .catch(err => setAuditHealth({ status: 'degraded', error: err.message }))
+  }, [])
 
   if (loading) {
     return (
@@ -105,7 +112,7 @@ export default function AdminAuditLogsPage() {
             <ScrollText size={18} className="text-sky-500 dark:text-sky-400" />
           </div>
           <div>
-            <h2 className="page-title">📋 审计日志</h2>
+            <h2 className="page-title">审计日志</h2>
             <p className="page-subtitle">共 {total} 条记录</p>
           </div>
         </div>
@@ -114,6 +121,30 @@ export default function AdminAuditLogsPage() {
       {error && (
         <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs">{error}</div>
       )}
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        <div className={`card p-4 ${auditHealth?.status === 'degraded' ? 'border-amber-200 bg-amber-50' : ''}`}>
+          <div className="flex items-center gap-2 text-xs text-ink-muted mb-1">
+            <Activity size={14} /> 审计状态
+          </div>
+          <p className={`text-lg font-semibold ${auditHealth?.status === 'degraded' ? 'text-amber-600' : 'text-sky-600'}`}>
+            {auditHealth?.status || '检测中'}
+          </p>
+        </div>
+        <div className="card p-4">
+          <div className="flex items-center gap-2 text-xs text-ink-muted mb-1">
+            <Database size={14} /> 审计后端
+          </div>
+          <p className="text-lg font-semibold text-ink-primary">{auditHealth?.backend || '—'}</p>
+        </div>
+        <div className="card p-4">
+          <div className="flex items-center gap-2 text-xs text-ink-muted mb-1">
+            <ScrollText size={14} /> 记录总数
+          </div>
+          <p className="text-lg font-semibold text-ink-primary">{(auditHealth?.total_records ?? total).toLocaleString()}</p>
+          {auditHealth?.error && <p className="text-xs text-amber-600 mt-1 truncate">{auditHealth.error}</p>}
+        </div>
+      </div>
 
       <div className="flex items-center gap-3">
         <select className="input-field text-sm py-2" value={actionFilter} onChange={e => { setActionFilter(e.target.value); setPage(1) }}>

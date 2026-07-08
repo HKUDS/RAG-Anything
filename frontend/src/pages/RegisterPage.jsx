@@ -79,18 +79,18 @@ export default function RegisterPage() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-sm"
       >
-        {/* Logo */}
+        {/* 标识 */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-sky-500 shadow-cloud-md mb-4">
             <BookOpen size={26} className="text-white" />
           </div>
           <h1 className="font-display font-semibold text-2xl tracking-tight text-ink-primary dark:text-cloud-200">
-            RAG<span className="text-sky-500 dark:text-sky-400">Anything</span>
+            知元
           </h1>
-          <p className="text-sm text-ink-muted dark:text-cloud-500 mt-2">创建账号，开启知识管理之旅 🌱</p>
+          <p className="text-sm text-ink-muted dark:text-cloud-500 mt-2">创建账号，开始使用多模态教学知识服务平台</p>
         </div>
 
-        {/* Card */}
+        {/* 卡片 */}
         <div className="card p-6 shadow-cloud dark:bg-sky-900/30 dark:border-sky-800/30">
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
@@ -195,7 +195,7 @@ export default function RegisterPage() {
         </div>
 
         <p className="text-center text-2xs text-ink-muted dark:text-cloud-500 mt-6">
-          📚 让知识管理变得温暖有序
+          知元 · 多模态教学知识服务平台
         </p>
       </motion.div>
     </div>

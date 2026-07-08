@@ -48,6 +48,7 @@ class AgenticRAG:
         llm_func: Callable,
         max_steps: int = 5,
         mode: str = "react",
+        max_response_tokens: int = 4096,
         system_prompt_override: Optional[str] = None,
     ):
         """
@@ -62,6 +63,11 @@ class AgenticRAG:
         self.llm_func = llm_func
         self.max_steps = max_steps
         self.mode = mode
+        try:
+            parsed_max_tokens = int(max_response_tokens)
+        except (TypeError, ValueError):
+            parsed_max_tokens = 4096
+        self.max_response_tokens = max(512, min(16384, parsed_max_tokens))
         self.system_prompt_override = system_prompt_override
         self.tools: dict[str, Tool] = {}
 
@@ -543,7 +549,7 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
                 Thought+Action+JSON（~100-200 tokens），使用 max_tokens=1024
                 以减少不必要的 token 预算开销。
         """
-        max_tokens = 4096 if is_final_step else 2048
+        max_tokens = self.max_response_tokens if is_final_step else min(2048, self.max_response_tokens)
 
         try:
             response = await self.llm_func(
@@ -609,7 +615,7 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
                 prompt=final_prompt,
                 system_prompt=system_prompt,
                 history_messages=[],
-                max_tokens=4096,
+                max_tokens=self.max_response_tokens,
                 temperature=0.0,
             )
             return response.strip() if isinstance(response, str) else str(response)
@@ -635,7 +641,7 @@ Action Input: <JSON 格式的工具参数 或 最终答案>
                 prompt=user_prompt,
                 system_prompt=system_prompt,
                 history_messages=[],
-                max_tokens=2048,
+                max_tokens=self.max_response_tokens,
                 temperature=0.0,
             )
             response = response.strip() if isinstance(response, str) else str(response)

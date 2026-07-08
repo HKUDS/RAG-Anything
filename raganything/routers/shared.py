@@ -751,6 +751,64 @@ def _filter_images_by_relevance(
     return _filtered
 
 
+async def recall_query_images(
+    instance,
+    query: str,
+    kb_name: str,
+    ctx: str = "",
+) -> tuple[list[str], str, str]:
+    """Recall query-related images with a unified multi-stage strategy."""
+    source = "none"
+    backfill_text = ""
+    raw_paths = extract_image_paths(ctx)
+
+    if raw_paths:
+        source = "direct"
+    else:
+        raw_paths, backfill_text = await _discover_images_via_graph(
+            instance, query, kb_name, ctx
+        )
+        if raw_paths:
+            source = "graph"
+        else:
+            raw_paths, backfill_text = await _bigram_image_scan(
+                kb_dir(kb_name), query, ctx, instance
+            )
+            if raw_paths:
+                source = "bigram"
+
+    raw_count = len(raw_paths)
+    valid_paths = _validate_image_paths(raw_paths)
+    filtered_paths = list(valid_paths)
+
+    if source in ("graph", "bigram") and valid_paths:
+        relevance_ctx = ctx or ""
+        if backfill_text:
+            relevance_ctx = (
+                f"{relevance_ctx}\n\n{backfill_text}"
+                if relevance_ctx else backfill_text
+            )
+        filtered_paths = _filter_images_by_relevance(
+            valid_paths,
+            query,
+            relevance_ctx,
+            min_overlap=1,
+        )
+        if not filtered_paths and valid_paths:
+            filtered_paths = valid_paths[:1]
+
+    final_paths = filtered_paths[:3]
+    lightrag_logger.info(
+        "[IMG-RECALL] KB=%s source=%s raw=%d filtered=%d final=%d",
+        kb_name,
+        source,
+        raw_count,
+        len(filtered_paths),
+        len(final_paths),
+    )
+    return final_paths, backfill_text, source
+
+
 # ── Thinking/Progress Translation ──────────────────────────
 
 THINKING_PATTERNS = [
@@ -847,6 +905,7 @@ __all__ = [
     "server_logger", "extract_image_paths",
     "_discover_images_via_graph", "_build_backfill_context",
     "_bigram_image_scan",
+    "recall_query_images",
     "THINKING_PATTERNS", "QUERY_SYSTEM_PROMPT",
     "_is_thinking_msg", "_translate_thinking_msg",
     # Re-exports from other modules

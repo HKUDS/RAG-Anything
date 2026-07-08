@@ -1,7 +1,13 @@
-const API_BASE = '/api'
+﻿const API_BASE = '/api'
 const UPLOAD_TIMEOUT_MS = 600_000 // 600s — aligned with nginx proxy_read_timeout
+const KB_STATS_TIMEOUT_MS = 8_000
+const KB_LIST_TIMEOUT_MS = 8_000
+const KB_LIST_CACHE_TTL_MS = 5_000
 
 let currentKB = ''
+let kbListInFlight = null
+let kbListCache = null
+let kbListCacheAt = 0
 export function setCurrentKB(name) { currentKB = name }
 export function getCurrentKB() { return currentKB }
 
@@ -37,6 +43,12 @@ function kbUrl(path) {
   return `${path}${sep}kb=${currentKB}`
 }
 
+function clearKBListCache() {
+  kbListInFlight = null
+  kbListCache = null
+  kbListCacheAt = 0
+}
+
 async function request(url, options = {}) {
   if (!currentKB) {
     console.warn(`[api] 跳过请求 ${url}：currentKB 未初始化`)
@@ -60,11 +72,39 @@ async function request(url, options = {}) {
 }
 
 async function fetchJson(url, options = {}) {
-  const res = await fetch(`${API_BASE}${url}`, {
-    headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
-    ...options,
-    headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
-  })
+  const { timeoutMs = 0, signal, ...restOptions } = options
+  const controller = timeoutMs > 0 ? new AbortController() : null
+  const activeSignal = controller ? controller.signal : signal
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), timeoutMs)
+    : null
+  const abortForwarder = controller && signal
+    ? () => controller.abort()
+    : null
+
+  if (signal && abortForwarder) {
+    if (signal.aborted) controller.abort()
+    else signal.addEventListener('abort', abortForwarder, { once: true })
+  }
+
+  let res
+  try {
+    res = await fetch(`${API_BASE}${url}`, {
+      headers: authHeaders({ 'Content-Type': 'application/json', ...(restOptions.headers || {}) }),
+      ...restOptions,
+      signal: activeSignal,
+      headers: authHeaders({ 'Content-Type': 'application/json', ...(restOptions.headers || {}) }),
+    })
+  } catch (err) {
+    if (timeoutId) clearTimeout(timeoutId)
+    if (signal && abortForwarder) signal.removeEventListener('abort', abortForwarder)
+    if (err.name === 'AbortError') throw new Error('请求超时，请稍后重试')
+    if (err.message === 'Failed to fetch') throw new Error('网络错误：请检查前后端服务是否正常')
+    throw err
+  }
+
+  if (timeoutId) clearTimeout(timeoutId)
+  if (signal && abortForwarder) signal.removeEventListener('abort', abortForwarder)
   if (res.status === 401) { handleAuthError(); throw new Error('登录已过期，请重新登录') }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: res.statusText }))
@@ -78,7 +118,7 @@ async function fetchJson(url, options = {}) {
 }
 
 export const api = {
-  // Generic HTTP methods
+  // 通用 HTTP 方法
   get: (url, config = {}) => {
     const params = config.params
     const qs = params ? '?' + new URLSearchParams(params).toString() : ''
@@ -88,13 +128,43 @@ export const api = {
   put: (url, data) => fetchJson(url, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (url) => fetchJson(url, { method: 'DELETE' }),
 
-  // KB Management
-  listKBs: () => fetchJson('/kb/list'),
-  createKB: (name, label) => fetchJson(`/kb/create?kb_name=${name}&label=${encodeURIComponent(label)}`, { method: 'POST' }),
-  switchKB: (name) => { currentKB = name; return fetchJson(`/kb/switch?name=${name}`, { method: 'PUT' }) },
-  deleteKB: (name) => fetchJson(`/kb/${name}`, { method: 'DELETE' }),
+  // 知识库管理
+  listKBs: ({ force = false } = {}) => {
+    if (!force && kbListCache && (Date.now() - kbListCacheAt) < KB_LIST_CACHE_TTL_MS) {
+      return Promise.resolve(kbListCache)
+    }
+    if (!kbListInFlight) {
+      kbListInFlight = fetchJson('/kb/list', { timeoutMs: KB_LIST_TIMEOUT_MS })
+        .then(response => {
+          kbListCache = response
+          kbListCacheAt = Date.now()
+          return response
+        })
+        .finally(() => {
+          kbListInFlight = null
+        })
+    }
+    return kbListInFlight
+  },
+  createKB: (name, label) => fetchJson(`/kb/create?kb_name=${name}&label=${encodeURIComponent(label)}`, { method: 'POST' })
+    .then(response => {
+      clearKBListCache()
+      return response
+    }),
+  switchKB: (name) => {
+    currentKB = name
+    return fetchJson(`/kb/switch?name=${name}`, { method: 'PUT' }).then(response => {
+      clearKBListCache()
+      return response
+    })
+  },
+  deleteKB: (name) => fetchJson(`/kb/${name}`, { method: 'DELETE' })
+    .then(response => {
+      clearKBListCache()
+      return response
+    }),
 
-  // Upload (FormData - no Content-Type so browser sets multipart boundary)
+  // 上传（FormData 不手动设置 Content-Type，由浏览器设置 multipart 边界）
   uploadFile: (file, chunking_strategy = '', multimodal = {}) => {
     if (!currentKB) { console.warn('[api] 跳过 upload：currentKB 未初始化'); return Promise.reject(new Error('知识库未就绪')) }
     const fd = new FormData(); fd.append('file', file)
@@ -167,9 +237,15 @@ export const api = {
     return request(`/upload/content${qs ? '?' + qs : ''}`, { method: 'POST', body: JSON.stringify({ content, title }) })
   },
 
-  // Knowledge
+  // 知识相关接口
   getDocuments: () => request('/knowledge/documents'),
   getStats: () => request('/knowledge/stats'),
+  getStatsForKB: (kbName) => fetchJson(`/knowledge/stats?kb=${encodeURIComponent(kbName)}`),
+  getStatsBatchForKBs: (kbNames) => fetchJson('/knowledge/stats/batch', {
+    method: 'POST',
+    body: JSON.stringify({ kb_names: kbNames }),
+    timeoutMs: KB_STATS_TIMEOUT_MS,
+  }),
   getEntities: (limit = 50) => request(`/knowledge/entities?limit=${limit}`),
   getGraph: () => request('/knowledge/graph'),
   getGraphNode: (name) => request(`/knowledge/graph/nodes/${encodeURIComponent(name)}`),
@@ -182,13 +258,14 @@ export const api = {
   deleteDocument: (id) => request(`/knowledge/documents/${id}`, { method: 'DELETE' }),
   deleteDocuments: (ids) => request('/knowledge/documents/batch-delete', { method: 'POST', body: JSON.stringify({ doc_ids: ids }) }),
   retryDocument: (id) => request(`/knowledge/documents/${id}/retry`, { method: 'POST' }),
+  reprocessMultimodal: (kbName) => fetchJson(`/kb/${encodeURIComponent(kbName)}/reprocess-multimodal`, { method: 'POST' }),
   downloadDocumentUrl: (id) => {
     const token = getToken()
     const tokenParam = token ? `&token=${encodeURIComponent(token)}` : ''
     return `${API_BASE}/knowledge/documents/${id}/download?kb=${encodeURIComponent(currentKB)}${tokenParam}`
   },
 
-  // Image similarity search (vision embedding - doubao-embedding-vision)
+  // 图像相似度搜索（视觉嵌入：doubao-embedding-vision）
   imageSearch: (file, topK = 10) => {
     if (!currentKB) { console.warn('[api] 跳过 imageSearch：currentKB 未初始化'); return Promise.reject(new Error('知识库未就绪')) }
     const fd = new FormData(); fd.append('image', file)
@@ -200,31 +277,37 @@ export const api = {
     })
   },
 
-  // Settings (admin only — uses fetchJson to avoid ?kb= param)
+  // 设置接口（仅管理员；使用 fetchJson 避免附加 ?kb= 参数）
   getSettings: () => fetchJson('/settings'),
   updateSettings: (data) => fetchJson('/settings', { method: 'PUT', body: JSON.stringify(data) }),
 
-  // Monitor
+  // 监控
   getStatus: () => fetchJson('/monitor/status'),
   getLLMStats: () => fetchJson('/monitor/stats'),
   getLogs: (limit = 50) => fetchJson(`/monitor/logs?limit=${limit}`),
+  getAuditHealth: () => fetchJson('/admin/health/audit'),
+  getCacheStats: () => fetchJson('/cache/stats'),
+  reloadKB: (kbName) => fetchJson(`/reload-kb/${encodeURIComponent(kbName)}`, { method: 'POST' }),
+  evictKB: (kbName) => fetchJson(`/cache/evict/${encodeURIComponent(kbName)}`, { method: 'POST' }),
+  pinKB: (kbName) => fetchJson(`/cache/pin/${encodeURIComponent(kbName)}`, { method: 'POST' }),
+  unpinKB: (kbName) => fetchJson(`/cache/unpin/${encodeURIComponent(kbName)}`, { method: 'POST' }),
   health: () => fetchJson('/health'),
 
-  // Agents
+  // 智能体
   listAgents: () => fetchJson('/agents'),
   getAgentTemplates: () => fetchJson('/agents/templates'),
   createAgent: (data) => fetchJson('/agents', { method: 'POST', body: JSON.stringify(data) }),
   updateAgent: (id, data) => fetchJson(`/agents/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteAgent: (id) => fetchJson(`/agents/${id}`, { method: 'DELETE' }),
 
-  // Agent Conversations
+  // 智能体会话
   listConversations: (agentId) => fetchJson(`/agents/${agentId}/conversations`),
   createConversation: (agentId, title) => fetchJson(`/agents/${agentId}/conversations?title=${encodeURIComponent(title)}`, { method: 'POST' }),
   updateConversation: (agentId, threadId, title) => fetchJson(`/agents/${agentId}/conversations/${threadId}?title=${encodeURIComponent(title)}`, { method: 'PUT' }),
   getConversation: (agentId, threadId) => fetchJson(`/agents/${agentId}/conversations/${threadId}`),
   deleteConversation: (agentId, threadId) => fetchJson(`/agents/${agentId}/conversations/${threadId}`, { method: 'DELETE' }),
 
-  // Message editing
+  // 消息编辑
   updateMessage: (agentId, threadId, messageId, content) =>
     fetchJson(`/agents/${agentId}/conversations/${threadId}/messages/${messageId}`,
       { method: 'PUT', body: JSON.stringify({ content }) }),

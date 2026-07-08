@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+﻿import { useState, useEffect, useRef } from 'react'
 import { X, Upload, RefreshCw } from 'lucide-react'
 import { getNodeType } from './nodeTypes'
 
@@ -57,7 +57,7 @@ function FilePicker({ value, onChange, filterType }) {
         const data = await res.json()
         setFiles(data.files || [])
       }
-    } catch { /* noop */ } finally { setLoading(false) }
+    } catch { /* 无需处理 */ } finally { setLoading(false) }
   }
 
   useEffect(() => { fetchFiles() }, [filterType])
@@ -76,7 +76,7 @@ function FilePicker({ value, onChange, filterType }) {
         const data = await res.json()
         onChange(data.filename)
       }
-    } catch { /* noop */ } finally { setUploading(false) }
+    } catch { /* 无需处理 */ } finally { setUploading(false) }
   }
 
   const formatSize = (bytes) => {
@@ -112,7 +112,7 @@ function FilePicker({ value, onChange, filterType }) {
                accept={filterType === '全部' ? '*' : filterType} />
       </div>
       {loading && <p className="text-2xs text-ink-muted">加载文件列表...</p>}
-      {value && <p className="text-2xs text-emerald-600">✓ 已选择: {value}</p>}
+      {value && <p className="text-2xs text-emerald-600">已选择: {value}</p>}
     </div>
   )
 }

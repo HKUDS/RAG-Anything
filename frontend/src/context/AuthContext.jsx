@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+﻿import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 
 const AuthContext = createContext(null)
 
@@ -9,7 +9,7 @@ export function AuthProvider({ children }) {
   const [token, setToken] = useState(null)
   const [loading, setLoading] = useState(true)
 
-  // 从 localStorage 恢复登录状态，并验证 token 有效性
+// 从本地存储恢复登录状态，并验证令牌有效性
   useEffect(() => {
     let cancelled = false
     const init = async () => {
@@ -17,7 +17,7 @@ export function AuthProvider({ children }) {
         const saved = localStorage.getItem(AUTH_KEY)
         if (saved) {
           const data = JSON.parse(saved)
-          // 先尝试用 access token 验证
+          // 先尝试用访问令牌验证
           let valid = false
           try {
             const res = await fetch('/api/auth/me', {
@@ -30,7 +30,7 @@ export function AuthProvider({ children }) {
             }
           } catch (_) {}
 
-          // access token 失效 → 尝试用 refresh token 刷新
+          // 访问令牌失效时，尝试用刷新令牌续期
           if (!valid && data.refreshToken) {
             try {
               const refreshRes = await fetch('/api/auth/refresh', {
@@ -42,8 +42,8 @@ export function AuthProvider({ children }) {
                 const refreshed = await refreshRes.json()
                 if (!cancelled) {
                   setToken(refreshed.access_token)
-                  // 刷新后调用 /auth/me 获取完整用户信息（含 role + permissions），
-                  // 避免 user 为 null 导致 hasPermission 误判为 403
+                  // 刷新后调用 /auth/me 获取完整用户信息（含角色与权限），
+                  // 避免用户为空导致权限判断误判为 403
                   let fullUser = null
                   try {
                     const meRes = await fetch('/api/auth/me', {
@@ -54,7 +54,7 @@ export function AuthProvider({ children }) {
                       fullUser = meData.user
                     }
                   } catch (_) {}
-                  // Fallback: /me 失败时尝试从 localStorage 恢复（向后兼容）
+                  // 兜底：/me 失败时尝试从本地存储恢复，保持向后兼容
                   if (!fullUser) {
                     try { const s = localStorage.getItem(AUTH_KEY); fullUser = s ? JSON.parse(s).user : null } catch { fullUser = null }
                   }
@@ -69,7 +69,7 @@ export function AuthProvider({ children }) {
             } catch (_) {}
           }
         }
-      } catch { /* noop */ } finally {
+      } catch { /* 无需处理 */ } finally {
         if (!cancelled) setLoading(false)
       }
     }
@@ -101,7 +101,7 @@ export function AuthProvider({ children }) {
     }
     const data = await res.json()
 
-    // 重新获取完整用户信息（含 role）
+  // 重新获取完整用户信息（含角色）
     let fullUser = data.user
     try {
       const meRes = await fetch('/api/auth/me', {
@@ -141,12 +141,12 @@ export function AuthProvider({ children }) {
           body: JSON.stringify({ refresh_token: refreshToken }),
         })
       }
-    } catch { /* noop */ } finally {
+    } catch { /* 无需处理 */ } finally {
       clearAuth()
     }
   }, [token, clearAuth])
 
-  // 验证 Token 是否仍然有效
+  // 验证令牌是否仍然有效
   const verifyToken = useCallback(async () => {
     if (!token) return false
     try {
@@ -158,14 +158,14 @@ export function AuthProvider({ children }) {
         setUser(data.user)
         return true
       }
-    } catch { /* noop */ }
+    } catch { /* 无需处理 */ }
     clearAuth()
     return false
   }, [token, clearAuth])
 
   const isAdmin = user?.role?.name === 'super_admin'
 
-  // 权限集（从 JWT/role 中解析）
+  // 权限集（从 JWT 或角色中解析）
   const permissions = user?.role?.permissions || []
 
   // 权限检查：用户拥有指定权限则返回 true；管理员自动拥有所有权限

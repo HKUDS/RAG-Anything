@@ -10,13 +10,16 @@
 
 import inspect
 import logging
+import os
 import re
 import time
 import asyncio
+from pathlib import Path
 from typing import Callable, Optional
 
 import jieba
 
+from raganything.routers.shared import recall_query_images
 from .source_tracer import SourceTracer
 from ..knowledge_graph.models import AgentResponse
 
@@ -198,14 +201,109 @@ class QAEngine:
             logger.warning(f"直接检索失败: {e}")
             return ""
 
-    def _post_process(self, query: str, answer_text: str, retrieved_texts: list[str],
-                      start_time: float, trace: list[dict] | None = None) -> AgentResponse:
+    def _guess_kb_name(self) -> str:
+        working_dir = getattr(self.rag_client, "working_dir", None)
+        if not working_dir:
+            return "default"
+        name = Path(str(working_dir)).name
+        if name == "rag_storage":
+            return "default"
+        if name.startswith("rag_storage_"):
+            suffix = name[len("rag_storage_"):].strip()
+            return suffix or "default"
+        return "default"
+
+    @staticmethod
+    def _normalize_optional_page(page) -> int | None:
+        if page is None or page == "":
+            return None
+        try:
+            value = int(page)
+        except (TypeError, ValueError):
+            return None
+        return value if value >= 0 else None
+
+    @staticmethod
+    def _source_relevance(source: str) -> float:
+        return {
+            "direct": 0.95,
+            "graph": 0.82,
+            "bigram": 0.74,
+            "fallback": 0.62,
+            "none": 0.0,
+        }.get(source, 0.6)
+
+    def _parse_caption_from_context(self, ctx: str, image_path: str) -> str:
+        if ctx and image_path:
+            escaped = re.escape(image_path)
+            block_match = re.search(
+                rf"Image Path:\s*{escaped}(.*?)(?:\n\s*Image Path:|\Z)",
+                ctx,
+                re.IGNORECASE | re.DOTALL,
+            )
+            block = block_match.group(1) if block_match else ctx
+            for pattern in (
+                r"Captions?:\s*(.+)",
+                r"Visual Analysis:\s*(.+)",
+                r"\[Image:\s*(.+?)\]",
+            ):
+                match = re.search(pattern, block, re.IGNORECASE)
+                if match:
+                    caption = match.group(1).strip().strip("[]")
+                    if caption:
+                        return caption[:300]
+        filename = os.path.splitext(os.path.basename(image_path or ""))[0].strip()
+        return filename or "Related image"
+
+    def _encode_recalled_paths(self, image_paths: list[str], ctx: str, source: str) -> list[dict]:
+        images: list[dict] = []
+        relevance = self._source_relevance(source)
+        for image_path in image_paths:
+            data_url = _encode_image_data_url(image_path)
+            if not data_url:
+                continue
+            images.append({
+                "data_url": data_url,
+                "caption": self._parse_caption_from_context(ctx, image_path),
+                "page": None,
+                "relevance": relevance,
+            })
+        return images
+
+    def _fallback_match_images(self, query: str, docs: list[dict]) -> list[dict]:
+        images = self._match_relevant_images(query, docs)
+        for image in images:
+            image["page"] = self._normalize_optional_page(image.get("page"))
+            image["caption"] = (image.get("caption") or "Related image").strip() or "Related image"
+            image["relevance"] = float(image.get("relevance", self._source_relevance("fallback")))
+        return images
+
+    async def _recall_images_from_context(self, query: str, ctx: str, docs: list[dict] | None = None) -> list[dict]:
+        docs = docs or []
+        if ctx and self.rag_client is not None:
+            try:
+                image_paths, _backfill_text, source = await recall_query_images(
+                    self.rag_client,
+                    query,
+                    self._guess_kb_name(),
+                    ctx,
+                )
+                images = self._encode_recalled_paths(image_paths, ctx, source)
+                if images:
+                    return images
+            except Exception as exc:
+                logger.warning(f"Shared image recall failed: {exc}")
+        return self._fallback_match_images(query, docs)
+
+    async def _post_process(self, query: str, answer_text: str, retrieved_texts: list[str],
+                            start_time: float, trace: list[dict] | None = None) -> AgentResponse:
         """后处理：图片匹配 + 引用溯源 + 置信度。"""
         docs = [{"content": t, "score": 0.8} for t in retrieved_texts]
         if answer_text:
             docs.insert(0, {"content": answer_text, "score": 0.9})
 
-        images = self._match_relevant_images(query, docs)
+        ctx = "\n\n".join([t for t in retrieved_texts if t])
+        images = await self._recall_images_from_context(query, ctx, docs)
         citations = self.source_tracer.extract_citations(answer_text, docs)
         confidence = self._estimate_confidence(docs)
         ms = round((time.time() - start_time) * 1000, 2)
@@ -242,7 +340,7 @@ class QAEngine:
             if inspect.isawaitable(result):
                 result = await result
             answer_text = result if isinstance(result, str) else str(result)
-            return self._post_process(query, answer_text, [ctx], start_time)
+            return await self._post_process(query, answer_text, [ctx], start_time)
 
         if len(ctx) < 50:
             # 无有效内容 → 直接走 AgenticRAG
@@ -259,7 +357,7 @@ class QAEngine:
             result = await result
         answer_text = result if isinstance(result, str) else str(result)
 
-        response = self._post_process(query, answer_text, [ctx], start_time)
+        response = await self._post_process(query, answer_text, [ctx], start_time)
         if response.confidence < 0.3:
             logger.info(f"Tier 1 置信度过低 ({response.confidence:.2f})，回退 AgenticRAG")
             return await self._agentic_answer(query, start_time)
@@ -284,7 +382,7 @@ class QAEngine:
                   "elapsed_ms": s.elapsed_ms} for s in agent_result.trace]
         contexts = [s.observation for s in agent_result.trace
                     if s.observation and s.action == "search"]
-        return self._post_process(query, agent_result.answer, contexts, start_time, trace)
+        return await self._post_process(query, agent_result.answer, contexts, start_time, trace)
 
     async def answer_stream(self, query: str) -> "AsyncIterator[dict]":
         """两级流式问答 — Tier 1 直接检索+流式LLM → Tier 2 AgenticRAG 兜底。
@@ -337,7 +435,7 @@ class QAEngine:
             yield {
                 "type": "done",
                 "answer": full_answer,
-                "images": self._match_relevant_images(query, docs),
+                "images": await self._recall_images_from_context(query, "\n\n".join(retrieved_contexts), docs),
                 "citations": self.source_tracer.extract_citations(full_answer, docs),
                 "confidence": self._estimate_confidence(docs),
                 "elapsed_ms": round((time.time() - start_time) * 1000, 2),
@@ -377,7 +475,7 @@ class QAEngine:
         yield {
             "type": "done",
             "answer": full_answer,
-            "images": self._match_relevant_images(query, docs),
+            "images": await self._recall_images_from_context(query, ctx, docs),
             "citations": self.source_tracer.extract_citations(full_answer, docs),
             "confidence": self._estimate_confidence(docs),
             "elapsed_ms": round((time.time() - start_time) * 1000, 2),

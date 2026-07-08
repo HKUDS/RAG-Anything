@@ -28,7 +28,7 @@ export default function ProtectedRoute({ children, adminOnly = false, requiredPe
     return <Navigate to="/login" state={{ from: location.pathname }} replace />
   }
 
-  // 权限检查: requiredPermission 优先
+  // 权限检查：优先使用 requiredPermission
   const permToCheck = requiredPermission || (adminOnly ? 'users:read' : null)
   if (permToCheck && !hasPermission(permToCheck)) {
     // 如果用户已登录但无权限，显示 403 而非静默重定向

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+﻿import { useState } from 'react'
 import { Play, Clock, ChevronRight } from 'lucide-react'
 
 export default function VideoSegmentPlayer({ segments = [], onSegmentClick }) {
@@ -29,7 +29,7 @@ export default function VideoSegmentPlayer({ segments = [], onSegmentClick }) {
               activeIdx === i ? 'bg-sky-50 border border-coral-200' : 'bg-cloud-200 border border-cloud-200 hover:bg-cloud-100'
             }`}
           >
-            {/* Thumbnail placeholder */}
+            {/* 缩略图占位 */}
             <div className="w-16 h-10 rounded-lg bg-cloud-300 flex items-center justify-center shrink-0 relative">
               <Play size={14} className="text-ink-muted" />
               {activeIdx === i && (
@@ -61,7 +61,7 @@ export default function VideoSegmentPlayer({ segments = [], onSegmentClick }) {
         ))}
       </div>
 
-      {/* Active segment info */}
+      {/* 当前片段信息 */}
       {activeIdx !== null && segments[activeIdx] && (
         <div className="p-3 rounded-xl bg-sky-50 border border-coral-100 text-xs text-coral-700 space-y-1">
           <p><span className="font-medium">视频:</span> {segments[activeIdx].video_name}</p>

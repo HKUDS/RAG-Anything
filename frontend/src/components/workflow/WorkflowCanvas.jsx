@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react'
+﻿import { useCallback, useRef } from 'react'
 import {
   ReactFlow,
   Controls,
@@ -9,7 +9,7 @@ import {
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { GitBranch } from 'lucide-react'
-// MiniMap node colors — delegate to nodeTypes definitions (single source of truth)
+// MiniMap 节点颜色由 nodeTypes 统一定义，保持单一数据源
 import WorkflowNode from './WorkflowNode'
 import { createDefaultNode, getNodeType } from './nodeTypes'
 

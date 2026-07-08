@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+﻿import { useState, useEffect } from 'react'
 import { X, UserPlus, Loader2, Check, Circle } from 'lucide-react'
 
 function checkPasswordStrength(pw) {
@@ -23,7 +23,7 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
   const [error, setError] = useState('')
   const [strength, setStrength] = useState(null)
 
-  // Derive default role ID from roles list (default to "student")
+  // 从角色列表中推导默认角色 ID，默认使用“学生”
   useEffect(() => {
     if (!roles || roles.length === 0) return
     const student = roles.find(r => r.name === 'student')
@@ -118,7 +118,7 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
                   {strength.special ? <Check size={11} /> : <Circle size={11} />} 特殊字符
                 </div>
                 <div className="text-xs text-ink-muted mt-1">
-                  满足 {strength.score()} / 4 类 {strength.score() >= 3 ? '✅' : '（需要至少 3 类）'}
+                  满足 {strength.score()} / 4 类 {strength.score() >= 3 ? '' : '（需要至少 3 类）'}
                 </div>
               </div>
             )}

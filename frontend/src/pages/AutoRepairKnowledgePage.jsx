@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react'
+﻿import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Search, Database, AlertTriangle, Wrench, BookOpen,
@@ -11,7 +11,7 @@ import { useAutoRepairKB } from '../hooks/useAutoRepairKB'
 import AutoRepairKBSelector from '../components/AutoRepairKBSelector'
 import KnowledgeGraphD3 from '../components/KnowledgeGraphD3'
 
-// Simple error boundary to prevent a single crash from blanking the entire page
+// 轻量错误边界，避免单点崩溃导致整页空白
 class KnowledgeErrorBoundary extends React.Component {
   constructor(props) { super(props); this.state = { hasError: false, error: null } }
   static getDerivedStateFromError(error) { return { hasError: true, error } }
@@ -75,25 +75,25 @@ export default function AutoRepairKnowledgePage() {
   const [kgError, setKgError] = useState(null)
   const [selectedNode, setSelectedNode] = useState(null)
   const [lineage, setLineage] = useState(null)
-  // Unified case library state
+  // 统一案例库状态
   const [caseResults, setCaseResults] = useState([])
   const [caseStats, setCaseStats] = useState(null)
   const [caseTypeFilter, setCaseTypeFilter] = useState('')  // '' | 'fault' | 'process'
   const [searchQ, setSearchQ] = useState('')
   const [loading, setLoading] = useState(false)
-  // Unified CRUD state
+  // 统一增删改查状态
   const [caseModalOpen, setCaseModalOpen] = useState(false)
   const [editingCase, setEditingCase] = useState(null)
   const [caseForm, setCaseForm] = useState({})
   const [caseSaving, setCaseSaving] = useState(false)
-  // Detail view state
+  // 详情视图状态
   const [viewingCase, setViewingCase] = useState(null)
   const { arKb, setArKb, kbList, kbLoading, creating, createArKb } = useAutoRepairKB()
 
-  // Generation counter to cancel stale in-flight requests
+  // 生成计数器，用于取消过期的进行中请求
   const genRef = useRef(0)
 
-  // ---- KG Data Loading (unified) ----
+  // ---- 知识图谱数据加载（统一）----
   const loadGraph = useCallback(async () => {
     const gen = ++genRef.current
     setKgLoading(true)
@@ -117,7 +117,7 @@ export default function AutoRepairKnowledgePage() {
     }
   }, [arKb])
 
-  // Unified cases loader
+  // 统一案例加载器
   const loadCases = useCallback(async () => {
     const gen = ++genRef.current
     setLoading(true)
@@ -137,11 +137,11 @@ export default function AutoRepairKnowledgePage() {
     }
   }, [searchQ, caseTypeFilter, arKb])
 
-  // Clear stale data on KB switch
+  // 切换知识库时清理旧数据
   useEffect(() => {
     setKgNodes([]); setKgEdges([]); setKgSummary(null)
     setCaseResults([]); setCaseStats(null)
-    // Load will be triggered by the next effect
+    // 下一轮 effect 会触发加载
   }, [arKb])
 
   useEffect(() => {
@@ -149,12 +149,12 @@ export default function AutoRepairKnowledgePage() {
     else if (activeTab === 'cases') loadCases()
   }, [activeTab, arKb])
 
-  // Search
+  // 搜索
   const handleSearch = () => {
     if (activeTab === 'cases') loadCases()
   }
 
-  // ── Unified Case CRUD ─────────────────────────────
+  // ── 统一案例增删改查 ─────────────────────────────
 
   const openCaseCreate = (caseType = 'fault') => {
     setEditingCase(null)
@@ -237,13 +237,13 @@ export default function AutoRepairKnowledgePage() {
     }
   }
 
-  // ── Detail View Handlers ──────────────────────────
+  // ── 详情视图处理 ──────────────────────────
 
   const openCaseDetail = (c) => {
     setViewingCase(c)
   }
 
-  // Node detail + lineage
+  // 节点详情与谱系
   const viewNodeDetail = async (nodeId) => {
     try {
       const [detailRes, lineageRes] = await Promise.all([
@@ -257,7 +257,7 @@ export default function AutoRepairKnowledgePage() {
     }
   }
 
-  // Handle node click from D3 graph
+  // 处理 D3 图谱中的节点点击
   const handleGraphNodeClick = useCallback(async (node) => {
     setSelectedNode(node)
     if (node?.id) {
@@ -271,7 +271,7 @@ export default function AutoRepairKnowledgePage() {
     }
   }, [arKb])
 
-  // Node type color
+  // 节点类型颜色
   const nodeTypeColor = (type) => {
     const map = {
       knowledge_point: 'bg-sky-50 text-sky-600 border-sky-200',
@@ -289,7 +289,7 @@ export default function AutoRepairKnowledgePage() {
   return (
     <KnowledgeErrorBoundary>
     <div className="space-y-5">
-      {/* Header */}
+      {/* 头部 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-ink-primary flex items-center gap-2">
@@ -329,7 +329,7 @@ export default function AutoRepairKnowledgePage() {
         </div>
       </div>
 
-      {/* Tabs */}
+      {/* 标签页 */}
       <div className="flex gap-1 p-1 bg-cloud-100 rounded-xl w-fit">
         {TABS.map(t => (
           <button key={t.key} onClick={() => { setActiveTab(t.key); setSelectedNode(null); setLineage(null); setViewingCase(null) }}
@@ -341,7 +341,7 @@ export default function AutoRepairKnowledgePage() {
         ))}
       </div>
 
-      {/* Search bar (cases tab) */}
+      {/* 搜索栏（案例标签页） */}
       {activeTab === 'cases' && (
         <div className="space-y-3">
           <div className="flex gap-2">
@@ -356,7 +356,7 @@ export default function AutoRepairKnowledgePage() {
             <button onClick={handleSearch}
               className="btn-primary px-5 py-2.5 text-sm rounded-xl">搜索</button>
           </div>
-          {/* Case type filter chips */}
+          {/* 案例类型筛选标签 */}
           <div className="flex items-center gap-1.5">
             {CASE_TYPE_FILTERS.map(f => (
               <button key={f.key} onClick={() => setCaseTypeFilter(f.key)}
@@ -373,11 +373,11 @@ export default function AutoRepairKnowledgePage() {
       )}
 
       <AnimatePresence mode="wait">
-        {/* ========== D3 GRAPH VISUALIZATION TAB ========== */}
+        {/* ========== D3 图谱可视化标签页 ========== */}
         {activeTab === 'graph' && (
           <motion.div key="graph" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-4">
-            {/* Stats cards */}
+            {/* 统计卡片 */}
             {kgSummary && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 {[
@@ -387,8 +387,9 @@ export default function AutoRepairKnowledgePage() {
                   { label: '关系类型', value: Object.keys(kgSummary.relation_types || {}).length, icon: Tag, color: 'amber' },
                 ].map(s => {
                   const colorMap = {
-                    sky: 'text-sky-400', sage: 'text-sage-400',
-                    sky: 'text-sky-400', amber: 'text-amber-400',
+                    sky: 'text-sky-400',
+                    sage: 'text-sage-400',
+                    amber: 'text-amber-400',
                   }
                   return (
                   <div key={s.label} className="card p-4">
@@ -401,7 +402,7 @@ export default function AutoRepairKnowledgePage() {
               </div>
             )}
 
-            {/* Graph component — receives data via props */}
+            {/* 图谱组件：通过 props 接收数据 */}
             <KnowledgeErrorBoundary>
             <KnowledgeGraphD3
               nodes={kgNodes}
@@ -414,7 +415,7 @@ export default function AutoRepairKnowledgePage() {
             />
             </KnowledgeErrorBoundary>
 
-            {/* Node detail panel (shown when node selected from graph or list) */}
+            {/* 节点详情面板：从图谱或列表选中节点时显示 */}
             {selectedNode && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -439,7 +440,7 @@ export default function AutoRepairKnowledgePage() {
                   <p className="text-2xs text-ink-muted">预计学时：{selectedNode.estimated_hours}h</p>
                 )}
 
-                {/* Lineage */}
+                {/* 谱系 */}
                 {lineage && (
                   <div className="grid grid-cols-3 gap-3 pt-3 border-t border-cloud-200">
                     <div className="p-2.5 rounded-lg bg-amber-50 text-xs">
@@ -477,7 +478,7 @@ export default function AutoRepairKnowledgePage() {
           </motion.div>
         )}
 
-        {/* ========== NODE LIST TAB ========== */}
+        {/* ========== 节点列表标签页 ========== */}
         {activeTab === 'nodes' && (
           <motion.div key="nodes" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-4">
@@ -507,7 +508,7 @@ export default function AutoRepairKnowledgePage() {
               </div>
             </div>
 
-            {/* Node detail (shared with graph tab) */}
+            {/* 节点详情（与图谱标签页共用） */}
             {selectedNode && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
@@ -554,7 +555,7 @@ export default function AutoRepairKnowledgePage() {
           </motion.div>
         )}
 
-        {/* ========== UNIFIED CASES TAB ========== */}
+        {/* ========== 统一案例标签页 ========== */}
         {activeTab === 'cases' && (
           <motion.div key="cases" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             className="space-y-4">
@@ -575,7 +576,7 @@ export default function AutoRepairKnowledgePage() {
               </div>
             </div>
 
-            {/* Stats cards */}
+            {/* 统计卡片 */}
             {caseStats && (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
                 <div className="card p-4">
@@ -603,7 +604,7 @@ export default function AutoRepairKnowledgePage() {
               </div>
             )}
 
-            {/* Category chips (process only) */}
+            {/* 分类标签（仅工艺案例） */}
             {caseStats?.process_categories && Object.keys(caseStats.process_categories).length > 0 && (
               <div className="flex flex-wrap gap-2">
                 {Object.entries(caseStats.process_categories).map(([cat, count]) => (
@@ -614,7 +615,7 @@ export default function AutoRepairKnowledgePage() {
               </div>
             )}
 
-            {/* Case cards grid */}
+            {/* 案例卡片网格 */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {caseResults.map((c, i) => (
                 <motion.div key={c.id || i} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
@@ -640,7 +641,7 @@ export default function AutoRepairKnowledgePage() {
                     </div>
                   </div>
 
-                  {/* Fault-specific card content */}
+                  {/* 故障案例专属卡片内容 */}
                   {c.case_type === 'fault' && (
                     <>
                       <p className="text-xs text-ink-body mb-3 line-clamp-2">{c.phenomenon}</p>
@@ -676,7 +677,7 @@ export default function AutoRepairKnowledgePage() {
                     </>
                   )}
 
-                  {/* Process-specific card content */}
+                  {/* 工艺案例专属卡片内容 */}
                   {c.case_type === 'process' && (
                     <>
                       <p className="text-xs text-ink-muted mb-3 line-clamp-2">{c.text_preview}</p>
@@ -704,7 +705,7 @@ export default function AutoRepairKnowledgePage() {
         )}
       </AnimatePresence>
 
-      {/* ===== Unified Case Create/Edit Modal ===== */}
+      {/* ===== 统一案例创建/编辑弹窗 ===== */}
       {caseModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setCaseModalOpen(false)} role="dialog" aria-modal="true" aria-label={editingCase ? '编辑案例' : '新建案例'}>
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
@@ -716,7 +717,7 @@ export default function AutoRepairKnowledgePage() {
               </span>
             </h3>
 
-            {/* Case type toggle (only when creating) */}
+            {/* 案例类型切换（仅创建时显示） */}
             {!editingCase && (
               <div className="flex gap-2 mb-4">
                 {[
@@ -751,7 +752,7 @@ export default function AutoRepairKnowledgePage() {
                   placeholder={caseForm.case_type === 'fault' ? '如：发动机怠速抖动' : '如：发动机正时皮带更换工艺'} />
               </div>
 
-              {/* Fault-specific form fields */}
+              {/* 故障案例专属表单字段 */}
               {caseForm.case_type === 'fault' && (
                 <>
                   <div className="grid grid-cols-2 gap-3">
@@ -804,7 +805,7 @@ export default function AutoRepairKnowledgePage() {
                 </>
               )}
 
-              {/* Process-specific form fields */}
+              {/* 工艺案例专属表单字段 */}
               {caseForm.case_type === 'process' && (
                 <>
                   <div>
@@ -845,7 +846,7 @@ export default function AutoRepairKnowledgePage() {
         </div>
       )}
 
-      {/* ===== Unified Case Detail Modal ===== */}
+      {/* ===== 统一案例详情弹窗 ===== */}
       {viewingCase && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setViewingCase(null)} role="dialog" aria-modal="true" aria-label={`案例详情: ${viewingCase.title}`}>
           <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto"
@@ -881,7 +882,7 @@ export default function AutoRepairKnowledgePage() {
               </button>
             </div>
 
-            {/* Fault-specific detail */}
+            {/* 故障案例专属详情 */}
             {viewingCase.case_type === 'fault' && (
               <>
                 <div className="mb-4">
@@ -917,7 +918,9 @@ export default function AutoRepairKnowledgePage() {
                     <ul className="space-y-1.5">
                       {viewingCase.preventive_measures.map((m, j) => (
                         <li key={j} className="flex gap-2 text-sm text-ink-body">
-                          <span className="flex-shrink-0 text-sky-400 mt-0.5">💡</span>
+                          <span className="flex-shrink-0 text-sky-400 mt-0.5">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+                          </span>
                           {m}
                         </li>
                       ))}
@@ -927,7 +930,7 @@ export default function AutoRepairKnowledgePage() {
               </>
             )}
 
-            {/* Process-specific detail */}
+            {/* 工艺案例专属详情 */}
             {viewingCase.case_type === 'process' && (
               <>
                 {viewingCase.parameters?.length > 0 && (
@@ -953,7 +956,7 @@ export default function AutoRepairKnowledgePage() {
               </>
             )}
 
-            {/* Actions */}
+            {/* 操作 */}
             <div className="flex gap-2 pt-4 border-t border-cloud-200">
               <button onClick={() => { const c = viewingCase; setViewingCase(null); openCaseEdit(c); }}
                 className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-sage-200 text-sage-600 hover:bg-sage-50 transition-colors">

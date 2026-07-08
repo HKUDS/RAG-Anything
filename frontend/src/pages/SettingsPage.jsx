@@ -1,229 +1,315 @@
-import { useState, useEffect } from 'react'
-import { Save, Trash2, TestTube2, Cpu, Sliders, Scissors, AlertCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import {
+  AlertCircle, Cpu, Database, Gauge, Info, Lock, Route, Save, Search, Server,
+  ShieldCheck, Sliders, TestTube2,
+} from 'lucide-react'
 import { api } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
+
+const RRF_DEFAULTS = {
+  rrf_k: 60,
+  bm25_top_k: 50,
+  vector_top_k: 100,
+  graph_top_k: 30,
+  graph_depth: 2,
+  bm25_k1: 1.5,
+  bm25_b: 0.75,
+  bm25_tokenizer: 'jieba',
+  rrf_channel_timeout: 0.15,
+  enabled_channels: 'bm25,vector,graph',
+}
+
+const PROCESSING_DEFAULT_FIELDS = [
+  { key: 'parser', label: '默认解析器', value: v => v || 'docling' },
+  { key: 'chunking_strategy', label: '默认分块策略', value: v => v || 'recursive' },
+  { key: 'chunk_size', label: '默认切块大小', value: v => `${v || 800} tokens` },
+  { key: 'enable_image', label: '默认图片处理', value: v => (v ?? true) ? '开启' : '关闭' },
+  { key: 'enable_table', label: '默认表格处理', value: v => (v ?? true) ? '开启' : '关闭' },
+  { key: 'enable_equation', label: '默认公式处理', value: v => (v ?? true) ? '开启' : '关闭' },
+  { key: 'enable_video', label: '默认视频处理', value: v => (v ?? false) ? '开启' : '关闭' },
+]
+
+function Field({ label, children, hint }) {
+  return (
+    <div>
+      <label className="text-xs text-ink-muted dark:text-cloud-500">{label}</label>
+      <div className="mt-1">{children}</div>
+      {hint && <p className="text-2xs text-ink-muted dark:text-cloud-500 mt-1">{hint}</p>}
+    </div>
+  )
+}
+
+function ReadonlyItem({ label, value }) {
+  return (
+    <div className="rounded-xl border border-cloud-300/70 dark:border-sky-800/30 bg-cloud-50 dark:bg-sky-900/20 px-3 py-2">
+      <p className="text-2xs text-ink-muted dark:text-cloud-500">{label}</p>
+      <p className="text-sm text-ink-body dark:text-cloud-300 font-medium mt-0.5 break-all">{value || '未配置'}</p>
+    </div>
+  )
+}
 
 export default function SettingsPage({ onToast }) {
-  const [settings, setSettings] = useState({})
+  const { hasPermission } = useAuth()
+  const canWrite = hasPermission('settings:write')
   const [local, setLocal] = useState({})
   const [testing, setTesting] = useState(false)
+  const [savingKey, setSavingKey] = useState('')
 
   useEffect(() => {
-    api.getSettings().then(s => { setSettings(s); setLocal(s) }).catch(err => console.error('加载设置失败:', err))
+    api.getSettings()
+      .then(s => {
+        const merged = { ...s, rrf: { ...RRF_DEFAULTS, ...(s.rrf || {}) } }
+        setLocal(merged)
+      })
+      .catch(err => {
+        console.error('加载设置失败:', err)
+        onToast?.(`加载设置失败: ${err.message}`, 'error')
+      })
   }, [])
 
-  const save = async (partial) => {
+  const save = async (partial, key = 'settings') => {
+    if (!canWrite) {
+      onToast?.('你的角色只有查看权限，不能修改平台设置', 'error')
+      return
+    }
+    setSavingKey(key)
     try {
-      await api.updateSettings(partial)
-      setSettings(prev => ({ ...prev, ...partial }))
-      onToast?.('设置已更新 ✨', 'success')
-    } catch (e) { onToast?.(e.message, 'error') }
+      const result = await api.updateSettings(partial)
+      onToast?.(result?.note || '设置已更新', 'success')
+    } catch (e) {
+      onToast?.(e.message, 'error')
+    } finally {
+      setSavingKey('')
+    }
+  }
+
+  const saveRrfField = (key, value) => {
+    const next = { ...(local.rrf || RRF_DEFAULTS), [key]: value }
+    setLocal(prev => ({ ...prev, rrf: next }))
+    save({ [key]: value }, key)
   }
 
   const testConnection = async () => {
     setTesting(true)
     try {
-      await api.health()
-      onToast?.('API 连接正常 ✅', 'success')
+      const health = await api.health()
+      const status = health?.status || 'ok'
+      onToast?.(`服务连接正常: ${status}`, 'success')
     } catch (e) {
       onToast?.(`连接失败: ${e.message}`, 'error')
+    } finally {
+      setTesting(false)
     }
-    setTesting(false)
   }
 
+  const disabled = !canWrite || Boolean(savingKey)
+  const rrf = local.rrf || RRF_DEFAULTS
+
   return (
-    <div className="max-w-2xl space-y-8">
+    <div className="max-w-4xl space-y-8">
       <div className="page-header page-header-divider">
         <div>
-          <h2 className="page-title">⚙️ 系统设置</h2>
-          <p className="page-subtitle">配置解析器、模型和处理参数</p>
+          <h2 className="page-title">平台设置</h2>
+          <p className="page-subtitle">管理模型接口、检索调优、运行限制和平台级默认值</p>
         </div>
       </div>
 
-      {/* Parser */}
-      <div className="card p-5 space-y-3 dark:bg-sky-900/20 dark:border-sky-800/30">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300"><Cpu size={16}/>解析器</h3>
-        <select className="input-field"
-          value={local.parser || 'docling'}
-          onChange={e => { setLocal({ ...local, parser: e.target.value }); save({ parser: e.target.value }) }}>
-          <option value="docling">Docling（推荐）</option>
-          <option value="mineru">MinerU</option>
-          <option value="paddleocr">PaddleOCR</option>
-          <option value="marker">Marker</option>
-        </select>
-      </div>
-
-      {/* Entity Extraction */}
-      <div className="card p-5 space-y-3 dark:bg-sky-900/20 dark:border-sky-800/30">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300"><Sliders size={16}/>实体抽取</h3>
-        <div>
-          <label className="text-xs text-ink-muted dark:text-cloud-500">实体类型白名单（逗号分隔，留空=默认）</label>
-          <input className="input-field text-sm mt-1" type="text"
-            placeholder="如：Part,Process,Material"
-            value={local.entity_types || ''}
-            onChange={e => setLocal({ ...local, entity_types: e.target.value })}
-            onBlur={e => save({ entity_types: e.target.value })} />
-        </div>
-        <div>
-          <label className="text-xs text-ink-muted dark:text-cloud-500">最小连通度（0=不过滤, 1=移除孤立实体）</label>
-          <input className="input-field text-sm mt-1" type="number" min="0" max="10"
-            value={local.entity_extraction_min_degree ?? 0}
-            onChange={e => { const v = parseInt(e.target.value) || 0; setLocal({ ...local, entity_extraction_min_degree: v }) }}
-            onBlur={e => save({ entity_extraction_min_degree: parseInt(e.target.value) || 0 })} />
-        </div>
-      </div>
-
-      {/* Models */}
-      <div className="card p-5 space-y-3 dark:bg-sky-900/20 dark:border-sky-800/30">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300"><TestTube2 size={16}/>模型配置</h3>
-        <div className="grid grid-cols-2 gap-3">
+      {!canWrite && (
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-900/20 p-4">
+          <Lock size={16} className="text-amber-500 dark:text-amber-400 mt-0.5 shrink-0" />
           <div>
-            <label className="text-xs text-ink-muted dark:text-cloud-500">LLM 模型</label>
-            <input className="input-field text-sm mt-1"
+            <p className="text-sm font-medium text-amber-700 dark:text-amber-300">当前为只读视图</p>
+            <p className="text-xs text-amber-700/80 dark:text-amber-300/80 mt-1">
+              你可以查看平台配置；修改模型、检索和运行参数需要 settings:write 权限。
+            </p>
+          </div>
+        </div>
+      )}
+
+      <section className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
+              <TestTube2 size={16} /> 模型与接口
+            </h3>
+            <p className="text-xs text-ink-muted dark:text-cloud-500 mt-1">
+              这里配置平台默认模型。智能体可以在自己的编辑页覆盖默认 LLM。
+            </p>
+          </div>
+          <button className="btn-secondary text-sm flex items-center gap-2" onClick={testConnection} disabled={testing}>
+            <Server size={14} /> {testing ? '测试中...' : '测试服务连接'}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Field label="默认 LLM 模型" hint="影响未单独指定模型的智能体和平台任务。">
+            <input
+              className="input-field text-sm"
               value={local.llm_model || ''}
+              disabled={disabled}
               onChange={e => setLocal({ ...local, llm_model: e.target.value })}
-              onBlur={e => { if (e.target.value) save({ llm_model: e.target.value }) }}
-              placeholder="如：qwen-plus" />
-          </div>
-          <div>
-            <label className="text-xs text-ink-muted dark:text-cloud-500">Vision 模型</label>
-            <input className="input-field text-sm mt-1" value={local.vision_model || ''} readOnly />
-          </div>
-          <div>
-            <label className="text-xs text-ink-muted dark:text-cloud-500">Embedding 模型</label>
-            <input className="input-field text-sm mt-1" value={local.embedding_model || ''} readOnly />
-          </div>
-          <div>
-            <label className="text-xs text-ink-muted dark:text-cloud-500">Embedding 维度</label>
-            <input className="input-field text-sm mt-1" value={local.embedding_dim || ''} readOnly />
-          </div>
+              onBlur={e => { if (e.target.value) save({ llm_model: e.target.value }, 'llm_model') }}
+              placeholder="如：qwen-plus"
+            />
+          </Field>
+          <ReadonlyItem label="Vision 模型" value={local.vision_model} />
+          <ReadonlyItem label="Embedding 模型" value={local.embedding_model} />
+          <ReadonlyItem label="Embedding 维度" value={local.embedding_dim} />
         </div>
-        <button className="btn-secondary text-sm flex items-center gap-2" onClick={testConnection} disabled={testing}>
-          {testing ? '测试中…' : '🔌 测试 API 连接'}
-        </button>
-      </div>
 
-      {/* Chunk + Concurrency */}
-      <div className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300"><Sliders size={16}/>处理参数</h3>
-        <div>
-          <div className="flex justify-between text-sm">
-            <span className="text-ink-muted dark:text-cloud-500">切块大小</span>
-            <span className="font-mono text-sky-500 dark:text-sky-400 font-medium">{local.chunk_size || 800} tokens</span>
-          </div>
-          <input type="range" min="200" max="4000" step="200"
-            value={local.chunk_size || 800}
-            onChange={e => { const v = parseInt(e.target.value); setLocal({ ...local, chunk_size: v }) }}
-            onMouseUp={() => save({ chunk_size: parseInt(local.chunk_size) })}
-            onTouchEnd={() => save({ chunk_size: parseInt(local.chunk_size) })}
-            className="w-full mt-2 accent-sky-500" />
-        </div>
-        <div>
-          <div className="flex justify-between text-sm">
-            <span className="text-ink-muted dark:text-cloud-500">最大并发数</span>
-            <span className="font-mono text-sky-500 dark:text-sky-400 font-medium">{local.max_async || 4}</span>
-          </div>
-          <input type="range" min="1" max="16" step="1"
-            value={local.max_async || 4}
-            onChange={e => { const v = parseInt(e.target.value); setLocal({ ...local, max_async: v }) }}
-            onMouseUp={() => save({ max_async: parseInt(local.max_async) })}
-            onTouchEnd={() => save({ max_async: parseInt(local.max_async) })}
-            className="w-full mt-2 accent-sky-500" />
-        </div>
-      </div>
-
-      {/* Multimodal Processing Toggles */}
-      <div className="card p-5 space-y-3 dark:bg-sky-900/20 dark:border-sky-800/30">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300"><Sliders size={16}/>多模态处理</h3>
-        <p className="text-xs text-ink-muted dark:text-cloud-500">控制文档上传时是否处理各类多模态内容。关闭可加快处理速度。</p>
-        {[
-          { key: 'enable_image', label: '图片处理', desc: '提取图片并生成 VLM 文字描述' },
-          { key: 'enable_table', label: '表格处理', desc: '提取表格并转换为结构化数据' },
-          { key: 'enable_equation', label: '公式处理', desc: '提取数学公式并转换为 LaTeX' },
-          { key: 'enable_video', label: '视频处理', desc: '提取视频帧并分析（需 ffmpeg）' },
-        ].map(({ key, label, desc }) => (
-          <div key={key} className="flex items-center justify-between py-1.5">
-            <div>
-              <span className="text-sm text-ink-body dark:text-cloud-300">{label}</span>
-              <p className="text-xs text-ink-muted dark:text-cloud-500">{desc}</p>
-            </div>
-            <button
-              onClick={() => {
-                const newVal = !(local[key] ?? true)
-                setLocal({ ...local, [key]: newVal })
-                save({ [key]: newVal })
-              }}
-              className={`relative w-10 h-5 rounded-full transition-colors ${
-                (local[key] ?? true) ? 'bg-sky-500' : 'bg-cloud-300 dark:bg-sky-800/50'
-              }`}
-              aria-label={`${label}: ${(local[key] ?? true) ? '已开启' : '已关闭'}`}
-              role="switch"
-              aria-checked={local[key] ?? true}
-            >
-              <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform ${
-                (local[key] ?? true) ? 'translate-x-5' : 'translate-x-0.5'
-              }`} />
-            </button>
-          </div>
-        ))}
-      </div>
-
-      {/* Chunking Strategy */}
-      <div className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300"><Scissors size={16}/>文本分块策略</h3>
-        <p className="text-xs text-ink-muted dark:text-cloud-500">选择文本切割方式，不同策略影响检索精度和处理成本</p>
-        <div className="space-y-2">
-          {local.chunking_strategies && Object.entries(local.chunking_strategies).map(([key, meta]) => {
-            const isActive = (local.chunking_strategy || 'recursive') === key
-            const costColors = {
-              free: 'text-sage-600 bg-sage-50 border-sage-200 dark:text-sage-400 dark:bg-sage-900/20 dark:border-sage-800/30',
-              medium: 'text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800/30',
-              high: 'text-rose-600 bg-rose-50 border-rose-200 dark:text-rose-400 dark:bg-rose-900/20 dark:border-rose-800/30',
-            }
-            return (
-              <button key={key}
-                onClick={() => {
-                  setLocal({ ...local, chunking_strategy: key })
-                  save({ chunking_strategy: key })
-                }}
-                className={`w-full text-left p-3 rounded-xl border transition-all ${
-                  isActive
-                    ? 'border-sky-300 dark:border-sky-700 bg-sky-50/50 dark:bg-sky-900/40 shadow-cloud-sm'
-                    : 'border-cloud-300 dark:border-sky-800/30 bg-cloud-50 dark:bg-sky-900/20 hover:border-cloud-400 dark:hover:border-sky-700'
-                }`}>
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-sm font-medium ${isActive ? 'text-sky-600 dark:text-sky-400' : 'text-ink-body dark:text-cloud-300'}`}>
-                        {meta.name}
-                      </span>
-                      {isActive && <span className="text-2xs px-1.5 py-0.5 rounded-lg bg-sky-100 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 font-mono">当前</span>}
-                    </div>
-                    <p className="text-xs text-ink-muted dark:text-cloud-500 mt-0.5">{meta.description}</p>
-                  </div>
-                  <span className={`text-2xs px-2 py-0.5 rounded-full border shrink-0 ${costColors[meta.cost_level] || costColors.free}`}>
-                    {meta.cost}
-                  </span>
-                </div>
-              </button>
-            )
-          })}
-        </div>
-        <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/30">
-          <AlertCircle size={14} className="text-amber-500 dark:text-amber-400 shrink-0 mt-0.5" />
-          <p className="text-xs text-amber-700 dark:text-amber-300">
-            切换分块策略后，<strong>新上传的文档</strong>将使用新策略处理。已处理的文档不受影响。如需对已有文档重新分块，请先删除后重新上传。
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800/30">
+          <AlertCircle size={14} className="text-rose-500 dark:text-rose-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-rose-700 dark:text-rose-300">
+            Embedding 模型和维度会影响现有向量索引兼容性，当前仅展示运行配置，不在前端直接修改。
           </p>
         </div>
-      </div>
+      </section>
 
-      {/* Cache */}
-      <div className="card p-5 dark:bg-sky-900/20 dark:border-sky-800/30">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300 mb-3"><Trash2 size={16}/>缓存管理</h3>
-        <button className="btn-secondary text-sm text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-800/30"
-          onClick={() => onToast?.('缓存清理功能需在服务端手动删除 rag_storage/ 目录')}>
-          🧹 清理 LLM 缓存
-        </button>
-      </div>
+      <section className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
+            <Sliders size={16} /> 平台默认处理
+          </h3>
+          <p className="text-xs text-ink-muted dark:text-cloud-500 mt-1">
+            这些是新上传任务的默认值。具体上传时可在知识库详情页按本次资料覆盖。
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {PROCESSING_DEFAULT_FIELDS.map(({ key, label, value }) => (
+            <ReadonlyItem key={key} label={label} value={value(local[key])} />
+          ))}
+        </div>
+
+        <div className="flex items-start gap-2 p-3 rounded-xl bg-sky-50 dark:bg-sky-900/30 border border-sky-200 dark:border-sky-800/30">
+          <Info size={14} className="text-sky-500 dark:text-sky-400 shrink-0 mt-0.5" />
+          <p className="text-xs text-sky-700 dark:text-sky-300">
+            解析器、分块、实体抽取和多模态处理属于知识库入库策略，后续应主要在知识库详情和上传面板调整。
+          </p>
+        </div>
+      </section>
+
+      <section className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
+            <Search size={16} /> 检索调优
+          </h3>
+          <p className="text-xs text-ink-muted dark:text-cloud-500 mt-1">
+            调整 RRF 融合检索、BM25、向量和图谱通道参数。修改后对后续查询生效。
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <Field label="启用通道" hint="逗号分隔，可用 bm25、vector、graph。">
+            <input
+              className="input-field text-sm"
+              value={rrf.enabled_channels || ''}
+              disabled={disabled}
+              onChange={e => setLocal({ ...local, rrf: { ...rrf, enabled_channels: e.target.value } })}
+              onBlur={e => saveRrfField('enabled_channels', e.target.value)}
+            />
+          </Field>
+          <Field label="BM25 分词器">
+            <input
+              className="input-field text-sm"
+              value={rrf.bm25_tokenizer || ''}
+              disabled={disabled}
+              onChange={e => setLocal({ ...local, rrf: { ...rrf, bm25_tokenizer: e.target.value } })}
+              onBlur={e => saveRrfField('bm25_tokenizer', e.target.value)}
+            />
+          </Field>
+          {[
+            ['rrf_k', 'RRF K', 1, 200, 1],
+            ['bm25_top_k', 'BM25 Top K', 1, 500, 1],
+            ['vector_top_k', '向量 Top K', 1, 500, 1],
+            ['graph_top_k', '图谱 Top K', 1, 200, 1],
+            ['graph_depth', '图谱深度', 1, 5, 1],
+            ['bm25_k1', 'BM25 k1', 0.1, 3, 0.1],
+            ['bm25_b', 'BM25 b', 0, 1, 0.05],
+            ['rrf_channel_timeout', '通道超时（秒）', 0.05, 5, 0.05],
+          ].map(([key, label, min, max, step]) => (
+            <Field key={key} label={label}>
+              <input
+                className="input-field text-sm"
+                type="number"
+                min={min}
+                max={max}
+                step={step}
+                value={rrf[key] ?? ''}
+                disabled={disabled}
+                onChange={e => {
+                  const value = step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value, 10)
+                  setLocal({ ...local, rrf: { ...rrf, [key]: Number.isNaN(value) ? '' : value } })
+                }}
+                onBlur={e => {
+                  const value = step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value, 10)
+                  if (!Number.isNaN(value)) saveRrfField(key, value)
+                }}
+              />
+            </Field>
+          ))}
+        </div>
+      </section>
+
+      <section className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
+            <Gauge size={16} /> 运行限制
+          </h3>
+          <p className="text-xs text-ink-muted dark:text-cloud-500 mt-1">
+            控制平台级并发，避免上传和检索任务耗尽模型或服务器资源。
+          </p>
+        </div>
+
+        <Field label="最大并发数" hint="后端会限制在 1-16 之间。">
+          <div className="flex items-center gap-3">
+            <input
+              type="range"
+              min="1"
+              max="16"
+              step="1"
+              value={local.max_async || 4}
+              disabled={disabled}
+              onChange={e => setLocal({ ...local, max_async: parseInt(e.target.value, 10) })}
+              onMouseUp={() => save({ max_async: parseInt(local.max_async, 10) }, 'max_async')}
+              onTouchEnd={() => save({ max_async: parseInt(local.max_async, 10) }, 'max_async')}
+              className="w-full accent-sky-500"
+            />
+            <span className="font-mono text-sky-500 dark:text-sky-400 font-medium w-10 text-right">{local.max_async || 4}</span>
+          </div>
+        </Field>
+      </section>
+
+      <section className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
+            <Database size={16} /> 存储与能力边界
+          </h3>
+          <p className="text-xs text-ink-muted dark:text-cloud-500 mt-1">
+            这些来自服务端运行环境，前端先以只读方式展示，避免误改部署级配置。
+          </p>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <ReadonlyItem label="知识库工作目录" value={local.working_dir} />
+          <ReadonlyItem label="解析输出目录" value={local.parser_output_dir} />
+          <ReadonlyItem label="支持文件格式" value={(local.supported_extensions || []).join(' ')} />
+          <ReadonlyItem label="当前缓存策略" value="按知识库实例缓存，维护入口已移至监控页" />
+        </div>
+      </section>
+
+      <section className="card p-5 space-y-3 dark:bg-sky-900/20 dark:border-sky-800/30">
+        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
+          <ShieldCheck size={16} /> 安全与权限
+        </h3>
+        <p className="text-xs text-ink-muted dark:text-cloud-500">
+          用户、角色和权限矩阵归口在用户管理；审计事件归口在审计日志。平台设置只负责展示和修改系统级策略。
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <span className="tag tag-blue"><Route size={10} /> 用户管理处理 RBAC</span>
+          <span className="tag tag-amber"><Cpu size={10} /> 监控页处理运行维护</span>
+          <span className="tag tag-teal"><Save size={10} /> 修改会触发后端权限校验</span>
+        </div>
+      </section>
     </div>
   )
 }

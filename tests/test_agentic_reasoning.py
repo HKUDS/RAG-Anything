@@ -129,3 +129,92 @@ class TestAgenticRAGReasoning:
         )
         assert resp.trace == [{"step": 1, "thought": "测试", "action": "search"}]
         assert hasattr(resp, 'trace')
+
+    def test_agentic_rag_max_response_tokens_is_clamped(self):
+        from raganything.agentic_rag import AgenticRAG
+
+        async def dummy_llm(prompt, system_prompt=None, history_messages=None, **kw):
+            return 'Action: FINISH\nAction Input: {"answer": "ok"}'
+
+        assert AgenticRAG(dummy_llm, max_response_tokens=128).max_response_tokens == 512
+        assert AgenticRAG(dummy_llm, max_response_tokens=999999).max_response_tokens == 16384
+        assert AgenticRAG(dummy_llm, max_response_tokens="bad").max_response_tokens == 4096
+
+    @pytest.mark.asyncio
+    async def test_agentic_rag_uses_runtime_token_budget(self):
+        from raganything.agentic_rag import AgenticRAG
+
+        calls = []
+
+        async def dummy_llm(prompt, system_prompt=None, history_messages=None, **kw):
+            calls.append(kw.get("max_tokens"))
+            return "final answer"
+
+        agent = AgenticRAG(dummy_llm, max_response_tokens=8192)
+        await agent._call_llm_with_retry("system", "user", [], is_final_step=False)
+        await agent._call_llm_with_retry("system", "user", [], is_final_step=True)
+        await agent._force_final_answer("system", "question", [])
+        await agent._cot_loop("question", context="context")
+
+        assert calls == [2048, 8192, 8192, 8192]
+
+    @pytest.mark.asyncio
+    async def test_search_tool_passes_retrieval_runtime_parameters(self):
+        from raganything.agentic_rag import SearchTool
+
+        class DummyRAG:
+            def __init__(self):
+                self.calls = []
+
+            async def aquery(self, query, mode="hybrid", **kwargs):
+                self.calls.append({"query": query, "mode": mode, "kwargs": kwargs})
+                return "search result"
+
+        rag = DummyRAG()
+        tool = SearchTool(
+            rag,
+            query_mode="rrf",
+            top_k=77,
+            chunk_top_k=12,
+            enable_rerank=True,
+            include_references=False,
+        )
+
+        result = await tool.execute({"query": "hello"})
+
+        assert result == "search result"
+        assert rag.calls == [
+            {
+                "query": "hello",
+                "mode": "rrf",
+                "kwargs": {
+                    "only_need_context": True,
+                    "enable_rerank": True,
+                    "chunk_top_k": 12,
+                    "top_k": 77,
+                    "include_references": False,
+                    "max_entity_tokens": 2000,
+                    "max_relation_tokens": 1000,
+                    "max_total_tokens": 8000,
+                },
+            }
+        ]
+
+    def test_agent_runtime_config_normalises_bounds_and_bools(self):
+        from raganything.routers.agent import _agent_runtime_config
+
+        config = _agent_runtime_config({
+            "max_response_tokens": "999999",
+            "retrieval_top_k": "2",
+            "chunk_top_k": "bad",
+            "enable_rerank": "yes",
+            "include_references": "off",
+        })
+
+        assert config == {
+            "max_response_tokens": 16384,
+            "retrieval_top_k": 5,
+            "chunk_top_k": 20,
+            "enable_rerank": True,
+            "include_references": False,
+        }

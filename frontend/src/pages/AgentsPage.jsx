@@ -1,15 +1,71 @@
-import { useState, useEffect } from 'react'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Bot, Trash2, Edit3, X, MessageSquare, Database,
-  Cpu, Search, Sparkles, ChevronDown, Brain, Layers
+  Cpu, Search, Brain, Layers,
 } from 'lucide-react'
 import { api } from '../utils/api'
 import { motion, AnimatePresence } from 'framer-motion'
+import Pagination from '../components/Pagination'
 
 const MODE_LABELS = { rrf: '融合', hybrid: '混合', local: '精确', global: '全局', naive: '快速' }
 const AGENT_MODE_LABELS = { none: '普通', react: 'ReAct', cot: 'CoT' }
 const AGENT_MODE_ICONS = { none: MessageSquare, react: Brain, cot: Layers }
+const AGENT_GRID_ROWS = 2
+const AGENTS_PER_PAGE = 8
+
+const ANSWER_STYLE_PRESETS = [
+  {
+    id: 'rigorous',
+    label: '严谨引用型',
+    description: '适合制度、课程资料和正式问答',
+    prompt: '你是严谨的知识库助手。回答必须基于检索内容；证据不足时直接说明知识库暂无足够信息，不要猜测。先给结论，再给关键依据。',
+  },
+  {
+    id: 'teaching',
+    label: '教学讲解型',
+    description: '适合学生问答、概念解释和课后辅导',
+    prompt: '你是耐心的教学助手。请用学生容易理解的语言回答，先解释核心概念，再用例子或类比帮助理解。复杂问题要拆成几个小步骤，并在最后给出简短总结。',
+  },
+  {
+    id: 'concise',
+    label: '简洁答复型',
+    description: '适合高频操作咨询和快速查询',
+    prompt: '你是高效的知识库助手。请直接回答问题，优先使用短句和要点。只保留用户完成任务需要的关键信息，避免冗长背景。',
+  },
+  {
+    id: 'steps',
+    label: '步骤清单型',
+    description: '适合流程指引、实验任务和操作手册',
+    prompt: '你是擅长拆解流程的助手。回答时请按照前提条件、操作步骤、注意事项、检查结果组织内容。步骤要可执行，每步尽量只包含一个动作。',
+  },
+]
+
+const normalizePrompt = (value = '') => value.trim().replace(/\r\n/g, '\n')
+
+const AGENT_NUMERIC_LIMITS = {
+  max_response_tokens: { min: 512, max: 16384, defaultValue: 4096 },
+  retrieval_top_k: { min: 5, max: 200, defaultValue: 40 },
+  chunk_top_k: { min: 1, max: 100, defaultValue: 20 },
+}
+
+const clampAgentNumber = (field, value) => {
+  const limits = AGENT_NUMERIC_LIMITS[field]
+  const parsed = Number.parseInt(value, 10)
+  if (!Number.isFinite(parsed)) return limits.defaultValue
+  return Math.min(limits.max, Math.max(limits.min, parsed))
+}
+
+const normalizeAgentPayload = (formData) => ({
+  ...formData,
+  temperature: Number.parseFloat(formData.temperature) || 0,
+  max_response_tokens: clampAgentNumber('max_response_tokens', formData.max_response_tokens),
+  retrieval_top_k: clampAgentNumber('retrieval_top_k', formData.retrieval_top_k),
+  chunk_top_k: clampAgentNumber('chunk_top_k', formData.chunk_top_k),
+  enable_rerank: Boolean(formData.enable_rerank),
+  include_references: Boolean(formData.include_references),
+})
 
 export default function AgentsPage() {
   const navigate = useNavigate()
@@ -20,13 +76,71 @@ export default function AgentsPage() {
   const [editingAgent, setEditingAgent] = useState(null)
   const [form, setForm] = useState(getDefaultForm())
   const [deleteConfirm, setDeleteConfirm] = useState(null)
+  const [search, setSearch] = useState('')
+  const [page, setPage] = useState(1)
+  const [gridColumns, setGridColumns] = useState(4)
+  const gridRef = useRef(null)
 
   useEffect(() => { loadData() }, [])
+  useEffect(() => { setPage(1) }, [search])
+  useLayoutEffect(() => {
+    const grid = gridRef.current
+    if (!grid) return undefined
+
+    let frame = 0
+    const updateGridColumns = () => {
+      if (frame) cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => {
+        const templateColumns = window.getComputedStyle(grid).gridTemplateColumns
+        const columns = templateColumns && templateColumns !== 'none'
+          ? templateColumns.split(' ').filter(Boolean).length
+          : 1
+
+        setGridColumns(Math.max(1, columns))
+      })
+    }
+
+    updateGridColumns()
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(updateGridColumns)
+      : null
+
+    resizeObserver?.observe(grid)
+    window.addEventListener('resize', updateGridColumns)
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame)
+      resizeObserver?.disconnect()
+      window.removeEventListener('resize', updateGridColumns)
+    }
+  }, [])
+  useEffect(() => {
+    if (!showModal) return
+
+    const root = document.documentElement
+    const body = document.body
+    const previousRootOverflow = root.style.overflow
+    const previousBodyOverflow = body.style.overflow
+
+    root.classList.add('agent-config-scroll-locked')
+    body.classList.add('agent-config-scroll-locked')
+    root.style.overflow = 'hidden'
+    body.style.overflow = 'hidden'
+
+    return () => {
+      root.classList.remove('agent-config-scroll-locked')
+      body.classList.remove('agent-config-scroll-locked')
+      root.style.overflow = previousRootOverflow
+      body.style.overflow = previousBodyOverflow
+    }
+  }, [showModal])
 
   function getDefaultForm() {
     return {
-      name: '', icon: '🤖', description: '', kb_name: 'default', llm_model: 'qwen-plus',
-      temperature: 0.0, query_mode: 'hybrid', agent_mode: 'none',
+      name: '', icon: '', description: '', kb_name: 'default', llm_model: 'qwen-plus',
+      temperature: 0.0, max_response_tokens: 4096, query_mode: 'hybrid', agent_mode: 'none',
+      retrieval_top_k: 40, chunk_top_k: 20, enable_rerank: false, include_references: true,
       system_prompt: '', use_default_prompt: true, welcome_message: '', template_id: '',
     }
   }
@@ -46,9 +160,13 @@ export default function AgentsPage() {
   const openEdit = (agent) => {
     setEditingAgent(agent.id)
     setForm({
-      name: agent.name, icon: agent.icon || '🤖', description: agent.description || '',
+      name: agent.name, icon: agent.icon || '', description: agent.description || '',
       kb_name: agent.kb_name, llm_model: agent.llm_model, temperature: agent.temperature || 0,
+      max_response_tokens: clampAgentNumber('max_response_tokens', agent.max_response_tokens),
       query_mode: agent.query_mode, agent_mode: agent.agent_mode || 'none',
+      retrieval_top_k: clampAgentNumber('retrieval_top_k', agent.retrieval_top_k),
+      chunk_top_k: clampAgentNumber('chunk_top_k', agent.chunk_top_k),
+      enable_rerank: Boolean(agent.enable_rerank), include_references: agent.include_references !== false,
       system_prompt: agent.system_prompt || '', use_default_prompt: agent.use_default_prompt !== false,
       welcome_message: agent.welcome_message || '', template_id: agent.template_id || '',
     })
@@ -59,12 +177,17 @@ export default function AgentsPage() {
     setForm({
       ...form,
       name: tpl.name.replace(/^[^一-龥]*\s*/, ''),
-      icon: tpl.icon || '🤖',
+      icon: tpl.icon || '',
       description: tpl.description || '',
       llm_model: tpl.llm_model || 'qwen-plus',
       temperature: tpl.temperature ?? 0,
+      max_response_tokens: clampAgentNumber('max_response_tokens', tpl.max_response_tokens),
       query_mode: tpl.query_mode || 'hybrid',
       agent_mode: tpl.agent_mode || 'none',
+      retrieval_top_k: clampAgentNumber('retrieval_top_k', tpl.retrieval_top_k),
+      chunk_top_k: clampAgentNumber('chunk_top_k', tpl.chunk_top_k),
+      enable_rerank: Boolean(tpl.enable_rerank),
+      include_references: tpl.include_references !== false,
       system_prompt: tpl.system_prompt || '',
       use_default_prompt: tpl.use_default_prompt !== false,
       welcome_message: tpl.welcome_message || '',
@@ -72,13 +195,28 @@ export default function AgentsPage() {
     })
   }
 
+  const applyAnswerStyle = (preset) => {
+    setForm(current => ({
+      ...current,
+      system_prompt: preset.prompt,
+    }))
+  }
+
+  const clearAnswerStyle = () => {
+    setForm(current => ({
+      ...current,
+      system_prompt: '',
+    }))
+  }
+
   const saveAgent = async () => {
     if (!form.name.trim()) return
+    const payload = normalizeAgentPayload(form)
     try {
       if (editingAgent) {
-        await api.updateAgent(editingAgent, form)
+        await api.updateAgent(editingAgent, payload)
       } else {
-        await api.createAgent(form)
+        await api.createAgent(payload)
       }
       setShowModal(false)
       loadData()
@@ -97,12 +235,49 @@ export default function AgentsPage() {
     navigate(`/agents/${agent.id}`)
   }
 
+  const normalizedSearch = search.trim().toLowerCase()
+  const filteredAgents = agents.filter(agent => {
+    if (!normalizedSearch) return true
+    return [
+      agent.name,
+      agent.description,
+      agent.id,
+      agent.kb_name,
+      agent.llm_model,
+      MODE_LABELS[agent.query_mode],
+      AGENT_MODE_LABELS[agent.agent_mode],
+    ].some(value => String(value || '').toLowerCase().includes(normalizedSearch))
+  })
+
+  const totalPages = Math.max(1, Math.ceil(filteredAgents.length / AGENTS_PER_PAGE))
+  const currentPage = Math.min(page, totalPages)
+  const paginatedAgents = filteredAgents.slice((currentPage - 1) * AGENTS_PER_PAGE, currentPage * AGENTS_PER_PAGE)
+  const agentGridRows = paginatedAgents.length > 0
+    ? Math.max(AGENT_GRID_ROWS, Math.ceil(paginatedAgents.length / Math.max(1, gridColumns)))
+    : AGENT_GRID_ROWS
+  const agentGridClassName = paginatedAgents.length > 0
+    ? 'resource-grid resource-grid-agents resource-grid-agents-fixed-rows'
+    : 'resource-grid resource-grid-agents'
+  const agentGridStyle = paginatedAgents.length > 0
+    ? { '--agent-grid-rows': agentGridRows, '--agent-grid-row-gaps': agentGridRows - 1 }
+    : undefined
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages)
+    }
+  }, [page, totalPages])
+
+
+  const activeAnswerStyle = ANSWER_STYLE_PRESETS.find(
+    preset => normalizePrompt(preset.prompt) === normalizePrompt(form.system_prompt)
+  )
   return (
-    <div className="space-y-8">
-      {/* Header */}
-      <div className="page-header page-header-divider">
+    <div className="resource-page resource-page-agents">
+      {/* 头部 */}
+      <div className="page-header page-header-divider resource-page-header">
         <div>
-          <h2 className="page-title">🤖 智能体</h2>
+          <h2 className="page-title">智能体</h2>
           <p className="page-subtitle">每个智能体拥有独立的知识库、模型和对话配置</p>
         </div>
         <button onClick={openCreate} className="btn-primary">
@@ -110,82 +285,116 @@ export default function AgentsPage() {
         </button>
       </div>
 
-      {/* Agent Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-        {agents.map(agent => (
-          <motion.div
-            key={agent.id}
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="card-hover p-5 group cursor-pointer"
-            onClick={() => startChat(agent)}
-          >
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">{agent.icon || '🤖'}</span>
-                <div>
-                  <h3 className="font-medium text-ink-body text-sm">{agent.name}</h3>
-                  <p className="text-2xs text-ink-muted font-mono">ID: {agent.id}</p>
+      <section className="resource-panel">
+        <div className="resource-toolbar">
+          <div className="relative w-full lg:max-w-md">
+            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
+            <input
+              className="input-field w-full pl-10 pr-4 text-sm"
+              placeholder="搜索智能体名称、描述、知识库或模型"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+          <div className="resource-count">
+            共 {agents.length} 个智能体
+            {normalizedSearch ? `，匹配到 ${filteredAgents.length} 个结果` : ''}
+          </div>
+        </div>
+
+        {/* 智能体卡片 */}
+        <div ref={gridRef} className={agentGridClassName} style={agentGridStyle}>
+          {paginatedAgents.map(agent => (
+            <motion.div
+              key={agent.id}
+              initial={{ opacity: 0, y: 12 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="directory-card resource-card resource-card-agent group cursor-pointer"
+              onClick={() => startChat(agent)}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="directory-icon resource-card-agent-icon">
+                    {agent.icon ? <span className="text-xl leading-none">{agent.icon}</span> : <Bot size={18} />}
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="font-semibold text-ink-primary text-base truncate">{agent.name}</h3>
+                    <p className="text-2xs text-ink-muted font-mono truncate">ID: {agent.id}</p>
+                  </div>
+                </div>
+                <div className="resource-card-agent-actions flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                  <button className="p-1.5 rounded-lg text-ink-muted hover:text-sky-500 hover:bg-sky-50 transition-colors" onClick={() => openEdit(agent)} aria-label={`编辑 ${agent.name}`}>
+                    <Edit3 size={14} aria-hidden="true" />
+                  </button>
+                  <button className="p-1.5 rounded-lg text-ink-muted hover:text-rose-500 hover:bg-rose-50 transition-colors" onClick={() => setDeleteConfirm(agent.id)} aria-label={`删除 ${agent.name}`}>
+                    <Trash2 size={14} aria-hidden="true" />
+                  </button>
                 </div>
               </div>
-              <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                <button className="p-1.5 rounded-lg text-ink-muted hover:text-sky-500 hover:bg-sky-50 transition-colors" onClick={() => openEdit(agent)} aria-label={`编辑 ${agent.name}`}>
-                  <Edit3 size={14} aria-hidden="true" />
-                </button>
-                <button className="p-1.5 rounded-lg text-ink-muted hover:text-rose-500 hover:bg-rose-50 transition-colors" onClick={() => setDeleteConfirm(agent.id)} aria-label={`删除 ${agent.name}`}>
-                  <Trash2 size={14} aria-hidden="true" />
-                </button>
+
+              {agent.description ? (
+                <p className="resource-card-agent-desc text-xs text-ink-muted leading-relaxed min-h-[36px] line-clamp-2">{agent.description}</p>
+              ) : (
+                <p className="text-xs text-ink-muted/60 leading-relaxed min-h-[36px] line-clamp-2">暂无描述</p>
+              )}
+
+              <div className="resource-card-agent-tags flex flex-wrap gap-1.5">
+                <span className="tag tag-purple">
+                  <Database size={10} /> {agent.kb_name}
+                </span>
+                <span className="tag tag-blue">
+                  <Cpu size={10} /> {agent.llm_model}
+                </span>
+                <span className="tag tag-amber">
+                  <Search size={10} /> {MODE_LABELS[agent.query_mode] || agent.query_mode}
+                </span>
+                <span className="tag tag-teal">
+                  {React.createElement(AGENT_MODE_ICONS[agent.agent_mode] || MessageSquare, { size: 10 })} {AGENT_MODE_LABELS[agent.agent_mode] || '普通'}
+                </span>
               </div>
-            </div>
 
-            {agent.description && (
-              <p className="text-xs text-ink-muted mb-3 line-clamp-2">{agent.description}</p>
-            )}
-
-            <div className="flex flex-wrap gap-1.5 mb-3">
-              <span className="tag tag-purple">
-                <Database size={10} /> {agent.kb_name}
-              </span>
-              <span className="tag tag-blue">
-                <Cpu size={10} /> {agent.llm_model}
-              </span>
-              <span className="tag tag-amber">
-                <Search size={10} /> {MODE_LABELS[agent.query_mode] || agent.query_mode}
-              </span>
-              <span className="tag tag-teal">
-                {'🧠'} {AGENT_MODE_LABELS[agent.agent_mode] || '普通'}
-              </span>
-            </div>
-
-            <button className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-sky-50 dark:bg-sky-900/30 text-sky-600 dark:text-sky-400 text-xs font-medium hover:bg-sky-100 dark:hover:bg-sky-900/50 transition-colors border border-sky-200/60 dark:border-sky-800/30">
-              <MessageSquare size={13} /> 开始对话
-            </button>
-          </motion.div>
-        ))}
-      </div>
-
-      {agents.length === 0 && (
-        <div className="empty-state">
-          <div className="empty-state-icon">🤖</div>
-          <p className="empty-state-title">这里还没有智能体</p>
-          <p className="empty-state-desc">创建你的第一个智能体助手，让它帮你理解和检索知识 ✨</p>
-          <button onClick={openCreate} className="btn-primary mt-6">创建第一个智能体</button>
+              <button className="directory-footer resource-card-agent-footer w-full flex items-center justify-center gap-2 text-xs font-medium text-ink-primary hover:text-sky-600 transition-colors">
+                <MessageSquare size={13} /> 开始对话
+              </button>
+            </motion.div>
+          ))}
         </div>
-      )}
 
-      {/* Create/Edit Modal */}
+        {filteredAgents.length > 0 && (
+          <Pagination page={currentPage} totalPages={totalPages} onPageChange={setPage} className="resource-pagination resource-pagination-agents" />
+        )}
+
+        {agents.length === 0 && (
+          <div className="empty-state resource-empty-state">
+            <div className="empty-state-icon"><Bot size={48} className="text-cloud-400" /></div>
+            <p className="empty-state-title">这里还没有智能体</p>
+            <p className="empty-state-desc">创建智能体以开始使用知识库问答和检索功能</p>
+            <button onClick={openCreate} className="btn-primary mt-6">创建第一个智能体</button>
+          </div>
+        )}
+
+        {agents.length > 0 && filteredAgents.length === 0 && (
+          <div className="empty-state resource-empty-state">
+            <div className="empty-state-icon"><Search size={40} className="text-cloud-400" /></div>
+            <p className="empty-state-title">没有找到匹配的智能体</p>
+            <p className="empty-state-desc">试试更短的关键词，或者搜索名称、知识库与模型字段</p>
+          </div>
+        )}
+      </section>
+
+      {/* 创建/编辑弹窗 */}
+      {createPortal(
       <AnimatePresence>
         {showModal && (
-          <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 bg-sky-900/25 dark:bg-black/40 backdrop-blur-sm" onClick={() => setShowModal(false)} role="dialog" aria-modal="true" aria-label={editingAgent ? '编辑智能体' : '新建智能体'}>
+          <div className="agent-config-overlay" onClick={() => setShowModal(false)} role="dialog" aria-modal="true" aria-label={editingAgent ? '编辑智能体' : '新建智能体'}>
             <motion.div
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="card w-full max-w-2xl max-h-[80vh] overflow-y-auto m-4"
+              className="agent-config-modal w-full"
               onClick={e => e.stopPropagation()}
             >
-              <div className="p-6 space-y-5">
-                <div className="flex items-center justify-between">
+              <div className="agent-config-header flex items-center justify-between">
                   <h3 className="font-display text-lg font-semibold text-ink-primary">
                     {editingAgent ? '编辑智能体' : '新建智能体'}
                   </h3>
@@ -194,7 +403,9 @@ export default function AgentsPage() {
                   </button>
                 </div>
 
-                {/* Template Selection */}
+                <div className="agent-config-scroll space-y-3.5">
+
+                {/* 模板选择 */}
                 {!editingAgent && templates.length > 0 && (
                   <div>
                     <label className="text-xs text-ink-muted mb-2 block">从模板创建</label>
@@ -214,7 +425,7 @@ export default function AgentsPage() {
                   </div>
                 )}
 
-                {/* Basic Info */}
+                {/* 基础信息 */}
                 <div className="grid grid-cols-4 gap-3">
                   <div className="col-span-1">
                     <label className="text-xs text-ink-muted mb-1 block">图标</label>
@@ -240,7 +451,7 @@ export default function AgentsPage() {
                     onChange={e => setForm({ ...form, welcome_message: e.target.value })} />
                 </div>
 
-                {/* KB + Model */}
+                {/* 知识库与模型 */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="text-xs text-ink-muted mb-1 block">关联知识库</label>
@@ -261,7 +472,7 @@ export default function AgentsPage() {
                   </div>
                 </div>
 
-                {/* Query Mode */}
+                {/* 查询模式 */}
                 <div>
                   <label className="text-xs text-ink-muted mb-1 block">默认查询模式</label>
                   <select className="input-field" value={form.query_mode}
@@ -274,7 +485,7 @@ export default function AgentsPage() {
                   </select>
                 </div>
 
-                {/* Reasoning Mode */}
+                {/* 推理模式 */}
                 <div>
                   <label className="text-xs text-ink-muted mb-1 block">推理模式</label>
                   <select className="input-field" value={form.agent_mode}
@@ -285,7 +496,7 @@ export default function AgentsPage() {
                   </select>
                 </div>
 
-                {/* Temperature */}
+                {/* 温度参数 */}
                 <div>
                   <div className="flex justify-between">
                     <label className="text-xs text-ink-muted mb-1 block">回复温度</label>
@@ -299,12 +510,83 @@ export default function AgentsPage() {
                   </div>
                 </div>
 
-                {/* System Prompt */}
+                {/* 生成与检索参数 */}
+                <div className="rounded-xl border border-cloud-300 bg-cloud-50/70 p-3 space-y-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <label className="text-xs font-semibold text-ink-primary">生成与检索参数</label>
+                    <span className="text-2xs text-ink-muted">保存后影响对话生成与知识库检索</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-2xs text-ink-muted mb-1 block">最大回复 tokens</label>
+                      <input className="input-field text-sm" type="number" min="512" max="16384" step="256" value={form.max_response_tokens}
+                        onChange={e => setForm({ ...form, max_response_tokens: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="text-2xs text-ink-muted mb-1 block">检索召回数</label>
+                      <input className="input-field text-sm" type="number" min="5" max="200" step="5" value={form.retrieval_top_k}
+                        onChange={e => setForm({ ...form, retrieval_top_k: e.target.value })} />
+                    </div>
+                    <div>
+                      <label className="text-2xs text-ink-muted mb-1 block">Chunk 候选数</label>
+                      <input className="input-field text-sm" type="number" min="1" max="100" step="1" value={form.chunk_top_k}
+                        onChange={e => setForm({ ...form, chunk_top_k: e.target.value })} />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setForm({ ...form, enable_rerank: !form.enable_rerank })}
+                      className={`rounded-xl border px-3 py-2 text-left transition-all ${form.enable_rerank ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-cloud-300 bg-white text-ink-body hover:bg-cloud-100'}`}>
+                      <span className="block text-xs font-semibold">启用重排</span>
+                      <span className="mt-1 block text-2xs text-ink-muted">提升精度，可能增加响应时间</span>
+                    </button>
+                    <button type="button" onClick={() => setForm({ ...form, include_references: !form.include_references })}
+                      className={`rounded-xl border px-3 py-2 text-left transition-all ${form.include_references ? 'border-sky-300 bg-sky-50 text-sky-700' : 'border-cloud-300 bg-white text-ink-body hover:bg-cloud-100'}`}>
+                      <span className="block text-xs font-semibold">包含引用来源</span>
+                      <span className="mt-1 block text-2xs text-ink-muted">控制回答提示词和参考来源回填</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 系统提示词 */}
                 <div>
-                  <label className="text-xs text-ink-muted mb-1 block">系统提示词</label>
-                  <textarea className="input-field h-24 text-xs font-mono" placeholder="自定义智能体行为指令..."
+                  <div className="flex items-center justify-between gap-3 mb-2">
+                    <label className="text-xs text-ink-muted block">回答风格</label>
+                    <span className="text-2xs text-ink-muted">写入系统提示词，保存后生效</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {ANSWER_STYLE_PRESETS.map(preset => {
+                      const isActive = activeAnswerStyle?.id === preset.id
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() => applyAnswerStyle(preset)}
+                          className={`text-left rounded-xl border px-3 py-2 transition-all ${
+                            isActive
+                              ? 'border-sky-300 bg-sky-50 text-sky-700 shadow-cloud-sm'
+                              : 'border-cloud-300 bg-white text-ink-body hover:border-sky-200 hover:bg-sky-50/60'
+                          }`}
+                        >
+                          <span className="block text-xs font-semibold">{preset.label}</span>
+                          <span className="mt-1 block text-2xs leading-relaxed text-ink-muted">{preset.description}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <div className="mt-2 flex items-center justify-between gap-3 text-2xs text-ink-muted">
+                    <span>{activeAnswerStyle ? `当前：${activeAnswerStyle.label}` : '当前：自定义或未设置'}</span>
+                    <button type="button" onClick={clearAnswerStyle} className="text-sky-600 hover:text-sky-700 transition-colors">
+                      清空提示词
+                    </button>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="text-xs text-ink-muted mb-1 block">自定义系统提示词</label>
+                  <textarea className="input-field h-28 text-xs font-mono" placeholder="可直接编辑回答风格或智能体行为指令..."
                     value={form.system_prompt}
                     onChange={e => setForm({ ...form, system_prompt: e.target.value })} />
+                  <p className="mt-1 text-2xs text-ink-muted">此内容会作为对话链路的 system_prompt 使用，不会新增未接线的配置字段。</p>
                 </div>
 
                 <div className="flex items-center gap-3">
@@ -317,20 +599,23 @@ export default function AgentsPage() {
                   <span className="text-xs text-ink-muted">叠加默认格式化提示词（标题、列表、表格结构）</span>
                 </div>
 
-                {/* Action buttons */}
-                <div className="flex gap-3 pt-2">
+                {/* 操作按钮 */}
+                </div>
+
+                <div className="agent-config-footer flex gap-3">
                   <button onClick={saveAgent} className="btn-primary flex-1">
                     {editingAgent ? '保存修改' : '创建智能体'}
                   </button>
                   <button onClick={() => setShowModal(false)} className="btn-secondary">取消</button>
                 </div>
-              </div>
             </motion.div>
           </div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body
+      )}
 
-      {/* Delete Confirmation */}
+      {/* 删除确认 */}
       <AnimatePresence>
         {deleteConfirm && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-sky-900/25 dark:bg-black/40 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除智能体">

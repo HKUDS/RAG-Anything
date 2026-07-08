@@ -52,7 +52,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
   const modalRef = useRef(null)
   const closeBtnRef = useRef(null)
 
-  // 初始化编辑表单 (正确使用 useEffect，修复 useState 误用 bug)
+  // 初始化编辑表单（正确使用 useEffect，修复 useState 误用问题）
   useEffect(() => {
     if (user && isOpen) {
       const form = {
@@ -151,7 +151,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
 
     // 管理员修改自身角色为降级时给出额外确认
     if (isAdminSelf && !adminRoleIds.includes(editForm.role_id)) {
-      if (!confirm('⚠️ 你正在将自己的角色从管理员降级！\n\n降级后将失去管理权限（用户管理、审计日志等），且无法自行恢复。\n\n确认继续？')) {
+      if (!confirm('注意：你正在将自己的角色从管理员降级！\n\n降级后将失去管理权限（用户管理、审计日志等），且无法自行恢复。\n\n确认继续？')) {
         return
       }
     }
@@ -171,7 +171,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
 
       // 显示成功反馈
-      setSuccessMsg(isEditingSelf ? '✅ 个人信息已更新' : `✅ 用户 ${editForm.username} 已更新`)
+      setSuccessMsg(isEditingSelf ? '个人信息已更新' : `用户 ${editForm.username} 已更新`)
       setInitialForm({ ...editForm, password: '' }) // 更新基准，防止关闭时再次提示
 
       // 延迟关闭，让用户看到成功消息
@@ -306,7 +306,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
             <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="edit-role">
               角色
               {isAdminSelf && (
-                <span className="ml-2 text-2xs text-amber-500 font-normal">⚠ 谨慎更改</span>
+                <span className="ml-2 text-2xs text-amber-500 font-normal">谨慎更改</span>
               )}
             </label>
             <select
@@ -342,11 +342,11 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
               value={editForm.is_active ? '1' : '0'}
               onChange={e => setEditForm(f => ({ ...f, is_active: e.target.value === '1' }))}
             >
-              <option value="1">✅ 启用</option>
-              <option value="0">🚫 禁用</option>
+              <option value="1">启用</option>
+              <option value="0">禁用</option>
             </select>
             {isEditingSelf && !editForm.is_active && (
-              <p className="text-2xs text-rose-500 mt-1">⚠️ 禁用自己将导致无法登录</p>
+              <p className="text-2xs text-rose-500 mt-1">注意：禁用自己将导致无法登录</p>
             )}
           </div>
 
@@ -372,7 +372,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
               <p className="text-2xs text-rose-500 mt-1">{fieldErrors.password}</p>
             )}
 
-            {/* 密码强度指示器（与 CreateUserModal 保持一致） */}
+            {/* 密码强度指示器（与创建用户弹窗保持一致） */}
             {strength && (
               <div className="mt-2 space-y-1">
                 <div className={`flex items-center gap-1.5 text-xs ${strength.length ? 'text-sage-600' : 'text-ink-muted'}`}>
@@ -391,7 +391,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
                   {strength.special ? <Check size={11} /> : <Circle size={11} />} 特殊字符
                 </div>
                 <div className={`text-xs mt-1 ${strength.score() >= 3 ? 'text-sage-600' : 'text-rose-500'}`}>
-                  满足 {strength.score()} / 4 类 {strength.score() >= 3 ? '✅' : '（需要至少 3 类）'}
+                  满足 {strength.score()} / 4 类 {strength.score() >= 3 ? '' : '（需要至少 3 类）'}
                 </div>
               </div>
             )}

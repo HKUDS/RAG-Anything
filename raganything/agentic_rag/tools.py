@@ -36,7 +36,15 @@ class SearchTool(Tool):
         "required": ["query"],
     }
 
-    def __init__(self, rag_instance=None, query_mode: str = "rrf"):
+    def __init__(
+        self,
+        rag_instance=None,
+        query_mode: str = "rrf",
+        top_k: int = 30,
+        chunk_top_k: int = 20,
+        enable_rerank: bool = False,
+        include_references: bool = True,
+    ):
         """
         Args:
             rag_instance: RAGAnything instance (provides aquery method)
@@ -45,6 +53,18 @@ class SearchTool(Tool):
         """
         self.rag = rag_instance
         self.query_mode = query_mode
+        try:
+            parsed_top_k = int(top_k)
+        except (TypeError, ValueError):
+            parsed_top_k = 30
+        try:
+            parsed_chunk_top_k = int(chunk_top_k)
+        except (TypeError, ValueError):
+            parsed_chunk_top_k = 20
+        self.top_k = max(5, min(200, parsed_top_k))
+        self.chunk_top_k = max(1, min(100, parsed_chunk_top_k))
+        self.enable_rerank = bool(enable_rerank)
+        self.include_references = bool(include_references)
 
     async def execute(self, input: dict) -> str:
         query = input.get("query", "")
@@ -59,9 +79,10 @@ class SearchTool(Tool):
                 query,
                 mode=self.query_mode,
                 only_need_context=True,
-                enable_rerank=False,
-                chunk_top_k=20,
-                top_k=30,
+                enable_rerank=self.enable_rerank,
+                chunk_top_k=self.chunk_top_k,
+                top_k=self.top_k,
+                include_references=self.include_references,
                 max_entity_tokens=2000,
                 max_relation_tokens=1000,
                 max_total_tokens=8000,

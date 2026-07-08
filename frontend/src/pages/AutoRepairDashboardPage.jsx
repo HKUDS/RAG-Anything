@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+﻿import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Factory, Cpu, Wrench, BookOpen, TrendingUp, Users, MessageSquare,
@@ -48,17 +48,17 @@ export default function AutoRepairDashboardPage() {
     }
   }, [arKb])
 
-  // Clear stale data on KB switch
+  // 切换知识库时清理旧数据
   useEffect(() => {
     setDashboard(null)
     setKgSummary(null)
     setCaseStats(null)
   }, [arKb])
 
-  // Initial data load (once on mount / when KB changes)
+  // 初始数据加载（挂载或知识库变化时执行一次）
   useEffect(() => { loadAll(true) }, [arKb])
 
-  // Smart auto-refresh: active=5s, idle=15s, hidden=stopped
+  // 智能自动刷新：活跃 5 秒，空闲 15 秒，页面隐藏时停止
   useEffect(() => {
     if (!autoRefresh) return
     let interval
@@ -88,12 +88,12 @@ export default function AutoRepairDashboardPage() {
     )
   }
 
-  // Detect if dashboard has any real data
+  // 判断仪表盘是否已有真实数据
   const hasData = (kgSummary?.total_nodes ?? 0) > 0
     || (caseStats?.total_cases ?? 0) > 0
     || (dashboard?.usage_stats?.total_queries ?? 0) > 0
 
-  // Stats cards
+  // 统计卡片
   const statCards = [
     { label: '知识节点', value: kgSummary?.total_nodes ?? '—', icon: Database, color: 'coral', sub: `${kgSummary?.total_edges ?? '—'} 条关系` },
     { label: '故障案例', value: caseStats?.fault_total ?? '—', icon: AlertTriangle, color: 'amber', sub: `${caseStats?.process_total ?? '—'} 工艺案例` },
@@ -105,7 +105,7 @@ export default function AutoRepairDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* 头部 */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-ink-primary flex items-center gap-2">
@@ -151,7 +151,7 @@ export default function AutoRepairDashboardPage() {
         </div>
       </div>
 
-      {/* Error */}
+      {/* 错误提示 */}
       {error && (
         <div className="card p-4 border-rose-200 bg-rose-50 text-sm text-rose-600 flex items-center justify-between gap-2">
           <span className="flex items-center gap-2"><AlertTriangle size={16} /> {error}</span>
@@ -161,7 +161,7 @@ export default function AutoRepairDashboardPage() {
         </div>
       )}
 
-      {/* Onboarding — shown when no data at all */}
+      {/* 引导区：完全无数据时显示 */}
       {!loading && !error && !hasData && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           className="card p-8 text-center space-y-6">
@@ -204,7 +204,7 @@ export default function AutoRepairDashboardPage() {
         </motion.div>
       )}
 
-      {/* Stat Cards */}
+      {/* 统计卡片 */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((s, i) => (
           <motion.div key={s.label} custom={i} variants={CARD_VARIANTS} initial="hidden" animate="visible"
@@ -232,9 +232,9 @@ export default function AutoRepairDashboardPage() {
         ))}
       </div>
 
-      {/* Quick Actions + Detail */}
+      {/* 快捷操作与详情 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Quick Nav */}
+        {/* 快捷导航 */}
         <motion.div custom={4} variants={CARD_VARIANTS} initial="hidden" animate="visible"
           className="card p-5">
           <h3 className="text-sm font-semibold text-ink-body mb-4 flex items-center gap-2">
@@ -260,7 +260,7 @@ export default function AutoRepairDashboardPage() {
           </div>
         </motion.div>
 
-        {/* Knowledge Stats */}
+        {/* 知识统计 */}
         <motion.div custom={5} variants={CARD_VARIANTS} initial="hidden" animate="visible"
           className="card p-5">
           <h3 className="text-sm font-semibold text-ink-body mb-4 flex items-center gap-2">
@@ -299,7 +299,7 @@ export default function AutoRepairDashboardPage() {
           )}
         </motion.div>
 
-        {/* Top Queries */}
+        {/* 高频查询 */}
         <motion.div custom={6} variants={CARD_VARIANTS} initial="hidden" animate="visible"
           className="card p-5">
           <h3 className="text-sm font-semibold text-ink-body mb-4 flex items-center gap-2">
@@ -323,7 +323,7 @@ export default function AutoRepairDashboardPage() {
         </motion.div>
       </div>
 
-      {/* Usage Trend */}
+      {/* 使用趋势 */}
       {dashboard?.query_trend && dashboard.query_trend.length > 0 && (
         <motion.div custom={7} variants={CARD_VARIANTS} initial="hidden" animate="visible"
           className="card p-5">

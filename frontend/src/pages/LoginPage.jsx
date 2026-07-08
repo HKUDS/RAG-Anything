@@ -25,7 +25,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  // Password change state (when must_change_password)
+  // 密码修改状态（must_change_password 为真时启用）
   const [mustChangePw, setMustChangePw] = useState(false)
   const [newPassword, setNewPassword] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
@@ -105,7 +105,7 @@ export default function LoginPage() {
               <KeyRound size={26} className="text-white" />
             </div>
             <h1 className="font-display font-semibold text-xl text-ink-primary">修改初始密码</h1>
-            <p className="text-sm text-ink-muted mt-2">首次登录需要设置一个新密码 🔐</p>
+            <p className="text-sm text-ink-muted mt-2">首次登录需要设置一个新密码</p>
           </div>
 
           <div className="card p-6 shadow-cloud">
@@ -171,9 +171,9 @@ export default function LoginPage() {
             <BookOpen size={26} className="text-white" />
           </div>
           <h1 className="font-display font-semibold text-2xl tracking-tight text-ink-primary">
-            RAG<span className="text-sky-500">Anything</span>
+            知元
           </h1>
-          <p className="text-sm text-ink-muted mt-2">欢迎回来，继续你的知识探索 ✨</p>
+          <p className="text-sm text-ink-muted mt-2">多模态教学知识服务平台</p>
         </div>
 
         <div className="card p-6 shadow-cloud">
@@ -236,7 +236,7 @@ export default function LoginPage() {
         </div>
 
         <p className="text-center text-2xs text-ink-muted mt-6">
-          📚 让知识管理变得温暖有序
+          知元 · 多模态教学知识服务平台
         </p>
       </motion.div>
     </div>

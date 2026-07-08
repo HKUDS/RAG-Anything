@@ -19,14 +19,10 @@ from lightrag.llm.openai import openai_complete_if_cache
 from lightrag.utils import logger as lightrag_logger
 
 from raganything.routers.shared import (
-    _bigram_image_scan,
     _build_citation_block,
     _DEGRADED_HINT,
-    _discover_images_via_graph,
-    _filter_images_by_relevance,
     _is_thinking_msg,
     _translate_thinking_msg,
-    _validate_image_paths,
     ANSWER_FORMAT_INSTRUCTION,
     API_KEY,
     BASE_URL,
@@ -34,10 +30,9 @@ from raganything.routers.shared import (
     LLM_MODEL,
     QUERY_SYSTEM_PROMPT,
     VISION_MODEL,
-    extract_image_paths,
     get_kb,
-    kb_dir,
     query_history,
+    recall_query_images,
     record_query,
     verify_kb_access,
 )
@@ -365,8 +360,13 @@ class AgentCreateRequest(BaseModel):
     kb_name: str = "default"
     llm_model: str = "qwen-plus"
     temperature: float = 0.0
+    max_response_tokens: int = 4096
     query_mode: str = "hybrid"
     agent_mode: str = "none"  # "none" | "react" | "cot"
+    retrieval_top_k: int = 40
+    chunk_top_k: int = 20
+    enable_rerank: bool = False
+    include_references: bool = True
     system_prompt: str = ""
     use_default_prompt: bool = True
     welcome_message: str = ""
@@ -384,9 +384,13 @@ class AgentUpdateRequest(BaseModel):
     query_mode: Optional[str] = None
     agent_mode: Optional[str] = None  # "none" | "react" | "cot"
     retrieval_top_k: Optional[int] = None
+    chunk_top_k: Optional[int] = None
+    enable_rerank: Optional[bool] = None
+    include_references: Optional[bool] = None
     system_prompt: Optional[str] = None
     use_default_prompt: Optional[bool] = None
     welcome_message: Optional[str] = None
+    template_id: Optional[str] = None
 
 
 class AgentQueryRequest(BaseModel):
@@ -402,7 +406,60 @@ class MessageUpdateRequest(BaseModel):
     content: str  # 新的消息内容（Markdown，≤10000 字符）
 
 
+# Agent config helpers
 # ═══════════════════════════════════════════════════════════
+_AGENT_INT_BOUNDS = {
+    "max_response_tokens": (512, 16384, 4096),
+    "retrieval_top_k": (5, 200, 40),
+    "chunk_top_k": (1, 100, 20),
+}
+
+_AGENT_BOOL_DEFAULTS = {
+    "enable_rerank": False,
+    "include_references": True,
+    "use_default_prompt": True,
+}
+
+
+def _bounded_agent_int(field: str, value: object) -> int:
+    minimum, maximum, default = _AGENT_INT_BOUNDS[field]
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(minimum, min(maximum, parsed))
+
+
+def _agent_bool(field: str, value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return _AGENT_BOOL_DEFAULTS[field]
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _normalise_agent_config_values(values: dict) -> dict:
+    normalised = dict(values)
+    for field in _AGENT_INT_BOUNDS:
+        if field in normalised:
+            normalised[field] = _bounded_agent_int(field, normalised[field])
+    for field in _AGENT_BOOL_DEFAULTS:
+        if field in normalised:
+            normalised[field] = _agent_bool(field, normalised[field])
+    return normalised
+
+
+def _agent_runtime_config(agent: dict) -> dict:
+    return _normalise_agent_config_values({
+        "max_response_tokens": agent.get("max_response_tokens", 4096),
+        "retrieval_top_k": agent.get("retrieval_top_k", 40),
+        "chunk_top_k": agent.get("chunk_top_k", 20),
+        "enable_rerank": agent.get("enable_rerank", False),
+        "include_references": agent.get("include_references", True),
+    })
+
 # Router
 # ═══════════════════════════════════════════════════════════
 
@@ -460,8 +517,13 @@ async def create_agent(
         kb_name=req.kb_name,
         llm_model=req.llm_model,
         temperature=req.temperature,
+        max_response_tokens=_bounded_agent_int("max_response_tokens", req.max_response_tokens),
         query_mode=req.query_mode,
         agent_mode=req.agent_mode,
+        retrieval_top_k=_bounded_agent_int("retrieval_top_k", req.retrieval_top_k),
+        chunk_top_k=_bounded_agent_int("chunk_top_k", req.chunk_top_k),
+        enable_rerank=_agent_bool("enable_rerank", req.enable_rerank),
+        include_references=_agent_bool("include_references", req.include_references),
         system_prompt=req.system_prompt,
         use_default_prompt=req.use_default_prompt,
         template_id=req.template_id,
@@ -487,7 +549,9 @@ async def update_agent(
     is_admin = current_user.get("is_admin", False)
     if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
         raise HTTPException(403, "无权修改该智能体")
-    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    updates = _normalise_agent_config_values(
+        {k: v for k, v in req.model_dump().items() if v is not None}
+    )
     agent = await pg_update_agent(agent_id, updates)
     if not agent:
         raise HTTPException(404, "智能体不存在")
@@ -694,6 +758,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     agent_mode = req.agent_mode or agent.get("agent_mode", "none")
     # AgenticRAG 专用检索模式：优先请求级，否则默认 rrf（更快）
     agentic_query_mode = req.mode or "rrf"
+    runtime_config = _agent_runtime_config(agent)
+    max_response_tokens = runtime_config["max_response_tokens"]
+    retrieval_top_k = runtime_config["retrieval_top_k"]
+    chunk_top_k = runtime_config["chunk_top_k"]
+    enable_rerank = runtime_config["enable_rerank"]
+    include_references = runtime_config["include_references"]
 
     # 构建 system_prompt
     system_prompt = agent.get("system_prompt", "")
@@ -874,8 +944,16 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     llm_func=instance.llm_model_func,
                     max_steps=int(os.getenv("AGENT_MAX_STEPS", "5")),
                     mode=agent_mode,
+                    max_response_tokens=max_response_tokens,
                 )
-                agentic.register_tool(SearchTool(instance, query_mode=agentic_query_mode))
+                agentic.register_tool(SearchTool(
+                    instance,
+                    query_mode=agentic_query_mode,
+                    top_k=retrieval_top_k,
+                    chunk_top_k=chunk_top_k,
+                    enable_rerank=enable_rerank,
+                    include_references=include_references,
+                ))
 
                 full_answer = ""
                 trace_steps = []
@@ -916,7 +994,10 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     try:
                         cot_context = await instance.aquery(
                             _cot_search_query, mode="rrf", only_need_context=True,
-                            top_k=30, max_total_tokens=8000,
+                            top_k=retrieval_top_k, chunk_top_k=chunk_top_k,
+                            enable_rerank=enable_rerank,
+                            include_references=include_references,
+                            max_total_tokens=8000,
                         ) or ""
                     except Exception:
                         pass
@@ -988,9 +1069,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 all_retrieved_text += " " + rewritten_query
                 all_retrieved_text += " " + full_answer
 
-                agent_images = extract_image_paths(all_retrieved_text)
-                _backfill_text_react = ""
-                if not agent_images:
+                agent_images, _backfill_text_react, _img_source = await recall_query_images(
+                    instance, req.query, actual_kb, all_retrieved_text
+                )
+                if _backfill_text_react:
+                    all_retrieved_text += "\n" + _backfill_text_react
+                if False and not agent_images:
                     # 第二道：实体图谱图片发现
                     agent_images, _backfill_text_react = await _discover_images_via_graph(
                         instance, req.query, actual_kb, all_retrieved_text
@@ -998,7 +1082,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     if _backfill_text_react:
                         all_retrieved_text += "\n" + _backfill_text_react
 
-                if not agent_images:
+                if False and not agent_images:
                     # 第三道：bigram 全库扫描
                     try:
                         agent_images, _backfill_text_react = await _bigram_image_scan(
@@ -1010,10 +1094,10 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         lightrag_logger.error(f"[AGENT-IMG] 全库扫描失败: {_fe}")
 
                 # ── 截断 + 文件存在性校验（安全网）──
-                agent_images = _validate_image_paths(agent_images)[:3]
+                agent_images = agent_images[:3]
 
                 # ── 图片相关性过滤（Agentic 路径）──
-                if agent_images and not image_description:
+                if False and agent_images and not image_description:
                     agent_images = _filter_images_by_relevance(
                         agent_images, req.query, all_retrieved_text or "", min_overlap=2
                     )
@@ -1029,7 +1113,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 # 注入回填文本到 citation 上下文
                 if _backfill_text_react and _agent_ctx:
                     _agent_ctx += "\n" + _backfill_text_react
-                if instance.config.enforce_citation and full_answer and _agent_ctx:
+                if include_references and instance.config.enforce_citation and full_answer and _agent_ctx:
                     _cit_block = _build_citation_block(_agent_ctx, full_answer)
                     if _cit_block:
                         full_answer += _cit_block
@@ -1097,8 +1181,9 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 _search_query = f"{rewritten_query}\n\n" + "\n".join(_vis_context_parts)
             ctx_task = asyncio.ensure_future(
                 instance.aquery(_search_query, mode=query_mode, vlm_enhanced=False,
-                                only_need_context=True, enable_rerank=False,
-                                chunk_top_k=40, top_k=60,
+                                only_need_context=True, enable_rerank=enable_rerank,
+                                chunk_top_k=chunk_top_k, top_k=retrieval_top_k,
+                                include_references=include_references,
                                 max_entity_tokens=3000, max_relation_tokens=2000,
                                 max_total_tokens=16000)
             )
@@ -1175,10 +1260,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 return
 
             # ── 图片提取（所有查询模式统一，三段式）──
-            agent_images = extract_image_paths(ctx)
-            backfill_text = ""
+            agent_images, backfill_text, _img_source = await recall_query_images(
+                instance, req.query, actual_kb, ctx
+            )
+            if backfill_text:
+                ctx = ctx + "\n\n" + backfill_text
 
-            if not agent_images:
+            if False and not agent_images:
                 # Africa 第二道：实体图谱图片发现（语义级别，模式无关）
                 agent_images, backfill_text = await _discover_images_via_graph(
                     instance, req.query, actual_kb, ctx
@@ -1186,7 +1274,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 if backfill_text:
                     ctx = ctx + "\n\n" + backfill_text
 
-            if not agent_images:
+            if False and not agent_images:
                 # 第三道：bigram 全库扫描（字符级别兜底）
                 try:
                     agent_images, backfill_text = await _bigram_image_scan(
@@ -1198,13 +1286,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     lightrag_logger.error(f"[IMG-FALLBACK] 全库扫描失败: {_fe}")
 
             # ── 截断 + 文件存在性校验（安全网）──
-            agent_images = _validate_image_paths(agent_images)[:3]
+            agent_images = agent_images[:3]
 
             # ── 图片相关性过滤 ──
             # 三段式发现只管"找到图片"，不管"图片是否与查询相关"。
             # 此过滤器用查询关键词与图片周围文本（VLM 描述/标题）做重叠匹配，
             # 剔除明显无关的图片。min_overlap=2 可过滤掉约 60-80% 假阳性。
-            if agent_images and not image_description:
+            if False and agent_images and not image_description:
                 # 仅对纯文本查询启用过滤（上传图片时跳过，因为视觉搜索已提供语义锚定）
                 agent_images = _filter_images_by_relevance(
                     agent_images, req.query, ctx or "", min_overlap=2
@@ -1298,10 +1386,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             # Step 2: 使用 PromptBuilder 构造分层 prompt
             sp = (agent.get("system_prompt") or "") + ("\n你是知识库助手。结合对话历史理解用户上下文和指代关系，但回答中的事实和数据必须来源于检索内容。" if agent.get("use_default_prompt") else "")
             # Select citation instruction based on config (same as non-agent endpoints)
-            _cit_inst = (
-                ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
-                else INLINE_QUOTE_INSTRUCTION
-            )
+            if include_references:
+                _cit_inst = (
+                    ANSWER_FORMAT_INSTRUCTION if instance.config.enforce_citation
+                    else INLINE_QUOTE_INSTRUCTION
+                )
+            else:
+                _cit_inst = ""
             # Detect degraded context (text chunks exist but may be thin).
             _has_chunks = (
                 ("[来源 " in ctx and len(ctx.strip()) > 200)          # RRF pipeline
@@ -1344,7 +1435,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             llm_response = await openai_complete_if_cache(
                 use_model, final_prompt, system_prompt=sp,
                 api_key=API_KEY, base_url=BASE_URL,
-                max_tokens=int(os.getenv("MAX_TOKENS", "8192")),
+                max_tokens=max_response_tokens,
                 temperature=agent.get("temperature", 0.7), stream=True,
             )
 

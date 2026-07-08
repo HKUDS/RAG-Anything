@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+﻿import { useState, useRef, useEffect } from 'react'
 import { Plus, Loader2, AlertCircle } from 'lucide-react'
 
 /**
@@ -76,7 +76,7 @@ export default function AutoRepairKBSelector({
         <span className="hidden sm:inline">新建</span>
       </button>
 
-      {/* Inline create form */}
+      {/* 行内创建表单 */}
       {showCreate && (
         <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-cloud-300 rounded-xl shadow-lg p-4 z-50">
           <p className="text-sm font-medium text-ink-primary mb-3">新建汽修知识库</p>
