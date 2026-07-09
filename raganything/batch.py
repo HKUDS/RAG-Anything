@@ -283,8 +283,8 @@ class BatchMixin:
         try:
             batch_parser = BatchParser(parser_type=self.config.parser)
             return batch_parser.get_supported_extensions()
-        except Exception as e:
-            logger.exception("Failed to get list of supported file extensions")
+        except Exception:
+            self.logger.exception("Failed to get list of supported file extensions")
             return []
 
     def filter_supported_files(
