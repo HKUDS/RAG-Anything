@@ -18,13 +18,14 @@ import asyncio
 import sys
 from pathlib import Path
 from raganything import RAGAnything
+from raganything.parser import Parser
 
 
 def check_libreoffice_installation():
     """Check if LibreOffice is installed and available"""
     import subprocess
 
-    for cmd in ["libreoffice", "soffice"]:
+    for cmd in Parser._libreoffice_command_candidates():
         try:
             result = subprocess.run(
                 [cmd, "--version"], capture_output=True, check=True, timeout=10
