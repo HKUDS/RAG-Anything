@@ -9,6 +9,8 @@ import asyncio
 import hashlib
 import json
 import logging
+import os
+import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from pathlib import Path
@@ -243,33 +245,54 @@ class BatchParser:
         """Persist incremental processing metadata atomically."""
         manifest_path = self._manifest_path(output_dir)
         manifest_path.parent.mkdir(parents=True, exist_ok=True)
-        temp_path = manifest_path.with_suffix(".tmp")
         payload = {
             "version": 1,
             "updated_at": time.time(),
             "files": manifest,
         }
-        temp_path.write_text(
-            json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8"
+        # Write to a uniquely named temp file in the same directory before the
+        # atomic replace. A fixed ".tmp" name would let two concurrent batches
+        # writing to the same output_dir clobber each other's half-written temp.
+        fd, temp_name = tempfile.mkstemp(
+            dir=str(manifest_path.parent),
+            prefix=".raganything_batch_manifest.",
+            suffix=".tmp",
         )
-        temp_path.replace(manifest_path)
+        temp_path = Path(temp_name)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as temp_file:
+                json.dump(payload, temp_file, indent=2, sort_keys=True)
+            temp_path.replace(manifest_path)
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            raise
 
     @staticmethod
-    def _file_signature(file_path: str) -> Dict[str, object]:
-        """Return size, mtime, and md5 metadata for change detection."""
+    def _file_metadata(file_path: str) -> Dict[str, object]:
+        """Return cheap stat metadata (resolved path, size, mtime) without hashing."""
         path = Path(file_path)
         stat = path.stat()
-        md5 = hashlib.md5()
-        with path.open("rb") as file_obj:
-            for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
-                md5.update(chunk)
-
         return {
             "path": str(path.resolve()),
             "size": stat.st_size,
             "mtime_ns": stat.st_mtime_ns,
-            "md5": md5.hexdigest(),
         }
+
+    @staticmethod
+    def _compute_md5(file_path: str) -> str:
+        """Stream a file and return its md5 hex digest."""
+        md5 = hashlib.md5()
+        with Path(file_path).open("rb") as file_obj:
+            for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+                md5.update(chunk)
+        return md5.hexdigest()
+
+    @classmethod
+    def _file_signature(cls, file_path: str) -> Dict[str, object]:
+        """Return size, mtime, and md5 metadata for change detection."""
+        metadata = cls._file_metadata(file_path)
+        metadata["md5"] = cls._compute_md5(file_path)
+        return metadata
 
     def _filter_incremental_files(
         self, file_paths: List[str], manifest: Dict[str, Dict[str, object]]
@@ -280,11 +303,47 @@ class BatchParser:
         signatures = {}
 
         for file_path in file_paths:
-            signature = self._file_signature(file_path)
-            manifest_key = signature["path"]
-            signatures[file_path] = signature
+            try:
+                metadata = self._file_metadata(file_path)
+            except OSError as exc:
+                # File vanished or became unreadable between discovery and the
+                # incremental scan. Treat it as changed so the normal per-file
+                # error path handles it instead of aborting the whole batch.
+                self.logger.warning(
+                    f"Could not read {file_path} for incremental scan: {exc}"
+                )
+                files_to_process.append(file_path)
+                continue
 
-            if manifest.get(manifest_key) == signature:
+            manifest_key = metadata["path"]
+            previous = manifest.get(manifest_key)
+
+            # Fast path: if size and mtime match a previous run, trust the
+            # stored signature and skip re-hashing the file entirely.
+            if (
+                isinstance(previous, dict)
+                and previous.get("size") == metadata["size"]
+                and previous.get("mtime_ns") == metadata["mtime_ns"]
+                and "md5" in previous
+            ):
+                signatures[file_path] = previous
+                skipped_files.append(file_path)
+                continue
+
+            # Metadata differs (or the file is new/unrecorded): hash to build a
+            # full signature and compare content.
+            try:
+                metadata["md5"] = self._compute_md5(file_path)
+            except OSError as exc:
+                self.logger.warning(
+                    f"Could not read {file_path} for incremental scan: {exc}"
+                )
+                files_to_process.append(file_path)
+                continue
+
+            signatures[file_path] = metadata
+
+            if previous == metadata:
                 skipped_files.append(file_path)
             else:
                 files_to_process.append(file_path)

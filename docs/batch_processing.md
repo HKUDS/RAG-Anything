@@ -145,8 +145,10 @@ python -m raganything.batch_parser --help
 
 Use `incremental=True` when repeatedly processing the same folder. RAG-Anything
 stores a manifest at `.raganything_batch_manifest.json` inside the output
-directory and skips files whose size, modification time, and MD5 hash match the
-last successful run.
+directory and skips files that are unchanged since the last successful run. A
+file is considered unchanged when its size and modification time match the
+manifest; only when those differ is the MD5 hash recomputed and compared, so
+large unchanged files are not re-hashed on every run.
 
 ```python
 result = batch_parser.process_batch(
