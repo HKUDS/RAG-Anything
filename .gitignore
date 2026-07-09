@@ -71,6 +71,7 @@ tiktoken_cache/
 
 # unit-test files
 test_*
+!tests/test_upload_tasks.py
 
 # Cline files
 memory-bank/

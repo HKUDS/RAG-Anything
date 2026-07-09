@@ -15,22 +15,84 @@ const CHART_SURFACE = '#ffffff'
 const CHART_BORDER = '#d6e5f2'
 const CHART_TEXT = '#2d4d66'
 const CHART_SHADOW = 'rgba(38,72,96,0.06)'
+const CHART_FONT_FAMILY = "'Inter', 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif"
 
 const formatPercent = value => `${Math.round((Number(value) || 0) * 100)}%`
+const STATUS_LABELS = {
+  ok: '正常',
+  degraded: '降级',
+  low: '空间偏低',
+  processing: '处理中',
+  completed: '已完成',
+  failed: '失败',
+  queued: '排队中',
+  deleted: '已删除',
+}
 
-function HealthPill({ label, value }) {
-  const isError = typeof value === 'string' && value.includes('error')
-  const isWarning = value === 'low'
+const EVENT_LABELS = {
+  upload_start: '开始上传',
+  upload_complete: '上传完成',
+  upload_error: '上传失败',
+  upload_delete: '删除上传任务',
+  url_download_start: '开始下载链接文件',
+  url_download_complete: '链接文件下载完成',
+  url_process_complete: '链接文件处理完成',
+  url_error: '链接处理失败',
+  graph_entity_create: '创建图谱实体',
+  graph_entity_rename: '重命名图谱实体',
+  graph_entity_delete: '删除图谱实体',
+  graph_edge_create: '创建图谱关系',
+  graph_edge_delete: '删除图谱关系',
+  doc_delete: '删除文档',
+  reprocess_multimodal_done: '多模态补处理完成',
+  kb_cache_reload: '刷新知识库缓存',
+  kb_cache_evict: '淘汰知识库缓存',
+  kb_cache_pin: '固定知识库缓存',
+  kb_cache_unpin: '取消固定知识库缓存',
+}
+
+function formatDisplayValue(value) {
+  if (value === undefined || value === null || value === '') return '未知'
+  if (typeof value !== 'string') return String(value)
+
+  const normalized = value.trim()
+  const lower = normalized.toLowerCase()
+  if (STATUS_LABELS[lower]) return STATUS_LABELS[lower]
+  if (lower.startsWith('error:')) {
+    const detail = normalized.slice(normalized.indexOf(':') + 1).trim()
+    return detail ? `异常：${detail}` : '异常'
+  }
+  return normalized
+}
+
+function formatEventLabel(event) {
+  return EVENT_LABELS[event] || event || '未知事件'
+}
+
+function getValueTone(rawValue) {
+  if (typeof rawValue !== 'string') return 'default'
+  const normalized = rawValue.trim().toLowerCase()
+  if (normalized.includes('error') || normalized === 'failed') return 'error'
+  if (normalized === 'low' || normalized === 'degraded') return 'warning'
+  return 'default'
+}
+
+function isEventError(event, error) {
+  return Boolean(error) || String(event || '').toLowerCase().includes('error')
+}
+
+function HealthPill({ label, value, rawValue = value }) {
+  const tone = getValueTone(rawValue)
   return (
     <div className={`rounded-xl border px-3 py-2 ${
-      isError
+      tone === 'error'
         ? 'border-rose-200 bg-rose-50 text-rose-600'
-        : isWarning
+        : tone === 'warning'
           ? 'border-amber-200 bg-amber-50 text-amber-600'
           : 'border-cloud-300 bg-cloud-50 text-ink-body'
     }`}>
       <p className="text-2xs opacity-80">{label}</p>
-      <p className="text-sm font-medium mt-0.5 break-all">{String(value ?? '未知')}</p>
+      <p className="text-sm font-medium mt-0.5 break-all">{formatDisplayValue(value)}</p>
     </div>
   )
 }
@@ -68,7 +130,7 @@ export default function MonitorPage({ onToast }) {
 
   const runMaintenance = async (action, kbName) => {
     if (!canMaintain) {
-      onToast?.('你的角色没有维护权限，需要 settings:write', 'error')
+      onToast?.('你的角色没有维护权限，需要“设置写入”权限（settings:write）', 'error')
       return
     }
     const key = `${action}:${kbName}`
@@ -109,18 +171,24 @@ export default function MonitorPage({ onToast }) {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
         {[
-          { icon: Zap, label: 'LLM 缓存条目', val: llmStats.total_cache_entries || llmStats.cache_entries || 0, color: 'text-sky-500' },
+          { icon: Zap, label: '模型缓存条目', val: llmStats.total_cache_entries || llmStats.cache_entries || 0, color: 'text-sky-500' },
           { icon: TrendingUp, label: '实体提取', val: llmStats.extract_calls || 0, color: 'text-sage-500' },
           { icon: Server, label: '服务状态', val: health?.status || '检测中', color: health?.status === 'degraded' ? 'text-amber-500' : 'text-sky-500' },
-          { icon: Database, label: 'KB 缓存', val: cacheStats?.total_cached ?? 0, color: 'text-amber-500' },
-        ].map(({ icon: Icon, label, val, color }) => (
-          <div key={label} className="stat-card">
-            <div className="flex items-center gap-2 stat-label mb-1">
-              <Icon size={14}/> {label}
+          { icon: Database, label: '知识库缓存', val: cacheStats?.total_cached ?? 0, color: 'text-amber-500' },
+        ].map(({ icon: Icon, label, val, color }) => {
+          const isNumericValue = typeof val === 'number'
+
+          return (
+            <div key={label} className="stat-card">
+              <div className="flex items-center gap-2 stat-label">
+                <Icon size={14}/> {label}
+              </div>
+              <p className={`stat-value ${isNumericValue ? 'stat-value-number monitor-stat-value-number' : 'stat-value-text'} ${color}`}>
+                {isNumericValue ? val.toLocaleString() : formatDisplayValue(val)}
+              </p>
             </div>
-            <p className={`stat-value ${color}`}>{typeof val === 'number' ? val.toLocaleString() : val}</p>
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -134,10 +202,11 @@ export default function MonitorPage({ onToast }) {
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <HealthPill label="Server" value={components.server || health?.status || '检测中'} />
-            <HealthPill label="Active KB" value={components.active_kb || '未选择'} />
-            <HealthPill label="KB 数量" value={components.kb_count ?? '未知'} />
+            <HealthPill label="服务" value={components.server || health?.status || '检测中'} />
+            <HealthPill label="当前知识库" value={components.active_kb || '未选择'} />
+            <HealthPill label="知识库数量" value={components.kb_count ?? '未知'} />
             <HealthPill label="认证数据库" value={components.auth_db || '未知'} />
+            <HealthPill label="监控日志" value={components.monitor_logs || '未知'} />
             <HealthPill label="磁盘剩余" value={components.disk_free_gb !== undefined ? `${components.disk_free_gb} GB` : '未知'} />
             {components.disk_warning && <HealthPill label="磁盘警告" value={components.disk_warning} />}
           </div>
@@ -146,7 +215,7 @@ export default function MonitorPage({ onToast }) {
         <section className="card p-4 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
           <div>
             <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
-              <HardDrive size={14}/> KB 缓存维护
+              <HardDrive size={14}/> 知识库缓存维护
             </h3>
             <p className="text-xs text-ink-muted dark:text-cloud-500 mt-1">
               缓存维护会影响下次查询加载速度；固定缓存可避免高频知识库被自动淘汰。
@@ -155,12 +224,12 @@ export default function MonitorPage({ onToast }) {
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <HealthPill label="缓存数量" value={`${cacheStats?.total_cached ?? 0}/${cacheStats?.max_size ?? '-'}`} />
             <HealthPill label="命中率" value={formatPercent(cacheStats?.hit_rate)} />
-            <HealthPill label="固定 KB" value={cacheStats?.pinned_count ?? 0} />
+            <HealthPill label="固定知识库" value={cacheStats?.pinned_count ?? 0} />
             <HealthPill label="淘汰次数" value={cacheStats?.evictions ?? 0} />
           </div>
           {!canMaintain && (
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              当前角色可查看监控，但维护操作需要 settings:write 权限。
+              当前角色可查看监控，但维护操作需要“设置写入”权限（settings:write）。
             </div>
           )}
           <div className="space-y-2 max-h-52 overflow-y-auto">
@@ -193,7 +262,7 @@ export default function MonitorPage({ onToast }) {
                       className="btn-secondary text-xs py-1 px-2 text-rose-600 border-rose-200"
                       disabled={!canMaintain || isPinned || maintaining === `evict:${kb}`}
                       onClick={() => runMaintenance('evict', kb)}
-                      title={isPinned ? '已固定的 KB 不能淘汰' : '淘汰缓存'}
+                      title={isPinned ? '已固定的知识库不能淘汰' : '淘汰缓存'}
                     >
                       {maintaining === `evict:${kb}` ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                     </button>
@@ -212,22 +281,22 @@ export default function MonitorPage({ onToast }) {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <div className="card p-4 dark:bg-sky-900/20 dark:border-sky-800/30">
-          <h3 className="text-sm font-medium text-ink-body dark:text-cloud-300 mb-3">LLM 调用分布</h3>
+          <h3 className="text-sm font-medium text-ink-body dark:text-cloud-300 mb-3">模型调用分布</h3>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData}>
               <XAxis dataKey="name"
-                tick={{ fill: CHART_INK, fontSize: 13, fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif" }} />
+                tick={{ fill: CHART_INK, fontSize: 13, fontFamily: CHART_FONT_FAMILY }} />
               <YAxis
-                tick={{ fill: CHART_INK, fontSize: 13, fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif" }} />
+                tick={{ fill: CHART_INK, fontSize: 13, fontFamily: CHART_FONT_FAMILY }} />
               <Tooltip contentStyle={{
                 background: CHART_SURFACE,
                 border: `1px solid ${CHART_BORDER}`,
                 borderRadius: '12px',
                 color: CHART_TEXT,
-                fontFamily: "'Microsoft YaHei', 'SimHei', 'PingFang SC', sans-serif",
+                fontFamily: CHART_FONT_FAMILY,
                 boxShadow: `0 4px 16px ${CHART_SHADOW}`,
-              }} />
-              <Bar dataKey="count" radius={[4, 4, 0, 0]} fill={CHART_CORAL} />
+              }} formatter={value => [typeof value === 'number' ? value.toLocaleString() : value, '调用次数']} />
+              <Bar dataKey="count" name="调用次数" radius={[4, 4, 0, 0]} fill={CHART_CORAL} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -239,7 +308,7 @@ export default function MonitorPage({ onToast }) {
                 <div className="w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 bg-sky-400"/>
                 <div>
                   <span className="text-ink-muted dark:text-cloud-500 font-mono">{e.time?.slice(11, 19) || ''}</span>
-                  <span className="text-sky-500 dark:text-sky-400 ml-2 font-medium">{e.event}</span>
+                  <span className="text-sky-500 dark:text-sky-400 ml-2 font-medium">{formatEventLabel(e.event)}</span>
                   <span className="text-ink-muted dark:text-cloud-500 ml-2">{e.file || ''}</span>
                   {e.error && <p className="text-rose-500 mt-0.5">{e.error.slice(0, 80)}</p>}
                 </div>
@@ -250,14 +319,19 @@ export default function MonitorPage({ onToast }) {
       </div>
 
       <div className="card p-4 dark:bg-sky-900/20 dark:border-sky-800/30">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300 mb-3">
-          <Terminal size={14}/> 实时日志
-        </h3>
+        <div className="mb-3">
+          <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
+            <Terminal size={14}/> 监控日志
+          </h3>
+          <p className="text-xs text-ink-muted dark:text-cloud-500 mt-1">
+            最近事件会持久化保存，服务重启后仍可查看。
+          </p>
+        </div>
         <div className="bg-cloud-100 dark:bg-sky-950/60 rounded-xl p-4 font-mono text-xs text-ink-muted dark:text-cloud-500 h-48 overflow-y-auto space-y-1 border border-cloud-200 dark:border-sky-800/30">
           {(logs || []).slice().reverse().slice(0, 20).map((e, i) => (
             <div key={i}>
               <span className="text-ink-muted dark:text-cloud-500">[{e.time?.slice(0, 19) || '?'}]</span>{' '}
-              <span className={e.event?.includes('error') ? 'text-rose-500 font-medium' : 'text-sky-500 dark:text-sky-400 font-medium'}>{e.event}</span>{' '}
+              <span className={isEventError(e.event, e.error) ? 'text-rose-500 font-medium' : 'text-sky-500 dark:text-sky-400 font-medium'}>{formatEventLabel(e.event)}</span>{' '}
               <span className="text-ink-muted dark:text-cloud-500">{e.file || e.task_id || ''}</span>
             </div>
           ))}

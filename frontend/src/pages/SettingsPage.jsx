@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
   AlertCircle, Cpu, Database, Gauge, Info, Lock, Route, Save, Search, Server,
-  ShieldCheck, Sliders, TestTube2,
+  RotateCcw, ShieldCheck, Sliders, TestTube2,
 } from 'lucide-react'
 import { api } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
@@ -19,6 +19,12 @@ const RRF_DEFAULTS = {
   enabled_channels: 'bm25,vector,graph',
 }
 
+const mergeSettings = settings => {
+  const rrf = { ...RRF_DEFAULTS, ...(settings?.rrf || {}) }
+  if (!String(rrf.bm25_tokenizer || '').trim()) rrf.bm25_tokenizer = RRF_DEFAULTS.bm25_tokenizer
+  return { ...settings, rrf }
+}
+
 const PROCESSING_DEFAULT_FIELDS = [
   { key: 'parser', label: '默认解析器', value: v => v || 'docling' },
   { key: 'chunking_strategy', label: '默认分块策略', value: v => v || 'recursive' },
@@ -27,6 +33,17 @@ const PROCESSING_DEFAULT_FIELDS = [
   { key: 'enable_table', label: '默认表格处理', value: v => (v ?? true) ? '开启' : '关闭' },
   { key: 'enable_equation', label: '默认公式处理', value: v => (v ?? true) ? '开启' : '关闭' },
   { key: 'enable_video', label: '默认视频处理', value: v => (v ?? false) ? '开启' : '关闭' },
+]
+
+const RRF_NUMBER_FIELDS = [
+  ['rrf_k', 'RRF K', 1, 200, 1],
+  ['bm25_top_k', 'BM25 Top K', 1, 500, 1],
+  ['vector_top_k', '向量 Top K', 1, 500, 1],
+  ['graph_top_k', '图谱 Top K', 1, 200, 1],
+  ['graph_depth', '图谱深度', 1, 5, 1],
+  ['bm25_k1', 'BM25 k1', 0.1, 3, 0.1],
+  ['bm25_b', 'BM25 b', 0, 1, 0.05],
+  ['rrf_channel_timeout', '通道超时（秒）', 0.05, 5, 0.05],
 ]
 
 function Field({ label, children, hint }) {
@@ -51,16 +68,14 @@ function ReadonlyItem({ label, value }) {
 export default function SettingsPage({ onToast }) {
   const { hasPermission } = useAuth()
   const canWrite = hasPermission('settings:write')
-  const [local, setLocal] = useState({})
+  const [local, setLocal] = useState(() => mergeSettings({}))
   const [testing, setTesting] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [savingKey, setSavingKey] = useState('')
 
   useEffect(() => {
     api.getSettings()
-      .then(s => {
-        const merged = { ...s, rrf: { ...RRF_DEFAULTS, ...(s.rrf || {}) } }
-        setLocal(merged)
-      })
+      .then(s => setLocal(mergeSettings(s)))
       .catch(err => {
         console.error('加载设置失败:', err)
         onToast?.(`加载设置失败: ${err.message}`, 'error')
@@ -102,20 +117,46 @@ export default function SettingsPage({ onToast }) {
     }
   }
 
-  const disabled = !canWrite || Boolean(savingKey)
+  const resetToDefaults = async () => {
+    if (!canWrite || savingKey || resetting) return
+    if (!window.confirm('确认恢复系统设置默认值吗？这会重置当前页可编辑项，并以服务启动时的默认配置为准。')) return
+    setResetting(true)
+    try {
+      const result = await api.resetSettings()
+      setLocal(mergeSettings(result?.settings || {}))
+      onToast?.(result?.note || '已恢复默认设置', 'success')
+    } catch (e) {
+      onToast?.(e.message, 'error')
+    } finally {
+      setResetting(false)
+    }
+  }
+
+  const disabled = !canWrite || Boolean(savingKey) || resetting
   const rrf = local.rrf || RRF_DEFAULTS
 
   return (
-    <div className="max-w-4xl space-y-8">
-      <div className="page-header page-header-divider">
+    <div className="settings-page w-full max-w-none grid grid-cols-1 xl:grid-cols-12 gap-5 xl:gap-6 items-stretch">
+      <div className="page-header page-header-divider flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between xl:col-span-12">
         <div>
           <h2 className="page-title">平台设置</h2>
           <p className="page-subtitle">管理模型接口、检索调优、运行限制和平台级默认值</p>
         </div>
+        {canWrite && (
+          <button
+            className="btn-secondary text-sm flex items-center gap-2 shrink-0"
+            onClick={resetToDefaults}
+            disabled={disabled}
+            title="恢复当前系统设置到服务启动时的默认值"
+          >
+            <RotateCcw size={14} />
+            {resetting ? '恢复中...' : '恢复默认'}
+          </button>
+        )}
       </div>
 
       {!canWrite && (
-        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-900/20 p-4">
+        <div className="flex items-start gap-3 rounded-2xl border border-amber-200 dark:border-amber-800/30 bg-amber-50 dark:bg-amber-900/20 p-4 xl:col-span-12">
           <Lock size={16} className="text-amber-500 dark:text-amber-400 mt-0.5 shrink-0" />
           <div>
             <p className="text-sm font-medium text-amber-700 dark:text-amber-300">当前为只读视图</p>
@@ -126,8 +167,8 @@ export default function SettingsPage({ onToast }) {
         </div>
       )}
 
-      <section className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
-        <div className="flex items-start justify-between gap-4">
+      <section className="card h-full p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30 xl:col-span-8 min-w-0">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
               <TestTube2 size={16} /> 模型与接口
@@ -136,7 +177,7 @@ export default function SettingsPage({ onToast }) {
               这里配置平台默认模型。智能体可以在自己的编辑页覆盖默认 LLM。
             </p>
           </div>
-          <button className="btn-secondary text-sm flex items-center gap-2" onClick={testConnection} disabled={testing}>
+          <button className="btn-secondary text-sm flex items-center gap-2 shrink-0" onClick={testConnection} disabled={testing}>
             <Server size={14} /> {testing ? '测试中...' : '测试服务连接'}
           </button>
         </div>
@@ -165,7 +206,7 @@ export default function SettingsPage({ onToast }) {
         </div>
       </section>
 
-      <section className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+      <section className="card h-full p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30 xl:col-span-4 min-w-0">
         <div>
           <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
             <Sliders size={16} /> 平台默认处理
@@ -175,7 +216,7 @@ export default function SettingsPage({ onToast }) {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {PROCESSING_DEFAULT_FIELDS.map(({ key, label, value }) => (
             <ReadonlyItem key={key} label={label} value={value(local[key])} />
           ))}
@@ -189,7 +230,7 @@ export default function SettingsPage({ onToast }) {
         </div>
       </section>
 
-      <section className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+      <section className="card h-full p-5 space-y-5 dark:bg-sky-900/20 dark:border-sky-800/30 xl:col-span-12 min-w-0">
         <div>
           <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
             <Search size={16} /> 检索调优
@@ -199,59 +240,58 @@ export default function SettingsPage({ onToast }) {
           </p>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Field label="启用通道" hint="逗号分隔，可用 bm25、vector、graph。">
-            <input
-              className="input-field text-sm"
-              value={rrf.enabled_channels || ''}
-              disabled={disabled}
-              onChange={e => setLocal({ ...local, rrf: { ...rrf, enabled_channels: e.target.value } })}
-              onBlur={e => saveRrfField('enabled_channels', e.target.value)}
-            />
-          </Field>
-          <Field label="BM25 分词器">
-            <input
-              className="input-field text-sm"
-              value={rrf.bm25_tokenizer || ''}
-              disabled={disabled}
-              onChange={e => setLocal({ ...local, rrf: { ...rrf, bm25_tokenizer: e.target.value } })}
-              onBlur={e => saveRrfField('bm25_tokenizer', e.target.value)}
-            />
-          </Field>
-          {[
-            ['rrf_k', 'RRF K', 1, 200, 1],
-            ['bm25_top_k', 'BM25 Top K', 1, 500, 1],
-            ['vector_top_k', '向量 Top K', 1, 500, 1],
-            ['graph_top_k', '图谱 Top K', 1, 200, 1],
-            ['graph_depth', '图谱深度', 1, 5, 1],
-            ['bm25_k1', 'BM25 k1', 0.1, 3, 0.1],
-            ['bm25_b', 'BM25 b', 0, 1, 0.05],
-            ['rrf_channel_timeout', '通道超时（秒）', 0.05, 5, 0.05],
-          ].map(([key, label, min, max, step]) => (
-            <Field key={key} label={label}>
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Field label="启用通道" hint="逗号分隔，可用 bm25、vector、graph。">
               <input
                 className="input-field text-sm"
-                type="number"
-                min={min}
-                max={max}
-                step={step}
-                value={rrf[key] ?? ''}
+                value={rrf.enabled_channels || ''}
                 disabled={disabled}
-                onChange={e => {
-                  const value = step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value, 10)
-                  setLocal({ ...local, rrf: { ...rrf, [key]: Number.isNaN(value) ? '' : value } })
-                }}
-                onBlur={e => {
-                  const value = step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value, 10)
-                  if (!Number.isNaN(value)) saveRrfField(key, value)
-                }}
+                onChange={e => setLocal({ ...local, rrf: { ...rrf, enabled_channels: e.target.value } })}
+                onBlur={e => saveRrfField('enabled_channels', e.target.value)}
               />
             </Field>
-          ))}
+            <Field label="BM25 分词器" hint="默认使用 jieba；仅影响后续检索任务。">
+              <input
+                className="input-field text-sm"
+                value={rrf.bm25_tokenizer || ''}
+                disabled={disabled}
+                onChange={e => setLocal({ ...local, rrf: { ...rrf, bm25_tokenizer: e.target.value } })}
+                onBlur={e => saveRrfField('bm25_tokenizer', e.target.value.trim() || RRF_DEFAULTS.bm25_tokenizer)}
+              />
+            </Field>
+          </div>
+
+          <div className="border-t border-cloud-200/80 dark:border-sky-800/30 pt-4">
+            <p className="text-2xs font-medium text-ink-muted dark:text-cloud-500 mb-3">数值参数</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3">
+              {RRF_NUMBER_FIELDS.map(([key, label, min, max, step]) => (
+                <Field key={key} label={label}>
+                  <input
+                    className="input-field text-sm"
+                    type="number"
+                    min={min}
+                    max={max}
+                    step={step}
+                    value={rrf[key] ?? ''}
+                    disabled={disabled}
+                    onChange={e => {
+                      const value = step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value, 10)
+                      setLocal({ ...local, rrf: { ...rrf, [key]: Number.isNaN(value) ? '' : value } })
+                    }}
+                    onBlur={e => {
+                      const value = step < 1 ? parseFloat(e.target.value) : parseInt(e.target.value, 10)
+                      if (!Number.isNaN(value)) saveRrfField(key, value)
+                    }}
+                  />
+                </Field>
+              ))}
+            </div>
+          </div>
         </div>
       </section>
 
-      <section className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+      <section className="card h-full p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30 xl:col-span-4 min-w-0">
         <div>
           <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
             <Gauge size={16} /> 运行限制
@@ -280,7 +320,7 @@ export default function SettingsPage({ onToast }) {
         </Field>
       </section>
 
-      <section className="card p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
+      <section className="card h-full p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30 xl:col-span-4 min-w-0">
         <div>
           <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
             <Database size={16} /> 存储与能力边界
@@ -289,7 +329,7 @@ export default function SettingsPage({ onToast }) {
             这些来自服务端运行环境，前端先以只读方式展示，避免误改部署级配置。
           </p>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 gap-3">
           <ReadonlyItem label="知识库工作目录" value={local.working_dir} />
           <ReadonlyItem label="解析输出目录" value={local.parser_output_dir} />
           <ReadonlyItem label="支持文件格式" value={(local.supported_extensions || []).join(' ')} />
@@ -297,7 +337,7 @@ export default function SettingsPage({ onToast }) {
         </div>
       </section>
 
-      <section className="card p-5 space-y-3 dark:bg-sky-900/20 dark:border-sky-800/30">
+      <section className="card h-full p-5 space-y-3 dark:bg-sky-900/20 dark:border-sky-800/30 xl:col-span-4 min-w-0">
         <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
           <ShieldCheck size={16} /> 安全与权限
         </h3>

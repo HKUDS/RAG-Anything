@@ -71,6 +71,20 @@ function buildHttpError(err, status) {
   )
 }
 
+async function readUploadJsonResponse(res) {
+  if (!res.ok) {
+    const err = await readResponseBody(res, { detail: res.statusText })
+    const detail = typeof err === 'string' ? err : err?.detail
+    throw new Error(_uploadErrorMsg(res.status, detail))
+  }
+
+  const data = await readResponseBody(res, {})
+  if (typeof data === 'string') {
+    throw new Error('服务器返回了无效的 JSON 响应')
+  }
+  return data
+}
+
 async function request(url, options = {}) {
   if (!currentKB) {
     console.warn(`[api] 跳过请求 ${url}：currentKB 未初始化`)
@@ -203,8 +217,7 @@ export const api = {
       method: 'POST', body: fd, headers: authHeaders(), signal: controller.signal
     }).then(r => {
       clearTimeout(timeoutId)
-      if (!r.ok) return r.json().then(e => { throw new Error(_uploadErrorMsg(r.status, e.detail)) })
-      return r.json()
+      return readUploadJsonResponse(r)
     }).catch(err => {
       clearTimeout(timeoutId)
       if (err.name === 'AbortError') throw new Error('上传超时：文件过大或网络较慢，请重试')
@@ -229,8 +242,7 @@ export const api = {
       method: 'POST', body: fd, headers: authHeaders(), signal: controller.signal
     }).then(r => {
       clearTimeout(timeoutId)
-      if (!r.ok) return r.json().then(e => { throw new Error(_uploadErrorMsg(r.status, e.detail)) })
-      return r.json()
+      return readUploadJsonResponse(r)
     }).catch(err => {
       clearTimeout(timeoutId)
       if (err.name === 'AbortError') throw new Error('上传超时：文件过大或网络较慢，请重试')
@@ -240,13 +252,24 @@ export const api = {
   },
   uploadFolder: (path, chunking_strategy = '', multimodal = {}) => {
     const params = new URLSearchParams()
+    params.set('folder_path', path)
     if (chunking_strategy) params.set('chunking_strategy', chunking_strategy)
     if (multimodal.enable_image !== undefined) params.set('enable_image', multimodal.enable_image)
     if (multimodal.enable_table !== undefined) params.set('enable_table', multimodal.enable_table)
     if (multimodal.enable_equation !== undefined) params.set('enable_equation', multimodal.enable_equation)
     if (multimodal.enable_video !== undefined) params.set('enable_video', multimodal.enable_video)
     const qs = params.toString()
-    return request(`/upload/folder${qs ? '?' + qs : ''}`, { method: 'POST', body: JSON.stringify({ folder_path: path }) })
+    return request(`/upload/folder${qs ? '?' + qs : ''}`, { method: 'POST' })
+  },
+  uploadUrl: (url, { strategy = '', multimodal = {} } = {}) => {
+    const params = new URLSearchParams()
+    params.set('url', url)
+    if (strategy) params.set('chunking_strategy', strategy)
+    if (multimodal.enable_image !== undefined) params.set('enable_image', multimodal.enable_image)
+    if (multimodal.enable_table !== undefined) params.set('enable_table', multimodal.enable_table)
+    if (multimodal.enable_equation !== undefined) params.set('enable_equation', multimodal.enable_equation)
+    if (multimodal.enable_video !== undefined) params.set('enable_video', multimodal.enable_video)
+    return request(`/upload/url?${params.toString()}`, { method: 'POST' })
   },
   uploadContent: (content, title, chunking_strategy = '', multimodal = {}) => {
     const params = new URLSearchParams()
@@ -280,6 +303,8 @@ export const api = {
   deleteDocument: (id) => request(`/knowledge/documents/${id}`, { method: 'DELETE' }),
   deleteDocuments: (ids) => request('/knowledge/documents/batch-delete', { method: 'POST', body: JSON.stringify({ doc_ids: ids }) }),
   retryDocument: (id) => request(`/knowledge/documents/${id}/retry`, { method: 'POST' }),
+  getUploadTasks: () => request('/upload/tasks'),
+  deleteUploadTask: (taskId) => request(`/upload/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }),
   reprocessMultimodal: (kbName) => fetchJson(`/kb/${encodeURIComponent(kbName)}/reprocess-multimodal`, { method: 'POST' }),
   downloadDocumentUrl: (id) => {
     const token = getToken()
@@ -302,6 +327,7 @@ export const api = {
   // 设置接口（仅管理员；使用 fetchJson 避免附加 ?kb= 参数）
   getSettings: () => fetchJson('/settings'),
   updateSettings: (data) => fetchJson('/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  resetSettings: () => fetchJson('/settings/reset', { method: 'POST' }),
 
   // 监控
   getStatus: () => fetchJson('/monitor/status'),

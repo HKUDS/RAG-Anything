@@ -8,13 +8,42 @@ import {
 import * as d3 from 'd3'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useParams, useNavigate } from 'react-router-dom'
-import { api, setCurrentKB, getToken } from '../utils/api'
+import { api, setCurrentKB } from '../utils/api'
 import ChunkDetailDrawer from '../components/ChunkDetailDrawer'
 import { useAuth } from '../context/AuthContext'
 
-const STATUS = { processed: 'badge-success', processing: 'badge-warning', handling: 'badge-info', failed: 'badge-error' }
-const STATUS_CN = { processed: '已完成', processing: '处理中', handling: '入库中', failed: '失败' }
-const PHASE_CN = { parsing: '解析文档', 'entity-extraction': '抽取实体', embedding: '向量化', 'graph-building': '构建图谱', 'multimodal-tasks': '多模态处理' }
+const STATUS = {
+  queued: 'badge-info',
+  processed: 'badge-success',
+  processing: 'badge-warning',
+  handling: 'badge-info',
+  completed: 'badge-success',
+  failed: 'badge-error',
+}
+const STATUS_CN = {
+  queued: '排队中',
+  processed: '已完成',
+  processing: '处理中',
+  handling: '入库中',
+  completed: '已完成',
+  failed: '失败',
+}
+const PHASE_CN = {
+  initializing: '初始化环境',
+  parsing: '解析文档',
+  'entity-extraction': '抽取实体',
+  embedding: '向量化',
+  'graph-building': '构建图谱',
+  'multimodal-tasks': '多模态处理',
+}
+const PHASE_PROGRESS_MODEL = {
+  initializing: { start: 4, end: 14, durationMs: 12_000, bufferMs: 700, bufferDrift: 0.8 },
+  parsing: { start: 12, end: 34, durationMs: 28_000, bufferMs: 900, bufferDrift: 1.2 },
+  'entity-extraction': { start: 36, end: 74, durationMs: 55_000, bufferMs: 1_150, bufferDrift: 1.4 },
+  embedding: { start: 56, end: 76, durationMs: 40_000, bufferMs: 950, bufferDrift: 1.1 },
+  'graph-building': { start: 78, end: 92, durationMs: 24_000, bufferMs: 850, bufferDrift: 0.9 },
+  'multimodal-tasks': { start: 88, end: 97, durationMs: 36_000, bufferMs: 1_300, bufferDrift: 0.8 },
+}
 const NODE_COLORS = ['#e8734a', '#5b9bd5', '#6b9e7a', '#d4a853', '#c9707e', '#366596', '#6da9d7', '#f08f6d']
 
 const COST_COLORS = {
@@ -23,11 +52,166 @@ const COST_COLORS = {
   high: 'text-rose-600 bg-rose-50 border-rose-200',
 }
 
+function clampProgress(value) {
+  return Math.max(0, Math.min(100, value))
+}
+
+function parseTaskTimestamp(value) {
+  if (!value) return null
+  const parsed = Date.parse(value)
+  return Number.isNaN(parsed) ? null : parsed
+}
+
+function easeOutCubic(t) {
+  return 1 - Math.pow(1 - t, 3)
+}
+
+function getFileExtension(filename) {
+  const raw = typeof filename === 'string' ? filename.trim().toLowerCase() : ''
+  const idx = raw.lastIndexOf('.')
+  return idx >= 0 ? raw.slice(idx + 1) : ''
+}
+
+function getFileSizeTempo(fileSize) {
+  const size = Number(fileSize)
+  if (!Number.isFinite(size) || size <= 0) return 1
+
+  const sizeKb = size / 1024
+  const logFactor = Math.log2(sizeKb + 1)
+  return Math.max(0.85, Math.min(2.6, 0.8 + logFactor / 6))
+}
+
+function getFileTypeTempo(filename, phaseKey) {
+  const ext = getFileExtension(filename)
+
+  const phaseMultiplier = {
+    parsing: {
+      pdf: 1.55,
+      ppt: 1.35,
+      pptx: 1.35,
+      xls: 1.25,
+      xlsx: 1.25,
+      doc: 1.08,
+      docx: 1.08,
+      txt: 0.75,
+      md: 0.75,
+      csv: 0.8,
+      jpg: 0.9,
+      jpeg: 0.9,
+      png: 0.9,
+    },
+    'entity-extraction': {
+      pdf: 1.2,
+      ppt: 1.1,
+      pptx: 1.1,
+      doc: 1.05,
+      docx: 1.05,
+      txt: 0.9,
+      md: 0.9,
+    },
+    'graph-building': {
+      pdf: 1.1,
+      ppt: 1.06,
+      pptx: 1.06,
+    },
+    'multimodal-tasks': {
+      pdf: 1.45,
+      ppt: 1.3,
+      pptx: 1.3,
+      doc: 1.12,
+      docx: 1.12,
+      xls: 1.18,
+      xlsx: 1.18,
+      jpg: 0.95,
+      jpeg: 0.95,
+      png: 0.95,
+    },
+  }
+
+  return phaseMultiplier[phaseKey]?.[ext] ?? 1
+}
+
+function getMultimodalStageTempo(task, phaseKey) {
+  if (phaseKey !== 'multimodal-tasks') return 1
+
+  const ext = getFileExtension(task.filename)
+  const heavyTypes = new Set(['pdf', 'ppt', 'pptx', 'doc', 'docx', 'xls', 'xlsx'])
+  return heavyTypes.has(ext) ? 1.4 : 1.22
+}
+
+function getPhaseTransitionBuffer(model, tempo) {
+  const baseBuffer = model.bufferMs ?? 0
+  if (baseBuffer <= 0) return { durationMs: 0, drift: 0 }
+
+  return {
+    durationMs: Math.round(baseBuffer * Math.min(1.45, 0.82 + tempo * 0.22)),
+    drift: model.bufferDrift ?? 0.8,
+  }
+}
+
+function getVisualTaskProgress(task, nowMs) {
+  if (task.status === 'completed') return { value: 100, simulated: false }
+
+  if (task.status === 'failed') {
+    const failedValue = Number.isFinite(task.progress) ? clampProgress(task.progress) : null
+    return { value: failedValue, simulated: false }
+  }
+
+  if (task.status !== 'processing') {
+    return { value: null, simulated: false }
+  }
+
+  const phaseKey = task.phase && PHASE_PROGRESS_MODEL[task.phase] ? task.phase : 'initializing'
+  const model = PHASE_PROGRESS_MODEL[phaseKey]
+  const anchorMs = parseTaskTimestamp(task.updated_at || task.created_at) ?? nowMs
+  const elapsed = Math.max(0, nowMs - anchorMs)
+  const tempo = (
+    getFileSizeTempo(task.file_size)
+    * getFileTypeTempo(task.filename, phaseKey)
+    * getMultimodalStageTempo(task, phaseKey)
+  )
+  const actualValue = Number.isFinite(task.progress) ? clampProgress(task.progress) : null
+  const simulatedDuration = model.durationMs * tempo
+  const transitionBuffer = getPhaseTransitionBuffer(model, tempo)
+  const bufferedStart = Math.min(model.end - 0.5, model.start + transitionBuffer.drift)
+  let simulatedValue = model.start
+
+  if (transitionBuffer.durationMs > 0 && elapsed < transitionBuffer.durationMs) {
+    const bufferRatio = elapsed / transitionBuffer.durationMs
+    simulatedValue = model.start + (bufferedStart - model.start) * easeOutCubic(bufferRatio)
+  } else {
+    const activeElapsed = Math.max(0, elapsed - transitionBuffer.durationMs)
+    const activeRatio = Math.min(1, activeElapsed / Math.max(1, simulatedDuration))
+    simulatedValue = bufferedStart + (model.end - bufferedStart) * easeOutCubic(activeRatio)
+  }
+  const floor = actualValue !== null && actualValue > 0 ? actualValue : model.start
+
+  return {
+    value: Math.min(99, clampProgress(Math.max(floor, simulatedValue))),
+    simulated: true,
+  }
+}
+
 // ====================== 上传区域 ======================
-function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strategies, onUploaded,
-  multimodal, setMultimodal }) {
+function UploadSection({
+  kbName,
+  onToast,
+  chunkingStrategy,
+  setChunkingStrategy,
+  strategies,
+  onUploaded,
+  multimodal,
+  setMultimodal,
+}) {
   const [dragOver, setDragOver] = useState(false)
-  const [files, setFiles] = useState([])
+  const [localFiles, setLocalFiles] = useState([])
+  const [serverTasks, setServerTasks] = useState([])
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
+  const [tasksLoading, setTasksLoading] = useState(false)
+  const [tasksLoaded, setTasksLoaded] = useState(false)
+  const [tasksError, setTasksError] = useState('')
+  const [batchUploading, setBatchUploading] = useState(false)
+  const [deletingTaskIds, setDeletingTaskIds] = useState([])
   const [urlInput, setUrlInput] = useState('')
   const [urlLoading, setUrlLoading] = useState(false)
   const [pasteContent, setPasteContent] = useState('')
@@ -35,49 +219,218 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
   const [folderPath, setFolderPath] = useState('')
   const [folderLoading, setFolderLoading] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
+  const [progressNow, setProgressNow] = useState(() => Date.now())
+  const fileInputRef = useRef(null)
+  const taskRequestRef = useRef(0)
 
-  const addFile = useCallback((file) => {
-    setFiles(prev => [...prev, { name: file.name, size: file.size, file, status: 'pending' }])
+  const addFiles = useCallback((fileList) => {
+    const nextFiles = Array.from(fileList || [])
+    if (nextFiles.length === 0) return
+
+    setLocalFiles(prev => {
+      const signatures = new Set(prev.map(item => item.signature))
+      const additions = []
+
+      nextFiles.forEach(file => {
+        const signature = `${file.name}:${file.size}:${file.lastModified}`
+        if (signatures.has(signature)) return
+        signatures.add(signature)
+        additions.push({
+          id: `${signature}:${Date.now()}:${Math.random().toString(16).slice(2)}`,
+          signature,
+          name: file.name,
+          size: file.size,
+          file,
+          submitting: false,
+          error: '',
+        })
+      })
+
+      return additions.length > 0 ? [...prev, ...additions] : prev
+    })
   }, [])
 
-  const processFile = async (idx) => {
-    const f = files[idx]
-    if (!f || f.status !== 'pending') return
-    setFiles(prev => prev.map((x, i) => i === idx ? { ...x, status: 'uploading' } : x))
+  const refreshUploadTasks = useCallback(async ({ silent = false } = {}) => {
+    if (!kbName) return
+    setCurrentKB(kbName)
+
+    const requestId = ++taskRequestRef.current
+    if (!silent) setTasksLoading(true)
+
     try {
-      await api.uploadFile(f.file, chunkingStrategy, multimodal)
-      setFiles(prev => prev.map((x, i) => i === idx ? { ...x, status: 'done' } : x))
-      onUploaded?.()
-      onToast?.(`${f.name} 上传成功`, 'success')
+      const result = await api.getUploadTasks()
+      if (requestId !== taskRequestRef.current) return
+      setServerTasks(result.tasks || [])
+      setTasksError('')
+      setTasksLoaded(true)
     } catch (e) {
-      setFiles(prev => prev.map((x, i) => i === idx ? { ...x, status: 'error', error: e.message } : x))
-      onToast?.(`${f.name} 上传失败: ${e.message}`, 'error')
+      if (requestId !== taskRequestRef.current) return
+      setTasksError(e.message || '上传任务加载失败')
+      setTasksLoaded(true)
+    } finally {
+      if (!silent && requestId === taskRequestRef.current) setTasksLoading(false)
+    }
+  }, [kbName])
+
+  useEffect(() => {
+    if (!kbName) return
+    setCurrentKB(kbName)
+    setLocalFiles([])
+    setServerTasks([])
+    setTasksError('')
+    setTasksLoaded(false)
+    void refreshUploadTasks()
+  }, [kbName, refreshUploadTasks])
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined
+
+    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const updatePreference = () => setPrefersReducedMotion(mediaQuery.matches)
+
+    updatePreference()
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', updatePreference)
+      return () => mediaQuery.removeEventListener('change', updatePreference)
+    }
+
+    mediaQuery.addListener(updatePreference)
+    return () => mediaQuery.removeListener(updatePreference)
+  }, [])
+
+  useEffect(() => {
+    if (!showUpload || !kbName) return undefined
+    const timer = window.setInterval(() => {
+      void refreshUploadTasks({ silent: true })
+    }, 3000)
+    return () => window.clearInterval(timer)
+  }, [kbName, refreshUploadTasks, showUpload])
+
+  useEffect(() => {
+    if (!showUpload) return
+    setProgressNow(Date.now())
+  }, [serverTasks, showUpload])
+
+  useEffect(() => {
+    if (!showUpload) return undefined
+    const hasActiveProcessing = serverTasks.some(task => task.status === 'processing')
+    if (!hasActiveProcessing || prefersReducedMotion) return undefined
+
+    const timer = window.setInterval(() => {
+      setProgressNow(Date.now())
+    }, 1000)
+    return () => window.clearInterval(timer)
+  }, [prefersReducedMotion, serverTasks, showUpload])
+
+  const removeLocalFile = useCallback((localId) => {
+    setLocalFiles(prev => prev.filter(item => item.id !== localId))
+  }, [])
+
+  const submitLocalFile = async (localId) => {
+    const target = localFiles.find(item => item.id === localId)
+    if (!target || target.submitting) return
+
+    setLocalFiles(prev => prev.map(item => (
+      item.id === localId ? { ...item, submitting: true, error: '' } : item
+    )))
+
+    try {
+      await api.uploadFile(target.file, chunkingStrategy, multimodal)
+      setLocalFiles(prev => prev.filter(item => item.id !== localId))
+      await refreshUploadTasks({ silent: true })
+      onUploaded?.()
+      onToast?.(`${target.name} 已加入上传队列`, 'success')
+    } catch (e) {
+      setLocalFiles(prev => prev.map(item => (
+        item.id === localId ? { ...item, submitting: false, error: e.message } : item
+      )))
+      onToast?.(`${target.name} 上传失败: ${e.message}`, 'error')
     }
   }
 
-  const processAllFiles = async () => {
-    const pending = files.filter(f => f.status === 'pending')
-    for (let i = 0; i < pending.length; i++) {
-      const idx = files.indexOf(pending[i])
-      if (idx >= 0) await processFile(idx)
+  const submitAllFiles = async () => {
+    const pendingFiles = localFiles.filter(item => !item.submitting)
+    if (pendingFiles.length === 0) return
+
+    const targetIds = new Set(pendingFiles.map(item => item.id))
+    setBatchUploading(true)
+    setLocalFiles(prev => prev.map(item => (
+      targetIds.has(item.id) ? { ...item, submitting: true, error: '' } : item
+    )))
+
+    try {
+      const result = await api.uploadFiles(
+        pendingFiles.map(item => item.file),
+        chunkingStrategy,
+        multimodal,
+      )
+
+      const successCounts = new Map()
+      const skippedCounts = new Map()
+      ;(result.tasks || []).forEach(task => {
+        successCounts.set(task.filename, (successCounts.get(task.filename) || 0) + 1)
+      })
+      ;(result.skipped || []).forEach(name => {
+        skippedCounts.set(name, (skippedCounts.get(name) || 0) + 1)
+      })
+
+      setLocalFiles(prev => prev.flatMap(item => {
+        if (!targetIds.has(item.id)) return [item]
+
+        const queuedCount = successCounts.get(item.name) || 0
+        if (queuedCount > 0) {
+          successCounts.set(item.name, queuedCount - 1)
+          return []
+        }
+
+        const skippedCount = skippedCounts.get(item.name) || 0
+        if (skippedCount > 0) {
+          skippedCounts.set(item.name, skippedCount - 1)
+          return [{ ...item, submitting: false, error: '文件重复或注册失败' }]
+        }
+
+        return [{ ...item, submitting: false }]
+      }))
+
+      await refreshUploadTasks({ silent: true })
+      onUploaded?.()
+      const queued = result.tasks?.length || 0
+      const skipped = result.skipped?.length || 0
+      onToast?.(
+        queued > 0
+          ? `已提交 ${queued} 个上传任务${skipped > 0 ? `，跳过 ${skipped} 个` : ''}`
+          : (result.message || '没有可提交的文件'),
+        queued > 0 ? 'success' : 'info',
+      )
+    } catch (e) {
+      setLocalFiles(prev => prev.map(item => (
+        targetIds.has(item.id) ? { ...item, submitting: false, error: e.message } : item
+      )))
+      onToast?.(`批量上传失败: ${e.message}`, 'error')
+    } finally {
+      setBatchUploading(false)
     }
-    onUploaded?.()
-    onToast?.(`已上传 ${pending.length} 个文件`, 'success')
   }
 
   const handleDrop = useCallback((e) => {
-    e.preventDefault(); setDragOver(false)
-    for (const file of e.dataTransfer.files) addFile(file)
-  }, [addFile])
+    e.preventDefault()
+    setDragOver(false)
+    addFiles(e.dataTransfer.files)
+  }, [addFiles])
 
   const handlePaste = async () => {
     if (!pasteContent.trim()) return
     try {
       await api.uploadContent(pasteContent, pasteTitle.trim() || '粘贴内容', chunkingStrategy, multimodal)
-      setPasteContent(''); setPasteTitle('')
+      setPasteContent('')
+      setPasteTitle('')
+      await refreshUploadTasks({ silent: true })
       onUploaded?.()
       onToast?.('文本已上传', 'success')
-    } catch (e) { onToast?.('粘贴上传失败: ' + e.message, 'error') }
+    } catch (e) {
+      onToast?.('粘贴上传失败: ' + e.message, 'error')
+    }
   }
 
   const handleUrlImport = async () => {
@@ -86,10 +439,14 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
     try {
       await api.uploadUrl(urlInput.trim(), { strategy: chunkingStrategy, multimodal })
       setUrlInput('')
+      await refreshUploadTasks({ silent: true })
       onUploaded?.()
       onToast?.('URL 导入成功', 'success')
-    } catch (e) { onToast?.('URL 导入失败: ' + e.message, 'error') }
-    setUrlLoading(false)
+    } catch (e) {
+      onToast?.('URL 导入失败: ' + e.message, 'error')
+    } finally {
+      setUrlLoading(false)
+    }
   }
 
   const handleFolderUpload = async () => {
@@ -98,11 +455,34 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
     try {
       await api.uploadFolder(folderPath.trim(), chunkingStrategy, multimodal)
       setFolderPath('')
+      await refreshUploadTasks({ silent: true })
       onUploaded?.()
       onToast?.('文件夹上传成功', 'success')
-    } catch (e) { onToast?.('文件夹上传失败: ' + e.message, 'error') }
-    setFolderLoading(false)
+    } catch (e) {
+      onToast?.('文件夹上传失败: ' + e.message, 'error')
+    } finally {
+      setFolderLoading(false)
+    }
   }
+
+  const handleDeleteTask = async (task) => {
+    if (!task?.can_delete || !task.task_id) return
+    setDeletingTaskIds(prev => [...prev, task.task_id])
+    try {
+      await api.deleteUploadTask(task.task_id)
+      setServerTasks(prev => prev.filter(item => item.task_id !== task.task_id))
+      onToast?.(`${task.filename} 已从队列移除`, 'success')
+      await refreshUploadTasks({ silent: true })
+    } catch (e) {
+      onToast?.(`删除上传任务失败: ${e.message}`, 'error')
+      await refreshUploadTasks({ silent: true })
+    } finally {
+      setDeletingTaskIds(prev => prev.filter(id => id !== task.task_id))
+    }
+  }
+
+  const pendingLocalCount = localFiles.filter(item => !item.submitting).length
+  const uploadSummaryCount = localFiles.length + serverTasks.length
 
   return (
     <div>
@@ -112,29 +492,40 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
       >
         {showUpload ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
         <Upload size={14} />
-        {showUpload ? '收起上传面板' : '展开上传面板'} {files.length > 0 && `(${files.length})`}
+        {showUpload ? '收起上传面板' : '展开上传面板'} {uploadSummaryCount > 0 && `(${uploadSummaryCount})`}
       </button>
 
       <AnimatePresence>
         {showUpload && (
           <motion.div
-            initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
             className="overflow-hidden"
           >
             <div className="space-y-4 pt-4">
-              {/* 拖拽区域 */}
               <div
-                className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors cursor-pointer ${dragOver ? 'border-sky-400 bg-sky-50' : 'border-cloud-300 hover:border-sky-300'}`}
+                className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors cursor-pointer ${
+                  dragOver ? 'border-sky-400 bg-sky-50' : 'border-cloud-300 hover:border-sky-300'
+                }`}
                 onDragOver={e => { e.preventDefault(); setDragOver(true) }}
                 onDragLeave={() => setDragOver(false)}
                 onDrop={handleDrop}
-                onClick={() => document.getElementById('kb-file-input')?.click()}
+                onClick={() => fileInputRef.current?.click()}
               >
                 <Upload size={24} className="mx-auto mb-2 text-ink-muted" />
                 <p className="text-sm text-ink-body font-medium">拖拽文件到此处上传</p>
                 <p className="text-xs text-ink-muted mt-1">或点击选择文件</p>
-                <input id="kb-file-input" type="file" multiple className="hidden"
-                  onChange={e => { for (const f of e.target.files) addFile(f); e.target.value = '' }} />
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  className="hidden"
+                  onChange={e => {
+                    addFiles(e.target.files)
+                    e.target.value = ''
+                  }}
+                />
               </div>
 
               <div className="rounded-xl border border-cloud-300/70 bg-cloud-100/70 p-3 space-y-3">
@@ -148,112 +539,274 @@ function UploadSection({ onToast, chunkingStrategy, setChunkingStrategy, strateg
                   </span>
                 </div>
 
-              {/* 分块策略 */}
-              {Object.keys(strategies).length > 0 && (
+                {Object.keys(strategies).length > 0 && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <Scissors size={13} className="text-ink-muted" />
+                    <span className="text-xs text-ink-muted">分块策略:</span>
+                    {Object.entries(strategies).map(([key, info]) => (
+                      <button
+                        key={key}
+                        onClick={() => setChunkingStrategy(key)}
+                        className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
+                          chunkingStrategy === key
+                            ? 'bg-sky-50 border-sky-300 text-sky-700 font-medium'
+                            : 'border-cloud-300 text-ink-muted hover:border-cloud-400'
+                        }`}
+                      >
+                        {info.label || key}
+                        {info.cost && (
+                          <span className={`ml-1 px-1 py-0.5 rounded text-2xs ${COST_COLORS[info.cost] || ''}`}>
+                            {info.cost === 'free' ? '免费' : info.cost === 'medium' ? '中等' : '高'}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 <div className="flex items-center gap-2 flex-wrap">
-                  <Scissors size={13} className="text-ink-muted" />
-                  <span className="text-xs text-ink-muted">分块策略:</span>
-                  {Object.entries(strategies).map(([key, info]) => (
-                    <button key={key}
-                      onClick={() => setChunkingStrategy(key)}
+                  <Zap size={13} className="text-ink-muted" />
+                  <span className="text-xs text-ink-muted">多模态:</span>
+                  {[
+                    { key: 'enable_image', label: '图片' },
+                    { key: 'enable_table', label: '表格' },
+                    { key: 'enable_equation', label: '公式' },
+                    { key: 'enable_video', label: '视频' },
+                  ].map(({ key, label }) => (
+                    <button
+                      key={key}
+                      onClick={() => setMultimodal(prev => ({ ...prev, [key]: !prev[key] }))}
                       className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
-                        chunkingStrategy === key
+                        multimodal[key]
                           ? 'bg-sky-50 border-sky-300 text-sky-700 font-medium'
                           : 'border-cloud-300 text-ink-muted hover:border-cloud-400'
                       }`}
                     >
-                      {info.label || key}
-                      {info.cost && (
-                        <span className={`ml-1 px-1 py-0.5 rounded text-2xs ${COST_COLORS[info.cost] || ''}`}>
-                          {info.cost === 'free' ? '免费' : info.cost === 'medium' ? '中等' : '高'}
-                        </span>
-                      )}
+                      {label}
                     </button>
                   ))}
                 </div>
-              )}
-
-              {/* 多模态开关 */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <Zap size={13} className="text-ink-muted" />
-                <span className="text-xs text-ink-muted">多模态:</span>
-                {[
-                  { key: 'enable_image', label: '图片' },
-                  { key: 'enable_table', label: '表格' },
-                  { key: 'enable_equation', label: '公式' },
-                  { key: 'enable_video', label: '视频' },
-                ].map(({ key, label }) => (
-                  <button key={key}
-                    onClick={() => setMultimodal(prev => ({ ...prev, [key]: !prev[key] }))}
-                    className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
-                      multimodal[key]
-                        ? 'bg-sky-50 border-sky-300 text-sky-700 font-medium'
-                        : 'border-cloud-300 text-ink-muted hover:border-cloud-400'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
               </div>
 
-              {/* 链接 / 文件夹 / 粘贴 */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 <div className="card p-3 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs text-ink-muted"><Globe size={12} /> URL 导入</div>
-                  <input className="input-field text-xs" placeholder="https://..." value={urlInput}
-                    onChange={e => setUrlInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleUrlImport()} />
+                  <input
+                    className="input-field text-xs"
+                    placeholder="https://..."
+                    value={urlInput}
+                    onChange={e => setUrlInput(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleUrlImport()}
+                  />
                   <button className="btn-primary text-xs w-full py-1.5" onClick={handleUrlImport} disabled={urlLoading}>
                     {urlLoading ? <Loader2 size={12} className="animate-spin inline" /> : '导入'}
                   </button>
                 </div>
                 <div className="card p-3 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs text-ink-muted"><FolderOpen size={12} /> 文件夹导入</div>
-                  <input className="input-field text-xs" placeholder="D:\docs\..." value={folderPath}
-                    onChange={e => setFolderPath(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleFolderUpload()} />
+                  <input
+                    className="input-field text-xs"
+                    placeholder={'D:\\docs\\...'}
+                    value={folderPath}
+                    onChange={e => setFolderPath(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && handleFolderUpload()}
+                  />
                   <button className="btn-primary text-xs w-full py-1.5" onClick={handleFolderUpload} disabled={folderLoading}>
                     {folderLoading ? <Loader2 size={12} className="animate-spin inline" /> : '导入'}
                   </button>
                 </div>
                 <div className="card p-3 space-y-2">
                   <div className="flex items-center gap-1.5 text-xs text-ink-muted"><ClipboardPaste size={12} /> 粘贴内容</div>
-                  <input className="input-field text-xs" placeholder="标题（可选）" value={pasteTitle}
-                    onChange={e => setPasteTitle(e.target.value)} maxLength={128} />
-                  <textarea className="input-field text-xs h-16 resize-none" placeholder="内容…" value={pasteContent}
-                    onChange={e => setPasteContent(e.target.value)} />
-                  <button className="btn-primary text-xs w-full py-1.5" onClick={handlePaste} disabled={!pasteContent.trim()}>提交</button>
+                  <input
+                    className="input-field text-xs"
+                    placeholder="标题（可选）"
+                    value={pasteTitle}
+                    onChange={e => setPasteTitle(e.target.value)}
+                    maxLength={128}
+                  />
+                  <textarea
+                    className="input-field text-xs h-16 resize-none"
+                    placeholder="内容…"
+                    value={pasteContent}
+                    onChange={e => setPasteContent(e.target.value)}
+                  />
+                  <button className="btn-primary text-xs w-full py-1.5" onClick={handlePaste} disabled={!pasteContent.trim()}>
+                    提交
+                  </button>
                 </div>
               </div>
 
-              {/* 文件列表 */}
-              {files.length > 0 && (
-                <div className="card p-3 space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium text-ink-body">文件列表 ({files.length})</p>
-                    {files.some(f => f.status === 'pending') && (
-                      <button className="btn-primary text-xs py-1 px-3" onClick={processAllFiles}>
-                        全部上传 ({files.filter(f => f.status === 'pending').length})
+              <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <div className="card p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium text-ink-body">待上传文件 ({localFiles.length})</p>
+                      <p className="text-2xs text-ink-muted mt-0.5">这里是浏览器里尚未提交到服务器的草稿文件。</p>
+                    </div>
+                    {pendingLocalCount > 0 && (
+                      <button
+                        className="btn-primary text-xs py-1 px-3"
+                        onClick={submitAllFiles}
+                        disabled={batchUploading}
+                      >
+                        {batchUploading ? '提交中…' : `全部上传 (${pendingLocalCount})`}
                       </button>
                     )}
                   </div>
-                  {files.map((f, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-1.5 bg-cloud-200 rounded-lg text-xs">
-                      <div className="flex items-center gap-2">
-                        {f.status === 'uploading' ? <Loader2 size={14} className="animate-spin text-sky-500" />
-                          : f.status === 'done' ? <CheckCircle2 size={14} className="text-sage-500" />
-                          : f.status === 'error' ? <XCircle size={14} className="text-rose-500" />
-                          : <FileText size={14} className="text-ink-muted" />}
-                        <span className="text-ink-body truncate max-w-[200px]">{f.name}</span>
-                        {f.error && <span className="text-rose-500">{f.error}</span>}
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-ink-muted font-mono">{(f.size / 1024).toFixed(0)} KB</span>
-                        {f.status === 'pending' && <button className="btn-primary text-xs py-0.5 px-2" onClick={() => processFile(i)}>上传</button>}
-                      </div>
+
+                  {localFiles.length === 0 ? (
+                    <div className="rounded-lg border border-cloud-300/60 bg-cloud-100/60 px-3 py-6 text-center">
+                      <p className="text-xs text-ink-muted">还没有待提交文件</p>
+                      <p className="text-2xs text-ink-muted mt-1">选择文件后会先出现在这里，提交成功后转入右侧上传任务。</p>
                     </div>
-                  ))}
+                  ) : (
+                    localFiles.map(file => (
+                      <div key={file.id} className="rounded-lg border border-cloud-300/60 bg-cloud-100/60 px-3 py-2 text-xs">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {file.submitting
+                                ? <Loader2 size={14} className="animate-spin text-sky-500 shrink-0" />
+                                : file.error
+                                  ? <XCircle size={14} className="text-rose-500 shrink-0" />
+                                  : <FileText size={14} className="text-ink-muted shrink-0" />}
+                              <span className="text-ink-body truncate">{file.name}</span>
+                            </div>
+                            <div className="flex items-center gap-3 mt-1 text-2xs text-ink-muted">
+                              <span className="font-mono">{(file.size / 1024).toFixed(0)} KB</span>
+                              <span>{file.submitting ? '提交中…' : '待提交'}</span>
+                            </div>
+                            {file.error && (
+                              <p className="mt-1 text-2xs text-rose-500 break-all">{file.error}</p>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {!file.submitting && (
+                              <>
+                                <button className="btn-primary text-xs py-0.5 px-2" onClick={() => submitLocalFile(file.id)}>
+                                  上传
+                                </button>
+                                <button className="btn-ghost text-xs py-0.5 px-2 text-rose-500" onClick={() => removeLocalFile(file.id)}>
+                                  移除
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
                 </div>
-              )}
+
+                <div className="card p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-medium text-ink-body">上传任务 ({serverTasks.length})</p>
+                      <p className="text-2xs text-ink-muted mt-0.5">这里展示已经提交到服务器的上传状态，刷新页面后仍可恢复。</p>
+                    </div>
+                    <button className="btn-ghost text-xs py-1 px-2" onClick={() => refreshUploadTasks()} disabled={tasksLoading}>
+                      {tasksLoading ? '刷新中…' : '刷新'}
+                    </button>
+                  </div>
+
+                  {tasksError && (
+                    <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
+                      上传任务加载失败: {tasksError}
+                    </div>
+                  )}
+
+                  {!tasksLoaded && tasksLoading ? (
+                    <div className="rounded-lg border border-cloud-300/60 bg-cloud-100/60 px-3 py-6 text-center">
+                      <Loader2 size={16} className="animate-spin inline text-sky-500" />
+                      <p className="text-xs text-ink-muted mt-2">正在读取上传任务…</p>
+                    </div>
+                  ) : serverTasks.length === 0 ? (
+                    <div className="rounded-lg border border-cloud-300/60 bg-cloud-100/60 px-3 py-6 text-center">
+                      <p className="text-xs text-ink-muted">当前没有服务器上传任务</p>
+                      <p className="text-2xs text-ink-muted mt-1">已提交的文件会在这里显示排队、处理中、完成或失败状态。</p>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-2xs text-ink-muted">处理中任务显示的是预计进度动画，会参考文档体量、文件类型和多模态阶段调整快慢；完成和失败状态为真实结果。</p>
+                      {serverTasks.map(task => {
+                      const deleting = deletingTaskIds.includes(task.task_id)
+                      const visualProgress = getVisualTaskProgress(task, progressNow)
+                      const progressValue = visualProgress.value
+                      const taskTimestamp = (task.updated_at || task.created_at || '').replace('T', ' ').slice(0, 16)
+
+                      return (
+                        <div key={task.task_id} className="rounded-lg border border-cloud-300/60 bg-cloud-100/60 px-3 py-2 text-xs">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 min-w-0">
+                                {task.status === 'processing'
+                                  ? <Loader2 size={14} className="animate-spin text-amber-500 shrink-0" />
+                                  : task.status === 'completed'
+                                    ? <CheckCircle2 size={14} className="text-sage-500 shrink-0" />
+                                    : task.status === 'failed'
+                                      ? <XCircle size={14} className="text-rose-500 shrink-0" />
+                                      : <Clock size={14} className="text-sky-500 shrink-0" />}
+                                <span className="text-ink-body truncate">{task.filename}</span>
+                                <span className={STATUS[task.status] || 'badge-info'}>
+                                  {STATUS_CN[task.status] || task.status}
+                                </span>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-2xs text-ink-muted">
+                                {taskTimestamp && (
+                                  <span className="flex items-center gap-1">
+                                    <Clock size={11} />
+                                    {taskTimestamp}
+                                  </span>
+                                )}
+                                {task.phase && (
+                                  <span>{PHASE_CN[task.phase] || task.phase}</span>
+                                )}
+                                {progressValue !== null && (
+                                  <span>{visualProgress.simulated ? '预计进度' : '进度'} {Math.round(progressValue)}%</span>
+                                )}
+                              </div>
+
+                              {progressValue !== null && (
+                                <div className="mt-2 h-1.5 rounded-full bg-cloud-300/70 overflow-hidden">
+                                  <div
+                                    className={`h-full rounded-full transition-all ${
+                                      task.status === 'failed'
+                                        ? 'bg-rose-400'
+                                        : task.status === 'completed'
+                                          ? 'bg-sage-400'
+                                          : visualProgress.simulated
+                                            ? `bg-sky-400${prefersReducedMotion ? '' : ' animate-pulse'}`
+                                            : 'bg-sky-400'
+                                    }`}
+                                    style={{ width: `${progressValue}%` }}
+                                  />
+                                </div>
+                              )}
+
+                              {task.error_message && (
+                                <p className="mt-2 text-2xs text-rose-500 break-all">{task.error_message}</p>
+                              )}
+                            </div>
+
+                            {task.can_delete && (
+                              <button
+                                className="btn-ghost text-xs py-0.5 px-2 text-rose-500 shrink-0"
+                                onClick={() => handleDeleteTask(task)}
+                                disabled={deleting}
+                                title="删除未开始的上传任务"
+                              >
+                                {deleting ? '删除中…' : '删除'}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </motion.div>
         )}
@@ -766,7 +1319,7 @@ export default function KnowledgeDetailPage() {
         ].map(({ label, val, color }) => (
           <div key={label} className="stat-card">
             <p className="stat-label">{label}</p>
-            <p className={`stat-value ${color}`}>{val.toLocaleString()}</p>
+            <p className={`stat-value stat-value-number ${color}`}>{val.toLocaleString()}</p>
           </div>
         ))}
       </div>
@@ -793,6 +1346,7 @@ export default function KnowledgeDetailPage() {
       <>
         <div className="card p-5">
           <UploadSection
+            kbName={kbName}
             onToast={showToast}
             chunkingStrategy={chunkingStrategy}
             setChunkingStrategy={setChunkingStrategy}

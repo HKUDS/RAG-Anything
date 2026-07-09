@@ -230,13 +230,29 @@
   /* 鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?     缁熻鍗＄墖
      鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺?*/
   .stat-card {
-    @apply card p-5 flex flex-col gap-1;
+    @apply card px-5 py-4.5 flex flex-col justify-center gap-1.5;
   }
   .stat-label {
-    @apply text-2xs font-semibold text-ink-muted uppercase tracking-wider;
+    @apply text-xs font-semibold text-ink-muted leading-5;
+    letter-spacing: 0.01em;
   }
   .stat-value {
-    @apply text-2xl font-semibold tracking-tight font-mono text-ink-primary;
+    @apply text-2xl font-semibold text-ink-primary;
+    line-height: 1;
+    font-kerning: normal;
+  }
+  .stat-value-number {
+    letter-spacing: -0.03em;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1, "kern" 1;
+  }
+  .stat-value-text {
+    font-size: 1.375rem;
+    line-height: 1.12;
+    letter-spacing: -0.02em;
+  }
+  .monitor-stat-value-number {
+    font-size: 1.75rem;
   }
   .stat-hint {
     @apply text-2xs text-ink-muted mt-0.5;
@@ -857,7 +873,7 @@ select.input-field {
 
 .stat-label {
   color: var(--muted) !important;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.03em;
 }
 
 .stat-value {

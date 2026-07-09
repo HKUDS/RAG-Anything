@@ -291,6 +291,169 @@ _kbs_being_deleted: set[str] = set()
 # Entries are removed when the worker completes or fails.
 _processing_files: dict[tuple[str, str], str] = {}
 
+
+def _scale_progress(done: int, total: int, start: int, end: int) -> int:
+    """Scale a counted sub-step into a bounded 0-100 progress range."""
+    if end <= start:
+        return end
+    if total <= 0:
+        return end
+
+    clamped_done = max(0, min(done, total))
+    ratio = clamped_done / total
+    return max(start, min(end, int(round(start + (end - start) * ratio))))
+
+
+def _parse_worker_progress_line(line: str, state: dict[str, Any]) -> dict[str, Any] | None:
+    """Convert worker log lines into more truthful progress updates when possible."""
+    text = line.strip()
+    if not text:
+        return None
+
+    if "[PROGRESS] phase=parsing status=start" in text:
+        state["track"] = "text"
+        return {
+            "phase": "parsing",
+            "phase_status": "start",
+            "message": "解析文档中",
+        }
+
+    if "[PROGRESS] phase=parsing status=done" in text:
+        return {
+            "phase": "parsing",
+            "phase_status": "done",
+            "progress": 25,
+            "message": "文档解析完成",
+        }
+
+    match = re.search(r"Parsing .+ complete! Extracted (\d+) content blocks", text)
+    if match:
+        state["track"] = "text"
+        blocks = int(match.group(1))
+        return {
+            "phase": "parsing",
+            "phase_status": "done",
+            "progress": 25,
+            "message": f"文档解析完成（{blocks} 个内容块）",
+        }
+
+    if "Starting text content insertion into LightRAG..." in text:
+        state["track"] = "text"
+        return {
+            "phase": "entity-extraction",
+            "phase_status": "start",
+            "progress": 28,
+            "message": "开始抽取文本实体与关系",
+        }
+
+    if "Starting multimodal content processing..." in text:
+        state["track"] = "multimodal"
+        return {
+            "phase": "multimodal-tasks",
+            "phase_status": "start",
+            "progress": 90,
+            "message": "开始处理图片、表格等多模态内容",
+        }
+
+    match = re.search(r"Multimodal chunk generation progress:\s*(\d+)/(\d+)", text)
+    if match:
+        state["track"] = "multimodal"
+        done = int(match.group(1))
+        total = int(match.group(2))
+        return {
+            "phase": "multimodal-tasks",
+            "phase_status": "describing",
+            "progress": _scale_progress(done, total, 91, 94),
+            "message": f"多模态内容生成 {done}/{total}",
+        }
+
+    match = re.search(r"Generated descriptions for (\d+)/(\d+) multimodal items", text)
+    if match:
+        state["track"] = "multimodal"
+        done = int(match.group(1))
+        total = int(match.group(2))
+        return {
+            "phase": "multimodal-tasks",
+            "phase_status": "describing",
+            "progress": _scale_progress(done, total, 91, 94),
+            "message": f"多模态描述生成完成 {done}/{total}",
+        }
+
+    match = re.search(r"Stored (\d+) multimodal chunks to storage", text)
+    if match:
+        state["track"] = "multimodal"
+        chunk_count = int(match.group(1))
+        return {
+            "phase": "multimodal-tasks",
+            "phase_status": "stored",
+            "progress": 95,
+            "message": f"多模态内容已入库（{chunk_count} 个块）",
+        }
+
+    match = re.search(r"Chunk (\d+) of (\d+) extracted", text)
+    if match:
+        done = int(match.group(1))
+        total = int(match.group(2))
+        if state.get("track") == "multimodal":
+            return {
+                "phase": "multimodal-tasks",
+                "phase_status": "extracting",
+                "progress": _scale_progress(done, total, 95, 97),
+                "message": f"多模态实体抽取 {done}/{total}",
+            }
+        return {
+            "phase": "entity-extraction",
+            "phase_status": "extracting",
+            "progress": _scale_progress(done, total, 30, 70),
+            "message": f"文本实体抽取 {done}/{total}",
+        }
+
+    if re.search(r"Extracted entities from (\d+) multimodal chunks", text):
+        state["track"] = "multimodal"
+        return {
+            "phase": "multimodal-tasks",
+            "phase_status": "extracted",
+            "progress": 97,
+            "message": "多模态实体抽取完成",
+        }
+
+    if re.search(r"Phase 1:\s+Processing\s+\d+\s+entities", text):
+        multimodal = state.get("track") == "multimodal"
+        return {
+            "phase": "graph-building",
+            "phase_status": "entities",
+            "progress": 97 if multimodal else 72,
+            "message": "正在合并实体",
+        }
+
+    if re.search(r"Phase 2:\s+Processing\s+\d+\s+relations", text):
+        multimodal = state.get("track") == "multimodal"
+        return {
+            "phase": "graph-building",
+            "phase_status": "relations",
+            "progress": 98 if multimodal else 82,
+            "message": "正在合并关系",
+        }
+
+    if re.search(r"Phase 3:\s+Updating final", text):
+        multimodal = state.get("track") == "multimodal"
+        return {
+            "phase": "graph-building",
+            "phase_status": "finalizing",
+            "progress": 99 if multimodal else 90,
+            "message": "正在写入最终结果",
+        }
+
+    if "Document " in text and " processing complete!" in text:
+        return {
+            "phase": "graph-building",
+            "phase_status": "finalizing",
+            "progress": 99,
+            "message": "文档处理完成，正在收尾",
+        }
+
+    return None
+
 # ── Worker Process Tracking ─────────────────────────────────
 # Maps kb_name -> list of (asyncio.subprocess.Process, task_id) for
 # running worker subprocesses.  Used by KB deletion to kill workers.
@@ -331,6 +494,48 @@ def _unregister_processing_file(kb_name: str, file_hash: str) -> None:
 
 # ── Uploaded File Metadata (PG) ───────────────────────────
 
+_uploaded_files_has_error_message: bool | None = None
+
+
+def _uploaded_files_supports_error_message() -> bool:
+    """Return whether uploaded_files.error_message should be referenced."""
+    return _uploaded_files_has_error_message is not False
+
+
+def _uploaded_files_mark_missing_error_message(exc: Exception) -> bool:
+    """Record legacy schema state when uploaded_files.error_message is absent."""
+    global _uploaded_files_has_error_message
+
+    if exc.__class__.__name__ != "UndefinedColumnError":
+        return False
+    if "error_message" not in str(exc):
+        return False
+
+    _uploaded_files_has_error_message = False
+    kb_logger.warning(
+        "uploaded_files.error_message column is missing; falling back to legacy schema compatibility"
+    )
+    return True
+
+
+def _uploaded_files_projection(include_error_message: bool) -> str:
+    columns = [
+        "id",
+        "filename",
+        "file_path",
+        "file_hash",
+        "file_size",
+        "kb_name",
+        "uploaded_by",
+        "task_id",
+        "status",
+    ]
+    if include_error_message:
+        columns.append("error_message")
+    columns.extend(["created_at", "updated_at"])
+    return ", ".join(columns)
+
+
 async def pg_register_upload(
     filename: str,
     file_path: str,
@@ -338,27 +543,65 @@ async def pg_register_upload(
     file_size: int,
     kb_name: str,
     uploaded_by: int,
-) -> int | None:
+    task_id: str | None = None,
+    status: str = "queued",
+) -> dict[str, Any] | None:
     """Insert uploaded file metadata into PG.
 
     Returns:
-        The new row id, or None if a duplicate hash+kb_name exists.
+        Serialized upload row, or None if a duplicate hash+kb_name exists.
     """
     try:
         from raganything.services.pg_state_repo import get_pg_pool
         pool = get_pg_pool()
-        row = await pool.fetchrow(
-            """INSERT INTO uploaded_files
-               (filename, file_path, file_hash, file_size, kb_name, uploaded_by)
-               VALUES ($1, $2, $3, $4, $5, $6)
-               ON CONFLICT (file_hash, kb_name) DO NOTHING
-               RETURNING id""",
-            filename, file_path, file_hash, file_size, kb_name, uploaded_by,
+        include_error_message = _uploaded_files_supports_error_message()
+        sql = (
+            "INSERT INTO uploaded_files "
+            "(filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
+            "ON CONFLICT (file_hash, kb_name) DO NOTHING "
+            f"RETURNING {_uploaded_files_projection(include_error_message)}"
         )
-        return row["id"] if row else None
+        try:
+            row = await pool.fetchrow(
+                sql,
+                filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status,
+            )
+        except Exception as exc:
+            if not include_error_message or not _uploaded_files_mark_missing_error_message(exc):
+                raise
+            row = await pool.fetchrow(
+                (
+                    "INSERT INTO uploaded_files "
+                    "(filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status) "
+                    "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
+                    "ON CONFLICT (file_hash, kb_name) DO NOTHING "
+                    f"RETURNING {_uploaded_files_projection(False)}"
+                ),
+                filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status,
+            )
+        return _serialize_upload_row(row) if row else None
     except Exception:
         kb_logger.warning("PG uploaded_files insert failed", exc_info=True)
         return None
+
+
+def _serialize_upload_row(row: Any) -> dict[str, Any]:
+    """Normalize an uploaded_files row to a JSON-friendly dict."""
+    return {
+        "id": row["id"],
+        "filename": row["filename"],
+        "file_path": row["file_path"],
+        "file_hash": row["file_hash"],
+        "file_size": row["file_size"],
+        "kb_name": row["kb_name"],
+        "uploaded_by": row["uploaded_by"],
+        "task_id": row["task_id"],
+        "status": row["status"],
+        "error_message": row.get("error_message", "") if hasattr(row, "get") else row["error_message"],
+        "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
+        "updated_at": row["updated_at"].isoformat() if hasattr(row["updated_at"], "isoformat") else str(row["updated_at"]),
+    }
 
 
 async def pg_update_upload_status(
@@ -366,17 +609,48 @@ async def pg_update_upload_status(
     kb_name: str,
     status: str,
     task_id: str | None = None,
+    error_message: str | None = None,
 ) -> bool:
     """Update the status (and optionally task_id) of an uploaded file."""
     try:
         from raganything.services.pg_state_repo import get_pg_pool
         pool = get_pg_pool()
-        result = await pool.execute(
-            """UPDATE uploaded_files
-               SET status = $1, task_id = COALESCE($2, task_id), updated_at = NOW()
-               WHERE file_hash = $3 AND kb_name = $4""",
-            status, task_id, file_hash, kb_name,
-        )
+        include_error_message = _uploaded_files_supports_error_message()
+        if include_error_message:
+            sql = (
+                "UPDATE uploaded_files "
+                "SET status = $1, "
+                "    task_id = COALESCE($2, task_id), "
+                "    error_message = COALESCE($3, error_message), "
+                "    updated_at = NOW() "
+                "WHERE file_hash = $4 AND kb_name = $5"
+            )
+            params = [status, task_id, error_message, file_hash, kb_name]
+        else:
+            sql = (
+                "UPDATE uploaded_files "
+                "SET status = $1, "
+                "    task_id = COALESCE($2, task_id), "
+                "    updated_at = NOW() "
+                "WHERE file_hash = $3 AND kb_name = $4"
+            )
+            params = [status, task_id, file_hash, kb_name]
+
+        try:
+            result = await pool.execute(sql, *params)
+        except Exception as exc:
+            if not include_error_message or not _uploaded_files_mark_missing_error_message(exc):
+                raise
+            result = await pool.execute(
+                (
+                    "UPDATE uploaded_files "
+                    "SET status = $1, "
+                    "    task_id = COALESCE($2, task_id), "
+                    "    updated_at = NOW() "
+                    "WHERE file_hash = $3 AND kb_name = $4"
+                ),
+                status, task_id, file_hash, kb_name,
+            )
         # Parse "UPDATE N" output safely — "UPDATE 0" substring would
         # false-match "UPDATE 10", "UPDATE 100", etc.
         try:
@@ -388,13 +662,154 @@ async def pg_update_upload_status(
         return False
 
 
+async def pg_update_upload_status_by_task_id(
+    task_id: str,
+    status: str,
+    *,
+    kb_name: str = "",
+    expected_current_status: str | None = None,
+    error_message: str | None = None,
+) -> dict[str, Any] | None:
+    """Update uploaded_files row by task_id and return the updated row."""
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        pool = get_pg_pool()
+        include_error_message = _uploaded_files_supports_error_message()
+        if include_error_message:
+            params: list[Any] = [status, error_message, task_id]
+            where = "task_id = $3"
+            if kb_name:
+                params.append(kb_name)
+                where += f" AND kb_name = ${len(params)}"
+            if expected_current_status is not None:
+                params.append(expected_current_status)
+                where += f" AND status = ${len(params)}"
+            sql = (
+                "UPDATE uploaded_files "
+                "SET status = $1, "
+                "    error_message = COALESCE($2, error_message), "
+                "    updated_at = NOW() "
+                f"WHERE {where} "
+                f"RETURNING {_uploaded_files_projection(True)}"
+            )
+        else:
+            params = [status, task_id]
+            where = "task_id = $2"
+            if kb_name:
+                params.append(kb_name)
+                where += f" AND kb_name = ${len(params)}"
+            if expected_current_status is not None:
+                params.append(expected_current_status)
+                where += f" AND status = ${len(params)}"
+            sql = (
+                "UPDATE uploaded_files "
+                "SET status = $1, "
+                "    updated_at = NOW() "
+                f"WHERE {where} "
+                f"RETURNING {_uploaded_files_projection(False)}"
+            )
+
+        try:
+            row = await pool.fetchrow(sql, *params)
+        except Exception as exc:
+            if not include_error_message or not _uploaded_files_mark_missing_error_message(exc):
+                raise
+            params = [status, task_id]
+            where = "task_id = $2"
+            if kb_name:
+                params.append(kb_name)
+                where += f" AND kb_name = ${len(params)}"
+            if expected_current_status is not None:
+                params.append(expected_current_status)
+                where += f" AND status = ${len(params)}"
+            row = await pool.fetchrow(
+                (
+                    "UPDATE uploaded_files "
+                    "SET status = $1, "
+                    "    updated_at = NOW() "
+                    f"WHERE {where} "
+                    f"RETURNING {_uploaded_files_projection(False)}"
+                ),
+                *params,
+            )
+        return _serialize_upload_row(row) if row else None
+    except Exception:
+        kb_logger.warning("PG uploaded_files task update failed", exc_info=True)
+        return None
+
+
+async def pg_get_upload_by_task_id(
+    task_id: str,
+    *,
+    kb_name: str = "",
+    uploaded_by: int | None = None,
+    is_admin: bool = False,
+) -> dict[str, Any] | None:
+    """Fetch a single uploaded_files row by task_id with optional access filters."""
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        pool = get_pg_pool()
+        conditions = ["task_id = $1"]
+        params: list[Any] = [task_id]
+        idx = 2
+
+        if kb_name:
+            conditions.append(f"kb_name = ${idx}")
+            params.append(kb_name)
+            idx += 1
+
+        if not is_admin and uploaded_by is not None:
+            conditions.append(f"(uploaded_by = ${idx} OR uploaded_by = 0)")
+            params.append(uploaded_by)
+            idx += 1
+
+        where = " AND ".join(conditions)
+        async with pool.acquire() as conn:
+            include_error_message = _uploaded_files_supports_error_message()
+            try:
+                row = await conn.fetchrow(
+                    f"""SELECT {_uploaded_files_projection(include_error_message)}
+                        FROM uploaded_files
+                        WHERE {where}
+                        LIMIT 1""",
+                    *params,
+                )
+            except Exception as exc:
+                if not include_error_message or not _uploaded_files_mark_missing_error_message(exc):
+                    raise
+                row = await conn.fetchrow(
+                    f"""SELECT {_uploaded_files_projection(False)}
+                        FROM uploaded_files
+                        WHERE {where}
+                        LIMIT 1""",
+                    *params,
+                )
+        return _serialize_upload_row(row) if row else None
+    except Exception:
+        kb_logger.warning("PG uploaded_files lookup failed", exc_info=True)
+        return None
+
+
+async def pg_claim_upload_task(task_id: str, kb_name: str) -> bool:
+    """Atomically claim a queued upload task for processing."""
+    row = await pg_update_upload_status_by_task_id(
+        task_id,
+        "processing",
+        kb_name=kb_name,
+        expected_current_status="queued",
+        error_message="",
+    )
+    return bool(row and row.get("kb_name") == kb_name)
+
+
 async def pg_list_uploads(
     kb_name: str = "",
     uploaded_by: int | None = None,
     is_admin: bool = False,
     limit: int = 50,
     offset: int = 0,
-) -> list[dict]:
+    exclude_statuses: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], int]:
     """List uploaded files from PG with optional filters.
 
     Args:
@@ -425,40 +840,45 @@ async def pg_list_uploads(
             params.append(uploaded_by)
             idx += 1
 
+        if exclude_statuses:
+            conditions.append(f"status <> ALL(${idx}::text[])")
+            params.append(exclude_statuses)
+            idx += 1
+
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.extend([limit, offset])
-        sql = (
-            f"SELECT id, filename, file_path, file_hash, file_size, "
-            f"       kb_name, uploaded_by, task_id, status, created_at, updated_at "
-            f"FROM uploaded_files {where} "
-            f"ORDER BY created_at DESC "
-            f"LIMIT ${idx} OFFSET ${idx + 1}"
-        )
 
         async with pool.acquire() as conn:
-            rows = await conn.fetch(sql, *params)
+            include_error_message = _uploaded_files_supports_error_message()
+            try:
+                rows = await conn.fetch(
+                    (
+                        f"SELECT {_uploaded_files_projection(include_error_message)} "
+                        f"FROM uploaded_files {where} "
+                        f"ORDER BY created_at DESC "
+                        f"LIMIT ${idx} OFFSET ${idx + 1}"
+                    ),
+                    *params,
+                )
+            except Exception as exc:
+                if not include_error_message or not _uploaded_files_mark_missing_error_message(exc):
+                    raise
+                rows = await conn.fetch(
+                    (
+                        f"SELECT {_uploaded_files_projection(False)} "
+                        f"FROM uploaded_files {where} "
+                        f"ORDER BY created_at DESC "
+                        f"LIMIT ${idx} OFFSET ${idx + 1}"
+                    ),
+                    *params,
+                )
             total_row = await conn.fetchrow(
                 f"SELECT count(*) as total FROM uploaded_files {where}",
                 *params[:idx - 1],
             )
             total = total_row["total"] if total_row else 0
 
-        return [
-            {
-                "id": r["id"],
-                "filename": r["filename"],
-                "file_path": r["file_path"],
-                "file_hash": r["file_hash"],
-                "file_size": r["file_size"],
-                "kb_name": r["kb_name"],
-                "uploaded_by": r["uploaded_by"],
-                "task_id": r["task_id"],
-                "status": r["status"],
-                "created_at": r["created_at"].isoformat() if hasattr(r["created_at"], "isoformat") else str(r["created_at"]),
-                "updated_at": r["updated_at"].isoformat() if hasattr(r["updated_at"], "isoformat") else str(r["updated_at"]),
-            }
-            for r in rows
-        ], total
+        return [_serialize_upload_row(r) for r in rows], total
 
     except Exception:
         kb_logger.warning("PG uploaded_files list failed", exc_info=True)
@@ -1638,6 +2058,9 @@ async def _process_uploaded_file(
         "id": task_id, "file": filename, "status": "processing",
         "started_at": datetime.now().isoformat(), "progress": 0,
         "kb": kb_name, "user_id": user_id,
+        "phase": "initializing",
+        "phase_status": "start",
+        "message": "初始化处理环境",
     }
     await upsert_task_state(task_id, task_data)
     await add_event("upload_start", file=filename, task_id=task_id, user_id=user_id)
@@ -1645,15 +2068,19 @@ async def _process_uploaded_file(
 
     # Register for dedup tracking (inside try — file I/O can fail)
     file_hash = None
+    worker_progress_state = {"track": "text"}
     try:
         # Compute file hash and register for dedup (may fail if file was removed)
         file_hash = _compute_file_hash(file_path)
         _register_processing_file(kb_name, file_hash, task_id)
 
         # Update PG uploaded_files status → processing
-        await pg_update_upload_status(file_hash, kb_name, "processing", task_id)
-
-        await emit_progress(task_id, 5, f"子进程处理: {filename}")
+        await pg_update_upload_status_by_task_id(
+            task_id,
+            "processing",
+            kb_name=kb_name,
+            error_message="",
+        )
         kb_logger.info(f"[UPLOAD] 任务={task_id} 文件={filename} KB={kb_name} 策略={actual_strategy}")
 
         worker_script = Path(__file__).parent.parent.parent / "process_worker.py"
@@ -1676,8 +2103,6 @@ async def _process_uploaded_file(
         if enable_video is not None:
             cmd.append("--enable-video")
             cmd.append("true" if enable_video else "false")
-
-        await emit_progress(task_id, 10, "处理中...")
 
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -1705,27 +2130,28 @@ async def _process_uploaded_file(
                         r"\[PROGRESS\]\s+phase=(\S+)\s+status=(\S+)(?:\s+file=(.+))?",
                         text,
                     )
-                    if m and task_id in processing_tasks:
-                        phase = m.group(1)
-                        status = m.group(2)
-                        # Map phases to progress percentages
-                        phase_map = {
-                            "parsing": (5, 25),
-                            "entity-extraction": (25, 55),
-                            "embedding": (55, 75),
-                            "graph-building": (75, 90),
-                            "multimodal-tasks": (90, 98),
-                        }
-                        if phase in phase_map:
-                            pct = phase_map[phase][1] if status == "done" else phase_map[phase][0]
+                    progress_update = _parse_worker_progress_line(text, worker_progress_state)
+                    if progress_update and task_id in processing_tasks:
+                        current_pct = processing_tasks[task_id].get("progress", 0) or 0
+                        next_pct = progress_update.get("progress")
+                        if next_pct is None:
+                            next_pct = current_pct
                         else:
-                            pct = processing_tasks[task_id].get("progress", 0)
-                        await update_task_progress(task_id, pct,
-                                                   phase=phase, phase_status=status)
+                            next_pct = max(current_pct, next_pct)
+                        await update_task_progress(
+                            task_id,
+                            next_pct,
+                            message=progress_update.get("message", ""),
+                            phase=progress_update.get("phase", ""),
+                            phase_status=progress_update.get("phase_status", ""),
+                        )
                         await ws_broadcast({
-                            "type": "progress", "task_id": task_id,
-                            "progress": pct, "phase": phase, "phase_status": status,
-                            "message": f"{phase}: {status}",
+                            "type": "progress",
+                            "task_id": task_id,
+                            "progress": next_pct,
+                            "phase": progress_update.get("phase", ""),
+                            "phase_status": progress_update.get("phase_status", ""),
+                            "message": progress_update.get("message", ""),
                         })
 
         stdout_task = asyncio.ensure_future(_read_stream(proc.stdout))
@@ -1785,11 +2211,17 @@ async def _process_uploaded_file(
 
         await emit_progress(task_id, 100, "处理完成")
         await complete_task(task_id)
-        processing_tasks[task_id]["chunking_strategy"] = actual_strategy
+        if task_id in processing_tasks:
+            processing_tasks[task_id]["chunking_strategy"] = actual_strategy
         await add_event("upload_complete", file=filename, task_id=task_id, kb=kb_name, user_id=user_id)
         await ws_broadcast({"type": "upload_done", "task_id": task_id, "filename": filename, "kb": kb_name})
         # Update PG uploaded_files status → completed
-        await pg_update_upload_status(file_hash, kb_name, "completed")
+        await pg_update_upload_status_by_task_id(
+            task_id,
+            "completed",
+            kb_name=kb_name,
+            error_message="",
+        )
         _unregister_processing_file(kb_name, file_hash)
 
     except Exception as e:
@@ -1817,7 +2249,12 @@ async def _process_uploaded_file(
         await _fix_stuck_doc_status(kb_name, filename)
         if file_hash is not None:
             # Update PG uploaded_files status → failed
-            await pg_update_upload_status(file_hash, kb_name, "failed")
+            await pg_update_upload_status_by_task_id(
+                task_id,
+                "failed",
+                kb_name=kb_name,
+                error_message=str(e),
+            )
             _unregister_processing_file(kb_name, file_hash)
 
 
@@ -1866,6 +2303,41 @@ async def _drain_kb_queue(kb_name: str) -> None:
                 f"[QUEUE] 取出任务: file={task_info.get('filename', '?')} "
                 f"kb={kb_name} queue_remaining={queue.qsize()}"
             )
+
+            task_id = task_info.get("task_id", "")
+            upload_record = None
+            if task_id:
+                upload_record = await pg_get_upload_by_task_id(
+                    task_id,
+                    kb_name=kb_name,
+                    is_admin=True,
+                )
+                if upload_record and upload_record.get("status") == "deleted":
+                    _unregister_processing_file(kb_name, upload_record.get("file_hash", ""))
+                    kb_logger.info(
+                        f"[QUEUE] 璺宠繃宸插垹闄ょ殑浠诲姟: task={task_id} kb={kb_name}"
+                    )
+                    continue
+                if upload_record and upload_record.get("status") == "queued":
+                    claimed = await pg_claim_upload_task(task_id, kb_name)
+                    if not claimed:
+                        refreshed = await pg_get_upload_by_task_id(
+                            task_id,
+                            kb_name=kb_name,
+                            is_admin=True,
+                        )
+                        if refreshed and refreshed.get("status") == "deleted":
+                            _unregister_processing_file(kb_name, refreshed.get("file_hash", ""))
+                            kb_logger.info(
+                                f"[QUEUE] 浠诲姟鍦ㄨ皟搴﹀墠宸茶鍒犻櫎: task={task_id} kb={kb_name}"
+                            )
+                            continue
+                        if refreshed and refreshed.get("status") != "processing":
+                            kb_logger.warning(
+                                f"[QUEUE] 浠诲姟鐘舵€佸紓甯革紝璺宠繃: task={task_id} "
+                                f"status={refreshed.get('status')} kb={kb_name}"
+                            )
+                            continue
 
             # Notify frontend that queue position has changed
             try:

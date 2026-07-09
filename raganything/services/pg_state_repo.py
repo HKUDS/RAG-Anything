@@ -104,6 +104,7 @@ from typing import Any, Optional
 import asyncpg
 
 logger = logging.getLogger("rag_server.pg_state")
+MONITOR_EVENTS_MAX_ROWS = int(os.getenv("MONITOR_EVENTS_MAX_ROWS", "5000"))
 
 # ── Global pool ──────────────────────────────────────────────
 
@@ -189,6 +190,141 @@ def get_pg_pool() -> asyncpg.Pool:
     Used by pg_auth_repo.py and other modules that need database access.
     """
     return _get_pool()
+
+
+# ═══════════════════════════════════════════════════════════════
+# monitor_events
+# ═══════════════════════════════════════════════════════════════
+
+async def ensure_monitor_event_table() -> None:
+    """Ensure the persistent monitor event table exists."""
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        await conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS monitor_events (
+                id          BIGSERIAL PRIMARY KEY,
+                created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                event       TEXT NOT NULL,
+                user_id     INTEGER NOT NULL DEFAULT 0,
+                payload     JSONB NOT NULL DEFAULT '{}'::jsonb
+            )
+            """
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_monitor_events_created "
+            "ON monitor_events(created_at DESC, id DESC)"
+        )
+        await conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_monitor_events_user_created "
+            "ON monitor_events(user_id, created_at DESC, id DESC)"
+        )
+
+
+async def insert_monitor_event(
+    record: dict[str, Any],
+    *,
+    max_rows: int = MONITOR_EVENTS_MAX_ROWS,
+) -> None:
+    """Persist one monitor event and prune old rows if needed."""
+    import json as _json
+    from datetime import datetime as _datetime
+
+    event_time = record.get("time")
+    if isinstance(event_time, str):
+        event_time = _datetime.fromisoformat(event_time)
+
+    payload = {
+        key: value
+        for key, value in record.items()
+        if key not in {"time", "event", "user_id"}
+    }
+    payload_str = _json.dumps(payload, ensure_ascii=False, default=str)
+
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                """
+                INSERT INTO monitor_events (created_at, event, user_id, payload)
+                VALUES ($1::timestamptz, $2, $3, $4::jsonb)
+                """,
+                event_time,
+                record.get("event", ""),
+                int(record.get("user_id", 0) or 0),
+                payload_str,
+            )
+            if max_rows > 0:
+                await conn.execute(
+                    """
+                    DELETE FROM monitor_events
+                    WHERE id IN (
+                        SELECT id
+                        FROM monitor_events
+                        ORDER BY created_at DESC, id DESC
+                        OFFSET $1
+                    )
+                    """,
+                    max_rows,
+                )
+
+
+async def get_monitor_events(
+    limit: int = 50,
+    user_id: Optional[int] = None,
+    *,
+    include_global: bool = True,
+) -> list[dict[str, Any]]:
+    """Get recent persistent monitor events in chronological order."""
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        if user_id is None:
+            rows = await conn.fetch(
+                """
+                SELECT created_at, event, user_id, payload
+                FROM monitor_events
+                ORDER BY created_at DESC, id DESC
+                LIMIT $1
+                """,
+                limit,
+            )
+        elif include_global:
+            rows = await conn.fetch(
+                """
+                SELECT created_at, event, user_id, payload
+                FROM monitor_events
+                WHERE user_id IN (0, $1)
+                ORDER BY created_at DESC, id DESC
+                LIMIT $2
+                """,
+                user_id,
+                limit,
+            )
+        else:
+            rows = await conn.fetch(
+                """
+                SELECT created_at, event, user_id, payload
+                FROM monitor_events
+                WHERE user_id = $1
+                ORDER BY created_at DESC, id DESC
+                LIMIT $2
+                """,
+                user_id,
+                limit,
+            )
+
+    events: list[dict[str, Any]] = []
+    for row in reversed(rows):
+        payload = row["payload"] or {}
+        event = {
+            "time": row["created_at"].isoformat(),
+            "event": row["event"],
+            "user_id": row["user_id"],
+        }
+        if isinstance(payload, dict):
+            event.update(payload)
+        events.append(event)
+    return events
 
 
 # ═══════════════════════════════════════════════════════════════

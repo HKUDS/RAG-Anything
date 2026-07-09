@@ -233,6 +233,7 @@ from raganything.services.kb_service import (
 )
 from raganything.services.ws_service import (
     ws_clients, processing_events, ws_broadcast, emit_progress, add_event,
+    load_persisted_monitor_events,
 )
 from raganything.services.state_service import (
     processing_tasks, load_tasks_from_pg,
@@ -259,8 +260,9 @@ app.include_router(autorepair_router, prefix="/api")
 @app.on_event("startup")
 async def startup():
     # 初始化 PostgreSQL 连接池（必需 — 无 SQLite 回退）
-    from raganything.services.pg_state_repo import init_pg_pool
+    from raganything.services.pg_state_repo import init_pg_pool, ensure_monitor_event_table
     await init_pg_pool()
+    await ensure_monitor_event_table()
     # 验证 P0 数据表（智能体 + KB 元数据）
     from raganything.services.pg_agent_repo import pg_ensure_agent_tables
     from raganything.services.pg_kb_meta_repo import pg_ensure_kb_tables
@@ -286,6 +288,7 @@ async def startup():
         print(f"[KB-MIGRATE] 已将 {sum(1 for v in meta.values() if v.get('owner_id') == 1)} 个知识库分配给管理员", flush=True)
     # 从 PG 恢复处理中任务（崩溃恢复）
     await load_tasks_from_pg()
+    await load_persisted_monitor_events()
     # 初始化智能体（PG）
     from raganything.services.pg_agent_repo import (
         pg_list_agents, pg_create_agent,

@@ -67,6 +67,179 @@ class SettingsUpdate(BaseModel):
     enabled_channels: Optional[str] = None
 
 
+def _env_or_default(key: str, default: str) -> str:
+    value = os.getenv(key)
+    return value.strip() if value and value.strip() else default
+
+
+def _serialize_settings() -> dict:
+    return {
+        "parser": os.getenv("PARSER", "docling"),
+        "entity_types": os.getenv("ENTITY_TYPES", ""),
+        "entity_extraction_min_degree": int(os.getenv("ENTITY_EXTRACTION_MIN_DEGREE", "0")),
+        "llm_model": shared.LLM_MODEL,
+        "vision_model": shared.VISION_MODEL,
+        "embedding_model": shared.EMB_MODEL,
+        "embedding_dim": shared.EMB_DIM,
+        "chunk_size": os.getenv("CHUNK_SIZE", "800"),
+        "chunking_strategy": shared.CHUNKING_STRATEGY,
+        "chunking_strategies": shared.CHUNKING_STRATEGY_META,
+        "max_async": os.getenv("MAX_ASYNC", "4"),
+        "enable_image": os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true",
+        "enable_table": os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
+        "enable_equation": os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
+        "enable_video": os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
+        "working_dir": shared.WORKING_DIR,
+        "parser_output_dir": os.getenv("OUTPUT_DIR", "./output"),
+        "supported_extensions": [
+            ".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif", ".webp",
+            ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt", ".md",
+        ],
+        "rrf": {
+            "rrf_k": int(os.getenv("RRF_K", "60")),
+            "bm25_top_k": int(os.getenv("BM25_TOP_K", "50")),
+            "vector_top_k": int(os.getenv("VECTOR_TOP_K", "100")),
+            "graph_top_k": int(os.getenv("GRAPH_TOP_K", "30")),
+            "graph_depth": int(os.getenv("GRAPH_DEPTH", "2")),
+            "bm25_k1": float(os.getenv("BM25_K1", "1.5")),
+            "bm25_b": float(os.getenv("BM25_B", "0.75")),
+            "bm25_tokenizer": _env_or_default("BM25_TOKENIZER", "jieba"),
+            "rrf_channel_timeout": float(os.getenv("RRF_CHANNEL_TIMEOUT", "0.15")),
+            "enabled_channels": os.getenv("RRF_ENABLED_CHANNELS", "bm25,vector,graph"),
+        },
+    }
+
+
+# 恢复默认值以服务启动时的配置为准，避免覆盖部署层自定义的环境变量基线。
+SETTINGS_BOOT_DEFAULTS = _serialize_settings()
+
+
+def _settings_update_from_snapshot(snapshot: dict) -> SettingsUpdate:
+    rrf = snapshot.get("rrf") or {}
+    return SettingsUpdate(
+        parser=snapshot.get("parser"),
+        llm_model=snapshot.get("llm_model"),
+        chunk_size=int(snapshot["chunk_size"]) if snapshot.get("chunk_size") is not None else None,
+        chunking_strategy=snapshot.get("chunking_strategy"),
+        entity_types=snapshot.get("entity_types"),
+        entity_extraction_min_degree=snapshot.get("entity_extraction_min_degree"),
+        max_async=int(snapshot["max_async"]) if snapshot.get("max_async") is not None else None,
+        enable_image=snapshot.get("enable_image"),
+        enable_table=snapshot.get("enable_table"),
+        enable_equation=snapshot.get("enable_equation"),
+        enable_video=snapshot.get("enable_video"),
+        rrf_k=rrf.get("rrf_k"),
+        bm25_top_k=rrf.get("bm25_top_k"),
+        vector_top_k=rrf.get("vector_top_k"),
+        graph_top_k=rrf.get("graph_top_k"),
+        graph_depth=rrf.get("graph_depth"),
+        bm25_k1=rrf.get("bm25_k1"),
+        bm25_b=rrf.get("bm25_b"),
+        bm25_tokenizer=rrf.get("bm25_tokenizer"),
+        rrf_channel_timeout=rrf.get("rrf_channel_timeout"),
+        enabled_channels=rrf.get("enabled_channels"),
+    )
+
+
+def _invalidate_settings_runtime_caches(changes: dict) -> None:
+    if not changes:
+        return
+
+    for name in list(shared.kb_instances.keys()):
+        del shared.kb_instances[name]
+
+    try:
+        from raganything.query_cache import get_query_cache
+        get_query_cache().invalidate()
+    except Exception:
+        pass
+
+
+def _apply_settings_update(settings: SettingsUpdate) -> dict:
+    changes = {}
+
+    if settings.parser is not None:
+        os.environ["PARSER"] = settings.parser
+        changes["parser"] = settings.parser
+    if settings.llm_model is not None:
+        os.environ["LLM_MODEL"] = settings.llm_model
+        # 同步更新 kb_service 模块级变量（兼容仍引用它的旧代码路径）
+        import raganything.services.kb_service as _kbs
+        _kbs.LLM_MODEL = settings.llm_model
+        shared.LLM_MODEL = settings.llm_model
+        changes["llm_model"] = settings.llm_model
+    if settings.chunk_size is not None:
+        os.environ["CHUNK_SIZE"] = str(settings.chunk_size)
+        changes["chunk_size"] = settings.chunk_size
+    if settings.chunking_strategy is not None:
+        os.environ["CHUNKING_STRATEGY"] = settings.chunking_strategy
+        shared.CHUNKING_STRATEGY = settings.chunking_strategy
+        # 同时更新 kb_service 模块级变量
+        import raganything.services.kb_service as _kbs
+        _kbs.CHUNKING_STRATEGY = settings.chunking_strategy
+        changes["chunking_strategy"] = settings.chunking_strategy
+    if settings.max_async is not None:
+        # 硬上限：防止 API 预算被恶意耗尽
+        clamped = max(1, min(settings.max_async, 16))
+        os.environ["MAX_ASYNC"] = str(clamped)
+        changes["max_async"] = clamped
+    if settings.enable_image is not None:
+        os.environ["ENABLE_IMAGE_PROCESSING"] = str(settings.enable_image).lower()
+        changes["enable_image"] = settings.enable_image
+    if settings.enable_table is not None:
+        os.environ["ENABLE_TABLE_PROCESSING"] = str(settings.enable_table).lower()
+        changes["enable_table"] = settings.enable_table
+    if settings.enable_equation is not None:
+        os.environ["ENABLE_EQUATION_PROCESSING"] = str(settings.enable_equation).lower()
+        changes["enable_equation"] = settings.enable_equation
+    if settings.enable_video is not None:
+        os.environ["ENABLE_VIDEO_PROCESSING"] = str(settings.enable_video).lower()
+        changes["enable_video"] = settings.enable_video
+    if settings.entity_types is not None:
+        os.environ["ENTITY_TYPES"] = settings.entity_types
+        changes["entity_types"] = settings.entity_types
+    if settings.entity_extraction_min_degree is not None:
+        os.environ["ENTITY_EXTRACTION_MIN_DEGREE"] = str(settings.entity_extraction_min_degree)
+        changes["entity_extraction_min_degree"] = settings.entity_extraction_min_degree
+    # RRF (Reciprocal Rank Fusion) 检索参数会被 HybridSearchEngine 初始化时读取。
+    # 保存后统一清理 KB 缓存，确保下一次查询重建检索引擎并使用新值。
+    if settings.rrf_k is not None:
+        os.environ["RRF_K"] = str(settings.rrf_k)
+        changes["rrf_k"] = settings.rrf_k
+    if settings.bm25_top_k is not None:
+        os.environ["BM25_TOP_K"] = str(settings.bm25_top_k)
+        changes["bm25_top_k"] = settings.bm25_top_k
+    if settings.vector_top_k is not None:
+        os.environ["VECTOR_TOP_K"] = str(settings.vector_top_k)
+        changes["vector_top_k"] = settings.vector_top_k
+    if settings.graph_top_k is not None:
+        os.environ["GRAPH_TOP_K"] = str(settings.graph_top_k)
+        changes["graph_top_k"] = settings.graph_top_k
+    if settings.graph_depth is not None:
+        os.environ["GRAPH_DEPTH"] = str(settings.graph_depth)
+        changes["graph_depth"] = settings.graph_depth
+    if settings.bm25_k1 is not None:
+        os.environ["BM25_K1"] = str(settings.bm25_k1)
+        changes["bm25_k1"] = settings.bm25_k1
+    if settings.bm25_b is not None:
+        os.environ["BM25_B"] = str(settings.bm25_b)
+        changes["bm25_b"] = settings.bm25_b
+    if settings.bm25_tokenizer is not None:
+        tokenizer = settings.bm25_tokenizer.strip() or "jieba"
+        os.environ["BM25_TOKENIZER"] = tokenizer
+        changes["bm25_tokenizer"] = tokenizer
+    if settings.rrf_channel_timeout is not None:
+        os.environ["RRF_CHANNEL_TIMEOUT"] = str(settings.rrf_channel_timeout)
+        changes["rrf_channel_timeout"] = settings.rrf_channel_timeout
+    if settings.enabled_channels is not None:
+        os.environ["RRF_ENABLED_CHANNELS"] = settings.enabled_channels
+        changes["enabled_channels"] = settings.enabled_channels
+
+    _invalidate_settings_runtime_caches(changes)
+
+    return changes
+
+
 class WorkflowRunRequest(BaseModel):
     query_text: str = ""
 
@@ -513,143 +686,27 @@ async def websocket_endpoint(ws: WebSocket):
 @router.get("/settings")
 async def get_settings(_perm: None = Depends(require_permission(Permission.SETTINGS_READ)), current_user: dict = Depends(get_current_user)):
     """获取当前配置"""
-    return {
-        "parser": os.getenv("PARSER", "docling"),
-        "entity_types": os.getenv("ENTITY_TYPES", ""),
-        "entity_extraction_min_degree": int(os.getenv("ENTITY_EXTRACTION_MIN_DEGREE", "0")),
-        "llm_model": shared.LLM_MODEL,
-        "vision_model": shared.VISION_MODEL,
-        "embedding_model": shared.EMB_MODEL,
-        "embedding_dim": shared.EMB_DIM,
-        "chunk_size": os.getenv("CHUNK_SIZE", "800"),
-        "chunking_strategy": shared.CHUNKING_STRATEGY,
-        "chunking_strategies": shared.CHUNKING_STRATEGY_META,
-        "max_async": os.getenv("MAX_ASYNC", "4"),
-        "enable_image": os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true",
-        "enable_table": os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
-        "enable_equation": os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
-        "enable_video": os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
-        "working_dir": shared.WORKING_DIR,
-        "parser_output_dir": os.getenv("OUTPUT_DIR", "./output"),
-        "supported_extensions": [
-            ".pdf", ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif", ".webp",
-            ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx", ".txt", ".md",
-        ],
-        "rrf": {
-            "rrf_k": int(os.getenv("RRF_K", "60")),
-            "bm25_top_k": int(os.getenv("BM25_TOP_K", "50")),
-            "vector_top_k": int(os.getenv("VECTOR_TOP_K", "100")),
-            "graph_top_k": int(os.getenv("GRAPH_TOP_K", "30")),
-            "graph_depth": int(os.getenv("GRAPH_DEPTH", "2")),
-            "bm25_k1": float(os.getenv("BM25_K1", "1.5")),
-            "bm25_b": float(os.getenv("BM25_B", "0.75")),
-            "bm25_tokenizer": os.getenv("BM25_TOKENIZER", "jieba"),
-            "rrf_channel_timeout": float(os.getenv("RRF_CHANNEL_TIMEOUT", "0.15")),
-            "enabled_channels": os.getenv("RRF_ENABLED_CHANNELS", "bm25,vector,graph"),
-        },
-    }
+    return _serialize_settings()
 
 
 @router.put("/settings")
 async def update_settings(settings: SettingsUpdate,
                           current_user: dict = Depends(require_permission(Permission.SETTINGS_WRITE))):
     """更新配置(runtime) — 需要 settings:write 权限"""
-    changes = {}
-    if settings.parser is not None:
-        os.environ["PARSER"] = settings.parser
-        changes["parser"] = settings.parser
-    if settings.llm_model is not None:
-        os.environ["LLM_MODEL"] = settings.llm_model
-        # 同步更新 kb_service 模块级变量（兼容仍引用它的旧代码路径）
-        import raganything.services.kb_service as _kbs
-        _kbs.LLM_MODEL = settings.llm_model
-        shared.LLM_MODEL = settings.llm_model
-        changes["llm_model"] = settings.llm_model
-    if settings.chunk_size is not None:
-        os.environ["CHUNK_SIZE"] = str(settings.chunk_size)
-        changes["chunk_size"] = settings.chunk_size
-    if settings.chunking_strategy is not None:
-        os.environ["CHUNKING_STRATEGY"] = settings.chunking_strategy
-        shared.CHUNKING_STRATEGY = settings.chunking_strategy
-        # 同时更新 kb_service 模块级变量
-        import raganything.services.kb_service as _kbs
-        _kbs.CHUNKING_STRATEGY = settings.chunking_strategy
-        changes["chunking_strategy"] = settings.chunking_strategy
-        # 分块策略变更需要重建所有知识库实例
-        for name in list(shared.kb_instances.keys()):
-            del shared.kb_instances[name]
-    if settings.max_async is not None:
-        # 硬上限：防止 API 预算被恶意耗尽
-        clamped = max(1, min(settings.max_async, 16))
-        os.environ["MAX_ASYNC"] = str(clamped)
-        changes["max_async"] = clamped
-    if settings.enable_image is not None:
-        os.environ["ENABLE_IMAGE_PROCESSING"] = str(settings.enable_image).lower()
-        changes["enable_image"] = settings.enable_image
-    if settings.enable_table is not None:
-        os.environ["ENABLE_TABLE_PROCESSING"] = str(settings.enable_table).lower()
-        changes["enable_table"] = settings.enable_table
-    if settings.enable_equation is not None:
-        os.environ["ENABLE_EQUATION_PROCESSING"] = str(settings.enable_equation).lower()
-        changes["enable_equation"] = settings.enable_equation
-    if settings.enable_video is not None:
-        os.environ["ENABLE_VIDEO_PROCESSING"] = str(settings.enable_video).lower()
-        changes["enable_video"] = settings.enable_video
-    if settings.entity_types is not None:
-        os.environ["ENTITY_TYPES"] = settings.entity_types
-        changes["entity_types"] = settings.entity_types
-    if settings.entity_extraction_min_degree is not None:
-        os.environ["ENTITY_EXTRACTION_MIN_DEGREE"] = str(settings.entity_extraction_min_degree)
-        changes["entity_extraction_min_degree"] = settings.entity_extraction_min_degree
-    # RRF (Reciprocal Rank Fusion) 检索参数 — 运行时调参，无需重建 KB
-    if settings.rrf_k is not None:
-        os.environ["RRF_K"] = str(settings.rrf_k)
-        changes["rrf_k"] = settings.rrf_k
-    if settings.bm25_top_k is not None:
-        os.environ["BM25_TOP_K"] = str(settings.bm25_top_k)
-        changes["bm25_top_k"] = settings.bm25_top_k
-    if settings.vector_top_k is not None:
-        os.environ["VECTOR_TOP_K"] = str(settings.vector_top_k)
-        changes["vector_top_k"] = settings.vector_top_k
-    if settings.graph_top_k is not None:
-        os.environ["GRAPH_TOP_K"] = str(settings.graph_top_k)
-        changes["graph_top_k"] = settings.graph_top_k
-    if settings.graph_depth is not None:
-        os.environ["GRAPH_DEPTH"] = str(settings.graph_depth)
-        changes["graph_depth"] = settings.graph_depth
-    if settings.bm25_k1 is not None:
-        os.environ["BM25_K1"] = str(settings.bm25_k1)
-        changes["bm25_k1"] = settings.bm25_k1
-    if settings.bm25_b is not None:
-        os.environ["BM25_B"] = str(settings.bm25_b)
-        changes["bm25_b"] = settings.bm25_b
-    if settings.bm25_tokenizer is not None:
-        os.environ["BM25_TOKENIZER"] = settings.bm25_tokenizer
-        changes["bm25_tokenizer"] = settings.bm25_tokenizer
-    if settings.rrf_channel_timeout is not None:
-        os.environ["RRF_CHANNEL_TIMEOUT"] = str(settings.rrf_channel_timeout)
-        changes["rrf_channel_timeout"] = settings.rrf_channel_timeout
-    if settings.enabled_channels is not None:
-        os.environ["RRF_ENABLED_CHANNELS"] = settings.enabled_channels
-        changes["enabled_channels"] = settings.enabled_channels
-    # 部分配置需要重建 RAG 实例才能生效
-    need_rebuild = (
-        settings.parser is not None
-        or settings.llm_model is not None
-        or settings.entity_types is not None
-        or settings.chunk_size is not None
-        or settings.entity_extraction_min_degree is not None
-        or settings.enable_image is not None
-        or settings.enable_table is not None
-        or settings.enable_equation is not None
-        or settings.enable_video is not None
-        or settings.max_async is not None
-    )
-    if need_rebuild:
-        # Clear all cached KB instances so they pick up the new config on next access
-        for name in list(shared.kb_instances.keys()):
-            del shared.kb_instances[name]
+    changes = _apply_settings_update(settings)
     return {"status": "ok", "changes": changes, "note": "配置已更新，下次访问知识库时生效"}
+
+
+@router.post("/settings/reset")
+async def reset_settings(current_user: dict = Depends(require_permission(Permission.SETTINGS_WRITE))):
+    """恢复系统设置到服务启动时的默认值"""
+    changes = _apply_settings_update(_settings_update_from_snapshot(SETTINGS_BOOT_DEFAULTS))
+    return {
+        "status": "ok",
+        "changes": changes,
+        "note": "已恢复服务启动时的默认设置",
+        "settings": _serialize_settings(),
+    }
 
 
 # ── 🔄 KB 缓存管理 ──────────────────────────────────
@@ -671,8 +728,9 @@ async def reload_kb(kb_name: str,
         except Exception:
             pass
         del shared.kb_instances[kb_name]
-        return {"status": "ok", "message": f"KB '{kb_name}' 缓存已清除，下次查询将重新加载"}
-    return {"status": "skipped", "message": f"KB '{kb_name}' 不在缓存中"}
+        await shared.add_event("kb_cache_reload", kb=kb_name, user_id=current_user.get("id", 0))
+        return {"status": "ok", "message": f"知识库“{kb_name}”缓存已清除，下次查询将重新加载"}
+    return {"status": "skipped", "message": f"知识库“{kb_name}”当前不在缓存中"}
 
 
 # ── 📊 KB 缓存管理 ──────────────────────────────────
@@ -704,24 +762,25 @@ async def cache_evict(
     权限: settings:write
     """
     if kb_name not in shared.kb_instances:
-        return {"status": "skipped", "message": f"KB '{kb_name}' 不在缓存中"}
+        return {"status": "skipped", "message": f"知识库“{kb_name}”当前不在缓存中"}
 
     if shared.kb_instances.is_pinned(kb_name):
         return {
             "status": "skipped",
-            "message": f"KB '{kb_name}' 已固定，不可淘汰。请先取消固定。",
+            "message": f"知识库“{kb_name}”已固定，不可淘汰。请先取消固定。",
         }
 
     if shared.kb_instances.is_dirty(kb_name):
         return {
             "status": "skipped",
-            "message": f"KB '{kb_name}' 正在处理中，无法淘汰。",
+            "message": f"知识库“{kb_name}”正在处理中，无法淘汰。",
         }
 
     success = await shared.kb_instances.evict(kb_name)
     if success:
-        return {"status": "ok", "message": f"KB '{kb_name}' 已淘汰"}
-    return {"status": "skipped", "message": f"KB '{kb_name}' 淘汰失败"}
+        await shared.add_event("kb_cache_evict", kb=kb_name, user_id=current_user.get("id", 0))
+        return {"status": "ok", "message": f"知识库“{kb_name}”缓存已淘汰"}
+    return {"status": "skipped", "message": f"知识库“{kb_name}”缓存淘汰失败"}
 
 
 @router.post("/cache/pin/{kb_name}")
@@ -735,7 +794,8 @@ async def cache_pin(
     权限: settings:write
     """
     shared.kb_instances.pin(kb_name)
-    return {"status": "ok", "message": f"KB '{kb_name}' 已固定"}
+    await shared.add_event("kb_cache_pin", kb=kb_name, user_id=current_user.get("id", 0))
+    return {"status": "ok", "message": f"知识库“{kb_name}”已固定到缓存"}
 
 
 @router.post("/cache/unpin/{kb_name}")
@@ -749,7 +809,8 @@ async def cache_unpin(
     权限: settings:write
     """
     shared.kb_instances.unpin(kb_name)
-    return {"status": "ok", "message": f"KB '{kb_name}' 已取消固定"}
+    await shared.add_event("kb_cache_unpin", kb=kb_name, user_id=current_user.get("id", 0))
+    return {"status": "ok", "message": f"知识库“{kb_name}”已取消固定"}
 
 
 # ── 📈 监控面板 ─────────────────────────────────────
@@ -759,12 +820,14 @@ async def monitor_status(_perm: None = Depends(require_permission(Permission.MON
     is_admin = current_user.get("is_admin", False)
     if is_admin:
         filtered_tasks = list(shared.processing_tasks.values())
-        filtered_events = shared.processing_events[-20:]
     else:
         filtered_tasks = [t for t in shared.processing_tasks.values()
                          if t.get("user_id", 0) == current_user["id"]]
-        filtered_events = [e for e in shared.processing_events[-20:]
-                          if e.get("user_id", 0) in (0, current_user["id"])]
+    filtered_events = await shared.get_monitor_events(
+        limit=20,
+        user_id=None if is_admin else current_user.get("id", 0),
+        is_admin=is_admin,
+    )
     return {
         "tasks": filtered_tasks,
         "events": filtered_events,
@@ -792,11 +855,12 @@ async def monitor_stats(_perm: None = Depends(require_permission(Permission.MONI
 async def monitor_logs(limit: int = 50, _perm: None = Depends(require_permission(Permission.MONITOR_READ)), current_user: dict = Depends(get_current_user)):
     """获取最近事件日志（按用户隔离，管理员看全部）"""
     is_admin = current_user.get("is_admin", False)
-    if is_admin:
-        return {"events": shared.processing_events[-limit:]}
-    filtered = [e for e in reversed(shared.processing_events)
-                if e.get("user_id", 0) in (0, current_user["id"])]
-    return {"events": filtered[-limit:]}
+    events = await shared.get_monitor_events(
+        limit=limit,
+        user_id=None if is_admin else current_user.get("id", 0),
+        is_admin=is_admin,
+    )
+    return {"events": events}
 
 
 @router.get("/health")
@@ -817,9 +881,14 @@ async def health():
         pool = get_pg_pool()
         async with pool.acquire() as conn:
             await conn.fetchval("SELECT 1 FROM users LIMIT 1")
+            monitor_table_ready = await conn.fetchval(
+                "SELECT to_regclass('public.monitor_events') IS NOT NULL"
+            )
         components["auth_db"] = "ok"
+        components["monitor_logs"] = "ok" if monitor_table_ready else "error: monitor_events table missing"
     except Exception as e:
         components["auth_db"] = f"error: {e}"
+        components["monitor_logs"] = f"error: {e}"
 
     # 检查磁盘空间
     try:
@@ -842,4 +911,3 @@ async def health():
 
 
 # ════════════════════════════════════════════════════════
-

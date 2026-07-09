@@ -51,12 +51,16 @@ def main():
     db_password = args.db_password or password
 
     ROOT = Path(__file__).resolve().parent.parent
-    schema_file = ROOT / "migrations" / "001_pg_schema.sql"
+    migration_files = [
+        ROOT / "migrations" / "001_pg_schema.sql",
+        ROOT / "migrations" / "013_monitor_events.sql",
+    ]
     env_file = ROOT / ".env"
 
-    if not schema_file.exists():
-        print(f"[错误] Schema 文件不存在: {schema_file}")
-        sys.exit(1)
+    for migration_file in migration_files:
+        if not migration_file.exists():
+            print(f"[错误] Schema 文件不存在: {migration_file}")
+            sys.exit(1)
 
     psql = find_psql()
     print(f"[OK] 找到 psql: {psql}")
@@ -99,30 +103,33 @@ def main():
 
     print("\n--- 3. 运行 Schema 迁移 ---")
     env["PGPASSWORD"] = db_password
-    cmd = [psql, "-U", args.db_user, "-d", args.db_name, "-f", str(schema_file)]
-    result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
-    if result.returncode == 0:
-        print("  [OK] Schema 迁移完成")
-    else:
+    for migration_file in migration_files:
+        print(f"  -> 执行 {migration_file.name}")
+        cmd = [psql, "-U", args.db_user, "-d", args.db_name, "-f", str(migration_file)]
+        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
+        if result.returncode == 0:
+            print(f"     [OK] {migration_file.name} 执行完成")
+            continue
+
         error_msg = result.stderr.strip()
         if "already exists" in error_msg.lower():
-            print("  [OK] Schema 已存在，跳过")
+            print(f"     [OK] {migration_file.name} 已存在，跳过")
+            continue
+
+        print(f"     [失败] {error_msg[:300]}")
+        print("     可能需要先授权 schema 权限:")
+        env["PGPASSWORD"] = password
+        grant_sql = f"GRANT ALL ON SCHEMA public TO {args.db_user}; ALTER SCHEMA public OWNER TO {args.db_user};"
+        subprocess.run(
+            [psql, "-U", "postgres", "-d", args.db_name, "-c", grant_sql],
+            capture_output=True, text=True, env=env, timeout=30,
+        )
+        env["PGPASSWORD"] = db_password
+        result2 = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
+        if result2.returncode == 0:
+            print(f"     [OK] {migration_file.name} 执行完成（授权后重试）")
         else:
-            print(f"  [失败] {error_msg[:300]}")
-            print("  可能需要先授权 schema 权限:")
-            env["PGPASSWORD"] = password
-            grant_sql = f"GRANT ALL ON SCHEMA public TO {args.db_user}; ALTER SCHEMA public OWNER TO {args.db_user};"
-            subprocess.run(
-                [psql, "-U", "postgres", "-d", args.db_name, "-c", grant_sql],
-                capture_output=True, text=True, env=env, timeout=30,
-            )
-            # Retry
-            env["PGPASSWORD"] = db_password
-            result2 = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
-            if result2.returncode == 0:
-                print("  [OK] Schema 迁移完成（授权后重试）")
-            else:
-                print(f"  [失败] {result2.stderr.strip()[:300]}")
+            print(f"     [失败] {result2.stderr.strip()[:300]}")
 
     print("\n--- 4. 配置 .env ---")
     dsn = f"postgresql://{args.db_user}:{db_password}@localhost:5432/{args.db_name}"

@@ -38,6 +38,15 @@ processing_events: list[dict] = []
 
 # ── Broadcast ──────────────────────────────────────────────
 
+def _event_pg_ready() -> bool:
+    """Return whether the PG pool is ready for monitor-event persistence."""
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+        get_pg_pool()
+        return True
+    except RuntimeError:
+        return False
+
 async def ws_broadcast(data: dict[str, Any]) -> None:
     """Broadcast a JSON message to all connected WebSocket clients.
 
@@ -110,6 +119,52 @@ async def emit_progress(task_id: str, progress: int, msg: str = "") -> None:
 
 # ── Events ─────────────────────────────────────────────────
 
+async def load_persisted_monitor_events(limit: int = 200) -> int:
+    """Warm the in-memory event window from persistent storage."""
+    global processing_events
+    if not _event_pg_ready():
+        return len(processing_events)
+
+    try:
+        from raganything.services.pg_state_repo import get_monitor_events as _pg_get_monitor_events
+        events = await _pg_get_monitor_events(limit=limit)
+    except Exception as exc:
+        ws_logger.warning("Failed to load persisted monitor events: %s", exc)
+        return len(processing_events)
+
+    async with _event_lock:
+        processing_events[:] = events[-limit:]
+        return len(processing_events)
+
+
+async def get_monitor_events(
+    limit: int = 50,
+    *,
+    user_id: Optional[int] = None,
+    is_admin: bool = False,
+) -> list[dict[str, Any]]:
+    """Get recent monitor events from PG, falling back to memory if needed."""
+    if limit <= 0:
+        return []
+
+    if _event_pg_ready():
+        try:
+            from raganything.services.pg_state_repo import get_monitor_events as _pg_get_monitor_events
+            if is_admin:
+                return await _pg_get_monitor_events(limit=limit)
+            return await _pg_get_monitor_events(limit=limit, user_id=user_id, include_global=True)
+        except Exception as exc:
+            ws_logger.warning("Failed to query persisted monitor events: %s", exc)
+
+    async with _event_lock:
+        if is_admin or user_id is None:
+            return processing_events[-limit:]
+        visible = [
+            current_event for current_event in processing_events
+            if current_event.get("user_id", 0) in (0, user_id)
+        ]
+        return visible[-limit:]
+
 async def add_event(event: str, user_id: int = 0, **kw: Any) -> None:
     """Add a processing event to the in-memory log.
 
@@ -121,11 +176,22 @@ async def add_event(event: str, user_id: int = 0, **kw: Any) -> None:
         **kw: Additional event fields
     """
     global processing_events
-    e = {"time": datetime.now().isoformat(), "event": event, "user_id": user_id, **kw}
+    e = {
+        "time": datetime.now().astimezone().isoformat(),
+        "event": event,
+        "user_id": user_id,
+        **kw,
+    }
     async with _event_lock:
         processing_events.append(e)
         if len(processing_events) > 200:
             processing_events[:] = processing_events[-200:]
+    if _event_pg_ready():
+        try:
+            from raganything.services.pg_state_repo import insert_monitor_event
+            await insert_monitor_event(e)
+        except Exception as exc:
+            ws_logger.warning("Failed to persist monitor event %s: %s", event, exc)
 
 
 # ── Connection Management ──────────────────────────────────
@@ -165,6 +231,8 @@ __all__ = [
     "ws_broadcast",
     "push_run_status",
     "emit_progress",
+    "load_persisted_monitor_events",
+    "get_monitor_events",
     "add_event",
     "register_ws",
     "unregister_ws",

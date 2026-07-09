@@ -19,7 +19,7 @@ from typing import Optional
 
 # Import shared module-level state (for read access)
 from raganything.services.state_service import (
-    upsert_task_state, complete_task, delete_task, get_task_status,
+    upsert_task_state, complete_task, delete_task, get_task_status, get_all_tasks,
 )
 from .shared import (
     limiter,
@@ -46,6 +46,11 @@ from .shared import (
 from raganything.services.kb_service import (
     pg_register_upload,
     pg_update_upload_status,
+    pg_update_upload_status_by_task_id,
+    pg_get_upload_by_task_id,
+    pg_claim_upload_task,
+    pg_list_uploads,
+    _unregister_processing_file,
     _load_doc_status_json,
     _load_full_docs_json,
 )
@@ -346,6 +351,8 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
         file_size=file_size,
         kb_name=kb,
         uploaded_by=current_user.get("id", 0),
+        task_id=task_id,
+        status="queued",
     )
     if pg_id is None:
         # PG insert failed — either a true duplicate or PG unavailable.
@@ -384,6 +391,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
     return {"task_id": task_id, "filename": file.filename, "status": "queued", "kb": kb,
             "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY,
             "position": qsize + 1, "queue_size": qsize + 1,
+            "can_delete": True,
             "message": f"文档已加入队列（第 {qsize + 1} 位），使用{strategy_name}分块。请到知识库页面查看进度。"}
 
 
@@ -403,6 +411,7 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
 
     tasks = []
     skipped: list[str] = []
+    queue_size = 0
     from .shared import _ensure_queue_draining
 
     for file in files:
@@ -442,6 +451,8 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
             file_size=file_size,
             kb_name=kb,
             uploaded_by=current_user.get("id", 0),
+            task_id=task_id,
+            status="queued",
         )
         if pg_id is None:
             # PG insert failed — duplicate content hash or PG unavailable
@@ -471,21 +482,137 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
         }
         queue, pre_qsize = await _ensure_queue_draining(kb)
         queue.put_nowait(task_info)
+        queue_size = queue.qsize()
         tasks.append({
             "task_id": task_id, "filename": file.filename,
-            "status": "queued", "position": pre_qsize + len(tasks),
+            "status": "queued", "position": queue_size,
+            "can_delete": True,
         })
         lightrag_logger.info(f"[UPLOAD-BATCH] 任务={task_id} 文件={file.filename} kb={kb}")
 
     strategy_name = CHUNKING_STRATEGY_META.get(chunking_strategy or CHUNKING_STRATEGY, {}).get('name', '默认')
-    result = {"status": "queued", "tasks": tasks, "total": len(tasks), "kb": kb,
+    if tasks:
+        message = f"已接收 {len(tasks)} 个文件，使用{strategy_name}分块，排队处理中"
+        if skipped:
+            message += f"，跳过 {len(skipped)} 个（重复或注册失败）"
+    elif skipped:
+        message = f"{len(skipped)} 个文件已跳过（重复或注册失败），没有新任务入队"
+    else:
+        message = "没有新文件进入上传队列"
+
+    result = {"status": "queued" if tasks else "skipped", "tasks": tasks, "total": len(tasks), "kb": kb,
               "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY,
-              "queue_size": queue.qsize(),
-              "message": f"已接收 {len(tasks)} 个文件，使用{strategy_name}分块，排队处理中"}
+              "queue_size": queue_size,
+              "message": message}
     if skipped:
         result["skipped"] = skipped
-        result["message"] += f"，{len(skipped)} 个跳过（重复）"
     return result
+
+
+@router.get("/upload/tasks")
+async def list_upload_tasks(
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+):
+    """List persisted upload tasks for the current KB."""
+    uploads, _total = await pg_list_uploads(
+        kb_name=kb,
+        uploaded_by=current_user.get("id"),
+        is_admin=current_user.get("is_admin", False),
+        limit=200,
+        offset=0,
+        exclude_statuses=["deleted"],
+    )
+    active_tasks = {
+        (task.get("id") or task.get("task_id")): task
+        for task in await get_all_tasks()
+        if task.get("kb", task.get("kb_name", "")) == kb
+    }
+
+    tasks = []
+    for upload in uploads:
+        task_id = upload.get("task_id")
+        if not task_id:
+            continue
+
+        runtime_task = active_tasks.get(task_id, {})
+        status = runtime_task.get("status") or upload.get("status") or "queued"
+        progress = runtime_task.get("progress")
+        if progress is None:
+            progress = 100 if status == "completed" else 0
+        phase = runtime_task.get("phase") or ""
+        error_message = (
+            runtime_task.get("error_message")
+            or runtime_task.get("error")
+            or upload.get("error_message")
+            or ""
+        )
+        tasks.append({
+            "task_id": task_id,
+            "filename": upload.get("filename", ""),
+            "file_size": upload.get("file_size", 0),
+            "status": status,
+            "progress": progress,
+            "phase": phase,
+            "error_message": error_message,
+            "created_at": upload.get("created_at", ""),
+            "updated_at": runtime_task.get("updated_at") or upload.get("updated_at", ""),
+            "can_delete": status == "queued",
+        })
+
+    return {"tasks": tasks, "total": len(tasks)}
+
+
+@router.delete("/upload/tasks/{task_id}")
+async def delete_upload_task(
+    task_id: str,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+):
+    """Delete a queued upload task before processing starts."""
+    upload = await pg_get_upload_by_task_id(
+        task_id,
+        kb_name=kb,
+        uploaded_by=current_user.get("id"),
+        is_admin=current_user.get("is_admin", False),
+    )
+    if not upload:
+        raise HTTPException(404, "上传任务不存在")
+    if upload.get("status") != "queued":
+        raise HTTPException(409, "仅排队中的上传任务可删除")
+
+    deleted = await pg_update_upload_status_by_task_id(
+        task_id,
+        "deleted",
+        kb_name=kb,
+        expected_current_status="queued",
+        error_message="",
+    )
+    if not deleted:
+        raise HTTPException(409, "上传任务状态已变化，请刷新后重试")
+
+    staged_file = Path(upload.get("file_path") or "")
+    try:
+        if staged_file.exists() and staged_file.is_file():
+            staged_file.unlink()
+    except OSError:
+        lightrag_logger.warning("[UPLOAD-DELETE] staged file cleanup failed: %s", staged_file)
+
+    _unregister_processing_file(kb, upload.get("file_hash", ""))
+    await delete_task(task_id)
+    await add_event(
+        "upload_delete",
+        task_id=task_id,
+        file=upload.get("filename", ""),
+        kb=kb,
+        user_id=current_user.get("id", 0),
+    )
+    return {
+        "task_id": task_id,
+        "filename": upload.get("filename", ""),
+        "status": "deleted",
+        "message": "上传任务已删除",
+    }
 
 
 @router.post("/upload/folder")

@@ -81,6 +81,8 @@ from raganything.services.ws_service import (  # noqa: F401 — re-export
     ws_broadcast,
     push_run_status,
     emit_progress,
+    load_persisted_monitor_events,
+    get_monitor_events,
     add_event,
 )
 
@@ -894,7 +896,8 @@ __all__ = [
     "WORKFLOW_DIR",
     # WebSocket
     "ws_clients", "active_ws_connections", "processing_events",
-    "ws_broadcast", "push_run_status", "emit_progress", "add_event",
+    "ws_broadcast", "push_run_status", "emit_progress",
+    "load_persisted_monitor_events", "get_monitor_events", "add_event",
     # State
     "processing_tasks", "query_history", "QUERY_HISTORY_FILE", "load_query_history", "save_query_history",
     "cleanup_completed_tasks",
