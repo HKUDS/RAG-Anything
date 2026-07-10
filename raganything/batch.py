@@ -81,14 +81,22 @@ class BatchMixin:
         if not folder_path_obj.exists():
             raise FileNotFoundError(f"Folder not found: {folder_path}")
 
-        # Collect files based on supported extensions
-        files_to_process = []
-        for file_ext in file_extensions:
-            if recursive:
-                pattern = f"**/*{file_ext}"
-            else:
-                pattern = f"*{file_ext}"
-            files_to_process.extend(folder_path_obj.glob(pattern))
+        # Collect files once and compare normalized suffixes so discovery is
+        # case-insensitive on every platform.
+        normalized_extensions = {
+            ext.lower() if ext.startswith(".") else f".{ext.lower()}"
+            for ext in file_extensions
+        }
+        candidates = (
+            folder_path_obj.rglob("*")
+            if recursive
+            else folder_path_obj.glob("*")
+        )
+        files_to_process = [
+            path
+            for path in candidates
+            if path.is_file() and path.suffix.lower() in normalized_extensions
+        ]
 
         if not files_to_process:
             self.logger.warning(f"No supported files found in {folder_path}")
