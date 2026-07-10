@@ -131,13 +131,20 @@ class BatchParser:
         """
         supported_extensions = set(self.get_supported_extensions())
         supported_files = []
+        seen_files = set()
+
+        def add_supported_file(file_path: Path) -> None:
+            resolved_path = str(file_path.resolve())
+            if resolved_path not in seen_files:
+                seen_files.add(resolved_path)
+                supported_files.append(str(file_path))
 
         for path_str in file_paths:
             path = Path(path_str)
 
             if path.is_file():
                 if path.suffix.lower() in supported_extensions:
-                    supported_files.append(str(path))
+                    add_supported_file(path)
                 else:
                     self.logger.warning(f"Unsupported file type: {path}")
 
@@ -149,7 +156,7 @@ class BatchParser:
                             file_path.is_file()
                             and file_path.suffix.lower() in supported_extensions
                         ):
-                            supported_files.append(str(file_path))
+                            add_supported_file(file_path)
                 else:
                     # Only files in the directory (not subdirectories)
                     for file_path in path.glob("*"):
@@ -157,7 +164,7 @@ class BatchParser:
                             file_path.is_file()
                             and file_path.suffix.lower() in supported_extensions
                         ):
-                            supported_files.append(str(file_path))
+                            add_supported_file(file_path)
 
             else:
                 self.logger.warning(f"Path does not exist: {path}")

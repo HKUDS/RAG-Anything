@@ -219,3 +219,14 @@ def test_incremental_dry_run_does_not_write_manifest(monkeypatch, tmp_path):
 
     manifest_path = output_dir / ".raganything_batch_manifest.json"
     assert not manifest_path.exists()
+
+
+def test_filter_supported_files_deduplicates_overlapping_inputs(monkeypatch, tmp_path):
+    batch_parser, _ = _make_batch_parser(monkeypatch)
+    docs_dir, first_doc, second_doc = _seed_two_docs(tmp_path)
+
+    result = batch_parser.filter_supported_files(
+        [str(docs_dir), str(first_doc), str(docs_dir)]
+    )
+
+    assert result == [str(first_doc), str(second_doc)]
