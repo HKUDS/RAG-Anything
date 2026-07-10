@@ -45,6 +45,25 @@ def test_public_url_builds_from_strip_prefix(tmp_path: Path):
     assert url == "https://cdn.example.com/assets/doc/images/a.png"
 
 
+def test_public_url_encodes_special_path_characters(tmp_path: Path):
+    root = tmp_path / "out"
+    root.mkdir()
+    img = root / "?? #1" / "figure 1.png"
+    img.parent.mkdir(parents=True)
+    img.write_bytes(b"x")
+
+    url = public_url_for_local_path(
+        str(img.resolve()),
+        base_url="https://cdn.example.com/assets",
+        strip_prefix=str(root),
+    )
+
+    assert url == (
+        "https://cdn.example.com/assets/"
+        "%E6%8A%A5%E5%91%8A%20%231/figure%201.png"
+    )
+
+
 def test_attach_respects_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     root = tmp_path / "bundle"
     root.mkdir()
