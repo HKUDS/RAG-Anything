@@ -2637,6 +2637,13 @@ select.input-field {
     align-content: stretch;
     padding-bottom: 16px;
   }
+
+  .resource-page-kbs .resource-panel {
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    align-content: stretch;
+    padding-bottom: 8px;
+  }
 }
 
 .resource-page .resource-page-header {
@@ -2928,6 +2935,55 @@ select.input-field {
 
   .resource-page-agents .resource-card-agent-footer.directory-footer {
     min-height: 30px;
+  }
+
+  .resource-page-kbs .resource-grid-kbs {
+    min-height: 0;
+    grid-template-rows: repeat(var(--kb-grid-rows, 3), minmax(0, 1fr));
+  }
+
+  .resource-page-kbs .resource-grid-kbs-fixed-rows {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .resource-page-kbs .resource-grid-kbs .resource-card.directory-card {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .resource-page-kbs .resource-card-kb.directory-card {
+    gap: clamp(6px, 0.9vh, 8px);
+    padding: clamp(8px, 1.2vh, 10px);
+  }
+
+  .resource-page-kbs .resource-card-kb-icon.directory-icon {
+    width: 32px;
+    height: 32px;
+    flex-basis: 32px;
+    border-radius: 10px;
+  }
+
+  .resource-page-kbs .resource-card-kb-metrics {
+    min-height: clamp(28px, 3.7vh, 32px);
+    padding: 5px 0;
+  }
+
+  .resource-page-kbs .resource-card-kb-footer.directory-footer {
+    min-height: 20px;
+    padding-right: 38px;
+  }
+
+  .resource-page-kbs .resource-card-kb-delete {
+    right: 8px;
+    bottom: 8px;
+    width: 28px;
+    height: 28px;
+  }
+
+  .resource-page-kbs .resource-pagination-kbs {
+    margin-top: 0;
+    padding-top: clamp(10px, 1.6vh, 16px);
   }
 }
 
