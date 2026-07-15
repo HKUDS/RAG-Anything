@@ -63,7 +63,7 @@ class RAGAnythingConfig:
             x.strip()
             for x in get_env_value(
                 "SUPPORTED_FILE_EXTENSIONS",
-                ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md",
+                ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.mp3,.wav,.flac,.m4a,.ogg,.wma,.aac,.opus,.mp4,.mov,.webm,.avi,.mkv,.flv,.wmv,.m4v",
                 str,
             ).split(",")
         ]
