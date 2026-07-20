@@ -88,9 +88,7 @@ class BatchMixin:
             for ext in file_extensions
         }
         candidates = (
-            folder_path_obj.rglob("*")
-            if recursive
-            else folder_path_obj.glob("*")
+            folder_path_obj.rglob("*") if recursive else folder_path_obj.glob("*")
         )
         files_to_process = [
             path
