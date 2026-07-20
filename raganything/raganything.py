@@ -46,6 +46,19 @@ from raganything.modalprocessors import (
     ContextConfig,
 )
 
+# Optional processors. The modules themselves import cleanly (heavy deps are
+# loaded lazily), so we gate registration on the *runtime* availability of the
+# extra dependencies via the ``*_deps_available`` helpers below.
+# (audio -> faster-whisper; video -> scenedetect + moviepy + opencv + faster-whisper).
+from raganything.modalprocessors_audio import (
+    AudioModalProcessor,
+    audio_deps_available,
+)
+from raganything.modalprocessors_video import (
+    VideoModalProcessor,
+    video_deps_available,
+)
+
 
 @dataclass
 class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
@@ -234,6 +247,44 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 modal_caption_func=self.llm_model_func,
                 context_extractor=self.context_extractor,
             )
+
+        if self.config.enable_audio_processing:
+            if not audio_deps_available():
+                self.logger.warning(
+                    "enable_audio_processing=True but audio dependencies are missing. "
+                    "Install them with: pip install raganything[audio]. "
+                    "Audio content will fall back to the generic processor."
+                )
+            else:
+                self.modal_processors["audio"] = AudioModalProcessor(
+                    lightrag=self.lightrag,
+                    modal_caption_func=self.llm_model_func,
+                    context_extractor=self.context_extractor,
+                )
+
+        if self.config.enable_video_processing:
+            if not video_deps_available():
+                self.logger.warning(
+                    "enable_video_processing=True but video dependencies are missing. "
+                    "Install them with: pip install raganything[video]. "
+                    "Video content will fall back to the generic processor."
+                )
+            else:
+                from lightrag.utils import get_env_value
+
+                self.modal_processors["video"] = VideoModalProcessor(
+                    lightrag=self.lightrag,
+                    modal_caption_func=self.vision_model_func or self.llm_model_func,
+                    context_extractor=self.context_extractor,
+                    min_scene_duration=get_env_value(
+                        "VIDEO_MIN_SCENE_DURATION", 5.0, float
+                    ),
+                    max_scenes=get_env_value("VIDEO_MAX_SCENES", 50, int),
+                    scene_threshold=get_env_value("VIDEO_SCENE_THRESHOLD", 27.0, float),
+                    max_windows=get_env_value("VIDEO_MAX_WINDOWS", 100, int),
+                    # Reuse the audio processor's whisper model when audio is enabled
+                    audio_processor=self.modal_processors.get("audio"),
+                )
 
         # Always include generic processor as fallback
         self.modal_processors["generic"] = GenericModalProcessor(
