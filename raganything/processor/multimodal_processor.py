@@ -21,6 +21,7 @@ from raganything.utils import (
     insert_text_content,
     insert_text_content_with_multimodal_content,
     get_processor_for_type,
+    is_multimodal_processed,
     get_equation_text_and_format,
     get_table_body,
     normalize_caption_list,
@@ -43,7 +44,37 @@ class MultimodalProcessorMixin:
         return await self.multimodal_status_cache.get_by_id(doc_id)
 
     async def _set_multimodal_status_record(self, doc_id: str, processed: bool) -> None:
-        """Persist multimodal completion state in a separate KV namespace."""
+        """Persist multimodal completion state in doc-status metadata when possible."""
+        try:
+            doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
+            if doc_status:
+                existing_metadata = doc_status.get("metadata") or {}
+                metadata = (
+                    dict(existing_metadata)
+                    if isinstance(existing_metadata, dict)
+                    else {}
+                )
+                metadata["multimodal_processed"] = processed
+                await self.lightrag.doc_status.upsert(
+                    {
+                        doc_id: {
+                            **doc_status,
+                            "metadata": metadata,
+                            "updated_at": self._current_doc_status_timestamp(),
+                        }
+                    }
+                )
+                await self.lightrag.doc_status.index_done_callback()
+                return
+        except Exception as exc:
+            self.logger.debug(
+                "Unable to persist multimodal status in doc metadata for %s: %s",
+                doc_id,
+                exc,
+            )
+
+        # Legacy non-PG backend fallback. This is intentionally optional: PGKV
+        # cannot store arbitrary namespaces, so it may be unavailable.
         if (
             not hasattr(self, "multimodal_status_cache")
             or self.multimodal_status_cache is None
@@ -64,8 +95,8 @@ class MultimodalProcessorMixin:
         self, doc_id: str, doc_status: Dict[str, Any] | None = None
     ) -> bool:
         """Read multimodal completion state from doc_status or compatibility cache."""
-        if doc_status is not None and "multimodal_processed" in doc_status:
-            return bool(doc_status.get("multimodal_processed", False))
+        if is_multimodal_processed(doc_status):
+            return True
 
         compatibility_status = await self._get_multimodal_status_record(doc_id)
         if compatibility_status is not None:
@@ -225,6 +256,19 @@ class MultimodalProcessorMixin:
             self.logger.error(
                 f"Background multimodal processing failed for doc {doc_id}: {exc}"
             )
+            try:
+                await self._upsert_doc_status(
+                    doc_id,
+                    file_ref,
+                    status=DocStatus.FAILED,
+                    error_msg=str(exc),
+                )
+            except Exception as status_exc:
+                self.logger.error(
+                    "Failed to persist background multimodal error state for doc %s: %s",
+                    doc_id,
+                    status_exc,
+                )
         finally:
             try:
                 await self._mark_multimodal_processing_complete(doc_id)
@@ -516,6 +560,18 @@ class MultimodalProcessorMixin:
                                 f"Multimodal chunk generation progress: {completed_count}/{total_items} ({progress_percent:.1f}%)"
                             )
 
+                    if (
+                        isinstance(entity_info, dict)
+                        and entity_info.get("non_indexable", False)
+                    ):
+                        self.logger.warning(
+                            "Skipping non-indexable %s fallback item %d (source=%s)",
+                            content_type,
+                            index,
+                            entity_info.get("analysis_source", "unknown"),
+                        )
+                        return None
+
                     return {
                         "index": index,
                         "content_type": content_type,
@@ -612,7 +668,9 @@ class MultimodalProcessorMixin:
             )
 
         # Stage 7: Update doc_status with integrated chunks_list
-        await self._update_doc_status_with_chunks_type_aware(doc_id, chunk_ids)
+        await self._update_doc_status_with_chunks_type_aware(
+            doc_id, chunk_ids, lightrag_chunks
+        )
     async def _mark_multimodal_processing_complete(self, doc_id: str):
         """Mark multimodal content processing as complete in the document status."""
         try:
@@ -621,10 +679,17 @@ class MultimodalProcessorMixin:
                 final_status = current_doc_status.get("status") or DocStatus.PROCESSED
                 if final_status != DocStatus.FAILED:
                     final_status = DocStatus.PROCESSED
+                existing_metadata = current_doc_status.get("metadata") or {}
+                metadata = (
+                    dict(existing_metadata)
+                    if isinstance(existing_metadata, dict)
+                    else {}
+                )
+                metadata["multimodal_processed"] = True
                 update_payload = {
                     **current_doc_status,
                     "status": final_status,
-                    "multimodal_processed": True,
+                    "metadata": metadata,
                     "updated_at": self._current_doc_status_timestamp(),
                 }
                 try:

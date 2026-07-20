@@ -71,7 +71,7 @@ class EquationModalProcessor(BaseModalProcessor):
                     else "descriptive name for this equation",
                 )
 
-            response = await self.modal_caption_func(
+            response = await self._call_modal_caption(
                 equation_prompt,
                 system_prompt=PROMPTS["EQUATION_ANALYSIS_SYSTEM"],
             )

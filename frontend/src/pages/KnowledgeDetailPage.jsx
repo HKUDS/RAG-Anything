@@ -7,9 +7,12 @@ import {
 } from 'lucide-react'
 import * as d3 from 'd3'
 import { motion, AnimatePresence } from 'framer-motion'
-import { useParams, useNavigate } from 'react-router-dom'
+import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, setCurrentKB } from '../utils/api'
-import ChunkDetailDrawer from '../components/ChunkDetailDrawer'
+import ChunkingStrategySelector from '../components/ChunkingStrategySelector'
+import { getChunkingStrategyPresentation } from '../utils/chunkingStrategyPresentation'
+import SideDrawer from '../components/SideDrawer'
+import TagRelationsPanel from '../components/TagRelationsPanel'
 import { useAuth } from '../context/AuthContext'
 
 const STATUS = {
@@ -45,12 +48,6 @@ const PHASE_PROGRESS_MODEL = {
   'multimodal-tasks': { start: 88, end: 97, durationMs: 36_000, bufferMs: 1_300, bufferDrift: 0.8 },
 }
 const NODE_COLORS = ['#e8734a', '#5b9bd5', '#6b9e7a', '#d4a853', '#c9707e', '#366596', '#6da9d7', '#f08f6d']
-
-const COST_COLORS = {
-  free: 'text-sage-600 bg-sage-50 border-sage-200',
-  medium: 'text-amber-600 bg-amber-50 border-amber-200',
-  high: 'text-rose-600 bg-rose-50 border-rose-200',
-}
 
 function clampProgress(value) {
   return Math.max(0, Math.min(100, value))
@@ -535,43 +532,25 @@ function UploadSection({
                     <p className="text-2xs text-ink-muted mt-0.5">这些选项只影响本次入库，不会改动平台默认设置。</p>
                   </div>
                   <span className="text-2xs px-2 py-0.5 rounded-full border border-sky-200 bg-sky-50 text-sky-600">
-                    上传现场
+                    仅本次生效
                   </span>
                 </div>
 
-                {Object.keys(strategies).length > 0 && (
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <Scissors size={13} className="text-ink-muted" />
-                    <span className="text-xs text-ink-muted">分块策略:</span>
-                    {Object.entries(strategies).map(([key, info]) => (
-                      <button
-                        key={key}
-                        onClick={() => setChunkingStrategy(key)}
-                        className={`px-2.5 py-1 rounded-lg text-xs border transition-colors ${
-                          chunkingStrategy === key
-                            ? 'bg-sky-50 border-sky-300 text-sky-700 font-medium'
-                            : 'border-cloud-300 text-ink-muted hover:border-cloud-400'
-                        }`}
-                      >
-                        {info.label || key}
-                        {info.cost && (
-                          <span className={`ml-1 px-1 py-0.5 rounded text-2xs ${COST_COLORS[info.cost] || ''}`}>
-                            {info.cost === 'free' ? '免费' : info.cost === 'medium' ? '中等' : '高'}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <ChunkingStrategySelector
+                  strategies={strategies}
+                  value={chunkingStrategy}
+                  onChange={setChunkingStrategy}
+                  helperText="选择本次上传的文本切分方式，会影响检索效果和处理时间。"
+                />
 
                 <div className="flex items-center gap-2 flex-wrap">
                   <Zap size={13} className="text-ink-muted" />
-                  <span className="text-xs text-ink-muted">多模态:</span>
+                  <span className="text-xs text-ink-muted">内容识别:</span>
                   {[
-                    { key: 'enable_image', label: '图片' },
-                    { key: 'enable_table', label: '表格' },
-                    { key: 'enable_equation', label: '公式' },
-                    { key: 'enable_video', label: '视频' },
+                    { key: 'enable_image', label: '识别图片内容' },
+                    { key: 'enable_table', label: '解析表格' },
+                    { key: 'enable_equation', label: '识别公式' },
+                    { key: 'enable_video', label: '处理视频' },
                   ].map(({ key, label }) => (
                     <button
                       key={key}
@@ -762,6 +741,11 @@ function UploadSection({
                                 {task.phase && (
                                   <span>{PHASE_CN[task.phase] || task.phase}</span>
                                 )}
+                                {task.chunking_strategy && (
+                                  <span className="rounded-md border border-cloud-300 bg-white px-1.5 py-0.5 text-ink-body">
+                                    切块：{getChunkingStrategyPresentation(task.chunking_strategy).name}
+                                  </span>
+                                )}
                                 {progressValue !== null && (
                                   <span>{visualProgress.simulated ? '预计进度' : '进度'} {Math.round(progressValue)}%</span>
                                 )}
@@ -819,6 +803,7 @@ function UploadSection({
 export default function KnowledgeDetailPage() {
   const { kbName } = useParams()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { isAdmin } = useAuth()
 
   const [docs, setDocs] = useState([])
@@ -852,12 +837,6 @@ export default function KnowledgeDetailPage() {
   const [multimodal, setMultimodal] = useState({
     enable_image: true, enable_table: true, enable_equation: true, enable_video: true
   })
-  // 分块详情面板状态
-  const [chunkPanelDoc, setChunkPanelDoc] = useState(null)
-  const [chunksData, setChunksData] = useState([])
-  const [chunksLoading, setChunksLoading] = useState(false)
-  const [expandedChunks, setExpandedChunks] = useState({})
-  const [chunkFilterText, setChunkFilterText] = useState('')
   const [activeTab, setActiveTab] = useState('documents')
   const [visionSearching, setVisionSearching] = useState(false)
   const [visionResults, setVisionResults] = useState(null)
@@ -871,6 +850,26 @@ export default function KnowledgeDetailPage() {
   const selectedNodeRef = useRef(null)
   selectedNodeRef.current = selectedNode
   const simRef = useRef(null)
+
+  useEffect(() => {
+    const requested = searchParams.get('tab')
+    setActiveTab(['documents', 'graph', 'tags'].includes(requested) ? requested : 'documents')
+  }, [searchParams])
+
+  const selectTab = useCallback((tab) => {
+    const next = new URLSearchParams(searchParams)
+    if (tab === 'documents') next.delete('tab')
+    else next.set('tab', tab)
+    if (tab !== 'tags') next.delete('tag')
+    setSearchParams(next)
+  }, [searchParams, setSearchParams])
+
+  const selectTag = useCallback((tagId) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', 'tags')
+    next.set('tag', tagId)
+    setSearchParams(next)
+  }, [searchParams, setSearchParams])
 
   // ── 图谱编辑处理 ──
 
@@ -950,50 +949,6 @@ export default function KnowledgeDetailPage() {
     setToast({ msg, type })
     setTimeout(() => setToast(null), 3000)
   }
-
-  // ── 分块详情面板处理 ──
-  const openChunkPanel = async (doc) => {
-    setChunkPanelDoc(doc)
-    setChunkFilterText('')
-    setChunksLoading(true)
-    setChunksData([])
-    setExpandedChunks({ 0: true }) // default: expand first chunk
-    try {
-      const result = await api.getDocumentChunks(doc.full_id)
-      setChunksData(result.chunks || [])
-    } catch (e) {
-      showToast('加载分块失败: ' + e.message, 'error')
-      setChunkPanelDoc(null)
-    } finally {
-      setChunksLoading(false)
-    }
-  }
-
-  const closeChunkPanel = () => {
-    setChunkPanelDoc(null)
-    setChunksData([])
-    setChunkFilterText('')
-    setExpandedChunks({})
-  }
-
-  const toggleChunk = (idx) => {
-    setExpandedChunks(prev => ({ ...prev, [idx]: !prev[idx] }))
-  }
-
-  const expandAll = () => {
-    const all = {}
-    chunksData.forEach((_, i) => { all[i] = true })
-    setExpandedChunks(all)
-  }
-
-  const collapseAll = () => {
-    setExpandedChunks({})
-  }
-
-  // 基于搜索文本筛选分块
-  const filteredChunks = chunkFilterText.trim()
-    ? chunksData.filter(c => (c.content || '').toLowerCase().includes(chunkFilterText.toLowerCase()))
-    : chunksData
 
   // 加载设置（分块策略），仅执行一次
   useEffect(() => {
@@ -1329,8 +1284,9 @@ export default function KnowledgeDetailPage() {
         {[
           { key: 'documents', label: '文档管理' },
           { key: 'graph', label: '知识图谱' },
+          { key: 'tags', label: '标签关联' },
         ].map(tab => (
-          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+          <button key={tab.key} onClick={() => selectTab(tab.key)}
             className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium transition-all ${
               activeTab === tab.key
                 ? 'bg-white text-ink-primary shadow-cloud-sm'
@@ -1416,12 +1372,20 @@ export default function KnowledgeDetailPage() {
                       <input type="checkbox" checked={selectedIds.has(doc.id)}
                         onChange={() => toggleSelect(doc.id)} className="w-3.5 h-3.5 accent-sky-500" />
                     </td>
-                    <td className="py-2.5 max-w-40 truncate text-sm" title={doc.file}>
-                      {doc.file !== '?' ? (
-                        <a href={api.downloadDocumentUrl(doc.full_id)} className="text-ink-body hover:text-sky-600 transition-colors" download>{doc.file}</a>
-                      ) : (
-                        <span className="text-ink-body">{doc.file}</span>
-                      )}
+                    <td className="py-2.5 max-w-40 text-sm" title={doc.file}>
+                      <div className="min-w-0">
+                        {doc.file !== '?' ? (
+                          <a href={api.downloadDocumentUrl(doc.full_id)} className="block truncate text-ink-body hover:text-sky-600 transition-colors" download>{doc.file}</a>
+                        ) : (
+                          <span className="block truncate text-ink-body">{doc.file}</span>
+                        )}
+                        <span
+                          className="mt-1 inline-flex rounded-md border border-cloud-300 bg-cloud-100 px-1.5 py-0.5 text-2xs text-ink-body"
+                          title={getChunkingStrategyPresentation(doc.chunking_strategy).description}
+                        >
+                          切块：{getChunkingStrategyPresentation(doc.chunking_strategy).name}
+                        </span>
+                      </div>
                     </td>
                     <td className="py-2.5">
                       <span className={STATUS[doc.status] || 'badge-info'}>
@@ -1431,14 +1395,18 @@ export default function KnowledgeDetailPage() {
                     </td>
                     <td className="py-2.5">
                       {doc.chunks > 0 ? (
-                        <button
-                          className="font-mono text-sm text-sky-600 hover:text-sky-700 hover:underline cursor-pointer focus:outline-none focus:ring-2 focus:ring-sky-300 rounded px-1 -mx-1 transition-colors"
-                          onClick={(e) => { e.preventDefault(); openChunkPanel(doc) }}
+                        <Link
+                          className="document-chunks-link"
+                          to={`/knowledge/${encodeURIComponent(kbName)}/documents/${encodeURIComponent(doc.full_id || doc.id)}/chunks`}
+                          state={{ doc }}
                           title={`查看 ${doc.file} 的切块详情`}
                           aria-label={`查看 ${doc.file} 的 ${doc.chunks} 个切块`}
                         >
-                          {doc.chunks}
-                        </button>
+                          <Layers size={14} aria-hidden="true" />
+                          <span className="document-chunks-link-count">{doc.chunks}</span>
+                          <span>个切块</span>
+                          <ArrowLeft size={13} aria-hidden="true" className="document-chunks-link-arrow" />
+                        </Link>
                       ) : (
                         <span className="font-mono text-ink-muted text-sm">{doc.chunks}</span>
                       )}
@@ -1470,6 +1438,8 @@ export default function KnowledgeDetailPage() {
         </div>
       </>
       )}
+
+      {activeTab === 'tags' && <TagRelationsPanel kbName={kbName} selectedTagId={searchParams.get('tag')} onSelectTag={selectTag} />}
 
       {/* ── 标签页：图谱与实体（合并）── */}
       {activeTab === 'graph' && (
@@ -1676,10 +1646,9 @@ export default function KnowledgeDetailPage() {
       {/* ── 标签页：实体（已弃用，合并至图谱标签页）── */}
 
       {/* 文档详情抽屉 */}
-      {detailDoc && (
-        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setDetailDoc(null)} role="dialog" aria-modal="true" aria-label="文档详情">
-          <div className="absolute inset-0 bg-sky-900/20" />
-          <div className="relative w-96 card m-3 p-6 overflow-y-auto animate-slide-in-right" onClick={e => e.stopPropagation()}>
+      <AnimatePresence>
+        {detailDoc && (
+          <SideDrawer isOpen onRequestClose={() => setDetailDoc(null)} ariaLabel="文档详情" size="sm" className="card p-6 overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-ink-primary">文档详情</h3>
               <button className="btn-ghost p-1" onClick={() => setDetailDoc(null)} aria-label="关闭文档详情"><X size={16} aria-hidden="true"/></button>
@@ -1687,6 +1656,7 @@ export default function KnowledgeDetailPage() {
             <div className="space-y-3 text-sm">
               {[{ icon: FileText, label: '文件名', val: detailDoc.file },
                 { icon: FileText, label: '状态', val: STATUS_CN[detailDoc.status] || detailDoc.status },
+                { icon: Scissors, label: '切块方式', val: getChunkingStrategyPresentation(detailDoc.chunking_strategy).name },
                 { icon: FileText, label: '分块数', val: detailDoc.chunks },
                 { icon: FileText, label: '字数', val: (detailDoc.length || 0).toLocaleString() },
                 { icon: Clock, label: '创建时间', val: detailDoc.created?.slice(0, 19) || '-' },
@@ -1709,9 +1679,9 @@ export default function KnowledgeDetailPage() {
                 </a>
               </div>
             )}
-          </div>
-        </div>
-      )}
+          </SideDrawer>
+        )}
+      </AnimatePresence>
 
       {/* 文档删除确认 */}
       {deleteConfirm && (
@@ -1848,23 +1818,6 @@ export default function KnowledgeDetailPage() {
           </div>
         </div>
       )}
-
-      {/* ── 分块详情抽屉 ── */}
-      <AnimatePresence>
-        {chunkPanelDoc && <ChunkDetailDrawer
-          doc={chunkPanelDoc}
-          chunksData={chunksData}
-          chunksLoading={chunksLoading}
-          expandedChunks={expandedChunks}
-          chunkFilterText={chunkFilterText}
-          filteredChunks={filteredChunks}
-          onClose={closeChunkPanel}
-          onToggleChunk={toggleChunk}
-          onExpandAll={expandAll}
-          onCollapseAll={collapseAll}
-          onFilterChange={setChunkFilterText}
-        />}
-      </AnimatePresence>
 
       {/* 提示消息 */}
       <AnimatePresence>

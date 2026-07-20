@@ -131,7 +131,7 @@ async def login(request: Request, req: AuthLoginRequest):
         "status": "ok",
         "access_token": token,
         "refresh_token": refresh,
-        "user": {"id": user["id"], "username": user["username"], "is_admin": user.get("is_admin", False)},
+        "user": {"id": user["id"], "username": user["username"], "is_admin": is_admin},
     }
 
 

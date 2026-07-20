@@ -72,7 +72,7 @@ export default function AdminAuditLogsPage() {
   const loadLogs = useCallback(async () => {
     try {
       const token = AUTH_TOKEN()
-      const params = new URLSearchParams({ page, page_size: 20 })
+      const params = new URLSearchParams({ page, page_size: 15 })
       if (actionFilter) params.set('action', actionFilter)
       const res = await fetch(`/api/admin/audit-logs?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` },

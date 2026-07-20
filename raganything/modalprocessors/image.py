@@ -12,7 +12,6 @@ Key Dependencies: lightrag (LightRAG, compute_mdhash_id), PIL, raganything.promp
 import asyncio
 import hashlib
 import json
-import base64
 import os
 from typing import Dict, Any, Tuple, Optional
 from pathlib import Path
@@ -23,6 +22,7 @@ from lightrag.lightrag import LightRAG
 from raganything.modalprocessors.base import BaseModalProcessor
 from raganything.modalprocessors.context import ContextExtractor
 from raganything.prompt import PROMPTS
+from raganything.utils._image import encode_image_to_base64, image_mime_type
 
 
 # ── Image type classification constants ──────────────────────
@@ -190,13 +190,7 @@ class ImageModalProcessor(BaseModalProcessor):
 
     def _encode_image_to_base64(self, image_path: str) -> str:
         """Encode image to base64"""
-        try:
-            with open(image_path, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-            return encoded_string
-        except Exception as e:
-            logger.error(f"Failed to encode image {image_path}: {e}")
-            return ""
+        return encode_image_to_base64(image_path)
 
     async def generate_description_only(
         self,
@@ -352,9 +346,10 @@ class ImageModalProcessor(BaseModalProcessor):
                 raise RuntimeError(f"Failed to encode image to base64: {image_path}")
 
             # Call vision model with encoded image
-            response = await self.modal_caption_func(
+            response = await self._call_modal_caption(
                 vision_prompt,
                 image_data=image_base64,
+                image_mime_type=image_mime_type(image_path),
                 system_prompt=PROMPTS["IMAGE_ANALYSIS_SYSTEM"],
             )
 
@@ -426,6 +421,7 @@ class ImageModalProcessor(BaseModalProcessor):
                     image_hash=image_hash,
                 )
             )
+            _vision_task._raganything_doc_id = doc_id
             register_background_task(_vision_task)
             self._pending_vision_tasks.append(_vision_task)
             # Clean up completed tasks to prevent unbounded growth
@@ -442,6 +438,27 @@ class ImageModalProcessor(BaseModalProcessor):
                 entity_name, e,
             )
 
+    async def cancel_pending_vision_tasks(self, doc_ids: set[str]) -> int:
+        """Cancel unfinished embedding writes for documents being deleted."""
+        if not doc_ids:
+            return 0
+
+        pending = [
+            task
+            for task in self._pending_vision_tasks
+            if not task.done()
+            and getattr(task, "_raganything_doc_id", None) in doc_ids
+        ]
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        self._pending_vision_tasks = [
+            task for task in self._pending_vision_tasks if not task.done()
+        ]
+        return len(pending)
+
     async def await_pending_vision_tasks(self, timeout: float = 120.0) -> int:
         """Wait for all pending vision embedding tasks to complete.
 
@@ -455,27 +472,34 @@ class ImageModalProcessor(BaseModalProcessor):
             "[VISION] Waiting for %d pending vision embedding tasks (timeout=%ds)...",
             len(pending), timeout,
         )
-        try:
-            done, _pending = await asyncio.wait(pending, timeout=timeout)
-            # Collect exceptions (don't crash — vision embedding is enhancement)
-            for task in done:
-                try:
-                    task.result()
-                except Exception as exc:
-                    logger.warning("[VISION] Background task failed: %s", exc)
-            self._pending_vision_tasks.clear()
-            logger.info(
-                "[VISION] Completed %d/%d vision embedding tasks",
-                len(done), len(pending),
-            )
-            return len(done)
-        except asyncio.TimeoutError:
+        done, still_pending = await asyncio.wait(pending, timeout=timeout)
+        # Collect exceptions without making vision embedding fatal.
+        for task in done:
+            try:
+                task.result()
+            except Exception as exc:
+                logger.warning("[VISION] Background task failed: %s", exc)
+
+        if still_pending:
+            # ``asyncio.wait`` returns pending tasks instead of raising on a
+            # timeout. Leaving them untracked lets them write after storage
+            # finalization, so cancel and collect them before returning.
             logger.warning(
-                "[VISION] Timed out after %ds — %d tasks still pending",
-                timeout, len(_pending) if _pending else 0,
+                "[VISION] Timed out after %ds; cancelling %d pending task(s)",
+                timeout,
+                len(still_pending),
             )
-            self._pending_vision_tasks = list(_pending) if _pending else []
-            return len(pending) - len(self._pending_vision_tasks)
+            for task in still_pending:
+                task.cancel()
+            await asyncio.gather(*still_pending, return_exceptions=True)
+
+        self._pending_vision_tasks.clear()
+        logger.info(
+            "[VISION] Completed %d/%d vision embedding tasks",
+            len(done),
+            len(pending),
+        )
+        return len(done)
 
     async def process_multimodal_content(
         self,

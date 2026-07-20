@@ -22,9 +22,12 @@ import os
 import re as _re
 import logging
 from pathlib import Path
+from raganything.services.runtime_settings import bootstrap_runtime_settings
 
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env", override=False)
+
+bootstrap_runtime_settings()
 
 from fastapi import WebSocket, Request
 from fastapi.responses import JSONResponse

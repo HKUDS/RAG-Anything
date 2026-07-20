@@ -45,6 +45,7 @@ temp/
 # Framework-specific files
 local_neo4jWorkDir/
 neo4jWorkDir/
+config/runtime_settings.json
 
 # Data & Storage
 inputs/
@@ -71,7 +72,10 @@ tiktoken_cache/
 
 # unit-test files
 test_*
+!tests/test_chunk_maintenance.py
 !tests/test_upload_tasks.py
+!tests/test_semantic_chunking.py
+!tests/test_recovery_lifecycle.py
 
 # Cline files
 memory-bank/

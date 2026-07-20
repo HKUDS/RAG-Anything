@@ -13,23 +13,29 @@ Extracted from routers/shared.py. All KB instance management is centralized here
 from __future__ import annotations
 
 import json
+import hashlib
 from typing import Any, Optional
 import os
 import sys
 import re
 import asyncio
 import logging
+from contextlib import asynccontextmanager
 from collections import OrderedDict
 from datetime import datetime
 from functools import partial
 from pathlib import Path
+from raganything.services.runtime_settings import bootstrap_runtime_settings
 
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env", override=False)
 
+bootstrap_runtime_settings()
+
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.base import DocStatus
 from raganything.embedding import (
     DoubaoEmbeddingAdapter,
     create_vision_embed_func,
@@ -42,6 +48,7 @@ from raganything.chunking import (
     make_semantic_chunking,
     make_agentic_chunking,
 )
+from raganything.utils import is_multimodal_processed
 
 # ── Configuration ─────────────────────────────────────────
 API_KEY = os.getenv("LLM_BINDING_API_KEY")
@@ -53,9 +60,12 @@ EMB_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
 WORKING_DIR = os.getenv("WORKING_DIR", "./rag_storage")
 CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
 MAX_CACHED_KBS = int(os.getenv("MAX_CACHED_KBS", "16"))
+_VLM_IMAGE_MIME_TYPES = {"image/gif", "image/jpeg", "image/png", "image/webp"}
 
 # ── KB State ──────────────────────────────────────────────
 _kb_locks: dict[str, asyncio.Lock] = {}
+_recovery_local_lock = asyncio.Lock()
+_RECOVERY_LOCK_NOT_ACQUIRED = object()
 
 
 class KBCache:
@@ -459,6 +469,31 @@ def _parse_worker_progress_line(line: str, state: dict[str, Any]) -> dict[str, A
 # running worker subprocesses.  Used by KB deletion to kill workers.
 _kb_worker_procs: dict[str, list] = {}
 
+_WORKER_NUMERIC_THREAD_ENV = (
+    "OPENBLAS_NUM_THREADS",
+    "OMP_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+)
+
+
+def _worker_subprocess_env() -> dict[str, str]:
+    """Bound numeric-library threads for isolated document workers.
+
+    Docling imports numeric libraries during worker startup.  Letting every
+    concurrent worker inherit a host-wide thread count can exhaust memory
+    before parsing begins, especially on Windows.
+    """
+    try:
+        threads = int(os.getenv("DOCUMENT_WORKER_MAX_THREADS", "1"))
+    except ValueError:
+        threads = 1
+    threads = max(1, min(threads, 4))
+    env = os.environ.copy()
+    for name in _WORKER_NUMERIC_THREAD_ENV:
+        env[name] = str(threads)
+    return env
+
 
 def _compute_file_hash(file_path: str) -> str:
     """Compute a short content hash for upload deduplication.
@@ -559,7 +594,12 @@ async def pg_register_upload(
             "INSERT INTO uploaded_files "
             "(filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status) "
             "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
-            "ON CONFLICT (file_hash, kb_name) DO NOTHING "
+            "ON CONFLICT (file_hash, kb_name) DO UPDATE SET "
+            "filename = EXCLUDED.filename, file_path = EXCLUDED.file_path, "
+            "file_size = EXCLUDED.file_size, uploaded_by = EXCLUDED.uploaded_by, "
+            "task_id = EXCLUDED.task_id, status = EXCLUDED.status, "
+            "error_message = '', updated_at = NOW() "
+            "WHERE uploaded_files.status = 'deleted' "
             f"RETURNING {_uploaded_files_projection(include_error_message)}"
         )
         try:
@@ -575,7 +615,12 @@ async def pg_register_upload(
                     "INSERT INTO uploaded_files "
                     "(filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status) "
                     "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
-                    "ON CONFLICT (file_hash, kb_name) DO NOTHING "
+                    "ON CONFLICT (file_hash, kb_name) DO UPDATE SET "
+                    "filename = EXCLUDED.filename, file_path = EXCLUDED.file_path, "
+                    "file_size = EXCLUDED.file_size, uploaded_by = EXCLUDED.uploaded_by, "
+                    "task_id = EXCLUDED.task_id, status = EXCLUDED.status, "
+                    "updated_at = NOW() "
+                    "WHERE uploaded_files.status = 'deleted' "
                     f"RETURNING {_uploaded_files_projection(False)}"
                 ),
                 filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status,
@@ -584,6 +629,64 @@ async def pg_register_upload(
     except Exception:
         kb_logger.warning("PG uploaded_files insert failed", exc_info=True)
         return None
+
+
+async def pg_mark_upload_reusable(file_hash: str, kb_name: str) -> bool:
+    """Release a terminal upload record so a deleted document can be uploaded again."""
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+
+        result = await get_pg_pool().execute(
+            """
+            UPDATE uploaded_files
+            SET status = 'deleted', updated_at = NOW()
+            WHERE file_hash = $1 AND kb_name = $2
+              AND status = ANY($3::text[])
+            """,
+            file_hash,
+            kb_name,
+            ["completed", "failed", "deleted", "uploaded"],
+        )
+        return int(str(result).split()[-1]) > 0
+    except Exception:
+        kb_logger.warning(
+            "PG uploaded_files stale-record release failed: kb=%s hash=%s",
+            kb_name,
+            file_hash[:12],
+            exc_info=True,
+        )
+        return False
+
+
+async def pg_release_upload_for_deleted_document(kb_name: str, file_path: str) -> bool:
+    """Mark the upload metadata reusable after its document has been deleted."""
+    filename = os.path.basename(str(file_path or ""))
+    filename = re.sub(r"^[0-9a-fA-F]{8}_", "", filename)
+    if not filename:
+        return False
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+
+        result = await get_pg_pool().execute(
+            """
+            UPDATE uploaded_files
+            SET status = 'deleted', updated_at = NOW()
+            WHERE kb_name = $1 AND filename = $2
+              AND status = ANY($3::text[])
+            """,
+            kb_name,
+            filename,
+            ["completed", "failed", "deleted", "uploaded"],
+        )
+        return int(str(result).split()[-1]) > 0
+    except Exception:
+        kb_logger.warning(
+            "PG uploaded_files document release failed: kb=%s file=%s",
+            kb_name,
+            filename,
+            exc_info=True,
+        )
+        return False
 
 
 def _serialize_upload_row(row: Any) -> dict[str, Any]:
@@ -885,6 +988,46 @@ async def pg_list_uploads(
         return [], 0
 
 
+async def pg_get_latest_content_updates_batch(kb_names: list[str]) -> dict[str, str]:
+    """Return the latest completed or deleted content change for each KB.
+
+    Upload metadata is the durable source for document processing completion and
+    document deletion. Callers intentionally receive an empty mapping when PG
+    is unavailable so they can fall back to KB creation metadata.
+    """
+    names = list(dict.fromkeys(name for name in kb_names if name))
+    if not names:
+        return {}
+
+    try:
+        from raganything.services.pg_state_repo import get_pg_pool
+
+        rows = await get_pg_pool().fetch(
+            """
+            SELECT kb_name, MAX(updated_at) AS last_content_updated_at
+            FROM uploaded_files
+            WHERE kb_name = ANY($1::text[])
+              AND status = ANY($2::text[])
+            GROUP BY kb_name
+            """,
+            names,
+            ["completed", "deleted"],
+        )
+    except Exception:
+        kb_logger.warning("PG uploaded_files content-update lookup failed", exc_info=True)
+        return {}
+
+    updates: dict[str, str] = {}
+    for row in rows:
+        timestamp = row["last_content_updated_at"]
+        if timestamp is None:
+            continue
+        updates[str(row["kb_name"])] = (
+            timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp)
+        )
+    return updates
+
+
 # ── KB Metadata Persistence ────────────────────────────────
 # KB metadata is stored exclusively in PostgreSQL (kb_metadata table).
 # See raganything/services/pg_kb_meta_repo.py for the implementation.
@@ -1181,6 +1324,7 @@ async def _save_doc_status_json(kb_name: str, data: dict[str, Any]) -> None:
                     "track_id": info.get("track_id"),
                 }
             await rag.lightrag.doc_status.upsert(upsert_data)
+            await rag.lightrag.doc_status.index_done_callback()
         except Exception:
             kb_logger.warning(
                 "PG doc_status save failed for KB %s", kb_name, exc_info=True,
@@ -1636,20 +1780,25 @@ async def create_rag(
         )
 
     def vision_func(prompt, system_prompt=None, history_messages=[],
-                    image_data=None, messages=None, **kw):
+                    image_data=None, image_mime_type=None, messages=None, **kw):
         if messages is not None:
             return openai_complete_if_cache(
                 _vision_model, "", system_prompt=None, history_messages=[],
                 messages=messages, api_key=_api_key, base_url=_base_url, **kw,
             )
         elif image_data is not None:
+            mime_type = (
+                image_mime_type
+                if image_mime_type in _VLM_IMAGE_MIME_TYPES
+                else "image/jpeg"
+            )
             return openai_complete_if_cache(
                 _vision_model, "", system_prompt=None, history_messages=[],
                 messages=[
                     {"role": "system", "content": system_prompt} if system_prompt else None,
                     {"role": "user", "content": [
                         {"type": "text", "text": prompt},
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}},
+                        {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_data}"}},
                     ]},
                 ],
                 api_key=_api_key, base_url=_base_url, **kw,
@@ -1685,6 +1834,7 @@ async def create_rag(
 
     # ── Chunking strategy mapping ──────────────────────────
     chunk_token_size = _env_int("CHUNK_SIZE", 800, max_val=4096)
+    embedding_batch_size = _env_int("EMBEDDING_BATCH_SIZE", 10, max_val=10)
 
     def _get_embedding_func_for_chunk(texts: list[str]) -> list[list[float]]:
         return embedding_func.func(texts, model=EMB_MODEL)
@@ -1699,7 +1849,9 @@ async def create_rag(
         "recursive": recursive_chunking,
         "sentence": sentence_chunking,
         "structure": structure_chunking,
-        "semantic": make_semantic_chunking(_get_embedding_func_for_chunk),
+        "semantic": make_semantic_chunking(
+            _get_embedding_func_for_chunk, embedding_batch_size
+        ),
         "agentic": make_agentic_chunking(_get_llm_func_for_chunk, _llm_model),
     }
     chosen_chunking_func = chunking_strategy_map.get(chunking_strategy)
@@ -1709,7 +1861,7 @@ async def create_rag(
         "chunk_overlap_token_size": _env_int("CHUNK_OVERLAP", 100, max_val=500),
         "enable_llm_cache": os.getenv("ENABLE_LLM_CACHE", "true").lower() == "true",
         "enable_llm_cache_for_entity_extract": os.getenv("ENABLE_LLM_CACHE_FOR_EXTRACT", "true").lower() == "true",
-        "embedding_batch_num": _env_int("EMBEDDING_BATCH_SIZE", 10, max_val=10),
+        "embedding_batch_num": embedding_batch_size,
         "embedding_func_max_async": _env_int("ENTITY_EXTRACT_CONCURRENCY", 3, max_val=16),
         # 显式传入 LightRAG 参数，消除 import-order 依赖
         "llm_model_max_async": _env_int("MAX_ASYNC", 4, max_val=16),
@@ -1833,23 +1985,106 @@ import tempfile
 import time as _time_module
 
 
-async def _acquire_recovery_lock_pg() -> bool:
-    """Acquire a PG advisory lock for recovery.
+@asynccontextmanager
+async def _recovery_lock():
+    """Serialize recovery locally and across PostgreSQL-backed workers."""
+    async with _recovery_local_lock:
+        if not _pg_storage_ready():
+            yield None
+            return
 
-    Uses ``pg_try_advisory_lock(987654)`` which auto-releases on
-    connection close. No file-based fallback.
-    """
-    try:
-        from raganything.services.pg_state_repo import get_pg_pool
-        pool = get_pg_pool()
+        try:
+            from raganything.services.pg_state_repo import get_pg_pool
+
+            pool = get_pg_pool()
+        except Exception:
+            kb_logger.warning("[Recovery] PG lock unavailable; skipping recovery")
+            yield _RECOVERY_LOCK_NOT_ACQUIRED
+            return
+
         async with pool.acquire() as conn:
-            locked = await conn.fetchval("SELECT pg_try_advisory_lock(987654)")
-            return bool(locked)
+            try:
+                locked = await conn.fetchval("SELECT pg_try_advisory_lock(987654)")
+            except Exception:
+                kb_logger.warning("[Recovery] PG lock acquisition failed", exc_info=True)
+                yield _RECOVERY_LOCK_NOT_ACQUIRED
+                return
+
+            if not locked:
+                kb_logger.debug("[Recovery] another process is already scanning")
+                yield _RECOVERY_LOCK_NOT_ACQUIRED
+                return
+
+            try:
+                yield conn
+            finally:
+                try:
+                    await conn.execute("SELECT pg_advisory_unlock(987654)")
+                except Exception:
+                    kb_logger.warning("[Recovery] PG lock release failed", exc_info=True)
+
+
+async def _persist_failed_doc_status(
+    kb_name: str,
+    filename: str,
+    error_message: str,
+    task_id: str = "",
+    chunking_strategy: str = "",
+) -> str | None:
+    """Create a retryable failed document record when parsing never reached LightRAG."""
+    doc_id = "doc-failed-" + hashlib.sha256(
+        f"{kb_name}:{filename}".encode("utf-8")
+    ).hexdigest()
+    metadata = {
+        "failure_stage": "worker",
+        "retryable": True,
+        "task_id": task_id,
+    }
+    if chunking_strategy:
+        metadata["chunking_strategy"] = chunking_strategy
+    record = {
+        "content_summary": "",
+        "content_length": 0,
+        "file_path": filename,
+        "status": "failed",
+        "chunks_count": 0,
+        "chunks_list": [],
+        "metadata": metadata,
+        "error_msg": error_message[:2000],
+        "track_id": task_id or None,
+    }
+    try:
+        rag = kb_instances.get(kb_name)
+        if rag is None:
+            rag = await get_kb(kb_name)
+        if rag is None or not getattr(rag, "lightrag", None):
+            return None
+        await rag.lightrag.doc_status.upsert({doc_id: record})
+        await rag.lightrag.doc_status.index_done_callback()
+        kb_logger.warning(
+            "[DOC-STATUS] Created failed placeholder doc=%s file=%s KB=%s",
+            doc_id[:24],
+            filename,
+            kb_name,
+        )
+        return doc_id
     except Exception:
-        return False
+        kb_logger.warning(
+            "[DOC-STATUS] Failed to create parser-stage failure record for KB=%s file=%s",
+            kb_name,
+            filename,
+            exc_info=True,
+        )
+        return None
 
 
-async def _fix_stuck_doc_status(kb_name: str, filename: str):
+async def _fix_stuck_doc_status(
+    kb_name: str,
+    filename: str,
+    error_message: str | None = None,
+    task_id: str = "",
+    chunking_strategy: str = "",
+):
     """Fix documents stuck in 'handling' state after subprocess crash/timeout.
 
     Uses PG-dispatch when PG storage is active, file fallback otherwise.
@@ -1860,15 +2095,24 @@ async def _fix_stuck_doc_status(kb_name: str, filename: str):
     """
     try:
         data = await _load_doc_status_json(kb_name)
-        if not data:
-            return
+        data = data or {}
         changed = False
+        matched = False
         for doc_id, info in data.items():
             stored = info.get("file_path", "")
             stored_base = os.path.basename(stored)
             search_base = os.path.basename(filename)
             # Robust match: handles hash-prefixed uploads and full/partial paths
             # Length guard: prefix is exactly 9 chars (8 hex + 1 underscore)
+            same_document = (
+                stored == filename
+                or stored_base == search_base
+                or (
+                    stored_base.endswith("_" + search_base)
+                    and len(stored_base) - len(search_base) == 9
+                )
+            )
+            matched = matched or same_document
             if (stored == filename
                     or stored_base == search_base
                     or (stored_base.endswith("_" + search_base)
@@ -1876,87 +2120,220 @@ async def _fix_stuck_doc_status(kb_name: str, filename: str):
                     and info.get("status") == "handling":
                 info["status"] = "failed"
                 info["error_msg"] = "处理中断：子进程异常退出或超时"
+                if chunking_strategy:
+                    metadata = info.get("metadata") or {}
+                    metadata = dict(metadata) if isinstance(metadata, dict) else {}
+                    metadata["chunking_strategy"] = chunking_strategy
+                    info["metadata"] = metadata
                 changed = True
                 kb_logger.warning(
                     f"[FIX-STUCK] 修复卡住的文档: {filename} (KB={kb_name}) handling→failed"
                 )
         if changed:
             await _save_doc_status_json(kb_name, data)
+        elif not matched:
+            failure_args = (
+                kb_name,
+                filename,
+                error_message or "Worker exited before document parsing created a status record.",
+                task_id,
+            )
+            if chunking_strategy:
+                await _persist_failed_doc_status(*failure_args, chunking_strategy)
+            else:
+                await _persist_failed_doc_status(*failure_args)
     except Exception as ex:
         kb_logger.error(f"[FIX-STUCK] 修复失败: {ex}")
 
 
-async def _recover_stuck_documents():
-    """Scan all KBs and auto-complete documents that finished processing
-    but are stuck with status='handling'.
-
-    A document is recoverable when its ``metadata.processing_end_time`` is
-    set (meaning the worker finished writing data) but the top-level
-    ``status`` was never updated from ``handling`` to ``completed``.
-
-    Uses a file-based lock (``.recovery.lock``) so only one worker runs
-    recovery at a time in multi-worker deployments.
-    """
-    locked = await _acquire_recovery_lock_pg()
-    if not locked:
-        kb_logger.debug("[Recovery] 另一进程正在执行恢复，跳过")
-        return
+def _has_processing_end_time(info: dict[str, Any]) -> bool:
+    metadata = info.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        return False
     try:
+        return float(metadata.get("processing_end_time", 0)) > 0
+    except (TypeError, ValueError):
+        return False
+
+
+def _has_completed_multimodal_metadata(info: dict[str, Any]) -> bool:
+    """Return whether the durable multimodal completion marker is present."""
+    metadata = info.get("metadata")
+    return (
+        isinstance(metadata, dict)
+        and metadata.get("multimodal_processed") is True
+    )
+
+
+async def _recover_pg_document_status(conn) -> None:
+    """Mark finished PG-backed documents as processed without loading KBs."""
+    try:
+        recovered = await conn.fetch(
+            """
+            UPDATE LIGHTRAG_DOC_STATUS
+               SET status = $1, updated_at = CURRENT_TIMESTAMP
+             WHERE status = $2
+               AND COALESCE(metadata ->> 'processing_end_time', '')
+                   ~ '^[0-9]+([.][0-9]+)?$'
+               AND (metadata ->> 'processing_end_time')::double precision > 0
+               AND metadata -> 'multimodal_processed' = 'true'::jsonb
+               AND NOT EXISTS (
+                   SELECT 1
+                     FROM processing_tasks AS task
+                    WHERE task.status NOT IN ('completed', 'failed')
+                      AND LIGHTRAG_DOC_STATUS.workspace = CASE
+                          WHEN task.kb_name = 'default' THEN './rag_storage'
+                          ELSE './rag_storage_' || task.kb_name
+                      END
+               )
+         RETURNING workspace, id
+            """,
+            DocStatus.PROCESSED.value,
+            DocStatus.HANDLING.value,
+        )
+    except Exception:
+        kb_logger.warning("[Recovery] PG document-status recovery failed", exc_info=True)
+        return
+
+    for row in recovered:
+        kb_logger.info(
+            "[Recovery] fixed finished document: %s/%s",
+            row["workspace"],
+            str(row["id"])[:16],
+        )
+
+
+async def _active_recovery_kbs(conn) -> set[str] | None:
+    if conn is not None:
         try:
-            meta = await load_kb_meta()
+            rows = await conn.fetch(
+                "SELECT kb_name FROM processing_tasks WHERE status NOT IN ('completed', 'failed')"
+            )
+            return {str(row["kb_name"] or "default") for row in rows}
         except Exception:
-            return  # no KBs registered yet
+            kb_logger.warning("[Recovery] PG active-task lookup failed", exc_info=True)
+            # A stale local cache must not cause a live document to be marked
+            # complete when the authoritative task store cannot be queried.
+            return None
 
-        for kb_name in list(meta.keys()):
-            try:
-                data = await _load_doc_status_json(kb_name)
-                if not data:
-                    continue
-                changed = False
-                for doc_id, info in data.items():
-                    if info.get("status") != "handling":
-                        continue
-                    end_time = info.get("metadata", {}).get("processing_end_time")
-                    if end_time and end_time > 0:
-                        info["status"] = "completed"
-                        changed = True
-                        kb_logger.info(
-                            f"[Recovery] 修复卡住文档: {kb_name}/{doc_id[:16]} "
-                            f"(processing_end={end_time})"
-                        )
-                if changed:
-                    await _save_doc_status_json(kb_name, data)
-                    # Clear cached instance so next query reloads from storage.
-                    if kb_name in kb_instances:
-                        del kb_instances[kb_name]
-            except Exception as e:
-                kb_logger.warning(f"[Recovery] 扫描 KB '{kb_name}' 异常: {e}")
+    from raganything.services.state_service import processing_tasks
 
-        # ── Periodic orphan purge (once per recovery scan) ──
-        for kb_name in list(meta.keys()):
-            try:
-                doc_data = await _load_doc_status_json(kb_name)
-                if not doc_data:
-                    continue
-                valid_ids = set(doc_data.keys())
-                workspace = str(Path(kb_dir(kb_name)))
-                from raganything.routers.knowledge import _pg_fetch_graph_entities
-                entities_data = await _pg_fetch_graph_entities(workspace)
-                if entities_data:
-                    orphan_count = sum(1 for k in entities_data if k not in valid_ids)
-                    if orphan_count > 0:
-                        try:
-                            _inst = await get_kb(kb_name)
-                            from raganything.routers.knowledge import _purge_all_orphans
-                            await _purge_all_orphans(_inst, kb_name)
-                            if kb_name in kb_instances:
-                                del kb_instances[kb_name]
-                        except Exception:
-                            pass
-            except Exception:
-                pass
-    finally:
-        pass  # PG advisory lock auto-releases on connection close
+    return {
+        str(task.get("kb") or task.get("kb_name") or "default")
+        for task in processing_tasks.values()
+        if task.get("status") not in ("completed", "failed")
+    }
+
+
+async def _recover_json_document_status(conn=None) -> None:
+    """Preserve recovery for JSON-backed and pre-migration knowledge bases."""
+    try:
+        meta = await load_kb_meta()
+    except Exception:
+        return
+
+    if not meta:
+        return
+
+    # Without PostgreSQL, this process owns both the task cache and recovery
+    # loop, so a single snapshot is sufficient. With PostgreSQL, however,
+    # task creation can occur in another worker and must be serialized with
+    # each JSON read/modify/replace operation below.
+    active_kbs = None
+    if conn is None:
+        active_kbs = await _active_recovery_kbs(None)
+        if active_kbs is None:
+            return
+
+    for kb_name in list(meta.keys()):
+        json_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+        if not json_path.exists():
+            continue
+
+        if conn is None:
+            if kb_name in active_kbs:
+                continue
+            await _recover_json_status_file(kb_name, json_path)
+            continue
+
+        try:
+            # PostgreSQL task writes use ROW EXCLUSIVE locks. SHARE conflicts
+            # with them, so no worker can create or update an active task
+            # between this authoritative check and the atomic JSON replace.
+            # NOWAIT keeps recovery best-effort: a busy task writer causes
+            # this scan to skip rather than delaying uploads indefinitely.
+            async with conn.transaction():
+                await conn.execute("LOCK TABLE processing_tasks IN SHARE MODE NOWAIT")
+                active_kbs = await _active_recovery_kbs(conn)
+                if active_kbs is None:
+                    return
+                if kb_name not in active_kbs:
+                    await _recover_json_status_file(kb_name, json_path)
+        except Exception:
+            kb_logger.warning(
+                "[Recovery] JSON task/write coordination failed for KB %s",
+                kb_name,
+                exc_info=True,
+            )
+            return
+
+
+async def _recover_json_status_file(kb_name: str, json_path: Path) -> None:
+    """Recover one JSON status file while its task-state guard is held."""
+    try:
+        data = json.loads(json_path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return
+    except (json.JSONDecodeError, OSError):
+        kb_logger.warning("[Recovery] JSON doc-status load failed for KB %s", kb_name)
+        return
+
+    changed = False
+    for doc_id, info in data.items():
+        if not isinstance(info, dict):
+            continue
+        if info.get("status") != DocStatus.HANDLING.value:
+            continue
+        if not _has_processing_end_time(info):
+            continue
+        if not _has_completed_multimodal_metadata(info):
+            continue
+        info["status"] = DocStatus.PROCESSED.value
+        changed = True
+        kb_logger.info(
+            "[Recovery] fixed finished JSON document: %s/%s",
+            kb_name,
+            str(doc_id)[:16],
+        )
+
+    if not changed:
+        return
+
+    try:
+        temporary_path = json_path.with_suffix(json_path.suffix + ".recovery")
+        temporary_path.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2, default=str),
+            encoding="utf-8",
+        )
+        temporary_path.replace(json_path)
+        if kb_name in kb_instances:
+            del kb_instances[kb_name]
+    except OSError:
+        kb_logger.warning("[Recovery] JSON doc-status save failed for KB %s", kb_name)
+
+
+async def _recover_stuck_documents():
+    """Recover finished documents without loading every registered KB instance.
+
+    Orphan reconciliation remains in the explicit repair and delete-recovery
+    paths. It is intentionally excluded from document-status recovery.
+    """
+    async with _recovery_lock() as lock_connection:
+        if lock_connection is _RECOVERY_LOCK_NOT_ACQUIRED:
+            return
+        if lock_connection is not None:
+            await _recover_pg_document_status(lock_connection)
+        await _recover_json_document_status(lock_connection)
 
 
 async def _stuck_recovery_loop(interval_sec: int = 300):
@@ -1965,9 +2342,8 @@ async def _stuck_recovery_loop(interval_sec: int = 300):
     Args:
         interval_sec: Seconds between scans (default 5 minutes)
 
-    Uses a file-based lock (``.recovery.lock``) to deduplicate across
-    workers.  The lock auto-expires after 30 seconds to recover from
-    process crashes during recovery.
+    Uses a process-local lock plus a PostgreSQL advisory lock when available
+    so only one worker scans persistent document status at a time.
     """
     await asyncio.sleep(5)  # let startup settle first
     while True:
@@ -1978,9 +2354,52 @@ async def _stuck_recovery_loop(interval_sec: int = 300):
         await asyncio.sleep(interval_sec)
 
 
+async def _finalize_failed_upload(
+    task_id: str,
+    kb_name: str,
+    filename: str,
+    user_id: int,
+    error_message: str,
+    file_hash: str | None,
+    chunking_strategy: str = "",
+) -> None:
+    """Persist document failure before making its task terminal.
+
+    Recovery treats non-terminal task rows as a KB-wide liveness guard. Keep
+    that guard in place until the matching document is failed (or a retryable
+    placeholder was created), so periodic recovery cannot complete it in the
+    middle of failure handling.
+    """
+    from raganything.services.ws_service import add_event
+    from raganything.services.state_service import upsert_task_state
+
+    fix_args = (kb_name, filename, error_message, task_id)
+    if chunking_strategy:
+        await _fix_stuck_doc_status(*fix_args, chunking_strategy)
+    else:
+        await _fix_stuck_doc_status(*fix_args)
+    await upsert_task_state(task_id, {
+        "id": task_id, "status": "failed", "error": error_message,
+        "kb": kb_name, "file": filename, "user_id": user_id,
+        "chunking_strategy": chunking_strategy,
+    })
+    await add_event(
+        "upload_error", file=filename, task_id=task_id,
+        error=error_message, user_id=user_id,
+    )
+    if file_hash is not None:
+        await pg_update_upload_status_by_task_id(
+            task_id,
+            "failed",
+            kb_name=kb_name,
+            error_message=error_message,
+        )
+        _unregister_processing_file(kb_name, file_hash)
+
+
 # ── Document Upload Processing ─────────────────────────────
 
-async def _verify_document_persisted(kb_name: str, filename: str) -> None:
+async def _verify_document_persisted(kb_name: str, filename: str) -> str | None:
     """Verify that a processed document has chunks in doc_status.
 
     Uses PG dispatch when PG storage is active, file fallback otherwise.
@@ -2004,7 +2423,7 @@ async def _verify_document_persisted(kb_name: str, filename: str) -> None:
                         "[VERIFY] PG doc_status 暂时不可用，跳过验证 (KB=%s, file=%s)",
                         kb_name, filename,
                     )
-                    return
+                    return None
         raise RuntimeError(
             f"文档处理异常：doc_status 无数据 (KB={kb_name})"
         )
@@ -2020,12 +2439,197 @@ async def _verify_document_persisted(kb_name: str, filename: str) -> None:
                     and len(stored_base) - len(fname) == 9)):
             chunks = info.get("chunks_count", 0)
             status = info.get("status", "?")
+            normalized_status = str(status or "").lower()
+            if normalized_status == "failed":
+                raise RuntimeError(
+                    f"文档处理异常：status=failed, chunks={chunks} (doc_id={doc_id[:16]})"
+                )
             if chunks == 0:
                 raise RuntimeError(
                     f"文档处理异常：chunks=0, status={status} (doc_id={doc_id[:16]})"
                 )
-            return
+            return str(doc_id)
     raise RuntimeError(f"文档处理异常：doc_status 中未找到匹配记录 ({fname})")
+
+
+def _find_document_status_for_filename(
+    data: dict[str, Any], filename: str
+) -> tuple[str, dict[str, Any]] | None:
+    """Find the persisted status row for a possibly hash-prefixed upload."""
+    fname = os.path.basename(filename)
+    for doc_id, info in data.items():
+        if not isinstance(info, dict):
+            continue
+        stored_base = os.path.basename(str(info.get("file_path") or ""))
+        if stored_base == fname or (
+            stored_base.endswith("_" + fname)
+            and len(stored_base) - len(fname) == 9
+        ):
+            return str(doc_id), info
+    return None
+
+
+def _automatic_tag_chunk_id(chunk: dict[str, Any]) -> str:
+    return str(chunk.get("chunk_id") or chunk.get("id") or "")
+
+
+def _automatic_tag_chunk_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Normalize persisted records for the local automatic tag planner."""
+    normalized: list[dict[str, Any]] = []
+    for record in records:
+        chunk = dict(record)
+        chunk_id = _automatic_tag_chunk_id(chunk)
+        if not chunk_id:
+            continue
+        chunk["chunk_id"] = chunk_id
+        normalized.append(chunk)
+    return normalized
+
+
+async def _load_automatic_tag_chunks(
+    kb_name: str, document_id: str,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Load chunks for automatic tags despite delayed doc-status visibility."""
+    from raganything.services.kb_chunk_repo import (
+        PersistedChunkQueryError,
+        query_chunks_by_document_id,
+    )
+
+    status_info: dict[str, Any] = {}
+    instance = None
+    for attempt in range(3):
+        statuses = await _load_doc_status_json(kb_name)
+        candidate = statuses.get(document_id) if isinstance(statuses, dict) else None
+        if isinstance(candidate, dict):
+            status_info = dict(candidate)
+        chunk_ids = [
+            str(value) for value in status_info.get("chunks_list", []) if value
+        ]
+        if chunk_ids:
+            instance = await get_kb(kb_name)
+            records = await instance.lightrag.text_chunks.get_by_ids(chunk_ids)
+            chunks = _automatic_tag_chunk_records([
+                dict(record) for record in (records or []) if isinstance(record, dict)
+            ])
+            expected_ids = set(chunk_ids)
+            loaded_ids = {chunk["chunk_id"] for chunk in chunks}
+            if loaded_ids == expected_ids:
+                return chunks, {
+                    "chunk_count": len(chunks),
+                    "status_retries": attempt,
+                    "status_repaired": False,
+                    "chunk_source": "doc_status",
+                }
+            kb_logger.warning(
+                "[AUTO-TAGS] doc-status chunks incomplete; KB=%s doc=%s expected=%s loaded=%s",
+                kb_name, document_id, len(expected_ids), len(loaded_ids),
+            )
+        elif attempt < 2:
+            kb_logger.info(
+                "[AUTO-TAGS] doc-status chunks not visible; retry=%s/2 KB=%s doc=%s",
+                attempt + 1, kb_name, document_id,
+            )
+            await asyncio.sleep(0.2)
+
+    instance = instance or await get_kb(kb_name)
+    try:
+        chunks = _automatic_tag_chunk_records(
+            await query_chunks_by_document_id(instance.lightrag, document_id)
+        )
+    except PersistedChunkQueryError:
+        kb_logger.warning(
+            "[AUTO-TAGS] persisted chunk fallback unavailable; KB=%s doc=%s",
+            kb_name, document_id, exc_info=True,
+        )
+        return [], {
+            "chunk_count": 0,
+            "status_retries": 2,
+            "status_repaired": False,
+            "chunk_source": "unavailable",
+        }
+    if not chunks:
+        kb_logger.warning(
+            "[AUTO-TAGS] no persisted chunks; upload remains available KB=%s doc=%s",
+            kb_name, document_id,
+        )
+        return [], {
+            "chunk_count": 0,
+            "status_retries": 2,
+            "status_repaired": False,
+            "chunk_source": "none",
+        }
+
+    recovered_ids = [chunk["chunk_id"] for chunk in chunks]
+    repaired = False
+    if status_info:
+        repaired_status = dict(status_info)
+        repaired_status["chunks_list"] = recovered_ids
+        repaired_status["chunks_count"] = len(recovered_ids)
+        try:
+            await instance.lightrag.doc_status.upsert({document_id: repaired_status})
+            await instance.lightrag.doc_status.index_done_callback()
+            repaired = True
+            kb_logger.info(
+                "[AUTO-TAGS] repaired doc-status from PG chunks; KB=%s doc=%s chunks=%s",
+                kb_name, document_id, len(recovered_ids),
+            )
+        except Exception:
+            kb_logger.warning(
+                "[AUTO-TAGS] PG chunk fallback succeeded but doc-status repair failed; KB=%s doc=%s",
+                kb_name, document_id, exc_info=True,
+            )
+    else:
+        kb_logger.warning(
+            "[AUTO-TAGS] PG chunk fallback found chunks but doc-status is unavailable; KB=%s doc=%s",
+            kb_name, document_id,
+        )
+    kb_logger.info(
+        "[AUTO-TAGS] using PG chunk fallback; KB=%s doc=%s chunks=%s",
+        kb_name, document_id, len(recovered_ids),
+    )
+    return chunks, {
+        "chunk_count": len(chunks),
+        "status_retries": 2,
+        "status_repaired": repaired,
+        "chunk_source": "postgres",
+    }
+
+
+async def _generate_uploaded_document_tags(
+    kb_name: str,
+    document_id: str,
+    *,
+    filename: str = "",
+    user_id: int,
+) -> dict[str, Any]:
+    """Generate local keyword tags for one canonical persisted document ID."""
+    from raganything.services.auto_tagging import (
+        automatic_tagging_enabled,
+        build_automatic_tag_plan,
+    )
+    from raganything.services.kb_tag_repo import replace_automatic_document_tags
+
+    if not automatic_tagging_enabled():
+        return {
+            "assigned": 0, "skipped": 0, "document_tags": 0, "chunk_tags": 0,
+            "chunk_count": 0, "status_retries": 0, "status_repaired": False,
+            "chunk_source": "disabled",
+        }
+    chunks, recovery = await _load_automatic_tag_chunks(kb_name, document_id)
+    if not chunks:
+        return {
+            "assigned": 0, "skipped": 0, "document_tags": 0, "chunk_tags": 0,
+            **recovery,
+        }
+    plan = build_automatic_tag_plan(chunks, filename=filename)
+    result = await replace_automatic_document_tags(
+        kb_name,
+        document_id,
+        plan.document_tags,
+        plan.chunk_tags,
+        user_id=user_id,
+    )
+    return {**result, **recovery}
 
 
 async def _process_uploaded_file(
@@ -2054,6 +2658,7 @@ async def _process_uploaded_file(
         processing_tasks, upsert_task_state, update_task_progress, complete_task,
     )
 
+    actual_strategy = chunking_strategy or CHUNKING_STRATEGY
     task_data = {
         "id": task_id, "file": filename, "status": "processing",
         "started_at": datetime.now().isoformat(), "progress": 0,
@@ -2061,11 +2666,10 @@ async def _process_uploaded_file(
         "phase": "initializing",
         "phase_status": "start",
         "message": "初始化处理环境",
+        "chunking_strategy": actual_strategy,
     }
     await upsert_task_state(task_id, task_data)
     await add_event("upload_start", file=filename, task_id=task_id, user_id=user_id)
-    actual_strategy = chunking_strategy or CHUNKING_STRATEGY
-
     # Register for dedup tracking (inside try — file I/O can fail)
     file_hash = None
     worker_progress_state = {"track": "text"}
@@ -2109,6 +2713,7 @@ async def _process_uploaded_file(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(Path(__file__).parent.parent.parent),
+            env=_worker_subprocess_env(),
         )
 
         # Track worker process for KB deletion to kill it if needed
@@ -2187,8 +2792,25 @@ async def _process_uploaded_file(
                 conflict_lines = [l for l in worker_output_lines if "already being processed" in l or "active processor" in l]
                 conflict_detail = conflict_lines[0] if conflict_lines else "文件正在被另一个 Worker 处理"
                 raise RuntimeError(f"处理冲突: {conflict_detail}")
-            error_lines = [l for l in worker_output_lines if "ERROR" in l]
-            error_detail = "; ".join(error_lines[-2:]) if error_lines else f"exit code {proc.returncode}"
+            failure_lines = [
+                line for line in worker_output_lines
+                if (
+                    "ERROR" in line
+                    or "未捕获异常:" in line
+                    or "处理失败:" in line
+                    or "Traceback (most recent call last)" in line
+                    or "OpenBLAS" in line
+                    or "MemoryError" in line
+                    or "Exception:" in line
+                )
+            ]
+            readable_lines = [line for line in failure_lines if "Traceback" not in line]
+            if readable_lines:
+                error_detail = "; ".join(readable_lines[-2:])
+            else:
+                diagnostic_tail = [line for line in worker_output_lines[-12:] if line]
+                error_detail = "; ".join(diagnostic_tail[-3:]) if diagnostic_tail else f"exit code {proc.returncode}"
+            error_detail = error_detail[:600]
             raise RuntimeError(f"子进程处理失败: {error_detail}")
 
         if worker_has_errors:
@@ -2198,7 +2820,8 @@ async def _process_uploaded_file(
 
         # Verify data was actually persisted: the worker may exit 0 even when
         # LightRAG internally marked the document as failed.
-        await _verify_document_persisted(kb_name, filename)
+        persisted_filename = os.path.basename(file_path)
+        document_id = await _verify_document_persisted(kb_name, persisted_filename)
 
         # Clear cached instance so next query reloads from disk.
         # ⚠️ Do NOT call finalize_storages() on the cached instance — the
@@ -2210,6 +2833,29 @@ async def _process_uploaded_file(
             kb_logger.info(f"[KB] 清除缓存实例: {kb_name}（子进程写入新数据）")
 
         await emit_progress(task_id, 100, "处理完成")
+        # Tags are generated after every chunk is durable. They improve linking
+        # and scoped Q&A, but must not make an otherwise successful upload fail.
+        if document_id:
+            try:
+                tag_result = await _generate_uploaded_document_tags(
+                    kb_name, document_id, filename=filename, user_id=user_id,
+                )
+                kb_logger.info(
+                    "[AUTO-TAGS] generated KB=%s doc=%s file=%s source=%s assigned=%s document_tags=%s chunk_tags=%s skipped=%s",
+                    kb_name, document_id, filename, tag_result["chunk_source"],
+                    tag_result["assigned"], tag_result["document_tags"],
+                    tag_result["chunk_tags"], tag_result["skipped"],
+                )
+            except Exception:
+                kb_logger.warning(
+                    "[AUTO-TAGS] generation failed but upload remains available: kb=%s doc=%s file=%s",
+                    kb_name, document_id, filename, exc_info=True,
+                )
+        else:
+            kb_logger.warning(
+                "[AUTO-TAGS] deferred because canonical document ID is unavailable; KB=%s file=%s",
+                kb_name, filename,
+            )
         await complete_task(task_id)
         if task_id in processing_tasks:
             processing_tasks[task_id]["chunking_strategy"] = actual_strategy
@@ -2241,21 +2887,15 @@ async def _process_uploaded_file(
             )
             return
 
-        await upsert_task_state(task_id, {
-            "id": task_id, "status": "failed", "error": str(e),
-            "kb": kb_name, "file": filename, "user_id": user_id,
-        })
-        await add_event("upload_error", file=filename, task_id=task_id, error=str(e), user_id=user_id)
-        await _fix_stuck_doc_status(kb_name, filename)
-        if file_hash is not None:
-            # Update PG uploaded_files status → failed
-            await pg_update_upload_status_by_task_id(
-                task_id,
-                "failed",
-                kb_name=kb_name,
-                error_message=str(e),
-            )
-            _unregister_processing_file(kb_name, file_hash)
+        await _finalize_failed_upload(
+            task_id,
+            kb_name,
+            filename,
+            user_id,
+            str(e),
+            file_hash,
+            actual_strategy,
+        )
 
 
 # ── Per-KB Queue Drain ────────────────────────────────────
@@ -2574,7 +3214,7 @@ async def _reprocess_multimodal_for_kb(kb_name: str, user_id: int = 1):
     for doc_id, info in all_docs.items():
         if info.get("status") == "failed":
             continue
-        if not info.get("multimodal_processed", False):
+        if not is_multimodal_processed(info):
             needs_processing.append((doc_id, dict(info)))
 
     if not needs_processing:

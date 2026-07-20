@@ -46,9 +46,28 @@ def get_processor_for_type(modal_processors: Dict[str, Any], content_type: str):
     elif content_type == "equation":
         return modal_processors.get("equation")
     elif content_type == "video":
-        return modal_processors.get("video") or modal_processors.get("generic")
+        # A generic text processor cannot safely describe a video. Returning
+        # None lets callers mark it non-indexable instead of indexing a path
+        # or fallback error as real video content.
+        return modal_processors.get("video")
     else:
         return modal_processors.get("generic")
+
+
+def is_multimodal_processed(doc_status: Dict[str, Any] | None) -> bool:
+    """Read completion from PG metadata while retaining legacy compatibility."""
+    if not isinstance(doc_status, dict):
+        return False
+    metadata = doc_status.get("metadata")
+    metadata_completed = (
+        bool(metadata.get("multimodal_processed", False))
+        if isinstance(metadata, dict)
+        else False
+    )
+    # Metadata is the PG-supported field. OR rather than precedence preserves
+    # completed legacy records and lets metadata=True repair stale top-level
+    # False values from older writers.
+    return metadata_completed or bool(doc_status.get("multimodal_processed", False))
 
 
 def get_processor_supports(proc_type: str) -> List[str]:

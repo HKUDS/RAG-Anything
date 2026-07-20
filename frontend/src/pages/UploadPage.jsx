@@ -1,15 +1,11 @@
 ﻿import { useState, useCallback, useEffect, useRef } from 'react'
-import { Upload, ClipboardPaste, FileText, Loader2, CheckCircle2, XCircle, FolderOpen, Globe, Scissors } from 'lucide-react'
+import { Upload, ClipboardPaste, FileText, Loader2, CheckCircle2, XCircle, FolderOpen, Globe } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { api } from '../utils/api'
+import ChunkingStrategySelector from '../components/ChunkingStrategySelector'
+import { getChunkingStrategyPresentation } from '../utils/chunkingStrategyPresentation'
 
 const SUPPORTED = '.pdf .jpg .jpeg .png .bmp .tiff .gif .webp .doc .docx .ppt .pptx .xls .xlsx .txt .md'.split(' ')
-
-const COST_COLORS = {
-  free: 'text-sage-600 bg-sage-50 border-sage-200 dark:text-sage-400 dark:bg-sage-900/20 dark:border-sage-800/30',
-  medium: 'text-amber-600 bg-amber-50 border-amber-200 dark:text-amber-400 dark:bg-amber-900/20 dark:border-amber-800/30',
-  high: 'text-rose-600 bg-rose-50 border-rose-200 dark:text-rose-400 dark:bg-rose-900/20 dark:border-rose-800/30',
-}
 
 export default function UploadPage({ onToast }) {
   const [dragOver, setDragOver] = useState(false)
@@ -56,7 +52,12 @@ export default function UploadPage({ onToast }) {
     setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'uploading' } : f))
     try {
       const res = await api.uploadFile(files[idx].file, chunkingStrategy)
-      setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'done', taskId: res.task_id } : f))
+      setFiles(prev => prev.map((f, i) => i === idx ? {
+        ...f,
+        status: 'done',
+        taskId: res.task_id,
+        chunkingStrategy: res.chunking_strategy || chunkingStrategy,
+      } : f))
       onToast?.(`${files[idx].name} 上传成功`, 'success')
     } catch (e) {
       setFiles(prev => prev.map((f, i) => i === idx ? { ...f, status: 'error', error: e.message } : f))
@@ -78,7 +79,12 @@ export default function UploadPage({ onToast }) {
       const f = files[idx]
       try {
         const res = await api.uploadFile(f.file, chunkingStrategy)
-        setFiles(prev => prev.map((x, i) => i === idx ? { ...x, status: 'done', taskId: res.task_id } : x))
+        setFiles(prev => prev.map((x, i) => i === idx ? {
+          ...x,
+          status: 'done',
+          taskId: res.task_id,
+          chunkingStrategy: res.chunking_strategy || chunkingStrategy,
+        } : x))
         ok++
       } catch (e) {
         setFiles(prev => prev.map((x, i) => i === idx ? { ...x, status: 'error', error: e.message } : x))
@@ -159,33 +165,13 @@ export default function UploadPage({ onToast }) {
         </div>
       </motion.div>
 
-      {/* 分块策略选择器 */}
+      {/* 切块方式 */}
       <div className="card p-4 space-y-3 dark:bg-sky-900/20 dark:border-sky-800/30">
-        <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300"><Scissors size={16}/>分块策略</h3>
-        <p className="text-xs text-ink-muted dark:text-cloud-500">选择本次上传的文本切割方式，不同策略影响检索精度和处理成本</p>
-        <div className="flex gap-2 flex-wrap">
-          {Object.entries(strategies).length > 0 ? (
-            Object.entries(strategies).map(([key, meta]) => {
-              const isActive = (chunkingStrategy || 'recursive') === key
-              return (
-                <button key={key}
-                  onClick={() => setChunkingStrategy(key)}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs border transition-all ${
-                    isActive
-                      ? 'border-sky-300 dark:border-sky-700 bg-sky-50 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 shadow-cloud-sm'
-                      : 'border-cloud-300 dark:border-sky-800/30 text-ink-muted dark:text-cloud-500 hover:border-cloud-400 dark:hover:border-sky-700 hover:text-ink-body dark:hover:text-cloud-300'
-                  }`}>
-                  <span className="font-medium">{meta.name}</span>
-                  <span className={`text-2xs px-1.5 py-0.5 rounded-full border ${COST_COLORS[meta.cost_level] || COST_COLORS.free}`}>
-                    {meta.cost}
-                  </span>
-                </button>
-              )
-            })
-          ) : (
-            <span className="text-xs text-ink-muted dark:text-cloud-500">加载中...</span>
-          )}
-        </div>
+        <ChunkingStrategySelector
+          strategies={strategies}
+          value={chunkingStrategy}
+          onChange={setChunkingStrategy}
+        />
       </div>
 
       {/* 链接、文件夹与粘贴输入行 */}
@@ -237,6 +223,11 @@ export default function UploadPage({ onToast }) {
                   : <FileText size={18} className="text-ink-muted dark:text-cloud-500" />}
                 <div>
                   <p className="text-sm text-ink-body dark:text-cloud-300">{f.name}</p>
+                  {f.chunkingStrategy && (
+                    <p className="mt-1 text-xs text-ink-muted dark:text-cloud-500">
+                      切块：{getChunkingStrategyPresentation(f.chunkingStrategy).name}
+                    </p>
+                  )}
                   {f.error && <p className="text-xs text-rose-500">{f.error}</p>}
                   {f.status === 'uploading' && f.taskId && wsProgress[f.taskId] && (
                     <div className="mt-1 w-32 h-1 bg-cloud-200 dark:bg-sky-900/50 rounded-full overflow-hidden">

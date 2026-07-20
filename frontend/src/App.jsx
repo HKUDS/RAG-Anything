@@ -9,6 +9,8 @@ import { api } from './utils/api'
 // ---- 路由级代码拆分 ----
 const KnowledgePage               = lazy(() => import('./pages/KnowledgePage'))
 const KnowledgeDetailPage        = lazy(() => import('./pages/KnowledgeDetailPage'))
+const DocumentChunksPage         = lazy(() => import('./pages/DocumentChunksPage'))
+const DocumentChunkDetailPage    = lazy(() => import('./pages/DocumentChunkDetailPage'))
 const SettingsPage                = lazy(() => import('./pages/SettingsPage'))
 const MonitorPage                 = lazy(() => import('./pages/MonitorPage'))
 const AgentsPage                  = lazy(() => import('./pages/AgentsPage'))
@@ -147,6 +149,8 @@ const NAV_GROUPS = [
 ]
 
 const ROUTE_META = [
+  { test: p => /^\/knowledge\/[^/]+\/documents\/[^/]+\/chunks\/[^/]+\/?$/.test(p), kicker: '知识资产', title: '切块详情', subtitle: '阅读、核对并维护一个可检索切块。' },
+  { test: p => /^\/knowledge\/[^/]+\/documents\/[^/]+\/chunks\/?$/.test(p), kicker: '知识资产', title: '切块详情', subtitle: '检索、核对并维护文档的检索切块。' },
   { test: p => p.startsWith('/knowledge/'), kicker: '知识资产', title: '知识资产视图', subtitle: '查看文档、分块、实体关系与知识图谱结构。' },
   { test: p => p.startsWith('/knowledge'), kicker: '知识核心', title: '知识库中枢', subtitle: '组织多源文档、实体网络和可检索的知识空间。' },
   { test: p => p.startsWith('/agents/'), kicker: '智能体会话', title: '智能体对话', subtitle: '基于知识库进行检索增强问答、多模态理解与推理。' },
@@ -643,6 +647,8 @@ export default function App() {
                   <Route path="/agents/:id" element={<ProtectedRoute requiredPermission="agent:read"><AgentChatPage onToast={showToast} /></ProtectedRoute>} />
                   <Route path="/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
                   <Route path="/knowledge/:kbName" element={<ProtectedRoute><KnowledgeDetailPage /></ProtectedRoute>} />
+                  <Route path="/knowledge/:kbName/documents/:docId/chunks" element={<ProtectedRoute><DocumentChunksPage /></ProtectedRoute>} />
+                  <Route path="/knowledge/:kbName/documents/:docId/chunks/:chunkId" element={<ProtectedRoute><DocumentChunkDetailPage /></ProtectedRoute>} />
                   <Route path="/workflow" element={<ProtectedRoute requiredPermission="workflow:read"><WorkflowPage /></ProtectedRoute>} />
                   <Route path="/autorepair" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairDashboardPage /></ProtectedRoute>} />
                   <Route path="/autorepair/knowledge" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairKnowledgePage /></ProtectedRoute>} />

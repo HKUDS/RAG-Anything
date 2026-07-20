@@ -189,7 +189,7 @@ async def test_process_document_complete_bootstraps_doc_status(
     doc_status = processor.lightrag.doc_status.records["doc-custom"]
     assert doc_status["file_path"] == "sample.pdf"
     assert doc_status["status"] == DocStatus.PROCESSED
-    assert doc_status["multimodal_processed"] is True
+    assert doc_status["metadata"]["multimodal_processed"] is True
 
 
 @pytest.mark.asyncio
@@ -277,10 +277,8 @@ async def test_image_only_document_falls_back_when_multimodal_flag_is_unsupporte
     assert doc_status["file_path"] == "figure.png"
     assert doc_status["status"] == DocStatus.PROCESSED
     assert "multimodal_processed" not in doc_status
-    assert processor.multimodal_status_cache.records["doc-image"] == {
-        "multimodal_processed": True,
-        "updated_at": doc_status["updated_at"],
-    }
+    assert doc_status["metadata"]["multimodal_processed"] is True
+    assert processor.multimodal_status_cache.records == {}
 
     processing_status = await processor.get_document_processing_status("doc-image")
     assert processing_status["multimodal_processed"] is True
@@ -355,3 +353,77 @@ async def test_compatibility_multimodal_cache_prevents_repeat_processing(
     )
 
     assert called["batch"] == 0
+
+
+@pytest.mark.asyncio
+async def test_background_multimodal_failure_marks_document_failed(
+    raganything_modules,
+):
+    processor_module = raganything_modules.processor
+    DocStatus = raganything_modules.base.DocStatus
+
+    class FakeDocStatusStorage:
+        def __init__(self):
+            self.records = {
+                "doc-image": {
+                    "status": DocStatus.PROCESSED,
+                    "file_path": "figure.png",
+                    "content_summary": "",
+                    "content_length": 0,
+                    "error_msg": "",
+                    "chunks_count": 1,
+                    "chunks_list": ["chunk-1"],
+                    "created_at": "2026-07-10T00:00:00+00:00",
+                    "updated_at": "2026-07-10T00:00:00+00:00",
+                }
+            }
+
+        async def get_by_id(self, key):
+            return self.records.get(key)
+
+        async def upsert(self, data):
+            for key, value in data.items():
+                self.records[key] = value
+
+        async def index_done_callback(self):
+            return None
+
+    class FakeLightRAG:
+        def __init__(self):
+            self.doc_status = FakeDocStatusStorage()
+
+    class DummyProcessor(processor_module.ProcessorMixin):
+        pass
+
+    processor = DummyProcessor()
+    processor.lightrag = FakeLightRAG()
+    processor.multimodal_status_cache = InMemoryJsonStorage()
+    processor.logger = types.SimpleNamespace(
+        info=lambda *args, **kwargs: None,
+        warning=lambda *args, **kwargs: None,
+        error=lambda *args, **kwargs: None,
+        debug=lambda *args, **kwargs: None,
+    )
+
+    async def fake_ensure_lightrag_initialized():
+        return {"success": True}
+
+    async def fake_process_multimodal_content(_items, _file_name, _doc_id):
+        raise RuntimeError("background failure")
+
+    processor._ensure_lightrag_initialized = fake_ensure_lightrag_initialized
+    processor._process_multimodal_content = fake_process_multimodal_content
+
+    await processor._process_multimodal_content_background(
+        [{"type": "image", "img_path": "figure.png"}],
+        "figure.png",
+        "doc-image",
+    )
+
+    doc_status = processor.lightrag.doc_status.records["doc-image"]
+    assert doc_status["status"] == DocStatus.FAILED
+    assert doc_status["error_msg"] == "background failure"
+    assert doc_status["metadata"]["multimodal_processed"] is True
+
+    processing_status = await processor.get_document_processing_status("doc-image")
+    assert processing_status["fully_processed"] is False

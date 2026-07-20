@@ -287,6 +287,12 @@ class ChunkProcessorMixin:
 
             # Use full path or basename based on config
             file_ref = self._get_file_reference(file_path)
+            media_path = (
+                original_item.get("img_path")
+                or original_item.get("video_path")
+                or original_item.get("media_path")
+                or ""
+            )
 
             # Build LightRAG standard chunk format
             chunks[chunk_id] = {
@@ -301,6 +307,9 @@ class ChunkProcessorMixin:
                 "modal_entity_name": entity_info["entity_name"],
                 "original_type": data["content_type"],
                 "page_idx": data["item_info"].get("page_idx", 0),
+                # PGKVStorage only persists its fixed schema. This value is
+                # also copied into doc-status metadata for lossless API reads.
+                "media_path": str(media_path),
             }
 
         self.logger.debug(
@@ -425,7 +434,10 @@ class ChunkProcessorMixin:
             # Fallback to just the description if template fails
             return description
     async def _update_doc_status_with_chunks_type_aware(
-        self, doc_id: str, chunk_ids: List[str]
+        self,
+        doc_id: str,
+        chunk_ids: List[str],
+        chunks: Dict[str, Any] | None = None,
     ):
         """Update document status with multimodal chunks"""
         try:
@@ -445,6 +457,32 @@ class ChunkProcessorMixin:
                 updated_chunks_list = existing_chunks_list + chunk_ids
                 updated_chunks_count = existing_chunks_count + len(chunk_ids)
 
+                # PGKVStorage's text-chunk schema intentionally retains only
+                # LightRAG core fields. Preserve multimodal-only fields in the
+                # durable doc-status metadata so /knowledge/.../chunks can
+                # faithfully reconstruct the response after a PG round-trip.
+                existing_metadata = current_doc_status.get("metadata") or {}
+                metadata = dict(existing_metadata) if isinstance(existing_metadata, dict) else {}
+                multimodal_chunks = metadata.get("multimodal_chunks") or {}
+                multimodal_chunks = (
+                    dict(multimodal_chunks)
+                    if isinstance(multimodal_chunks, dict)
+                    else {}
+                )
+                for chunk_id in chunk_ids:
+                    chunk = (chunks or {}).get(chunk_id, {})
+                    if not isinstance(chunk, dict):
+                        continue
+                    multimodal_chunks[chunk_id] = {
+                        "is_multimodal": True,
+                        "original_type": chunk.get("original_type"),
+                        "modal_entity_name": chunk.get("modal_entity_name"),
+                        "page_idx": chunk.get("page_idx"),
+                        "media_path": chunk.get("media_path") or "",
+                    }
+                if multimodal_chunks:
+                    metadata["multimodal_chunks"] = multimodal_chunks
+
                 # Update document status with integrated chunk list
                 await self.lightrag.doc_status.upsert(
                     {
@@ -452,6 +490,7 @@ class ChunkProcessorMixin:
                             **current_doc_status,  # Keep existing fields
                             "chunks_list": updated_chunks_list,  # Integrated chunks list
                             "chunks_count": updated_chunks_count,  # Updated total count
+                            "metadata": metadata,
                             "updated_at": beijing_now(),
                         }
                     }

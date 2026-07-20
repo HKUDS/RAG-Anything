@@ -59,6 +59,7 @@ from raganything.services.pg_agent_repo import (
     pg_get_summary_updated_at,
 )
 from raganything.services.prompt_builder import PromptBuilder, ContextLayer
+from raganything.query.tag_scoped_retriever import resolve_tag_scope, retrieve_tag_scoped_context
 
 
 # ═══════════════════════════════════════════════════════════
@@ -416,6 +417,7 @@ class AgentQueryRequest(BaseModel):
     agent_mode: Optional[str] = None  # 空则使用智能体默认的 agent_mode
     vlm_enhanced: bool = False
     image: Optional[str] = None  # base64 data URI of user-uploaded query image (e.g. data:image/jpeg;base64,...)
+    tag_id: Optional[int] = None
 
 
 class MessageUpdateRequest(BaseModel):
@@ -822,6 +824,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     actual_kb = await verify_kb_access(kb=agent.get("kb_name", ""), current_user=current_user)
 
     instance = await get_kb(actual_kb)
+    tag_scope = None
+    if req.tag_id is not None:
+        tag_scope = await resolve_tag_scope(actual_kb, req.tag_id)
+        if tag_scope is None:
+            # Do not reveal whether a tag exists in a different knowledge base.
+            raise HTTPException(422, "Selected tag scope is no longer available")
+    scope_metadata = {"tag_scope": {"id": tag_scope.tag_id, "name": tag_scope.tag_name}} if tag_scope else {}
     runtime_config = _build_effective_agent_runtime(agent, req)
     # 检索模式（agentic 路径优先 rrf 轻量模式，可被请求级覆盖；普通路径沿用 agent 配置）
     query_mode = runtime_config["query_mode"]
@@ -872,7 +881,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         full_answer = ""
 
         try:
-            yield f"data: {json.dumps({'type': 'agent_info', 'agent': agent.get('name',''), 'icon': agent.get('icon',''), 'thread_id': thread_id}, ensure_ascii=False)}\n\n"
+            scope_payload = ({"id": tag_scope.tag_id, "name": tag_scope.tag_name} if tag_scope else None)
+            yield f"data: {json.dumps({'type': 'agent_info', 'agent': agent.get('name',''), 'icon': agent.get('icon',''), 'thread_id': thread_id, 'tag_scope': scope_payload}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'🔍 开始查询: {req.query[:80]}...'}, ensure_ascii=False)}\n\n"
 
             # ── 查询改写：基于对话历史消解指代词 ──
@@ -904,7 +914,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             image_description = None
             similar_images = []
             _similar_image_urls: list[dict] = []
-            if req.image:
+            if req.image and tag_scope is None:
                 yield f"data: {json.dumps({'type': 'image_analysis', 'status': 'analyzing'}, ensure_ascii=False)}\n\n"
 
                 # 0. Validate and decode the base64 image
@@ -1022,6 +1032,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     chunk_top_k=chunk_top_k,
                     enable_rerank=enable_rerank,
                     include_references=include_references,
+                    tag_scope=tag_scope,
                 ))
 
                 full_answer = ""
@@ -1035,6 +1046,15 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         image_description=image_description,
                         similar_image_urls=_similar_image_urls,
                     )
+                    if tag_scope is not None:
+                        scoped_context = await retrieve_tag_scoped_context(
+                            instance, tag_scope, rewritten_query,
+                            top_k=chunk_top_k, max_total_tokens=8000,
+                        )
+                        react_query += (
+                            f"\n\n## 硬性检索范围\n仅可依据标签“{tag_scope.tag_name}”下的内容回答。"
+                            f"\n{scoped_context or '该标签范围内没有可用内容。请明确说明无法在此范围内作答。'}"
+                        )
                     async for event in agentic.run_stream(react_query):
                         if event.type == "thinking":
                             sd = {
@@ -1061,13 +1081,19 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         _cot_search_query = f"{rewritten_query}\n\n[图片描述]\n{image_description[:500]}"
                     cot_context = ""
                     try:
-                        cot_context = await instance.aquery(
-                            _cot_search_query, mode=agentic_query_mode, only_need_context=True,
-                            top_k=retrieval_top_k, chunk_top_k=chunk_top_k,
-                            enable_rerank=enable_rerank,
-                            include_references=include_references,
-                            max_total_tokens=8000,
-                        ) or ""
+                        if tag_scope is not None:
+                            cot_context = await retrieve_tag_scoped_context(
+                                instance, tag_scope, _cot_search_query,
+                                top_k=chunk_top_k, max_total_tokens=8000,
+                            )
+                        else:
+                            cot_context = await instance.aquery(
+                                _cot_search_query, mode=agentic_query_mode, only_need_context=True,
+                                top_k=retrieval_top_k, chunk_top_k=chunk_top_k,
+                                enable_rerank=enable_rerank,
+                                include_references=include_references,
+                                max_total_tokens=8000,
+                            ) or ""
                     except Exception:
                         pass
                     # Build image + history context via unified helpers
@@ -1085,6 +1111,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         await pg_add_message(agent_id, thread_id, {
                             "role": "user", "content": req.query,
                             "time": datetime.now().isoformat(),
+                            **scope_metadata,
                         })
                         await pg_add_message(agent_id, thread_id, {
                             "role": "assistant", "content": full_answer,
@@ -1092,6 +1119,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                             "agent_mode": agent_mode, "trace": [],
                             "fallback": True,
                             "time": datetime.now().isoformat(),
+                            **scope_metadata,
                             **_assistant_message_media([], _display_similar_images, image_description),
                         })
                         record = {
@@ -1193,12 +1221,14 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 await pg_add_message(agent_id, thread_id, {
                     "role": "user", "content": req.query,
                     "time": datetime.now().isoformat(),
+                    **scope_metadata,
                 })
                 await pg_add_message(agent_id, thread_id, {
                     "role": "assistant", "content": full_answer,
                     "elapsed": elapsed, "mode": query_mode,
                     "agent_mode": agent_mode, "trace": trace_steps,
                     "time": datetime.now().isoformat(),
+                    **scope_metadata,
                     **_assistant_message_media(agent_images, _display_similar_images, image_description),
                 })
 
@@ -1250,14 +1280,22 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     _vis_context_parts.append(f"[相似图片描述]\n{' | '.join(_vis_descs[:3])}")
             if _vis_context_parts:
                 _search_query = f"{rewritten_query}\n\n" + "\n".join(_vis_context_parts)
-            ctx_task = asyncio.ensure_future(
-                instance.aquery(_search_query, mode=query_mode, vlm_enhanced=False,
-                                only_need_context=True, enable_rerank=enable_rerank,
-                                chunk_top_k=chunk_top_k, top_k=retrieval_top_k,
-                                include_references=include_references,
-                                max_entity_tokens=3000, max_relation_tokens=2000,
-                                max_total_tokens=16000)
-            )
+            if tag_scope is not None:
+                ctx_task = asyncio.ensure_future(
+                    retrieve_tag_scoped_context(
+                        instance, tag_scope, _search_query,
+                        top_k=chunk_top_k, max_total_tokens=16000,
+                    )
+                )
+            else:
+                ctx_task = asyncio.ensure_future(
+                    instance.aquery(_search_query, mode=query_mode, vlm_enhanced=False,
+                                    only_need_context=True, enable_rerank=enable_rerank,
+                                    chunk_top_k=chunk_top_k, top_k=retrieval_top_k,
+                                    include_references=include_references,
+                                    max_entity_tokens=3000, max_relation_tokens=2000,
+                                    max_total_tokens=16000)
+                )
             while not ctx_task.done():
                 while True:
                     try:
@@ -1286,6 +1324,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "role": "user",
                     "content": req.query,
                     "time": datetime.now().isoformat(),
+                    **scope_metadata,
                 })
                 await pg_add_message(agent_id, thread_id, {
                     "role": "assistant",
@@ -1294,6 +1333,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "mode": query_mode,
                     "fallback": True,
                     "time": datetime.now().isoformat(),
+                    **scope_metadata,
                     **_assistant_message_media(agent_images, _display_similar_images, image_description),
                 })
 
@@ -1405,6 +1445,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "role": "user",
                     "content": req.query,
                     "time": datetime.now().isoformat(),
+                    **scope_metadata,
                 })
                 await pg_add_message(agent_id, thread_id, {
                     "role": "assistant",
@@ -1413,6 +1454,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "mode": query_mode,
                     "fallback": True,
                     "time": datetime.now().isoformat(),
+                    **scope_metadata,
                     **_assistant_message_media(agent_images, _display_similar_images, image_description),
                 })
 
@@ -1536,6 +1578,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 "role": "user",
                 "content": req.query,
                 "time": datetime.now().isoformat(),
+                **scope_metadata,
             })
             await pg_add_message(agent_id, thread_id, {
                 "role": "assistant",
@@ -1544,6 +1587,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 "mode": query_mode,
                 "fallback": is_fallback,
                 "time": datetime.now().isoformat(),
+                **scope_metadata,
                 **_assistant_message_media(agent_images, _display_similar_images, image_description),
             })
 

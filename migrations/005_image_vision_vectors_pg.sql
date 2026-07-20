@@ -33,6 +33,10 @@ CREATE TABLE IF NOT EXISTS image_vision_vectors (
     -- Primary key: "img-{sha256_first_16}" (matching legacy NanoVectorDB format)
     id              TEXT PRIMARY KEY,
 
+    -- Knowledge-base workspace. Content-derived document and image IDs are
+    -- not globally unique, so every read/write/delete must be KB-scoped.
+    workspace       TEXT NOT NULL DEFAULT '',
+
     -- SHA-256 content hash (first 16 hex chars), indexed for dedup
     image_hash      TEXT NOT NULL,
 
@@ -68,6 +72,9 @@ CREATE TABLE IF NOT EXISTS image_vision_vectors (
 -- Index for cascade delete by document
 CREATE INDEX IF NOT EXISTS idx_ivv_doc_id
     ON image_vision_vectors(doc_id);
+
+CREATE INDEX IF NOT EXISTS idx_ivv_workspace_doc_id
+    ON image_vision_vectors(workspace, doc_id);
 
 -- Index for hash lookup (dedup check)
 CREATE INDEX IF NOT EXISTS idx_ivv_image_hash

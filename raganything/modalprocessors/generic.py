@@ -60,7 +60,7 @@ class GenericModalProcessor(BaseModalProcessor):
                     content=str(modal_content),
                 )
 
-            response = await self.modal_caption_func(
+            response = await self._call_modal_caption(
                 generic_prompt,
                 system_prompt=PROMPTS["GENERIC_ANALYSIS_SYSTEM"].format(
                     content_type=content_type

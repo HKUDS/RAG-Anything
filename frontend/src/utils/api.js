@@ -61,14 +61,16 @@ async function readResponseBody(res, emptyValue = {}) {
 }
 
 function buildHttpError(err, status) {
-  if (typeof err === 'string') {
-    return new Error(err || `HTTP ${status}`)
-  }
-  return new Error(
+  const error = new Error(typeof err === 'string'
+    ? (err || `HTTP ${status}`)
+    : (
     typeof err?.detail === 'string' ? err.detail
     : Array.isArray(err?.detail) ? err.detail.map(e => e.msg || JSON.stringify(e)).join('; ')
     : `HTTP ${status}`
-  )
+    ))
+  error.status = status
+  error.detail = typeof err === 'object' ? err?.detail : err
+  return error
 }
 
 async function readUploadJsonResponse(res) {
@@ -299,17 +301,44 @@ export const api = {
   deleteGraphNode: (name) => request(`/knowledge/graph/nodes/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   createGraphEdge: (data) => request('/knowledge/graph/edges', { method: 'POST', body: JSON.stringify(data) }),
   deleteGraphEdge: (id) => request(`/knowledge/graph/edges/${id}`, { method: 'DELETE' }),
-  getDocumentChunks: (docId) => request(`/knowledge/documents/${docId}/chunks`),
+  getDocumentChunks: (docId, { kb = currentKB, signal } = {}) => fetchJson(
+    `/knowledge/documents/${encodeURIComponent(docId)}/chunks?kb=${encodeURIComponent(kb)}`,
+    { signal }
+  ),
+  getDocumentChunk: (docId, chunkId, { kb = currentKB, signal } = {}) => fetchJson(
+    `/knowledge/documents/${encodeURIComponent(docId)}/chunks/${encodeURIComponent(chunkId)}?kb=${encodeURIComponent(kb)}`,
+    { signal }
+  ),
+  listKnowledgeTags: ({ kb = currentKB, query = '', limit = 100, signal } = {}) => fetchJson(
+    `/knowledge/tags?kb=${encodeURIComponent(kb)}&q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`,
+    { signal }
+  ),
+  getKnowledgeTagLinks: (tagId, { kb = currentKB, signal } = {}) => fetchJson(
+    `/knowledge/tags/${encodeURIComponent(tagId)}/links?kb=${encodeURIComponent(kb)}`,
+    { signal }
+  ),
+  updateDocumentChunkTags: (docId, chunkId, tagNames, { kb = currentKB } = {}) => fetchJson(
+    `/knowledge/documents/${encodeURIComponent(docId)}/chunks/${encodeURIComponent(chunkId)}/tags?kb=${encodeURIComponent(kb)}`,
+    { method: 'PUT', body: JSON.stringify({ tag_names: tagNames }) }
+  ),
+  updateDocumentChunk: (docId, chunkId, content, { kb = currentKB } = {}) => fetchJson(
+    `/knowledge/documents/${encodeURIComponent(docId)}/chunks/${encodeURIComponent(chunkId)}?kb=${encodeURIComponent(kb)}`,
+    { method: 'PATCH', body: JSON.stringify({ content }) }
+  ),
+  deleteDocumentChunk: (docId, chunkId, { kb = currentKB } = {}) => fetchJson(
+    `/knowledge/documents/${encodeURIComponent(docId)}/chunks/${encodeURIComponent(chunkId)}?kb=${encodeURIComponent(kb)}`,
+    { method: 'DELETE' }
+  ),
   deleteDocument: (id) => request(`/knowledge/documents/${id}`, { method: 'DELETE' }),
   deleteDocuments: (ids) => request('/knowledge/documents/batch-delete', { method: 'POST', body: JSON.stringify({ doc_ids: ids }) }),
   retryDocument: (id) => request(`/knowledge/documents/${id}/retry`, { method: 'POST' }),
   getUploadTasks: () => request('/upload/tasks'),
   deleteUploadTask: (taskId) => request(`/upload/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }),
   reprocessMultimodal: (kbName) => fetchJson(`/kb/${encodeURIComponent(kbName)}/reprocess-multimodal`, { method: 'POST' }),
-  downloadDocumentUrl: (id) => {
+  downloadDocumentUrl: (id, kb = currentKB) => {
     const token = getToken()
     const tokenParam = token ? `&token=${encodeURIComponent(token)}` : ''
-    return `${API_BASE}/knowledge/documents/${id}/download?kb=${encodeURIComponent(currentKB)}${tokenParam}`
+    return `${API_BASE}/knowledge/documents/${encodeURIComponent(id)}/download?kb=${encodeURIComponent(kb)}${tokenParam}`
   },
 
   // 图像相似度搜索（视觉嵌入：doubao-embedding-vision）

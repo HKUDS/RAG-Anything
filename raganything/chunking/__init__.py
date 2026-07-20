@@ -38,6 +38,10 @@ from typing import Any, Callable
 
 logger = logging.getLogger("raganything.chunking")
 
+# Semantic chunking calls embeddings directly, outside LightRAG's normal
+# vector-store batching path. The configured provider accepts at most 10 inputs.
+SEMANTIC_EMBEDDING_BATCH_SIZE = 10
+
 # LightRAG's built-in fixed-size chunking is used as a fallback by
 # semantic and agentic strategies.  The symbol lives in a private
 # module so we guard the import to stay compatible with older LightRAG
@@ -390,7 +394,10 @@ def structure_chunking(
 #       相似度骤降之处即为语义边界
 # 费用: 🟡 中等成本（约 N*2 次 Embedding API 调用，N = 段落数）
 
-def make_semantic_chunking(embedding_func):
+def make_semantic_chunking(
+    embedding_func,
+    embedding_batch_size: int = SEMANTIC_EMBEDDING_BATCH_SIZE,
+):
     """创建语义分块函数（工厂模式，注入 embedding 函数）
 
     Args:
@@ -401,6 +408,12 @@ def make_semantic_chunking(embedding_func):
     Returns:
         chunking_func: 符合 LightRAG chunking_func 规范的异步函数
     """
+
+    try:
+        batch_size = int(embedding_batch_size)
+    except (TypeError, ValueError):
+        batch_size = SEMANTIC_EMBEDDING_BATCH_SIZE
+    batch_size = max(1, min(batch_size, SEMANTIC_EMBEDDING_BATCH_SIZE))
 
     def _cosine_similarity(a: list[float], b: list[float]) -> float:
         """计算两个向量的余弦相似度"""
@@ -435,9 +448,18 @@ def make_semantic_chunking(embedding_func):
                 split_by_character_only, chunk_overlap_token_size, chunk_token_size,
             )
 
-        # Phase 2: Compute paragraph embeddings
+        # Phase 2: Compute paragraph embeddings. Keep direct provider calls
+        # bounded and ordered because this path bypasses LightRAG batching.
         try:
-            embeddings = await embedding_func(paragraphs)
+            embeddings = []
+            for start in range(0, len(paragraphs), batch_size):
+                batch = paragraphs[start:start + batch_size]
+                batch_embeddings = await embedding_func(batch)
+                if len(batch_embeddings) != len(batch):
+                    raise ValueError(
+                        "Semantic chunking embedding count did not match the input batch"
+                    )
+                embeddings.extend(batch_embeddings)
         except Exception as e:
             logger.warning(f"Semantic chunking embedding failed: {e}, falling back to recursive")
             return recursive_chunking(
@@ -764,7 +786,10 @@ def build_chunking_func(strategy: str, lightrag_instance):
         async def _embed_wrapper(texts: list[str]) -> list[list[float]]:
             return await actual_embed(texts)
 
-        return make_semantic_chunking(_embed_wrapper)
+        return make_semantic_chunking(
+            _embed_wrapper,
+            getattr(lightrag_instance, "embedding_batch_num", SEMANTIC_EMBEDDING_BATCH_SIZE),
+        )
 
     # 智能分块需要 llm_model_func
     if strategy == "agentic":

@@ -84,6 +84,11 @@ import asyncpg
 import jwt as pyjwt
 from passlib.context import CryptContext
 
+from raganything.permissions import (
+    DEFAULT_ROLE_NAME,
+    DEFAULT_ROLES,
+)
+
 logger = logging.getLogger("rag_server.pg_auth")
 
 # ── Password Hashing ───────────────────────────────────────
@@ -213,6 +218,13 @@ async def init_db() -> None:
                 "desc": "学生，可查看知识库并使用智能体问答（各年级学生）",
                 "perms": ["kb:read", "agent:read", "autorepair:read"],
             },
+        }
+        default_roles = {
+            role_name: {
+                "desc": role_cfg["description"],
+                "perms": role_cfg["permissions"],
+            }
+            for role_name, role_cfg in DEFAULT_ROLES.items()
         }
         for role_name, role_cfg in default_roles.items():
             await conn.execute(
@@ -348,7 +360,7 @@ async def create_user(username: str, email: str, password: str, role_id: int | N
 
     # Default role: student
     if role_id is None:
-        role_name = "student"
+        role_name = DEFAULT_ROLE_NAME
     else:
         role_name = None  # Use role_id directly
 
@@ -362,12 +374,15 @@ async def create_user(username: str, email: str, password: str, role_id: int | N
                 raise ValueError(f"角色 '{role_name}' 不存在，请先初始化默认角色")
             role_id = role_row["id"]
         else:
-            # Validate the explicit role_id exists
+            # Legacy admin/editor/viewer rows remain for historical data only.
+            # They must not be assigned through current user-management APIs.
             role_row = await conn.fetchrow(
-                "SELECT id FROM roles WHERE id = $1", role_id
+                "SELECT id FROM roles WHERE id = $1 AND name = ANY($2::text[])",
+                role_id,
+                list(DEFAULT_ROLES),
             )
             if not role_row:
-                raise ValueError(f"角色 ID {role_id} 不存在")
+                raise ValueError(f"角色 ID {role_id} 不存在或不可分配")
 
         try:
             row = await conn.fetchrow(
@@ -431,6 +446,14 @@ async def update_user(user_id: int, data: dict) -> dict | None:
 
     pool = _get_pool()
     async with pool.acquire() as conn:
+        if "role_id" in updates:
+            role_row = await conn.fetchrow(
+                "SELECT id FROM roles WHERE id = $1 AND name = ANY($2::text[])",
+                updates["role_id"],
+                list(DEFAULT_ROLES),
+            )
+            if not role_row:
+                raise ValueError(f"角色 ID {updates['role_id']} 不存在或不可分配")
         try:
             await conn.execute(
                 f"UPDATE users SET {set_clause} WHERE id = ${len(values)}",
@@ -493,7 +516,8 @@ async def list_roles() -> list[dict]:
                     role["permissions"] = _json.loads(role["permissions"])
             except (_json.JSONDecodeError, TypeError):
                 role["permissions"] = []
-            roles.append(role)
+            if role.get("name") in DEFAULT_ROLES:
+                roles.append(role)
         return roles
 
 
@@ -511,7 +535,17 @@ async def get_user_role(user_id: int) -> dict | None:
             WHERE u.id = $1
             """, user_id,
         )
-        return dict(row) if row else None
+        if not row:
+            return None
+
+        role = dict(row)
+        try:
+            if isinstance(role.get("permissions"), str):
+                role["permissions"] = json.loads(role["permissions"])
+        except (json.JSONDecodeError, TypeError):
+            role["permissions"] = []
+
+        return role
 
 
 async def has_permission(user_id: int, permission: str) -> bool:
@@ -523,7 +557,9 @@ async def has_permission(user_id: int, permission: str) -> bool:
     if role.get("name") == "super_admin":
         return True
     try:
-        perms = json.loads(role.get("permissions", "[]"))
+        perms = role.get("permissions", [])
+        if isinstance(perms, str):
+            perms = json.loads(perms or "[]")
         return permission in perms
     except (json.JSONDecodeError, TypeError):
         return False
@@ -599,7 +635,7 @@ def create_token(user_id: int, username: str, is_admin: bool, role: dict | None 
     payload = {
         "user_id": user_id,
         "username": username,
-        "role": role.get("name") if role else ("super_admin" if is_admin else "student"),
+        "role": role.get("name") if role else ("super_admin" if is_admin else DEFAULT_ROLE_NAME),
         "permissions": role.get("permissions") if role else [],
         "sid": SERVER_START_ID,
         "jti": uuid.uuid4().hex,
@@ -626,7 +662,7 @@ def create_refresh_token(user_id: int, username: str, is_admin: bool, role: dict
     payload = {
         "user_id": user_id,
         "username": username,
-        "role": role.get("name") if role else ("super_admin" if is_admin else "student"),
+        "role": role.get("name") if role else ("super_admin" if is_admin else DEFAULT_ROLE_NAME),
         "permissions": role.get("permissions") if role else [],
         "type": "refresh",
         "sid": SERVER_START_ID,

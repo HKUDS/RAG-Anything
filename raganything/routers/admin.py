@@ -37,6 +37,7 @@ from raganything.services.auth import (
     has_permission as _auth_has_permission,
     is_token_revoked as _auth_is_token_revoked,
 )
+import raganything.services.runtime_settings as runtime_settings
 
 router = APIRouter(tags=["admin"])
 
@@ -111,7 +112,7 @@ def _serialize_settings() -> dict:
 
 
 # 恢复默认值以服务启动时的配置为准，避免覆盖部署层自定义的环境变量基线。
-SETTINGS_BOOT_DEFAULTS = _serialize_settings()
+SETTINGS_BOOT_DEFAULTS = runtime_settings.get_boot_settings_snapshot()
 
 
 def _settings_update_from_snapshot(snapshot: dict) -> SettingsUpdate:
@@ -235,6 +236,7 @@ def _apply_settings_update(settings: SettingsUpdate) -> dict:
         os.environ["RRF_ENABLED_CHANNELS"] = settings.enabled_channels
         changes["enabled_channels"] = settings.enabled_channels
 
+    runtime_settings.sync_persisted_settings_from_env()
     _invalidate_settings_runtime_caches(changes)
 
     return changes
@@ -861,6 +863,33 @@ async def monitor_logs(limit: int = 50, _perm: None = Depends(require_permission
         is_admin=is_admin,
     )
     return {"events": events}
+
+
+@router.get("/health/vision-embedding")
+async def vision_embedding_health(
+    _perm: None = Depends(require_permission(Permission.SETTINGS_READ)),
+):
+    """Run a minimal, admin-only vision embedding authorization probe."""
+    if os.getenv("VISION_SEARCH_ENABLED", "false").lower() != "true":
+        return {
+            "status": "disabled",
+            "reason": "VISION_SEARCH_ENABLED is false",
+        }
+
+    from raganything.embedding import create_vision_embed_func
+
+    adapter = create_vision_embed_func(working_dir=shared.WORKING_DIR)
+    if adapter is None:
+        return {
+            "status": "disabled",
+            "reason": "vision_embedding_not_configured",
+        }
+
+    result = await adapter.health_check()
+    return {
+        "status": "ok" if result.get("available") else "blocked",
+        **result,
+    }
 
 
 @router.get("/health")

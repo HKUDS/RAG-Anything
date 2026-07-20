@@ -54,6 +54,8 @@ def main():
     migration_files = [
         ROOT / "migrations" / "001_pg_schema.sql",
         ROOT / "migrations" / "013_monitor_events.sql",
+        ROOT / "migrations" / "016_knowledge_chunk_tags.sql",
+        ROOT / "migrations" / "017_automatic_tag_assignments.sql",
     ]
     env_file = ROOT / ".env"
 

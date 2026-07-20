@@ -1,15 +1,22 @@
-import { useState, useEffect, useLayoutEffect, useRef, useCallback } from 'react'
-import { Plus, Layers, Trash2, Clock, Database, FileText, CircleDot, X, Search, UserRound } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react'
+import { Plus, Layers, Trash2, Clock, Database, FileText, CircleDot, X, Search, UserRound, ListFilter, ChevronDown, Check, ArrowDownNarrowWide, ArrowUpNarrowWide } from 'lucide-react'
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion'
+import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import { api, setCurrentKB, getCurrentKB } from '../utils/api'
 import Pagination from '../components/Pagination'
+import { sortKnowledgeBases } from '../utils/kbSorting'
 
 const KB_GRID_ROWS = 3
 const FALLBACK_GRID_COLUMNS = 4
 const FALLBACK_PAGE_SIZE = FALLBACK_GRID_COLUMNS * KB_GRID_ROWS
 const KB_LIST_CACHE_KEY = 'raganything:kb-list-cache'
 const KB_STATS_CACHE_KEY = 'raganything:kb-stats-cache'
+const SORT_OPTIONS = [
+  { value: 'updated', label: '更新时间', Icon: Clock },
+  { value: 'entities', label: '实体数量', Icon: CircleDot },
+  { value: 'documents', label: '文档数量', Icon: FileText },
+]
 
 function readCachedKBList() {
   if (typeof window === 'undefined') return []
@@ -93,6 +100,7 @@ function KBSelector({ kbs, kbStats, onSwitch, onDelete, deletingKB, gridRef, res
     if (!iso) return ''
     try {
       const d = new Date(iso)
+      if (Number.isNaN(d.getTime())) return iso.slice(0, 10)
       return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
     } catch {
       return iso.slice(0, 10)
@@ -159,9 +167,9 @@ function KBSelector({ kbs, kbStats, onSwitch, onDelete, deletingKB, gridRef, res
             </div>
 
             <div className="directory-footer resource-card-kb-footer text-2xs text-ink-muted">
-              <span className="resource-card-kb-meta" title="创建日期">
+              <span className="resource-card-kb-meta" title="更新时间">
                 <Clock size={11} />
-                <span>创建 {kb.created ? formatDate(kb.created) : '暂无日期'}</span>
+                <span>更新 {formatDate(kb.last_content_updated_at || kb.created) || '暂无日期'}</span>
               </span>
               {kb.owner_username && (
                 <span className="resource-card-kb-owner" title={`所有者：${kb.owner_username}`}>
@@ -239,15 +247,27 @@ export default function KnowledgePage() {
   const [kbStats, setKbStats] = useState(() => initialCachedStatsRef.current)
   const [loadError, setLoadError] = useState(false)
   const [search, setSearch] = useState('')
+  const [sortField, setSortField] = useState('updated')
+  const [sortDirection, setSortDirection] = useState('desc')
+  const [showSortMenu, setShowSortMenu] = useState(false)
+  const [sortMenuPosition, setSortMenuPosition] = useState(null)
+  const [sortMenuFocusIndex, setSortMenuFocusIndex] = useState(0)
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(FALLBACK_PAGE_SIZE)
   const gridRef = useRef(null)
   const createInputRef = useRef()
+  const sortControlRef = useRef(null)
+  const sortTriggerRef = useRef(null)
+  const sortMenuRef = useRef(null)
+  const sortMenuItemRefs = useRef({})
+  const sortValueRef = useRef(null)
+  const sortMenuCloseTimeoutRef = useRef(null)
   const kbStatsRef = useRef({})
   const staleStatsRef = useRef(new Set(Object.keys(initialCachedStatsRef.current)))
   const pendingStatsRef = useRef(new Set())
   const statsGenRef = useRef(0)
   const [statsReloadKey, setStatsReloadKey] = useState(0)
+  const prefersReducedMotion = useReducedMotion()
 
   const loadStatsForKBs = useCallback(async (kbNames) => {
     const names = [...new Set((kbNames || []).filter(Boolean))]
@@ -477,18 +497,29 @@ export default function KnowledgePage() {
   }, [loadKBs])
 
   const normalizedSearch = search.trim().toLowerCase()
-  const filteredKBs = kbs.filter(kb => {
+  const filteredKBs = useMemo(() => kbs.filter(kb => {
     if (!normalizedSearch) return true
     return [
       kb.name,
       kb.label,
       kb.owner_username,
     ].some(value => String(value || '').toLowerCase().includes(normalizedSearch))
-  })
+  }), [kbs, normalizedSearch])
+  const sortedKBs = useMemo(
+    () => sortKnowledgeBases(filteredKBs, kbStats, sortField, sortDirection),
+    [filteredKBs, kbStats, sortField, sortDirection]
+  )
+  const kbNamesKey = kbs.map(kb => kb.name).join('|')
+  const needsAllStats = sortField === 'documents' || sortField === 'entities'
 
-  const totalPages = Math.max(1, Math.ceil(filteredKBs.length / pageSize))
+  useEffect(() => {
+    if (!needsAllStats) return
+    loadStatsForKBs(kbs.map(kb => kb.name))
+  }, [kbNamesKey, kbs, loadStatsForKBs, needsAllStats])
+
+  const totalPages = Math.max(1, Math.ceil(sortedKBs.length / pageSize))
   const currentPage = Math.min(page, totalPages)
-  const paginatedKBs = filteredKBs.slice((currentPage - 1) * pageSize, currentPage * pageSize)
+  const paginatedKBs = sortedKBs.slice((currentPage - 1) * pageSize, currentPage * pageSize)
   const paginatedKBNamesKey = paginatedKBs.map(kb => kb.name).join('|')
 
   useEffect(() => {
@@ -500,6 +531,187 @@ export default function KnowledgePage() {
       setPage(totalPages)
     }
   }, [page, totalPages])
+
+  const activeSortOption = SORT_OPTIONS.find(option => option.value === sortField) || SORT_OPTIONS[0]
+  const ActiveSortIcon = activeSortOption.Icon
+  const directionLabel = sortDirection === 'asc' ? '当前为升序，切换为降序' : '当前为降序，切换为升序'
+  const sortDirectionDescription = sortField === 'updated'
+    ? (sortDirection === 'asc' ? '最早优先' : '最新优先')
+    : (sortDirection === 'asc' ? '从少到多' : '从多到少')
+
+  const clearSortMenuCloseTimeout = useCallback(() => {
+    if (sortMenuCloseTimeoutRef.current === null) return
+    window.clearTimeout(sortMenuCloseTimeoutRef.current)
+    sortMenuCloseTimeoutRef.current = null
+  }, [])
+
+  const closeSortMenu = useCallback((restoreTriggerFocus = false) => {
+    clearSortMenuCloseTimeout()
+    setShowSortMenu(false)
+    setSortMenuPosition(null)
+    if (restoreTriggerFocus) {
+      window.requestAnimationFrame(() => sortTriggerRef.current?.focus())
+    }
+  }, [clearSortMenuCloseTimeout])
+
+  const scheduleSortMenuClose = useCallback(() => {
+    clearSortMenuCloseTimeout()
+    sortMenuCloseTimeoutRef.current = window.setTimeout(() => {
+      sortMenuCloseTimeoutRef.current = null
+      closeSortMenu()
+    }, 200)
+  }, [clearSortMenuCloseTimeout, closeSortMenu])
+
+  const openSortMenu = useCallback(() => {
+    clearSortMenuCloseTimeout()
+    const selectedIndex = Math.max(0, SORT_OPTIONS.findIndex(option => option.value === sortField))
+    setSortMenuFocusIndex(selectedIndex)
+    setShowSortMenu(true)
+  }, [clearSortMenuCloseTimeout, sortField])
+
+  useEffect(() => () => {
+    clearSortMenuCloseTimeout()
+  }, [clearSortMenuCloseTimeout])
+
+  const focusSortMenuOption = useCallback((index) => {
+    const normalizedIndex = (index + SORT_OPTIONS.length) % SORT_OPTIONS.length
+    setSortMenuFocusIndex(normalizedIndex)
+    window.requestAnimationFrame(() => sortMenuItemRefs.current[normalizedIndex]?.focus())
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!showSortMenu || !sortControlRef.current || !sortMenuRef.current) return undefined
+
+    const updateSortMenuPosition = () => {
+      const controlRect = sortControlRef.current.getBoundingClientRect()
+      const menuRect = sortMenuRef.current.getBoundingClientRect()
+      const viewportMargin = 12
+      const left = Math.max(
+        viewportMargin,
+        Math.min(controlRect.right - menuRect.width, window.innerWidth - menuRect.width - viewportMargin)
+      )
+      const belowTop = controlRect.bottom + 8
+      const top = belowTop + menuRect.height <= window.innerHeight - viewportMargin
+        ? belowTop
+        : Math.max(viewportMargin, controlRect.top - menuRect.height - 8)
+
+      setSortMenuPosition({ top, left })
+    }
+
+    updateSortMenuPosition()
+    window.addEventListener('resize', updateSortMenuPosition)
+    window.addEventListener('scroll', updateSortMenuPosition, true)
+    window.requestAnimationFrame(() => sortMenuItemRefs.current[sortMenuFocusIndex]?.focus())
+
+    return () => {
+      window.removeEventListener('resize', updateSortMenuPosition)
+      window.removeEventListener('scroll', updateSortMenuPosition, true)
+    }
+  }, [showSortMenu, sortMenuFocusIndex])
+
+  useEffect(() => {
+    if (!showSortMenu) return undefined
+
+    const isInsideSortControl = (target) => (
+      sortControlRef.current?.contains(target) || sortMenuRef.current?.contains(target)
+    )
+    const closeOnOutsidePointer = (event) => {
+      if (!isInsideSortControl(event.target)) closeSortMenu()
+    }
+    const closeOnFocusAway = (event) => {
+      if (!isInsideSortControl(event.target)) closeSortMenu()
+    }
+    const closeOnEscape = (event) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      closeSortMenu(true)
+    }
+
+    document.addEventListener('pointerdown', closeOnOutsidePointer)
+    document.addEventListener('focusin', closeOnFocusAway)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOnOutsidePointer)
+      document.removeEventListener('focusin', closeOnFocusAway)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [closeSortMenu, showSortMenu])
+
+  const selectSortField = (field) => {
+    setSortField(field)
+    setPage(1)
+    closeSortMenu(true)
+  }
+
+  const handleSortMenuKeyDown = (event, index) => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      focusSortMenuOption(index + 1)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      focusSortMenuOption(index - 1)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      focusSortMenuOption(0)
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      focusSortMenuOption(SORT_OPTIONS.length - 1)
+    } else if (event.key === 'Escape') {
+      event.preventDefault()
+      closeSortMenu(true)
+    } else if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      selectSortField(SORT_OPTIONS[index].value)
+    }
+  }
+
+  const sortMenu = typeof document === 'undefined' ? null : createPortal(
+    <AnimatePresence>
+      {showSortMenu && (
+        <motion.div
+          ref={sortMenuRef}
+          id="kb-sort-options"
+          className="resource-sort-menu"
+          initial={prefersReducedMotion ? false : { opacity: 0, y: -4, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4, scale: 0.98 }}
+          transition={{ duration: prefersReducedMotion ? 0 : 0.16, ease: 'easeOut' }}
+          style={{
+            top: sortMenuPosition?.top ?? 0,
+            left: sortMenuPosition?.left ?? 0,
+            visibility: sortMenuPosition ? 'visible' : 'hidden',
+          }}
+          onMouseEnter={clearSortMenuCloseTimeout}
+          onMouseLeave={scheduleSortMenuClose}
+          role="menu"
+          aria-label="选择知识库排序依据"
+        >
+          {SORT_OPTIONS.map(({ value, label, Icon }, index) => {
+            const isSelected = sortField === value
+            return (
+              <button
+                key={value}
+                ref={element => { sortMenuItemRefs.current[index] = element }}
+                type="button"
+                role="menuitemradio"
+                className={`resource-sort-option${isSelected ? ' is-selected' : ''}`}
+                onClick={() => selectSortField(value)}
+                onKeyDown={event => handleSortMenuKeyDown(event, index)}
+                onFocus={() => setSortMenuFocusIndex(index)}
+                aria-checked={isSelected}
+                tabIndex={index === sortMenuFocusIndex ? 0 : -1}
+              >
+                <Icon size={16} aria-hidden="true" />
+                <span>{label}</span>
+                {isSelected && <Check size={16} className="resource-sort-option-check" aria-hidden="true" />}
+              </button>
+            )
+          })}
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body
+  )
 
   return (
     <div className="resource-page resource-page-kbs">
@@ -521,6 +733,7 @@ export default function KnowledgePage() {
             <input
               className="input-field w-full pl-10 pr-4 text-sm"
               placeholder="搜索知识库名称或拥有者"
+              aria-label="搜索知识库名称或拥有者"
               value={search}
               onChange={e => {
                 setSearch(e.target.value)
@@ -528,9 +741,57 @@ export default function KnowledgePage() {
               }}
             />
           </div>
-          <div className="resource-count">
-            共 {kbs.length} 个知识库
-            {normalizedSearch ? `，匹配到 ${filteredKBs.length} 个结果` : ''}
+          <div className="resource-toolbar-actions">
+            <div ref={sortControlRef} className="resource-sort-controls" role="group" aria-label="知识库排序">
+              <button
+                ref={sortTriggerRef}
+                type="button"
+                className="resource-sort-trigger"
+                onClick={() => {
+                  if (showSortMenu) closeSortMenu()
+                  else openSortMenu()
+                }}
+                aria-expanded={showSortMenu}
+                aria-controls="kb-sort-options"
+                aria-haspopup="menu"
+                aria-label={`排序依据：${activeSortOption.label}。当前排序方式：${sortDirectionDescription}`}
+              >
+                <ListFilter size={16} aria-hidden="true" />
+                <span className="resource-sort-prefix">排序</span>
+                <span
+                  ref={sortValueRef}
+                  className="resource-sort-value"
+                  onMouseEnter={openSortMenu}
+                  onMouseLeave={scheduleSortMenuClose}
+                >
+                  <ActiveSortIcon size={15} aria-hidden="true" />
+                  {activeSortOption.label}
+                </span>
+                <ChevronDown size={16} className={`resource-sort-chevron${showSortMenu ? ' is-open' : ''}`} aria-hidden="true" />
+              </button>
+              <span className="resource-sort-divider" aria-hidden="true" />
+              <button
+                type="button"
+                className="resource-sort-direction"
+                onClick={() => {
+                  setSortDirection(direction => direction === 'asc' ? 'desc' : 'asc')
+                  setPage(1)
+                  closeSortMenu()
+                }}
+                title={directionLabel}
+                aria-label={directionLabel}
+                aria-pressed={sortDirection === 'asc'}
+              >
+                {sortDirection === 'asc'
+                  ? <ArrowUpNarrowWide size={17} aria-hidden="true" />
+                  : <ArrowDownNarrowWide size={17} aria-hidden="true" />}
+              </button>
+            </div>
+            {sortMenu}
+            <div className="resource-count">
+              共 {kbs.length} 个知识库
+              {normalizedSearch ? `，匹配到 ${filteredKBs.length} 个结果` : ''}
+            </div>
           </div>
         </div>
 
@@ -544,7 +805,7 @@ export default function KnowledgePage() {
           reserveRows={paginatedKBs.length > 0}
         />
 
-        {filteredKBs.length > 0 && (
+        {sortedKBs.length > 0 && (
           <Pagination page={currentPage} totalPages={totalPages} onPageChange={setPage} className="resource-pagination resource-pagination-kbs" />
         )}
 

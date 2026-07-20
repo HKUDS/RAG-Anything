@@ -145,6 +145,7 @@ class DocProcessorMixin:
         file_path: str,
         *,
         scheme_name: str | None = None,
+        chunking_strategy: str | None = None,
         **updates,
     ) -> Dict[str, Any]:
         """Merge doc_status updates while preserving any existing LightRAG fields."""
@@ -153,6 +154,19 @@ class DocProcessorMixin:
             file_path,
             scheme_name=scheme_name,
         )
+        metadata_update = updates.get("metadata")
+        if isinstance(metadata_update, dict) or chunking_strategy:
+            existing_metadata = current_doc_status.get("metadata") or {}
+            metadata = (
+                dict(existing_metadata)
+                if isinstance(existing_metadata, dict)
+                else {}
+            )
+            if isinstance(metadata_update, dict):
+                metadata.update(metadata_update)
+            if chunking_strategy:
+                metadata["chunking_strategy"] = chunking_strategy
+            updates["metadata"] = metadata
         updated_doc_status = {
             **current_doc_status,
             **updates,
@@ -684,6 +698,7 @@ class DocProcessorMixin:
         split_by_character_only: bool = False,
         doc_id: str | None = None,
         file_name: str | None = None,
+        chunking_strategy: str | None = None,
         **kwargs,
     ):
         """
@@ -744,6 +759,7 @@ class DocProcessorMixin:
                     file_name,
                     status=DocStatus.HANDLING,
                     error_msg="",
+                    chunking_strategy=chunking_strategy,
                 )
 
             # Step 2.5: Set content source for context extraction in multimodal processing
@@ -796,6 +812,7 @@ class DocProcessorMixin:
                     file_name,
                     status=DocStatus.HANDLING,
                     error_msg="",
+                    chunking_strategy=chunking_strategy,
                 )
                 # Register chunk → doc source mappings for citation tracing
                 # After text insertion, LightRAG populates chunks_list in doc_status
@@ -845,6 +862,7 @@ class DocProcessorMixin:
                         file_name,
                         status=DocStatus.FAILED,
                         error_msg=str(exc),
+                        chunking_strategy=chunking_strategy,
                     )
                 except Exception as status_exc:
                     self.logger.debug(
@@ -1155,6 +1173,7 @@ class DocProcessorMixin:
         split_by_character_only: bool = False,
         doc_id: str | None = None,
         display_stats: bool = None,
+        chunking_strategy: str | None = None,
     ):
         """
         Insert content list directly without document parsing
@@ -1235,6 +1254,7 @@ class DocProcessorMixin:
                 file_ref,
                 status=DocStatus.HANDLING,
                 error_msg="",
+                chunking_strategy=chunking_strategy,
             )
 
         # Step 1.5: Set content source for context extraction in multimodal processing
@@ -1286,6 +1306,7 @@ class DocProcessorMixin:
                 file_ref,
                 status=DocStatus.HANDLING,
                 error_msg="",
+                chunking_strategy=chunking_strategy,
             )
             if callback_manager is not None:
                 insert_duration = time.time() - insert_start
@@ -1320,6 +1341,7 @@ class DocProcessorMixin:
                     doc_id, file_ref,
                     status=DocStatus.PROCESSED,
                     error_msg="",
+                    chunking_strategy=chunking_strategy,
                 )
             except RuntimeError:
                 # No event loop available — fall back to sync

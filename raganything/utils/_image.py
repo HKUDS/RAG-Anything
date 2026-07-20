@@ -14,6 +14,21 @@ from pathlib import Path
 from lightrag.utils import logger
 
 
+_IMAGE_FORMAT_MIME_TYPES = {
+    "JPEG": "image/jpeg",
+    "PNG": "image/png",
+    "GIF": "image/gif",
+    "WEBP": "image/webp",
+}
+_IMAGE_SUFFIX_MIME_TYPES = {
+    ".jpeg": "image/jpeg",
+    ".jpg": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+}
+
+
 def encode_image_to_base64(image_path: str) -> str:
     """
     Encode image file to base64 string
@@ -31,6 +46,23 @@ def encode_image_to_base64(image_path: str) -> str:
     except Exception as e:
         logger.error(f"Failed to encode image {image_path}: {e}")
         return ""
+
+
+def image_mime_type(image_path: str | Path) -> str:
+    """Return a VLM-supported MIME type from decoded image bytes when possible."""
+    path = Path(image_path)
+    try:
+        from PIL import Image
+
+        with Image.open(path) as image:
+            image_format = (image.format or "").upper()
+        mime_type = _IMAGE_FORMAT_MIME_TYPES.get(image_format)
+        if mime_type:
+            return mime_type
+    except (ImportError, OSError, ValueError):
+        pass
+
+    return _IMAGE_SUFFIX_MIME_TYPES.get(path.suffix.lower(), "image/jpeg")
 
 
 def validate_image_file(image_path: str, max_size_mb: int = 50) -> bool:

@@ -18,6 +18,7 @@ import time
 from typing import Any
 
 from raganything.agentic_rag.tool_base import Tool
+from raganything.query.tag_scoped_retriever import TagScope, retrieve_tag_scoped_context
 
 
 class SearchTool(Tool):
@@ -44,6 +45,7 @@ class SearchTool(Tool):
         chunk_top_k: int = 20,
         enable_rerank: bool = False,
         include_references: bool = True,
+        tag_scope: TagScope | None = None,
     ):
         """
         Args:
@@ -65,6 +67,7 @@ class SearchTool(Tool):
         self.chunk_top_k = max(1, min(100, parsed_chunk_top_k))
         self.enable_rerank = bool(enable_rerank)
         self.include_references = bool(include_references)
+        self.tag_scope = tag_scope
 
     async def execute(self, input: dict) -> str:
         query = input.get("query", "")
@@ -75,6 +78,17 @@ class SearchTool(Tool):
             return "搜索失败：知识库未初始化"
 
         try:
+            if self.tag_scope is not None:
+                result = await retrieve_tag_scoped_context(
+                    self.rag,
+                    self.tag_scope,
+                    query,
+                    top_k=self.chunk_top_k,
+                    max_total_tokens=8000,
+                )
+                if not result:
+                    return f"标签“{self.tag_scope.tag_name}”范围内没有与问题相关的内容"
+                return result[:8000] if len(result) > 8000 else result
             result = await self.rag.aquery(
                 query,
                 mode=self.query_mode,

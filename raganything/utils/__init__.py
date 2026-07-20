@@ -31,6 +31,7 @@ from raganything.utils._content import (  # noqa: F401 — re-export
 )
 from raganything.utils._image import (  # noqa: F401 — re-export
     encode_image_to_base64,
+    image_mime_type,
     validate_image_file,
 )
 from raganything.utils._insert import (  # noqa: F401 — re-export
@@ -40,6 +41,7 @@ from raganything.utils._insert import (  # noqa: F401 — re-export
 from raganything.utils._general import (  # noqa: F401 — re-export
     beijing_now,
     get_processor_for_type,
+    is_multimodal_processed,
     get_processor_supports,
     error_response,
     success_response,
@@ -69,12 +71,14 @@ __all__ = [
     "separate_content",
     # Image encoding
     "encode_image_to_base64",
+    "image_mime_type",
     "validate_image_file",
     # Text insertion
     "insert_text_content",
     "insert_text_content_with_multimodal_content",
     # Processor dispatch & general
     "get_processor_for_type",
+    "is_multimodal_processed",
     "get_processor_supports",
     "error_response",
     "success_response",

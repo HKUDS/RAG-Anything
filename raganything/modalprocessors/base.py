@@ -12,10 +12,13 @@ Call chain: generate_description_only() → _create_entity_and_chunk()
     → _process_chunk_for_extraction() → extract_entities() → merge_nodes_and_edges()
 """
 
-import re
-import json
-import time
+import asyncio
 import base64
+import inspect
+import json
+import os
+import re
+import time
 from typing import Dict, Any, Tuple, List
 
 from lightrag.utils import (
@@ -28,6 +31,34 @@ from lightrag.kg.shared_storage import get_namespace_data, get_pipeline_status_l
 from lightrag.operate import extract_entities, merge_nodes_and_edges
 
 from raganything.modalprocessors.context import ContextExtractor
+
+
+_DEFAULT_MODAL_CAPTION_TIMEOUT = 90.0
+_MAX_MODAL_CAPTION_TIMEOUT = 300.0
+
+
+def _modal_caption_timeout_seconds() -> float:
+    """Return a bounded timeout for non-critical modal description calls."""
+    raw_timeout = os.getenv(
+        "MULTIMODAL_CAPTION_TIMEOUT", str(_DEFAULT_MODAL_CAPTION_TIMEOUT)
+    )
+    try:
+        timeout = float(raw_timeout)
+    except (TypeError, ValueError):
+        logger.warning(
+            "Invalid MULTIMODAL_CAPTION_TIMEOUT=%r; using %.0fs",
+            raw_timeout,
+            _DEFAULT_MODAL_CAPTION_TIMEOUT,
+        )
+        return _DEFAULT_MODAL_CAPTION_TIMEOUT
+
+    if timeout <= 0:
+        logger.warning(
+            "MULTIMODAL_CAPTION_TIMEOUT must be positive; using %.0fs",
+            _DEFAULT_MODAL_CAPTION_TIMEOUT,
+        )
+        return _DEFAULT_MODAL_CAPTION_TIMEOUT
+    return min(timeout, _MAX_MODAL_CAPTION_TIMEOUT)
 
 
 class BaseModalProcessor:
@@ -75,6 +106,31 @@ class BaseModalProcessor:
         # Content source for context extraction
         self.content_source = None
         self.content_format = "auto"
+
+    async def _call_modal_caption(self, *args, **kwargs):
+        """Invoke a modal description provider without blocking ingestion indefinitely.
+
+        Caption generation enriches a document but is not required for its core
+        lifecycle. A stalled provider must therefore fall through to each
+        processor's existing fallback instead of consuming the upload task's
+        full timeout budget.
+        """
+        if self.modal_caption_func is None:
+            raise RuntimeError("Modal caption function is not configured")
+
+        result = self.modal_caption_func(*args, **kwargs)
+        if not inspect.isawaitable(result):
+            return result
+
+        timeout = _modal_caption_timeout_seconds()
+        try:
+            return await asyncio.wait_for(result, timeout=timeout)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Modal caption generation timed out after %.1fs; using processor fallback",
+                timeout,
+            )
+            raise
 
     def set_content_source(self, content_source: Any, content_format: str = "auto"):
         """Set content source for context extraction

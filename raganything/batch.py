@@ -42,6 +42,7 @@ class BatchMixin:
         file_extensions: Optional[List[str]] = None,
         recursive: bool = None,
         max_workers: int = None,
+        chunking_strategy: str | None = None,
     ):
         """
         Process all supported files in a folder
@@ -128,6 +129,7 @@ class BatchMixin:
                         parse_method=parse_method,
                         split_by_character=split_by_character,
                         split_by_character_only=split_by_character_only,
+                        chunking_strategy=chunking_strategy,
                         file_name=(
                             None
                             if not is_in_subdir

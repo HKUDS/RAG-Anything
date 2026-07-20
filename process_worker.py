@@ -13,6 +13,17 @@ import io
 from pathlib import Path
 from functools import partial
 
+# Set the numeric-library limit before importing Docling, LightRAG, or any
+# library that may load OpenBLAS.  The parent process overrides this value for
+# managed uploads; this guard also protects manual worker runs.
+try:
+    _worker_threads = int(os.getenv("DOCUMENT_WORKER_MAX_THREADS", "1"))
+except ValueError:
+    _worker_threads = 1
+_worker_threads = max(1, min(_worker_threads, 4))
+for _thread_env in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    os.environ[_thread_env] = str(_worker_threads)
+
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 # ── 配置来源：os.environ ────────────────────────────────
@@ -29,6 +40,7 @@ from raganything import RAGAnything, RAGAnythingConfig
 from raganything.embedding import create_vision_embed_func, make_cached_embed_func
 from raganything.chunking import STRATEGY_META
 from raganything.processor import get_pending_background_tasks
+from raganything.utils.pdf_fallback import extract_pdf_embedded_images
 from raganything.utils.process_lock import FileLock, get_file_lock_path
 
 # 所有配置从 os.environ 读取（继承自父进程，反映 Admin API 最新设置）
@@ -38,6 +50,7 @@ LLM_MODEL = os.getenv("LLM_MODEL", "qwen-plus")
 EMB_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
 EMB_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
 CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
+_VLM_IMAGE_MIME_TYPES = {"image/gif", "image/jpeg", "image/png", "image/webp"}
 
 
 
@@ -130,7 +143,8 @@ async def create_rag(parser=None, working_dir=None, chunking_strategy=None):
 
     VISION_MODEL = os.getenv("VISION_MODEL", "qwen-vl-plus")
 
-    async def vision_func(prompt, system_prompt=None, history_messages=None, image_data=None, messages=None, **kw):
+    async def vision_func(prompt, system_prompt=None, history_messages=None,
+                          image_data=None, image_mime_type=None, messages=None, **kw):
         """VLM 视觉模型函数（async）"""
         if messages is not None:
             return await openai_complete_if_cache(
@@ -138,10 +152,15 @@ async def create_rag(parser=None, working_dir=None, chunking_strategy=None):
                 messages=messages, api_key=API_KEY, base_url=BASE_URL, **kw,
             )
         elif image_data is not None:
+            mime_type = (
+                image_mime_type
+                if image_mime_type in _VLM_IMAGE_MIME_TYPES
+                else "image/jpeg"
+            )
             msgs = [
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}},
+                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_data}"}},
                 ]},
             ]
             if system_prompt:
@@ -151,7 +170,9 @@ async def create_rag(parser=None, working_dir=None, chunking_strategy=None):
                 messages=msgs, api_key=API_KEY, base_url=BASE_URL, **kw,
             )
         else:
-            return llm_func(prompt, system_prompt, history_messages or [], **kw)
+            return await llm_func(
+                prompt, system_prompt, history_messages or [], **kw
+            )
 
     _raw_embed_func = partial(
         openai_embed.func, model=EMB_MODEL, api_key=API_KEY, base_url=BASE_URL,
@@ -315,6 +336,16 @@ async def _await_pending_background_tasks() -> None:
         print(f"[WORKER] 等待后台任务时出错: {exc}", flush=True)
 
 
+async def _flush_background_tasks_and_finalize(rag, filename: str) -> None:
+    """Complete background multimodal writes before closing LightRAG storage."""
+    print(f"[PROGRESS] phase=multimodal-tasks status=start file={filename}", flush=True)
+    await _await_pending_background_tasks()
+    print(f"[PROGRESS] phase=multimodal-tasks status=done file={filename}", flush=True)
+    print(f"[PROGRESS] phase=graph-building status=start file={filename}", flush=True)
+    await rag.finalize_storages()
+    print(f"[PROGRESS] phase=graph-building status=done file={filename}", flush=True)
+
+
 async def process_file(file_path: str, kb_name: str, chunking_strategy: str = "",
                      enable_image: bool | None = None, enable_table: bool | None = None,
                      enable_equation: bool | None = None, enable_video: bool | None = None):
@@ -425,7 +456,8 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
             if text_content.strip():
                 await rag.insert_content_list(
                     [{"type": "text", "text": text_content, "page_idx": 0}],
-                    file_path=filename
+                    file_path=filename,
+                    chunking_strategy=strategy,
                 )
             print(f"[PROGRESS] phase=parsing status=done file={filename}", flush=True)
         else:
@@ -433,7 +465,11 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
             docling_ok = False
             print(f"[PROGRESS] phase=parsing status=start file={filename}", flush=True)
             try:
-                await rag.process_document_complete(safe_path, output_dir=output_dir)
+                await rag.process_document_complete(
+                    safe_path,
+                    output_dir=output_dir,
+                    chunking_strategy=strategy,
+                )
                 docling_ok = True
             except Exception as e:
                 err_msg = str(e)
@@ -466,7 +502,11 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                                 with open(mf, "w", encoding="utf-8") as f:
                                     f.write("\n".join(new_lines))
                             print("[WORKER] 预处理完成，重试中...", flush=True)
-                            await rag.process_document_complete(safe_path, output_dir=output_dir)
+                            await rag.process_document_complete(
+                                safe_path,
+                                output_dir=output_dir,
+                                chunking_strategy=strategy,
+                            )
                             docling_ok = True
                         else:
                             print("[WORKER] 未找到解析输出文件，使用 VLM OCR 兜底", flush=True)
@@ -491,23 +531,41 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                             if info.get("chunks_count", 0) > 0:
                                 chunks_ok = True
                             break
-                if not docling_ok or not chunks_ok:
+                # A PG-backed worker may not have a local JSON doc-status file.
+                # In that case a successful Docling run is not evidence that it
+                # produced zero chunks, so only use the local status result when
+                # it was actually available.
+                chunks_status_known = sp.exists()
+                needs_fallback = not docling_ok or (chunks_status_known and not chunks_ok)
+                if needs_fallback:
                     print(f"[WORKER] VLM OCR 兜底: {filename}", flush=True)
                     try:
                         ocr_text = await _vlm_ocr_document(file_path)
+                        fallback_content = []
                         if ocr_text.strip():
+                            fallback_content.append(
+                                {"type": "text", "text": ocr_text, "page_idx": 0}
+                            )
+                        if (
+                            ext == "pdf"
+                            and os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower()
+                            == "true"
+                        ):
+                            fallback_content.extend(
+                                extract_pdf_embedded_images(file_path, output_dir)
+                            )
+                        if fallback_content:
                             await rag.insert_content_list(
-                                [{"type": "text", "text": ocr_text, "page_idx": 0}],
-                                file_path=filename
+                                fallback_content,
+                                file_path=filename,
+                                chunking_strategy=strategy,
                             )
                             print(f"[WORKER] VLM OCR 完成: {len(ocr_text)} 字符", flush=True)
                     except Exception as e2:
                         print(f"[WORKER] VLM OCR 失败: {e2}", flush=True)
                         raise
 
-        print(f"[PROGRESS] phase=graph-building status=start file={filename}", flush=True)
-        await rag.finalize_storages()
-        print(f"[PROGRESS] phase=graph-building status=done file={filename}", flush=True)
+        await _flush_background_tasks_and_finalize(rag, filename)
 
         # Verify that chunks were actually created — if the merging/extraction
         # stage failed silently, the document status will report zero chunks.
@@ -549,17 +607,10 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
 
         print(f"[WORKER] 完成: {filename}", flush=True)
 
-        # Wait for background multimodal tasks before exiting.
-        # If the subprocess exits too early, async tasks (VLM image captions,
-        # table analysis) are killed mid-flight and data is lost.
-        print(f"[PROGRESS] phase=multimodal-tasks status=start file={filename}", flush=True)
-        await _await_pending_background_tasks()
-        print(f"[PROGRESS] phase=multimodal-tasks status=done file={filename}", flush=True)
-
     except Exception as e:
         # 兜底：任何未捕获异常都将文档标记为失败，避免永久卡在 handling
         import traceback
-        print(f"[WORKER] 未捕获异常: {e}", flush=True)
+        print(f"[WORKER] ERROR: unhandled {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
         _fix_stuck_doc(filename, target_dir, f"Worker 异常退出: {str(e)[:200]}")
         sys.exit(1)

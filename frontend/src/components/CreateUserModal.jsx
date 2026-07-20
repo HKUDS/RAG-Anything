@@ -1,13 +1,15 @@
-﻿import { useState, useEffect } from 'react'
-import { X, UserPlus, Loader2, Check, Circle } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Check, Circle, Loader2, UserPlus } from 'lucide-react'
+import { UserDialog } from './UserDialog'
+import UserRoleSelect from './UserRoleSelect'
 
-function checkPasswordStrength(pw) {
+function checkPasswordStrength(password) {
   return {
-    length: pw.length >= 8,
-    upper: /[A-Z]/.test(pw),
-    lower: /[a-z]/.test(pw),
-    digit: /[0-9]/.test(pw),
-    special: /[^A-Za-z0-9]/.test(pw),
+    length: password.length >= 8,
+    upper: /[A-Z]/.test(password),
+    lower: /[a-z]/.test(password),
+    digit: /[0-9]/.test(password),
+    special: /[^A-Za-z0-9]/.test(password),
     score() {
       return [this.upper, this.lower, this.digit, this.special].filter(Boolean).length
     },
@@ -21,126 +23,159 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
   const [roleId, setRoleId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [strength, setStrength] = useState(null)
+  const usernameRef = useRef(null)
 
-  // 从角色列表中推导默认角色 ID，默认使用“学生”
   useEffect(() => {
-    if (!roles || roles.length === 0) return
-    const student = roles.find(r => r.name === 'student')
-    if (student) setRoleId(student.id)
+    if (!roles?.length) return
+    const studentRole = roles.find((role) => role.name === 'student')
+    setRoleId((currentRoleId) => currentRoleId ?? studentRole?.id ?? null)
   }, [roles])
 
-  useEffect(() => { setStrength(checkPasswordStrength(password)) }, [password])
-
-  useEffect(() => {
-    if (!isOpen) return
-    const handleEsc = (e) => { if (e.key === 'Escape') onClose() }
-    document.addEventListener('keydown', handleEsc)
-    return () => document.removeEventListener('keydown', handleEsc)
-  }, [isOpen, onClose])
+  const handleRequestClose = useCallback(() => {
+    if (!loading) onClose()
+  }, [loading, onClose])
 
   if (!isOpen) return null
 
-  const canSubmit = username.trim().length >= 2 && email.includes('@') && strength && strength.score() >= 3
+  const strength = password ? checkPasswordStrength(password) : null
+  const canSubmit = username.trim().length >= 2
+    && email.includes('@')
+    && Boolean(roleId)
+    && strength?.score() >= 3
 
-  const handleSubmit = async (e) => {
-    e.preventDefault()
+  const handleSubmit = async (event) => {
+    event.preventDefault()
     setError('')
     if (!canSubmit) return
 
     setLoading(true)
     try {
       const token = JSON.parse(localStorage.getItem('raganything_auth')).token
-      const res = await fetch('/api/admin/users', {
+      const response = await fetch('/api/admin/users', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ username: username.trim(), email: email.trim(), password, role_id: roleId }),
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          username: username.trim(),
+          email: email.trim(),
+          password,
+          role_id: roleId,
+        }),
       })
-      const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`)
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`)
+
       onCreated?.(data.user)
-      const studentRole = (roles || []).find(r => r.name === 'student')
-      setUsername(''); setEmail(''); setPassword(''); setRoleId(studentRole?.id || null); setError('')
+      const studentRole = (roles || []).find((role) => role.name === 'student')
+      setUsername('')
+      setEmail('')
+      setPassword('')
+      setRoleId(studentRole?.id ?? null)
+      setError('')
       onClose()
-    } catch (e) {
-      setError(e.message)
+    } catch (requestError) {
+      setError(requestError.message)
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm" role="dialog" aria-modal="true" aria-label="创建用户">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 mx-4">
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-base font-semibold text-ink-primary flex items-center gap-2">
-            <UserPlus size={18} className="text-sky-500" /> 创建用户
-          </h3>
-          <button onClick={onClose} aria-label="关闭" className="text-ink-muted hover:text-ink-body transition-colors">
-            <X size={18} aria-hidden="true" />
+    <UserDialog
+      isOpen={isOpen}
+      title="创建用户"
+      icon={<UserPlus size={18} />}
+      onRequestClose={handleRequestClose}
+      closeDisabled={loading}
+      closeLabel="关闭创建用户弹层"
+      initialFocusRef={usernameRef}
+      footer={(
+        <div className="flex gap-3">
+          <button type="button" onClick={handleRequestClose} disabled={loading} className="btn-secondary flex-1 py-2.5 text-sm">
+            取消
+          </button>
+          <button
+            type="submit"
+            form="create-user-form"
+            disabled={loading || !canSubmit}
+            className="btn-primary flex-1 py-2.5 text-sm flex items-center justify-center gap-1.5 disabled:opacity-50"
+          >
+            {loading ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
+            {loading ? '创建中…' : '创建'}
           </button>
         </div>
+      )}
+    >
+      {error && (
+        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs text-rose-600" role="alert">
+          {error}
+        </div>
+      )}
 
-        {error && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-600 text-xs">{error}</div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-ink-body mb-1">用户名 *</label>
-            <input className="input-field text-sm py-2 w-full" placeholder="至少 2 个字符" value={username}
-              onChange={e => setUsername(e.target.value)} autoFocus />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-body mb-1">邮箱 *</label>
-            <input className="input-field text-sm py-2 w-full" type="email" placeholder="user@example.com" value={email}
-              onChange={e => setEmail(e.target.value)} />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-body mb-1">密码 *</label>
-            <input className="input-field text-sm py-2 w-full" type="password" placeholder="至少 8 位，包含 3/4 类字符" value={password}
-              onChange={e => setPassword(e.target.value)} />
-            {password && strength && (
-              <div className="mt-2 space-y-1">
-                <div className={`flex items-center gap-1.5 text-xs ${strength.length ? 'text-sage-600' : 'text-ink-muted'}`}>
-                  {strength.length ? <Check size={11} /> : <Circle size={11} />} 至少 8 位
-                </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.upper ? 'text-sage-600' : 'text-ink-muted'}`}>
-                  {strength.upper ? <Check size={11} /> : <Circle size={11} />} 大写字母
-                </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.lower ? 'text-sage-600' : 'text-ink-muted'}`}>
-                  {strength.lower ? <Check size={11} /> : <Circle size={11} />} 小写字母
-                </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.digit ? 'text-sage-600' : 'text-ink-muted'}`}>
-                  {strength.digit ? <Check size={11} /> : <Circle size={11} />} 数字
-                </div>
-                <div className={`flex items-center gap-1.5 text-xs ${strength.special ? 'text-sage-600' : 'text-ink-muted'}`}>
-                  {strength.special ? <Check size={11} /> : <Circle size={11} />} 特殊字符
-                </div>
-                <div className="text-xs text-ink-muted mt-1">
-                  满足 {strength.score()} / 4 类 {strength.score() >= 3 ? '' : '（需要至少 3 类）'}
-                </div>
+      <form id="create-user-form" onSubmit={handleSubmit} className="space-y-4" noValidate>
+        <div>
+          <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="create-username">用户名 *</label>
+          <input
+            ref={usernameRef}
+            id="create-username"
+            className="input-field text-sm py-2 w-full"
+            placeholder="至少 2 个字符"
+            value={username}
+            onChange={(event) => setUsername(event.target.value)}
+            autoComplete="username"
+            required
+            minLength={2}
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="create-email">邮箱 *</label>
+          <input
+            id="create-email"
+            className="input-field text-sm py-2 w-full"
+            type="email"
+            placeholder="user@example.com"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            required
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="create-password">密码 *</label>
+          <input
+            id="create-password"
+            className="input-field text-sm py-2 w-full"
+            type="password"
+            placeholder="至少 8 位，包含 3/4 类字符"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="new-password"
+            required
+          />
+          {password && strength && (
+            <div className="mt-2 space-y-1" aria-live="polite">
+              <div className={`flex items-center gap-1.5 text-xs ${strength.length ? 'text-sage-600' : 'text-ink-muted'}`}>
+                {strength.length ? <Check size={11} /> : <Circle size={11} />} 至少 8 位
               </div>
-            )}
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-ink-body mb-1">角色</label>
-            <select className="input-field text-sm py-2 w-full" value={roleId} onChange={e => setRoleId(Number(e.target.value))}>
-              {(roles || []).map(r => (
-                <option key={r.id} value={r.id}>{r.name} — {r.description}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex gap-2 pt-2">
-            <button type="button" onClick={onClose} className="btn-secondary flex-1 py-2 text-sm">取消</button>
-            <button type="submit" disabled={loading || !canSubmit}
-              className="btn-primary flex-1 py-2 text-sm flex items-center justify-center gap-1.5 disabled:opacity-50">
-              {loading ? <Loader2 size={14} className="animate-spin" /> : <UserPlus size={14} />}
-              {loading ? '创建中…' : '创建'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+              <div className={`flex items-center gap-1.5 text-xs ${strength.upper ? 'text-sage-600' : 'text-ink-muted'}`}>
+                {strength.upper ? <Check size={11} /> : <Circle size={11} />} 大写字母
+              </div>
+              <div className={`flex items-center gap-1.5 text-xs ${strength.lower ? 'text-sage-600' : 'text-ink-muted'}`}>
+                {strength.lower ? <Check size={11} /> : <Circle size={11} />} 小写字母
+              </div>
+              <div className={`flex items-center gap-1.5 text-xs ${strength.digit ? 'text-sage-600' : 'text-ink-muted'}`}>
+                {strength.digit ? <Check size={11} /> : <Circle size={11} />} 数字
+              </div>
+              <div className={`flex items-center gap-1.5 text-xs ${strength.special ? 'text-sage-600' : 'text-ink-muted'}`}>
+                {strength.special ? <Check size={11} /> : <Circle size={11} />} 特殊字符
+              </div>
+              <div className="text-xs text-ink-muted mt-1">
+                满足 {strength.score()} / 4 类 {strength.score() >= 3 ? '' : '（需要至少 3 类）'}
+              </div>
+            </div>
+          )}
+        </div>
+        <UserRoleSelect id="create-role" roles={roles} value={roleId} onChange={setRoleId} disabled={loading} />
+      </form>
+    </UserDialog>
   )
 }

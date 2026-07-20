@@ -1,6 +1,8 @@
 """Knowledge Router — /api/upload/*, /api/knowledge/*, /api/kb/*, /api/files/image"""
 
 import asyncio
+import copy
+import hashlib
 import json
 import os
 import re
@@ -8,14 +10,17 @@ import secrets
 import uuid
 import shutil
 import time
+import inspect
+from contextlib import asynccontextmanager
+from functools import wraps
 from datetime import datetime
 from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, BackgroundTasks, Query as QueryParam
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
-from typing import Optional
+from pydantic import BaseModel, Field
+from typing import Any, Optional
 
 # Import shared module-level state (for read access)
 from raganything.services.state_service import (
@@ -45,21 +50,67 @@ from .shared import (
 )
 from raganything.services.kb_service import (
     pg_register_upload,
+    pg_mark_upload_reusable,
+    pg_release_upload_for_deleted_document,
     pg_update_upload_status,
     pg_update_upload_status_by_task_id,
     pg_get_upload_by_task_id,
     pg_claim_upload_task,
     pg_list_uploads,
+    pg_get_latest_content_updates_batch,
     _unregister_processing_file,
     _load_doc_status_json,
     _load_full_docs_json,
+    _generate_uploaded_document_tags,
 )
 from raganything.dependencies import get_current_user, get_optional_user, get_current_user_from_token, require_permission
 from raganything.permissions import Permission
+from raganything.services.auth import audit_log, has_permission as _auth_has_permission
+from raganything.processor.chunk_processor import compute_chunk_id
 from raganything.chunking import build_chunking_func, STRATEGY_META as CHUNKING_STRATEGY_META
+from raganything.utils import is_multimodal_processed
+from raganything.services.kb_tag_repo import (
+    TagValidationError,
+    delete_chunk_tags,
+    delete_document_tags,
+    delete_kb_tags,
+    get_tag_assignments,
+    get_tags_for_chunks,
+    list_tags,
+    move_chunk_tags,
+    replace_chunk_tags,
+)
+from raganything.services.kb_chunk_repo import (
+    PersistedChunkQueryError,
+    query_chunks_by_document_id,
+)
 
 # Module reference for writing to shared mutable state (active_kb)
 from . import shared as _shared
+
+
+def _lease_kb_cache_for_operation(handler):
+    """Keep a KB's storage handles alive for the duration of a request."""
+
+    @wraps(handler)
+    async def wrapped(*args, **kwargs):
+        bound = inspect.signature(handler).bind_partial(*args, **kwargs)
+        kb_name = bound.arguments.get("kb")
+        if not kb_name:
+            return await handler(*args, **kwargs)
+
+        was_pinned = kb_instances.is_pinned(kb_name)
+        if not was_pinned:
+            kb_instances.pin(kb_name)
+
+        try:
+            return await handler(*args, **kwargs)
+        finally:
+            if not was_pinned:
+                kb_instances.unpin(kb_name)
+
+    return wrapped
+
 
 # ── PG Graph Helpers: read knowledge graph data from LightRAG PG tables ──
 # LightRAG stores entities/relations/doc_status in PG tables (PGKVStorage +
@@ -132,6 +183,24 @@ async def _pg_fetch_doc_ids(workspace: str) -> set[str]:
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             "SELECT id FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1",
+            workspace,
+        )
+    return {row["id"] for row in rows}
+
+
+async def _pg_fetch_full_doc_ids(workspace: str) -> set[str]:
+    """Fetch every full-document ID, including rows missing doc_status.
+
+    ``full_docs.get_by_ids()`` can only retrieve IDs already known to
+    ``doc_status``. Orphan repair needs the inverse: all persisted rows in the
+    workspace, including historical records whose doc-status row is gone.
+    """
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id FROM LIGHTRAG_DOC_FULL WHERE workspace=$1",
             workspace,
         )
     return {row["id"] for row in rows}
@@ -303,8 +372,10 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
                        kb: str = Depends(verify_kb_access), chunking_strategy: str = "",
                        enable_image: str = "", enable_table: str = "",
                        enable_equation: str = "", enable_video: str = "",
+                       _perm: None = Depends(require_permission(Permission.KB_WRITE)),
                        current_user: dict = Depends(get_current_user)):
     """Upload a single file — immediate return, background processing"""
+    actual_strategy = _resolve_chunking_strategy(chunking_strategy)
     task_id = str(uuid.uuid4())[:8]
     upload_dir = Path("./uploads")
     upload_dir.mkdir(exist_ok=True)
@@ -344,7 +415,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
         )
 
     # Register file metadata in PG (dedup enforced by UNIQUE on file_hash + kb_name)
-    pg_id = await pg_register_upload(
+    pg_id = await _register_upload_with_stale_recovery(
         filename=safe_name,
         file_path=str(file_path.absolute()),
         file_hash=file_hash,
@@ -352,7 +423,6 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
         kb_name=kb,
         uploaded_by=current_user.get("id", 0),
         task_id=task_id,
-        status="queued",
     )
     if pg_id is None:
         # PG insert failed — either a true duplicate or PG unavailable.
@@ -366,7 +436,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
             f"文件内容重复或上传注册失败: {file.filename}",
         )
 
-    lightrag_logger.info(f"[UPLOAD-API] 收到上传请求: file={file.filename} kb={kb} strategy={chunking_strategy}")
+    lightrag_logger.info(f"[UPLOAD-API] 收到上传请求: file={file.filename} kb={kb} strategy={actual_strategy}")
 
     # Register for dedup tracking BEFORE spawning the background task
     _register_processing_file(kb, file_hash, task_id)
@@ -378,7 +448,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
         "file_path": str(file_path.absolute()),
         "filename": file.filename,
         "kb_name": kb,
-        "chunking_strategy": chunking_strategy,
+        "chunking_strategy": actual_strategy,
         "user_id": current_user["id"],
         "enable_image": enable_image.lower() == "true" if enable_image else None,
         "enable_table": enable_table.lower() == "true" if enable_table else None,
@@ -387,9 +457,9 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
     }
     queue, qsize = await _ensure_queue_draining(kb)
     queue.put_nowait(task_info)
-    strategy_name = CHUNKING_STRATEGY_META.get(chunking_strategy or CHUNKING_STRATEGY, {}).get('name', '默认')
+    strategy_name = CHUNKING_STRATEGY_META.get(actual_strategy, {}).get('name', '默认')
     return {"task_id": task_id, "filename": file.filename, "status": "queued", "kb": kb,
-            "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY,
+            "chunking_strategy": actual_strategy,
             "position": qsize + 1, "queue_size": qsize + 1,
             "can_delete": True,
             "message": f"文档已加入队列（第 {qsize + 1} 位），使用{strategy_name}分块。请到知识库页面查看进度。"}
@@ -401,10 +471,13 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
                        kb: str = Depends(verify_kb_access), chunking_strategy: str = "",
                        enable_image: str = "", enable_table: str = "",
                        enable_equation: str = "", enable_video: str = "",
+                       _perm: None = Depends(require_permission(Permission.KB_WRITE)),
                        current_user: dict = Depends(get_current_user)):
     """批量上传文件 - 接收多个文件，逐个后台处理"""
     if not files:
         raise HTTPException(400, "请至少选择一个文件")
+
+    actual_strategy = _resolve_chunking_strategy(chunking_strategy)
 
     upload_dir = Path("./uploads")
     upload_dir.mkdir(exist_ok=True)
@@ -444,7 +517,7 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
             continue
 
         # Register file metadata in PG (dedup enforced by UNIQUE on file_hash + kb_name)
-        pg_id = await pg_register_upload(
+        pg_id = await _register_upload_with_stale_recovery(
             filename=file.filename,
             file_path=str(file_path.absolute()),
             file_hash=file_hash,
@@ -452,7 +525,6 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
             kb_name=kb,
             uploaded_by=current_user.get("id", 0),
             task_id=task_id,
-            status="queued",
         )
         if pg_id is None:
             # PG insert failed — duplicate content hash or PG unavailable
@@ -473,7 +545,7 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
             "file_path": str(file_path.absolute()),
             "filename": file.filename,
             "kb_name": kb,
-            "chunking_strategy": chunking_strategy,
+            "chunking_strategy": actual_strategy,
             "user_id": current_user["id"],
             "enable_image": enable_image.lower() == "true" if enable_image else None,
             "enable_table": enable_table.lower() == "true" if enable_table else None,
@@ -490,7 +562,7 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
         })
         lightrag_logger.info(f"[UPLOAD-BATCH] 任务={task_id} 文件={file.filename} kb={kb}")
 
-    strategy_name = CHUNKING_STRATEGY_META.get(chunking_strategy or CHUNKING_STRATEGY, {}).get('name', '默认')
+    strategy_name = CHUNKING_STRATEGY_META.get(actual_strategy, {}).get('name', '默认')
     if tasks:
         message = f"已接收 {len(tasks)} 个文件，使用{strategy_name}分块，排队处理中"
         if skipped:
@@ -501,7 +573,7 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
         message = "没有新文件进入上传队列"
 
     result = {"status": "queued" if tasks else "skipped", "tasks": tasks, "total": len(tasks), "kb": kb,
-              "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY,
+              "chunking_strategy": actual_strategy,
               "queue_size": queue_size,
               "message": message}
     if skipped:
@@ -567,6 +639,7 @@ async def list_upload_tasks(
 async def delete_upload_task(
     task_id: str,
     kb: str = Depends(verify_kb_access),
+    _perm: None = Depends(require_permission(Permission.KB_WRITE)),
     current_user: dict = Depends(get_current_user),
 ):
     """Delete a queued upload task before processing starts."""
@@ -618,11 +691,14 @@ async def delete_upload_task(
 @router.post("/upload/folder")
 async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(verify_kb_access),
                          chunking_strategy: str = "", current_user: dict = Depends(get_current_user),
+                         _perm: None = Depends(require_permission(Permission.KB_WRITE)),
                          enable_image: str = "", enable_table: str = "",
                          enable_equation: str = "", enable_video: str = ""):
     """批量处理文件夹"""
     if not os.path.isdir(folder_path):
         raise HTTPException(400, "文件夹不存在")
+
+    actual_strategy = _resolve_chunking_strategy(chunking_strategy)
 
     import os as _os
     _prev_env = {}
@@ -647,12 +723,17 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
         # 临时切换分块策略
         original_func = None
         try:
-            if chunking_strategy and instance.lightrag:
-                new_func = build_chunking_func(chunking_strategy, instance.lightrag)
+            if actual_strategy and instance.lightrag:
+                new_func = build_chunking_func(actual_strategy, instance.lightrag)
                 if new_func is not None:
                     original_func = instance.lightrag.chunking_func
                     instance.lightrag.chunking_func = new_func
-            await instance.process_folder_complete(folder_path, output_dir="./output", recursive=True)
+            await instance.process_folder_complete(
+                folder_path,
+                output_dir="./output",
+                recursive=True,
+                chunking_strategy=actual_strategy,
+            )
             await complete_task(task_id)
         except Exception as e:
             await upsert_task_state(task_id, {
@@ -663,7 +744,12 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
         finally:
             if original_func and instance.lightrag:
                 instance.lightrag.chunking_func = original_func
-        return {"task_id": task_id, "folder": folder_path, "status": "completed"}
+        return {
+            "task_id": task_id,
+            "folder": folder_path,
+            "status": "completed",
+            "chunking_strategy": actual_strategy,
+        }
     finally:
         for key, val in _prev_env.items():
             if val is None:
@@ -675,11 +761,13 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
 @router.post("/upload/content")
 async def upload_content(req: PasteContentRequest, kb: str = Depends(verify_kb_access),
                           current_user: dict = Depends(get_current_user),
+                          _perm: None = Depends(require_permission(Permission.KB_WRITE)),
                           chunking_strategy: str = "",
                           enable_image: str = "", enable_table: str = "",
                           enable_equation: str = "", enable_video: str = ""):
     """直接粘贴内容入库"""
     import os as _os
+    actual_strategy = _resolve_chunking_strategy(chunking_strategy)
 
     # ── Per-upload multimodal overrides ─────────────
     _prev_env = {}
@@ -698,14 +786,18 @@ async def upload_content(req: PasteContentRequest, kb: str = Depends(verify_kb_a
         content_list = [{"type": "text", "text": req.content, "page_idx": 0}]
         original_func = None
         try:
-            if chunking_strategy and instance.lightrag:
-                new_func = build_chunking_func(chunking_strategy, instance.lightrag)
+            if actual_strategy and instance.lightrag:
+                new_func = build_chunking_func(actual_strategy, instance.lightrag)
                 if new_func is not None:
                     original_func = instance.lightrag.chunking_func
                     instance.lightrag.chunking_func = new_func
-            await instance.insert_content_list(content_list, file_path=req.title or "pasted_content")
+            await instance.insert_content_list(
+                content_list,
+                file_path=req.title or "pasted_content",
+                chunking_strategy=actual_strategy,
+            )
             return {"status": "completed", "title": req.title or "pasted_content",
-                    "chunking_strategy": chunking_strategy or CHUNKING_STRATEGY}
+                    "chunking_strategy": actual_strategy}
         except Exception as e:
             raise HTTPException(500, str(e))
         finally:
@@ -723,11 +815,15 @@ async def upload_content(req: PasteContentRequest, kb: str = Depends(verify_kb_a
 @router.post("/upload/url")
 async def upload_from_url(url: str = QueryParam(...), kb: str = Depends(verify_kb_access),
                          current_user: dict = Depends(get_current_user),
+                         _perm: None = Depends(require_permission(Permission.KB_WRITE)),
+                         chunking_strategy: str = "",
                          enable_image: str = "", enable_table: str = "",
                          enable_equation: str = "", enable_video: str = ""):
     """从 URL 下载文档并入库"""
     if not url.startswith("http"):
         raise HTTPException(400, "无效 URL")
+
+    actual_strategy = _resolve_chunking_strategy(chunking_strategy)
 
     import os as _os
     _prev_env = {}
@@ -785,10 +881,29 @@ async def upload_from_url(url: str = QueryParam(...), kb: str = Depends(verify_k
         fp.write_bytes(content)
         await add_event("url_download_complete", file=fname, task_id=task_id, size=len(content), user_id=current_user.get("id", 0))
 
-        instance = await get_kb()
-        await instance.process_document_complete(str(fp.absolute()), output_dir="./output")
+        instance = await get_kb(kb)
+        original_func = None
+        try:
+            if instance.lightrag:
+                new_func = build_chunking_func(actual_strategy, instance.lightrag)
+                if new_func is not None:
+                    original_func = instance.lightrag.chunking_func
+                    instance.lightrag.chunking_func = new_func
+            await instance.process_document_complete(
+                str(fp.absolute()),
+                output_dir="./output",
+                chunking_strategy=actual_strategy,
+            )
+        finally:
+            if original_func and instance.lightrag:
+                instance.lightrag.chunking_func = original_func
         await add_event("url_process_complete", file=fname, task_id=task_id, user_id=current_user.get("id", 0))
-        return {"status": "completed", "filename": fname, "size": len(content)}
+        return {
+            "status": "completed",
+            "filename": fname,
+            "size": len(content),
+            "chunking_strategy": actual_strategy,
+        }
     except HTTPException:
         raise
     except Exception as e:
@@ -816,6 +931,77 @@ def _strip_hash_prefix(filename: str) -> str:
     """
     m = _HASH_PREFIX_RE.match(filename)
     return m.group(1) if m else filename
+
+
+def _resolve_chunking_strategy(requested_strategy: str) -> str:
+    """Freeze the valid strategy that this upload will actually use."""
+    requested = (requested_strategy or "").strip()
+    if requested in CHUNKING_STRATEGY_META:
+        return requested
+
+    configured_default = (CHUNKING_STRATEGY or "").strip()
+    if configured_default in CHUNKING_STRATEGY_META:
+        return configured_default
+    return "recursive"
+
+
+def _normalized_upload_filename(filename: str) -> str:
+    return os.path.normcase(_strip_hash_prefix(os.path.basename(str(filename or ""))))
+
+
+async def _document_exists_for_upload_filename(kb: str, filename: str) -> bool:
+    """Keep real duplicate documents protected when recovering legacy upload rows."""
+    target = _normalized_upload_filename(filename)
+    if not target:
+        return False
+    try:
+        documents = await _load_doc_status_json(kb)
+    except Exception:
+        return True
+    return any(
+        _normalized_upload_filename(info.get("file_path", "")) == target
+        for info in documents.values()
+        if isinstance(info, dict)
+    )
+
+
+async def _register_upload_with_stale_recovery(
+    *,
+    filename: str,
+    file_path: str,
+    file_hash: str,
+    file_size: int,
+    kb_name: str,
+    uploaded_by: int,
+    task_id: str,
+) -> dict[str, Any] | None:
+    """Register an upload and reclaim legacy terminal metadata only when safe."""
+    registered = await pg_register_upload(
+        filename=filename,
+        file_path=file_path,
+        file_hash=file_hash,
+        file_size=file_size,
+        kb_name=kb_name,
+        uploaded_by=uploaded_by,
+        task_id=task_id,
+        status="queued",
+    )
+    if registered is not None:
+        return registered
+    if await _document_exists_for_upload_filename(kb_name, filename):
+        return None
+    if not await pg_mark_upload_reusable(file_hash, kb_name):
+        return None
+    return await pg_register_upload(
+        filename=filename,
+        file_path=file_path,
+        file_hash=file_hash,
+        file_size=file_size,
+        kb_name=kb_name,
+        uploaded_by=uploaded_by,
+        task_id=task_id,
+        status="queued",
+    )
 
 
 @router.get("/knowledge/documents")
@@ -849,6 +1035,12 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                 if task_file == orig_name and task.get("kb", "") == kb:
                     doc_phase = task.get("phase", "") or ""
                     break
+            metadata = info.get("metadata") or {}
+            stored_strategy = (
+                metadata.get("chunking_strategy")
+                if isinstance(metadata, dict)
+                else None
+            )
             docs.append({
                 "id": (doc_id or "")[:16],
                 "full_id": doc_id or "",
@@ -859,6 +1051,7 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                 "created": info.get("created_at") or "",
                 "updated": info.get("updated_at") or "",
                 "phase": doc_phase,
+                "chunking_strategy": stored_strategy if isinstance(stored_strategy, str) else None,
             })
             seen_files.add(orig_name)
 
@@ -880,6 +1073,11 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                     "created": task.get("started_at") or "",
                     "updated": task.get("started_at") or "",
                     "phase": task.get("phase") or "",
+                    "chunking_strategy": (
+                        task.get("chunking_strategy")
+                        if isinstance(task.get("chunking_strategy"), str)
+                        else None
+                    ),
                 })
 
         # Sort with None-safe key: treat None/empty as empty string
@@ -891,112 +1089,808 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
         raise HTTPException(500, str(e))
 
 
+def _multimodal_chunk_metadata(status_info: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Read application-owned multimodal metadata from a document status row."""
+    metadata = status_info.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        return {}
+    chunks = metadata.get("multimodal_chunks") or {}
+    if not isinstance(chunks, dict):
+        return {}
+    return {
+        str(chunk_id): value
+        for chunk_id, value in chunks.items()
+        if isinstance(value, dict)
+    }
+
+
+def _infer_multimodal_fields(
+    chunk_data: dict[str, Any], metadata: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Restore multimodal fields lost by legacy PGKV text-chunk storage."""
+    fields = dict(metadata or {})
+    content = str(chunk_data.get("content") or "")
+    normalized = content.lower()
+    inferred_type = fields.get("original_type")
+    if not inferred_type:
+        if "image content analysis:" in normalized:
+            inferred_type = "image"
+        elif "table analysis:" in normalized:
+            inferred_type = "table"
+        elif "mathematical equation analysis:" in normalized:
+            inferred_type = "equation"
+        elif "video content analysis:" in normalized:
+            inferred_type = "video"
+    if inferred_type:
+        fields["original_type"] = inferred_type
+        fields["is_multimodal"] = True
+        fields.setdefault("modal_entity_name", f"{inferred_type} content")
+    return fields
+
+
+_chunk_document_locks: dict[tuple[str, str], asyncio.Lock] = {}
+_chunk_document_locks_guard = asyncio.Lock()
+_chunk_bm25_locks: dict[str, asyncio.Lock] = {}
+_chunk_bm25_locks_guard = asyncio.Lock()
+
+
+class ChunkContentUpdate(BaseModel):
+    content: str
+
+
+class ChunkTagsUpdate(BaseModel):
+    tag_names: list[str] = Field(default_factory=list)
+
+
+async def _get_chunk_document_lock(kb: str, doc_id: str) -> asyncio.Lock:
+    async with _chunk_document_locks_guard:
+        return _chunk_document_locks.setdefault((kb, doc_id), asyncio.Lock())
+
+
+@asynccontextmanager
+async def _chunk_document_lock_scope(kb: str, doc_id: str, lg: Any):
+    """Serialize mutations locally and across workers for PG-backed stores."""
+    local_lock = await _get_chunk_document_lock(kb, doc_id)
+    async with local_lock:
+        pool = None
+        connection = None
+        is_pg_store = lg.doc_status.__class__.__module__.startswith(
+            "lightrag.kg.postgres_impl"
+        )
+        if is_pg_store:
+            lock_key = int.from_bytes(
+                hashlib.sha256(f"{kb}\0{doc_id}".encode()).digest()[:8],
+                "big",
+                signed=True,
+            )
+            try:
+                from raganything.services.pg_state_repo import get_pg_pool
+
+                pool = get_pg_pool()
+                connection = await pool.acquire()
+                await connection.execute("SELECT pg_advisory_lock($1)", lock_key)
+            except Exception as exc:
+                if pool is not None and connection is not None:
+                    await pool.release(connection)
+                raise HTTPException(
+                    503, "Unable to acquire the document mutation lock"
+                ) from exc
+        try:
+            yield
+        finally:
+            if pool is not None and connection is not None:
+                try:
+                    await connection.execute("SELECT pg_advisory_unlock($1)", lock_key)
+                finally:
+                    await pool.release(connection)
+
+
+def _resolve_chunk_document(
+    all_status: dict[str, Any], requested_id: str
+) -> tuple[str, dict[str, Any]]:
+    if requested_id in all_status and isinstance(all_status[requested_id], dict):
+        return requested_id, all_status[requested_id]
+    matches = [
+        (key, value)
+        for key, value in all_status.items()
+        if str(key).startswith(requested_id) and isinstance(value, dict)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    raise HTTPException(404, f"Document {requested_id} does not exist")
+
+
+def _stored_chunk_id(chunk: dict[str, Any]) -> str:
+    return str(chunk.get("chunk_id") or chunk.get("id") or "")
+
+
+async def _load_document_chunk_records(
+    lg: Any, doc_id: str, status_info: dict[str, Any], kb: str
+) -> list[dict[str, Any]]:
+    ids = [str(value) for value in status_info.get("chunks_list", []) if value]
+    records = await lg.text_chunks.get_by_ids(ids) if ids else []
+    if not records and int(status_info.get("chunks_count") or 0) > 0:
+        records = await _query_chunks_by_doc_id(lg, doc_id, kb)
+    result = [dict(value) for value in (records or []) if isinstance(value, dict)]
+    result.sort(key=lambda value: int(value.get("chunk_order_index") or 0))
+    return result
+
+
+def _serialize_document_chunk(
+    chunk_data: dict[str, Any], multimodal_metadata: dict[str, dict[str, Any]]
+) -> dict[str, Any]:
+    chunk_id = _stored_chunk_id(chunk_data)
+    fields = _infer_multimodal_fields(chunk_data, multimodal_metadata.get(chunk_id))
+    media_path = fields.get("media_path") or _extract_media_path(chunk_data)
+    media_available = bool(media_path and Path(media_path).exists())
+    media_url = None
+    if media_available:
+        base_url = os.environ.get("RAGANYTHING_PUBLIC_ASSET_BASE_URL", "").strip()
+        strip_prefix = os.environ.get("RAGANYTHING_PUBLIC_ASSET_STRIP_PREFIX", "").strip()
+        if base_url and strip_prefix:
+            from raganything.asset_urls import public_url_for_local_path
+
+            media_url = public_url_for_local_path(
+                media_path, base_url=base_url, strip_prefix=strip_prefix
+            )
+    return {
+        "chunk_id": chunk_id,
+        "content": chunk_data.get("content", ""),
+        "tokens": int(chunk_data.get("tokens") or 0),
+        "chunk_order_index": int(chunk_data.get("chunk_order_index") or 0),
+        "file_path": chunk_data.get("file_path", ""),
+        "is_multimodal": bool(chunk_data.get("is_multimodal") or fields.get("is_multimodal")),
+        "original_type": chunk_data.get("original_type") or fields.get("original_type"),
+        "modal_entity_name": chunk_data.get("modal_entity_name") or fields.get("modal_entity_name"),
+        "page_idx": chunk_data.get("page_idx")
+        if chunk_data.get("page_idx") is not None else fields.get("page_idx"),
+        "media_path": media_path,
+        "media_url": media_url,
+        "media_available": media_available,
+    }
+
+
+def _chunk_document_payload(doc_id: str, status_info: dict[str, Any]) -> dict[str, Any]:
+    metadata = status_info.get("metadata") or {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    return {
+        "id": doc_id,
+        "file": _strip_hash_prefix(str(status_info.get("file_path") or "")),
+        "status": status_info.get("status") or "",
+        "content_summary": status_info.get("content_summary") or "",
+        "content_length": int(status_info.get("content_length") or 0),
+        "chunking_strategy": metadata.get("chunking_strategy"),
+        "created": status_info.get("created_at") or "",
+        "updated": status_info.get("updated_at") or "",
+    }
+
+
+def _chunk_graph_sync_state(status_info: dict[str, Any]) -> str:
+    metadata = status_info.get("metadata") or {}
+    return "stale" if isinstance(metadata, dict) and metadata.get("graph_sync_state") == "stale" else "synced"
+
+
+def _chunk_document_is_processing(
+    doc_id: str, kb: str, status_info: dict[str, Any]
+) -> bool:
+    if str(status_info.get("status") or "").lower() in {
+        "queued", "pending", "ready", "handling", "processing",
+        "preprocessing", "indexing",
+    }:
+        return True
+    file_name = _strip_hash_prefix(str(status_info.get("file_path") or ""))
+    for task_id, task in processing_tasks.items():
+        if not isinstance(task, dict) or task.get("kb") != kb:
+            continue
+        if str(task.get("status") or "").lower() in {"completed", "failed"}:
+            continue
+        task_file = _strip_hash_prefix(str(task.get("file") or ""))
+        if task_id == doc_id or task.get("doc_id") == doc_id or task_file == file_name:
+            return True
+    return False
+
+
+async def _chunk_store_get(store: Any, item_id: str) -> dict[str, Any] | None:
+    if hasattr(store, "get_by_id"):
+        value = await store.get_by_id(item_id)
+    else:
+        values = await store.get_by_ids([item_id])
+        value = values[0] if values else None
+    return dict(value) if isinstance(value, dict) else None
+
+
+def _is_pg_vector_store(store: Any) -> bool:
+    return store.__class__.__module__.startswith("lightrag.kg.postgres_impl")
+
+
+def _validated_pg_table_name(store: Any) -> str:
+    table_name = str(getattr(store, "table_name", "") or "")
+    if not table_name and hasattr(store, "namespace"):
+        from lightrag.kg.postgres_impl import namespace_to_table_name
+
+        table_name = str(namespace_to_table_name(store.namespace) or "")
+    if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table_name):
+        raise RuntimeError("Invalid PG vector table name")
+    return table_name
+
+
+async def _chunk_text_get(store: Any, item_id: str) -> dict[str, Any] | None:
+    if not store.__class__.__module__.startswith("lightrag.kg.postgres_impl"):
+        return await _chunk_store_get(store, item_id)
+    table_name = _validated_pg_table_name(store)
+    result = await store.db.query(
+        f"SELECT id, content FROM {table_name} WHERE workspace=$1 AND id=$2",
+        [store.workspace, item_id],
+    )
+    return dict(result) if result else None
+
+
+async def _delete_chunk_text(store: Any, item_ids: list[str]) -> None:
+    if store.__class__.__module__.startswith("lightrag.kg.postgres_impl"):
+        table_name = _validated_pg_table_name(store)
+        await store.db.execute(
+            f"DELETE FROM {table_name} WHERE workspace=$1 AND id = ANY($2)",
+            {"workspace": store.workspace, "ids": item_ids},
+        )
+    else:
+        await store.delete(item_ids)
+    for item_id in item_ids:
+        if await _chunk_text_get(store, item_id):
+            raise RuntimeError(f"Text chunk {item_id} still exists after deletion")
+
+
+async def _chunk_vector_get(store: Any, item_id: str) -> dict[str, Any] | None:
+    """Read PG vectors directly so database errors cannot look like absence."""
+    if not _is_pg_vector_store(store):
+        return await _chunk_store_get(store, item_id)
+    table_name = _validated_pg_table_name(store)
+    result = await store.db.query(
+        f"SELECT id FROM {table_name} WHERE workspace=$1 AND id=$2",
+        [store.workspace, item_id],
+    )
+    return {"id": item_id} if result else None
+
+
+async def _delete_chunk_vectors(store: Any, item_ids: list[str]) -> None:
+    """Delete and verify vectors without PGVectorStorage swallowing errors."""
+    if _is_pg_vector_store(store):
+        table_name = _validated_pg_table_name(store)
+        await store.db.execute(
+            f"DELETE FROM {table_name} WHERE workspace=$1 AND id = ANY($2)",
+            {"workspace": store.workspace, "ids": item_ids},
+        )
+    else:
+        await store.delete(item_ids)
+    for item_id in item_ids:
+        if await _chunk_vector_get(store, item_id):
+            raise RuntimeError(f"Chunk vector {item_id} still exists after deletion")
+
+
+async def _flush_chunk_mutation_stores(lg: Any) -> None:
+    for store in (lg.text_chunks, lg.chunks_vdb, lg.doc_status):
+        callback = getattr(store, "index_done_callback", None)
+        if callback:
+            await callback()
+
+
+def _edited_chunk_tokens(lg: Any, content: str) -> int:
+    tokenizer = getattr(lg, "tokenizer", None)
+    if tokenizer is not None and hasattr(tokenizer, "encode"):
+        return len(tokenizer.encode(content))
+    return max(1, len(content.split()))
+
+
+async def _all_kb_chunk_records(instance: Any, kb: str) -> list[dict[str, Any]]:
+    """Load the complete KB corpus because BM25 rebuild replaces the whole index."""
+    all_status = await _load_doc_status_json(kb)
+    chunks_by_id: dict[str, dict[str, Any]] = {}
+    for doc_id, status_info in (all_status or {}).items():
+        if not isinstance(status_info, dict):
+            continue
+        records = await _load_document_chunk_records(
+            instance.lightrag, str(doc_id), status_info, kb
+        )
+        for record in records:
+            record_id = _stored_chunk_id(record)
+            if record_id:
+                chunks_by_id[record_id] = record
+    return list(chunks_by_id.values())
+
+
+async def _refresh_chunk_search(instance: Any, kb: str) -> None:
+    async with _chunk_bm25_locks_guard:
+        lock = _chunk_bm25_locks.setdefault(kb, asyncio.Lock())
+    # BM25 indexes are process-local. Serialize replacement rebuilds per worker.
+    async with lock:
+        engine = getattr(instance, "hybrid_search_engine", None)
+        if engine is not None and hasattr(engine, "build_bm25_index"):
+            chunks = await _all_kb_chunk_records(instance, kb)
+            await engine.build_bm25_index(chunks)
+        from raganything.query_cache import get_query_cache
+
+        get_query_cache().invalidate()
+
+
+async def _log_chunk_mutation(
+    *, action: str, user_id: int, kb: str, doc_id: str, chunk_id: str,
+    new_chunk_id: str | None, before_hash: str | None, after_hash: str | None,
+    result: str,
+) -> None:
+    details = {
+        "kb": kb, "doc_id": doc_id, "chunk_id": chunk_id,
+        "new_chunk_id": new_chunk_id, "before_hash": before_hash,
+        "after_hash": after_hash, "result": result,
+    }
+    try:
+        await add_event(action, user_id=user_id, **details)
+    except Exception:
+        lightrag_logger.warning("Failed to record %s monitor event", action, exc_info=True)
+    try:
+        await audit_log(user_id, action, details={**details, "user_id": user_id})
+    except Exception:
+        lightrag_logger.warning("Failed to record %s audit event", action, exc_info=True)
+
+
+async def _restore_chunk_mutation(
+    lg: Any, doc_id: str, old_status: dict[str, Any], old_chunk_id: str,
+    old_chunk: dict[str, Any], new_chunk_id: str | None,
+) -> None:
+    try:
+        await lg.text_chunks.upsert({old_chunk_id: old_chunk})
+        await lg.chunks_vdb.upsert({old_chunk_id: old_chunk})
+        await lg.doc_status.upsert({doc_id: old_status})
+        if new_chunk_id and new_chunk_id != old_chunk_id:
+            await _delete_chunk_text(lg.text_chunks, [new_chunk_id])
+            await _delete_chunk_vectors(lg.chunks_vdb, [new_chunk_id])
+        await _flush_chunk_mutation_stores(lg)
+    except Exception:
+        lightrag_logger.error(
+            "Chunk compensation failed for doc=%s chunk=%s",
+            doc_id, old_chunk_id, exc_info=True,
+        )
+
+
 @router.get("/knowledge/documents/{doc_id}/chunks")
 async def get_document_chunks(
     doc_id: str,
     kb: str = Depends(verify_kb_access),
     current_user: dict = Depends(get_current_user),
 ):
-    """返回文档的所有切块详情（排序后的 chunk 列表）。"""
+    """Return document metadata and ordered chunks for a reloadable detail page."""
     try:
         instance = await get_kb(kb)
         if not instance or not instance.lightrag:
-            raise HTTPException(500, "知识库未初始化")
-
-        _lg = instance.lightrag
-        doc_status = await _load_doc_status_json(kb)
-        if not doc_status or doc_id not in doc_status:
-            raise HTTPException(404, f"文档 {doc_id} 不存在")
-
-        status_info = doc_status[doc_id]
-        if not isinstance(status_info, dict):
-            raise HTTPException(404, f"文档 {doc_id} 状态数据异常")
-
-        chunks_list = status_info.get("chunks_list", [])
-        chunk_data_list = []
-
-        if chunks_list:
-            chunk_data_list = await _lg.text_chunks.get_by_ids(chunks_list)
-        else:
-            chunks_count = status_info.get("chunks_count", 0)
-            if chunks_count and chunks_count > 0:
-                chunk_data_list = await _query_chunks_by_doc_id(_lg, doc_id, kb)
-
-        if not chunk_data_list:
-            return {"doc_id": doc_id, "chunks": [], "total": 0}
-
-        chunks = []
-        for chunk_data in chunk_data_list:
-            if not chunk_data or not isinstance(chunk_data, dict):
-                continue
-            media_path = _extract_media_path(chunk_data)
-            media_url = None
-            if media_path:
-                base_url = os.environ.get("RAGANYTHING_PUBLIC_ASSET_BASE_URL", "").strip()
-                strip_prefix = os.environ.get("RAGANYTHING_PUBLIC_ASSET_STRIP_PREFIX", "").strip()
-                if base_url and strip_prefix:
-                    from raganything.asset_urls import public_url_for_local_path
-                    media_url = public_url_for_local_path(
-                        media_path, base_url=base_url, strip_prefix=strip_prefix
-                    )
-            chunks.append({
-                "chunk_id": chunk_data.get("chunk_id", ""),
-                "content": chunk_data.get("content", ""),
-                "tokens": chunk_data.get("tokens", 0),
-                "chunk_order_index": chunk_data.get("chunk_order_index", 0),
-                "file_path": chunk_data.get("file_path", ""),
-                "is_multimodal": chunk_data.get("is_multimodal", False),
-                "original_type": chunk_data.get("original_type"),
-                "modal_entity_name": chunk_data.get("modal_entity_name"),
-                "page_idx": chunk_data.get("page_idx"),
-                "media_path": media_path,
-                "media_url": media_url,
-            })
-
-        chunks.sort(key=lambda c: c["chunk_order_index"])
-        return {"doc_id": doc_id, "chunks": chunks, "total": len(chunks)}
-
+            raise HTTPException(500, "Knowledge base is not initialized")
+        all_status = await _load_doc_status_json(kb)
+        full_id, status_info = _resolve_chunk_document(all_status or {}, doc_id)
+        records = await _load_document_chunk_records(instance.lightrag, full_id, status_info, kb)
+        metadata = _multimodal_chunk_metadata(status_info)
+        chunks = [_serialize_document_chunk(record, metadata) for record in records]
+        tags_by_chunk = await get_tags_for_chunks(kb, full_id, [value["chunk_id"] for value in chunks])
+        for chunk in chunks:
+            chunk["tags"] = tags_by_chunk.get(chunk["chunk_id"], [])
+        document = _chunk_document_payload(full_id, status_info)
+        if not document["content_summary"] and chunks:
+            document["content_summary"] = str(chunks[0].get("content") or "")[:240]
+        return {
+            "doc_id": full_id,
+            "document": document,
+            "chunks": chunks,
+            "total": len(chunks),
+            "total_tokens": sum(value["tokens"] for value in chunks),
+            "graph_sync_state": _chunk_graph_sync_state(status_info),
+        }
     except HTTPException:
         raise
-    except Exception as e:
-        lightrag_logger.error(f"[get_document_chunks] doc_id={doc_id} kb={kb} error: {e}", exc_info=True)
-        raise HTTPException(500, str(e))
+    except Exception as exc:
+        lightrag_logger.error(
+            "[get_document_chunks] doc_id=%s kb=%s error=%s", doc_id, kb, exc,
+            exc_info=True,
+        )
+        raise HTTPException(500, "Unable to load document chunks") from exc
+
+
+@router.get("/knowledge/documents/{doc_id}/chunks/{chunk_id}")
+async def get_document_chunk(
+    doc_id: str,
+    chunk_id: str,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+):
+    """Return one document chunk for a permalinked detail page."""
+    try:
+        instance = await get_kb(kb)
+        if not instance or not instance.lightrag:
+            raise HTTPException(500, "Knowledge base is not initialized")
+        all_status = await _load_doc_status_json(kb)
+        full_id, status_info = _resolve_chunk_document(all_status or {}, doc_id)
+        document_chunk_ids = {
+            str(value) for value in status_info.get("chunks_list", []) if value
+        }
+        record = await _chunk_store_get(instance.lightrag.text_chunks, chunk_id)
+        if record is None:
+            raise HTTPException(404, f"Chunk {chunk_id} does not exist")
+        belongs_to_document = (
+            chunk_id in document_chunk_ids
+            if document_chunk_ids
+            else str(record.get("full_doc_id") or "") == full_id
+        )
+        if not belongs_to_document:
+            raise HTTPException(404, f"Chunk {chunk_id} does not exist")
+
+        chunk = _serialize_document_chunk(
+            dict(record), _multimodal_chunk_metadata(status_info)
+        )
+        if chunk["chunk_id"] != chunk_id:
+            raise HTTPException(404, f"Chunk {chunk_id} does not exist")
+        chunk["tags"] = (
+            await get_tags_for_chunks(kb, full_id, [chunk_id])
+        ).get(chunk_id, [])
+        document = _chunk_document_payload(full_id, status_info)
+        if not document["content_summary"]:
+            document["content_summary"] = str(chunk.get("content") or "")[:240]
+        return {
+            "doc_id": full_id,
+            "document": document,
+            "chunk": chunk,
+            "total": len(document_chunk_ids) or int(status_info.get("chunks_count") or 1),
+            "graph_sync_state": _chunk_graph_sync_state(status_info),
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        lightrag_logger.error(
+            "[get_document_chunk] doc_id=%s chunk_id=%s kb=%s error=%s",
+            doc_id, chunk_id, kb, exc, exc_info=True,
+        )
+        raise HTTPException(500, "Unable to load document chunk") from exc
+
+
+@router.get("/knowledge/tags")
+async def list_knowledge_tags(
+    q: str = "",
+    limit: int = 100,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+):
+    return {"tags": await list_tags(kb, q, limit)}
+
+
+@router.get("/knowledge/tags/{tag_id}/links")
+async def get_knowledge_tag_links(
+    tag_id: int,
+    kb: str = Depends(verify_kb_access),
+    current_user: dict = Depends(get_current_user),
+):
+    tag, assignments = await get_tag_assignments(kb, tag_id)
+    if not tag:
+        raise HTTPException(404, "Tag does not exist in this knowledge base")
+    instance = await get_kb(kb)
+    if not instance or not instance.lightrag:
+        raise HTTPException(500, "Knowledge base is not initialized")
+    status_by_id = await _load_doc_status_json(kb)
+    grouped: dict[str, list[str]] = {}
+    for assignment in assignments:
+        grouped.setdefault(assignment["document_id"], []).append(assignment["chunk_id"])
+    documents = []
+    for document_id, chunk_ids in grouped.items():
+        status_info = (status_by_id or {}).get(document_id)
+        if not isinstance(status_info, dict):
+            continue
+        records = await _load_document_chunk_records(instance.lightrag, document_id, status_info, kb)
+        by_id = {_stored_chunk_id(record): record for record in records}
+        matched = []
+        for chunk_id in chunk_ids:
+            record = by_id.get(chunk_id)
+            if record:
+                serialized = _serialize_document_chunk(record, _multimodal_chunk_metadata(status_info))
+                serialized["tags"] = [{"id": tag["id"], "name": tag["name"]}]
+                matched.append(serialized)
+        if matched:
+            documents.append({"document": _chunk_document_payload(document_id, status_info), "chunks": matched})
+    return {
+        "tag": tag,
+        "documents": documents,
+        "document_count": len(documents),
+        "chunk_count": sum(len(value["chunks"]) for value in documents),
+    }
+
+
+@router.post("/knowledge/documents/{doc_id}/tags/regenerate")
+@_lease_kb_cache_for_operation
+async def regenerate_document_automatic_tags(
+    doc_id: str,
+    kb: str = Depends(verify_kb_access),
+    _perm: None = Depends(require_permission(Permission.KB_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    """Rebuild local automatic tags without affecting manual tag choices."""
+    instance = await get_kb(kb)
+    if not instance or not instance.lightrag:
+        raise HTTPException(500, "Knowledge base is not initialized")
+    all_status = await _load_doc_status_json(kb)
+    full_id, status_info = _resolve_chunk_document(all_status or {}, doc_id)
+    if _chunk_document_is_processing(full_id, kb, status_info):
+        raise HTTPException(409, "Document is currently being processed")
+
+    result = await _generate_uploaded_document_tags(
+        kb,
+        full_id,
+        filename=_strip_hash_prefix(
+            os.path.basename(str(status_info.get("file_path") or ""))
+        ),
+        user_id=int(current_user.get("id") or 0),
+    )
+    await _log_chunk_mutation(
+        action="document_tags_regenerate",
+        user_id=int(current_user.get("id") or 0),
+        kb=kb,
+        doc_id=full_id,
+        chunk_id=None,
+        new_chunk_id=None,
+        before_hash=None,
+        after_hash=None,
+        result="success" if result["chunk_count"] else "no_chunks",
+    )
+    return {
+        "status": "generated" if result["chunk_count"] else "no_chunks",
+        "doc_id": full_id,
+        **result,
+    }
+
+
+@router.put("/knowledge/documents/{doc_id}/chunks/{chunk_id}/tags")
+@_lease_kb_cache_for_operation
+async def replace_document_chunk_tags(
+    doc_id: str,
+    chunk_id: str,
+    update: ChunkTagsUpdate,
+    kb: str = Depends(verify_kb_access),
+    _perm: None = Depends(require_permission(Permission.KB_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    instance = await get_kb(kb)
+    if not instance or not instance.lightrag:
+        raise HTTPException(500, "Knowledge base is not initialized")
+    lg = instance.lightrag
+    initial_status = await _load_doc_status_json(kb)
+    canonical_id, _ = _resolve_chunk_document(initial_status or {}, doc_id)
+    try:
+        async with _chunk_document_lock_scope(kb, canonical_id, lg):
+            all_status = await _load_doc_status_json(kb)
+            full_id, status_info = _resolve_chunk_document(all_status or {}, doc_id)
+            if _chunk_document_is_processing(full_id, kb, status_info):
+                raise HTTPException(409, "Document is currently being processed")
+            records = await _load_document_chunk_records(lg, full_id, status_info, kb)
+            if not any(_stored_chunk_id(record) == chunk_id for record in records):
+                raise HTTPException(404, f"Chunk {chunk_id} does not exist")
+            tags = await replace_chunk_tags(kb, full_id, chunk_id, update.tag_names, user_id=current_user["id"])
+        await _log_chunk_mutation(
+            action="chunk_tags_update", user_id=current_user["id"], kb=kb,
+            doc_id=full_id, chunk_id=chunk_id, new_chunk_id=None,
+            before_hash=None, after_hash=None, result="success",
+        )
+        return {"status": "updated", "doc_id": full_id, "chunk_id": chunk_id, "tags": tags}
+    except TagValidationError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except HTTPException as exc:
+        await _log_chunk_mutation(
+            action="chunk_tags_update", user_id=current_user["id"], kb=kb,
+            doc_id=doc_id, chunk_id=chunk_id, new_chunk_id=None,
+            before_hash=None, after_hash=None, result=f"failed:{exc.status_code}",
+        )
+        raise
+
+
+@router.patch("/knowledge/documents/{doc_id}/chunks/{chunk_id}")
+@_lease_kb_cache_for_operation
+async def update_document_chunk(
+    doc_id: str,
+    chunk_id: str,
+    update: ChunkContentUpdate,
+    kb: str = Depends(verify_kb_access),
+    _perm: None = Depends(require_permission(Permission.KB_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    if not update.content.strip() or len(update.content) > 8000:
+        raise HTTPException(422, "content must contain 1 to 8000 characters")
+    instance = await get_kb(kb)
+    if not instance or not instance.lightrag:
+        raise HTTPException(500, "Knowledge base is not initialized")
+    lg = instance.lightrag
+    initial_status = await _load_doc_status_json(kb)
+    canonical_id, _ = _resolve_chunk_document(initial_status or {}, doc_id)
+    before_hash = None
+    new_id = compute_chunk_id(update.content)
+    try:
+        async with _chunk_document_lock_scope(kb, canonical_id, lg):
+            all_status = await _load_doc_status_json(kb)
+            full_id, status_info = _resolve_chunk_document(all_status or {}, doc_id)
+            if _chunk_document_is_processing(full_id, kb, status_info):
+                raise HTTPException(409, "Document is currently being processed")
+            records = await _load_document_chunk_records(lg, full_id, status_info, kb)
+            old_chunk = next((value for value in records if _stored_chunk_id(value) == chunk_id), None)
+            if old_chunk is None:
+                raise HTTPException(404, f"Chunk {chunk_id} does not exist")
+            before_hash = hashlib.sha256(str(old_chunk.get("content") or "").encode()).hexdigest()
+            if new_id != chunk_id and await _chunk_store_get(lg.text_chunks, new_id):
+                raise HTTPException(409, "A chunk with the same content already exists")
+
+            old_status = copy.deepcopy(status_info)
+            new_chunk = copy.deepcopy(old_chunk)
+            new_chunk.update({
+                "id": new_id, "chunk_id": new_id, "content": update.content,
+                "tokens": _edited_chunk_tokens(lg, update.content),
+                "full_doc_id": old_chunk.get("full_doc_id") or full_id,
+                "file_path": old_chunk.get("file_path") or status_info.get("file_path", ""),
+            })
+            new_status = copy.deepcopy(status_info)
+            ordered_chunk_ids = [_stored_chunk_id(value) for value in records]
+            new_status["chunks_list"] = [
+                new_id if value == chunk_id else value
+                for value in ordered_chunk_ids
+            ]
+            new_status["chunks_count"] = len(records)
+            new_status["content_length"] = max(
+                0, int(status_info.get("content_length") or 0)
+                - len(str(old_chunk.get("content") or "")) + len(update.content),
+            )
+            new_status["updated_at"] = datetime.now().astimezone().isoformat()
+            raw_metadata = status_info.get("metadata")
+            metadata = copy.deepcopy(raw_metadata) if isinstance(raw_metadata, dict) else {}
+            metadata["graph_sync_state"] = "stale"
+            multimodal = metadata.get("multimodal_chunks")
+            if isinstance(multimodal, dict) and chunk_id in multimodal:
+                multimodal[new_id] = multimodal.pop(chunk_id)
+            new_status["metadata"] = metadata
+
+            try:
+                await lg.text_chunks.upsert({new_id: new_chunk})
+                saved_text = await _chunk_text_get(lg.text_chunks, new_id)
+                if not saved_text or saved_text.get("content") != update.content:
+                    raise RuntimeError("text chunk read-back verification failed")
+                await lg.chunks_vdb.upsert({new_id: new_chunk})
+                if not await _chunk_vector_get(lg.chunks_vdb, new_id):
+                    raise RuntimeError("chunk vector read-back verification failed")
+                await lg.doc_status.upsert({full_id: new_status})
+                saved_status = await lg.doc_status.get_by_id(full_id)
+                if not saved_status or saved_status.get("chunks_list") != new_status["chunks_list"]:
+                    raise RuntimeError("document status read-back verification failed")
+                if new_id != chunk_id:
+                    await _delete_chunk_text(lg.text_chunks, [chunk_id])
+                    await _delete_chunk_vectors(lg.chunks_vdb, [chunk_id])
+                await _flush_chunk_mutation_stores(lg)
+                updated_records = [new_chunk if _stored_chunk_id(value) == chunk_id else value for value in records]
+                await _refresh_chunk_search(instance, kb)
+                await move_chunk_tags(kb, full_id, chunk_id, new_id)
+            except Exception as exc:
+                await _restore_chunk_mutation(lg, full_id, old_status, chunk_id, old_chunk, new_id)
+                try:
+                    await _refresh_chunk_search(instance, kb)
+                except Exception:
+                    pass
+                raise HTTPException(500, "Chunk update failed and was rolled back") from exc
+
+            response = {
+                "status": "updated", "doc_id": full_id, "old_chunk_id": chunk_id,
+                "new_chunk_id": new_id,
+                "chunk": _serialize_document_chunk(new_chunk, _multimodal_chunk_metadata(new_status)),
+                "total": len(updated_records),
+                "total_tokens": sum(int(value.get("tokens") or 0) for value in updated_records),
+                "graph_sync_state": "stale",
+            }
+            response["chunk"]["tags"] = (await get_tags_for_chunks(kb, full_id, [new_id])).get(new_id, [])
+        await _log_chunk_mutation(
+            action="chunk_update", user_id=current_user["id"], kb=kb,
+            doc_id=response["doc_id"], chunk_id=chunk_id, new_chunk_id=new_id,
+            before_hash=before_hash, after_hash=hashlib.sha256(update.content.encode()).hexdigest(),
+            result="success",
+        )
+        return response
+    except HTTPException as exc:
+        await _log_chunk_mutation(
+            action="chunk_update", user_id=current_user["id"], kb=kb,
+            doc_id=doc_id, chunk_id=chunk_id, new_chunk_id=new_id,
+            before_hash=before_hash, after_hash=hashlib.sha256(update.content.encode()).hexdigest(),
+            result=f"failed:{exc.status_code}",
+        )
+        raise
+
+
+@router.delete("/knowledge/documents/{doc_id}/chunks/{chunk_id}")
+@_lease_kb_cache_for_operation
+async def delete_document_chunk(
+    doc_id: str,
+    chunk_id: str,
+    kb: str = Depends(verify_kb_access),
+    _perm: None = Depends(require_permission(Permission.KB_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    instance = await get_kb(kb)
+    if not instance or not instance.lightrag:
+        raise HTTPException(500, "Knowledge base is not initialized")
+    lg = instance.lightrag
+    initial_status = await _load_doc_status_json(kb)
+    canonical_id, _ = _resolve_chunk_document(initial_status or {}, doc_id)
+    before_hash = None
+    try:
+        async with _chunk_document_lock_scope(kb, canonical_id, lg):
+            all_status = await _load_doc_status_json(kb)
+            full_id, status_info = _resolve_chunk_document(all_status or {}, doc_id)
+            if _chunk_document_is_processing(full_id, kb, status_info):
+                raise HTTPException(409, "Document is currently being processed")
+            records = await _load_document_chunk_records(lg, full_id, status_info, kb)
+            old_chunk = next((value for value in records if _stored_chunk_id(value) == chunk_id), None)
+            if old_chunk is None:
+                raise HTTPException(404, f"Chunk {chunk_id} does not exist")
+            if len(records) <= 1:
+                raise HTTPException(409, "The final chunk cannot be deleted; delete the document instead")
+            before_hash = hashlib.sha256(str(old_chunk.get("content") or "").encode()).hexdigest()
+            old_status = copy.deepcopy(status_info)
+            remaining = [value for value in records if _stored_chunk_id(value) != chunk_id]
+            new_status = copy.deepcopy(status_info)
+            ordered_chunk_ids = [_stored_chunk_id(value) for value in records]
+            new_status["chunks_list"] = [value for value in ordered_chunk_ids if value != chunk_id]
+            new_status["chunks_count"] = len(remaining)
+            new_status["content_length"] = max(
+                0, int(status_info.get("content_length") or 0)
+                - len(str(old_chunk.get("content") or "")),
+            )
+            new_status["updated_at"] = datetime.now().astimezone().isoformat()
+            raw_metadata = status_info.get("metadata")
+            metadata = copy.deepcopy(raw_metadata) if isinstance(raw_metadata, dict) else {}
+            metadata["graph_sync_state"] = "stale"
+            multimodal = metadata.get("multimodal_chunks")
+            if isinstance(multimodal, dict):
+                multimodal.pop(chunk_id, None)
+            new_status["metadata"] = metadata
+            try:
+                await lg.doc_status.upsert({full_id: new_status})
+                saved_status = await lg.doc_status.get_by_id(full_id)
+                if not saved_status or saved_status.get("chunks_list") != new_status["chunks_list"]:
+                    raise RuntimeError("document status read-back verification failed")
+                await _delete_chunk_text(lg.text_chunks, [chunk_id])
+                await _delete_chunk_vectors(lg.chunks_vdb, [chunk_id])
+                await _flush_chunk_mutation_stores(lg)
+                await _refresh_chunk_search(instance, kb)
+                await delete_chunk_tags(kb, full_id, chunk_id)
+            except Exception as exc:
+                await _restore_chunk_mutation(lg, full_id, old_status, chunk_id, old_chunk, None)
+                try:
+                    await _refresh_chunk_search(instance, kb)
+                except Exception:
+                    pass
+                raise HTTPException(500, "Chunk deletion failed and was rolled back") from exc
+            response = {
+                "status": "deleted", "doc_id": full_id, "deleted_chunk_id": chunk_id,
+                "total": len(remaining),
+                "total_tokens": sum(int(value.get("tokens") or 0) for value in remaining),
+                "graph_sync_state": "stale",
+            }
+        await _log_chunk_mutation(
+            action="chunk_delete", user_id=current_user["id"], kb=kb,
+            doc_id=response["doc_id"], chunk_id=chunk_id, new_chunk_id=None,
+            before_hash=before_hash, after_hash=None, result="success",
+        )
+        return response
+    except HTTPException as exc:
+        await _log_chunk_mutation(
+            action="chunk_delete", user_id=current_user["id"], kb=kb,
+            doc_id=doc_id, chunk_id=chunk_id, new_chunk_id=None,
+            before_hash=before_hash, after_hash=None, result=f"failed:{exc.status_code}",
+        )
+        raise
 
 
 async def _query_chunks_by_doc_id(_lg, doc_id: str, kb: str) -> list[dict]:
-    """Fallback: query lightrag_doc_chunks PG table for chunks by full_doc_id."""
+    """Compatibility wrapper for the shared PostgreSQL chunk fallback."""
     try:
-        from lightrag.kg.postgres_impl import PGKVStorage, namespace_to_table_name
-        tc_store = _lg.text_chunks
-        if not isinstance(tc_store, PGKVStorage):
-            return []
-        workspace = tc_store.workspace
-        table_name = namespace_to_table_name(tc_store.namespace)
-        sql = (
-            f"SELECT id, content, tokens, chunk_order_index, file_path,"
-            f" full_doc_id, llm_cache_list"
-            f" FROM {table_name}"
-            f" WHERE workspace = $1 AND full_doc_id = $2"
-            f" ORDER BY chunk_order_index"
+        return await query_chunks_by_document_id(_lg, doc_id)
+    except PersistedChunkQueryError:
+        lightrag_logger.warning(
+            "Unable to query persisted chunks; KB=%s doc=%s", kb, doc_id,
+            exc_info=True,
         )
-        rows = await tc_store.db.query(sql, [workspace, doc_id], multirows=True)
-        if not rows:
-            return []
-        chunk_data_list = []
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            chunk = dict(row)
-            llm_cache = chunk.get("llm_cache_list")
-            if isinstance(llm_cache, str):
-                import json as _json
-                try:
-                    chunk["llm_cache_list"] = _json.loads(llm_cache)
-                except _json.JSONDecodeError:
-                    chunk["llm_cache_list"] = []
-            chunk_data_list.append(chunk)
-        return chunk_data_list
-    except Exception:
         return []
 
 
@@ -1006,11 +1900,15 @@ def _extract_media_path(chunk_data: dict) -> str | None:
     if not content:
         return None
     import re as _re
-    for pattern in (r"Image Path:\s*(\S+)", r"Table Image Path:\s*(\S+)"):
+    for pattern in (
+        r"Image Path:\s*(\S+)",
+        r"Table Image Path:\s*(\S+)",
+        r"- Video Path:\s*(\S+)",
+    ):
         match = _re.search(pattern, content)
         if match:
             path_str = match.group(1).strip()
-            if path_str and Path(path_str).exists():
+            if path_str:
                 return path_str
     return None
 
@@ -1236,106 +2134,15 @@ async def repair_kb_orphans(
     if not instance.lightrag:
         raise HTTPException(500, "知识库未初始化")
 
-    base = Path(kb_dir(kb))
-    workspace = kb_dir(kb)  # raw string for workspace matching (see knowledge_stats)
-
-    # 加载合法文档白名单 — PG-backed
-    doc_data = await _load_doc_status_json(kb)
-    if not doc_data:
-        return {"status": "ok", "message": "无文档记录，无需修复", "cleaned": {}}
-    valid_doc_ids = set(doc_data.keys())
-
-    _lg = instance.lightrag
-    report: dict[str, int] = {}
-
-    # ── 1. 扫描 full_entities ──
-    entities_data = await _pg_fetch_graph_entities(workspace)
-    if entities_data:
-        orphan_entity_keys = [k for k in entities_data if k not in valid_doc_ids]
-        if orphan_entity_keys:
-            _ent_names_to_delete: list[str] = []
-            for _ok in orphan_entity_keys:
-                _ed = entities_data.get(_ok, {})
-                _ent_names_to_delete.extend(_ed.get("entity_names", []))
-                try:
-                    await _lg.full_entities.delete([_ok])
-                except Exception:
-                    pass
-            # 删除孤儿实体向量和图谱节点
-            if _ent_names_to_delete:
-                try:
-                    await _lg.entities_vdb.delete(_ent_names_to_delete)
-                except Exception:
-                    pass
-                try:
-                    _graph = getattr(_lg, "chunk_entity_relation_graph", None)
-                    if _graph:
-                        for _en in _ent_names_to_delete:
-                            try:
-                                await _graph.delete_node(_en)
-                            except Exception:
-                                pass
-                except Exception:
-                    pass
-            report["orphan_entities"] = len(orphan_entity_keys)
-            lightrag_logger.info(
-                "[REPAIR] KB=%s 清理 %d 个孤儿实体组 (%d 个实体向量)",
-                kb, len(orphan_entity_keys), len(_ent_names_to_delete),
-            )
-
-    # ── 2. 扫描 full_relations ──
-    relations_data = await _pg_fetch_graph_relations(workspace)
-    if relations_data:
-        orphan_rel_keys = [k for k in relations_data if k not in valid_doc_ids]
-        if orphan_rel_keys:
-            for _ok in orphan_rel_keys:
-                try:
-                    await _lg.full_relations.delete([_ok])
-                except Exception:
-                    pass
-            report["orphan_relations"] = len(orphan_rel_keys)
-            lightrag_logger.info(
-                "[REPAIR] KB=%s 清理 %d 个孤儿关系组", kb, len(orphan_rel_keys),
-            )
-
-    # ── 3. 扫描 full_docs ──
-    full_docs_data = await _load_full_docs_json(kb)
-    if full_docs_data:
-        orphan_doc_keys = [k for k in full_docs_data if k not in valid_doc_ids]
-        if orphan_doc_keys:
-            for _ok in orphan_doc_keys:
-                try:
-                    await _lg.full_docs.delete([_ok])
-                except Exception:
-                    pass
-            report["orphan_docs"] = len(orphan_doc_keys)
-
-    # ── 4. 扫描 image_vision_repo（PG/NVDB 统一接口）──
-    if hasattr(_lg, "image_vision_repo") and _lg.image_vision_repo is not None:
-        try:
-            _repo = _lg.image_vision_repo
-            _orphan_ids = await _repo.get_orphan_ids(valid_doc_ids)
-            if _orphan_ids:
-                _orphan_img = await _repo.delete_by_ids(_orphan_ids)
-                await _repo.flush()
-                report["orphan_vision_vectors"] = _orphan_img
-                lightrag_logger.info(
-                    "[REPAIR] KB=%s 清理 %d 个孤儿视觉向量", kb, _orphan_img,
-                )
-        except Exception as e:
-            lightrag_logger.warning("[REPAIR] 视觉向量清理失败: %s", e)
-
-    # ── 5. 持久化（绕过 finalize 对非 cache 命名空间的 NO-OP）──
-    for _store in [_lg.full_entities, _lg.full_relations, _lg.full_docs]:
-        try:
-            await _store.index_done_callback()
-        except Exception:
-            pass
+    # Full reconciliation is intentionally explicit. Normal successful
+    # document deletion is handled by LightRAG's targeted delete path and
+    # must not scan an entire KB after every request.
     try:
-        if hasattr(_lg, "entities_vdb") and _lg.entities_vdb is not None:
-            await _lg.entities_vdb.index_done_callback()
-    except Exception:
-        pass
+        report = await _purge_all_orphans(
+            instance, kb, deep_scan=True, strict=True
+        )
+    except RuntimeError as exc:
+        raise HTTPException(503, f"知识库修复检查不可用: {exc}") from exc
 
     # 清除查询缓存
     try:
@@ -2015,7 +2822,7 @@ async def download_document(
 
     # 安全检查：确保文件在项目目录内
     try:
-        real_path.relative_to(Path.cwd())
+        real_path.relative_to(Path.cwd().resolve())
     except ValueError:
         raise HTTPException(403, "不允许访问项目目录外的文件")
 
@@ -2089,6 +2896,44 @@ def _cleanup_document_files(kb_name: str, file_path: str, doc_id: str = "") -> N
                 pass
 
 
+async def _cleanup_document_vision_vectors(instance, doc_ids: list[str]) -> None:
+    """Cancel pending writes, then remove vision vectors for deleted documents."""
+    doc_ids = [doc_id for doc_id in doc_ids if doc_id]
+    if not doc_ids:
+        return
+
+    image_processor = (getattr(instance, "modal_processors", None) or {}).get("image")
+    if image_processor is not None and hasattr(
+        image_processor, "cancel_pending_vision_tasks"
+    ):
+        try:
+            await image_processor.cancel_pending_vision_tasks(set(doc_ids))
+        except Exception:
+            lightrag_logger.warning(
+                "[CLEANUP] Unable to cancel pending vision tasks for docs=%s",
+                doc_ids,
+                exc_info=True,
+            )
+
+    repo = getattr(instance.lightrag, "image_vision_repo", None)
+    if repo is None:
+        return
+
+    for doc_id in doc_ids:
+        try:
+            await repo.delete_by_doc_id(doc_id)
+        except Exception:
+            lightrag_logger.warning(
+                "[CLEANUP] Unable to delete vision vectors for doc=%s",
+                doc_id,
+                exc_info=True,
+            )
+    try:
+        await repo.flush()
+    except Exception:
+        lightrag_logger.warning("[CLEANUP] Unable to flush vision vectors", exc_info=True)
+
+
 async def _force_cleanup_lightrag_orphans(instance, full_id: str) -> list[str]:
     """显式清理 LightRAG 内部存储中属于 full_id 的孤儿数据。
 
@@ -2133,40 +2978,10 @@ async def _force_cleanup_lightrag_orphans(instance, full_id: str) -> list[str]:
         except Exception:
             pass
 
-    # 2. 清理实体/关系向量库和图谱
-    if _ent_names:
-        try:
-            if hasattr(_lg, "entities_vdb") and _lg.entities_vdb is not None:
-                await _lg.entities_vdb.delete(_ent_names)
-                _cleaned.append("entities_vdb")
-        except Exception:
-            pass
-        try:
-            if hasattr(_lg, "relationships_vdb") and _lg.relationships_vdb is not None:
-                await _lg.relationships_vdb.delete(_ent_names)
-        except Exception:
-            pass
-        try:
-            _graph = getattr(_lg, "chunk_entity_relation_graph", None)
-            if _graph is not None:
-                for _ename in _ent_names:
-                    try:
-                        await _graph.delete_node(_ename)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-    if _rel_pairs:
-        try:
-            _graph = getattr(_lg, "chunk_entity_relation_graph", None)
-            if _graph is not None:
-                for _src, _tgt in _rel_pairs:
-                    try:
-                        await _graph.remove_edges([(_src, _tgt)])
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+    # 2. VDB and graph cleanup is deferred to _purge_all_orphans(). Vector
+    # store IDs are backend-specific hashes, and an entity/relation can still
+    # be referenced by another document. Deleting by raw names here risks
+    # removing valid shared vectors.
 
     # 3. 显式持久化（绕过 LightRAG finalize() 对非 cache 命名空间的 NO-OP）
     for _store in [_lg.full_entities, _lg.full_relations, _lg.full_docs]:
@@ -2183,28 +2998,36 @@ async def _force_cleanup_lightrag_orphans(instance, full_id: str) -> list[str]:
     return _cleaned
 
 
-async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
-    """全量扫描并清除所有不在 doc_status 白名单中的孤儿数据。
+async def _purge_all_orphans(
+    instance, kb: str, *, deep_scan: bool = False, strict: bool = False
+) -> dict[str, int]:
+    """Reconcile persisted orphan data during explicit repair flows.
 
-    每次文档删除后调用此函数，确保 full_entities / full_relations /
-    full_docs / image_vision_repo 中不残留任何已删除文档的数据。
+    Successful LightRAG document deletion is already targeted and must not
+    call this O(KB) reconciliation routine. Callers use it only after a
+    ``not_found`` recovery or through the explicit repair endpoint.
 
     Returns:
         {"entities": N, "relations": N, "docs": N, "vision_vectors": N}
     """
     _lg = instance.lightrag
-    base = Path(kb_dir(kb))
     workspace = kb_dir(kb)  # raw string for workspace matching (see knowledge_stats)
     report: dict[str, int] = {}
 
-    # ── 加载 doc_status 白名单 — PG-backed ──
-    doc_data = await _load_doc_status_json(kb)
-    if not doc_data:
+    # Fetch directly from PG so an empty result is an authoritative empty
+    # whitelist rather than the ambiguous empty-dict fallback returned by
+    # _load_doc_status_json() during a transient storage failure.
+    try:
+        valid_doc_ids = await _pg_fetch_doc_ids(workspace)
+    except Exception as exc:
+        lightrag_logger.warning(
+            "[PURGE-ORPHANS] Unable to load authoritative doc IDs for KB=%s: %s",
+            kb,
+            exc,
+        )
+        if strict:
+            raise RuntimeError("authoritative doc-status lookup failed") from exc
         return report
-    valid_doc_ids = set(doc_data.keys())
-    if not valid_doc_ids:
-        # 全部文档已删除 → 清空所有存储
-        valid_doc_ids = set()
 
     # ── 1. full_entities ──
     entities_data: dict = await _pg_fetch_graph_entities(workspace)
@@ -2212,27 +3035,11 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
         try:
             orphan_keys = [k for k in entities_data if k not in valid_doc_ids]
             if orphan_keys:
-                _ent_names: list[str] = []
                 for _ok in orphan_keys:
-                    _ed = entities_data.get(_ok, {})
-                    _ent_names.extend(_ed.get("entity_names", []))
                     try:
                         await _lg.full_entities.delete([_ok])
                     except Exception:
                         pass
-                # 清理实体向量和图谱节点
-                if _ent_names and hasattr(_lg, "entities_vdb") and _lg.entities_vdb is not None:
-                    try:
-                        await _lg.entities_vdb.delete(_ent_names)
-                    except Exception:
-                        pass
-                _graph = getattr(_lg, "chunk_entity_relation_graph", None)
-                if _graph and _ent_names:
-                    for _en in _ent_names:
-                        try:
-                            await _graph.delete_node(_en)
-                        except Exception:
-                            pass
                 report["entities"] = len(orphan_keys)
         except Exception:
             pass
@@ -2243,21 +3050,9 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
         try:
             orphan_keys = [k for k in relations_data if k not in valid_doc_ids]
             if orphan_keys:
-                # 收集孤儿 relation pairs 用于清理 VDB
-                _rel_pairs: list[list[str]] = []
                 for _ok in orphan_keys:
-                    _rd = relations_data.get(_ok, {})
-                    _rel_pairs.extend(_rd.get("relation_pairs", []))
                     try:
                         await _lg.full_relations.delete([_ok])
-                    except Exception:
-                        pass
-                # 清理 relationships_vdb 中的向量
-                if _rel_pairs and hasattr(_lg, "relationships_vdb") and _lg.relationships_vdb is not None:
-                    try:
-                        # Relation VDB keys: "src<SEP>tgt" format
-                        _rel_ids = [f"{src}<SEP>{tgt}" for src, tgt in _rel_pairs]
-                        await _lg.relationships_vdb.delete(_rel_ids)
                     except Exception:
                         pass
                 report["relations"] = len(orphan_keys)
@@ -2265,10 +3060,20 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
             pass
 
     # ── 3. full_docs ──
-    full_docs_data = await _load_full_docs_json(kb)
-    if full_docs_data:
+    try:
+        full_doc_ids = await _pg_fetch_full_doc_ids(workspace)
+    except Exception as exc:
+        lightrag_logger.warning(
+            "[PURGE-ORPHANS] Unable to enumerate full docs for KB=%s: %s",
+            kb,
+            exc,
+        )
+        if strict:
+            raise RuntimeError("full-document enumeration failed") from exc
+        full_doc_ids = set()
+    if full_doc_ids:
         try:
-            orphan_keys = [k for k in full_docs_data if k not in valid_doc_ids]
+            orphan_keys = [k for k in full_doc_ids if k not in valid_doc_ids]
             if orphan_keys:
                 for _ok in orphan_keys:
                     try:
@@ -2322,157 +3127,149 @@ async def _purge_all_orphans(instance, kb: str) -> dict[str, int]:
             ", ".join(f"{k}={v}" for k, v in report.items()),
         )
 
-    # ── 6. VDB + 图谱深层扫描 ──
+    # ── 6. Optional VDB + 图谱深层扫描 ──
     # 步骤 1-3 依赖 full_entities.json 里的 doc_id → entity_names 映射来
     # 定位孤儿。但如果 full_entities 本身因为旧 bug 没写盘，实体向量会残留
     # 在 entities_vdb / relationships_vdb / 图谱中无法被追踪到。
     # 此处直接扫描 VDB 和图谱，清理所有不在 full_entities 白名单中的条目。
-    _vdb_purged = await _purge_orphan_vdb_entries(_lg, entities_data, relations_data)
-    if _vdb_purged:
-        for k, v in _vdb_purged.items():
-            report[k] = report.get(k, 0) + v
+    if deep_scan:
+        valid_entities_data = {
+            doc_id: value
+            for doc_id, value in entities_data.items()
+            if doc_id in valid_doc_ids
+        }
+        valid_relations_data = {
+            doc_id: value
+            for doc_id, value in relations_data.items()
+            if doc_id in valid_doc_ids
+        }
+        _vdb_purged = await _purge_orphan_vdb_entries(
+            _lg, valid_entities_data, valid_relations_data
+        )
+        if _vdb_purged:
+            for k, v in _vdb_purged.items():
+                report[k] = report.get(k, 0) + v
 
     return report
 
 
 async def _purge_orphan_vdb_entries(lg, entities_data: dict, relations_data: dict = None) -> dict[str, int]:
-    """Deep-scan entities_vdb, relationships_vdb, and graph for entries
-    whose names are not referenced by any doc in full_entities or full_relations.
+    """Reconcile orphan VDB and graph entries without guessing hashed IDs.
 
-    This catches stale vectors left over when ``full_entities``/``full_relations``
-    entries were lost due to old bugs (e.g. ``finalize_storages`` not writing to disk).
-
-    Returns:
-        {"entities_vdb": N, "relationships_vdb": N, "graph_nodes": N}
+    LightRAG stores opaque vector IDs (for example ``ent-*`` hashes). The
+    metadata fields identify the entity or relation, so they are the only
+    safe basis for membership tests; once a row is known to be orphaned, its
+    actual ``__id__`` is passed to the VDB delete operation.
     """
     report: dict[str, int] = {}
-    if relations_data is None:
-        relations_data = {}
+    relations_data = relations_data or {}
 
-    # Build whitelist: all entity names known to full_entities
-    valid_ent_names: set[str] = set()
-    for v in entities_data.values():
-        valid_ent_names.update(v.get("entity_names", []))
+    valid_ent_names = {
+        str(name)
+        for value in entities_data.values()
+        for name in value.get("entity_names", [])
+        if name
+    }
+    valid_rel_keys = {
+        f"{src}<SEP>{tgt}"
+        for value in relations_data.values()
+        for src, tgt in value.get("relation_pairs", [])
+        if src and tgt
+    }
 
-    # Build whitelist: all relation keys known to full_relations
-    # Relation VDB uses "src<SEP>tgt" format
-    valid_rel_keys: set[str] = set()
-    for v in relations_data.values():
-        for src, tgt in v.get("relation_pairs", []):
-            valid_rel_keys.add(f"{src}<SEP>{tgt}")
-
-    # ── Helper: safely enumerate NanoVectorDB data rows ──
-    def _vdb_rows(vdb):
-        """Return list of data rows from a NanoVectorDB instance.
-
-        Uses the private ``_NanoVectorDB__storage`` attribute (name-mangled).
-        Returns empty list if VDB is None or attribute access fails.
-        """
-        if vdb is None:
-            return []
+    def _vdb_rows(vdb) -> list[dict]:
+        """Return inspectable NanoVectorDB rows; opaque backends are skipped."""
         storage = getattr(vdb, "_NanoVectorDB__storage", None)
-        if not isinstance(storage, dict):
-            return []
-        data = storage.get("data")
-        if not isinstance(data, list):
-            return []
-        return data
+        data = storage.get("data") if isinstance(storage, dict) else None
+        return [row for row in data if isinstance(row, dict)] if isinstance(data, list) else []
 
-    # ── entities_vdb deep scan ──
     if hasattr(lg, "entities_vdb") and lg.entities_vdb is not None:
         try:
-            _vdb = lg.entities_vdb
-            orphan_names: list[str] = []
-            for _row in _vdb_rows(_vdb):
-                _name = _row.get("__id__") or _row.get("entity_name") or ""
-                if _name and _name not in valid_ent_names:
-                    orphan_names.append(_name)
-            if orphan_names:
-                await _vdb.delete(orphan_names)
-                report["entities_vdb"] = len(orphan_names)
-                lightrag_logger.info(
-                    "[PURGE-ORPHANS-VDB] entities_vdb 清理了 %d 个不在白名单的向量",
-                    len(orphan_names),
-                )
-        except Exception as _e:
-            lightrag_logger.warning("[PURGE-ORPHANS-VDB] entities_vdb 扫描失败: %s", _e)
+            vdb = lg.entities_vdb
+            orphan_ids = [
+                row.get("__id__")
+                for row in _vdb_rows(vdb)
+                if row.get("__id__")
+                and row.get("entity_name")
+                and str(row["entity_name"]) not in valid_ent_names
+            ]
+            if orphan_ids:
+                await vdb.delete(orphan_ids)
+                report["entities_vdb"] = len(orphan_ids)
+        except Exception as exc:
+            lightrag_logger.warning("[PURGE-ORPHANS-VDB] entities_vdb scan failed: %s", exc)
 
-    # ── relationships_vdb deep scan ──
     if hasattr(lg, "relationships_vdb") and lg.relationships_vdb is not None:
         try:
-            _rvdb = lg.relationships_vdb
-            orphan_rel_names: list[str] = []
-            for _row in _vdb_rows(_rvdb):
-                _name = _row.get("__id__") or _row.get("relation_name") or ""
-                if _name and _name not in valid_rel_keys:
-                    orphan_rel_names.append(_name)
-            if orphan_rel_names:
-                await _rvdb.delete(orphan_rel_names)
-                report["relationships_vdb"] = len(orphan_rel_names)
-                lightrag_logger.info(
-                    "[PURGE-ORPHANS-VDB] relationships_vdb 清理了 %d 个不在白名单的向量",
-                    len(orphan_rel_names),
+            vdb = lg.relationships_vdb
+            orphan_ids: list[str] = []
+            for row in _vdb_rows(vdb):
+                vector_id = row.get("__id__")
+                src = row.get("src_id")
+                tgt = row.get("tgt_id")
+                relation_key = (
+                    f"{src}<SEP>{tgt}" if src and tgt else row.get("relation_name")
                 )
-        except Exception as _e:
-            lightrag_logger.warning("[PURGE-ORPHANS-VDB] relationships_vdb 扫描失败: %s", _e)
+                if vector_id and relation_key and str(relation_key) not in valid_rel_keys:
+                    orphan_ids.append(str(vector_id))
+            if orphan_ids:
+                await vdb.delete(orphan_ids)
+                report["relationships_vdb"] = len(orphan_ids)
+        except Exception as exc:
+            lightrag_logger.warning("[PURGE-ORPHANS-VDB] relationships_vdb scan failed: %s", exc)
 
-    # ── graph node deep scan ──
-    _graph = getattr(lg, "chunk_entity_relation_graph", None)
-    if _graph is not None and valid_ent_names:
+    graph = getattr(lg, "chunk_entity_relation_graph", None)
+    if graph is not None:
         try:
-            # Use existing graph API to enumerate nodes if available
-            orphan_graph_nodes: list[str] = []
-            _all_nodes = set()
-            # Try getting all nodes via graph storage
-            _graph_storage = getattr(_graph, "_graph", None)
-            if _graph_storage is not None:
-                # NetworkX graph
-                _all_nodes = set(_graph_storage.nodes())
-            elif hasattr(_graph, "get_all_nodes"):
-                _all_nodes = set(_graph.get_all_nodes() or [])
+            graph_storage = getattr(graph, "_graph", None)
+            if graph_storage is not None:
+                raw_nodes = list(graph_storage.nodes())
+            elif hasattr(graph, "get_all_nodes"):
+                raw_nodes = graph.get_all_nodes()
+                if inspect.isawaitable(raw_nodes):
+                    raw_nodes = await raw_nodes
             else:
-                # Fallback: enumerate from _node_data if available
-                _nd = getattr(_graph, "_node_data", None)
-                if _nd:
-                    _all_nodes = set(_nd.keys())
+                raw_nodes = list((getattr(graph, "_node_data", None) or {}).keys())
 
-            for _node in _all_nodes:
-                _node_name = str(_node)
-                if _node_name and _node_name not in valid_ent_names:
-                    orphan_graph_nodes.append(_node_name)
+            orphan_nodes: list[str] = []
+            for node in raw_nodes or []:
+                if isinstance(node, dict):
+                    node_name = node.get("id") or node.get("entity_id") or node.get("name")
+                else:
+                    node_name = node
+                node_name = str(node_name or "")
+                if node_name and node_name not in valid_ent_names:
+                    orphan_nodes.append(node_name)
 
-            if orphan_graph_nodes:
-                for _gn in orphan_graph_nodes:
-                    try:
-                        await _graph.delete_node(_gn)
-                    except Exception:
-                        pass
-                report["graph_nodes"] = len(orphan_graph_nodes)
-                lightrag_logger.info(
-                    "[PURGE-ORPHANS-VDB] graph 清理了 %d 个不在白名单的节点",
-                    len(orphan_graph_nodes),
-                )
-        except Exception as _e:
-            lightrag_logger.warning("[PURGE-ORPHANS-VDB] graph 扫描失败: %s", _e)
+            if orphan_nodes:
+                for node_name in orphan_nodes:
+                    await graph.delete_node(node_name)
+                report["graph_nodes"] = len(orphan_nodes)
+                if hasattr(graph, "index_done_callback"):
+                    await graph.index_done_callback()
+        except Exception as exc:
+            lightrag_logger.warning("[PURGE-ORPHANS-VDB] graph scan failed: %s", exc)
 
-    # Persist VDB changes
     if report:
-        try:
-            if hasattr(lg, "entities_vdb") and lg.entities_vdb is not None:
-                await lg.entities_vdb.index_done_callback()
-        except Exception:
-            pass
-        try:
-            if hasattr(lg, "relationships_vdb") and lg.relationships_vdb is not None:
-                await lg.relationships_vdb.index_done_callback()
-        except Exception:
-            pass
+        for attr in ("entities_vdb", "relationships_vdb"):
+            vdb = getattr(lg, attr, None)
+            if vdb is not None and hasattr(vdb, "index_done_callback"):
+                try:
+                    await vdb.index_done_callback()
+                except Exception:
+                    pass
 
     return report
 
 
+def _task_is_active_for_document_delete(task: dict[str, Any]) -> bool:
+    """Keep recovery's KB liveness guard until a worker reaches a terminal state."""
+    return str(task.get("status") or "").lower() not in {"completed", "failed"}
+
+
 @router.delete("/knowledge/documents/{doc_id}")
-async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
+@_lease_kb_cache_for_operation
+async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm: None = Depends(require_permission(Permission.KB_WRITE)), current_user: dict = Depends(get_current_user)):
     """删除文档 - 使用 LightRAG 的 adelete_by_doc_id 彻底清理所有关联数据"""
     instance = await get_kb(kb)
     if not instance.lightrag:
@@ -2494,6 +3291,8 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
         # 可能是一个处理中/失败的 processing task，尝试从 processing_tasks 中移除
         task = await get_task_status(doc_id)
         if task:
+            if _task_is_active_for_document_delete(task):
+                raise HTTPException(409, "文档仍在处理中，不能删除活动任务")
             fname = task.get("file", "未知")
             await delete_task(doc_id)
             await add_event("doc_delete", file=fname, doc_id=doc_id, kb=kb, source="processing_tasks", user_id=current_user["id"])
@@ -2501,6 +3300,8 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
         # 也尝试按 file_path 匹配（前端可能传文件名相关的 ID）
         for tid, task in list(processing_tasks.items()):
             if task.get("kb", "") == kb and task.get("file", "") == doc_id:
+                if _task_is_active_for_document_delete(task):
+                    raise HTTPException(409, "文档仍在处理中，不能删除活动任务")
                 await delete_task(tid)
                 await add_event("doc_delete", file=doc_id, doc_id=tid, kb=kb, source="processing_tasks", user_id=current_user["id"])
                 return {"status": "deleted", "doc_id": tid, "file": doc_id, "message": "已从处理队列中移除"}
@@ -2513,6 +3314,7 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
 
     await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
 
+    needs_orphan_repair = False
     if result.status == "success":
         _cleanup_document_files(kb, file_name, full_id)
         # Clean up multimodal status cache entry for this document
@@ -2522,14 +3324,7 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
                 await instance.multimodal_status_cache.index_done_callback()
             except Exception:
                 pass
-        # Clean up vision embedding repository for this document
-        if (hasattr(instance.lightrag, 'image_vision_repo')
-                and instance.lightrag.image_vision_repo is not None):
-            try:
-                await instance.lightrag.image_vision_repo.delete_by_doc_id(full_id)
-                await instance.lightrag.image_vision_repo.flush()
-            except Exception:
-                pass
+        await _cleanup_document_vision_vectors(instance, [full_id])
 
         # Force LightRAG storages to persist deletions to disk so that
         # _bigram_image_scan and other disk-level readers see up-to-date data.
@@ -2537,6 +3332,8 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
         # Invalidate query cache to prevent stale results referencing deleted data
         from raganything.query_cache import get_query_cache
         get_query_cache().invalidate()
+        await delete_document_tags(kb, full_id)
+        await pg_release_upload_for_deleted_document(kb, file_name)
         _delete_response = {"status": "deleted", "doc_id": full_id, "file": file_name, "message": result.message}
     elif result.status == "not_found":
         # Data may be partially missing (e.g. multimodal processing was
@@ -2568,28 +3365,39 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), curr
                 "[NOT_FOUND-CLEANUP] doc=%s 已清理存储: %s",
                 full_id, ", ".join(_cleaned_stores) if _cleaned_stores else "无额外存储需清理",
             )
+            await _cleanup_document_vision_vectors(instance, [full_id])
             # Invalidate query cache even for partial cleanup
             from raganything.query_cache import get_query_cache
             get_query_cache().invalidate()
+            await delete_document_tags(kb, full_id)
+            await pg_release_upload_for_deleted_document(kb, file_name)
             _delete_response = {
                 "status": "deleted",
                 "doc_id": full_id,
                 "file": file_name,
                 "message": "文档记录已清理（部分数据不完整）",
             }
+            needs_orphan_repair = True
         except Exception:
             raise HTTPException(404, f"文档 {file_name} 数据未找到")
     else:
         raise HTTPException(500, result.message)
 
-    # ── 删除后全量孤儿扫描：确保 full_entities/full_relations 等存储中
-    #    不残留任何已删除文档的数据（包括历史残留）。 ──
-    await _purge_all_orphans(instance, kb)
+    if needs_orphan_repair:
+        try:
+            await _purge_all_orphans(instance, kb, deep_scan=True)
+        except Exception:
+            lightrag_logger.warning(
+                "[NOT_FOUND-CLEANUP] Deep orphan repair failed for doc=%s",
+                full_id,
+                exc_info=True,
+            )
     return _delete_response
 
 
 @router.post("/knowledge/documents/batch-delete")
-async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
+@_lease_kb_cache_for_operation
+async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(verify_kb_access), _perm: None = Depends(require_permission(Permission.KB_WRITE)), current_user: dict = Depends(get_current_user)):
     """批量删除文档 - 一次请求删除多个文档"""
     instance = await get_kb(kb)
     if not instance.lightrag:
@@ -2618,6 +3426,9 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
             # Try processing_tasks
             task = await get_task_status(doc_id)
             if task:
+                if _task_is_active_for_document_delete(task):
+                    errors.append({"doc_id": doc_id, "error": "文档仍在处理中，不能删除活动任务"})
+                    continue
                 await delete_task(doc_id)
                 await add_event("doc_delete", file=task.get("file", "?"), doc_id=doc_id, kb=kb, source="processing_tasks", user_id=current_user["id"])
                 deleted.append(doc_id)
@@ -2633,6 +3444,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
                 deleted.append(doc_id)
                 deleted_full_ids.append(full_id)
                 _cleanup_document_files(kb, file_name, full_id)
+                await pg_release_upload_for_deleted_document(kb, file_name)
                 await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
                 if result.status == "not_found":
                     not_found_full_ids.append(full_id)
@@ -2670,6 +3482,12 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
         except Exception:
             pass
 
+    # Success and not_found recoveries both remove the document record, so
+    # clean each document's vision vectors directly and flush once per batch.
+    await _cleanup_document_vision_vectors(instance, deleted_full_ids)
+    for deleted_document_id in deleted_full_ids:
+        await delete_document_tags(kb, deleted_document_id)
+
     # PG-backed: doc_status is already updated via LightRAG; no JSON file to write
 
     # Force LightRAG storages to persist deletions + invalidate query cache
@@ -2678,15 +3496,22 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
         from raganything.query_cache import get_query_cache
         get_query_cache().invalidate()
 
-    # ── 删除后全量孤儿扫描 ──
-    await _purge_all_orphans(instance, kb)
+    if not_found_full_ids:
+        try:
+            await _purge_all_orphans(instance, kb, deep_scan=True)
+        except Exception:
+            lightrag_logger.warning(
+                "[BATCH-NOT_FOUND-CLEANUP] Deep orphan repair failed for docs=%s",
+                not_found_full_ids,
+                exc_info=True,
+            )
 
     return {"deleted": deleted, "not_found": not_found, "errors": errors,
             "total_deleted": len(deleted), "total_failed": len(errors)}
 
 
 @router.post("/knowledge/documents/{doc_id}/retry")
-async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user), background_tasks: BackgroundTasks = None):
+async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm: None = Depends(require_permission(Permission.KB_WRITE)), current_user: dict = Depends(get_current_user), background_tasks: BackgroundTasks = None):
     """重试处理失败的文档 — PG-backed"""
     # PG-backed doc_status lookup
     data = await _load_doc_status_json(kb)
@@ -2705,6 +3530,14 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), curre
 
     if not full_id:
         raise HTTPException(404, "文档不存在")
+
+    stored_metadata = data.get(full_id, {}).get("metadata") or {}
+    stored_strategy = (
+        stored_metadata.get("chunking_strategy")
+        if isinstance(stored_metadata, dict)
+        else ""
+    )
+    actual_strategy = _resolve_chunking_strategy(stored_strategy)
 
     # 查找原始文件路径
     upload_dir = Path("./uploads")
@@ -2733,12 +3566,52 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), curre
         "file_path": str(file_path.absolute()),
         "filename": file_name,
         "kb_name": kb,
-        "chunking_strategy": "",
+        "chunking_strategy": actual_strategy,
         "user_id": current_user["id"],
     }
+    await upsert_task_state(
+        task_id,
+        {
+            "id": task_id,
+            "file": file_name,
+            "status": "queued",
+            "started_at": datetime.now().isoformat(),
+            "progress": 0,
+            "kb": kb,
+            "user_id": current_user["id"],
+            "phase": "queued",
+            "phase_status": "queued",
+            "message": "Retry queued",
+            "chunking_strategy": actual_strategy,
+        },
+    )
+    try:
+        file_hash = _compute_file_hash(str(file_path))
+        await pg_update_upload_status(
+            file_hash,
+            kb,
+            "queued",
+            task_id=task_id,
+            error_message="",
+        )
+    except Exception:
+        lightrag_logger.warning(
+            "[RETRY] Could not reset uploaded_files state for file=%s kb=%s",
+            file_name,
+            kb,
+            exc_info=True,
+        )
     queue, qsize = await _ensure_queue_draining(kb)
     queue.put_nowait(task_info)
+    await add_event(
+        "upload_retry_queued",
+        file=file_name,
+        task_id=task_id,
+        kb=kb,
+        user_id=current_user["id"],
+    )
     return {"status": "queued", "task_id": task_id, "filename": file_name,
+            "chunking_strategy": actual_strategy,
             "position": qsize + 1, "queue_size": qsize + 1,
             "message": "文档已加入处理队列"}
 
@@ -2747,6 +3620,7 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), curre
 async def reprocess_multimodal(
     kb_name: str,
     background_tasks: BackgroundTasks,
+    _perm: None = Depends(require_permission(Permission.SETTINGS_WRITE)),
     current_user: dict = Depends(get_current_user),
 ):
     """回溯处理知识库中文档的多模态内容（图片/表格/公式）。
@@ -2754,17 +3628,13 @@ async def reprocess_multimodal(
     扫描 KB 中 ``multimodal_processed`` 不为 ``true`` 的文档，从原始文件
     重新解析（优先走解析缓存），仅执行多模态处理——不重新插入文本。
     """
-    # Require admin permission
-    if not current_user.get("is_admin", False):
-        raise HTTPException(403, "仅管理员可执行此操作")
-
     try:
         # Scan first to get count — PG-backed
         all_docs = await _load_doc_status_json(kb_name)
         total = sum(
             1 for info in all_docs.values()
             if info.get("status") != "failed"
-            and not info.get("multimodal_processed", False)
+            and not is_multimodal_processed(info)
         )
 
         if total == 0:
@@ -2812,7 +3682,7 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
             "active": name == _shared.active_kb,
         })
     # 新用户没有 KB 时自动创建个人 KB 并初始化存储
-    if not kbs and not is_admin:
+    if not kbs and not is_admin and await _auth_has_permission(current_user["id"], Permission.KB_WRITE):
         personal_kb = current_user["username"]
         label = f"{current_user['username']}的知识库"
         meta[personal_kb] = {
@@ -2835,17 +3705,29 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
 
     visible_names = [kb["name"] for kb in kbs]
     stats_by_name: dict[str, dict[str, int]] = {}
+    content_updates_by_name: dict[str, str] = {}
     if visible_names:
-        try:
-            stats_by_name = await asyncio.wait_for(
+        stats_result, content_updates_result = await asyncio.gather(
+            asyncio.wait_for(
                 _compute_kb_stats_batch_fast(visible_names),
                 timeout=KB_STATS_BATCH_TIMEOUT_SECONDS,
-            )
-        except Exception:
-            stats_by_name = {}
+            ),
+            asyncio.wait_for(
+                pg_get_latest_content_updates_batch(visible_names),
+                timeout=KB_STATS_BATCH_TIMEOUT_SECONDS,
+            ),
+            return_exceptions=True,
+        )
+        if isinstance(stats_result, dict):
+            stats_by_name = stats_result
+        if isinstance(content_updates_result, dict):
+            content_updates_by_name = content_updates_result
 
     for kb in kbs:
         kb["stats"] = stats_by_name.get(kb["name"], _stats_unavailable_payload())
+        kb["last_content_updated_at"] = (
+            content_updates_by_name.get(kb["name"]) or kb["created"]
+        )
 
     elapsed_ms = (time.perf_counter() - started_at) * 1000
     lightrag_logger.info(
@@ -2859,7 +3741,7 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
 
 
 @router.post("/kb/create")
-async def create_kb(kb_name: str = QueryParam(...), current_user: dict = Depends(get_current_user), label: str = QueryParam(""), domain: str = QueryParam("general")):
+async def create_kb(kb_name: str = QueryParam(...), _perm: None = Depends(require_permission(Permission.KB_WRITE)), current_user: dict = Depends(get_current_user), label: str = QueryParam(""), domain: str = QueryParam("general")):
     meta = await load_kb_meta()
     if kb_name in meta:
         raise HTTPException(400, f"知识库 '{kb_name}' 已存在")
@@ -2891,7 +3773,7 @@ async def switch_kb(name: str = QueryParam(...), current_user: dict = Depends(ge
 
 
 @router.delete("/kb/{name}")
-async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
+async def delete_kb(name: str, _perm: None = Depends(require_permission(Permission.KB_DELETE)), current_user: dict = Depends(get_current_user)):
     """删除知识库 — 清理所有资源（Worker 进程、队列、缓存、文件、元数据）。
 
     委托给 ``cleanup_kb_resources()`` 统一处理，确保不遗漏任何状态。
@@ -2908,6 +3790,7 @@ async def delete_kb(name: str, current_user: dict = Depends(get_current_user)):
         raise HTTPException(403, "无权删除该知识库")
 
     await cleanup_kb_resources(name)
+    await delete_kb_tags(name)
     return {"status": "deleted", "name": name}
 
 
@@ -3001,7 +3884,7 @@ async def serve_image(
         raise HTTPException(401, "请提供有效的认证 Token（query 参数 ?token= 或 Authorization header）")
 
     abs_path = Path(path).resolve()
-    cwd = Path.cwd()
+    cwd = Path.cwd().resolve()
     # 安全检查：只允许项目目录内的文件
     try:
         abs_path.relative_to(cwd)

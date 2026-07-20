@@ -56,6 +56,9 @@ def _check_ffmpeg_available() -> bool:
         return True
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return False
+    except OSError as exc:
+        logger.warning("ffmpeg probe failed; disabling video support: %s", exc)
+        return False
 
 
 def _check_ffprobe_available() -> bool:
@@ -69,6 +72,9 @@ def _check_ffprobe_available() -> bool:
         )
         return True
     except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+    except OSError as exc:
+        logger.warning("ffprobe probe failed; disabling video support: %s", exc)
         return False
 
 
@@ -92,7 +98,14 @@ def _get_video_metadata(video_path: str) -> Dict[str, Any]:
             "-show_streams",
             str(video_path),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
         if result.returncode != 0:
             return {"error": result.stderr.strip()}
 
@@ -267,7 +280,14 @@ class FrameExtractor:
             "-loglevel", "error",
             os.path.join(output_dir, "frame_%04d.png"),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
 
         frames = []
         if result.returncode != 0:
@@ -326,7 +346,14 @@ class FrameExtractor:
                     "-loglevel", "error",
                     frame_path,
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=30,
+                )
 
                 if result.returncode == 0 and os.path.exists(frame_path):
                     frames.append({
@@ -467,7 +494,12 @@ class SceneDetector:
                 "-",
             ]
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=60
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=60,
             )
 
             # Parse scene change timestamps from stderr
@@ -586,7 +618,14 @@ class AudioTranscriber:
                 "-loglevel", "error",
                 audio_path,
             ]
-            result = subprocess.run(extract_cmd, capture_output=True, text=True, timeout=60)
+            result = subprocess.run(
+                extract_cmd,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=60,
+            )
 
             if result.returncode != 0 or not os.path.exists(audio_path):
                 logger.warning(f"Audio extraction failed: {result.stderr.strip()}")
@@ -859,6 +898,8 @@ class VideoModalProcessor(BaseModalProcessor):
                     ),
                     "entity_type": "video",
                     "summary": fallback_label,
+                    "analysis_source": "fallback",
+                    "non_indexable": True,
                 }
                 return f"[{fallback_label}]", fallback_entity
 
@@ -881,6 +922,8 @@ class VideoModalProcessor(BaseModalProcessor):
                     "entity_name": f"{video_path_obj.stem} (video)",
                     "entity_type": "video",
                     "summary": f"Video: {video_path_obj.name} ({duration:.1f}s, no frames extracted)",
+                    "analysis_source": "fallback",
+                    "non_indexable": True,
                 }
                 return f"Video file: {video_path_obj.name}", fallback_entity
 
@@ -937,7 +980,7 @@ class VideoModalProcessor(BaseModalProcessor):
                                 footnotes="None",
                             )
 
-                            response = await self.modal_caption_func(
+                            response = await self._call_modal_caption(
                                 frame_prompt,
                                 image_data=image_base64,
                                 system_prompt=PROMPTS["IMAGE_ANALYSIS_SYSTEM"],
@@ -976,7 +1019,7 @@ class VideoModalProcessor(BaseModalProcessor):
             )
 
             # Call LLM for video synthesis
-            response = await self.modal_caption_func(
+            response = await self._call_modal_caption(
                 video_prompt,
                 system_prompt=PROMPTS["VIDEO_ANALYSIS_SYSTEM"],
             )
@@ -985,6 +1028,9 @@ class VideoModalProcessor(BaseModalProcessor):
             enhanced_caption, entity_info = self._parse_video_response(
                 response, entity_name
             )
+            if isinstance(entity_info, dict):
+                entity_info["analysis_source"] = "model"
+                entity_info["non_indexable"] = False
 
             # Clean up temp frames
             try:
@@ -1004,8 +1050,11 @@ class VideoModalProcessor(BaseModalProcessor):
                 or f"video_{compute_mdhash_id(str(modal_content))}",
                 "entity_type": "video",
                 "summary": f"Video content: {str(modal_content)[:100]}",
+                "analysis_source": "fallback",
+                "non_indexable": True,
+                "processing_error": str(e)[:500],
             }
-            return f"[Video processing error: {e}]", fallback_entity
+            return "[Video processing unavailable]", fallback_entity
 
     async def process_multimodal_content(
         self,

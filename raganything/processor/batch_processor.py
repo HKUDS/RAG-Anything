@@ -73,6 +73,19 @@ class BatchProcessorMixin:
             self.logger.error(
                 f"Background multimodal processing failed for doc {doc_id}: {exc}"
             )
+            try:
+                await self._upsert_doc_status(
+                    doc_id,
+                    file_ref,
+                    status=DocStatus.FAILED,
+                    error_msg=str(exc),
+                )
+            except Exception as status_exc:
+                self.logger.error(
+                    "Failed to persist background multimodal error state for doc %s: %s",
+                    doc_id,
+                    status_exc,
+                )
         finally:
             try:
                 await self._mark_multimodal_processing_complete(doc_id)

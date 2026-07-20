@@ -343,7 +343,7 @@ export default function AdminUsersPage() {
 
   const loadUsers = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ page, page_size: 20 })
+      const params = new URLSearchParams({ page, page_size: 12 })
       if (search) params.set('search', search)
       if (roleFilter) params.set('role', roleFilter)
       if (statusFilter) params.set('status', statusFilter)

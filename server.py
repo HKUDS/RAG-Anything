@@ -9,12 +9,15 @@ import os
 import sys
 import asyncio
 from pathlib import Path
+from raganything.services.runtime_settings import bootstrap_runtime_settings
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
 
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env", override=False)
 
+
+bootstrap_runtime_settings()
 
 from fastapi import FastAPI, Request
 from fastapi.security import HTTPBearer
@@ -261,8 +264,12 @@ app.include_router(autorepair_router, prefix="/api")
 async def startup():
     # 初始化 PostgreSQL 连接池（必需 — 无 SQLite 回退）
     from raganything.services.pg_state_repo import init_pg_pool, ensure_monitor_event_table
+    from raganything.services.kb_tag_repo import ensure_tag_schema
     await init_pg_pool()
     await ensure_monitor_event_table()
+    await ensure_tag_schema()
+    from raganything.embedding.image_vector_repo import _ensure_workspace_schema
+    await _ensure_workspace_schema()
     # 验证 P0 数据表（智能体 + KB 元数据）
     from raganything.services.pg_agent_repo import pg_ensure_agent_tables
     from raganything.services.pg_kb_meta_repo import pg_ensure_kb_tables
@@ -317,13 +324,11 @@ async def startup():
             "kb_name": "default", "llm_model": LLM_MODEL,
             "system_prompt": "", "use_default_prompt": True,
         }, owner_id=1, owner_username="admin")
-    # 启动时扫描所有 KB，智能修复卡在 handling 的文档
-    # 文档若 processing_end_time 已写入 → 标记 completed（处理实际已完成）
-    # 文档若 processing_end_time 未写入 → 标记 failed（处理被中断）
-    from raganything.services.kb_service import _recover_stuck_documents, _stuck_recovery_loop
-    await _recover_stuck_documents()
-    # 启动周期性后台恢复任务（每 300 秒扫描一次）
-    asyncio.create_task(_stuck_recovery_loop(300))
+    # Recovery can inspect many persistent workspaces, so keep it out of the
+    # startup critical path. The loop performs its first scan after a short
+    # delay and is cancelled before storage teardown on shutdown.
+    from raganything.services.kb_service import _stuck_recovery_loop
+    app.state.stuck_recovery_task = asyncio.create_task(_stuck_recovery_loop(300))
     # 启动磁盘空间监控（Prometheus 指标 + 阈值告警）
     asyncio.create_task(_disk_monitor_loop(DISK_CHECK_INTERVAL))
     # 预加载默认知识库
@@ -332,7 +337,17 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    for name, kb in kb_instances.items():
+    recovery_task = getattr(app.state, "stuck_recovery_task", None)
+    if recovery_task is not None:
+        recovery_task.cancel()
+        try:
+            await recovery_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            server_logger.warning("Recovery task failed during shutdown", exc_info=True)
+
+    for name, kb in list(kb_instances.items()):
         try: await kb.finalize_storages()
         except: pass
     # 关闭 PostgreSQL 连接池

@@ -1,10 +1,11 @@
-﻿import { useState, useEffect, useMemo } from 'react'
+﻿import { useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   X, Search, ChevronRight, Loader2, FileText, Scissors, Zap,
   ImageIcon, Table, Sigma, Video
 } from 'lucide-react'
 import { getToken } from '../utils/api'
+import SideDrawer from './SideDrawer'
 
 const TYPE_ICONS = { image: ImageIcon, table: Table, equation: Sigma, video: Video }
 const TYPE_LABELS = { image: '图片', table: '表格', equation: '公式', video: '视频' }
@@ -105,33 +106,13 @@ export default function ChunkDetailDrawer({
 }) {
   const authToken = useMemo(() => getToken(), [])
 
-  // 全局 Escape 键监听
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') onClose()
-    }
-    document.addEventListener('keydown', handleKeyDown)
-    return () => document.removeEventListener('keydown', handleKeyDown)
-  }, [onClose])
-
   const totalTokens = useMemo(
     () => chunksData.reduce((s, c) => s + (c.tokens || 0), 0),
     [chunksData]
   )
 
   return (
-    <motion.div
-      className="fixed inset-0 z-50 flex justify-end"
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      onClick={onClose} role="dialog" aria-modal="true" aria-label="分块详情"
-    >
-      <div className="absolute inset-0 bg-sky-900/20" />
-      <motion.div
-        className="relative w-[520px] max-w-[90vw] card m-3 flex flex-col overflow-hidden"
-        initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 40 }}
-        transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-        onClick={e => e.stopPropagation()}
-      >
+    <SideDrawer isOpen onRequestClose={onClose} ariaLabel="分块详情" size="lg" className="card h-full flex flex-col overflow-hidden">
         {/* 头部 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-cloud-200 shrink-0">
           <div className="min-w-0">
@@ -314,7 +295,6 @@ export default function ChunkDetailDrawer({
             })
           )}
         </div>
-      </motion.div>
-    </motion.div>
+    </SideDrawer>
   )
 }

@@ -1,10 +1,10 @@
 ﻿import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Send, User, Clock, Plus, Trash2, Edit3, X, ChevronLeft,
   ChevronDown, ChevronRight, Brain, Zap, MessageSquare, ArrowLeft,
   Layers, Cpu, Database, GitGraph, Image, StopCircle, Sparkles,
-  BookOpen, Search, AlertTriangle, RefreshCw, Check
+  BookOpen, Search, AlertTriangle, RefreshCw, Check, Tag
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -130,6 +130,7 @@ async function readStreamErrorMessage(res) {
 export default function AgentChatPage({ onToast }) {
   const { id: agentId } = useParams()
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { hasPermission } = useAuth()
   const chatRef = useRef()
   const abortRef = useRef(null)
@@ -152,6 +153,7 @@ export default function AgentChatPage({ onToast }) {
   const [imagePreview, setImagePreview] = useState('')
   const fileInputRef = useRef(null)
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [tagOptions, setTagOptions] = useState([])
 
   // ── 消息编辑状态 ────────────────────────────────────
   const [editingMsgId, setEditingMsgId] = useState(null)  // msg.msg_id currently being edited
@@ -163,6 +165,8 @@ export default function AgentChatPage({ onToast }) {
   const canAdjustModes = hasPermission('agent:read')
   const effectiveMode = modeOverride ?? agent?.query_mode ?? 'hybrid'
   const effectiveAgentMode = agentModeOverride ?? agent?.agent_mode ?? 'none'
+  const selectedTagId = searchParams.get('tag') || ''
+  const selectedTag = tagOptions.find(tag => String(tag.id) === selectedTagId) || null
 
   const trackBlobUrl = useCallback((url) => {
     if (url && url.startsWith('blob:')) {
@@ -240,6 +244,18 @@ export default function AgentChatPage({ onToast }) {
     loadAgent()
     loadThreads(true)
   }, [agentId, loadAgent])
+
+  useEffect(() => {
+    if (!agent?.kb_name) {
+      setTagOptions([])
+      return undefined
+    }
+    const controller = new AbortController()
+    api.listKnowledgeTags({ kb: agent.kb_name, signal: controller.signal })
+      .then(result => setTagOptions(Array.isArray(result.tags) ? result.tags : []))
+      .catch(() => setTagOptions([]))
+    return () => controller.abort()
+  }, [agent?.kb_name])
 
   useEffect(() => {
     const handleFocus = () => {
@@ -456,7 +472,11 @@ export default function AgentChatPage({ onToast }) {
         setLoading(false)
         abortRef.current = null
         break
-      case 'agent_info': break
+      case 'agent_info':
+        if (isVisibleThread && event.tag_scope) {
+          setMessages(prev => prev.map(m => m.id === msgId ? { ...m, tag_scope: event.tag_scope } : m))
+        }
+        break
     }
   }
 
@@ -483,6 +503,7 @@ export default function AgentChatPage({ onToast }) {
         headers['Authorization'] = `Bearer ${token}`
       }
       const body = { query, thread_id: threadId }
+      if (selectedTag) body.tag_id = selectedTag.id
       if (modeOverride !== null) {
         body.mode = effectiveMode
       }
@@ -542,7 +563,7 @@ export default function AgentChatPage({ onToast }) {
       setLoading(false)
       abortRef.current = null
     }
-  }, [agentId, agentModeOverride, effectiveAgentMode, effectiveMode, modeOverride, onToast])
+  }, [agentId, agentModeOverride, effectiveAgentMode, effectiveMode, modeOverride, onToast, selectedTag])
 
   // ── 发送消息 ─────────────────────────────────────────────
   const send = async () => {
@@ -1006,6 +1027,7 @@ export default function AgentChatPage({ onToast }) {
                   <span className="text-xl shrink-0 mt-0.5 select-none">{agent.icon}</span>
 
                   <div className="max-w-[80%] min-w-[40%] space-y-2">
+                    {m.tag_scope ? <span className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2 py-1 text-2xs text-sky-700 dark:border-sky-800/50 dark:bg-sky-900/30 dark:text-sky-300"><Tag size={11} />仅检索标签：{m.tag_scope.name}</span> : null}
                     {/* ── 思考过程（类 Perplexity 样式）───── */}
                     {hasThinking && (
                       <div className="rounded-xl border border-cloud-200 dark:border-sky-800/30 bg-cloud-50/80 dark:bg-sky-900/20 overflow-hidden">
@@ -1313,6 +1335,29 @@ export default function AgentChatPage({ onToast }) {
             )}
           </AnimatePresence>
 
+          <div className="mb-2 flex items-center gap-2">
+            <label className="inline-flex min-w-0 items-center gap-1.5 text-xs text-ink-muted dark:text-cloud-500" htmlFor="agent-tag-scope">
+              <Tag size={13} aria-hidden="true" />
+              <span>问答范围</span>
+            </label>
+            <select
+              id="agent-tag-scope"
+              value={selectedTagId}
+              disabled={loading}
+              onChange={event => {
+                const next = new URLSearchParams(searchParams)
+                if (event.target.value) next.set('tag', event.target.value)
+                else next.delete('tag')
+                setSearchParams(next, { replace: true })
+              }}
+              className="input-field min-w-0 max-w-64 py-1 text-xs"
+            >
+              <option value="">全部资料</option>
+              {tagOptions.map(tag => <option key={tag.id} value={tag.id}>标签：{tag.name}（{tag.chunk_count || 0} 个切块）</option>)}
+            </select>
+            {selectedTag ? <span className="text-2xs text-sky-600 dark:text-sky-400">仅检索该标签切块</span> : null}
+          </div>
+
           <div className="flex gap-2 items-end">
             {/* 隐藏文件输入 */}
             <input
@@ -1336,7 +1381,7 @@ export default function AgentChatPage({ onToast }) {
               <textarea
                 ref={inputRef}
                 className="input-field w-full resize-none text-sm py-2.5 max-h-32"
-                placeholder={`向 ${agent.name} 提问…`}
+                placeholder={selectedTag ? `仅在“${selectedTag.name}”标签内提问…` : `向 ${agent.name} 提问…`}
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => {

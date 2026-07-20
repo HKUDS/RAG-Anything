@@ -41,12 +41,40 @@ def _pg_available() -> bool:
 
 # ── PG Query Templates (pgvector, cosine distance via <=>) ──
 
+_workspace_schema_ready = False
+_workspace_schema_lock = asyncio.Lock()
+
+
+async def _ensure_workspace_schema() -> None:
+    """Ensure legacy vision-vector tables are isolated by KB workspace."""
+    global _workspace_schema_ready
+    if _workspace_schema_ready:
+        return
+
+    async with _workspace_schema_lock:
+        if _workspace_schema_ready:
+            return
+        from raganything.services.pg_state_repo import get_pg_pool
+
+        pool = get_pg_pool()
+        async with pool.acquire() as conn:
+            await conn.execute(
+                "ALTER TABLE image_vision_vectors "
+                "ADD COLUMN IF NOT EXISTS workspace TEXT NOT NULL DEFAULT ''"
+            )
+            await conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ivv_workspace_doc_id "
+                "ON image_vision_vectors(workspace, doc_id)"
+            )
+        _workspace_schema_ready = True
+
 _PG_UPSERT_SQL = """
 INSERT INTO image_vision_vectors
-    (id, image_hash, doc_id, entity_name, entity_type, image_path,
+    (id, workspace, image_hash, doc_id, entity_name, entity_type, image_path,
      file_path, description, vision_model, embedding, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::vector,$11)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::vector,$12)
 ON CONFLICT (id) DO UPDATE SET
+    workspace     = EXCLUDED.workspace,
     entity_name   = EXCLUDED.entity_name,
     image_path    = EXCLUDED.image_path,
     doc_id        = EXCLUDED.doc_id,
@@ -63,8 +91,9 @@ SELECT id, image_hash, doc_id, entity_name, entity_type,
        created_at,
        1 - (embedding <=> $1::vector) AS score
 FROM image_vision_vectors
+WHERE workspace = $2
 ORDER BY embedding <=> $1::vector
-LIMIT $2
+LIMIT $3
 """
 
 
@@ -89,6 +118,7 @@ class ImageVectorRepository:
 
     def __init__(self, working_dir: str):
         self._working_dir = working_dir
+        self._workspace = str(Path(working_dir).resolve())
         self._db_path = os.path.join(working_dir, "vdb_image_vision.json")
         self._bak_path = self._db_path + ".bak"
         self._vdb = None  # NanoVectorDB instance (fallback only)
@@ -113,8 +143,11 @@ class ImageVectorRepository:
             self._use_pg = _pg_available()
 
             if self._use_pg:
+                await _ensure_workspace_schema()
                 logger.info(
-                    "[vision-repo] PG backend active (dim=%d)", embedding_dim
+                    "[vision-repo] PG backend active (workspace=%s dim=%d)",
+                    self._workspace,
+                    embedding_dim,
                 )
             else:
                 # Fallback: NanoVectorDB
@@ -195,14 +228,21 @@ class ImageVectorRepository:
         if self._use_pg:
             from raganything.services.pg_state_repo import get_pg_pool
 
+            # The historical record ID was only based on image bytes. Scope new
+            # PG records by workspace so equal images in separate KBs cannot
+            # overwrite one another.
+            workspace_hash = hashlib.sha256(
+                self._workspace.encode("utf-8")
+            ).hexdigest()[:16]
+            record_id = f"img-{workspace_hash}-{image_hash}"
             pool = get_pg_pool()
             vec_str = self._vec_to_pg(vector)
             async with pool.acquire() as conn:
                 await conn.execute(
                     _PG_UPSERT_SQL,
-                    record_id, image_hash, doc_id, entity_name, entity_type,
-                    image_path, file_path, description, vision_model,
-                    vec_str, created_at,
+                    record_id, self._workspace, image_hash, doc_id,
+                    entity_name, entity_type, image_path, file_path,
+                    description, vision_model, vec_str, created_at,
                 )
         else:
             if self._vdb is None:
@@ -237,7 +277,7 @@ class ImageVectorRepository:
             vec_str = self._vec_to_pg(vector)
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    _PG_SEARCH_SQL, vec_str, top_k
+                    _PG_SEARCH_SQL, vec_str, self._workspace, top_k
                 )
             return [dict(r) for r in rows]
 
@@ -274,7 +314,9 @@ class ImageVectorRepository:
             pool = get_pg_pool()
             async with pool.acquire() as conn:
                 result = await conn.execute(
-                    "DELETE FROM image_vision_vectors WHERE doc_id = $1",
+                    "DELETE FROM image_vision_vectors "
+                    "WHERE workspace = $1 AND doc_id = $2",
+                    self._workspace,
                     doc_id,
                 )
             # asyncpg returns "DELETE N", parse N
@@ -328,7 +370,8 @@ class ImageVectorRepository:
                 pool = get_pg_pool()
                 async with pool.acquire() as conn:
                     return await conn.fetchval(
-                        "SELECT count(*) FROM image_vision_vectors"
+                        "SELECT count(*) FROM image_vision_vectors WHERE workspace = $1",
+                        self._workspace,
                     )
 
             future = _syncio.run_coroutine_threadsafe(_pg_count(), loop)
@@ -446,7 +489,10 @@ class ImageVectorRepository:
                 # All vectors are orphans if no valid docs exist
                 pool = get_pg_pool()
                 async with pool.acquire() as conn:
-                    rows = await conn.fetch("SELECT id FROM image_vision_vectors")
+                    rows = await conn.fetch(
+                        "SELECT id FROM image_vision_vectors WHERE workspace = $1",
+                        self._workspace,
+                    )
                 return [r["id"] for r in rows]
 
             pool = get_pg_pool()
@@ -454,7 +500,8 @@ class ImageVectorRepository:
                 # Single scan: fetch all (id, doc_id) pairs, filter in Python.
                 # For typical KB scale (hundreds of images), this is fine.
                 rows = await conn.fetch(
-                    "SELECT id, doc_id FROM image_vision_vectors"
+                    "SELECT id, doc_id FROM image_vision_vectors WHERE workspace = $1",
+                    self._workspace,
                 )
             return [r["id"] for r in rows if r["doc_id"] not in valid_doc_ids]
 
@@ -479,7 +526,9 @@ class ImageVectorRepository:
             pool = get_pg_pool()
             async with pool.acquire() as conn:
                 result = await conn.execute(
-                    "DELETE FROM image_vision_vectors WHERE id = ANY($1)",
+                    "DELETE FROM image_vision_vectors "
+                    "WHERE workspace = $1 AND id = ANY($2)",
+                    self._workspace,
                     ids,
                 )
             deleted = 0

@@ -17,6 +17,8 @@ from typing import Optional
 import jwt as pyjwt
 from passlib.context import CryptContext
 
+from raganything.permissions import DEFAULT_ROLE_NAME
+
 # ── Password Hashing ───────────────────────────────────────
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -151,7 +153,7 @@ def create_token(user_id: int, username: str, is_admin: bool, role: dict | None 
     payload = {
         "user_id": user_id,
         "username": username,
-        "role": role.get("name") if role else ("super_admin" if is_admin else "student"),
+        "role": role.get("name") if role else ("super_admin" if is_admin else DEFAULT_ROLE_NAME),
         "permissions": role.get("permissions") if role else [],
         "sid": SERVER_START_ID,
         "jti": uuid.uuid4().hex,
@@ -180,7 +182,7 @@ def create_refresh_token(user_id: int, username: str, is_admin: bool, role: dict
     payload = {
         "user_id": user_id,
         "username": username,
-        "role": role.get("name") if role else ("super_admin" if is_admin else "student"),
+        "role": role.get("name") if role else ("super_admin" if is_admin else DEFAULT_ROLE_NAME),
         "permissions": role.get("permissions") if role else [],
         "type": "refresh",
         "sid": SERVER_START_ID,

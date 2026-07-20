@@ -46,6 +46,86 @@ _MIN_DIM = 10  # px
 _MAX_FILE_BYTES = 10 * 1024 * 1024  # 10 MB
 
 
+class VisionEmbeddingHTTPError(RuntimeError):
+    """Safe, structured upstream failure information for vision embeddings."""
+
+    def __init__(
+        self,
+        status_code: int,
+        provider_code: str | None = None,
+        provider_message: str | None = None,
+        request_id: str | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.provider_code = provider_code
+        self.provider_message = provider_message
+        self.request_id = request_id
+        details = [f"HTTP {status_code}"]
+        if provider_code:
+            details.append(f"provider_code={provider_code}")
+        if request_id:
+            details.append(f"request_id={request_id}")
+        if provider_message:
+            details.append(provider_message)
+        super().__init__("; ".join(details))
+
+    def as_dict(self) -> dict[str, str | int | None]:
+        return {
+            "status_code": self.status_code,
+            "provider_code": self.provider_code,
+            "provider_message": self.provider_message,
+            "request_id": self.request_id,
+        }
+
+
+class VisionEmbeddingAuthenticationError(VisionEmbeddingHTTPError):
+    """401 from the configured vision embedding provider."""
+
+
+class VisionEmbeddingAuthorizationError(VisionEmbeddingHTTPError):
+    """403 from the configured vision embedding provider."""
+
+
+class VisionEmbeddingUnavailableError(RuntimeError):
+    """Raised when the local circuit breaker has disabled vision embedding."""
+
+
+def _safe_response_diagnostics(response) -> dict[str, str | None]:
+    """Extract bounded, non-secret provider diagnostics from an HTTP response."""
+    payload: dict = {}
+    try:
+        parsed = response.json()
+        if isinstance(parsed, dict):
+            payload = parsed
+    except (ValueError, TypeError):
+        pass
+
+    error = payload.get("error")
+    if not isinstance(error, dict):
+        error = {}
+    provider_code = payload.get("code") or error.get("code")
+    provider_message = payload.get("message") or error.get("message")
+    request_id = (
+        payload.get("request_id")
+        or error.get("request_id")
+        or response.headers.get("x-request-id")
+        or response.headers.get("x-tt-logid")
+        or response.headers.get("x-tt-trace-id")
+    )
+
+    def clean(value: object) -> str | None:
+        if value is None:
+            return None
+        text = " ".join(str(value).split())[:300]
+        return text or None
+
+    return {
+        "provider_code": clean(provider_code),
+        "provider_message": clean(provider_message),
+        "request_id": clean(request_id),
+    }
+
+
 # ── Dimension Discovery ─────────────────────────────────────
 
 def _dim_cache_path(working_dir: str) -> str:
@@ -211,6 +291,8 @@ class DoubaoEmbeddingAdapter:
         self._semaphore = asyncio.Semaphore(max_concurrent)
         self._total_calls = 0
         self._total_failures = 0
+        self._disabled_reason: str | None = None
+        self._last_failure: dict[str, str | int | None] | None = None
 
     # ── Dimension management ─────────────────────────────
 
@@ -223,6 +305,34 @@ class DoubaoEmbeddingAdapter:
     def embedding_dim(self) -> int:
         """Alias for compatibility with EmbeddingFunc.embedding_dim."""
         return self._dim
+
+    @property
+    def availability(self) -> dict[str, str | int | bool | None]:
+        """Return safe current availability state without exposing credentials."""
+        return {
+            "available": self._disabled_reason is None,
+            "disabled_reason": self._disabled_reason,
+            "model": self.model,
+            "host": self.base_url,
+            "last_failure": self._last_failure,
+        }
+
+    async def health_check(self) -> dict[str, str | int | bool | None]:
+        """Run one minimal provider probe and return a safe diagnostic summary."""
+        if self._disabled_reason is not None:
+            return self.availability
+        try:
+            await self._call_api([{"type": "text", "text": "health check"}])
+        except VisionEmbeddingHTTPError as exc:
+            return {**self.availability, **exc.as_dict()}
+        except Exception as exc:
+            return {
+                **self.availability,
+                "available": False,
+                "disabled_reason": "request_failed",
+                "provider_message": str(exc)[:300],
+            }
+        return self.availability
 
     async def discover_dimension(self) -> int:
         """Probe the API to discover the native embedding dimension.
@@ -351,6 +461,9 @@ class DoubaoEmbeddingAdapter:
                         vec = vec / norm
                     return vec
             return None
+        except VisionEmbeddingUnavailableError:
+            logger.debug("[vision-embed] skipped %s because the circuit breaker is open", label)
+            return None
         except Exception as e:
             logger.warning(
                 "[vision-embed] API call failed for %s: %s",
@@ -397,6 +510,11 @@ class DoubaoEmbeddingAdapter:
         """
         import httpx
 
+        if self._disabled_reason is not None:
+            raise VisionEmbeddingUnavailableError(
+                f"Vision embedding disabled after {self._disabled_reason}"
+            )
+
         async with self._semaphore:
             body: dict = {"model": self.model, "input": multimodal_input}
             if dimension > 0:
@@ -414,7 +532,23 @@ class DoubaoEmbeddingAdapter:
                 self._total_calls += 1
                 if not resp.is_success:
                     self._total_failures += 1
-                    resp.raise_for_status()
+                    diagnostics = _safe_response_diagnostics(resp)
+                    error_cls: type[VisionEmbeddingHTTPError] = VisionEmbeddingHTTPError
+                    if resp.status_code == 401:
+                        error_cls = VisionEmbeddingAuthenticationError
+                        self._disabled_reason = "authentication_failed"
+                    elif resp.status_code == 403:
+                        error_cls = VisionEmbeddingAuthorizationError
+                        self._disabled_reason = "authorization_failed"
+                    error = error_cls(resp.status_code, **diagnostics)
+                    self._last_failure = error.as_dict()
+                    logger.error(
+                        "[vision-embed] provider request failed model=%s host=%s %s",
+                        self.model,
+                        self.base_url,
+                        error,
+                    )
+                    raise error
 
                 data = resp.json()
                 # Log token usage for cost tracking
@@ -448,6 +582,9 @@ class DoubaoEmbeddingAdapter:
             "total_failures": self._total_failures,
             "dimension": self._dim,
             "model": self.model,
+            "available": self._disabled_reason is None,
+            "disabled_reason": self._disabled_reason,
+            "last_failure": self._last_failure,
         }
 
 
@@ -465,7 +602,8 @@ def create_vision_embed_func(
     if not model:
         return None
 
-    api_key = os.getenv("VISION_EMBEDDING_API_KEY", "")
+    raw_api_key = os.getenv("VISION_EMBEDDING_API_KEY", "")
+    api_key = raw_api_key.strip()
     if not api_key:
         logger.warning(
             "[vision-embed] VISION_EMBEDDING_MODEL=%s is set but "
@@ -473,6 +611,14 @@ def create_vision_embed_func(
             "Vision embedding disabled. "
             "Get your API key from https://console.volcengine.com/ark",
             model,
+        )
+        return None
+    if raw_api_key != api_key:
+        logger.warning("[vision-embed] Trimmed whitespace from VISION_EMBEDDING_API_KEY")
+    if api_key.lower().startswith("bearer "):
+        logger.error(
+            "[vision-embed] VISION_EMBEDDING_API_KEY must be the raw token, not a Bearer value. "
+            "Vision embedding disabled."
         )
         return None
 
@@ -498,14 +644,21 @@ def create_vision_embed_func(
         max_concurrent=max_async,
     )
     logger.info(
-        "[vision-embed] Created adapter model=%s host=%s dim=%d",
-        model, host, dim,
+        "[vision-embed] Created adapter model=%s host=%s dim=%d key_fingerprint=%s source=process_environment",
+        model,
+        host,
+        dim,
+        hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12],
     )
     return adapter
 
 
 __all__ = [
     "DoubaoEmbeddingAdapter",
+    "VisionEmbeddingAuthenticationError",
+    "VisionEmbeddingAuthorizationError",
+    "VisionEmbeddingHTTPError",
+    "VisionEmbeddingUnavailableError",
     "create_vision_embed_func",
     "_preprocess_image",
     "_preprocess_image_bytes",

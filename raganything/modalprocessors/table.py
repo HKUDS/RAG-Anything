@@ -82,7 +82,7 @@ class TableModalProcessor(BaseModalProcessor):
                     table_footnote=table_footnote if table_footnote else "None",
                 )
 
-            response = await self.modal_caption_func(
+            response = await self._call_modal_caption(
                 table_prompt,
                 system_prompt=PROMPTS["TABLE_ANALYSIS_SYSTEM"],
             )
