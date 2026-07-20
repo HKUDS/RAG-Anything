@@ -79,7 +79,9 @@ def _import_modalprocessors_with_lightrag_stubs(monkeypatch):
     monkeypatch.setitem(sys.modules, "lightrag.utils", utils_module)
     monkeypatch.setitem(sys.modules, "lightrag.lightrag", lightrag_module)
     monkeypatch.setitem(sys.modules, "lightrag.kg", kg_package)
-    monkeypatch.setitem(sys.modules, "lightrag.kg.shared_storage", shared_storage_module)
+    monkeypatch.setitem(
+        sys.modules, "lightrag.kg.shared_storage", shared_storage_module
+    )
     monkeypatch.setitem(sys.modules, "lightrag.operate", operate_module)
 
     return importlib.import_module("raganything.modalprocessors")
