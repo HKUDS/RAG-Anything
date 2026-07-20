@@ -48,7 +48,7 @@ def test_public_url_builds_from_strip_prefix(tmp_path: Path):
 def test_public_url_encodes_special_path_characters(tmp_path: Path):
     root = tmp_path / "out"
     root.mkdir()
-    img = root / "?? #1" / "figure 1.png"
+    img = root / "报告 #1" / "figure 1.png"
     img.parent.mkdir(parents=True)
     img.write_bytes(b"x")
 
@@ -59,8 +59,7 @@ def test_public_url_encodes_special_path_characters(tmp_path: Path):
     )
 
     assert url == (
-        "https://cdn.example.com/assets/"
-        "%E6%8A%A5%E5%91%8A%20%231/figure%201.png"
+        "https://cdn.example.com/assets/%E6%8A%A5%E5%91%8A%20%231/figure%201.png"
     )
 
 
