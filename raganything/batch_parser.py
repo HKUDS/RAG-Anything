@@ -11,7 +11,7 @@ import json
 import logging
 import os
 import tempfile
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from functools import partial
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -464,11 +464,23 @@ class BatchParser:
                     for file_path in files_to_process
                 }
 
-                # Process completed tasks
-                for future in as_completed(
-                    future_to_file, timeout=self.timeout_per_file
-                ):
-                    success, file_path, error_msg = future.result()
+                # Wait up to timeout_per_file for each submitted file. Passing
+                # the timeout to as_completed() would incorrectly apply it to
+                # the whole batch instead of each individual parse.
+                for future, submitted_file in future_to_file.items():
+                    try:
+                        success, file_path, error_msg = future.result(
+                            timeout=self.timeout_per_file
+                        )
+                    except TimeoutError:
+                        # cancel() only prevents a not-yet-started task from
+                        # running; a parse already in progress keeps running in
+                        # its worker thread. We still record the file as failed
+                        # and move on so one slow file cannot stall the batch.
+                        future.cancel()
+                        success = False
+                        file_path = submitted_file
+                        error_msg = f"Processing timed out after {self.timeout_per_file} seconds"
 
                     if success:
                         successful_files.append(file_path)

@@ -1,5 +1,6 @@
 import importlib.util
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -232,3 +233,25 @@ def test_filter_supported_files_deduplicates_overlapping_inputs(monkeypatch, tmp
     # docs_dir (listed twice) overlaps with first_doc; dedup keeps each file
     # exactly once. Compare sorted since directory glob order is not defined.
     assert sorted(result) == sorted([str(first_doc), str(second_doc)])
+
+
+def test_timeout_is_applied_per_file_not_to_entire_batch(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    docs_dir, first_doc, second_doc = _seed_two_docs(tmp_path)
+    batch_parser.timeout_per_file = 0.1
+
+    original_parse = fake_parser.parse_document
+
+    def slow_parse(*args, **kwargs):
+        time.sleep(0.06)
+        return original_parse(*args, **kwargs)
+
+    fake_parser.parse_document = slow_parse
+
+    result = batch_parser.process_batch([str(docs_dir)], str(tmp_path / "out"))
+
+    # Both files finish under the per-file timeout, so both succeed. The old
+    # as_completed(timeout=...) applied the timeout to the whole batch and would
+    # have failed here. Compare sorted since glob order is not defined.
+    assert sorted(result.successful_files) == sorted([str(first_doc), str(second_doc)])
+    assert result.failed_files == []
