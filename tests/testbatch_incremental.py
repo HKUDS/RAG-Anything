@@ -229,4 +229,6 @@ def test_filter_supported_files_deduplicates_overlapping_inputs(monkeypatch, tmp
         [str(docs_dir), str(first_doc), str(docs_dir)]
     )
 
-    assert result == [str(first_doc), str(second_doc)]
+    # docs_dir (listed twice) overlaps with first_doc; dedup keeps each file
+    # exactly once. Compare sorted since directory glob order is not defined.
+    assert sorted(result) == sorted([str(first_doc), str(second_doc)])
