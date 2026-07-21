@@ -8,7 +8,7 @@ import json
 import hashlib
 import re
 import time
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from pathlib import Path
 from lightrag import QueryParam
 from lightrag.utils import always_get_an_event_loop
@@ -24,7 +24,11 @@ class QueryMixin:
     """QueryMixin class containing query functionality for RAGAnything"""
 
     def _generate_multimodal_cache_key(
-        self, query: str, multimodal_content: List[Dict[str, Any]], mode: str, **kwargs
+        self,
+        query: str,
+        multimodal_content: Optional[List[Dict[str, Any]]],
+        mode: str,
+        **kwargs,
     ) -> str:
         """
         Generate cache key for multimodal query
@@ -64,7 +68,7 @@ class QueryMixin:
                             and isinstance(value, str)
                             and len(value) > 200
                         ):
-                            normalized_item[f"{key}_hash"] = hashlib.md5(
+                            normalized_item[f"{key}_hash"] = hashlib.sha256(
                                 value.encode()
                             ).hexdigest()
                         else:
@@ -95,7 +99,7 @@ class QueryMixin:
 
         # Generate hash from the cache data
         cache_str = json.dumps(cache_data, sort_keys=True, ensure_ascii=False)
-        cache_hash = hashlib.md5(cache_str.encode()).hexdigest()
+        cache_hash = hashlib.sha256(cache_str.encode()).hexdigest()
 
         return f"multimodal_query:{cache_hash}"
 
@@ -195,7 +199,7 @@ class QueryMixin:
     async def aquery_with_multimodal(
         self,
         query: str,
-        multimodal_content: List[Dict[str, Any]] = None,
+        multimodal_content: Optional[List[Dict[str, Any]]] = None,
         mode: str = "mix",
         system_prompt: str | None = None,
         **kwargs,
@@ -237,6 +241,8 @@ class QueryMixin:
                 }]
             )
         """
+        if multimodal_content is None:
+            multimodal_content = []
         # Ensure LightRAG is initialized
         init_result = await self._ensure_lightrag_initialized()
         if not init_result or not init_result.get("success"):
@@ -602,8 +608,9 @@ class QueryMixin:
         enhanced_prompt = prompt
         images_processed = 0
 
-        # Initialize image cache
+        # Initialize image cache (base64 payloads + MIME types in parallel)
         self._current_images_base64 = []
+        self._current_images_mime = []
 
         # Enhanced regex pattern for matching image paths
         # Matches only the path ending with image file extensions
@@ -681,8 +688,11 @@ class QueryMixin:
                 image_base64 = encode_image_to_base64(image_path)
                 if image_base64:
                     images_processed += 1
-                    # Save base64 to instance variable for later use
+                    # Save base64 + MIME for VLM message construction
                     self._current_images_base64.append(image_base64)
+                    self._current_images_mime.append(
+                        self._mime_type_for_image_path(image_path)
+                    )
 
                     # Keep original path info and add VLM marker
                     result = f"Image Path: {image_path}\n[VLM_IMAGE_{images_processed}]"
@@ -705,6 +715,21 @@ class QueryMixin:
 
         return enhanced_prompt, images_processed
 
+    @staticmethod
+    def _mime_type_for_image_path(image_path: str) -> str:
+        """Map an image file path to a MIME type for VLM data URLs."""
+        ext = Path(image_path).suffix.lower()
+        return {
+            ".png": "image/png",
+            ".gif": "image/gif",
+            ".webp": "image/webp",
+            ".bmp": "image/bmp",
+            ".tif": "image/tiff",
+            ".tiff": "image/tiff",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+        }.get(ext, "image/jpeg")
+
     def _build_vlm_messages_with_images(
         self, enhanced_prompt: str, user_query: str, system_prompt: str
     ) -> List[Dict]:
@@ -719,6 +744,7 @@ class QueryMixin:
             List[Dict]: VLM message format
         """
         images_base64 = getattr(self, "_current_images_base64", [])
+        images_mime = getattr(self, "_current_images_mime", [])
 
         if not images_base64:
             # Pure text mode
@@ -751,11 +777,19 @@ class QueryMixin:
 
                     # Insert corresponding image
                     if 0 <= image_num < len(images_base64):
+                        mime = (
+                            images_mime[image_num]
+                            if image_num < len(images_mime)
+                            else "image/jpeg"
+                        )
                         content_parts.append(
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/jpeg;base64,{images_base64[image_num]}"
+                                    "url": (
+                                        f"data:{mime};base64,"
+                                        f"{images_base64[image_num]}"
+                                    )
                                 },
                             }
                         )
@@ -844,7 +878,7 @@ class QueryMixin:
     def query_with_multimodal(
         self,
         query: str,
-        multimodal_content: List[Dict[str, Any]] = None,
+        multimodal_content: Optional[List[Dict[str, Any]]] = None,
         mode: str = "mix",
         **kwargs,
     ) -> str:
@@ -862,6 +896,8 @@ class QueryMixin:
         Returns:
             str: Query result
         """
+        if multimodal_content is None:
+            multimodal_content = []
         loop = always_get_an_event_loop()
         return loop.run_until_complete(
             self.aquery_with_multimodal(query, multimodal_content, mode=mode, **kwargs)

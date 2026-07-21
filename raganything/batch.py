@@ -24,7 +24,7 @@ class BatchMixin:
     logger: logging.Logger
 
     # Type hints for methods that will be available from other mixins
-    async def _ensure_lightrag_initialized(self) -> None: ...
+    async def _ensure_lightrag_initialized(self) -> Dict[str, Any]: ...
     async def process_document_complete(self, file_path: str, **kwargs) -> None: ...
 
     # ==========================================
@@ -44,7 +44,10 @@ class BatchMixin:
         max_workers: int = None,
     ):
         """
-        Process all supported files in a folder
+        Process all supported files in a folder with full RAG insertion.
+
+        Parses each file and inserts text + multimodal content into LightRAG
+        (unlike ``process_documents_batch``, which only parses to disk).
 
         Args:
             folder_path: Path to the folder containing files to process
@@ -189,10 +192,14 @@ class BatchMixin:
         recursive: Optional[bool] = None,
         show_progress: bool = True,
         incremental: bool = False,
+        skip_installation_check: bool = False,
         **kwargs,
     ) -> BatchProcessingResult:
         """
-        Process multiple documents in batch using the new BatchParser
+        Parse multiple documents in batch (parse-only; does not insert into LightRAG).
+
+        Use ``process_documents_with_rag_batch`` or ``process_folder_complete`` when
+        you need documents indexed into the RAG knowledge graph.
 
         Args:
             file_paths: List of file paths or directories to process
@@ -202,10 +209,11 @@ class BatchMixin:
             recursive: Whether to process directories recursively
             show_progress: Whether to show progress bar
             incremental: Whether to skip files unchanged since the last successful batch run
+            skip_installation_check: If True, skip parser installation preflight
             **kwargs: Additional arguments passed to the parser
 
         Returns:
-            BatchProcessingResult: Results of the batch processing
+            BatchProcessingResult: Results of the batch parsing
         """
         # Use config defaults if not specified
         if output_dir is None:
@@ -222,7 +230,7 @@ class BatchMixin:
             parser_type=self.config.parser,
             max_workers=max_workers,
             show_progress=show_progress,
-            skip_installation_check=True,  # Skip installation check for better UX
+            skip_installation_check=skip_installation_check,
         )
 
         # Process batch
@@ -244,10 +252,14 @@ class BatchMixin:
         recursive: Optional[bool] = None,
         show_progress: bool = True,
         incremental: bool = False,
+        skip_installation_check: bool = False,
         **kwargs,
     ) -> BatchProcessingResult:
         """
-        Asynchronously process multiple documents in batch
+        Asynchronously parse multiple documents in batch (parse-only; no RAG insert).
+
+        Use ``process_documents_with_rag_batch`` or ``process_folder_complete`` when
+        you need documents indexed into the RAG knowledge graph.
 
         Args:
             file_paths: List of file paths or directories to process
@@ -257,10 +269,11 @@ class BatchMixin:
             recursive: Whether to process directories recursively
             show_progress: Whether to show progress bar
             incremental: Whether to skip files unchanged since the last successful batch run
+            skip_installation_check: If True, skip parser installation preflight
             **kwargs: Additional arguments passed to the parser
 
         Returns:
-            BatchProcessingResult: Results of the batch processing
+            BatchProcessingResult: Results of the batch parsing
         """
         # Use config defaults if not specified
         if output_dir is None:
@@ -277,7 +290,7 @@ class BatchMixin:
             parser_type=self.config.parser,
             max_workers=max_workers,
             show_progress=show_progress,
-            skip_installation_check=True,  # Skip installation check for better UX
+            skip_installation_check=skip_installation_check,
         )
 
         # Process batch asynchronously

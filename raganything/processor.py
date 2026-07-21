@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 
 from raganything.base import DocStatus
-from raganything.parser import MineruParser, MineruExecutionError, get_parser
+from raganything.parser import MineruParser, MineruExecutionError, get_parser, Parser
 from raganything.utils import (
     separate_content,
     insert_text_content,
@@ -416,34 +416,199 @@ class ProcessorMixin:
 
         self.logger.info(f"Starting document parsing: {file_path}")
 
-        file_path = Path(file_path)
-        if not file_path.exists():
-            raise FileNotFoundError(f"File not found: {file_path}")
+        original_input = str(file_path)
+        downloaded_temp_file: Path | None = None
 
-        callback_file = str(file_path)
-        callback_manager = getattr(self, "callback_manager", None)
-        parse_start_time = time.time()
-        if callback_manager is not None:
-            callback_manager.dispatch(
-                "on_parse_start",
-                file_path=callback_file,
-                parser=self.config.parser,
+        try:
+            if Parser._is_url(original_input):
+                doc_parser = getattr(self, "doc_parser", None)
+                if doc_parser is None:
+                    doc_parser = get_parser(self.config.parser)
+                    self.doc_parser = doc_parser
+                downloaded_temp_file = await asyncio.to_thread(
+                    doc_parser._download_file, original_input
+                )
+                file_path = Path(downloaded_temp_file)
+                callback_file = original_input
+            else:
+                file_path = Path(file_path)
+                if not file_path.exists():
+                    raise FileNotFoundError(f"File not found: {file_path}")
+                callback_file = str(file_path)
+
+            callback_manager = getattr(self, "callback_manager", None)
+            parse_start_time = time.time()
+            if callback_manager is not None:
+                callback_manager.dispatch(
+                    "on_parse_start",
+                    file_path=callback_file,
+                    parser=self.config.parser,
+                )
+
+            # Generate cache key based on file and configuration
+            cache_key = self._generate_cache_key(file_path, parse_method, **kwargs)
+
+            # Check cache first
+            cached_result = await self._get_cached_result(
+                cache_key, file_path, parse_method, **kwargs
+            )
+            if cached_result is not None:
+                content_list, doc_id = cached_result
+                self.logger.info(f"Using cached parsing result for: {file_path}")
+                if display_stats:
+                    self.logger.info(
+                        f"* Total blocks in cached content_list: {len(content_list)}"
+                    )
+                if callback_manager is not None:
+                    duration = time.time() - parse_start_time
+                    callback_manager.dispatch(
+                        "on_parse_complete",
+                        file_path=callback_file,
+                        content_blocks=len(content_list),
+                        doc_id=doc_id,
+                        duration_seconds=duration,
+                    )
+                return content_list, doc_id
+
+            # Choose appropriate parsing method based on file extension
+            ext = file_path.suffix.lower()
+
+            try:
+                doc_parser = getattr(self, "doc_parser", None)
+                if doc_parser is None:
+                    doc_parser = get_parser(self.config.parser)
+                    self.doc_parser = doc_parser
+
+                # Log parser and method information
+                self.logger.info(
+                    f"Using {self.config.parser} parser with method: {parse_method}"
+                )
+
+                if ext in [".pdf"]:
+                    self.logger.info("Detected PDF file, using parser for PDF...")
+                    content_list = await asyncio.to_thread(
+                        doc_parser.parse_pdf,
+                        pdf_path=file_path,
+                        output_dir=output_dir,
+                        method=parse_method,
+                        **kwargs,
+                    )
+                elif ext in [
+                    ".jpg",
+                    ".jpeg",
+                    ".png",
+                    ".bmp",
+                    ".tiff",
+                    ".tif",
+                    ".gif",
+                    ".webp",
+                ]:
+                    self.logger.info("Detected image file, using parser for images...")
+                    try:
+                        content_list = await asyncio.to_thread(
+                            doc_parser.parse_image,
+                            image_path=file_path,
+                            output_dir=output_dir,
+                            **kwargs,
+                        )
+                    except NotImplementedError:
+                        # Fallback to MinerU for image parsing if current parser doesn't support it
+                        self.logger.warning(
+                            f"{self.config.parser} parser doesn't support image parsing, falling back to MinerU"
+                        )
+                        content_list = await asyncio.to_thread(
+                            MineruParser().parse_image,
+                            image_path=file_path,
+                            output_dir=output_dir,
+                            **kwargs,
+                        )
+                elif ext in [
+                    ".doc",
+                    ".docx",
+                    ".ppt",
+                    ".pptx",
+                    ".xls",
+                    ".xlsx",
+                    ".html",
+                    ".htm",
+                    ".xhtml",
+                ]:
+                    self.logger.info(
+                        "Detected Office or HTML document, using parser for Office/HTML..."
+                    )
+                    content_list = await asyncio.to_thread(
+                        doc_parser.parse_office_doc,
+                        doc_path=file_path,
+                        output_dir=output_dir,
+                        **kwargs,
+                    )
+                else:
+                    # For other or unknown formats, use generic parser
+                    self.logger.info(
+                        f"Using generic parser for {ext} file (method={parse_method})..."
+                    )
+                    content_list = await asyncio.to_thread(
+                        doc_parser.parse_document,
+                        file_path=file_path,
+                        method=parse_method,
+                        output_dir=output_dir,
+                        **kwargs,
+                    )
+
+            except MineruExecutionError as e:
+                self.logger.error(f"Mineru command failed: {e}")
+                if callback_manager is not None:
+                    callback_manager.dispatch(
+                        "on_parse_error",
+                        file_path=callback_file,
+                        error=e,
+                        parser=self.config.parser,
+                    )
+                raise
+            except Exception as e:
+                self.logger.error(
+                    f"Error during parsing with {self.config.parser} parser: {str(e)}"
+                )
+                if callback_manager is not None:
+                    callback_manager.dispatch(
+                        "on_parse_error",
+                        file_path=callback_file,
+                        error=e,
+                        parser=self.config.parser,
+                    )
+                raise
+
+            msg = f"Parsing {file_path} complete! Extracted {len(content_list)} content blocks"
+            self.logger.info(msg)
+
+            if len(content_list) == 0:
+                raise ValueError("Parsing failed: No content was extracted")
+
+            # Generate doc_id based on content
+            doc_id = self._generate_content_based_doc_id(content_list)
+
+            # Store result in cache
+            await self._store_cached_result(
+                cache_key, content_list, doc_id, file_path, parse_method, **kwargs
             )
 
-        # Generate cache key based on file and configuration
-        cache_key = self._generate_cache_key(file_path, parse_method, **kwargs)
-
-        # Check cache first
-        cached_result = await self._get_cached_result(
-            cache_key, file_path, parse_method, **kwargs
-        )
-        if cached_result is not None:
-            content_list, doc_id = cached_result
-            self.logger.info(f"Using cached parsing result for: {file_path}")
+            # Display content statistics if requested
             if display_stats:
-                self.logger.info(
-                    f"* Total blocks in cached content_list: {len(content_list)}"
-                )
+                self.logger.info("\nContent Information:")
+                self.logger.info(f"* Total blocks in content_list: {len(content_list)}")
+
+                # Count elements by type
+                block_types: Dict[str, int] = {}
+                for block in content_list:
+                    if isinstance(block, dict):
+                        block_type = block.get("type", "unknown")
+                        if isinstance(block_type, str):
+                            block_types[block_type] = block_types.get(block_type, 0) + 1
+
+                self.logger.info("* Content block types:")
+                for block_type, count in block_types.items():
+                    self.logger.info(f"  - {block_type}: {count}")
+
             if callback_manager is not None:
                 duration = time.time() - parse_start_time
                 callback_manager.dispatch(
@@ -453,158 +618,21 @@ class ProcessorMixin:
                     doc_id=doc_id,
                     duration_seconds=duration,
                 )
+
             return content_list, doc_id
-
-        # Choose appropriate parsing method based on file extension
-        ext = file_path.suffix.lower()
-
-        try:
-            doc_parser = getattr(self, "doc_parser", None)
-            if doc_parser is None:
-                doc_parser = get_parser(self.config.parser)
-                self.doc_parser = doc_parser
-
-            # Log parser and method information
-            self.logger.info(
-                f"Using {self.config.parser} parser with method: {parse_method}"
-            )
-
-            if ext in [".pdf"]:
-                self.logger.info("Detected PDF file, using parser for PDF...")
-                content_list = await asyncio.to_thread(
-                    doc_parser.parse_pdf,
-                    pdf_path=file_path,
-                    output_dir=output_dir,
-                    method=parse_method,
-                    **kwargs,
-                )
-            elif ext in [
-                ".jpg",
-                ".jpeg",
-                ".png",
-                ".bmp",
-                ".tiff",
-                ".tif",
-                ".gif",
-                ".webp",
-            ]:
-                self.logger.info("Detected image file, using parser for images...")
+        finally:
+            if downloaded_temp_file is not None:
                 try:
-                    content_list = await asyncio.to_thread(
-                        doc_parser.parse_image,
-                        image_path=file_path,
-                        output_dir=output_dir,
-                        **kwargs,
-                    )
-                except NotImplementedError:
-                    # Fallback to MinerU for image parsing if current parser doesn't support it
+                    if downloaded_temp_file.exists():
+                        downloaded_temp_file.unlink()
+                        self.logger.debug(
+                            f"Removed temporary download: {downloaded_temp_file}"
+                        )
+                except Exception as cleanup_error:
                     self.logger.warning(
-                        f"{self.config.parser} parser doesn't support image parsing, falling back to MinerU"
+                        f"Failed to remove temporary download "
+                        f"{downloaded_temp_file}: {cleanup_error}"
                     )
-                    content_list = await asyncio.to_thread(
-                        MineruParser().parse_image,
-                        image_path=file_path,
-                        output_dir=output_dir,
-                        **kwargs,
-                    )
-            elif ext in [
-                ".doc",
-                ".docx",
-                ".ppt",
-                ".pptx",
-                ".xls",
-                ".xlsx",
-                ".html",
-                ".htm",
-                ".xhtml",
-            ]:
-                self.logger.info(
-                    "Detected Office or HTML document, using parser for Office/HTML..."
-                )
-                content_list = await asyncio.to_thread(
-                    doc_parser.parse_office_doc,
-                    doc_path=file_path,
-                    output_dir=output_dir,
-                    **kwargs,
-                )
-            else:
-                # For other or unknown formats, use generic parser
-                self.logger.info(
-                    f"Using generic parser for {ext} file (method={parse_method})..."
-                )
-                content_list = await asyncio.to_thread(
-                    doc_parser.parse_document,
-                    file_path=file_path,
-                    method=parse_method,
-                    output_dir=output_dir,
-                    **kwargs,
-                )
-
-        except MineruExecutionError as e:
-            self.logger.error(f"Mineru command failed: {e}")
-            if callback_manager is not None:
-                callback_manager.dispatch(
-                    "on_parse_error",
-                    file_path=callback_file,
-                    error=e,
-                    parser=self.config.parser,
-                )
-            raise
-        except Exception as e:
-            self.logger.error(
-                f"Error during parsing with {self.config.parser} parser: {str(e)}"
-            )
-            if callback_manager is not None:
-                callback_manager.dispatch(
-                    "on_parse_error",
-                    file_path=callback_file,
-                    error=e,
-                    parser=self.config.parser,
-                )
-            raise
-
-        msg = f"Parsing {file_path} complete! Extracted {len(content_list)} content blocks"
-        self.logger.info(msg)
-
-        if len(content_list) == 0:
-            raise ValueError("Parsing failed: No content was extracted")
-
-        # Generate doc_id based on content
-        doc_id = self._generate_content_based_doc_id(content_list)
-
-        # Store result in cache
-        await self._store_cached_result(
-            cache_key, content_list, doc_id, file_path, parse_method, **kwargs
-        )
-
-        # Display content statistics if requested
-        if display_stats:
-            self.logger.info("\nContent Information:")
-            self.logger.info(f"* Total blocks in content_list: {len(content_list)}")
-
-            # Count elements by type
-            block_types: Dict[str, int] = {}
-            for block in content_list:
-                if isinstance(block, dict):
-                    block_type = block.get("type", "unknown")
-                    if isinstance(block_type, str):
-                        block_types[block_type] = block_types.get(block_type, 0) + 1
-
-            self.logger.info("* Content block types:")
-            for block_type, count in block_types.items():
-                self.logger.info(f"  - {block_type}: {count}")
-
-        if callback_manager is not None:
-            duration = time.time() - parse_start_time
-            callback_manager.dispatch(
-                "on_parse_complete",
-                file_path=callback_file,
-                content_blocks=len(content_list),
-                doc_id=doc_id,
-                duration_seconds=duration,
-            )
-
-        return content_list, doc_id
 
     async def _process_multimodal_content(
         self,
@@ -642,10 +670,21 @@ class ProcessorMixin:
         # Ensure LightRAG is initialized before accessing its storages
         init_result = await self._ensure_lightrag_initialized()
         if not init_result or not init_result.get("success"):
+            error_msg = (init_result or {}).get("error", "unknown error")
             self.logger.error(
-                "LightRAG initialization failed; skipping multimodal processing"
+                f"LightRAG initialization failed during multimodal processing: {error_msg}"
             )
-            return
+            if callback_manager is not None:
+                callback_manager.dispatch(
+                    "on_document_error",
+                    file_path=file_path,
+                    doc_id=doc_id,
+                    error=RuntimeError(
+                        f"LightRAG initialization failed: {error_msg}"
+                    ),
+                    stage="multimodal",
+                )
+            raise RuntimeError(f"LightRAG initialization failed: {error_msg}")
 
         # Check multimodal processing status - handle LightRAG's early DocStatus.PROCESSED marking
         try:

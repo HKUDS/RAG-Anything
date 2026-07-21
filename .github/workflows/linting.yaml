@@ -14,12 +14,12 @@ jobs:
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v2
+              uses: actions/checkout@v4
 
             - name: Set up Python
-              uses: actions/setup-python@v2
+              uses: actions/setup-python@v5
               with:
-                python-version: '3.x'
+                python-version: '3.12'
 
             - name: Install dependencies
               run: |
@@ -28,9 +28,3 @@ jobs:
 
             - name: Run pre-commit
               run: pre-commit run --all-files --show-diff-on-failure
-
-            - name: Commit lint changes
-              uses: stefanzweifel/git-auto-commit-action@v5
-              with:
-                commit_message: "chore: apply linting and formatting"
-                branch: ${{ github.head_ref }}
