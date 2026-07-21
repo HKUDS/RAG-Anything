@@ -27,14 +27,17 @@ from __future__ import annotations
 import os
 import platform
 import hashlib
+import ipaddress
 import json
 import argparse
 import base64
+import socket
 import subprocess
 import tempfile
 import threading
 import logging
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import shutil
@@ -52,6 +55,18 @@ from typing import (
 from raganything.asset_urls import attach_public_media_urls
 
 _IS_WINDOWS: bool = platform.system() == "Windows"
+
+# URL download safety limits (SSRF / disk DoS mitigations)
+_ALLOWED_DOWNLOAD_SCHEMES = frozenset({"http", "https"})
+_MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024  # 100 MiB
+_MAX_DOWNLOAD_REDIRECTS = 5
+_BLOCKED_DOWNLOAD_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "metadata.google.internal",
+        "metadata.goog",
+    }
+)
 
 
 class MineruExecutionError(Exception):
@@ -81,46 +96,148 @@ class Parser:
     logger = logging.getLogger(__name__)
 
     @staticmethod
+    def apply_public_media_urls(
+        content_list: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Attach optional public media URLs to each content_list item in place."""
+        for item in content_list:
+            if isinstance(item, dict):
+                attach_public_media_urls(item)
+        return content_list
+
+    @staticmethod
     def _is_url(path: str) -> bool:
-        """Check if the path is a URL."""
+        """Return True if path is an http(s) URL suitable for remote download."""
         try:
             result = urllib.parse.urlparse(str(path))
-            return all([result.scheme, result.netloc])
+            return (
+                result.scheme.lower() in _ALLOWED_DOWNLOAD_SCHEMES
+                and bool(result.netloc)
+            )
         except ValueError:
             return False
 
+    @staticmethod
+    def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+        """Return True if the IP is not safe for outbound document downloads."""
+        return bool(
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        )
+
+    @classmethod
+    def _ensure_url_safe_for_download(cls, url: str) -> urllib.parse.ParseResult:
+        """
+        Validate that a URL is allowed for remote download (SSRF mitigations).
+
+        Rejects non-http(s) schemes, blocked hostnames, and hosts that resolve
+        only (or also) to private / loopback / link-local / reserved addresses.
+        """
+        parsed = urllib.parse.urlparse(url)
+        scheme = (parsed.scheme or "").lower()
+        if scheme not in _ALLOWED_DOWNLOAD_SCHEMES:
+            raise ValueError(
+                f"Unsupported URL scheme '{parsed.scheme}'. "
+                f"Only {sorted(_ALLOWED_DOWNLOAD_SCHEMES)} are allowed."
+            )
+        hostname = parsed.hostname
+        if not hostname:
+            raise ValueError("URL is missing a hostname")
+
+        host_lower = hostname.lower().rstrip(".")
+        if host_lower in _BLOCKED_DOWNLOAD_HOSTNAMES or host_lower.endswith(".localhost"):
+            raise ValueError(f"Blocked hostname for download: {hostname}")
+
+        # Literal IP in the URL — check without DNS
+        try:
+            literal_ip = ipaddress.ip_address(hostname)
+        except ValueError:
+            literal_ip = None
+        if literal_ip is not None and cls._is_blocked_ip(literal_ip):
+            raise ValueError(f"Blocked address for download: {hostname}")
+
+        port = parsed.port or (443 if scheme == "https" else 80)
+        try:
+            addrinfo = socket.getaddrinfo(
+                hostname, port, type=socket.SOCK_STREAM
+            )
+        except socket.gaierror as exc:
+            raise ValueError(f"Cannot resolve hostname: {hostname}") from exc
+
+        if not addrinfo:
+            raise ValueError(f"Cannot resolve hostname: {hostname}")
+
+        for info in addrinfo:
+            ip = ipaddress.ip_address(info[4][0])
+            if cls._is_blocked_ip(ip):
+                raise ValueError(
+                    f"Blocked address for hostname {hostname}: {ip}"
+                )
+        return parsed
+
     def _download_file(self, url: str) -> Path:
         """
-        Download a file from a URL to a temporary file.
-        Attempts to preserve the file extension from the URL or Content-Type header.
+        Download a file from an http(s) URL to a temporary file.
+
+        Attempts to preserve the file extension from the URL or Content-Type
+        header. Applies SSRF mitigations (scheme/host/IP checks, redirect
+        re-validation) and a maximum download size.
         """
         tmp_path = None
         response = None
         try:
             self.logger.info(f"Downloading file from URL: {url}")
+            self._ensure_url_safe_for_download(url)
 
-            # Parse URL to get path and extension
             parsed_url = urllib.parse.urlparse(url)
             path = Path(parsed_url.path)
             suffix = path.suffix if path.suffix else ""
 
-            # Create request with User-Agent to avoid 403 Forbidden from some sites
             req = urllib.request.Request(
                 url,
                 data=None,
                 headers={
-                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.114 Safari/537.36"
+                    "User-Agent": (
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/91.0.4472.114 Safari/537.36"
+                    )
                 },
             )
 
-            # Open connection to get headers (with an explicit timeout to prevent hanging)
-            response = urllib.request.urlopen(req, timeout=30)
+            # Re-validate every redirect target before following it
+            class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+                def __init__(self, outer: "Parser"):
+                    super().__init__()
+                    self._outer = outer
+                    self._redirects = 0
 
-            # If no extension in URL, try Content-Type header
+                def redirect_request(self, req, fp, code, msg, headers, newurl):
+                    self._redirects += 1
+                    if self._redirects > _MAX_DOWNLOAD_REDIRECTS:
+                        raise urllib.error.HTTPError(
+                            newurl,
+                            code,
+                            f"Exceeded maximum redirects ({_MAX_DOWNLOAD_REDIRECTS})",
+                            headers,
+                            fp,
+                        )
+                    self._outer._ensure_url_safe_for_download(newurl)
+                    return super().redirect_request(
+                        req, fp, code, msg, headers, newurl
+                    )
+
+            opener = urllib.request.build_opener(_SafeRedirectHandler(self))
+            response = opener.open(req, timeout=30)
+
             if not suffix:
                 content_type = (
-                    response.headers.get("Content-Type", "").split(";")[0].strip()
-                )
+                    response.headers.get("Content-Type", "") or ""
+                ).split(";")[0].strip()
                 if content_type:
                     import mimetypes
 
@@ -131,14 +248,35 @@ class Parser:
                             f"Inferred file extension '{suffix}' from Content-Type: {content_type}"
                         )
 
-            # Create a temporary file with the correct extension
+            content_length_raw = response.headers.get("Content-Length")
+            if content_length_raw:
+                try:
+                    content_length = int(content_length_raw)
+                except (TypeError, ValueError):
+                    content_length = None
+                if content_length is not None and content_length > _MAX_DOWNLOAD_BYTES:
+                    raise RuntimeError(
+                        f"Remote file too large ({content_length} bytes); "
+                        f"limit is {_MAX_DOWNLOAD_BYTES} bytes"
+                    )
+
             fd, tmp_path = tempfile.mkstemp(suffix=suffix)
             os.close(fd)
             tmp_path = Path(tmp_path)
 
-            # Download the file content
+            downloaded = 0
             with open(tmp_path, "wb") as out_file:
-                shutil.copyfileobj(response, out_file)
+                while True:
+                    chunk = response.read(64 * 1024)
+                    if not chunk:
+                        break
+                    downloaded += len(chunk)
+                    if downloaded > _MAX_DOWNLOAD_BYTES:
+                        raise RuntimeError(
+                            f"Remote file exceeded download limit of "
+                            f"{_MAX_DOWNLOAD_BYTES} bytes"
+                        )
+                    out_file.write(chunk)
 
             self.logger.info(
                 f"Downloaded to temporary file: {tmp_path} ({tmp_path.stat().st_size} bytes)"
@@ -146,10 +284,9 @@ class Parser:
             return tmp_path
 
         except Exception as e:
-            # Clean up temp file if it was created
-            if tmp_path and tmp_path.exists():
+            if tmp_path and Path(tmp_path).exists():
                 try:
-                    tmp_path.unlink()
+                    Path(tmp_path).unlink()
                     self.logger.debug(
                         f"Cleaned up temporary file after failed download: {tmp_path}"
                     )
@@ -159,7 +296,7 @@ class Parser:
                     )
 
             self.logger.error(f"Failed to download file from {url}: {e}")
-            raise RuntimeError(f"Failed to download file from {url}: {e}")
+            raise RuntimeError(f"Failed to download file from {url}: {e}") from e
         finally:
             if response:
                 response.close()
@@ -1691,7 +1828,7 @@ class DoclingParser(Parser):
             content_list = self.read_from_block_recursive(
                 doc_dict["body"], "body", file_subdir, 0, "0", doc_dict
             )
-            return content_list
+            return self.apply_public_media_urls(content_list)
 
         except Exception as e:
             self.logger.error(f"Error in parse_pdf: {str(e)}")
@@ -2091,7 +2228,7 @@ class DoclingParser(Parser):
             content_list = self.read_from_block_recursive(
                 doc_dict["body"], "body", file_subdir, 0, "0", doc_dict
             )
-            return content_list
+            return self.apply_public_media_urls(content_list)
 
         except Exception as e:
             self.logger.error(f"Error in parse_office_doc: {str(e)}")
@@ -2148,7 +2285,7 @@ class DoclingParser(Parser):
             content_list = self.read_from_block_recursive(
                 doc_dict["body"], "body", file_subdir, 0, "0", doc_dict
             )
-            return content_list
+            return self.apply_public_media_urls(content_list)
 
         except Exception as e:
             self.logger.error(f"Error in parse_html: {str(e)}")
@@ -2419,7 +2556,7 @@ class PaddleOCRParser(Parser):
             close = getattr(page_inputs, "close", None)
             if callable(close):
                 close()
-        return content_list
+        return self.apply_public_media_urls(content_list)
 
     def parse_image(
         self,
@@ -2444,9 +2581,12 @@ class PaddleOCRParser(Parser):
         text_lines = self._ocr_input(
             str(image_path), lang=lang, cls_enabled=cls_enabled
         )
-        return [
-            {"type": "text", "text": text, "page_idx": page_idx} for text in text_lines
-        ]
+        return self.apply_public_media_urls(
+            [
+                {"type": "text", "text": text, "page_idx": page_idx}
+                for text in text_lines
+            ]
+        )
 
     def parse_office_doc(
         self,

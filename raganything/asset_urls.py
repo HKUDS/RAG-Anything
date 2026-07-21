@@ -5,10 +5,8 @@ Implements the environment-variable contract described in docs and README:
 when ingestion runs on a server but retrieval/UI runs elsewhere, stored paths
 must remain valid locally while a parallel public URL can be shown to clients.
 
-NOTE: ``attach_public_media_urls`` is currently invoked from the MinerU
-parser path only. Other parsers (e.g. Docling) will not yield
-``*_public_url`` fields until this helper is wired into their content_list
-post-processing too.
+``attach_public_media_urls`` is applied after content_list construction for
+MinerU, Docling, and PaddleOCR parser paths.
 """
 
 from __future__ import annotations

@@ -67,7 +67,7 @@ It is meant to stay small and easy to maintain (see discussion in [#207](https:/
 
 **Quick checks:**
 
-- Absolute local paths are normal for processing on one host. For a browser or another server, set **public URL mapping** (environment variables `RAGANYTHING_PUBLIC_ASSET_BASE_URL` and `RAGANYTHING_PUBLIC_ASSET_STRIP_PREFIX` — see the main [README](../README.md)) so each chunk can carry an `*_public_url` field alongside the local path. Today this mapping only runs in the MinerU parser path; other parsers will not yet produce `*_public_url`.
+- Absolute local paths are normal for processing on one host. For a browser or another server, set **public URL mapping** (environment variables `RAGANYTHING_PUBLIC_ASSET_BASE_URL` and `RAGANYTHING_PUBLIC_ASSET_STRIP_PREFIX` — see the main [README](../README.md)) so each chunk can carry an `*_public_url` field alongside the local path. This mapping runs for MinerU, Docling, and PaddleOCR content_list post-processing.
 
 ---
 
