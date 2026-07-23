@@ -118,6 +118,15 @@ class QueryMixin:
             str: Query result
         """
         if self.lightrag is None:
+            init_result = await self._ensure_lightrag_initialized()
+            if isinstance(init_result, dict) and not init_result.get("success", True):
+                error = init_result.get("error") or (
+                    "No LightRAG instance available. Please process documents first "
+                    "or provide a pre-initialized LightRAG instance."
+                )
+                raise ValueError(error)
+
+        if self.lightrag is None:
             raise ValueError(
                 "No LightRAG instance available. Please process documents first or provide a pre-initialized LightRAG instance."
             )
