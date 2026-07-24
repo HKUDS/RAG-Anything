@@ -1,0 +1,182 @@
+name: OpenDataLoader Release Gate
+
+on:
+  pull_request:
+    paths:
+      - 'pyproject.toml'
+      - 'setup.py'
+      - 'uv.lock'
+      - 'Dockerfile'
+      - 'scripts/opendataloader_release_gate.py'
+      - '.github/workflows/opendataloader-release-gate.yml'
+  workflow_dispatch:
+    inputs:
+      run_release_gate:
+        description: 'Run the redistribution evidence gate (requires approved evidence files).'
+        required: true
+        default: false
+        type: boolean
+      source_revision:
+        description: 'Immutable upstream OpenDataLoader source revision.'
+        required: false
+        type: string
+      source_url:
+        description: 'Immutable corresponding-source URL for that revision.'
+        required: false
+        type: string
+      image_digest:
+        description: 'Final pushed OCI image digest, sha256:...'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  lock:
+    name: Locked dependency graph
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: '0.6.14'
+      - name: Validate committed lock
+        id: locked
+        continue-on-error: true
+        run: uv lock --locked
+      - name: Capture resolver conflict evidence
+        if: steps.locked.outcome == 'failure'
+        run: |
+          uv lock 2>&1 | tee resolver.log || true
+          git diff -- uv.lock > uv-lock.diff || true
+      - name: Upload resolver evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opendataloader-resolver-evidence
+          path: |
+            resolver.log
+            uv-lock.diff
+          if-no-files-found: ignore
+      - name: Fail when the committed lock is stale
+        if: steps.locked.outcome == 'failure'
+        run: exit 1
+
+  install-smoke:
+    name: Install smoke (${{ matrix.environment }})
+    needs: lock
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - environment: default
+            extra: ''
+            parser: mineru
+          - environment: opendataloader
+            extra: opendataloader
+            parser: opendataloader
+          - environment: marker
+            extra: ''
+            parser: ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-java@v4
+        if: matrix.environment == 'opendataloader'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: '0.6.14'
+      - name: Install default or OpenDataLoader environment
+        if: matrix.environment != 'marker'
+        run: |
+          if [ -n '${{ matrix.extra }}' ]; then
+            uv sync --frozen --extra '${{ matrix.extra }}'
+          else
+            uv sync --frozen
+          fi
+      - name: Run parser installation smoke
+        if: matrix.environment != 'marker'
+        run: |
+          uv run python -c "from raganything.parser import get_parser; p = get_parser('${{ matrix.parser }}'); assert p.check_installation()"
+      - name: Install Marker in a separate runtime only
+        if: matrix.environment == 'marker'
+        run: |
+          python -m venv marker-runtime
+          marker-runtime/bin/python -m pip install --upgrade pip
+          marker-runtime/bin/python -m pip install marker-pdf
+          marker-runtime/bin/python -c "import marker"
+
+  container-smoke:
+    name: Default and opt-in container smoke
+    needs: lock
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build default image
+        run: docker build --target default --tag raganything:default .
+      - name: Assert default image excludes Java and OpenDataLoader
+        run: |
+          docker run --rm --entrypoint sh raganything:default -c '! command -v java'
+          docker run --rm --entrypoint python raganything:default -c "from importlib.util import find_spec; assert find_spec('opendataloader_pdf') is None"
+      - name: Build opt-in image
+        run: docker build --target opendataloader --tag raganything:opendataloader .
+      - name: Assert opt-in Java and SDK versions
+        run: |
+          docker run --rm --entrypoint java raganything:opendataloader -version
+          docker run --rm --entrypoint python raganything:opendataloader -c "from importlib.metadata import version; assert version('opendataloader-pdf') == '2.5.0'"
+
+  redistribution-evidence:
+    name: Final artifact SBOM and legal gate
+    if: github.event_name == 'workflow_dispatch' && inputs.run_release_gate
+    needs: [lock, container-smoke]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download exact wheel and collect notices
+        run: |
+          mkdir -p release-artifacts
+          python -m pip download --only-binary=:all: --no-deps --dest release-artifacts opendataloader-pdf==2.5.0
+          python scripts/opendataloader_release_gate.py collect \
+            --wheel release-artifacts/*.whl \
+            --notice-root OSS_NOTICES/opendataloader-pdf \
+            --manifest release-artifacts/release-manifest.json \
+            --source-revision '${{ inputs.source_revision }}' \
+            --source-url '${{ inputs.source_url }}'
+      - name: Build final opt-in candidate for SBOM capture
+        run: docker build --target opendataloader --tag raganything:opendataloader .
+      - name: Generate wheel, JAR, and image SBOMs
+        run: |
+          docker run --rm -v "$PWD:/work" anchore/syft:v1.20.0 /work/release-artifacts -o cyclonedx-json=/work/release-artifacts/wheel.sbom.json
+          docker run --rm -v "$PWD:/work" anchore/syft:v1.20.0 /work/OSS_NOTICES/opendataloader-pdf/jar -o cyclonedx-json=/work/release-artifacts/jar.sbom.json
+          docker run --rm -v "$PWD:/work" -v /var/run/docker.sock:/var/run/docker.sock anchore/syft:v1.20.0 raganything:opendataloader -o cyclonedx-json=/work/release-artifacts/image.sbom.json
+      - name: Fail closed on missing notices, SBOM data, reconciliation, or approval
+        run: |
+          python scripts/opendataloader_release_gate.py verify \
+            --manifest release-artifacts/release-manifest.json \
+            --notice-root OSS_NOTICES/opendataloader-pdf \
+            --sbom release-artifacts/wheel.sbom.json \
+            --sbom release-artifacts/jar.sbom.json \
+            --sbom release-artifacts/image.sbom.json \
+            --reconciliation release-evidence/opendataloader-pdf/reconciliation.json \
+            --approval release-evidence/opendataloader-pdf/legal-approval.json \
+            --image-digest '${{ inputs.image_digest }}'
+      - name: Upload release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opendataloader-release-evidence
+          path: |
+            OSS_NOTICES/opendataloader-pdf
+            release-artifacts
+          if-no-files-found: warn

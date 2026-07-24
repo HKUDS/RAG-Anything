@@ -131,3 +131,61 @@ async def test_processor_parse_document_uses_selected_parser(monkeypatch, tmp_pa
     assert content_list_2 == [
         {"type": "text", "text": "parsed by fake parser", "page_idx": 0}
     ]
+
+
+@pytest.mark.asyncio
+async def test_pdf_override_requires_coverage_before_cache(monkeypatch, tmp_path):
+    """PDF_PARSER must control the coverage gate, not the global parser."""
+    from raganything.processor import doc_processor as doc_proc_module
+    from raganything.processor.doc_processor import DocProcessorMixin
+
+    class Logger:
+        def info(self, *args, **kwargs):
+            pass
+
+        def warning(self, *args, **kwargs):
+            pass
+
+        def error(self, *args, **kwargs):
+            pass
+
+        def debug(self, *args, **kwargs):
+            pass
+
+    class IncompleteOdlParser:
+        def parse_pdf(self, **kwargs):
+            return [{"type": "text", "text": "partial", "page_idx": 0}]
+
+    class Processor(DocProcessorMixin):
+        pass
+
+    processor = Processor()
+    processor.config = type(
+        "Config",
+        (),
+        {
+            "parser": "mineru",
+            "pdf_parser": "opendataloader",
+            "parser_output_dir": str(tmp_path / "output"),
+            "parse_method": "auto",
+            "display_content_stats": False,
+            "ocr_quality_check_enabled": False,
+        },
+    )()
+    processor.logger = Logger()
+    processor.parse_cache = None
+    stored = False
+
+    async def fake_store(*args, **kwargs):
+        nonlocal stored
+        stored = True
+
+    monkeypatch.setattr(doc_proc_module, "get_parser", lambda name: IncompleteOdlParser())
+    monkeypatch.setattr(processor, "_store_cached_result", fake_store)
+    pdf = tmp_path / "partial.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n")
+
+    with pytest.raises(ValueError, match="page coverage manifest"):
+        await processor.parse_document(str(pdf))
+
+    assert stored is False

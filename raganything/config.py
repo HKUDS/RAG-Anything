@@ -27,7 +27,13 @@ class RAGAnythingConfig:
     """Default output directory for parsed content."""
 
     parser: str = field(default=get_env_value("PARSER", "mineru", str))
-    """Parser selection: 'mineru', 'docling', 'paddleocr', or 'marker'."""
+    """Parser selection: 'mineru', 'docling', 'paddleocr', 'marker', or 'opendataloader'."""
+
+    pdf_parser: str = field(default=get_env_value("PDF_PARSER", "", str))
+    """Optional PDF-only parser override. When set (e.g. 'opendataloader'),
+    PDF files use this parser while all other file types continue using
+    the global ``parser``.  An empty value preserves the global default
+    for all formats."""
 
     # Entity Extraction Configuration
     # ---

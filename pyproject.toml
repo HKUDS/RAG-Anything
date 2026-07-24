@@ -41,11 +41,8 @@ markdown = [
     "weasyprint>=60.0",
     "pygments>=2.10.0",
 ]
-marker = [
-    "marker-pdf>=0.2.16",
-]
-marker_full = [
-    "marker-pdf[full]>=0.2.16",
+opendataloader = [
+    "opendataloader-pdf==2.5.0",
 ]
 all = [
     "Pillow>=10.0.0",
@@ -55,7 +52,6 @@ all = [
     "markdown>=3.4.0",
     "weasyprint>=60.0",
     "pygments>=2.10.0",
-    "marker-pdf>=0.2.16",
 ]
 
 [project.urls]

@@ -1,0 +1,13 @@
+{
+  "integration": "opendataloader-pdf",
+  "version": "2.5.0",
+  "components": [
+    {
+      "name": "veraPDF",
+      "actual_version": "",
+      "notice_version": "",
+      "disposition": "pending",
+      "owner": ""
+    }
+  ]
+}

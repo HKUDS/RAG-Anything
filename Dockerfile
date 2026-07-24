@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.11-slim AS base
 
 LABEL org.opencontainers.image.title="RAG-Anything"
 LABEL org.opencontainers.image.description="All-in-One Multimodal RAG System"
@@ -33,3 +33,16 @@ EXPOSE 8000
 
 # 启动命令
 CMD ["python", "server.py"]
+
+# Opt-in OpenDataLoader runtime. Build explicitly with:
+# docker build --target opendataloader -t raganything:opendataloader .
+FROM base AS opendataloader
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    openjdk-17-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
+RUN pip install --no-cache-dir ".[opendataloader]" \
+    && java -version 2>&1 | grep -Eq 'version "17\\.|openjdk 17\\.' \
+    && python -c "from importlib.metadata import version; assert version('opendataloader-pdf') == '2.5.0'"
+
+# Keep the default final target free of OpenDataLoader and Java.
+FROM base AS default

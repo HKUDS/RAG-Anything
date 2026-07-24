@@ -26,11 +26,10 @@ from __future__ import annotations
 
 from .batch_processor import register_background_task
 
-import os
 import time
 import hashlib
 import json
-from typing import Dict, List, Any, Tuple, Optional
+from typing import Dict, List, Any
 from pathlib import Path
 
 from raganything.base import DocStatus
@@ -40,30 +39,71 @@ from raganything.utils import (
     separate_content,
     insert_text_content,
     insert_text_content_with_multimodal_content,
-    get_processor_for_type,
-    get_equation_text_and_format,
-    get_table_body,
-    normalize_caption_list,
 )
 import asyncio
-from lightrag.utils import compute_mdhash_id
 
 
 
 class DocProcessorMixin:
     """Document parsing, caching, and processing entry points."""
 
-    def _requires_pdf_page_coverage(self, file_path: Path) -> bool:
-        return (
-            file_path.suffix.lower() == ".pdf"
-            and str(getattr(self.config, "parser", "")).lower() == "docling"
+    # ── PDF page-coverage gate (generalised) ──────────────────────────
+    # Any parser that declares PDF coverage support SHALL comply with this
+    # contract.  The gate was originally Docling-only; it now applies to
+    # every backend that produces a PageTrackedContent manifest.
+
+    _PARSERS_WITH_PDF_COVERAGE = frozenset({"docling", "opendataloader"})
+
+    def _parser_supports_pdf_coverage(self, parser_name: str) -> bool:
+        """Return True when *parser_name* declares PDF coverage support."""
+        return parser_name.strip().lower() in self._PARSERS_WITH_PDF_COVERAGE
+
+    def _effective_parser_name(self, file_path: Path | str) -> str:
+        """Return the only parser name allowed for this file's lifecycle."""
+        path = Path(file_path)
+        global_parser = str(getattr(self.config, "parser", "")).strip().lower()
+        pdf_override = str(getattr(self.config, "pdf_parser", "")).strip().lower()
+        if path.suffix.lower() == ".pdf" and pdf_override:
+            return pdf_override
+        return global_parser
+
+    def _effective_parse_config(
+        self, file_path: Path, parse_method: str | None = None, **kwargs: Any
+    ) -> Dict[str, Any]:
+        """Build the cache/metadata configuration from the effective parser."""
+        parser_name = self._effective_parser_name(file_path)
+        config: Dict[str, Any] = {
+            "parser": parser_name,
+            "parse_method": parse_method or self.config.parse_method,
+        }
+        if parser_name == "opendataloader":
+            from raganything.parser.opendataloader_parser import OpenDataLoaderParser
+
+            config["parser_identity"] = OpenDataLoaderParser.cache_identity()
+        config.update(
+            {
+                key: value
+                for key, value in kwargs.items()
+                if key in {"lang", "device", "start_page", "end_page", "formula", "table", "backend", "source"}
+            }
         )
+        return config
+
+    def _requires_pdf_page_coverage(self, file_path: Path) -> bool:
+        """Return True when this PDF requires a validated page-coverage manifest."""
+        if file_path.suffix.lower() != ".pdf":
+            return False
+        return self._parser_supports_pdf_coverage(self._effective_parser_name(file_path))
 
     @staticmethod
     def _validate_pdf_page_coverage(page_coverage: Any) -> Dict[str, Any]:
-        """Reject a partial PDF before it can enter caches or durable storage."""
+        """Reject a partial PDF before it can enter caches or durable storage.
+
+        Blank pages (zero-element pages) are counted as covered when the
+        parser explicitly includes them in ``blank_pages``.
+        """
         if not isinstance(page_coverage, dict):
-            raise ValueError("Docling PDF parsing did not provide a page coverage manifest")
+            raise ValueError("PDF parsing did not provide a page coverage manifest")
         try:
             total_pages = int(page_coverage.get("source_total_pages"))
         except (TypeError, ValueError) as exc:
@@ -75,14 +115,18 @@ class DocProcessorMixin:
         success = {int(value) for value in page_coverage.get("successful_pages") or []}
         failed = {int(value) for value in page_coverage.get("failed_pages") or []}
         skipped = {int(value) for value in page_coverage.get("skipped_pages") or []}
+        blank = {int(value) for value in page_coverage.get("blank_pages") or []}
+
+        # blank_pages are acknowledged empty pages — they are covered
+        covered = success | blank
         if success & failed or success & skipped or failed & skipped:
             raise ValueError("PDF page coverage contains overlapping page states")
-        if success | failed | skipped != expected:
+        if covered | failed | skipped != expected:
             raise ValueError("PDF page coverage does not account for every source page")
         if failed or skipped:
             raise ValueError(
                 "PDF page coverage is incomplete; failed pages: "
-                + ", ".join(str(value) for value in sorted(failed | skipped))
+                + ",".join(str(p) for p in sorted(failed | skipped))
             )
         return page_coverage
 
@@ -104,31 +148,11 @@ class DocProcessorMixin:
         # Get file modification time
         mtime = file_path.stat().st_mtime
 
-        # Create configuration dict for cache key
         config_dict = {
             "file_path": str(file_path.absolute()),
             "mtime": mtime,
-            "parser": self.config.parser,
-            "parse_method": parse_method or self.config.parse_method,
+            **self._effective_parse_config(file_path, parse_method, **kwargs),
         }
-
-        # Add relevant kwargs to config
-        relevant_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k
-            in [
-                "lang",
-                "device",
-                "start_page",
-                "end_page",
-                "formula",
-                "table",
-                "backend",
-                "source",
-            ]
-        }
-        config_dict.update(relevant_kwargs)
 
         # Generate hash from config
         config_str = json.dumps(config_dict, sort_keys=True)
@@ -357,28 +381,7 @@ class DocProcessorMixin:
 
             # Check parsing configuration
             cached_config = cached_data.get("parse_config", {})
-            current_config = {
-                "parser": self.config.parser,
-                "parse_method": parse_method or self.config.parse_method,
-            }
-
-            # Add relevant kwargs to current config
-            relevant_kwargs = {
-                k: v
-                for k, v in kwargs.items()
-                if k
-                in [
-                    "lang",
-                    "device",
-                    "start_page",
-                    "end_page",
-                    "formula",
-                    "table",
-                    "backend",
-                    "source",
-                ]
-            }
-            current_config.update(relevant_kwargs)
+            current_config = self._effective_parse_config(file_path, parse_method, **kwargs)
 
             if cached_config != current_config:
                 self.logger.debug(f"Cache invalid - config changed: {cache_key}")
@@ -441,29 +444,7 @@ class DocProcessorMixin:
             # Get file modification time
             file_mtime = file_path.stat().st_mtime
 
-            # Create parsing configuration
-            parse_config = {
-                "parser": self.config.parser,
-                "parse_method": parse_method or self.config.parse_method,
-            }
-
-            # Add relevant kwargs to config
-            relevant_kwargs = {
-                k: v
-                for k, v in kwargs.items()
-                if k
-                in [
-                    "lang",
-                    "device",
-                    "start_page",
-                    "end_page",
-                    "formula",
-                    "table",
-                    "backend",
-                    "source",
-                ]
-            }
-            parse_config.update(relevant_kwargs)
+            parse_config = self._effective_parse_config(file_path, parse_method, **kwargs)
 
             page_coverage = getattr(content_list, "page_coverage", None)
             requires_page_coverage = self._requires_pdf_page_coverage(file_path)
@@ -524,13 +505,14 @@ class DocProcessorMixin:
             raise FileNotFoundError(f"File not found: {file_path}")
 
         callback_file = str(file_path)
+        effective_parser = self._effective_parser_name(file_path)
         callback_manager = getattr(self, "callback_manager", None)
         parse_start_time = time.time()
         if callback_manager is not None:
             callback_manager.dispatch(
                 "on_parse_start",
                 file_path=callback_file,
-                parser=self.config.parser,
+                parser=effective_parser,
             )
 
         # Generate cache key based on file and configuration
@@ -561,15 +543,19 @@ class DocProcessorMixin:
         # Choose appropriate parsing method based on file extension
         ext = file_path.suffix.lower()
 
+        if effective_parser == "opendataloader" and ext != ".pdf":
+            raise ValueError("OpenDataLoader may only be selected through PDF_PARSER for PDF files")
+
         try:
             doc_parser = getattr(self, "doc_parser", None)
-            if doc_parser is None:
-                doc_parser = get_parser(self.config.parser)
+            if doc_parser is None or getattr(self, "_cached_parser_name", "") != effective_parser:
+                doc_parser = get_parser(effective_parser)
                 self.doc_parser = doc_parser
+                self._cached_parser_name = effective_parser
 
             # Log parser and method information
             self.logger.info(
-                f"Using {self.config.parser} parser with method: {parse_method}"
+                f"Using {effective_parser} parser with method: {parse_method}"
             )
 
             if ext in [".pdf"]:
@@ -600,6 +586,8 @@ class DocProcessorMixin:
                         **kwargs,
                     )
                 except NotImplementedError:
+                    if effective_parser == "opendataloader":
+                        raise
                     # Fallback to MinerU for image parsing if current parser doesn't support it
                     self.logger.warning(
                         f"{self.config.parser} parser doesn't support image parsing, falling back to MinerU"
@@ -659,20 +647,20 @@ class DocProcessorMixin:
                     "on_parse_error",
                     file_path=callback_file,
                     error=e,
-                    parser=self.config.parser,
+                    parser=effective_parser,
                 )
             raise
         except Exception as e:
             self.logger.error(
-                f"Error during parsing with {self.config.parser} parser: {str(e)}"
+                f"Error during parsing with {effective_parser} parser: {str(e)}"
             )
             if callback_manager is not None:
                 callback_manager.dispatch(
                     "on_parse_error",
                     file_path=callback_file,
                     error=e,
-                    parser=self.config.parser,
-            )
+                    parser=effective_parser,
+                )
             raise
 
         page_coverage = getattr(content_list, "page_coverage", None)
@@ -686,7 +674,10 @@ class DocProcessorMixin:
             raise ValueError("Parsing failed: No content was extracted")
 
         # ── OCR Quality Check + Auto-Retry (Phase 3) ──
-        if getattr(self.config, "ocr_quality_check_enabled", True):
+        if (
+            effective_parser != "opendataloader"
+            and getattr(self.config, "ocr_quality_check_enabled", True)
+        ):
             from raganything.utils._quality import validate_and_suggest
 
             quality_threshold = getattr(self.config, "ocr_quality_threshold", 0.7)

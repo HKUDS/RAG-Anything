@@ -1,0 +1,9 @@
+{
+  "integration": "opendataloader-pdf",
+  "version": "2.5.0",
+  "approved": false,
+  "license_owner": "",
+  "approved_at": "",
+  "evidence_manifest_sha256": "",
+  "scope": "OpenDataLoader integration only"
+}

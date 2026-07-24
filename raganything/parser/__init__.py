@@ -20,7 +20,21 @@ from .image_parser import PaddleOCRParser
 
 _CUSTOM_PARSERS: dict = {}
 
-SUPPORTED_PARSERS = ("mineru", "docling", "paddleocr", "marker")
+SUPPORTED_PARSERS = ("mineru", "docling", "paddleocr", "marker", "opendataloader")
+
+# Lazy imports for optional-dependency parsers — the wrapped getter
+# returns a fresh instance per call so config (timeout / heap / limits)
+# is never accidentally shared across documents.
+_ODL_PARSER_CLASS = None
+
+
+def _get_odl_parser():
+    """Return an OpenDataLoaderParser instance (lazy import)."""
+    global _ODL_PARSER_CLASS
+    if _ODL_PARSER_CLASS is None:
+        from raganything.parser.opendataloader_parser import OpenDataLoaderParser
+        _ODL_PARSER_CLASS = OpenDataLoaderParser
+    return _ODL_PARSER_CLASS()
 
 
 def _normalize_parser_name(name: str) -> str:
@@ -151,6 +165,8 @@ def get_parser(parser_type: str) -> Parser:
         return PaddleOCRParser()
     if pt == "marker":
         return MarkerParser()
+    if pt == "opendataloader":
+        return _get_odl_parser()
     if pt in _CUSTOM_PARSERS:
         return _CUSTOM_PARSERS[pt]()
     raise ValueError(

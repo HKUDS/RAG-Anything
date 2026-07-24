@@ -104,5 +104,4 @@ my_docs/
 node_modules/
 *.output
 ~$*
-uv.lock
 package-lock.json

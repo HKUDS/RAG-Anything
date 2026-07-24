@@ -411,6 +411,7 @@ async def create_rag(parser=None, working_dir=None, chunking_strategy=None):
 
     config = RAGAnythingConfig(
         working_dir=wd, parser=parser,
+        pdf_parser=os.getenv("PDF_PARSER", ""),
         enable_image_processing=os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true",
         enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
         enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",

@@ -43,7 +43,7 @@ def retrieve_metadata():
 def read_requirements():
     deps = []
     try:
-        with open("./requirements.txt") as f:
+        with open("./requirements.txt", encoding="utf-8") as f:
             deps = [
                 line.strip() for line in f if line.strip() and not line.startswith("#")
             ]
@@ -67,6 +67,7 @@ extras_require = {
         "paddleocr>=2.7.0",
         "pypdfium2>=4.25.0",
     ],  # PaddleOCR parser for scanned PDFs
+    "opendataloader": ["opendataloader-pdf==2.5.0"],
     "all": [
         "Pillow>=10.0.0",
         "reportlab>=4.0.0",
