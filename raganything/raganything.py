@@ -235,6 +235,22 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 context_extractor=self.context_extractor,
             )
 
+        if getattr(self.config, "enable_video_processing", False):
+            try:
+                from raganything.twelvelabs import TwelveLabsModalProcessor
+
+                self.modal_processors["video"] = TwelveLabsModalProcessor(
+                    lightrag=self.lightrag,
+                    modal_caption_func=self.llm_model_func,
+                    context_extractor=self.context_extractor,
+                )
+            except (ImportError, ValueError) as e:
+                # Missing 'twelvelabs' package or TWELVELABS_API_KEY: skip the
+                # optional video modality rather than break initialization.
+                self.logger.warning(
+                    f"Video processing requested but unavailable, skipping: {e}"
+                )
+
         # Always include generic processor as fallback
         self.modal_processors["generic"] = GenericModalProcessor(
             lightrag=self.lightrag,

@@ -43,6 +43,14 @@ except ModuleNotFoundError:
 except ImportError:
     pass
 
+# Optional: TwelveLabs video modality processor (requires the 'twelvelabs' extra).
+try:
+    from .twelvelabs import TwelveLabsModalProcessor as TwelveLabsModalProcessor
+except ModuleNotFoundError:
+    pass
+except ImportError:
+    pass
+
 # Optional: multilingual prompt manager.
 try:
     from .prompt_manager import (
@@ -96,6 +104,9 @@ if "ProcessingCallback" in globals():
             "ProcessingEvent",
         ]
     )
+
+if "TwelveLabsModalProcessor" in globals():
+    __all__.append("TwelveLabsModalProcessor")
 
 if "set_prompt_language" in globals():
     __all__.extend(

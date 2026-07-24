@@ -51,6 +51,14 @@ class RAGAnythingConfig:
     )
     """Enable equation content processing."""
 
+    enable_video_processing: bool = field(
+        default=get_env_value("ENABLE_VIDEO_PROCESSING", False, bool)
+    )
+    """Enable video content processing via TwelveLabs (Pegasus + Marengo).
+
+    Opt-in: disabled by default. Requires the ``twelvelabs`` package
+    (``pip install raganything[video]``) and a ``TWELVELABS_API_KEY``."""
+
     # Batch Processing Configuration
     # ---
     max_concurrent_files: int = field(

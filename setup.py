@@ -67,6 +67,7 @@ extras_require = {
         "paddleocr>=2.7.0",
         "pypdfium2>=4.25.0",
     ],  # PaddleOCR parser for scanned PDFs
+    "video": ["twelvelabs>=1.2.8"],  # Video understanding & embeddings (TwelveLabs)
     "all": [
         "Pillow>=10.0.0",
         "reportlab>=4.0.0",
@@ -75,6 +76,7 @@ extras_require = {
         "markdown>=3.4.0",
         "weasyprint>=60.0",
         "pygments>=2.10.0",
+        "twelvelabs>=1.2.8",
     ],  # All optional features
     "markdown": [
         "markdown>=3.4.0",
