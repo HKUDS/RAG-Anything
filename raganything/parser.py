@@ -516,7 +516,7 @@ class Parser:
 
                 # Handle markdown or plain text
                 if text_path.suffix.lower() == ".md":
-                    # Handle markdown content - simplified implementation
+                    # ReportLab Paragraph requires escaped markup; reuse inline helper.
                     lines = text_content.split("\n")
                     for line in lines:
                         line = line.strip()
@@ -536,10 +536,19 @@ class Parser:
                                     spaceAfter=8,
                                     spaceBefore=16 if level <= 2 else 12,
                                 )
-                                story.append(Paragraph(header_text, header_style))
+                                story.append(
+                                    Paragraph(
+                                        cls._process_inline_markdown(header_text),
+                                        header_style,
+                                    )
+                                )
                         else:
                             # Regular text
-                            story.append(Paragraph(line, normal_style))
+                            story.append(
+                                Paragraph(
+                                    cls._process_inline_markdown(line), normal_style
+                                )
+                            )
                             story.append(Spacer(1, 6))
                 else:
                     # Handle plain text files (.txt)
@@ -640,7 +649,7 @@ class Parser:
         # Links: [text](url) - convert to text with URL annotation
         def link_replacer(match):
             link_text = match.group(1)
-            url = match.group(2)
+            url = match.group(2).replace('"', "&quot;")
             return f'<link href="{url}" color="blue"><u>{link_text}</u></link>'
 
         text = re.sub(r"\[([^\]]+?)\]\(([^)]+?)\)", link_replacer, text)
