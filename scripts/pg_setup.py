@@ -53,9 +53,19 @@ def main():
     ROOT = Path(__file__).resolve().parent.parent
     migration_files = [
         ROOT / "migrations" / "001_pg_schema.sql",
+        ROOT / "migrations" / "003_p0_agent_kb_meta.sql",
+        ROOT / "migrations" / "007_infra_state_pg.sql",
+        ROOT / "migrations" / "009_uploaded_files_meta.sql",
+        ROOT / "migrations" / "010_uploaded_files_task_queue.sql",
+        ROOT / "migrations" / "012_uploaded_files_status_default_queued.sql",
         ROOT / "migrations" / "013_monitor_events.sql",
         ROOT / "migrations" / "016_knowledge_chunk_tags.sql",
         ROOT / "migrations" / "017_automatic_tag_assignments.sql",
+        ROOT / "migrations" / "018_agent_activity_sort_index.sql",
+        ROOT / "migrations" / "019_document_repair_jobs.sql",
+        ROOT / "migrations" / "020_document_tag_jobs.sql",
+        ROOT / "migrations" / "021_upload_retry_jobs.sql",
+        ROOT / "migrations" / "022_document_tag_upload_link.sql",
     ]
     env_file = ROOT / ".env"
 
@@ -73,7 +83,7 @@ def main():
     def run_sql(sql: str, db: str = "postgres", desc: str = ""):
         """Execute SQL via psql."""
         print(f"  {desc} ...", end=" ", flush=True)
-        cmd = [psql, "-U", "postgres", "-d", db, "-c", sql]
+        cmd = [psql, "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db, "-c", sql]
         result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
         if result.returncode == 0:
             print("OK")
@@ -107,7 +117,10 @@ def main():
     env["PGPASSWORD"] = db_password
     for migration_file in migration_files:
         print(f"  -> 执行 {migration_file.name}")
-        cmd = [psql, "-U", args.db_user, "-d", args.db_name, "-f", str(migration_file)]
+        cmd = [
+            psql, "-v", "ON_ERROR_STOP=1", "-U", args.db_user,
+            "-d", args.db_name, "-f", str(migration_file),
+        ]
         result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
         if result.returncode == 0:
             print(f"     [OK] {migration_file.name} 执行完成")
@@ -123,7 +136,7 @@ def main():
         env["PGPASSWORD"] = password
         grant_sql = f"GRANT ALL ON SCHEMA public TO {args.db_user}; ALTER SCHEMA public OWNER TO {args.db_user};"
         subprocess.run(
-            [psql, "-U", "postgres", "-d", args.db_name, "-c", grant_sql],
+            [psql, "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", args.db_name, "-c", grant_sql],
             capture_output=True, text=True, env=env, timeout=30,
         )
         env["PGPASSWORD"] = db_password

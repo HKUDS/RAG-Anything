@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import re
 import unicodedata
 from typing import Any, Iterable
@@ -24,6 +25,19 @@ _tag_schema_lock = asyncio.Lock()
 
 class TagValidationError(ValueError):
     """Raised when a tag request is outside the supported product limits."""
+
+
+class TagDocumentChangedError(RuntimeError):
+    """Raised when chunks changed or disappeared before automatic tag commit."""
+
+
+def document_mutation_lock_key(kb_name: str, document_id: str) -> int:
+    """Return the shared PostgreSQL advisory-lock key for one document."""
+    return int.from_bytes(
+        hashlib.sha256(f"{kb_name}\0{document_id}".encode()).digest()[:8],
+        "big",
+        signed=True,
+    )
 
 
 def normalize_tag_name(value: object) -> tuple[str, str]:
@@ -132,7 +146,12 @@ async def _get_tag_pool() -> Any:
     return get_pg_pool()
 
 
-async def list_tags(kb_name: str, query: str = "", limit: int = 100) -> list[dict[str, Any]]:
+async def list_tags(
+    kb_name: str,
+    query: str = "",
+    limit: int = 100,
+    offset: int = 0,
+) -> list[dict[str, Any]]:
     query = re.sub(r"\s+", " ", unicodedata.normalize("NFKC", query or "").strip()).casefold()
     pool = await _get_tag_pool()
     async with pool.acquire() as conn:
@@ -147,12 +166,13 @@ async def list_tags(kb_name: str, query: str = "", limit: int = 100) -> list[dic
             WHERE t.kb_name = $1
               AND ($2 = '' OR t.normalized_name LIKE '%' || $2 || '%')
             GROUP BY t.id, t.display_name
-            ORDER BY document_count DESC, chunk_count DESC, t.display_name ASC
-            LIMIT $3
+            ORDER BY document_count DESC, chunk_count DESC, t.display_name ASC, t.id ASC
+            LIMIT $3 OFFSET $4
             """,
             kb_name,
             query,
             max(1, min(int(limit or 100), 200)),
+            max(0, min(int(offset or 0), 1_000_000)),
         )
     return [
         {"id": int(row["id"]), "name": row["display_name"], "document_count": row["document_count"], "chunk_count": row["chunk_count"]}
@@ -225,6 +245,10 @@ async def replace_chunk_tags(
     pool = await _get_tag_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock($1)",
+                document_mutation_lock_key(kb_name, document_id),
+            )
             existing_rows = await conn.fetch(
                 """
                 SELECT a.tag_id, t.normalized_name
@@ -253,6 +277,23 @@ async def replace_chunk_tags(
                     document_id,
                     chunk_id,
                     removed_ids,
+                )
+            if requested_names:
+                await conn.execute(
+                    """
+                    UPDATE chunk_tag_assignments a
+                    SET assignment_kind = $5, created_by = $6
+                    FROM kb_tags t
+                    WHERE a.tag_id = t.id
+                      AND a.kb_name = $1 AND a.document_id = $2 AND a.chunk_id = $3
+                      AND t.normalized_name = ANY($4::text[])
+                    """,
+                    kb_name,
+                    document_id,
+                    chunk_id,
+                    list(requested_names),
+                    ASSIGNMENT_KIND_MANUAL,
+                    int(user_id or 0),
                 )
             existing_names = {row["normalized_name"] for row in existing_rows}
             tags: list[dict[str, Any]] = []
@@ -288,6 +329,10 @@ async def replace_chunk_tags(
                 chunk_id,
             )
             tags = [_tag(row) for row in rows]
+            if len(tags) > MAX_TAGS_PER_CHUNK:
+                raise TagValidationError(
+                    f"a chunk may have at most {MAX_TAGS_PER_CHUNK} tags"
+                )
             await _delete_orphaned_tags(conn, kb_name)
     return sorted(tags, key=lambda value: value["name"])
 
@@ -299,7 +344,8 @@ async def replace_automatic_document_tags(
     chunk_tag_names: dict[str, Iterable[object]],
     *,
     user_id: int,
-) -> dict[str, int]:
+    document_tag_names_by_chunk: dict[str, Iterable[object]] | None = None,
+) -> dict[str, Any]:
     """Atomically replace generated tags while retaining all manual tag choices."""
     document_names = _unique_tag_names(document_tag_names)
     chunk_names = {
@@ -307,9 +353,39 @@ async def replace_automatic_document_tags(
         for chunk_id, names in chunk_tag_names.items()
         if chunk_id
     }
+    scoped_document_names = (
+        {
+            str(chunk_id): _unique_tag_names(names)
+            for chunk_id, names in document_tag_names_by_chunk.items()
+            if chunk_id
+        }
+        if document_tag_names_by_chunk is not None
+        else {chunk_id: document_names for chunk_id in chunk_names}
+    )
     pool = await _get_tag_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock($1)",
+                document_mutation_lock_key(kb_name, document_id),
+            )
+            workspace = (
+                "./rag_storage" if kb_name == "default" else f"./rag_storage_{kb_name}"
+            )
+            persisted_rows = await conn.fetch(
+                """
+                SELECT id FROM LIGHTRAG_DOC_CHUNKS
+                WHERE workspace = $1 AND full_doc_id = $2
+                """,
+                workspace,
+                document_id,
+            )
+            persisted_chunk_ids = {str(row["id"]) for row in persisted_rows}
+            planned_chunk_ids = set(chunk_names)
+            if persisted_chunk_ids != planned_chunk_ids:
+                raise TagDocumentChangedError(
+                    "document chunks changed before automatic tags were committed"
+                )
             manual_rows = await conn.fetch(
                 """
                 SELECT a.chunk_id, t.normalized_name
@@ -338,6 +414,8 @@ async def replace_automatic_document_tags(
             )
 
             all_names = {normalized: display for display, normalized in document_names}
+            for names in scoped_document_names.values():
+                all_names.update({normalized: display for display, normalized in names})
             for names in chunk_names.values():
                 all_names.update({normalized: display for display, normalized in names})
             tag_id_by_name: dict[str, int] = {}
@@ -351,7 +429,7 @@ async def replace_automatic_document_tags(
             skipped = 0
             for chunk_id, local_names in chunk_names.items():
                 selected = set(manual_names.get(chunk_id, set()))
-                for display_name, normalized_name in document_names:
+                for display_name, normalized_name in scoped_document_names.get(chunk_id, []):
                     if normalized_name in selected:
                         continue
                     if len(selected) >= MAX_TAGS_PER_CHUNK:
@@ -383,12 +461,26 @@ async def replace_automatic_document_tags(
                     """,
                     assignment_rows,
                 )
+            coverage_rows = await conn.fetch(
+                """
+                SELECT DISTINCT chunk_id
+                FROM chunk_tag_assignments
+                WHERE kb_name = $1 AND document_id = $2
+                  AND chunk_id = ANY($3::text[])
+                  AND assignment_kind = ANY($4::text[])
+                """,
+                kb_name,
+                document_id,
+                list(chunk_names),
+                list(_AUTO_ASSIGNMENT_KINDS),
+            )
             await _delete_orphaned_tags(conn, kb_name)
     return {
         "assigned": len(assignment_rows),
         "skipped": skipped,
         "document_tags": len(document_names),
         "chunk_tags": sum(len(value) for value in chunk_names.values()),
+        "tagged_chunk_ids": [str(row["chunk_id"]) for row in coverage_rows],
     }
 
 
@@ -445,6 +537,10 @@ async def delete_document_tags(kb_name: str, document_id: str) -> None:
     pool = await _get_tag_pool()
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock($1)",
+                document_mutation_lock_key(kb_name, document_id),
+            )
             await conn.execute(
                 "DELETE FROM chunk_tag_assignments WHERE kb_name = $1 AND document_id = $2",
                 kb_name,

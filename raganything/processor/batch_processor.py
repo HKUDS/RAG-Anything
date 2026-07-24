@@ -59,6 +59,7 @@ class BatchProcessorMixin:
         Runs VLM/LLM calls asynchronously, marks completion when done.
         Failures are logged but don't affect the document's 'processed' status.
         """
+        completed = False
         try:
             self.logger.info(
                 f"Background multimodal processing started: {len(multimodal_items)} items for doc {doc_id}"
@@ -66,19 +67,49 @@ class BatchProcessorMixin:
             await self._process_multimodal_content(
                 multimodal_items, file_ref, doc_id
             )
+            completed = True
             self.logger.info(
                 f"Background multimodal processing completed for doc {doc_id}"
             )
+        except asyncio.CancelledError:
+            self.logger.warning(
+                "Background multimodal processing cancelled for doc %s", doc_id
+            )
+            raise
         except Exception as exc:
             self.logger.error(
                 f"Background multimodal processing failed for doc {doc_id}: {exc}"
             )
             try:
+                failure_metadata = {
+                    "content_ready": False,
+                    "multimodal_processed": False,
+                    "failure_stage": "multimodal",
+                    "cleanup_pending": True,
+                    "residual_data": True,
+                    "last_error": str(exc)[:4000],
+                }
+                doc_status_store = getattr(
+                    getattr(self, "lightrag", None), "doc_status", None
+                )
+                if doc_status_store is not None:
+                    current_status = await doc_status_store.get_by_id(doc_id)
+                    existing_metadata = (
+                        current_status.get("metadata")
+                        if isinstance(current_status, dict) else {}
+                    )
+                    if isinstance(existing_metadata, dict):
+                        multimodal_chunks = existing_metadata.get("multimodal_chunks")
+                        if isinstance(multimodal_chunks, dict):
+                            failure_metadata["residual_multimodal_chunk_ids"] = [
+                                str(value) for value in multimodal_chunks if value
+                            ]
                 await self._upsert_doc_status(
                     doc_id,
                     file_ref,
                     status=DocStatus.FAILED,
                     error_msg=str(exc),
+                    metadata=failure_metadata,
                 )
             except Exception as status_exc:
                 self.logger.error(
@@ -86,13 +117,13 @@ class BatchProcessorMixin:
                     doc_id,
                     status_exc,
                 )
+            raise
         finally:
-            try:
-                await self._mark_multimodal_processing_complete(doc_id)
-            except Exception as exc:
-                self.logger.error(
-                    f"Failed to mark multimodal complete for doc {doc_id}: {exc}"
-                )
+            if completed:
+                if not await self._mark_multimodal_processing_complete(doc_id):
+                    raise RuntimeError(
+                        "multimodal completion marker could not be persisted"
+                    )
     async def _batch_extract_entities_lightrag_style_type_aware(
         self, lightrag_chunks: Dict[str, Any]
     ) -> List[Tuple]:

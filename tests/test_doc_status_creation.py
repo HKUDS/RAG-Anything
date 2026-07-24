@@ -189,7 +189,7 @@ async def test_process_document_complete_bootstraps_doc_status(
     doc_status = processor.lightrag.doc_status.records["doc-custom"]
     assert doc_status["file_path"] == "sample.pdf"
     assert doc_status["status"] == DocStatus.PROCESSED
-    assert doc_status["metadata"]["multimodal_processed"] is True
+    assert (doc_status.get("metadata") or {}).get("multimodal_processed") is True
 
 
 @pytest.mark.asyncio
@@ -277,7 +277,7 @@ async def test_image_only_document_falls_back_when_multimodal_flag_is_unsupporte
     assert doc_status["file_path"] == "figure.png"
     assert doc_status["status"] == DocStatus.PROCESSED
     assert "multimodal_processed" not in doc_status
-    assert doc_status["metadata"]["multimodal_processed"] is True
+    assert (doc_status.get("metadata") or {}).get("multimodal_processed") is True
     assert processor.multimodal_status_cache.records == {}
 
     processing_status = await processor.get_document_processing_status("doc-image")
@@ -414,16 +414,17 @@ async def test_background_multimodal_failure_marks_document_failed(
     processor._ensure_lightrag_initialized = fake_ensure_lightrag_initialized
     processor._process_multimodal_content = fake_process_multimodal_content
 
-    await processor._process_multimodal_content_background(
-        [{"type": "image", "img_path": "figure.png"}],
-        "figure.png",
-        "doc-image",
-    )
+    with pytest.raises(RuntimeError, match="background failure"):
+        await processor._process_multimodal_content_background(
+            [{"type": "image", "img_path": "figure.png"}],
+            "figure.png",
+            "doc-image",
+        )
 
     doc_status = processor.lightrag.doc_status.records["doc-image"]
     assert doc_status["status"] == DocStatus.FAILED
     assert doc_status["error_msg"] == "background failure"
-    assert doc_status["metadata"]["multimodal_processed"] is True
+    assert (doc_status.get("metadata") or {}).get("multimodal_processed") is not True
 
     processing_status = await processor.get_document_processing_status("doc-image")
     assert processing_status["fully_processed"] is False

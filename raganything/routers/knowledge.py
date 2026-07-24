@@ -13,7 +13,7 @@ import time
 import inspect
 from contextlib import asynccontextmanager
 from functools import wraps
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
@@ -60,8 +60,11 @@ from raganything.services.kb_service import (
     pg_get_latest_content_updates_batch,
     _unregister_processing_file,
     _load_doc_status_json,
+    _load_doc_status_summaries,
     _load_full_docs_json,
     _generate_uploaded_document_tags,
+    _resolve_uploaded_document_id,
+    _kb_worker_procs,
 )
 from raganything.dependencies import get_current_user, get_optional_user, get_current_user_from_token, require_permission
 from raganything.permissions import Permission
@@ -69,6 +72,10 @@ from raganything.services.auth import audit_log, has_permission as _auth_has_per
 from raganything.processor.chunk_processor import compute_chunk_id
 from raganything.chunking import build_chunking_func, STRATEGY_META as CHUNKING_STRATEGY_META
 from raganything.utils import is_multimodal_processed
+from raganything.services.document_tagging import (
+    enqueue_document_tagging,
+    wait_for_document_tagging,
+)
 from raganything.services.kb_tag_repo import (
     TagValidationError,
     delete_chunk_tags,
@@ -77,6 +84,7 @@ from raganything.services.kb_tag_repo import (
     get_tag_assignments,
     get_tags_for_chunks,
     list_tags,
+    document_mutation_lock_key,
     move_chunk_tags,
     replace_chunk_tags,
 )
@@ -376,7 +384,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
                        current_user: dict = Depends(get_current_user)):
     """Upload a single file — immediate return, background processing"""
     actual_strategy = _resolve_chunking_strategy(chunking_strategy)
-    task_id = str(uuid.uuid4())[:8]
+    task_id = str(uuid.uuid4())
     upload_dir = Path("./uploads")
     upload_dir.mkdir(exist_ok=True)
     safe_name = os.path.basename(file.filename)
@@ -488,7 +496,7 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
     from .shared import _ensure_queue_draining
 
     for file in files:
-        task_id = str(uuid.uuid4())[:8]
+        task_id = str(uuid.uuid4())
         file_path = upload_dir / file.filename
 
         # Stream write to disk (avoid loading full file into memory)
@@ -600,6 +608,10 @@ async def list_upload_tasks(
         for task in await get_all_tasks()
         if task.get("kb", task.get("kb_name", "")) == kb
     }
+    from raganything.services.upload_retry import get_retry_metadata
+    retry_by_task = await get_retry_metadata(
+        [str(upload.get("task_id")) for upload in uploads if upload.get("task_id")]
+    )
 
     tasks = []
     for upload in uploads:
@@ -608,6 +620,7 @@ async def list_upload_tasks(
             continue
 
         runtime_task = active_tasks.get(task_id, {})
+        retry = retry_by_task.get(str(task_id), {})
         status = runtime_task.get("status") or upload.get("status") or "queued"
         progress = runtime_task.get("progress")
         if progress is None:
@@ -619,6 +632,13 @@ async def list_upload_tasks(
             or upload.get("error_message")
             or ""
         )
+        outcome = runtime_task.get("outcome") or upload.get("outcome") or ""
+        warning_message = (
+            runtime_task.get("warning_message")
+            or runtime_task.get("warning")
+            or upload.get("warning_message")
+            or ""
+        )
         tasks.append({
             "task_id": task_id,
             "filename": upload.get("filename", ""),
@@ -627,12 +647,72 @@ async def list_upload_tasks(
             "progress": progress,
             "phase": phase,
             "error_message": error_message,
+            "outcome": outcome,
+            "warning_message": warning_message,
+            "retryable": bool(
+                runtime_task.get("retryable")
+                if "retryable" in runtime_task
+                else retry.get("status") in {"queued", "running", "retry_wait"}
+            ),
+            "failure_stage": runtime_task.get("failure_stage") or retry.get("stage") or "",
+            "retry_count": int(runtime_task.get("retry_count") or retry.get("attempt_count") or 0),
+            "max_retries": int(runtime_task.get("max_retries") or retry.get("max_attempts") or 5),
+            "next_retry_at": (
+                runtime_task.get("next_retry_at")
+                or (retry["next_attempt_at"].isoformat() if retry.get("next_attempt_at") else None)
+            ),
             "created_at": upload.get("created_at", ""),
             "updated_at": runtime_task.get("updated_at") or upload.get("updated_at", ""),
             "can_delete": status == "queued",
         })
 
     return {"tasks": tasks, "total": len(tasks)}
+
+
+@router.post("/upload/tasks/{task_id}/retry-now")
+async def retry_upload_task_now(
+    task_id: str,
+    kb: str = Depends(verify_kb_access),
+    _perm: None = Depends(require_permission(Permission.KB_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    upload = await pg_get_upload_by_task_id(
+        task_id, kb_name=kb, uploaded_by=current_user.get("id"),
+        is_admin=current_user.get("is_admin", False),
+    )
+    if not upload:
+        raise HTTPException(404, "Upload task not found")
+    from raganything.services.upload_retry import retry_now
+    if not await retry_now(task_id, reset_budget=upload.get("status") == "failed"):
+        raise HTTPException(409, "Upload task is not waiting for retry")
+    return {"task_id": task_id, "status": "retry_wait", "queued": True}
+
+
+@router.post("/upload/tasks/{task_id}/cancel-retry")
+async def cancel_upload_task_retry(
+    task_id: str,
+    kb: str = Depends(verify_kb_access),
+    _perm: None = Depends(require_permission(Permission.KB_WRITE)),
+    current_user: dict = Depends(get_current_user),
+):
+    upload = await pg_get_upload_by_task_id(
+        task_id, kb_name=kb, uploaded_by=current_user.get("id"),
+        is_admin=current_user.get("is_admin", False),
+    )
+    if not upload:
+        raise HTTPException(404, "Upload task not found")
+    from raganything.services.upload_retry import cancel_retry
+    if not await cancel_retry(task_id):
+        raise HTTPException(409, "Upload retry is already running or terminal")
+    from raganything.services.state_service import processing_tasks
+    if task_id in processing_tasks:
+        processing_tasks[task_id].update({
+            "status": "failed",
+            "retryable": False,
+            "next_retry_at": None,
+            "message": "Automatic retry cancelled",
+        })
+    return {"task_id": task_id, "status": "failed", "cancelled": True}
 
 
 @router.delete("/upload/tasks/{task_id}")
@@ -713,8 +793,18 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
             _os.environ[key] = val.lower()
 
     try:
-        task_id = str(uuid.uuid4())[:8]
+        task_id = str(uuid.uuid4())
         instance = await get_kb(kb)
+        supported_extensions = {
+            str(ext).lower()
+            for ext in getattr(getattr(instance, "config", None), "supported_file_extensions", [])
+        }
+        folder_files = [
+            str(path)
+            for path in Path(folder_path).rglob("*")
+            if path.is_file()
+            and (not supported_extensions or path.suffix.lower() in supported_extensions)
+        ]
         task_data = {
             "id": task_id, "file": folder_path, "status": "processing",
             "started_at": datetime.now().isoformat(), "kb": kb, "user_id": current_user["id"],
@@ -734,7 +824,12 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
                 recursive=True,
                 chunking_strategy=actual_strategy,
             )
-            await complete_task(task_id)
+            tag_warnings = await _settle_in_process_upload(
+                kb, folder_files, current_user["id"],
+            )
+            warning = "; ".join(tag_warnings)
+            outcome = "degraded" if warning else ""
+            await complete_task(task_id, outcome=outcome, warning=warning)
         except Exception as e:
             await upsert_task_state(task_id, {
                 "id": task_id, "status": "failed", "error": str(e),
@@ -747,7 +842,8 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
         return {
             "task_id": task_id,
             "folder": folder_path,
-            "status": "completed",
+            "status": "degraded" if tag_warnings else "completed",
+            "warning": "; ".join(tag_warnings),
             "chunking_strategy": actual_strategy,
         }
     finally:
@@ -838,7 +934,7 @@ async def upload_from_url(url: str = QueryParam(...), kb: str = Depends(verify_k
             _os.environ[key] = val.lower()
 
     try:
-        task_id = str(uuid.uuid4())[:8]
+        task_id = str(uuid.uuid4())
         await add_event("url_download_start", url=url, task_id=task_id, user_id=current_user.get("id", 0))
         async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
             resp = await client.get(url)
@@ -894,12 +990,16 @@ async def upload_from_url(url: str = QueryParam(...), kb: str = Depends(verify_k
                 output_dir="./output",
                 chunking_strategy=actual_strategy,
             )
+            tag_warnings = await _settle_in_process_upload(
+                kb, [fname], current_user.get("id", 0),
+            )
         finally:
             if original_func and instance.lightrag:
                 instance.lightrag.chunking_func = original_func
         await add_event("url_process_complete", file=fname, task_id=task_id, user_id=current_user.get("id", 0))
         return {
-            "status": "completed",
+            "status": "degraded" if tag_warnings else "completed",
+            "warning": "; ".join(tag_warnings),
             "filename": fname,
             "size": len(content),
             "chunking_strategy": actual_strategy,
@@ -943,6 +1043,56 @@ def _resolve_chunking_strategy(requested_strategy: str) -> str:
     if configured_default in CHUNKING_STRATEGY_META:
         return configured_default
     return "recursive"
+
+
+async def _settle_in_process_upload(
+    kb_name: str,
+    filenames: list[str],
+    user_id: int,
+) -> list[str]:
+    """Wait for this request's documents and tags without touching shared tasks."""
+    timeout = float(os.getenv("UPLOAD_PROCESS_SETTLE_TIMEOUT", "1800"))
+    loop = asyncio.get_running_loop()
+    warnings: list[str] = []
+    for filename in filenames:
+        deadline = loop.time() + max(0.0, timeout)
+        doc_id = None
+        status_info = None
+        while True:
+            doc_id = await _resolve_uploaded_document_id(
+                kb_name, os.path.basename(filename),
+            )
+            if doc_id:
+                status_info = (await _load_doc_status_json(kb_name)).get(doc_id)
+            if isinstance(status_info, dict):
+                raw_status = str(status_info.get("status") or "").lower()
+                if raw_status == "failed":
+                    warnings.append(
+                        str(status_info.get("error_msg") or "多模态处理失败")
+                    )
+                    break
+                if (
+                    raw_status in {"processed", "completed"}
+                    and is_multimodal_processed(status_info)
+                ):
+                    break
+            if loop.time() >= deadline:
+                raise TimeoutError(f"文档后台处理未完成: {filename}")
+            await asyncio.sleep(0.5)
+        if not doc_id or not isinstance(status_info, dict):
+            raise RuntimeError(f"无法确认文档处理状态: {filename}")
+        if str(status_info.get("status") or "").lower() == "failed":
+            continue
+        await enqueue_document_tagging(
+            kb_name, doc_id, filename=os.path.basename(filename), user_id=user_id,
+        )
+        tag_health = await wait_for_document_tagging(kb_name, doc_id)
+        if tag_health.get("tag_status") in {"failed", "disabled"}:
+            warnings.append(
+                tag_health.get("tag_error_message")
+                or f"自动标签未完成: {filename}"
+            )
+    return warnings
 
 
 def _normalized_upload_filename(filename: str) -> str:
@@ -1004,6 +1154,123 @@ async def _register_upload_with_stale_recovery(
     )
 
 
+_GRAPH_READY_STATUSES = {"ready", "completed", "processed", "complete"}
+
+
+def _document_health_contract(info: dict[str, Any]) -> dict[str, Any]:
+    """Derive the public document health without changing LightRAG's status."""
+    metadata = info.get("metadata") or {}
+    metadata = metadata if isinstance(metadata, dict) else {}
+    raw_status = str(info.get("status") or "?")
+    graph_status = str(metadata.get("graph_status") or "")
+    content_ready = metadata.get("content_ready") is True
+    try:
+        chunk_count = int(info.get("chunks_count") or 0)
+    except (TypeError, ValueError):
+        chunk_count = 0
+
+    is_degraded = (
+        raw_status == "failed"
+        and content_ready
+        and chunk_count > 0
+        and graph_status.lower() not in _GRAPH_READY_STATUSES
+    )
+    multimodal_pending = metadata.get("multimodal_processed") is False
+    if multimodal_pending and raw_status in {"processed", "completed"}:
+        health = "processing"
+        status = "handling"
+    elif is_degraded:
+        health = "degraded"
+        status = "degraded"
+    elif raw_status == "failed":
+        health = "failed"
+        status = raw_status
+    elif raw_status in {"processed", "completed"}:
+        health = "healthy"
+        status = raw_status
+    else:
+        health = raw_status
+        status = raw_status
+
+    retryable_value = metadata.get("retryable")
+    retryable = (
+        raw_status == "failed"
+        if retryable_value is None
+        else retryable_value is True
+    )
+    return {
+        "status": status,
+        "raw_status": raw_status,
+        "health": health,
+        "content_ready": content_ready,
+        "graph_status": graph_status,
+        "failure_stage": str(metadata.get("failure_stage") or ""),
+        "retryable": retryable,
+        "error_message": str(
+            metadata.get("last_error") or info.get("error_msg") or ""
+        ),
+    }
+
+
+async def _document_tag_health_contract(
+    kb: str, doc_ids: list[str]
+) -> dict[str, dict[str, Any]]:
+    try:
+        from raganything.services.document_tagging import get_document_tag_health
+
+        return await get_document_tag_health(kb, doc_ids)
+    except Exception:
+        lightrag_logger.warning(
+            "Unable to load document tag health: kb=%s", kb, exc_info=True
+        )
+        return {
+            doc_id: {
+                "tag_status": "unavailable",
+                "tag_raw_status": "unavailable",
+                "tagged_chunks": 0,
+                "eligible_tag_chunks": 0,
+                "tag_not_applicable_chunks": 0,
+                "unique_auto_tag_count": 0,
+                "auto_tag_assignment_count": 0,
+                "avg_auto_tags_per_tagged_chunk": 0.0,
+                "tag_error_message": "标签状态暂时不可用",
+                "tag_retryable": True,
+            }
+            for doc_id in doc_ids
+        }
+
+
+def _apply_enrichment_status_overlay(document: dict[str, Any]) -> dict[str, Any]:
+    """Prevent public completion while tags are pending or terminally failed."""
+    result = dict(document)
+    tag_status = str(result.get("tag_status") or "")
+    if tag_status in {"pending", "running", "retry_wait"}:
+        if result.get("status") in {"processed", "completed"}:
+            result["status"] = "handling"
+            if "health" in result:
+                result["health"] = "processing"
+    elif tag_status == "failed" and result.get("status") in {"processed", "completed"}:
+        result["status"] = "degraded"
+        if "health" in result:
+            result["health"] = "degraded"
+        if not result.get("error_message"):
+            result["error_message"] = str(result.get("tag_error_message") or "")
+    return result
+
+
+async def _get_tags_for_chunks_best_effort(
+    kb: str, doc_id: str, chunk_ids: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    try:
+        return await get_tags_for_chunks(kb, doc_id, chunk_ids)
+    except Exception:
+        lightrag_logger.warning(
+            "Unable to load chunk tags: kb=%s doc=%s", kb, doc_id,
+            exc_info=True,
+        )
+        return {chunk_id: [] for chunk_id in chunk_ids}
+
+
 @router.get("/knowledge/documents")
 async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """列出所有文档及其状态（含处理中的任务）"""
@@ -1011,7 +1278,7 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
         # Clean up completed/failed tasks before building the response
         await cleanup_completed_tasks()
 
-        data = await _load_doc_status_json(kb)
+        data = await _load_doc_status_summaries(kb)
 
         # Deduplicate doc_status entries by original filename: keep only the
         # most recently updated entry per stripped filename.
@@ -1022,6 +1289,10 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
             orig = _strip_hash_prefix(info.get("file_path", "") or "")
             if orig not in best_doc or (info.get("updated_at") or "") > (best_doc[orig][1].get("updated_at") or ""):
                 best_doc[orig] = (doc_id, info)
+
+        tag_health_by_doc = await _document_tag_health_contract(
+            kb, [doc_id for doc_id, _info in best_doc.values()]
+        )
 
         docs = []
         seen_files = set()
@@ -1041,11 +1312,28 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                 if isinstance(metadata, dict)
                 else None
             )
+            health_fields = _document_health_contract(info)
+            tag_health = tag_health_by_doc.get(doc_id, {
+                "tag_status": "pending",
+                "tag_raw_status": "missing",
+                "tagged_chunks": 0,
+                "eligible_tag_chunks": 0,
+                "tag_not_applicable_chunks": 0,
+                "unique_auto_tag_count": 0,
+                "auto_tag_assignment_count": 0,
+                "avg_auto_tags_per_tagged_chunk": 0.0,
+                "tag_error_message": "",
+                "tag_retryable": True,
+            })
+            completion_fields = _apply_enrichment_status_overlay({
+                **health_fields,
+                **tag_health,
+            })
             docs.append({
                 "id": (doc_id or "")[:16],
                 "full_id": doc_id or "",
                 "file": _strip_hash_prefix((info.get("file_path") or "?")),
-                "status": info.get("status") or "?",
+                **completion_fields,
                 "chunks": info.get("chunks_count") or 0,
                 "length": info.get("content_length") or 0,
                 "created": info.get("created_at") or "",
@@ -1068,6 +1356,25 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                     "full_id": tid or "",
                     "file": fn,
                     "status": task.get("status") or "processing",
+                    "raw_status": task.get("status") or "processing",
+                    "health": task.get("status") or "processing",
+                    "content_ready": False,
+                    "graph_status": "",
+                    "failure_stage": "",
+                    "retryable": False,
+                    "error_message": str(
+                        task.get("error_message") or task.get("error") or ""
+                    ),
+                    "tag_status": "not_started",
+                    "tag_raw_status": "missing",
+                    "tagged_chunks": 0,
+                    "eligible_tag_chunks": 0,
+                    "tag_not_applicable_chunks": 0,
+                    "unique_auto_tag_count": 0,
+                    "auto_tag_assignment_count": 0,
+                    "avg_auto_tags_per_tagged_chunk": 0.0,
+                    "tag_error_message": "",
+                    "tag_retryable": False,
                     "chunks": 0,
                     "length": 0,
                     "created": task.get("started_at") or "",
@@ -1148,7 +1455,13 @@ async def _get_chunk_document_lock(kb: str, doc_id: str) -> asyncio.Lock:
 
 
 @asynccontextmanager
-async def _chunk_document_lock_scope(kb: str, doc_id: str, lg: Any):
+async def _chunk_document_lock_scope(
+    kb: str,
+    doc_id: str,
+    lg: Any,
+    *,
+    acquire_pg_lock: bool = True,
+):
     """Serialize mutations locally and across workers for PG-backed stores."""
     local_lock = await _get_chunk_document_lock(kb, doc_id)
     async with local_lock:
@@ -1157,12 +1470,8 @@ async def _chunk_document_lock_scope(kb: str, doc_id: str, lg: Any):
         is_pg_store = lg.doc_status.__class__.__module__.startswith(
             "lightrag.kg.postgres_impl"
         )
-        if is_pg_store:
-            lock_key = int.from_bytes(
-                hashlib.sha256(f"{kb}\0{doc_id}".encode()).digest()[:8],
-                "big",
-                signed=True,
-            )
+        if is_pg_store and acquire_pg_lock:
+            lock_key = document_mutation_lock_key(kb, doc_id)
             try:
                 from raganything.services.pg_state_repo import get_pg_pool
 
@@ -1466,10 +1775,26 @@ async def get_document_chunks(
         records = await _load_document_chunk_records(instance.lightrag, full_id, status_info, kb)
         metadata = _multimodal_chunk_metadata(status_info)
         chunks = [_serialize_document_chunk(record, metadata) for record in records]
-        tags_by_chunk = await get_tags_for_chunks(kb, full_id, [value["chunk_id"] for value in chunks])
+        tags_by_chunk = await _get_tags_for_chunks_best_effort(
+            kb, full_id, [value["chunk_id"] for value in chunks]
+        )
         for chunk in chunks:
             chunk["tags"] = tags_by_chunk.get(chunk["chunk_id"], [])
         document = _chunk_document_payload(full_id, status_info)
+        tag_health = await _document_tag_health_contract(kb, [full_id])
+        document.update(tag_health.get(full_id, {
+            "tag_status": "pending",
+            "tag_raw_status": "missing",
+            "tagged_chunks": 0,
+            "eligible_tag_chunks": 0,
+            "tag_not_applicable_chunks": 0,
+            "unique_auto_tag_count": 0,
+            "auto_tag_assignment_count": 0,
+            "avg_auto_tags_per_tagged_chunk": 0.0,
+            "tag_error_message": "",
+            "tag_retryable": True,
+        }))
+        document = _apply_enrichment_status_overlay(document)
         if not document["content_summary"] and chunks:
             document["content_summary"] = str(chunks[0].get("content") or "")[:240]
         return {
@@ -1524,9 +1849,23 @@ async def get_document_chunk(
         if chunk["chunk_id"] != chunk_id:
             raise HTTPException(404, f"Chunk {chunk_id} does not exist")
         chunk["tags"] = (
-            await get_tags_for_chunks(kb, full_id, [chunk_id])
+            await _get_tags_for_chunks_best_effort(kb, full_id, [chunk_id])
         ).get(chunk_id, [])
         document = _chunk_document_payload(full_id, status_info)
+        tag_health = await _document_tag_health_contract(kb, [full_id])
+        document.update(tag_health.get(full_id, {
+            "tag_status": "pending",
+            "tag_raw_status": "missing",
+            "tagged_chunks": 0,
+            "eligible_tag_chunks": 0,
+            "tag_not_applicable_chunks": 0,
+            "unique_auto_tag_count": 0,
+            "auto_tag_assignment_count": 0,
+            "avg_auto_tags_per_tagged_chunk": 0.0,
+            "tag_error_message": "",
+            "tag_retryable": True,
+        }))
+        document = _apply_enrichment_status_overlay(document)
         if not document["content_summary"]:
             document["content_summary"] = str(chunk.get("content") or "")[:240]
         return {
@@ -1550,10 +1889,11 @@ async def get_document_chunk(
 async def list_knowledge_tags(
     q: str = "",
     limit: int = 100,
+    offset: int = 0,
     kb: str = Depends(verify_kb_access),
     current_user: dict = Depends(get_current_user),
 ):
-    return {"tags": await list_tags(kb, q, limit)}
+    return {"tags": await list_tags(kb, q, limit, offset)}
 
 
 @router.get("/knowledge/tags/{tag_id}/links")
@@ -1621,6 +1961,18 @@ async def regenerate_document_automatic_tags(
         ),
         user_id=int(current_user.get("id") or 0),
     )
+    from raganything.services.document_tagging import (
+        enqueue_document_tagging_best_effort,
+        record_document_tagging_complete,
+    )
+    await enqueue_document_tagging_best_effort(
+        kb, full_id,
+        filename=_strip_hash_prefix(
+            os.path.basename(str(status_info.get("file_path") or ""))
+        ),
+        user_id=int(current_user.get("id") or 0),
+    )
+    await record_document_tagging_complete(kb, full_id, result)
     await _log_chunk_mutation(
         action="document_tags_regenerate",
         user_id=int(current_user.get("id") or 0),
@@ -1656,7 +2008,9 @@ async def replace_document_chunk_tags(
     initial_status = await _load_doc_status_json(kb)
     canonical_id, _ = _resolve_chunk_document(initial_status or {}, doc_id)
     try:
-        async with _chunk_document_lock_scope(kb, canonical_id, lg):
+        async with _chunk_document_lock_scope(
+            kb, canonical_id, lg, acquire_pg_lock=False
+        ):
             all_status = await _load_doc_status_json(kb)
             full_id, status_info = _resolve_chunk_document(all_status or {}, doc_id)
             if _chunk_document_is_processing(full_id, kb, status_info):
@@ -1780,6 +2134,12 @@ async def update_document_chunk(
                 "graph_sync_state": "stale",
             }
             response["chunk"]["tags"] = (await get_tags_for_chunks(kb, full_id, [new_id])).get(new_id, [])
+            from raganything.services.document_tagging import enqueue_document_tagging_best_effort
+            await enqueue_document_tagging_best_effort(
+                kb, full_id,
+                filename=os.path.basename(str(new_status.get("file_path") or "")),
+                user_id=int(current_user.get("id") or 0),
+            )
         await _log_chunk_mutation(
             action="chunk_update", user_id=current_user["id"], kb=kb,
             doc_id=response["doc_id"], chunk_id=chunk_id, new_chunk_id=new_id,
@@ -1867,6 +2227,12 @@ async def delete_document_chunk(
                 "total_tokens": sum(int(value.get("tokens") or 0) for value in remaining),
                 "graph_sync_state": "stale",
             }
+            from raganything.services.document_tagging import enqueue_document_tagging_best_effort
+            await enqueue_document_tagging_best_effort(
+                kb, full_id,
+                filename=os.path.basename(str(new_status.get("file_path") or "")),
+                user_id=int(current_user.get("id") or 0),
+            )
         await _log_chunk_mutation(
             action="chunk_delete", user_id=current_user["id"], kb=kb,
             doc_id=response["doc_id"], chunk_id=chunk_id, new_chunk_id=None,
@@ -1942,7 +2308,7 @@ async def _compute_kb_stats(kb: str) -> dict[str, int]:
             pass
 
     if not pg_doc_totals_loaded:
-        data = await _load_doc_status_json(kb)
+        data = await _load_doc_status_summaries(kb)
         best_doc: dict[str, tuple[str, dict]] = {}
         for doc_id, info in data.items():
             if not isinstance(info, dict):
@@ -3267,6 +3633,110 @@ def _task_is_active_for_document_delete(task: dict[str, Any]) -> bool:
     return str(task.get("status") or "").lower() not in {"completed", "failed"}
 
 
+# Give a live parser time to report progress; after a restart, the in-memory
+# worker registry is empty and an old PG task can otherwise block deletion.
+_ORPHAN_TASK_STALE_SECONDS = 15 * 60
+
+
+def _task_belongs_to_kb(task: dict[str, Any], kb: str) -> bool:
+    """Require a task's persisted KB identity before allowing document cleanup."""
+    task_kb = task.get("kb") or task.get("kb_name")
+    return bool(task_kb) and str(task_kb) == str(kb)
+
+
+def _task_updated_at(task: dict[str, Any]) -> datetime | None:
+    """Normalize persisted task timestamps to an aware UTC datetime."""
+    value = task.get("updated_at") or task.get("started_at")
+    if isinstance(value, datetime):
+        timestamp = value
+    elif value:
+        try:
+            timestamp = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+    else:
+        return None
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
+
+
+def _has_active_worker_for_task(kb: str, task_id: str | None) -> bool:
+    """Return whether this process still owns a live worker for the task."""
+    if not task_id:
+        return False
+    for process, running_task_id in _kb_worker_procs.get(kb, []):
+        if str(running_task_id) != str(task_id):
+            continue
+        # asyncio subprocesses expose ``returncode=None`` while running.
+        return getattr(process, "returncode", None) is None
+    return False
+
+
+def _is_stalled_parsing_task(
+    task: dict[str, Any], kb: str | None = None, task_id: str | None = None,
+) -> bool:
+    """Allow cleanup of a parsing task left behind after its worker vanished."""
+    if kb is not None and not _task_belongs_to_kb(task, kb):
+        return False
+    updated_at = _task_updated_at(task)
+    if updated_at is None:
+        return False
+    age_seconds = (datetime.now(timezone.utc) - updated_at).total_seconds()
+    if age_seconds < _ORPHAN_TASK_STALE_SECONDS:
+        return False
+    effective_task_id = task_id or task.get("id") or task.get("task_id")
+    return not _has_active_worker_for_task(str(kb or task.get("kb") or ""), effective_task_id)
+
+
+def _is_orphaned_post_parse_task(
+    task: dict[str, Any], doc_status: dict[str, Any],
+    *, kb: str | None = None, task_id: str | None = None,
+) -> bool:
+    """Identify a stale task whose document record has already been removed."""
+    task_file = _normalized_upload_filename(
+        task.get("file_path") or task.get("file") or task.get("file_name") or ""
+    )
+    if not task_file:
+        return False
+    if any(
+        isinstance(info, dict)
+        and _normalized_upload_filename(info.get("file_path") or "") == task_file
+        for info in doc_status.values()
+    ):
+        return False
+    effective_task_id = task_id or task.get("id") or task.get("task_id")
+    if kb is not None and _has_active_worker_for_task(kb, effective_task_id):
+        return False
+    phase = str(task.get("phase") or "").lower()
+    if phase == "parsing":
+        return _is_stalled_parsing_task(task, kb=kb, task_id=task_id)
+    return phase not in {"", "queued", "initializing", "model-preflight", "parsing"}
+
+
+async def _remove_document_processing_tasks(
+    kb: str, doc_id: str, file_path: str,
+) -> list[str]:
+    """Remove task rows that would otherwise resurrect a deleted document."""
+    target_file = _normalized_upload_filename(file_path)
+    matching_ids = []
+    for task_id, task in list(processing_tasks.items()):
+        if not isinstance(task, dict) or not _task_belongs_to_kb(task, kb):
+            continue
+        task_doc_id = str(task.get("doc_id") or "")
+        task_file = _normalized_upload_filename(
+            task.get("file_path") or task.get("file") or task.get("file_name") or ""
+        )
+        if task_id == doc_id or task_doc_id == doc_id or (
+            target_file and task_file == target_file
+        ):
+            matching_ids.append(task_id)
+
+    for task_id in matching_ids:
+        await delete_task(task_id)
+    return matching_ids
+
+
 @router.delete("/knowledge/documents/{doc_id}")
 @_lease_kb_cache_for_operation
 async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm: None = Depends(require_permission(Permission.KB_WRITE)), current_user: dict = Depends(get_current_user)):
@@ -3276,9 +3746,7 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _per
         raise HTTPException(500, "知识库未初始化")
 
     # PG-backed doc_status lookup
-    doc_status = await _load_doc_status_json(kb)
-    if not doc_status:
-        raise HTTPException(404, "无文档记录")
+    doc_status = await _load_doc_status_json(kb) or {}
 
     # 通过前缀匹配找到完整 doc_id
     full_id = None
@@ -3290,18 +3758,28 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _per
     if not full_id:
         # 可能是一个处理中/失败的 processing task，尝试从 processing_tasks 中移除
         task = await get_task_status(doc_id)
-        if task:
-            if _task_is_active_for_document_delete(task):
+        if task and _task_belongs_to_kb(task, kb):
+            if _task_is_active_for_document_delete(task) and not _is_orphaned_post_parse_task(
+                task, doc_status, kb=kb, task_id=doc_id,
+            ):
                 raise HTTPException(409, "文档仍在处理中，不能删除活动任务")
             fname = task.get("file", "未知")
+            _cleanup_document_files(kb, fname)
+            await pg_release_upload_for_deleted_document(kb, fname)
             await delete_task(doc_id)
             await add_event("doc_delete", file=fname, doc_id=doc_id, kb=kb, source="processing_tasks", user_id=current_user["id"])
             return {"status": "deleted", "doc_id": doc_id, "file": fname, "message": "已从处理队列中移除"}
         # 也尝试按 file_path 匹配（前端可能传文件名相关的 ID）
         for tid, task in list(processing_tasks.items()):
-            if task.get("kb", "") == kb and task.get("file", "") == doc_id:
-                if _task_is_active_for_document_delete(task):
+            if _task_belongs_to_kb(task, kb) and (
+                task.get("file") or task.get("file_name") or ""
+            ) == doc_id:
+                if _task_is_active_for_document_delete(task) and not _is_orphaned_post_parse_task(
+                    task, doc_status, kb=kb, task_id=tid,
+                ):
                     raise HTTPException(409, "文档仍在处理中，不能删除活动任务")
+                _cleanup_document_files(kb, doc_id)
+                await pg_release_upload_for_deleted_document(kb, doc_id)
                 await delete_task(tid)
                 await add_event("doc_delete", file=doc_id, doc_id=tid, kb=kb, source="processing_tasks", user_id=current_user["id"])
                 return {"status": "deleted", "doc_id": tid, "file": doc_id, "message": "已从处理队列中移除"}
@@ -3310,7 +3788,10 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _per
     file_name = doc_status[full_id].get("file_path", "未知")
 
     # 使用 LightRAG 的正式删除方法，彻底清理所有关联数据
-    result = await instance.lightrag.adelete_by_doc_id(full_id, delete_llm_cache=True)
+    async with _chunk_document_lock_scope(kb, full_id, instance.lightrag):
+        result = await instance.lightrag.adelete_by_doc_id(
+            full_id, delete_llm_cache=True
+        )
 
     await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
 
@@ -3326,14 +3807,19 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _per
                 pass
         await _cleanup_document_vision_vectors(instance, [full_id])
 
-        # Force LightRAG storages to persist deletions to disk so that
-        # _bigram_image_scan and other disk-level readers see up-to-date data.
-        await instance.lightrag.finalize_storages()
-        # Invalidate query cache to prevent stale results referencing deleted data
+        # adelete_by_doc_id() persists its own storage mutations via
+        # LightRAG's _insert_done(). Do not finalize here: finalize_storages()
+        # closes the cached instance's storage handles.
+        # Invalidate query cache to prevent stale results referencing deleted data.
         from raganything.query_cache import get_query_cache
         get_query_cache().invalidate()
         await delete_document_tags(kb, full_id)
         await pg_release_upload_for_deleted_document(kb, file_name)
+        await _remove_document_processing_tasks(kb, full_id, file_name)
+        from raganything.services.document_repair import cancel_repair_jobs
+        await cancel_repair_jobs(kb, [full_id])
+        from raganything.services.document_tagging import cancel_document_tagging
+        await cancel_document_tagging(kb, [full_id])
         _delete_response = {"status": "deleted", "doc_id": full_id, "file": file_name, "message": result.message}
     elif result.status == "not_found":
         # Data may be partially missing (e.g. multimodal processing was
@@ -3371,6 +3857,11 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _per
             get_query_cache().invalidate()
             await delete_document_tags(kb, full_id)
             await pg_release_upload_for_deleted_document(kb, file_name)
+            await _remove_document_processing_tasks(kb, full_id, file_name)
+            from raganything.services.document_repair import cancel_repair_jobs
+            await cancel_repair_jobs(kb, [full_id])
+            from raganything.services.document_tagging import cancel_document_tagging
+            await cancel_document_tagging(kb, [full_id])
             _delete_response = {
                 "status": "deleted",
                 "doc_id": full_id,
@@ -3404,9 +3895,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
         raise HTTPException(500, "知识库未初始化")
 
     # PG-backed doc_status lookup
-    doc_status = await _load_doc_status_json(kb)
-    if not doc_status:
-        raise HTTPException(404, "无文档记录")
+    doc_status = await _load_doc_status_json(kb) or {}
 
     deleted = []
     not_found = []
@@ -3425,10 +3914,15 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
         if not full_id:
             # Try processing_tasks
             task = await get_task_status(doc_id)
-            if task:
-                if _task_is_active_for_document_delete(task):
+            if task and _task_belongs_to_kb(task, kb):
+                if _task_is_active_for_document_delete(task) and not _is_orphaned_post_parse_task(
+                    task, doc_status, kb=kb, task_id=doc_id,
+                ):
                     errors.append({"doc_id": doc_id, "error": "文档仍在处理中，不能删除活动任务"})
                     continue
+                task_file = task.get("file") or task.get("file_name") or ""
+                _cleanup_document_files(kb, task_file)
+                await pg_release_upload_for_deleted_document(kb, task_file)
                 await delete_task(doc_id)
                 await add_event("doc_delete", file=task.get("file", "?"), doc_id=doc_id, kb=kb, source="processing_tasks", user_id=current_user["id"])
                 deleted.append(doc_id)
@@ -3438,13 +3932,17 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
 
         try:
             file_name = doc_status[full_id].get("file_path", "未知")
-            result = await instance.lightrag.adelete_by_doc_id(full_id, delete_llm_cache=True)
+            async with _chunk_document_lock_scope(kb, full_id, instance.lightrag):
+                result = await instance.lightrag.adelete_by_doc_id(
+                    full_id, delete_llm_cache=True
+                )
             if result.status in ("success", "not_found"):
                 del doc_status[full_id]
                 deleted.append(doc_id)
                 deleted_full_ids.append(full_id)
                 _cleanup_document_files(kb, file_name, full_id)
                 await pg_release_upload_for_deleted_document(kb, file_name)
+                await _remove_document_processing_tasks(kb, full_id, file_name)
                 await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
                 if result.status == "not_found":
                     not_found_full_ids.append(full_id)
@@ -3454,10 +3952,6 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
                         await instance.lightrag.doc_status.index_done_callback()
                     except Exception:
                         pass
-                # Also clean up matching processing_tasks entry
-                for tid, task in list(processing_tasks.items()):
-                    if task.get("kb", "") == kb and task.get("file", "") == file_name:
-                        del processing_tasks[tid]
             else:
                 errors.append({"doc_id": doc_id, "error": result.message})
         except Exception as e:
@@ -3487,12 +3981,17 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
     await _cleanup_document_vision_vectors(instance, deleted_full_ids)
     for deleted_document_id in deleted_full_ids:
         await delete_document_tags(kb, deleted_document_id)
+    if deleted_full_ids:
+        from raganything.services.document_repair import cancel_repair_jobs
+        await cancel_repair_jobs(kb, deleted_full_ids)
+        from raganything.services.document_tagging import cancel_document_tagging
+        await cancel_document_tagging(kb, deleted_full_ids)
 
     # PG-backed: doc_status is already updated via LightRAG; no JSON file to write
 
-    # Force LightRAG storages to persist deletions + invalidate query cache
+    # adelete_by_doc_id() persists its own storage mutations. Keep the cached
+    # instance alive and only invalidate query results after a successful batch.
     if deleted:
-        await instance.lightrag.finalize_storages()
         from raganything.query_cache import get_query_cache
         get_query_cache().invalidate()
 
@@ -3539,6 +4038,28 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
     )
     actual_strategy = _resolve_chunking_strategy(stored_strategy)
 
+    # Preserve durable text chunks and repair graph enrichment in place.
+    if int(data.get(full_id, {}).get("chunks_count") or 0) > 0:
+        from raganything.services.document_repair import prepare_document_repair
+
+        try:
+            repair = await prepare_document_repair(
+                kb,
+                full_id,
+                error=data.get(full_id, {}).get("error_msg", ""),
+            )
+        except ValueError:
+            repair = None
+        if repair is not None:
+            return {
+                "status": "queued",
+                "outcome": "degraded",
+                "doc_id": full_id,
+                "filename": file_name,
+                "repair_job": repair["job"],
+                "message": "文本内容已可用，图谱补偿已加入队列",
+            }
+
     # 查找原始文件路径
     upload_dir = Path("./uploads")
     file_path = upload_dir / file_name
@@ -3559,7 +4080,7 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
     del data[full_id]
 
     # 推入 per-KB 处理队列（统一排队）
-    task_id = str(uuid.uuid4())[:8]
+    task_id = str(uuid.uuid4())
     from .shared import _ensure_queue_draining
     task_info = {
         "task_id": task_id,
@@ -3791,6 +4312,8 @@ async def delete_kb(name: str, _perm: None = Depends(require_permission(Permissi
 
     await cleanup_kb_resources(name)
     await delete_kb_tags(name)
+    from raganything.services.document_tagging import delete_kb_tag_jobs
+    await delete_kb_tag_jobs(name)
     return {"status": "deleted", "name": name}
 
 

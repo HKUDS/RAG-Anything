@@ -4,14 +4,18 @@ RAG-Anything FastAPI 服务器
 访问: http://localhost:8000
 """
 import io
-import json
 import os
 import sys
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from raganything.services.runtime_settings import bootstrap_runtime_settings
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+
+_RESET_MARKER = Path(__file__).resolve().parent / ".system-reset-in-progress"
+if _RESET_MARKER.exists():
+    raise RuntimeError(f"System reset is in progress: {_RESET_MARKER}")
 
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env", override=False)
@@ -229,23 +233,37 @@ apply_sensitive_log_filter()
 # ── 多知识库管理 ──────────────────────────────────
 # 共享状态从 services 层导入，保持模块级别名向后兼容
 from raganything.services.kb_service import (
-    kb_instances, get_kb, create_rag, load_kb_meta, save_kb_meta, kb_dir,
-    infer_entity_type, _build_citation_block, _get_kb_doc_list,
-    _fix_stuck_doc_status, _process_uploaded_file,
-    KB_META_FILE,
+    kb_instances, get_kb, create_rag as create_rag,
+    load_kb_meta, save_kb_meta, kb_dir as kb_dir,
+    infer_entity_type as infer_entity_type,
+    _build_citation_block as _build_citation_block,
+    _get_kb_doc_list as _get_kb_doc_list,
+    _fix_stuck_doc_status as _fix_stuck_doc_status,
+    _process_uploaded_file as _process_uploaded_file,
+    KB_META_FILE as KB_META_FILE,
 )
 from raganything.services.ws_service import (
-    ws_clients, processing_events, ws_broadcast, emit_progress, add_event,
+    ws_clients as ws_clients,
+    processing_events as processing_events,
+    ws_broadcast as ws_broadcast,
+    emit_progress as emit_progress,
+    add_event as add_event,
     load_persisted_monitor_events,
 )
 from raganything.services.state_service import (
-    processing_tasks, load_tasks_from_pg,
+    processing_tasks as processing_tasks, load_tasks_from_pg,
 )
 from raganything.routers.shared import (
-    get_current_user, get_admin_user, verify_kb_access,
-    validate_query_input, extract_image_paths,
-    _is_thinking_msg, _translate_thinking_msg,
-    QUERY_SYSTEM_PROMPT, THINKING_PATTERNS, server_logger,
+    get_current_user as get_current_user,
+    get_admin_user as get_admin_user,
+    verify_kb_access as verify_kb_access,
+    validate_query_input as validate_query_input,
+    extract_image_paths as extract_image_paths,
+    _is_thinking_msg as _is_thinking_msg,
+    _translate_thinking_msg as _translate_thinking_msg,
+    QUERY_SYSTEM_PROMPT as QUERY_SYSTEM_PROMPT,
+    THINKING_PATTERNS as THINKING_PATTERNS,
+    server_logger,
 )
 # Router 注册
 from raganything.routers.auth import router as auth_router
@@ -275,68 +293,112 @@ async def startup():
     from raganything.services.pg_kb_meta_repo import pg_ensure_kb_tables
     await pg_ensure_agent_tables()
     await pg_ensure_kb_tables()
+    from raganything.services.document_repair import ensure_document_repair_jobs_table
+    await ensure_document_repair_jobs_table()
+    from raganything.services.document_tagging import ensure_document_tag_jobs_table
+    await ensure_document_tag_jobs_table()
+    from raganything.services.upload_retry import (
+        ensure_upload_retry_jobs_table,
+        start_upload_retry_runner,
+    )
+    await ensure_upload_retry_jobs_table()
     from raganything.services.pg_graph_edit_repo import ensure_graph_edit_tables
     await ensure_graph_edit_tables()
     server_logger.info("PG P0 tables (agents, kb_metadata, graph_edit) verified")
 
     # 初始化认证数据库
     await init_db()
+    from raganything.services.auth import (
+        DEFAULT_ADMIN_USERNAME,
+        get_user_by_username,
+        refresh_runtime_constants,
+    )
+    refresh_runtime_constants()
+    admin_user = await get_user_by_username(DEFAULT_ADMIN_USERNAME)
+    if not admin_user:
+        raise RuntimeError("Default administrator was not created")
+    admin_id = int(admin_user["id"])
+    admin_username = str(admin_user["username"])
     # 加载所有知识库元数据
     meta = await load_kb_meta()
-    # 迁移旧知识库：无 owner_id 的 KB 全部归管理员（user_id=1）
+    # Ensure the first-install baseline exists and always belongs to the
+    # administrator's real database ID (which is not necessarily 1).
+    default_created = "default" not in meta
+    if default_created:
+        now = datetime.now().isoformat()
+        meta["default"] = {
+            "name": "默认知识库",
+            "created": now,
+            "domain": "general",
+            "description": "",
+            "owner_id": admin_id,
+            "owner_username": admin_username,
+            "status": "ready",
+            "document_count": 0,
+            "updated_at": now,
+            "extra": {},
+        }
+    # 迁移旧知识库：无 owner_id 的 KB 全部归当前管理员
     changed = False
     for kb_name, kb_info in meta.items():
-        if "owner_id" not in kb_info:
-            kb_info["owner_id"] = 1
-            kb_info["owner_username"] = "admin"
+        if not int(kb_info.get("owner_id") or 0):
+            kb_info["owner_id"] = admin_id
+            kb_info["owner_username"] = admin_username
             changed = True
-    if changed:
+    if changed or default_created:
         await save_kb_meta(meta)
-        print(f"[KB-MIGRATE] 已将 {sum(1 for v in meta.values() if v.get('owner_id') == 1)} 个知识库分配给管理员", flush=True)
+    if changed:
+        print(
+            f"[KB-MIGRATE] 已将 {sum(1 for v in meta.values() if v.get('owner_id') == admin_id)} 个知识库分配给管理员",
+            flush=True,
+        )
     # 从 PG 恢复处理中任务（崩溃恢复）
     await load_tasks_from_pg()
     await load_persisted_monitor_events()
     # 初始化智能体（PG）
     from raganything.services.pg_agent_repo import (
-        pg_list_agents, pg_create_agent,
+        pg_ensure_default_agent,
+        pg_list_agents,
     )
-    agents = await pg_list_agents(is_admin=True)
     # 迁移旧智能体和对话：无 owner_id 的归管理员
     from raganything.services.pg_state_repo import get_pg_pool
     pool = get_pg_pool()
     async with pool.acquire() as conn:
         await conn.execute(
-            "UPDATE agents SET owner_id=1, owner_username='admin' WHERE owner_id=0"
+            "UPDATE agents SET owner_id=$1, owner_username=$2 WHERE owner_id=0",
+            admin_id,
+            admin_username,
         )
         await conn.execute(
-            "UPDATE agent_conversations SET owner_id=1 WHERE owner_id=0"
+            "UPDATE agent_conversations SET owner_id=$1 WHERE owner_id=0",
+            admin_id,
         )
-    # 确保默认智能体存在
-    has_default = any(
-        a.get("kb_name") == "default" and a.get("name") in ("通用助手", "default")
-        for a in agents
+    await pg_ensure_default_agent(
+        LLM_MODEL,
+        owner_id=admin_id,
+        owner_username=admin_username,
     )
-    if not has_default:
-        await pg_create_agent({
-            "name": "通用助手", "icon": "🤖",
-            "description": "默认智能体，关联默认知识库",
-            "welcome_message": "你好！我是通用助手，可以回答知识库中的任何问题。",
-            "kb_name": "default", "llm_model": LLM_MODEL,
-            "system_prompt": "", "use_default_prompt": True,
-        }, owner_id=1, owner_username="admin")
+    agents = await pg_list_agents(is_admin=True)
     # Recovery can inspect many persistent workspaces, so keep it out of the
     # startup critical path. The loop performs its first scan after a short
     # delay and is cancelled before storage teardown on shutdown.
     from raganything.services.kb_service import _stuck_recovery_loop
     app.state.stuck_recovery_task = asyncio.create_task(_stuck_recovery_loop(300))
+    from raganything.services.document_repair import repair_loop
+    app.state.document_repair_task = asyncio.create_task(repair_loop(15))
+    from raganything.services.document_tagging import document_tagging_loop
+    app.state.document_tagging_task = asyncio.create_task(document_tagging_loop(3))
+    await start_upload_retry_runner()
     # 启动磁盘空间监控（Prometheus 指标 + 阈值告警）
     asyncio.create_task(_disk_monitor_loop(DISK_CHECK_INTERVAL))
     # 预加载默认知识库
-    kb = await get_kb("default")
+    await get_kb("default")
     server_logger.info(f"RAG-Anything 服务器已启动，智能体: {len(agents)}个, 知识库: {list(meta.keys())}")
 
 @app.on_event("shutdown")
 async def shutdown():
+    from raganything.services.upload_retry import stop_upload_retry_runner
+    await stop_upload_retry_runner()
     recovery_task = getattr(app.state, "stuck_recovery_task", None)
     if recovery_task is not None:
         recovery_task.cancel()
@@ -347,15 +409,46 @@ async def shutdown():
         except Exception:
             server_logger.warning("Recovery task failed during shutdown", exc_info=True)
 
+    repair_task = getattr(app.state, "document_repair_task", None)
+    if repair_task is not None:
+        repair_task.cancel()
+        try:
+            await repair_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            server_logger.warning("Document repair task failed during shutdown", exc_info=True)
+
+    tagging_task = getattr(app.state, "document_tagging_task", None)
+    if tagging_task is not None:
+        tagging_task.cancel()
+        try:
+            await tagging_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            server_logger.warning("Document tagging task failed during shutdown", exc_info=True)
+
+    from raganything.services.kb_service import _cancel_deferred_auto_tag_tasks
+    await _cancel_deferred_auto_tag_tasks()
+
     for name, kb in list(kb_instances.items()):
-        try: await kb.finalize_storages()
-        except: pass
+        try:
+            await kb.finalize_storages()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            server_logger.warning(
+                "Failed to finalize KB storage during shutdown: %s",
+                name,
+                exc_info=True,
+            )
     # 关闭 PostgreSQL 连接池
     try:
         from raganything.services.pg_state_repo import close_pg_pool
         await close_pg_pool()
     except Exception:
-        pass
+        server_logger.warning("Failed to close PG pool during shutdown", exc_info=True)
 
 # ── Server Startup Guard ─────────────────────────────────────
 def _acquire_server_lock(port: int, workers: int = 1) -> None:

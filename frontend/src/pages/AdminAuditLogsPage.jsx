@@ -2,6 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { Activity, Database, Loader2, ScrollText, ShieldOff, UserPlus, UserCog, Trash2, ShieldAlert } from 'lucide-react'
 import Pagination from '../components/Pagination'
 import { api } from '../utils/api'
+import { clampPage, getStoredPageSize, storePageSize } from '../utils/pagination'
+
+const PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:audit-logs'
 
 const AUTH_TOKEN = () => {
   const saved = localStorage.getItem('raganything_auth')
@@ -64,6 +67,7 @@ export default function AdminAuditLogsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(() => getStoredPageSize(PAGE_SIZE_STORAGE_KEY))
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [actionFilter, setActionFilter] = useState('')
@@ -72,7 +76,7 @@ export default function AdminAuditLogsPage() {
   const loadLogs = useCallback(async () => {
     try {
       const token = AUTH_TOKEN()
-      const params = new URLSearchParams({ page, page_size: 15 })
+      const params = new URLSearchParams({ page, page_size: pageSize })
       if (actionFilter) params.set('action', actionFilter)
       const res = await fetch(`/api/admin/audit-logs?${params}`, {
         headers: { 'Authorization': `Bearer ${token}` },
@@ -87,9 +91,19 @@ export default function AdminAuditLogsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, actionFilter])
+  }, [page, pageSize, actionFilter])
+
+  const updatePageSize = value => {
+    const next = storePageSize(PAGE_SIZE_STORAGE_KEY, value)
+    setPageSize(next)
+    setPage(1)
+  }
 
   useEffect(() => { loadLogs() }, [loadLogs])
+  useEffect(() => {
+    const safePage = clampPage(page, totalPages)
+    if (page !== safePage) setPage(safePage)
+  }, [page, totalPages])
   useEffect(() => {
     api.getAuditHealth()
       .then(setAuditHealth)
@@ -197,7 +211,13 @@ export default function AdminAuditLogsPage() {
           </table>
         </div>
         <div className="px-3 pb-2">
-          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            pageSize={pageSize}
+            onPageSizeChange={updatePageSize}
+          />
         </div>
       </div>
     </div>

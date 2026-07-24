@@ -126,6 +126,14 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
     _parser_installation_checked: bool = field(default=False, init=False)
     """Flag to track if parser installation has been checked."""
 
+    _finalize_lock: Optional[asyncio.Lock] = field(
+        default=None, init=False, repr=False
+    )
+    _finalized: bool = field(default=False, init=False, repr=False)
+    _finalize_components: dict[str, bool] = field(
+        default_factory=dict, init=False, repr=False
+    )
+
     def __post_init__(self):
         """Post-initialization setup following LightRAG pattern"""
         # Initialize configuration if not provided
@@ -235,6 +243,8 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         2. No event loop in thread (typical atexit) -> create one with asyncio.run()
         3. Event loop exists but is closed/closing (atexit race) -> create new loop
         """
+        if self._finalized:
+            return
         try:
             import asyncio
 
@@ -636,6 +646,73 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             self.vision_embed_func = None  # disable gracefully
 
     async def finalize_storages(self):
+        """Finalize resources in dependency order, retrying only failed steps."""
+        if self._finalized:
+            return
+        if self._finalize_lock is None:
+            self._finalize_lock = asyncio.Lock()
+        async with self._finalize_lock:
+            if self._finalized:
+                return
+            await self._finalize_storages_once()
+            self._finalized = True
+            try:
+                atexit.unregister(self.close)
+            except Exception:
+                pass
+
+    async def _finalize_component(self, name: str, callback) -> None:
+        if self._finalize_components.get(name):
+            return
+        await callback()
+        self._finalize_components[name] = True
+
+    async def _finalize_optional_storage(self, storage: Any) -> None:
+        if storage is not None:
+            await storage.finalize()
+
+    async def _persist_lightrag_stores(self) -> None:
+        if self.lightrag is None:
+            return
+        stores = (
+            ("full_entities", getattr(self.lightrag, "full_entities", None)),
+            ("full_relations", getattr(self.lightrag, "full_relations", None)),
+            ("full_docs", getattr(self.lightrag, "full_docs", None)),
+            ("text_chunks", getattr(self.lightrag, "text_chunks", None)),
+            ("entity_chunks", getattr(self.lightrag, "entity_chunks", None)),
+            ("relation_chunks", getattr(self.lightrag, "relation_chunks", None)),
+            ("entities_vdb", getattr(self.lightrag, "entities_vdb", None)),
+            ("relationships_vdb", getattr(self.lightrag, "relationships_vdb", None)),
+            ("chunks_vdb", getattr(self.lightrag, "chunks_vdb", None)),
+        )
+        for name, storage in stores:
+            if storage is None:
+                continue
+            await storage.index_done_callback()
+            self.logger.debug("Persisted LightRAG store %s", name)
+
+    async def _flush_vision_repository(self) -> None:
+        repository = getattr(self.lightrag, "image_vision_repo", None) if self.lightrag else None
+        if repository is not None:
+            await repository.flush()
+
+    async def _await_pending_vision(self) -> None:
+        image_processor = self.modal_processors.get("image")
+        if image_processor is not None and hasattr(image_processor, "await_pending_vision_tasks"):
+            await image_processor.await_pending_vision_tasks()
+
+    async def _finalize_lightrag(self) -> None:
+        if self.lightrag is not None and hasattr(self.lightrag, "finalize_storages"):
+            await self.lightrag.finalize_storages()
+
+    def disable_atexit_cleanup(self) -> None:
+        """Worker subprocesses explicitly finalize and then bypass atexit."""
+        try:
+            atexit.unregister(self.close)
+        except Exception:
+            pass
+
+    async def _finalize_storages_once(self):
         """Finalize all storages including parse cache and LightRAG storages
 
         This method should be called when shutting down to properly clean up resources
@@ -660,6 +737,20 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             - Manual calling is recommended in production environments
             - All finalization tasks run concurrently for better performance
         """
+        await self._finalize_component("vision_tasks", self._await_pending_vision)
+        await self._finalize_component("vision_repository", self._flush_vision_repository)
+        await self._finalize_component("lightrag_persist", self._persist_lightrag_stores)
+        await self._finalize_component(
+            "parse_cache", lambda: self._finalize_optional_storage(self.parse_cache)
+        )
+        await self._finalize_component(
+            "multimodal_cache",
+            lambda: self._finalize_optional_storage(self.multimodal_status_cache),
+        )
+        await self._finalize_component("lightrag", self._finalize_lightrag)
+        self.logger.info("Successfully finalized all RAGAnything storages")
+        return
+
         try:
             # ── Await pending vision embedding tasks (P0-2 fix) ──
             # Ensures image vectors are computed and stored before
@@ -674,6 +765,15 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                         pending_count,
                     )
                     await image_processor.await_pending_vision_tasks()
+
+            # Flush the visual repository before LightRAG releases its shared
+            # storage clients. Running these concurrently can race a final PG
+            # pool close against an in-flight flush on failure paths.
+            if (self.lightrag is not None
+                    and hasattr(self.lightrag, 'image_vision_repo')
+                    and self.lightrag.image_vision_repo is not None):
+                await self.lightrag.image_vision_repo.flush()
+                self.logger.debug("Finished vision embedding repository flush")
 
             tasks = []
 
@@ -692,13 +792,6 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             ):
                 tasks.append(self.lightrag.finalize_storages())
                 self.logger.debug("Scheduled LightRAG storages finalization")
-
-            # Finalize vision embedding repository
-            if (self.lightrag is not None
-                    and hasattr(self.lightrag, 'image_vision_repo')
-                    and self.lightrag.image_vision_repo is not None):
-                tasks.append(self.lightrag.image_vision_repo.flush())
-                self.logger.debug("Scheduled vision embedding repository finalization")
 
             # Run all finalization tasks concurrently
             if tasks:

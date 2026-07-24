@@ -160,7 +160,7 @@ export default function DocumentChunkDetailPage() {
 
   useEffect(() => {
     const controller = new AbortController()
-    api.listKnowledgeTags({ kb: kbName, signal: controller.signal })
+    api.listAllKnowledgeTags({ kb: kbName, signal: controller.signal })
       .then(result => setKnownTags(Array.isArray(result.tags) ? result.tags : []))
       .catch(() => {})
     return () => controller.abort()

@@ -25,6 +25,7 @@ _FIELD_SPECS = (
     (('chunk_size',), 'CHUNK_SIZE', 'int', 800),
     (('chunking_strategy',), 'CHUNKING_STRATEGY', 'str', 'recursive'),
     (('max_async',), 'MAX_ASYNC', 'int', 4),
+    (('llm_timeout',), 'LLM_TIMEOUT', 'int', 180),
     (('enable_image',), 'ENABLE_IMAGE_PROCESSING', 'bool', True),
     (('enable_table',), 'ENABLE_TABLE_PROCESSING', 'bool', True),
     (('enable_equation',), 'ENABLE_EQUATION_PROCESSING', 'bool', True),

@@ -300,6 +300,14 @@ async def init_db() -> None:
             if row:
                 SERVER_START_ID = row["value"]
 
+        # Changes only when all application data is intentionally reset.
+        # Frontends use this epoch to discard stale browser-owned state.
+        await conn.execute(
+            "INSERT INTO settings (key, value) VALUES ('system_data_epoch', $1)"
+            " ON CONFLICT (key) DO NOTHING",
+            uuid.uuid4().hex,
+        )
+
     # Ensure default admin exists
     admin = await get_user_by_username(DEFAULT_ADMIN_USERNAME)
     if not admin:

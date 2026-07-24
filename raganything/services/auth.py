@@ -102,6 +102,16 @@ DEFAULT_ADMIN_EMAIL = _PG_DEFAULT_ADMIN_EMAIL
 DEFAULT_ADMIN_PASSWORD = _PG_DEFAULT_ADMIN_PASSWORD
 
 
+def refresh_runtime_constants() -> None:
+    """Synchronize JWT constants after PostgreSQL startup initialization."""
+    from raganything.services import pg_auth_repo
+
+    global SECRET_KEY, REFRESH_SECRET_KEY, SERVER_START_ID
+    SECRET_KEY = pg_auth_repo.SECRET_KEY
+    REFRESH_SECRET_KEY = pg_auth_repo.REFRESH_SECRET_KEY
+    SERVER_START_ID = pg_auth_repo.SERVER_START_ID
+
+
 # ── Token Blacklist (async wrappers around PG functions) ────
 
 async def is_token_revoked(jti: str) -> bool:

@@ -5,6 +5,9 @@ import { useAuth } from '../context/AuthContext'
 import Pagination from '../components/Pagination'
 import CreateUserModal from '../components/CreateUserModal'
 import EditUserModal from '../components/EditUserModal'
+import { clampPage, getStoredPageSize, storePageSize } from '../utils/pagination'
+
+const PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:admin-users'
 
 const AUTH_TOKEN = () => {
   const saved = localStorage.getItem('raganything_auth')
@@ -234,6 +237,7 @@ export default function AdminUsersPage() {
   const [roleFilter, setRoleFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(() => getStoredPageSize(PAGE_SIZE_STORAGE_KEY))
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const [roles, setRoles] = useState([])
@@ -343,7 +347,7 @@ export default function AdminUsersPage() {
 
   const loadUsers = useCallback(async () => {
     try {
-      const params = new URLSearchParams({ page, page_size: 12 })
+      const params = new URLSearchParams({ page, page_size: pageSize })
       if (search) params.set('search', search)
       if (roleFilter) params.set('role', roleFilter)
       if (statusFilter) params.set('status', statusFilter)
@@ -356,7 +360,13 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, search, roleFilter, statusFilter])
+  }, [page, pageSize, search, roleFilter, statusFilter])
+
+  const updatePageSize = value => {
+    const next = storePageSize(PAGE_SIZE_STORAGE_KEY, value)
+    setPageSize(next)
+    setPage(1)
+  }
 
   const loadRoles = useCallback(async () => {
     try {
@@ -369,6 +379,10 @@ export default function AdminUsersPage() {
 
   useEffect(() => { loadUsers() }, [loadUsers])
   useEffect(() => { loadRoles() }, [loadRoles])
+  useEffect(() => {
+    const safePage = clampPage(page, totalPages)
+    if (page !== safePage) setPage(safePage)
+  }, [page, totalPages])
 
   useEffect(() => {
     setRolePopover(null)
@@ -585,7 +599,13 @@ export default function AdminUsersPage() {
         </div>
 
         <div className="px-3 pb-2">
-          <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            pageSize={pageSize}
+            onPageSizeChange={updatePageSize}
+          />
         </div>
       </div>
 

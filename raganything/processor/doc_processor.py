@@ -52,6 +52,40 @@ from lightrag.utils import compute_mdhash_id
 
 class DocProcessorMixin:
     """Document parsing, caching, and processing entry points."""
+
+    def _requires_pdf_page_coverage(self, file_path: Path) -> bool:
+        return (
+            file_path.suffix.lower() == ".pdf"
+            and str(getattr(self.config, "parser", "")).lower() == "docling"
+        )
+
+    @staticmethod
+    def _validate_pdf_page_coverage(page_coverage: Any) -> Dict[str, Any]:
+        """Reject a partial PDF before it can enter caches or durable storage."""
+        if not isinstance(page_coverage, dict):
+            raise ValueError("Docling PDF parsing did not provide a page coverage manifest")
+        try:
+            total_pages = int(page_coverage.get("source_total_pages"))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("PDF page coverage has no valid source_total_pages") from exc
+        if total_pages <= 0:
+            raise ValueError("PDF page coverage has no source pages")
+
+        expected = set(range(1, total_pages + 1))
+        success = {int(value) for value in page_coverage.get("successful_pages") or []}
+        failed = {int(value) for value in page_coverage.get("failed_pages") or []}
+        skipped = {int(value) for value in page_coverage.get("skipped_pages") or []}
+        if success & failed or success & skipped or failed & skipped:
+            raise ValueError("PDF page coverage contains overlapping page states")
+        if success | failed | skipped != expected:
+            raise ValueError("PDF page coverage does not account for every source page")
+        if failed or skipped:
+            raise ValueError(
+                "PDF page coverage is incomplete; failed pages: "
+                + ", ".join(str(value) for value in sorted(failed | skipped))
+            )
+        return page_coverage
+
     def _generate_cache_key(
         self, file_path: Path, parse_method: str = None, **kwargs
     ) -> str:
@@ -175,6 +209,82 @@ class DocProcessorMixin:
         await self.lightrag.doc_status.upsert({doc_id: updated_doc_status})
         await self.lightrag.doc_status.index_done_callback()
         return updated_doc_status
+
+    async def _persist_degraded_graph_status(
+        self,
+        doc_id: str,
+        file_path: str,
+        error: BaseException,
+        *,
+        chunking_strategy: str | None = None,
+    ) -> bool:
+        """Preserve a graph failure as degraded only when all text chunks exist."""
+        current = await self.lightrag.doc_status.get_by_id(doc_id)
+        status = current.get("status") if isinstance(current, dict) else None
+        status_value = status.value if hasattr(status, "value") else status
+        if str(status_value or "").lower() != DocStatus.FAILED.value:
+            return False
+
+        chunk_ids = [str(value) for value in current.get("chunks_list", []) if value]
+        try:
+            expected_count = int(current.get("chunks_count") or len(chunk_ids))
+        except (TypeError, ValueError):
+            expected_count = len(chunk_ids)
+        if expected_count <= 0 or len(chunk_ids) != expected_count:
+            return False
+
+        records = await self.lightrag.text_chunks.get_by_ids(chunk_ids)
+        if isinstance(records, dict):
+            records_by_id = records
+        else:
+            record_list = list(records or [])
+            if len(record_list) != expected_count or any(record is None for record in record_list):
+                return False
+            records_by_id = dict(zip(chunk_ids, record_list))
+        if any(not isinstance(records_by_id.get(chunk_id), dict) for chunk_id in chunk_ids):
+            return False
+
+        metadata = current.get("metadata") or {}
+        metadata = dict(metadata) if isinstance(metadata, dict) else {}
+        existing_failed_ids = metadata.get("failed_chunk_ids")
+        if isinstance(existing_failed_ids, list):
+            failed_chunk_ids = [
+                str(value) for value in existing_failed_ids if str(value) in records_by_id
+            ]
+        else:
+            failed_chunk_ids = [
+                chunk_id
+                for chunk_id in chunk_ids
+                if not records_by_id[chunk_id].get("llm_cache_list")
+            ]
+        try:
+            retry_count = max(0, int(metadata.get("retry_count") or 0))
+        except (TypeError, ValueError):
+            retry_count = 0
+        error_message = str(error)
+        retryable_markers = (
+            "timeout", "timed out", "429", "rate limit", "connection",
+            "502", "503", "504", "server error", "temporarily unavailable",
+        )
+        metadata.update({
+            "content_ready": True,
+            "graph_status": "pending",
+            "failure_stage": "entity_extraction",
+            "retryable": any(marker in error_message.lower() for marker in retryable_markers),
+            "failed_chunk_ids": failed_chunk_ids,
+            "retry_count": retry_count,
+            "last_error": error_message[:4000],
+        })
+        await self._upsert_doc_status(
+            doc_id,
+            file_path,
+            status=DocStatus.FAILED,
+            error_msg=error_message,
+            metadata=metadata,
+            chunking_strategy=chunking_strategy,
+        )
+        return True
+
     def _generate_content_based_doc_id(self, content_list: List[Dict[str, Any]]) -> str:
         """
         Generate doc_id based on document content
@@ -277,6 +387,17 @@ class DocProcessorMixin:
             content_list = cached_data.get("content_list", [])
             doc_id = cached_data.get("doc_id")
 
+            if self._requires_pdf_page_coverage(file_path):
+                if cached_data.get("cache_version") != "2.0":
+                    self.logger.debug("Cache invalid - PDF page coverage version missing: %s", cache_key)
+                    return None
+                page_coverage = self._validate_pdf_page_coverage(
+                    cached_data.get("page_coverage")
+                )
+                from raganything.parser.office_parser import PageTrackedContent
+
+                content_list = PageTrackedContent(content_list, page_coverage)
+
             if content_list and doc_id:
                 self.logger.debug(
                     f"Found valid cached parsing result for key: {cache_key}"
@@ -344,6 +465,11 @@ class DocProcessorMixin:
             }
             parse_config.update(relevant_kwargs)
 
+            page_coverage = getattr(content_list, "page_coverage", None)
+            requires_page_coverage = self._requires_pdf_page_coverage(file_path)
+            if requires_page_coverage:
+                page_coverage = self._validate_pdf_page_coverage(page_coverage)
+
             cache_data = {
                 cache_key: {
                     "content_list": content_list,
@@ -351,9 +477,11 @@ class DocProcessorMixin:
                     "mtime": file_mtime,
                     "parse_config": parse_config,
                     "cached_at": time.time(),
-                    "cache_version": "1.0",
+                    "cache_version": "2.0" if requires_page_coverage else "1.0",
                 }
             }
+            if requires_page_coverage:
+                cache_data[cache_key]["page_coverage"] = page_coverage
             await self.parse_cache.upsert(cache_data)
             # Ensure data is persisted to disk
             await self.parse_cache.index_done_callback()
@@ -544,8 +672,12 @@ class DocProcessorMixin:
                     file_path=callback_file,
                     error=e,
                     parser=self.config.parser,
-                )
+            )
             raise
+
+        page_coverage = getattr(content_list, "page_coverage", None)
+        if self._requires_pdf_page_coverage(file_path):
+            page_coverage = self._validate_pdf_page_coverage(page_coverage)
 
         msg = f"Parsing {file_path} complete! Extracted {len(content_list)} content blocks"
         self.logger.info(msg)
@@ -565,6 +697,11 @@ class DocProcessorMixin:
                     content_list,
                     current_method=parse_method,
                     quality_threshold=quality_threshold,
+                    source_total_pages=(
+                        page_coverage.get("source_total_pages")
+                        if isinstance(page_coverage, dict) else None
+                    ),
+                    page_coverage=page_coverage if isinstance(page_coverage, dict) else None,
                 )
 
                 self.logger.info(
@@ -637,6 +774,10 @@ class DocProcessorMixin:
                     if len(content_list) == 0:
                         self.logger.error("Retry with '%s' produced no content", retry_method)
                         continue
+
+                    page_coverage = getattr(content_list, "page_coverage", None)
+                    if self._requires_pdf_page_coverage(file_path):
+                        page_coverage = self._validate_pdf_page_coverage(page_coverage)
 
                     parse_method = retry_method  # update for cache key
                     self.logger.info(
@@ -741,6 +882,9 @@ class DocProcessorMixin:
             content_list, content_based_doc_id = await self.parse_document(
                 file_path, output_dir, parse_method, display_stats, **kwargs
             )
+            page_coverage = getattr(content_list, "page_coverage", None)
+            if self._requires_pdf_page_coverage(Path(file_path)):
+                page_coverage = self._validate_pdf_page_coverage(page_coverage)
 
             # Use provided doc_id or fall back to content-based doc_id
             if doc_id is None:
@@ -760,6 +904,10 @@ class DocProcessorMixin:
                     status=DocStatus.HANDLING,
                     error_msg="",
                     chunking_strategy=chunking_strategy,
+                    metadata=(
+                        {"page_coverage": page_coverage}
+                        if isinstance(page_coverage, dict) else None
+                    ),
                 )
 
             # Step 2.5: Set content source for context extraction in multimodal processing
@@ -813,6 +961,10 @@ class DocProcessorMixin:
                     status=DocStatus.HANDLING,
                     error_msg="",
                     chunking_strategy=chunking_strategy,
+                    metadata=(
+                        {"page_coverage": page_coverage}
+                        if isinstance(page_coverage, dict) else None
+                    ),
                 )
                 # Register chunk → doc source mappings for citation tracing
                 # After text insertion, LightRAG populates chunks_list in doc_status
@@ -848,7 +1000,10 @@ class DocProcessorMixin:
             else:
                 # If no multimodal content, mark multimodal processing as complete
                 # This ensures the document status properly reflects completion of all processing
-                await self._mark_multimodal_processing_complete(doc_id)
+                if not await self._mark_multimodal_processing_complete(doc_id):
+                    raise RuntimeError(
+                        "multimodal completion marker could not be persisted"
+                    )
                 self.logger.debug(
                     f"No multimodal content found in document {doc_id}, "
                     "marked multimodal processing as complete",
@@ -857,6 +1012,27 @@ class DocProcessorMixin:
         except Exception as exc:
             if doc_id is not None:
                 try:
+                    degraded = False
+                    if stage == "text_insert":
+                        try:
+                            degraded = await self._persist_degraded_graph_status(
+                                doc_id,
+                                file_name,
+                                exc,
+                                chunking_strategy=chunking_strategy,
+                            )
+                        except Exception:
+                            self.logger.warning(
+                                "Unable to verify durable chunks for failed document %s",
+                                doc_id,
+                                exc_info=True,
+                            )
+                    if degraded:
+                        self.logger.warning(
+                            "Text content is durable but graph extraction is incomplete: %s",
+                            doc_id,
+                        )
+                        return
                     await self._upsert_doc_status(
                         doc_id,
                         file_name,
@@ -1327,6 +1503,7 @@ class DocProcessorMixin:
             import asyncio as _asyncio
             try:
                 loop = _asyncio.get_running_loop()
+                await self._set_multimodal_status_record(doc_id, False)
                 bg_task = loop.create_task(
                     self._process_multimodal_content_background(
                         multimodal_items, file_ref, doc_id
@@ -1337,20 +1514,23 @@ class DocProcessorMixin:
                     f"Scheduled {len(multimodal_items)} multimodal items for background processing"
                 )
                 # Mark document as processed immediately — text is ready for search
-                await self._upsert_doc_status(
-                    doc_id, file_ref,
-                    status=DocStatus.PROCESSED,
-                    error_msg="",
-                    chunking_strategy=chunking_strategy,
-                )
+                # Leave the document in HANDLING until the tracked background
+                # task finishes. Text chunks are searchable already, but the
+                # document must not look complete while VLM/vision work runs.
             except RuntimeError:
                 # No event loop available — fall back to sync
                 await self._process_multimodal_content(
                     multimodal_items, file_ref, doc_id
                 )
-                await self._mark_multimodal_processing_complete(doc_id)
+                if not await self._mark_multimodal_processing_complete(doc_id):
+                    raise RuntimeError(
+                        "multimodal completion marker could not be persisted"
+                    )
         else:
-            await self._mark_multimodal_processing_complete(doc_id)
+            if not await self._mark_multimodal_processing_complete(doc_id):
+                raise RuntimeError(
+                    "multimodal completion marker could not be persisted"
+                )
             self.logger.debug(
                 f"No multimodal content found in document {doc_id}, marked multimodal processing as complete"
             )

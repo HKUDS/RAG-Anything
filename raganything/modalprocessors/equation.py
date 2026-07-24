@@ -143,7 +143,7 @@ class EquationModalProcessor(BaseModalProcessor):
                 "entity_type": "equation",
                 "summary": f"Equation content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_equation_response(
         self, response: str, entity_name: str = None

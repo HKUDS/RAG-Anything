@@ -146,7 +146,7 @@ class GenericModalProcessor(BaseModalProcessor):
                 "entity_type": content_type,
                 "summary": f"{content_type} content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_generic_response(
         self, response: str, entity_name: str = None, content_type: str = "content"

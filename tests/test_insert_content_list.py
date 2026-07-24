@@ -146,12 +146,6 @@ def test_insert_content_list_defers_status_until_after_text_insert():
     assert processor.lightrag.doc_status.records["doc-content-list"]["status"] == (
         DocStatus.PROCESSED
     )
-    assert (
-        processor.lightrag.doc_status.records["doc-content-list"][
-            "multimodal_processed"
-        ]
-        is True
-    )
 
 
 def test_process_document_complete_defers_status_until_after_text_insert():
@@ -169,10 +163,6 @@ def test_process_document_complete_defers_status_until_after_text_insert():
     assert processor.lightrag.doc_status.records["doc-complete"]["status"] == (
         DocStatus.PROCESSED
     )
-    assert (
-        processor.lightrag.doc_status.records["doc-complete"]["multimodal_processed"]
-        is True
-    )
 
 
 def test_process_document_complete_keeps_status_for_multimodal_only_content():
@@ -184,9 +174,8 @@ def test_process_document_complete_keeps_status_for_multimodal_only_content():
     asyncio.run(processor.process_document_complete("/tmp/source.pdf"))
 
     # Structured format: inline image refs make text non-empty,
-    # so ainsert() runs. FakeLightRAG.ainsert sets PROCESSED,
-    # then _upsert_doc_status transitions to HANDLING,
-    # then multimodal processing runs.
+    # so ainsert() runs. The processor leaves the document in HANDLING
+    # while the tracked multimodal task runs.
     assert processor.events[0] == ("ainsert", "doc-complete", ANY)
     assert processor.events[1] == ("doc_status", "doc-complete", DocStatus.PROCESSED)
     assert processor.events[2] == ("doc_status", "doc-complete", DocStatus.HANDLING)
@@ -204,18 +193,43 @@ def test_insert_content_list_keeps_status_for_multimodal_only_content():
     )
 
     # Structured format: inline references mean text IS present,
-    # so ainsert() runs, then status transitions directly to PROCESSED
-    # (multimodal is backgrounded). This makes image-only documents
-    # searchable by their inline references.
+    # so ainsert() runs and the document remains HANDLING while multimodal
+    # processing is backgrounded.
     assert processor.events[0] == ("ainsert", "doc-content-list", ANY)
-    assert processor.events[1] == (
-        "doc_status",
-        "doc-content-list",
-        DocStatus.PROCESSED,
+    assert processor.events[1] == ("doc_status", "doc-content-list", DocStatus.PROCESSED)
+    assert processor.events[2] == ("doc_status", "doc-content-list", DocStatus.HANDLING)
+    assert processor.lightrag.doc_status.records["doc-content-list"]["status"] == (
+        DocStatus.PROCESSED
     )
-    assert (
-        processor.lightrag.doc_status.records["doc-content-list"][
-            "multimodal_processed"
-        ]
-        is True
-    )
+
+
+def test_multimodal_document_stays_handling_until_background_task_finishes():
+    async def scenario():
+        from raganything.processor import get_pending_background_tasks
+
+        processor = DummyProcessor()
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def blocked_multimodal(_items, _file_ref, _doc_id):
+            started.set()
+            await release.wait()
+
+        processor._process_multimodal_content = blocked_multimodal
+        await processor.insert_content_list(
+            [{"type": "image", "img_path": "/tmp/image.png", "page_idx": 0}],
+            file_path="/tmp/source.pdf",
+        )
+        await started.wait()
+        assert processor.lightrag.doc_status.records["doc-content-list"]["status"] == (
+            DocStatus.HANDLING
+        )
+
+        release.set()
+        pending = get_pending_background_tasks()
+        await asyncio.gather(*pending)
+        assert processor.lightrag.doc_status.records["doc-content-list"]["status"] == (
+            DocStatus.PROCESSED
+        )
+
+    asyncio.run(scenario())

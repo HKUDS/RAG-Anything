@@ -51,6 +51,7 @@ class SettingsUpdate(BaseModel):
     entity_types: Optional[str] = None
     entity_extraction_min_degree: Optional[int] = None
     max_async: Optional[int] = None
+    llm_timeout: Optional[int] = None
     enable_image: Optional[bool] = None
     enable_table: Optional[bool] = None
     enable_equation: Optional[bool] = None
@@ -86,6 +87,7 @@ def _serialize_settings() -> dict:
         "chunking_strategy": shared.CHUNKING_STRATEGY,
         "chunking_strategies": shared.CHUNKING_STRATEGY_META,
         "max_async": os.getenv("MAX_ASYNC", "4"),
+        "llm_timeout": int(os.getenv("LLM_TIMEOUT", "180")),
         "enable_image": os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true",
         "enable_table": os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
         "enable_equation": os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
@@ -125,6 +127,7 @@ def _settings_update_from_snapshot(snapshot: dict) -> SettingsUpdate:
         entity_types=snapshot.get("entity_types"),
         entity_extraction_min_degree=snapshot.get("entity_extraction_min_degree"),
         max_async=int(snapshot["max_async"]) if snapshot.get("max_async") is not None else None,
+        llm_timeout=int(snapshot["llm_timeout"]) if snapshot.get("llm_timeout") is not None else None,
         enable_image=snapshot.get("enable_image"),
         enable_table=snapshot.get("enable_table"),
         enable_equation=snapshot.get("enable_equation"),
@@ -184,6 +187,10 @@ def _apply_settings_update(settings: SettingsUpdate) -> dict:
         clamped = max(1, min(settings.max_async, 16))
         os.environ["MAX_ASYNC"] = str(clamped)
         changes["max_async"] = clamped
+    if settings.llm_timeout is not None:
+        timeout = max(30, min(settings.llm_timeout, 600))
+        os.environ["LLM_TIMEOUT"] = str(timeout)
+        changes["llm_timeout"] = timeout
     if settings.enable_image is not None:
         os.environ["ENABLE_IMAGE_PROCESSING"] = str(settings.enable_image).lower()
         changes["enable_image"] = settings.enable_image
@@ -896,6 +903,7 @@ async def vision_embedding_health(
 async def health():
     """健康检查（公开接口，用于 Docker/监控探测）"""
     components = {"server": "ok", "active_kb": shared.active_kb}
+    system_data_epoch = ""
 
     # 检查 KB 存储状态
     try:
@@ -912,6 +920,9 @@ async def health():
             await conn.fetchval("SELECT 1 FROM users LIMIT 1")
             monitor_table_ready = await conn.fetchval(
                 "SELECT to_regclass('public.monitor_events') IS NOT NULL"
+            )
+            system_data_epoch = await conn.fetchval(
+                "SELECT value FROM settings WHERE key = 'system_data_epoch'"
             )
         components["auth_db"] = "ok"
         components["monitor_logs"] = "ok" if monitor_table_ready else "error: monitor_events table missing"
@@ -935,6 +946,7 @@ async def health():
     return {
         "status": "degraded" if has_errors else "ok",
         "version": "1.3.1",
+        "system_data_epoch": system_data_epoch or "",
         "components": components,
     }
 

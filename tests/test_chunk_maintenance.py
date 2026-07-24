@@ -170,6 +170,16 @@ async def test_extended_chunks_contract_is_reloadable(monkeypatch):
         "chunking_strategy": "recursive",
         "created": "2026-01-01T00:00:00+08:00",
         "updated": "2026-01-02T00:00:00+08:00",
+        "tag_status": "unavailable",
+        "tag_raw_status": "unavailable",
+        "tagged_chunks": 0,
+        "eligible_tag_chunks": 0,
+        "tag_not_applicable_chunks": 0,
+        "unique_auto_tag_count": 0,
+        "auto_tag_assignment_count": 0,
+        "avg_auto_tags_per_tagged_chunk": 0.0,
+        "tag_error_message": "标签状态暂时不可用",
+        "tag_retryable": True,
     }
     assert result["total"] == 2
     assert result["total_tokens"] == 5

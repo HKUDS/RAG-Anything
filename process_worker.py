@@ -10,8 +10,14 @@ import json
 import os
 import sys
 import io
+import math
+import uuid
 from pathlib import Path
 from functools import partial
+
+_RESET_MARKER = Path(__file__).resolve().parent / ".system-reset-in-progress"
+if _RESET_MARKER.exists():
+    raise RuntimeError(f"System reset is in progress: {_RESET_MARKER}")
 
 # Set the numeric-library limit before importing Docling, LightRAG, or any
 # library that may load OpenBLAS.  The parent process overrides this value for
@@ -24,7 +30,10 @@ _worker_threads = max(1, min(_worker_threads, 4))
 for _thread_env in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
     os.environ[_thread_env] = str(_worker_threads)
 
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+if __name__ == "__main__" and hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(
+        sys.stdout.buffer, encoding="utf-8", errors="replace", write_through=True
+    )
 
 # ── 配置来源：os.environ ────────────────────────────────
 # Worker 子进程通过 asyncio.create_subprocess_exec() 继承父进程
@@ -46,11 +55,144 @@ from raganything.utils.process_lock import FileLock, get_file_lock_path
 # 所有配置从 os.environ 读取（继承自父进程，反映 Admin API 最新设置）
 API_KEY = os.getenv("LLM_BINDING_API_KEY")
 BASE_URL = os.getenv("LLM_BINDING_HOST")
+EMB_API_KEY = os.getenv("EMBEDDING_BINDING_API_KEY") or API_KEY
+EMB_BASE_URL = os.getenv("EMBEDDING_BINDING_HOST") or BASE_URL
 LLM_MODEL = os.getenv("LLM_MODEL", "qwen-plus")
 EMB_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
 EMB_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
 CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
 _VLM_IMAGE_MIME_TYPES = {"image/gif", "image/jpeg", "image/png", "image/webp"}
+
+
+class RetryableExternalServiceError(RuntimeError):
+    """Raised before durable writes when a configured model endpoint is offline."""
+
+
+def _emit_worker_error(
+    *, stage: str, error: BaseException, retryable: bool, secondary: list[str] | None = None,
+) -> None:
+    """Emit the single machine-readable error record consumed by the parent."""
+    payload = {
+        "stage": stage,
+        "root_type": type(error).__name__,
+        "failure_code": str(getattr(error, "failure_code", "")),
+        "retryable": bool(retryable),
+        "message": str(error)[:2000],
+        "secondary": [str(item)[:1000] for item in (secondary or [])],
+    }
+    page_coverage = getattr(error, "page_coverage", None)
+    if isinstance(page_coverage, dict):
+        payload["page_coverage"] = {
+            key: page_coverage.get(key, [])
+            for key in (
+                "source_total_pages",
+                "successful_pages",
+                "failed_pages",
+                "skipped_pages",
+                "retried_pages",
+            )
+        }
+    print("WORKER_ERROR_JSON " + json.dumps(payload, ensure_ascii=False), flush=True)
+
+
+def _exception_chain_text(exc: BaseException) -> str:
+    values: list[str] = []
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        values.extend((type(current).__name__, str(current), repr(current)))
+        last_attempt = getattr(current, "last_attempt", None)
+        if last_attempt is not None:
+            try:
+                nested = last_attempt.exception()
+            except Exception:
+                nested = None
+            if isinstance(nested, BaseException) and id(nested) not in seen:
+                current = nested
+                continue
+        current = current.__cause__ or current.__context__
+    return " ".join(values).casefold()
+
+
+def _is_retryable_external_error(exc: BaseException) -> bool:
+    text = _exception_chain_text(exc)
+    return any(marker in text for marker in (
+        "apiconnectionerror",
+        "connecterror",
+        "connection error",
+        "all connection attempts failed",
+        "connection reset",
+        "connection refused",
+        "timed out",
+        "timeout",
+        "rate limit",
+        "status code: 429",
+        "status_code=429",
+        "status code: 500",
+        "status code: 502",
+        "status code: 503",
+        "status code: 504",
+    ))
+
+
+def _is_ocr_memory_error(exc: BaseException) -> bool:
+    """Classify only the local OCR allocation failures, never remote model errors."""
+    if getattr(exc, "failure_stage", "") == "ocr":
+        return True
+    text = _exception_chain_text(exc)
+    return any(marker in text for marker in (
+        "bad allocation",
+        "std::bad_alloc",
+        "memoryerror",
+        "out of memory",
+    )) and any(marker in text for marker in ("onnx", "rapidocr", "ocr", "bad_alloc"))
+
+
+def _is_incomplete_pdf_coverage_error(exc: BaseException) -> bool:
+    return (
+        getattr(exc, "failure_code", "") == "pdf_page_coverage_incomplete"
+        or "pdf page coverage is incomplete" in _exception_chain_text(exc)
+    )
+
+
+async def _preflight_embedding_service(rag) -> None:
+    """Verify embedding availability before parsing or persisting a document."""
+    if os.getenv("MODEL_PREFLIGHT_ENABLED", "true").strip().lower() in {
+        "0", "false", "no", "off",
+    }:
+        return
+    try:
+        timeout = max(5, min(int(os.getenv("MODEL_PREFLIGHT_TIMEOUT", "20")), 120))
+    except ValueError:
+        timeout = 20
+    probe = f"RAGAnything upload preflight {uuid.uuid4().hex}"
+    try:
+        provider = getattr(
+            rag, "_raw_embedding_preflight_provider", rag._raw_embedding_provider
+        )
+        result = await asyncio.wait_for(
+            provider([probe], timeout=timeout),
+            timeout=timeout,
+        )
+        if result is None or len(result) != 1:
+            raise RuntimeError("embedding preflight returned an invalid vector batch")
+        vector = result[0]
+        if len(vector) != EMB_DIM:
+            raise RuntimeError(
+                f"embedding preflight dimension mismatch: expected {EMB_DIM}, got {len(vector)}"
+            )
+        values = [float(value) for value in vector]
+        if not all(math.isfinite(value) for value in values):
+            raise RuntimeError("embedding preflight returned non-finite values")
+        if math.sqrt(sum(value * value for value in values)) <= 0.0:
+            raise RuntimeError("embedding preflight returned a zero-norm vector")
+    except Exception as exc:
+        if _is_retryable_external_error(exc):
+            raise RetryableExternalServiceError(
+                "外部 Embedding 服务暂时无法连接，请恢复模型网络后重试"
+            ) from exc
+        raise RuntimeError(f"Embedding 服务预检失败: {exc}") from exc
 
 
 
@@ -102,7 +244,11 @@ async def _vlm_ocr_document(file_path: str) -> str:
         return "\n\n".join(all_text)
     except Exception as e:
         print(f"[WORKER] VLM OCR 异常: {e}", flush=True)
-        return ""
+        if _is_retryable_external_error(e):
+            raise RetryableExternalServiceError(
+                "外部 VLM 服务暂时无法连接，请恢复模型网络后重试"
+            ) from e
+        raise RuntimeError(f"VLM OCR 失败: {e}") from e
 
 
 PLAIN_TEXT_EXTS = {"txt", "md", "csv", "json", "xml", "yaml", "yml",
@@ -136,6 +282,7 @@ async def create_rag(parser=None, working_dir=None, chunking_strategy=None):
     def llm_func(prompt, system_prompt=None, history_messages=None, **kw):
         if "max_tokens" not in kw:
             kw["max_tokens"] = int(os.getenv("MAX_TOKENS", "4096"))
+        kw.setdefault("timeout", int(os.getenv("LLM_TIMEOUT", "180")))
         return openai_complete_if_cache(
             LLM_MODEL, prompt, system_prompt=system_prompt,
             history_messages=history_messages or [], api_key=API_KEY, base_url=BASE_URL, **kw,
@@ -175,9 +322,26 @@ async def create_rag(parser=None, working_dir=None, chunking_strategy=None):
             )
 
     _raw_embed_func = partial(
-        openai_embed.func, model=EMB_MODEL, api_key=API_KEY, base_url=BASE_URL,
+        openai_embed.func,
+        model=EMB_MODEL,
+        api_key=EMB_API_KEY,
+        base_url=EMB_BASE_URL,
+        client_configs={
+            "timeout": int(os.getenv("LLM_TIMEOUT", "180")),
+            "max_retries": 0,
+        },
     )
     _raw_embed_func.embedding_dim = EMB_DIM
+
+    async def _preflight_embed_func(texts, *, timeout: int):
+        raw_call = getattr(openai_embed.func, "__wrapped__", openai_embed.func)
+        return await raw_call(
+            texts,
+            model=EMB_MODEL,
+            api_key=EMB_API_KEY,
+            base_url=EMB_BASE_URL,
+            client_configs={"timeout": timeout, "max_retries": 0},
+        )
 
     _cached_embed_func = make_cached_embed_func(_raw_embed_func, wd, EMB_MODEL)
 
@@ -258,11 +422,15 @@ async def create_rag(parser=None, working_dir=None, chunking_strategy=None):
     _vision_embed_func = None
     if os.getenv("VISION_SEARCH_ENABLED", "false").lower() == "true":
         _vision_embed_func = create_vision_embed_func(working_dir=wd)
-    return RAGAnything(config=config, llm_model_func=llm_func,
-                       vision_model_func=vision_func,
-                       embedding_func=embedding_func,
-                       vision_embed_func=_vision_embed_func,
-                       lightrag_kwargs=lightrag_kwargs)
+    rag = RAGAnything(config=config, llm_model_func=llm_func,
+                      vision_model_func=vision_func,
+                      embedding_func=embedding_func,
+                      vision_embed_func=_vision_embed_func,
+                      lightrag_kwargs=lightrag_kwargs)
+    # The availability probe must never hit the application's embedding cache.
+    rag._raw_embedding_provider = _raw_embed_func
+    rag._raw_embedding_preflight_provider = _preflight_embed_func
+    return rag
 
 
 def _fix_stuck_doc(filename: str, target_dir: str, error_msg: str) -> bool:
@@ -300,8 +468,18 @@ def _fix_stuck_doc(filename: str, target_dir: str, error_msg: str) -> bool:
 
 
 # Maximum seconds to wait for background multimodal tasks before giving up.
-# Configurable via BG_TASK_MAX_WAIT env var; default 1800 s (30 minutes).
-_BG_TASK_MAX_WAIT = int(os.getenv("BG_TASK_MAX_WAIT", "1800"))
+# Keep the worker-side guard aligned with the parent watchdog unless explicitly
+# overridden. A 30-minute fixed default is too short for image-heavy manuals.
+try:
+    _BG_TASK_MAX_WAIT = int(
+        os.getenv(
+            "BG_TASK_MAX_WAIT",
+            os.getenv("PROCESS_IDLE_TIMEOUT", os.getenv("PROCESS_TIMEOUT", "1800")),
+        )
+    )
+except (TypeError, ValueError):
+    _BG_TASK_MAX_WAIT = 1800
+_BG_TASK_MAX_WAIT = max(1, _BG_TASK_MAX_WAIT)
 
 
 async def _await_pending_background_tasks() -> None:
@@ -336,10 +514,40 @@ async def _await_pending_background_tasks() -> None:
         print(f"[WORKER] 等待后台任务时出错: {exc}", flush=True)
 
 
+async def _drain_background_tasks_or_raise() -> None:
+    """Drain this isolated worker's registry and fail on timeout or task errors."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + _BG_TASK_MAX_WAIT
+    while True:
+        pending = get_pending_background_tasks()
+        if not pending:
+            return
+        remaining = deadline - loop.time()
+        if remaining <= 0:
+            for task in pending:
+                task.cancel()
+            await asyncio.gather(*pending, return_exceptions=True)
+            raise TimeoutError(
+                f"background processing exceeded {_BG_TASK_MAX_WAIT} seconds"
+            )
+        done, still_pending = await asyncio.wait(pending, timeout=remaining)
+        results = await asyncio.gather(*done, return_exceptions=True)
+        errors = [result for result in results if isinstance(result, BaseException)]
+        if errors:
+            raise RuntimeError(f"background processing failed: {errors[0]}")
+        if still_pending:
+            for task in still_pending:
+                task.cancel()
+            await asyncio.gather(*still_pending, return_exceptions=True)
+            raise TimeoutError(
+                f"background processing exceeded {_BG_TASK_MAX_WAIT} seconds"
+            )
+
+
 async def _flush_background_tasks_and_finalize(rag, filename: str) -> None:
     """Complete background multimodal writes before closing LightRAG storage."""
     print(f"[PROGRESS] phase=multimodal-tasks status=start file={filename}", flush=True)
-    await _await_pending_background_tasks()
+    await _drain_background_tasks_or_raise()
     print(f"[PROGRESS] phase=multimodal-tasks status=done file={filename}", flush=True)
     print(f"[PROGRESS] phase=graph-building status=start file={filename}", flush=True)
     await rag.finalize_storages()
@@ -348,7 +556,7 @@ async def _flush_background_tasks_and_finalize(rag, filename: str) -> None:
 
 async def process_file(file_path: str, kb_name: str, chunking_strategy: str = "",
                      enable_image: bool | None = None, enable_table: bool | None = None,
-                     enable_equation: bool | None = None, enable_video: bool | None = None):
+                     enable_equation: bool | None = None, enable_video: bool | None = None) -> int:
     """处理单个文件并写入对应 KB 目录"""
     filename = os.path.basename(file_path)
     target_dir = kb_dir(kb_name)
@@ -414,7 +622,7 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                             f"(updated {_age:.0f}s ago)，退出",
                             flush=True,
                         )
-                        sys.exit(3)
+                        return 3
                     else:
                         print(
                             f"[WORKER] 文档 {filename} 的 processing 状态已过期 "
@@ -439,15 +647,27 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
             f"[WORKER] 文件已被另一个 Worker 锁定: {filename} (lock: {lock_path})",
             flush=True,
         )
-        sys.exit(3)
+        return 3
 
-    # 创建 RAG 实例
-    rag = await create_rag(working_dir=target_dir, chunking_strategy=strategy)
-    await rag._ensure_lightrag_initialized()
-
-    safe_path = str(Path(file_path).resolve())
-
+    rag = None
+    finalized = False
+    current_stage = "initializing"
+    primary_error: BaseException | None = None
+    secondary_errors: list[str] = []
+    exit_code = 0
     try:
+        # Initialize storage handles, then prove that the external embedding
+        # dependency is reachable before parsing or writing any document rows.
+        rag = await create_rag(working_dir=target_dir, chunking_strategy=strategy)
+        rag.disable_atexit_cleanup()
+        await rag._ensure_lightrag_initialized()
+        current_stage = "model_preflight"
+        print(f"[PROGRESS] phase=model-preflight status=start file={filename}", flush=True)
+        await _preflight_embedding_service(rag)
+        print(f"[PROGRESS] phase=model-preflight status=done file={filename}", flush=True)
+
+        safe_path = str(Path(file_path).resolve())
+        current_stage = "parsing"
         if ext in PLAIN_TEXT_EXTS:
             print("[WORKER] 纯文本模式，直接读取", flush=True)
             print(f"[PROGRESS] phase=parsing status=start file={filename}", flush=True)
@@ -472,6 +692,22 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                 )
                 docling_ok = True
             except Exception as e:
+                if _is_retryable_external_error(e):
+                    current_stage = "embedding"
+                    raise RetryableExternalServiceError(
+                        "External model service is temporarily unavailable"
+                    ) from e
+                if _is_ocr_memory_error(e):
+                    # Docling's bounded PDF path already retried the individual
+                    # failing page once. A whole-document VLM fallback cannot
+                    # prove 100% page coverage, so it must not mask this error.
+                    current_stage = "ocr"
+                    raise
+                if _is_incomplete_pdf_coverage_error(e):
+                    # A partial result is not an eligible VLM fallback: the
+                    # fallback has no all-source-page completion proof.
+                    current_stage = "parsing"
+                    raise
                 err_msg = str(e)
                 print(f"[WORKER] Docling 处理失败: {err_msg[:150]}", flush=True)
                 # "Separator is not found" 错误：PDF 文本是大段连续内容，手动分行后重试
@@ -538,14 +774,15 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                 chunks_status_known = sp.exists()
                 needs_fallback = not docling_ok or (chunks_status_known and not chunks_ok)
                 if needs_fallback:
+                    current_stage = "vlm_ocr"
                     print(f"[WORKER] VLM OCR 兜底: {filename}", flush=True)
                     try:
                         ocr_text = await _vlm_ocr_document(file_path)
-                        fallback_content = []
-                        if ocr_text.strip():
-                            fallback_content.append(
-                                {"type": "text", "text": ocr_text, "page_idx": 0}
-                            )
+                        if not ocr_text.strip():
+                            raise RuntimeError("VLM OCR returned no usable text")
+                        fallback_content = [
+                            {"type": "text", "text": ocr_text, "page_idx": 0}
+                        ]
                         if (
                             ext == "pdf"
                             and os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower()
@@ -565,7 +802,9 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                         print(f"[WORKER] VLM OCR 失败: {e2}", flush=True)
                         raise
 
+        current_stage = "finalize"
         await _flush_background_tasks_and_finalize(rag, filename)
+        finalized = True
 
         # Verify that chunks were actually created — if the merging/extraction
         # stage failed silently, the document status will report zero chunks.
@@ -603,7 +842,7 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
 
         if merge_failed:
             print(f"[WORKER] 失败 (合并阶段错误): {filename}", flush=True)
-            sys.exit(1)
+            raise RuntimeError("document processing produced zero chunks")
 
         print(f"[WORKER] 完成: {filename}", flush=True)
 
@@ -612,16 +851,54 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
         import traceback
         print(f"[WORKER] ERROR: unhandled {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
-        _fix_stuck_doc(filename, target_dir, f"Worker 异常退出: {str(e)[:200]}")
-        sys.exit(1)
+        primary_error = e
+        retryable = (
+            not _is_ocr_memory_error(e)
+            and (isinstance(e, RetryableExternalServiceError) or _is_retryable_external_error(e))
+        )
+        exit_code = 4 if retryable else 1
+        chain_text = _exception_chain_text(e)
+        if current_stage == "parsing" and _is_ocr_memory_error(e):
+            current_stage = "ocr"
+        elif current_stage == "parsing" and "embedding" in chain_text:
+            current_stage = "embedding"
+        elif current_stage == "parsing" and any(
+            marker in chain_text for marker in ("entity", "llm", "completion")
+        ):
+            current_stage = "entity_extraction"
+        if current_stage != "model_preflight":
+            _fix_stuck_doc(filename, target_dir, f"Worker 异常退出: {str(e)[:200]}")
 
     finally:
+        if rag is not None and not finalized:
+            try:
+                await rag.finalize_storages()
+            except Exception as exc:
+                secondary_errors.append(f"finalize: {type(exc).__name__}: {exc}")
+                print(f"[WORKER] WARNING: storage cleanup failed: {exc}", flush=True)
         if file_lock.is_locked():
             file_lock.release()
         # Clean up PG pool created by this worker subprocess
         try:
             from raganything.services.pg_state_repo import close_pg_pool
             await close_pg_pool()
+        except Exception as exc:
+            secondary_errors.append(f"pg_pool: {type(exc).__name__}: {exc}")
+
+    if primary_error is not None:
+        _emit_worker_error(
+            stage=current_stage,
+            error=primary_error,
+            retryable=exit_code == 4,
+            secondary=secondary_errors,
+        )
+    return exit_code
+
+
+def _flush_standard_streams() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
         except Exception:
             pass
 
@@ -641,10 +918,19 @@ if __name__ == "__main__":
                         choices=["true", "false"])
     args = parser.parse_args()
 
-    asyncio.run(process_file(
-        args.file, args.kb, args.strategy,
-        enable_image=args.enable_image == "true" if args.enable_image else None,
-        enable_table=args.enable_table == "true" if args.enable_table else None,
-        enable_equation=args.enable_equation == "true" if args.enable_equation else None,
-        enable_video=args.enable_video == "true" if args.enable_video else None,
-    ))
+    try:
+        worker_exit_code = asyncio.run(process_file(
+            args.file, args.kb, args.strategy,
+            enable_image=args.enable_image == "true" if args.enable_image else None,
+            enable_table=args.enable_table == "true" if args.enable_table else None,
+            enable_equation=args.enable_equation == "true" if args.enable_equation else None,
+            enable_video=args.enable_video == "true" if args.enable_video else None,
+        ))
+    except BaseException as exc:
+        retryable = _is_retryable_external_error(exc)
+        _emit_worker_error(
+            stage="bootstrap", error=exc, retryable=retryable, secondary=[],
+        )
+        worker_exit_code = 4 if retryable else 1
+    _flush_standard_streams()
+    os._exit(int(worker_exit_code))

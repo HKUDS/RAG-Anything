@@ -1,5 +1,7 @@
 ﻿import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 
+import { synchronizeSystemDataEpoch } from '../utils/systemDataEpoch'
+
 const AuthContext = createContext(null)
 
 const AUTH_KEY = 'raganything_auth'
@@ -90,6 +92,7 @@ export function AuthProvider({ children }) {
   }, [])
 
   const login = useCallback(async (username, password) => {
+    await synchronizeSystemDataEpoch()
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

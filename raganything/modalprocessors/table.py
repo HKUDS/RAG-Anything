@@ -159,7 +159,7 @@ class TableModalProcessor(BaseModalProcessor):
                 "entity_type": "table",
                 "summary": f"Table content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_table_response(
         self, response: str, entity_name: str = None

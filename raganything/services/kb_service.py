@@ -14,12 +14,13 @@ from __future__ import annotations
 
 import json
 import hashlib
-from typing import Any, Optional
+from typing import Any
 import os
 import sys
 import re
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
 from collections import OrderedDict
 from datetime import datetime
@@ -37,7 +38,6 @@ from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
 from raganything.base import DocStatus
 from raganything.embedding import (
-    DoubaoEmbeddingAdapter,
     create_vision_embed_func,
     make_cached_embed_func,
 )
@@ -66,6 +66,17 @@ _VLM_IMAGE_MIME_TYPES = {"image/gif", "image/jpeg", "image/png", "image/webp"}
 _kb_locks: dict[str, asyncio.Lock] = {}
 _recovery_local_lock = asyncio.Lock()
 _RECOVERY_LOCK_NOT_ACQUIRED = object()
+_retry_cleanup_locks: dict[tuple[str, str], asyncio.Lock] = {}
+_deferred_auto_tag_tasks: dict[asyncio.Task[Any], str] = {}
+try:
+    _AUTO_TAG_PLANNING_CONCURRENCY = int(
+        os.getenv("AUTO_TAG_PLANNING_CONCURRENCY", "2")
+    )
+except ValueError:
+    _AUTO_TAG_PLANNING_CONCURRENCY = 2
+_auto_tag_planning_semaphore = asyncio.Semaphore(
+    max(1, min(_AUTO_TAG_PLANNING_CONCURRENCY, 2))
+)
 
 
 class KBCache:
@@ -320,6 +331,44 @@ def _parse_worker_progress_line(line: str, state: dict[str, Any]) -> dict[str, A
     if not text:
         return None
 
+    if "[PROGRESS] phase=model-preflight status=start" in text:
+        return {
+            "phase": "model-preflight",
+            "phase_status": "start",
+            "progress": 2,
+            "message": "正在检查模型服务连接",
+        }
+
+    if "[PROGRESS] phase=model-preflight status=done" in text:
+        return {
+            "phase": "model-preflight",
+            "phase_status": "done",
+            "progress": 5,
+            "message": "模型服务连接正常",
+        }
+
+    ocr_page = re.search(
+        r"OCR_PAGE_METRICS.*?[\"']page(?:_number)?[\"']\s*[:=]\s*(\d+)"
+        r"(?:.*?[\"'](?:total_pages|total)[\"']\s*[:=]\s*(\d+))?",
+        text,
+    )
+    if ocr_page:
+        state["track"] = "ocr"
+        page = int(ocr_page.group(1))
+        total_pages = int(ocr_page.group(2)) if ocr_page.group(2) else 0
+        return {
+            "phase": "ocr",
+            "phase_status": "page",
+            "progress": (
+                _scale_progress(page, total_pages, 5, 24)
+                if total_pages > 0 else None
+            ),
+            "message": (
+                f"OCR page {page}/{total_pages}"
+                if total_pages > 0 else f"OCR page {page}"
+            ),
+        }
+
     if "[PROGRESS] phase=parsing status=start" in text:
         state["track"] = "text"
         return {
@@ -354,6 +403,58 @@ def _parse_worker_progress_line(line: str, state: dict[str, Any]) -> dict[str, A
             "phase_status": "start",
             "progress": 28,
             "message": "开始抽取文本实体与关系",
+        }
+
+    # Docling emits page paths/metrics while parsing. Treat those lines as
+    # real activity so a large PDF with slow per-page work does not look idle.
+    page_match = re.search(
+        r"(?:page[- ]|Page\s+)(\d+)(?:\s*(?:/|of)\s*(\d+))?",
+        text,
+    )
+    if page_match:
+        state["track"] = "text"
+        page = int(page_match.group(1))
+        total_pages = int(page_match.group(2)) if page_match.group(2) else 0
+        progress = (
+            _scale_progress(page, total_pages, 6, 24)
+            if total_pages > 0 else None
+        )
+        return {
+            "phase": "parsing",
+            "phase_status": "page",
+            "progress": progress,
+            "message": (
+                f"page {page}/{total_pages}"
+                if total_pages > 0 else f"page {page}"
+            ),
+        }
+
+    # Worker stages may be namespaced (for example
+    # ``multimodal-tasks/graph-building``).  Parse the complete token so
+    # every explicit stage log still refreshes the idle watchdog heartbeat.
+    generic_phase = re.search(
+        r"\[PROGRESS\]\s+phase=([^\s]+)\s+status=([^\s]+)", text
+    )
+    if generic_phase:
+        phase = generic_phase.group(1)
+        status = generic_phase.group(2)
+        phase_parts = [part for part in phase.split("/") if part]
+        phase_key = phase_parts[-1] if phase_parts else phase
+        state["track"] = (
+            "multimodal" if "multimodal-tasks" in phase_parts
+            else state.get("track", "text")
+        )
+        progress_by_phase = {
+            "multimodal-tasks": 90,
+            "graph-building": 97,
+            "ocr": 10,
+            "embedding": 80,
+        }
+        return {
+            "phase": phase,
+            "phase_status": status,
+            "progress": progress_by_phase.get(phase, progress_by_phase.get(phase_key)),
+            "message": f"{phase} {status}",
         }
 
     if "Starting multimodal content processing..." in text:
@@ -464,6 +565,244 @@ def _parse_worker_progress_line(line: str, state: dict[str, Any]) -> dict[str, A
 
     return None
 
+
+def _worker_watchdog_config() -> tuple[float, float]:
+    """Return ``(idle_timeout, max_elapsed)`` for an upload Worker.
+
+    ``PROCESS_TIMEOUT`` was historically a hard wall-clock timeout.  It is
+    retained as the fallback for ``PROCESS_IDLE_TIMEOUT`` so existing
+    deployments keep their configured safety limit while active page/chunk
+    progress can refresh the watchdog.  ``PROCESS_MAX_TIMEOUT`` is optional
+    and disabled by default; set it when a hard upper bound is desired.
+    """
+
+    def _read_seconds(name: str, default: float) -> float:
+        try:
+            value = float(os.getenv(name, str(default)))
+        except (TypeError, ValueError):
+            value = default
+        return max(0.0, value)
+
+    legacy_timeout = _read_seconds("PROCESS_TIMEOUT", 3600.0)
+    idle_timeout = _read_seconds("PROCESS_IDLE_TIMEOUT", legacy_timeout)
+    max_elapsed = _read_seconds("PROCESS_MAX_TIMEOUT", 0.0)
+    return idle_timeout, max_elapsed
+
+
+async def _wait_for_worker_with_watchdog(
+    proc,
+    progress_event: asyncio.Event,
+    progress_state: dict[str, Any],
+    *,
+    idle_timeout: float,
+    max_elapsed: float = 0.0,
+    started_at: float | None = None,
+) -> None:
+    """Wait for a Worker while allowing active progress to reset idle time.
+
+    The helper deliberately owns and cancels its ``proc.wait()`` task when a
+    watchdog fires.  The caller can then kill the subprocess and await it
+    without leaving a pending task behind.  ``progress_state`` is updated by
+    the stream readers and must contain ``last_progress_at`` when a progress
+    event is emitted.
+    """
+
+    started = time.monotonic() if started_at is None else started_at
+    last_progress_at = float(progress_state.get("last_progress_at") or started)
+    wait_task = asyncio.create_task(proc.wait())
+    try:
+        while True:
+            now = time.monotonic()
+            idle_remaining = (
+                idle_timeout - (now - last_progress_at)
+                if idle_timeout > 0
+                else float("inf")
+            )
+            max_remaining = (
+                max_elapsed - (now - started)
+                if max_elapsed > 0
+                else float("inf")
+            )
+            remaining = min(idle_remaining, max_remaining)
+            if remaining <= 0:
+                timeout_kind = (
+                    "max_elapsed"
+                    if max_elapsed > 0 and max_remaining <= idle_remaining
+                    else "idle"
+                )
+                progress_state["watchdog_timeout"] = timeout_kind
+                raise asyncio.TimeoutError
+
+            progress_wait = asyncio.create_task(progress_event.wait())
+            try:
+                done, _ = await asyncio.wait(
+                    {wait_task, progress_wait},
+                    timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+            finally:
+                if not progress_wait.done():
+                    progress_wait.cancel()
+                await asyncio.gather(progress_wait, return_exceptions=True)
+
+            if wait_task in done:
+                await wait_task
+                return
+
+            if progress_wait in done:
+                progress_event.clear()
+                observed = progress_state.get("last_progress_at")
+                if observed is not None:
+                    try:
+                        last_progress_at = max(last_progress_at, float(observed))
+                    except (TypeError, ValueError):
+                        last_progress_at = time.monotonic()
+                else:
+                    last_progress_at = time.monotonic()
+                continue
+
+            # A progress event may race with asyncio.wait's timeout boundary.
+            # Prefer the observed timestamp over killing an actively progressing
+            # Worker.
+            observed = progress_state.get("last_progress_at")
+            try:
+                observed_float = float(observed) if observed is not None else None
+            except (TypeError, ValueError):
+                observed_float = None
+            if progress_event.is_set() or (
+                observed_float is not None and observed_float > last_progress_at
+            ):
+                progress_event.clear()
+                last_progress_at = max(
+                    last_progress_at,
+                    observed_float if observed_float is not None else time.monotonic(),
+                )
+                continue
+
+            timeout_kind = (
+                "max_elapsed"
+                if max_elapsed > 0
+                and (max_elapsed - (time.monotonic() - started))
+                <= (idle_timeout - (time.monotonic() - last_progress_at))
+                else "idle"
+            )
+            progress_state["watchdog_timeout"] = timeout_kind
+            raise asyncio.TimeoutError
+    except asyncio.TimeoutError:
+        if not wait_task.done():
+            wait_task.cancel()
+            await asyncio.gather(wait_task, return_exceptions=True)
+        raise
+    except BaseException:
+        if not wait_task.done():
+            wait_task.cancel()
+            await asyncio.gather(wait_task, return_exceptions=True)
+        raise
+
+
+def _select_worker_failure_detail(lines: list[str], returncode: int) -> str:
+    """Keep the causal worker error instead of a later cleanup warning."""
+    clean = [str(line).strip() for line in lines if str(line).strip()]
+    priorities = (
+        "[WORKER] ERROR: unhandled",
+        "RetryableExternalServiceError",
+        "外部 Embedding 服务",
+        "外部 VLM 服务",
+        "LightRAG pipeline failed",
+        "Embedding func: Error",
+        "VLM OCR 失败",
+        "Failed to extract document",
+        "MemoryError",
+        "OpenBLAS",
+    )
+    for marker in priorities:
+        matches = [line for line in clean if marker in line]
+        if matches:
+            return matches[-1][:600]
+
+    errors = [
+        line for line in clean
+        if (
+            "ERROR" in line
+            or "未捕获异常:" in line
+            or "处理失败:" in line
+            or "Exception:" in line
+        )
+        and "Traceback" not in line
+        and "Failed to finalize" not in line
+        and "storage cleanup failed" not in line
+    ]
+    if errors:
+        return errors[-1][:600]
+    tail = clean[-12:]
+    return ("; ".join(tail[-3:]) if tail else f"exit code {returncode}")[:600]
+
+
+def _parse_worker_error(lines: list[str], returncode: int) -> dict[str, Any]:
+    """Prefer the worker's structured primary error over cleanup noise."""
+    for line in reversed(lines):
+        marker = "WORKER_ERROR_JSON "
+        if marker not in line:
+            continue
+        try:
+            payload = json.loads(line.split(marker, 1)[1])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if isinstance(payload, dict) and payload.get("message"):
+            return payload
+    unsigned = int(returncode) & 0xFFFFFFFF
+    if unsigned == 0xC0000005:
+        return {
+            "stage": "native_crash",
+            "root_type": "WindowsAccessViolation",
+            "retryable": False,
+            "message": "上传 Worker 原生崩溃（Windows 访问冲突 0xC0000005）",
+            "secondary": [],
+        }
+    return {
+        "stage": "worker",
+        "root_type": "WorkerProcessError",
+        "retryable": returncode == 4,
+        "message": _select_worker_failure_detail(lines, returncode),
+        "secondary": [],
+    }
+
+
+class WorkerProcessError(RuntimeError):
+    def __init__(self, payload: dict[str, Any]):
+        super().__init__(str(payload.get("message") or "Worker failed"))
+        self.stage = str(payload.get("stage") or "worker")
+        self.root_type = str(payload.get("root_type") or "WorkerProcessError")
+        self.failure_code = str(payload.get("failure_code") or "")
+        self.retryable = bool(payload.get("retryable"))
+        self.secondary = list(payload.get("secondary") or [])
+        self.page_coverage = payload.get("page_coverage")
+
+
+def _retry_cleanup_lock(kb_name: str, filename: str) -> asyncio.Lock:
+    key = (kb_name, os.path.basename(filename))
+    lock = _retry_cleanup_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _retry_cleanup_locks[key] = lock
+    return lock
+
+
+def _worker_resource_snapshot(proc: Any) -> dict[str, Any]:
+    """Best-effort RSS/CPU sample for timeout diagnostics."""
+    try:
+        import psutil
+
+        process = psutil.Process(proc.pid)
+        memory = process.memory_info()
+        return {
+            "pid": process.pid,
+            "rss_bytes": int(memory.rss),
+            "cpu_percent": float(process.cpu_percent(interval=None)),
+        }
+    except Exception as exc:
+        return {"error": str(exc)[:200]}
+
 # ── Worker Process Tracking ─────────────────────────────────
 # Maps kb_name -> list of (asyncio.subprocess.Process, task_id) for
 # running worker subprocesses.  Used by KB deletion to kill workers.
@@ -475,6 +814,23 @@ _WORKER_NUMERIC_THREAD_ENV = (
     "MKL_NUM_THREADS",
     "NUMEXPR_NUM_THREADS",
 )
+_ocr_worker_slots: dict[asyncio.AbstractEventLoop, tuple[int, asyncio.Semaphore]] = {}
+
+
+def _get_ocr_worker_slot() -> asyncio.Semaphore:
+    """Return the process-wide OCR concurrency gate for the active event loop."""
+    try:
+        capacity = int(os.getenv("DOCUMENT_OCR_MAX_CONCURRENCY", "1"))
+    except ValueError:
+        capacity = 1
+    capacity = max(1, min(capacity, 4))
+    loop = asyncio.get_running_loop()
+    current = _ocr_worker_slots.get(loop)
+    if current is None or current[0] != capacity:
+        semaphore = asyncio.Semaphore(capacity)
+        _ocr_worker_slots[loop] = (capacity, semaphore)
+        return semaphore
+    return current[1]
 
 
 def _worker_subprocess_env() -> dict[str, str]:
@@ -530,6 +886,7 @@ def _unregister_processing_file(kb_name: str, file_hash: str) -> None:
 # ── Uploaded File Metadata (PG) ───────────────────────────
 
 _uploaded_files_has_error_message: bool | None = None
+_uploaded_files_has_terminal_metadata: bool | None = None
 
 
 def _uploaded_files_supports_error_message() -> bool:
@@ -553,7 +910,28 @@ def _uploaded_files_mark_missing_error_message(exc: Exception) -> bool:
     return True
 
 
-def _uploaded_files_projection(include_error_message: bool) -> str:
+def _uploaded_files_supports_terminal_metadata() -> bool:
+    """Return whether uploaded_files has the 019 outcome columns."""
+    return _uploaded_files_has_terminal_metadata is not False
+
+
+def _uploaded_files_mark_missing_terminal_metadata(exc: Exception) -> bool:
+    """Remember a pre-019 schema when a query references its new columns."""
+    global _uploaded_files_has_terminal_metadata
+    if exc.__class__.__name__ != "UndefinedColumnError":
+        return False
+    if "outcome" not in str(exc) and "warning_message" not in str(exc):
+        return False
+    _uploaded_files_has_terminal_metadata = False
+    kb_logger.warning(
+        "uploaded_files terminal metadata columns are missing; using legacy compatibility"
+    )
+    return True
+
+
+def _uploaded_files_projection(
+    include_error_message: bool, include_terminal_metadata: bool = False,
+) -> str:
     columns = [
         "id",
         "filename",
@@ -567,6 +945,8 @@ def _uploaded_files_projection(include_error_message: bool) -> str:
     ]
     if include_error_message:
         columns.append("error_message")
+    if include_terminal_metadata:
+        columns.extend(["outcome", "warning_message"])
     columns.extend(["created_at", "updated_at"])
     return ", ".join(columns)
 
@@ -676,7 +1056,7 @@ async def pg_release_upload_for_deleted_document(kb_name: str, file_path: str) -
             """,
             kb_name,
             filename,
-            ["completed", "failed", "deleted", "uploaded"],
+            ["queued", "processing", "completed", "failed", "deleted", "uploaded"],
         )
         return int(str(result).split()[-1]) > 0
     except Exception:
@@ -691,6 +1071,7 @@ async def pg_release_upload_for_deleted_document(kb_name: str, file_path: str) -
 
 def _serialize_upload_row(row: Any) -> dict[str, Any]:
     """Normalize an uploaded_files row to a JSON-friendly dict."""
+    get = row.get if hasattr(row, "get") else lambda key, default="": row[key]
     return {
         "id": row["id"],
         "filename": row["filename"],
@@ -701,7 +1082,9 @@ def _serialize_upload_row(row: Any) -> dict[str, Any]:
         "uploaded_by": row["uploaded_by"],
         "task_id": row["task_id"],
         "status": row["status"],
-        "error_message": row.get("error_message", "") if hasattr(row, "get") else row["error_message"],
+        "error_message": get("error_message", ""),
+        "outcome": get("outcome", ""),
+        "warning_message": get("warning_message", ""),
         "created_at": row["created_at"].isoformat() if hasattr(row["created_at"], "isoformat") else str(row["created_at"]),
         "updated_at": row["updated_at"].isoformat() if hasattr(row["updated_at"], "isoformat") else str(row["updated_at"]),
     }
@@ -772,15 +1155,32 @@ async def pg_update_upload_status_by_task_id(
     kb_name: str = "",
     expected_current_status: str | None = None,
     error_message: str | None = None,
+    outcome: str | None = None,
+    warning_message: str | None = None,
 ) -> dict[str, Any] | None:
     """Update uploaded_files row by task_id and return the updated row."""
     try:
         from raganything.services.pg_state_repo import get_pg_pool
         pool = get_pg_pool()
-        include_error_message = _uploaded_files_supports_error_message()
-        if include_error_message:
-            params: list[Any] = [status, error_message, task_id]
-            where = "task_id = $3"
+        for _attempt in range(3):
+            include_error_message = _uploaded_files_supports_error_message()
+            include_terminal_metadata = _uploaded_files_supports_terminal_metadata()
+            params: list[Any] = [status]
+            assignments = ["status = $1"]
+            if include_error_message:
+                params.append(error_message)
+                assignments.append(
+                    f"error_message = COALESCE(${len(params)}, error_message)"
+                )
+            if include_terminal_metadata:
+                params.append(outcome)
+                assignments.append(f"outcome = COALESCE(${len(params)}, outcome)")
+                params.append(warning_message)
+                assignments.append(
+                    f"warning_message = COALESCE(${len(params)}, warning_message)"
+                )
+            params.append(task_id)
+            where = f"task_id = ${len(params)}"
             if kb_name:
                 params.append(kb_name)
                 where += f" AND kb_name = ${len(params)}"
@@ -789,53 +1189,23 @@ async def pg_update_upload_status_by_task_id(
                 where += f" AND status = ${len(params)}"
             sql = (
                 "UPDATE uploaded_files "
-                "SET status = $1, "
-                "    error_message = COALESCE($2, error_message), "
-                "    updated_at = NOW() "
+                f"SET {', '.join(assignments)}, updated_at = NOW() "
                 f"WHERE {where} "
-                f"RETURNING {_uploaded_files_projection(True)}"
+                f"RETURNING {_uploaded_files_projection(include_error_message, include_terminal_metadata)}"
             )
-        else:
-            params = [status, task_id]
-            where = "task_id = $2"
-            if kb_name:
-                params.append(kb_name)
-                where += f" AND kb_name = ${len(params)}"
-            if expected_current_status is not None:
-                params.append(expected_current_status)
-                where += f" AND status = ${len(params)}"
-            sql = (
-                "UPDATE uploaded_files "
-                "SET status = $1, "
-                "    updated_at = NOW() "
-                f"WHERE {where} "
-                f"RETURNING {_uploaded_files_projection(False)}"
-            )
-
-        try:
-            row = await pool.fetchrow(sql, *params)
-        except Exception as exc:
-            if not include_error_message or not _uploaded_files_mark_missing_error_message(exc):
+            try:
+                row = await pool.fetchrow(sql, *params)
+                return _serialize_upload_row(row) if row else None
+            except Exception as exc:
+                if (
+                    include_terminal_metadata
+                    and _uploaded_files_mark_missing_terminal_metadata(exc)
+                ):
+                    continue
+                if include_error_message and _uploaded_files_mark_missing_error_message(exc):
+                    continue
                 raise
-            params = [status, task_id]
-            where = "task_id = $2"
-            if kb_name:
-                params.append(kb_name)
-                where += f" AND kb_name = ${len(params)}"
-            if expected_current_status is not None:
-                params.append(expected_current_status)
-                where += f" AND status = ${len(params)}"
-            row = await pool.fetchrow(
-                (
-                    "UPDATE uploaded_files "
-                    "SET status = $1, "
-                    "    updated_at = NOW() "
-                    f"WHERE {where} "
-                    f"RETURNING {_uploaded_files_projection(False)}"
-                ),
-                *params,
-            )
-        return _serialize_upload_row(row) if row else None
+        return None
     except Exception:
         kb_logger.warning("PG uploaded_files task update failed", exc_info=True)
         return None
@@ -868,25 +1238,28 @@ async def pg_get_upload_by_task_id(
 
         where = " AND ".join(conditions)
         async with pool.acquire() as conn:
-            include_error_message = _uploaded_files_supports_error_message()
-            try:
-                row = await conn.fetchrow(
-                    f"""SELECT {_uploaded_files_projection(include_error_message)}
-                        FROM uploaded_files
-                        WHERE {where}
-                        LIMIT 1""",
-                    *params,
-                )
-            except Exception as exc:
-                if not include_error_message or not _uploaded_files_mark_missing_error_message(exc):
+            row = None
+            for _attempt in range(3):
+                include_error_message = _uploaded_files_supports_error_message()
+                include_terminal_metadata = _uploaded_files_supports_terminal_metadata()
+                try:
+                    row = await conn.fetchrow(
+                        f"""SELECT {_uploaded_files_projection(include_error_message, include_terminal_metadata)}
+                            FROM uploaded_files
+                            WHERE {where}
+                            LIMIT 1""",
+                        *params,
+                    )
+                    break
+                except Exception as exc:
+                    if (
+                        include_terminal_metadata
+                        and _uploaded_files_mark_missing_terminal_metadata(exc)
+                    ):
+                        continue
+                    if include_error_message and _uploaded_files_mark_missing_error_message(exc):
+                        continue
                     raise
-                row = await conn.fetchrow(
-                    f"""SELECT {_uploaded_files_projection(False)}
-                        FROM uploaded_files
-                        WHERE {where}
-                        LIMIT 1""",
-                    *params,
-                )
         return _serialize_upload_row(row) if row else None
     except Exception:
         kb_logger.warning("PG uploaded_files lookup failed", exc_info=True)
@@ -952,29 +1325,30 @@ async def pg_list_uploads(
         params.extend([limit, offset])
 
         async with pool.acquire() as conn:
-            include_error_message = _uploaded_files_supports_error_message()
-            try:
-                rows = await conn.fetch(
-                    (
-                        f"SELECT {_uploaded_files_projection(include_error_message)} "
-                        f"FROM uploaded_files {where} "
-                        f"ORDER BY created_at DESC "
-                        f"LIMIT ${idx} OFFSET ${idx + 1}"
-                    ),
-                    *params,
-                )
-            except Exception as exc:
-                if not include_error_message or not _uploaded_files_mark_missing_error_message(exc):
+            rows = []
+            for _attempt in range(3):
+                include_error_message = _uploaded_files_supports_error_message()
+                include_terminal_metadata = _uploaded_files_supports_terminal_metadata()
+                try:
+                    rows = await conn.fetch(
+                        (
+                            f"SELECT {_uploaded_files_projection(include_error_message, include_terminal_metadata)} "
+                            f"FROM uploaded_files {where} "
+                            f"ORDER BY created_at DESC "
+                            f"LIMIT ${idx} OFFSET ${idx + 1}"
+                        ),
+                        *params,
+                    )
+                    break
+                except Exception as exc:
+                    if (
+                        include_terminal_metadata
+                        and _uploaded_files_mark_missing_terminal_metadata(exc)
+                    ):
+                        continue
+                    if include_error_message and _uploaded_files_mark_missing_error_message(exc):
+                        continue
                     raise
-                rows = await conn.fetch(
-                    (
-                        f"SELECT {_uploaded_files_projection(False)} "
-                        f"FROM uploaded_files {where} "
-                        f"ORDER BY created_at DESC "
-                        f"LIMIT ${idx} OFFSET ${idx + 1}"
-                    ),
-                    *params,
-                )
             total_row = await conn.fetchrow(
                 f"SELECT count(*) as total FROM uploaded_files {where}",
                 *params[:idx - 1],
@@ -1142,33 +1516,18 @@ KB_META_JSON = Path("rag_storage_kb_meta.json")
 
 
 async def load_kb_meta() -> dict[str, Any]:
-    """Load KB metadata — PG first, JSON fallback.
+    """Load KB metadata from the authoritative PostgreSQL store.
 
     Returns:
         Dict keyed by KB name: {name: {name, created, domain, ...}, ...}
         Empty dict if no KBs exist (caller should create default if needed).
     """
-    # ── Path 1: PG ──────────────────────────────────────
     try:
         from raganything.services.pg_kb_meta_repo import pg_load_kb_meta
-        result = await pg_load_kb_meta()
-        if result:
-            return result
+        return await pg_load_kb_meta()
     except Exception:
-        kb_logger.debug("PG kb_meta load failed, trying JSON fallback")
-
-    # ── Path 2: JSON file fallback ──────────────────────
-    if KB_META_JSON.exists():
-        try:
-            import json as _json
-            data = _json.loads(KB_META_JSON.read_text(encoding="utf-8"))
-            if isinstance(data, dict) and data:
-                kb_logger.info("[KB-META] 从 JSON 文件加载了 %d 个知识库", len(data))
-                return data
-        except (_json.JSONDecodeError, OSError):
-            pass
-
-    return {}
+        kb_logger.exception("PG kb_meta load failed")
+        raise
 
 
 async def save_kb_meta(meta: dict[str, Any]) -> None:
@@ -1178,11 +1537,8 @@ async def save_kb_meta(meta: dict[str, Any]) -> None:
         meta: Full KB metadata dict: {name: {name, created, ...}, ...}
     """
     # ── PG ──────────────────────────────────────────────
-    try:
-        from raganything.services.pg_kb_meta_repo import pg_save_all_kb_meta
-        await pg_save_all_kb_meta(meta)
-    except Exception:
-        kb_logger.warning("PG kb_meta save failed, only JSON will be updated")
+    from raganything.services.pg_kb_meta_repo import pg_save_all_kb_meta
+    await pg_save_all_kb_meta(meta)
 
     # ── JSON mirror ─────────────────────────────────────
     try:
@@ -1208,6 +1564,165 @@ def kb_dir(name: str) -> str:
 # regardless of the active storage backend.
 
 
+def _serialize_doc_status_record(record: Any) -> dict[str, Any]:
+    """Normalize a full doc-status record without trusting paginated summaries."""
+    if isinstance(record, dict):
+        if "chunks_list" not in record:
+            raise RuntimeError("full doc_status record is missing chunks_list")
+        get_value = record.get
+    else:
+        if not hasattr(record, "chunks_list"):
+            raise RuntimeError("full doc_status record is missing chunks_list")
+        get_value = lambda key, default=None: getattr(record, key, default)
+
+    status = get_value("status")
+    if hasattr(status, "value"):
+        status = status.value
+    chunks_list = get_value("chunks_list")
+    if chunks_list is None:
+        chunks_list = []
+    if not isinstance(chunks_list, list):
+        raise RuntimeError("full doc_status chunks_list is not a list")
+    chunks_count = get_value("chunks_count")
+    if chunks_count is not None:
+        try:
+            expected_count = int(chunks_count)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError("full doc_status chunks_count is invalid") from exc
+        if expected_count != len(chunks_list):
+            raise RuntimeError(
+                "full doc_status chunk declaration is inconsistent: "
+                f"chunks_count={expected_count}, chunks_list={len(chunks_list)}"
+            )
+    if len(set(chunks_list)) != len(chunks_list):
+        raise RuntimeError("full doc_status chunks_list contains duplicate IDs")
+
+    return {
+        "file_path": get_value("file_path", ""),
+        "status": status,
+        "content_summary": get_value("content_summary", ""),
+        "content_length": get_value("content_length", 0),
+        "chunks_count": chunks_count,
+        "chunks_list": list(chunks_list),
+        "metadata": get_value("metadata") or {},
+        "error_msg": get_value("error_msg"),
+        "created_at": get_value("created_at"),
+        "updated_at": get_value("updated_at"),
+        "track_id": get_value("track_id"),
+    }
+
+
+async def _get_pg_doc_status_storage(kb_name: str) -> Any | None:
+    """Return a live PG doc-status store, or ``None`` for a JSON-backed KB."""
+    if not _pg_storage_ready():
+        return None
+
+    rag = kb_instances.get(kb_name)
+    if rag is None:
+        try:
+            rag = await get_kb(kb_name)
+        except Exception as exc:
+            raise RuntimeError(
+                f"PG doc_status initialization failed for KB {kb_name}"
+            ) from exc
+    if rag is None or not rag.lightrag or not hasattr(rag.lightrag, "doc_status"):
+        raise RuntimeError(f"PG doc_status storage is unavailable for KB {kb_name}")
+
+    ds = rag.lightrag.doc_status
+    # JSONDocStatusStorage deliberately has no ``db`` attribute.
+    if not hasattr(ds, "db"):
+        return None
+    if getattr(ds, "db", None) is not None:
+        return ds
+
+    # finalize_storages() can leave a released PG store in the instance cache.
+    if kb_instances.get(kb_name) is rag:
+        del kb_instances[kb_name]
+    try:
+        rag = await get_kb(kb_name)
+        ds = rag.lightrag.doc_status
+    except Exception as exc:
+        raise RuntimeError(
+            f"PG doc_status cache recovery failed for KB {kb_name}"
+        ) from exc
+    if not hasattr(ds, "db") or getattr(ds, "db", None) is None:
+        raise RuntimeError(f"PG doc_status storage is unavailable for KB {kb_name}")
+    return ds
+
+
+async def _load_doc_status_by_id(
+    kb_name: str, doc_id: str,
+) -> dict[str, Any] | None:
+    """Load one full doc-status record, including its authoritative chunk IDs."""
+    import json as _json
+
+    ds = await _get_pg_doc_status_storage(kb_name)
+    if ds is not None:
+        try:
+            record = await ds.get_by_id(doc_id)
+        except Exception:
+            kb_logger.warning(
+                "PG doc_status single-record load failed for KB %s doc %s",
+                kb_name, doc_id, exc_info=True,
+            )
+            raise
+        return _serialize_doc_status_record(record) if record is not None else None
+
+    json_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
+    if not json_path.exists():
+        return None
+    try:
+        data = _json.loads(json_path.read_text(encoding="utf-8"))
+    except (_json.JSONDecodeError, OSError):
+        kb_logger.warning(
+            "JSON doc_status load failed for KB %s", kb_name, exc_info=True,
+        )
+        return None
+    record = data.get(doc_id) if isinstance(data, dict) else None
+    return _serialize_doc_status_record(record) if isinstance(record, dict) else None
+
+
+def _serialize_doc_status_summary(record: Any) -> dict[str, Any]:
+    """Normalize fields exposed by LightRAG's summary-only pagination API."""
+    get_value = record.get if isinstance(record, dict) else (
+        lambda key, default=None: getattr(record, key, default)
+    )
+    status = get_value("status")
+    if hasattr(status, "value"):
+        status = status.value
+    return {
+        "file_path": get_value("file_path", ""),
+        "status": status,
+        "content_summary": get_value("content_summary", ""),
+        "content_length": get_value("content_length", 0),
+        "chunks_count": get_value("chunks_count", 0),
+        "metadata": get_value("metadata") or {},
+        "error_msg": get_value("error_msg"),
+        "created_at": get_value("created_at"),
+        "updated_at": get_value("updated_at"),
+        "track_id": get_value("track_id"),
+    }
+
+
+async def _load_doc_status_summaries(kb_name: str) -> dict[str, Any]:
+    """Load lightweight status rows for list views without transferring chunk IDs."""
+    ds = await _get_pg_doc_status_storage(kb_name)
+    if ds is None:
+        return await _load_doc_status_json(kb_name)
+
+    result: dict[str, Any] = {}
+    page = 1
+    while True:
+        docs, total = await ds.get_docs_paginated(
+            status_filter=None, page=page, page_size=200,
+        )
+        for doc_id, summary in docs:
+            result[str(doc_id)] = _serialize_doc_status_summary(summary)
+        if not docs or len(result) >= total:
+            return result
+        page += 1
+
+
 async def _load_doc_status_json(kb_name: str) -> dict[str, Any]:
     """Load doc_status data for a KB, dispatching PG → LightRAG API → JSON fallback.
 
@@ -1221,64 +1736,55 @@ async def _load_doc_status_json(kb_name: str) -> dict[str, Any]:
     import json as _json
 
     # ── Path 1: PG via LightRAG doc_status ─────────────────
-    if _pg_storage_ready():
-        rag = kb_instances.get(kb_name)
-        if rag is None:
-            try:
-                rag = await get_kb(kb_name)
-            except Exception:
-                pass
-        if rag is not None and rag.lightrag and hasattr(rag.lightrag, "doc_status"):
-            try:
-                from raganything.base import DocStatus as RAGDocStatus
-                ds = rag.lightrag.doc_status
-                # Guard: PG storage may not be initialized (e.g. after finalize()
-                # in worker subprocess, or when ClientManager returns None).
-                if getattr(ds, "db", None) is None:
-                    kb_logger.debug(
-                        "PG doc_status.db is None for KB %s, falling back to JSON",
-                        kb_name,
-                    )
-                else:
-                    all_statuses = [
-                        RAGDocStatus.PENDING,
-                        RAGDocStatus.READY,
-                        RAGDocStatus.HANDLING,
-                        RAGDocStatus.PROCESSING,
-                        RAGDocStatus.PROCESSED,
-                        RAGDocStatus.FAILED,
-                    ]
-                    result: dict[str, Any] = {}
-                    for status in all_statuses:
-                        page = 1
-                        while True:
-                            docs, total = await ds.get_docs_paginated(
-                                status_filter=status, page=page, page_size=200,
-                            )
-                            for doc_id, dps in docs:
-                                result[doc_id] = {
-                                    "file_path": dps.file_path,
-                                    "status": dps.status.value if hasattr(dps.status, "value") else dps.status,
-                                    "content_summary": dps.content_summary,
-                                    "content_length": dps.content_length,
-                                    "chunks_count": dps.chunks_count,
-                                    "chunks_list": dps.chunks_list or [],
-                                    "metadata": dps.metadata or {},
-                                    "error_msg": dps.error_msg,
-                                    "created_at": dps.created_at,
-                                    "updated_at": dps.updated_at,
-                                    "track_id": dps.track_id,
-                                }
-                            if len(docs) < 200:
-                                break
-                            page += 1
-                    if result:
-                        return result
-            except Exception:
-                kb_logger.warning(
-                    "PG doc_status load failed for KB %s",
-                    kb_name, exc_info=True,
+    ds = await _get_pg_doc_status_storage(kb_name)
+    if ds is not None:
+        try:
+            result: dict[str, Any] = {}
+            page = 1
+            while True:
+                # Pagination is a summary-only API in PG: it deliberately
+                # returns chunks_list=[] even for processed documents. Use it
+                # only to discover IDs, then hydrate authoritative records.
+                docs, total = await ds.get_docs_paginated(
+                    status_filter=None, page=page, page_size=200,
                 )
+                if not docs:
+                    if len(result) < total:
+                        raise RuntimeError(
+                            "PG doc_status pagination ended before all full records "
+                            f"were loaded for KB {kb_name}: loaded={len(result)}, total={total}"
+                        )
+                    return result
+
+                doc_ids = [str(doc_id) for doc_id, _summary in docs]
+                full_records = await ds.get_by_ids(doc_ids)
+                if len(full_records) != len(doc_ids):
+                    raise RuntimeError(
+                        "PG doc_status full-record hydration returned an unexpected "
+                        f"count for KB {kb_name}: expected={len(doc_ids)}, "
+                        f"actual={len(full_records)}"
+                    )
+                missing_ids = [
+                    doc_id for doc_id, record in zip(doc_ids, full_records)
+                    if record is None
+                ]
+                if missing_ids:
+                    raise RuntimeError(
+                        "PG doc_status full records are temporarily unavailable for "
+                        f"KB {kb_name}: {', '.join(missing_ids[:5])}"
+                    )
+                for doc_id, record in zip(doc_ids, full_records):
+                    result[doc_id] = _serialize_doc_status_record(record)
+
+                if len(result) >= total:
+                    return result
+                page += 1
+        except Exception:
+            kb_logger.warning(
+                "PG doc_status load failed for KB %s",
+                kb_name, exc_info=True,
+            )
+            raise
 
     # ── Path 2: JSON file fallback ─────────────────────────
     json_path = Path(kb_dir(kb_name)) / "kv_store_doc_status.json"
@@ -1506,6 +2012,10 @@ async def cleanup_kb_resources(name: str) -> None:
 
     kb_logger.info(f"[cleanup] 开始清理 KB 资源: {name}")
     _kbs_being_deleted.add(name)  # set BEFORE any async yield
+
+    # A compensation task must not recreate storage or write tags after the
+    # knowledge base has entered deletion.
+    await _cancel_deferred_auto_tag_tasks(name)
 
     # ── 1. Kill all running worker subprocesses ──────────
     worker_list = _kb_worker_procs.pop(name, [])
@@ -1774,6 +2284,7 @@ async def create_rag(
     def llm_func(prompt, system_prompt=None, history_messages=[], **kw):
         if "max_tokens" not in kw:
             kw["max_tokens"] = int(os.getenv("MAX_TOKENS", "4096"))
+        kw.setdefault("timeout", int(os.getenv("LLM_TIMEOUT", "180")))
         return openai_complete_if_cache(
             _llm_model, prompt, system_prompt=system_prompt,
             history_messages=history_messages, api_key=_api_key, base_url=_base_url, **kw,
@@ -1981,9 +2492,6 @@ async def create_rag(
 # Multi-worker recovery lock. PG advisory lock auto-releases on connection
 # close — no cleanup needed after worker crash.
 
-import tempfile
-import time as _time_module
-
 
 @asynccontextmanager
 async def _recovery_lock():
@@ -2039,6 +2547,8 @@ async def _persist_failed_doc_status(
         "failure_stage": "worker",
         "retryable": True,
         "task_id": task_id,
+        "content_ready": False,
+        "multimodal_processed": False,
     }
     if chunking_strategy:
         metadata["chunking_strategy"] = chunking_strategy
@@ -2084,6 +2594,7 @@ async def _fix_stuck_doc_status(
     error_message: str | None = None,
     task_id: str = "",
     chunking_strategy: str = "",
+    file_hash: str = "",
 ):
     """Fix documents stuck in 'handling' state after subprocess crash/timeout.
 
@@ -2098,6 +2609,46 @@ async def _fix_stuck_doc_status(
         data = data or {}
         changed = False
         matched = False
+        search_base = os.path.basename(filename)
+        active_candidates: list[str] = []
+        active_unscoped: list[str] = []
+        for candidate_id, candidate in data.items():
+            if not isinstance(candidate, dict):
+                continue
+            stored_base = os.path.basename(str(candidate.get("file_path") or ""))
+            same_document = (
+                stored_base == search_base
+                or (
+                    stored_base.endswith("_" + search_base)
+                    and len(stored_base) - len(search_base) == 9
+                )
+            )
+            if not same_document or str(candidate.get("status") or "").lower() not in {
+                "handling", "processing",
+            }:
+                continue
+            active_candidates.append(str(candidate_id))
+            candidate_metadata = candidate.get("metadata")
+            candidate_metadata = (
+                candidate_metadata if isinstance(candidate_metadata, dict) else {}
+            )
+            if not (
+                candidate.get("track_id")
+                or candidate_metadata.get("task_id")
+                or candidate_metadata.get("file_hash")
+            ):
+                active_unscoped.append(str(candidate_id))
+        # An unscoped active row can only be claimed when it is the sole active
+        # row for this filename. If a scoped row exists alongside it, the
+        # filename alone cannot establish ownership, so fail closed.
+        if active_unscoped and len(active_candidates) > 1:
+            kb_logger.error(
+                "[FIX-STUCK] 同名活动文档归属不明确，跳过批量失败标记: KB=%s file=%s docs=%s",
+                kb_name,
+                filename,
+                active_unscoped,
+            )
+            return
         for doc_id, info in data.items():
             stored = info.get("file_path", "")
             stored_base = os.path.basename(stored)
@@ -2113,18 +2664,60 @@ async def _fix_stuck_doc_status(
                 )
             )
             matched = matched or same_document
-            if (stored == filename
-                    or stored_base == search_base
-                    or (stored_base.endswith("_" + search_base)
-                        and len(stored_base) - len(search_base) == 9)) \
-                    and info.get("status") == "handling":
+            normalized_status = str(info.get("status") or "").lower()
+            if same_document and normalized_status in {
+                "handling", "processing", "failed",
+            }:
+                metadata = info.get("metadata") or {}
+                metadata = dict(metadata) if isinstance(metadata, dict) else {}
+                existing_markers = {
+                    str(value)
+                    for value in (info.get("track_id"), metadata.get("task_id"))
+                    if value
+                }
+                if existing_markers and task_id not in existing_markers:
+                    continue
+                existing_hash = str(metadata.get("file_hash") or "")
+                if existing_hash and file_hash and existing_hash != file_hash:
+                    continue
+                # A terminal failed row without task/hash provenance belongs
+                # to an older or unknown upload. Never stamp it with the
+                # current retry markers based on filename alone.
+                if normalized_status == "failed" and not (
+                    existing_markers or existing_hash
+                ):
+                    continue
+                if normalized_status == "failed" and not (
+                    metadata.get("cleanup_pending") is True
+                    and metadata.get("residual_data") is True
+                ):
+                    # Preserve ordinary parser failures; this hook only owns
+                    # incomplete worker states that require cleanup.
+                    continue
                 info["status"] = "failed"
                 info["error_msg"] = "处理中断：子进程异常退出或超时"
+                metadata.update({
+                    "content_ready": False,
+                    "multimodal_processed": False,
+                    "failure_stage": "worker_timeout",
+                    "cleanup_pending": True,
+                    "residual_data": True,
+                    "last_error": str(error_message or "处理中断：子进程异常退出或超时")[:4000],
+                    "task_id": task_id,
+                    "file_hash": file_hash,
+                })
+                multimodal_chunks = metadata.get("multimodal_chunks")
+                if isinstance(multimodal_chunks, dict):
+                    residual_ids = [str(value) for value in multimodal_chunks if value]
+                    if residual_ids:
+                        metadata.update({
+                            "residual_multimodal_chunk_ids": residual_ids,
+                            "cleanup_pending": True,
+                            "residual_data": True,
+                        })
+                info["metadata"] = metadata
                 if chunking_strategy:
-                    metadata = info.get("metadata") or {}
-                    metadata = dict(metadata) if isinstance(metadata, dict) else {}
                     metadata["chunking_strategy"] = chunking_strategy
-                    info["metadata"] = metadata
                 changed = True
                 kb_logger.warning(
                     f"[FIX-STUCK] 修复卡住的文档: {filename} (KB={kb_name}) handling→failed"
@@ -2354,6 +2947,252 @@ async def _stuck_recovery_loop(interval_sec: int = 300):
         await asyncio.sleep(interval_sec)
 
 
+def _is_retryable_graph_failure(error: str) -> bool:
+    from raganything.services.document_repair import _is_retryable_error
+
+    return _is_retryable_error(RuntimeError(str(error or "")))
+
+
+async def _load_persisted_chunk_ids_for_document(
+    kb_name: str,
+    doc_id: str,
+) -> set[str] | None:
+    """Load the durable chunk IDs for one document when an authoritative store is available.
+
+    ``doc_status.chunks_list`` is only a declaration.  A worker can persist
+    multimodal chunks before it reaches the Stage 7 status update, leaving
+    extra rows that must keep a failed document out of the degraded/tagging
+    path.  Return ``None`` when the local backend cannot identify document
+    ownership, so legacy JSON fixtures without ``full_doc_id`` remain
+    compatible while PostgreSQL gets a strict set comparison.
+    """
+    workspace = "./rag_storage" if kb_name == "default" else f"./rag_storage_{kb_name}"
+
+    if _pg_storage_ready():
+        try:
+            from raganything.services.pg_state_repo import get_pg_pool
+
+            rows = await get_pg_pool().fetch(
+                "SELECT id FROM LIGHTRAG_DOC_CHUNKS "
+                "WHERE workspace=$1 AND full_doc_id=$2",
+                workspace,
+                doc_id,
+            )
+            return {str(row["id"]) for row in rows if row.get("id")}
+        except Exception:
+            kb_logger.warning(
+                "Failed to load persisted chunk IDs for degraded document "
+                "KB=%s doc=%s",
+                kb_name,
+                doc_id,
+                exc_info=True,
+            )
+            # Do not turn a transient PG read failure into an unsafe degraded
+            # transition.  The caller treats ``None`` as unverifiable.
+            return None
+
+    # JSON-backed stores may expose ownership on each chunk record.  Avoid
+    # comparing every chunk in a KB when that field is absent because the
+    # fallback loader intentionally aggregates records across documents.
+    try:
+        text_chunks = await _load_text_chunks_json(kb_name)
+    except Exception:
+        return None
+    if not isinstance(text_chunks, dict):
+        return None
+    owned_records = {
+        str(chunk_id)
+        for chunk_id, chunk in text_chunks.items()
+        if isinstance(chunk, dict) and str(chunk.get("full_doc_id") or "") == doc_id
+    }
+    has_ownership_fields = any(
+        isinstance(chunk, dict) and "full_doc_id" in chunk
+        for chunk in text_chunks.values()
+    )
+    return owned_records if has_ownership_fields else None
+
+
+async def _mark_degraded_document(
+    kb_name: str,
+    doc_id: str,
+    info: dict[str, Any],
+    *,
+    error_message: str,
+) -> dict[str, Any] | None:
+    """Persist degraded metadata only after every declared text chunk is readable."""
+    metadata = info.get("metadata") or {}
+    metadata = dict(metadata) if isinstance(metadata, dict) else {}
+    failure_stage = str(metadata.get("failure_stage") or "").lower()
+    marker_required = bool(
+        metadata.get("multimodal_chunks")
+        or metadata.get("residual_multimodal_chunk_ids")
+        or failure_stage in {"multimodal", "worker_timeout", "finalize"}
+    )
+    if (
+        metadata.get("content_ready") is False
+        or metadata.get("multimodal_processed") is False
+        or metadata.get("cleanup_pending") is True
+        or (marker_required and metadata.get("multimodal_processed") is not True)
+    ):
+        kb_logger.warning(
+            "Document content quality gate rejected incomplete worker state: "
+            "kb=%s doc=%s failure_stage=%s",
+            kb_name,
+            doc_id,
+            metadata.get("failure_stage", "unknown"),
+        )
+        return None
+
+    chunk_ids = [str(value) for value in info.get("chunks_list", []) if value]
+    try:
+        expected_count = int(info.get("chunks_count") or len(chunk_ids))
+    except (TypeError, ValueError):
+        expected_count = len(chunk_ids)
+    if expected_count <= 0 or len(chunk_ids) != expected_count:
+        return None
+
+    persisted_chunk_ids = await _load_persisted_chunk_ids_for_document(
+        kb_name, doc_id,
+    )
+    if persisted_chunk_ids is None and _pg_storage_ready():
+        kb_logger.warning(
+            "Document content quality gate rejected unverifiable persisted "
+            "chunks: kb=%s doc=%s",
+            kb_name,
+            doc_id,
+        )
+        return None
+    if persisted_chunk_ids is not None and persisted_chunk_ids != set(chunk_ids):
+        kb_logger.warning(
+            "Document content quality gate rejected chunk-set mismatch: "
+            "kb=%s doc=%s declared=%d persisted=%d extra=%d missing=%d",
+            kb_name,
+            doc_id,
+            len(chunk_ids),
+            len(persisted_chunk_ids),
+            len(persisted_chunk_ids - set(chunk_ids)),
+            len(set(chunk_ids) - persisted_chunk_ids),
+        )
+        return None
+
+    text_chunks = await _load_text_chunks_json(kb_name)
+    from raganything.services.document_quality import evaluate_content_readiness
+    quality = await evaluate_content_readiness(kb_name, chunk_ids, text_chunks)
+    if not quality["ready"]:
+        kb_logger.warning(
+            "Document content quality gate rejected degraded state: kb=%s doc=%s quality=%s",
+            kb_name, doc_id, quality,
+        )
+        return None
+
+    existing_failed_ids = metadata.get("failed_chunk_ids")
+    if isinstance(existing_failed_ids, list):
+        failed_chunk_ids = [
+            str(value) for value in existing_failed_ids if str(value) in text_chunks
+        ]
+    else:
+        failed_chunk_ids = [
+            chunk_id
+            for chunk_id in chunk_ids
+            if not (text_chunks.get(chunk_id) or {}).get("llm_cache_list")
+        ]
+    try:
+        retry_count = max(0, int(metadata.get("retry_count") or 0))
+    except (TypeError, ValueError):
+        retry_count = 0
+
+    metadata.update({
+        "content_ready": True,
+        # Legacy text-only degraded documents predate the durable marker. They
+        # have no multimodal residue, so normalize them to an explicit success
+        # marker before allowing tagging.
+        "multimodal_processed": metadata.get("multimodal_processed") is not False,
+        "graph_status": "pending",
+        "failure_stage": "entity_extraction",
+        "retryable": _is_retryable_graph_failure(error_message),
+        "failed_chunk_ids": failed_chunk_ids,
+        "retry_count": retry_count,
+        "last_error": str(error_message or "")[:4000],
+    })
+
+    try:
+        rag = kb_instances.get(kb_name)
+        if rag is None:
+            rag = await get_kb(kb_name)
+        if rag is None or not getattr(rag, "lightrag", None):
+            return None
+        await rag.lightrag.doc_status.upsert({
+            doc_id: {**info, "status": "failed", "metadata": metadata},
+        })
+        await rag.lightrag.doc_status.index_done_callback()
+    except Exception:
+        kb_logger.warning(
+            "Failed to persist degraded document state: KB=%s doc=%s",
+            kb_name, doc_id, exc_info=True,
+        )
+        return None
+    return metadata
+
+
+async def _find_degraded_document(
+    kb_name: str,
+    filename: str,
+    error_message: str,
+    *,
+    task_id: str = "",
+    file_hash: str = "",
+) -> tuple[str, dict[str, Any]] | None:
+    """Find and validate the newest failed document matching an upload."""
+    data = await _load_doc_status_json(kb_name)
+    fname = os.path.basename(filename)
+    matches: list[tuple[str, dict[str, Any], bool]] = []
+    for doc_id, info in (data or {}).items():
+        if not isinstance(info, dict) or str(info.get("status") or "").lower() != "failed":
+            continue
+        stored_base = os.path.basename(str(info.get("file_path") or ""))
+        is_exact = stored_base == fname
+        is_prefixed = (
+            stored_base.endswith("_" + fname)
+            and len(stored_base) - len(fname) == 9
+        )
+        if is_exact or is_prefixed:
+            metadata = info.get("metadata")
+            metadata = metadata if isinstance(metadata, dict) else {}
+            candidate_markers = {
+                str(value)
+                for value in (info.get("track_id"), metadata.get("task_id"))
+                if value
+            }
+            candidate_hash = str(metadata.get("file_hash") or "")
+            if task_id or file_hash:
+                # Once the caller has provenance, a filename match by itself
+                # is insufficient to enter degraded/tagging recovery.
+                if task_id and candidate_markers and task_id not in candidate_markers:
+                    continue
+                if file_hash and candidate_hash and candidate_hash != file_hash:
+                    continue
+                if not candidate_markers and not candidate_hash:
+                    continue
+            matches.append((str(doc_id), info, is_exact))
+    matches.sort(
+        key=lambda match: (
+            match[2],
+            str(match[1].get("updated_at") or match[1].get("created_at") or ""),
+        ),
+        reverse=True,
+    )
+    if not matches:
+        return None
+    doc_id, info, _is_exact = matches[0]
+    metadata = await _mark_degraded_document(
+        kb_name,
+        doc_id,
+        info,
+        error_message=info.get("error_msg") or error_message,
+    )
+    return (doc_id, metadata) if metadata is not None else None
+
+
 async def _finalize_failed_upload(
     task_id: str,
     kb_name: str,
@@ -2371,18 +3210,100 @@ async def _finalize_failed_upload(
     middle of failure handling.
     """
     from raganything.services.ws_service import add_event
-    from raganything.services.state_service import upsert_task_state
+    from raganything.services.state_service import complete_task, fail_task
 
-    fix_args = (kb_name, filename, error_message, task_id)
-    if chunking_strategy:
-        await _fix_stuck_doc_status(*fix_args, chunking_strategy)
-    else:
-        await _fix_stuck_doc_status(*fix_args)
-    await upsert_task_state(task_id, {
-        "id": task_id, "status": "failed", "error": error_message,
-        "kb": kb_name, "file": filename, "user_id": user_id,
-        "chunking_strategy": chunking_strategy,
-    })
+    await _fix_stuck_doc_status(
+        kb_name,
+        filename,
+        error_message,
+        task_id,
+        chunking_strategy,
+        file_hash or "",
+    )
+
+    degraded = await _find_degraded_document(
+        kb_name,
+        filename,
+        error_message,
+        task_id=task_id,
+        file_hash=file_hash or "",
+    )
+    if degraded is not None:
+        doc_id, metadata = degraded
+        warning = "文本内容已入库，知识图谱抽取待补全"
+        if metadata.get("retryable") is True:
+            from raganything.services.document_repair import enqueue_repair
+
+            await enqueue_repair(
+                kb_name,
+                doc_id,
+                error=metadata.get("last_error") or error_message,
+            )
+        try:
+            from raganything.services.document_tagging import (
+                enqueue_document_tagging,
+                wait_for_document_tagging,
+            )
+
+            await enqueue_document_tagging(
+                kb_name,
+                doc_id,
+                filename=filename,
+                user_id=user_id,
+                task_id=task_id,
+            )
+        except Exception as exc:
+            await _defer_tagging_schedule(
+                task_id,
+                kb_name,
+                filename,
+                doc_id,
+                f"自动标签任务暂时无法入队: {exc}",
+                file_hash,
+            )
+            return
+        try:
+            tag_health = await wait_for_document_tagging(kb_name, doc_id)
+        except TimeoutError as exc:
+            await _defer_tagging_schedule(
+                task_id,
+                kb_name,
+                filename,
+                doc_id,
+                f"自动标签仍在后台处理中: {exc}",
+                file_hash,
+            )
+            return
+        if tag_health.get("tag_status") in {"failed", "disabled"}:
+            await _finalize_tagging_failure(
+                task_id,
+                kb_name,
+                filename,
+                user_id,
+                doc_id,
+                tag_health.get("tag_error_message")
+                or "文档正文已入库，但自动标签未完成",
+                file_hash,
+            )
+            return
+        await complete_task(task_id, outcome="degraded", warning=warning)
+        await add_event(
+            "upload_complete", file=filename, task_id=task_id, kb=kb_name,
+            outcome="degraded", warning=warning, doc_id=doc_id, user_id=user_id,
+        )
+        await pg_update_upload_status_by_task_id(
+            task_id,
+            "completed",
+            kb_name=kb_name,
+            error_message=warning,
+            outcome="degraded",
+            warning_message=warning,
+        )
+        if file_hash is not None:
+            _unregister_processing_file(kb_name, file_hash)
+        return
+
+    await fail_task(task_id, error_message)
     await add_event(
         "upload_error", file=filename, task_id=task_id,
         error=error_message, user_id=user_id,
@@ -2399,57 +3320,486 @@ async def _finalize_failed_upload(
 
 # ── Document Upload Processing ─────────────────────────────
 
+class DocumentProcessingFailedError(RuntimeError):
+    """The worker persisted an explicit failed document status."""
+
+
+class DocumentPartiallyProcessedError(DocumentProcessingFailedError):
+    """Text chunks are durable, but graph enrichment did not finish."""
+
+    def __init__(self, message: str, *, doc_id: str, metadata: dict[str, Any]):
+        super().__init__(message)
+        self.doc_id = doc_id
+        self.metadata = metadata
+
+
+class DocumentStatusPendingError(RuntimeError):
+    """The worker succeeded, but its PG document row is not visible yet."""
+
+
+class DocumentTaggingStageError(RuntimeError):
+    """The document body is durable, but required automatic tagging failed."""
+
+    def __init__(self, message: str, *, doc_id: str):
+        super().__init__(message)
+        self.doc_id = doc_id
+
+
+class DocumentTaggingSchedulePendingError(RuntimeError):
+    """The processed document is waiting for its durable tag job to be created."""
+
+    def __init__(self, message: str, *, doc_id: str):
+        super().__init__(message)
+        self.doc_id = doc_id
+
+
+async def _finalize_tagging_failure(
+    task_id: str,
+    kb_name: str,
+    filename: str,
+    user_id: int,
+    doc_id: str,
+    error_message: str,
+    file_hash: str | None,
+) -> None:
+    """Fail only the upload/tag barrier while preserving the processed document."""
+    from raganything.services.state_service import fail_task
+    from raganything.services.ws_service import add_event, ws_broadcast
+
+    await fail_task(
+        task_id,
+        error_message,
+        outcome="terminal_failed",
+        failure_stage="tagging",
+        retryable=False,
+    )
+    await add_event(
+        "upload_error",
+        file=filename,
+        task_id=task_id,
+        kb=kb_name,
+        doc_id=doc_id,
+        error=error_message,
+        failure_stage="tagging",
+        user_id=user_id,
+    )
+    await ws_broadcast({
+        "type": "upload_error",
+        "task_id": task_id,
+        "filename": filename,
+        "kb": kb_name,
+        "doc_id": doc_id,
+        "error": error_message,
+        "failure_stage": "tagging",
+    })
+    await pg_update_upload_status_by_task_id(
+        task_id,
+        "failed",
+        kb_name=kb_name,
+        error_message=error_message,
+        outcome="terminal_failed",
+    )
+    if file_hash is not None:
+        _unregister_processing_file(kb_name, file_hash)
+
+
+async def _defer_tagging_schedule(
+    task_id: str,
+    kb_name: str,
+    filename: str,
+    doc_id: str,
+    error_message: str,
+    file_hash: str | None,
+) -> None:
+    """Leave upload and document non-terminal until reconciliation creates the job."""
+    from raganything.services.state_service import defer_task
+    from raganything.services.ws_service import ws_broadcast
+
+    await defer_task(task_id, error_message, failure_stage="tagging")
+    await pg_update_upload_status_by_task_id(
+        task_id,
+        "retry_wait",
+        kb_name=kb_name,
+        error_message=error_message,
+    )
+    await ws_broadcast({
+        "type": "upload_retry_wait",
+        "task_id": task_id,
+        "filename": filename,
+        "kb": kb_name,
+        "doc_id": doc_id,
+        "error": error_message,
+        "failure_stage": "tagging",
+    })
+    if file_hash is not None:
+        _unregister_processing_file(kb_name, file_hash)
+
+
 async def _verify_document_persisted(kb_name: str, filename: str) -> str | None:
     """Verify that a processed document has chunks in doc_status.
 
     Uses PG dispatch when PG storage is active, file fallback otherwise.
 
-    Raises RuntimeError if the document is missing from doc_status or has
-    zero chunks after worker subprocess reports success.
-
-    When PG doc_status is temporarily unreadable (e.g. after subprocess
-    finalization), the check is skipped with a warning instead of failing
-    — the worker independently persisted data to PG.
+    PG absence and non-terminal rows are reported as temporarily pending so
+    the upload can complete while automatic tagging retries in the background.
+    Explicit failures and terminal zero-chunk rows remain hard failures.
     """
     data = await _load_doc_status_json(kb_name)
     if not data:
-        # Distinguish: PG unreadable vs truly missing data
         if _pg_storage_ready():
-            rag = kb_instances.get(kb_name)
-            if rag is not None and hasattr(rag, "lightrag") and rag.lightrag:
-                ds = getattr(rag.lightrag, "doc_status", None)
-                if ds is not None and getattr(ds, "db", None) is None:
-                    kb_logger.warning(
-                        "[VERIFY] PG doc_status 暂时不可用，跳过验证 (KB=%s, file=%s)",
-                        kb_name, filename,
-                    )
-                    return None
+            raise DocumentStatusPendingError(
+                f"PG doc_status 暂时无数据 (KB={kb_name}, file={filename})"
+            )
         raise RuntimeError(
             f"文档处理异常：doc_status 无数据 (KB={kb_name})"
         )
 
     fname = os.path.basename(filename)
+    matches: list[tuple[str, dict[str, Any], bool]] = []
     for doc_id, info in data.items():
+        if not isinstance(info, dict):
+            continue
         stored_raw = info.get("file_path", "")
         stored_base = os.path.basename(stored_raw)
         # Robust match: handles hash-prefixed uploads (8-hex + "_" + original)
         # Length guard: prefix is exactly 9 chars (8 hex + 1 underscore)
-        if (stored_base == fname
-                or (stored_base.endswith("_" + fname)
-                    and len(stored_base) - len(fname) == 9)):
-            chunks = info.get("chunks_count", 0)
-            status = info.get("status", "?")
-            normalized_status = str(status or "").lower()
-            if normalized_status == "failed":
-                raise RuntimeError(
-                    f"文档处理异常：status=failed, chunks={chunks} (doc_id={doc_id[:16]})"
+        is_exact = stored_base == fname
+        is_prefixed = (
+            stored_base.endswith("_" + fname)
+            and len(stored_base) - len(fname) == 9
+        )
+        if is_exact or is_prefixed:
+            matches.append((str(doc_id), info, is_exact))
+    if matches:
+        # Exact staged filenames win. For repeated display names, the newest
+        # persisted status is the current upload rather than an older document.
+        matches.sort(
+            key=lambda match: (
+                match[2],
+                str(match[1].get("updated_at") or match[1].get("created_at") or ""),
+            ),
+            reverse=True,
+        )
+        doc_id, info, _is_exact = matches[0]
+        chunks_list = info.get("chunks_list") or []
+        chunks = info.get("chunks_count")
+        if chunks is None:
+            chunks = len(chunks_list)
+        try:
+            chunks = int(chunks or 0)
+        except (TypeError, ValueError):
+            chunks = len(chunks_list)
+        status = info.get("status", "?")
+        normalized_status = str(status or "").lower()
+        if normalized_status == "failed":
+            degraded = await _mark_degraded_document(
+                kb_name, doc_id, info, error_message=info.get("error_msg") or "",
+            )
+            if degraded is not None:
+                raise DocumentPartiallyProcessedError(
+                    f"文档文本已入库，图谱抽取待补全，chunks={chunks} "
+                    f"(doc_id={doc_id[:16]})",
+                    doc_id=doc_id,
+                    metadata=degraded,
                 )
-            if chunks == 0:
-                raise RuntimeError(
-                    f"文档处理异常：chunks=0, status={status} (doc_id={doc_id[:16]})"
+            raise DocumentProcessingFailedError(
+                f"文档处理异常：status=failed, chunks={chunks} (doc_id={doc_id[:16]})"
+            )
+        if chunks == 0:
+            if _pg_storage_ready() and normalized_status in {
+                "", "?", "pending", "queued", "processing", "handling",
+            }:
+                raise DocumentStatusPendingError(
+                    f"PG 文档状态尚未完成：status={status}, chunks=0 "
+                    f"(doc_id={doc_id[:16]})"
                 )
-            return str(doc_id)
-    raise RuntimeError(f"文档处理异常：doc_status 中未找到匹配记录 ({fname})")
+            raise DocumentProcessingFailedError(
+                f"文档处理异常：chunks=0, status={status} (doc_id={doc_id[:16]})"
+            )
+        return doc_id
+    if _pg_storage_ready():
+        raise DocumentStatusPendingError(
+            f"PG doc_status 中暂未找到匹配记录 ({fname})"
+        )
+    raise RuntimeError(
+        f"文档处理异常：doc_status 中未找到匹配记录 ({fname})"
+    )
+
+
+async def _resolve_uploaded_document_id(
+    kb_name: str,
+    filename: str,
+    *,
+    attempts: int = 5,
+    retry_delay: float = 0.5,
+) -> str | None:
+    """Resolve a worker-written document without reusing the pre-worker cache."""
+    pending_error: DocumentStatusPendingError | None = None
+    total_attempts = max(1, int(attempts))
+    # The subprocess owns the durable write. The cached server instance may
+    # still hold finalized PG storage, so invalidate it once before reloading.
+    if kb_name in kb_instances:
+        del kb_instances[kb_name]
+        kb_logger.info(
+            "[KB] 清除 Worker 前缓存实例: %s（重新读取文档状态）", kb_name,
+        )
+    for attempt in range(total_attempts):
+        try:
+            document_id = await _verify_document_persisted(kb_name, filename)
+        except DocumentProcessingFailedError:
+            raise
+        except DocumentStatusPendingError as exc:
+            pending_error = exc
+            document_id = None
+        else:
+            # Keep compatibility with storage adapters that signal pending as None.
+            if document_id is None:
+                pending_error = DocumentStatusPendingError(
+                    f"文档状态暂时不可见 (KB={kb_name}, file={filename})"
+                )
+        if document_id:
+            return document_id
+        if attempt + 1 < total_attempts:
+            delay = max(0.0, float(retry_delay)) * min(attempt + 1, 3)
+            kb_logger.info(
+                "[VERIFY] 文档状态尚不可见，准备重试 %s/%s (KB=%s, file=%s)",
+                attempt + 1, total_attempts - 1, kb_name, filename,
+            )
+            await asyncio.sleep(delay)
+
+    if pending_error is not None:
+        kb_logger.warning(
+            "[VERIFY] 文档状态重试耗尽，转入后台补偿 (KB=%s, file=%s): %s",
+            kb_name, filename, pending_error,
+        )
+    return None
+
+
+async def _cleanup_retry_document_residue(
+    kb_name: str,
+    filename: str,
+    task_id: str,
+    file_hash: str,
+    *,
+    retry_job_id: int | None,
+) -> list[str]:
+    """Remove incomplete data before a content-hash retry reuses its doc ID."""
+    if retry_job_id is None:
+        return []
+
+    def _status_text(value: Any) -> str:
+        return str(getattr(value, "value", value) or "").lower()
+
+    search_name = os.path.basename(filename)
+    async with _retry_cleanup_lock(kb_name, search_name):
+        statuses = await _load_doc_status_json(kb_name)
+        candidates: list[tuple[str, dict[str, Any]]] = []
+        for doc_id, info in (statuses or {}).items():
+            if not isinstance(info, dict):
+                continue
+            if _status_text(info.get("status")) != "failed":
+                continue
+            metadata = info.get("metadata")
+            if not isinstance(metadata, dict):
+                continue
+            if (
+                metadata.get("cleanup_pending") is not True
+                or metadata.get("residual_data") is not True
+            ):
+                continue
+            stored_name = os.path.basename(str(info.get("file_path") or ""))
+            if not (
+                stored_name == search_name
+                or (
+                    stored_name.endswith("_" + search_name)
+                    and len(stored_name) - len(search_name) == 9
+                )
+            ):
+                continue
+            markers = {
+                str(value)
+                for value in (info.get("track_id"), metadata.get("task_id"))
+                if value
+            }
+            if markers and task_id not in markers:
+                continue
+            previous_hash = str(metadata.get("file_hash") or "")
+            if previous_hash and file_hash and previous_hash != file_hash:
+                continue
+            candidates.append((str(doc_id), info))
+
+        if not candidates:
+            return []
+
+        unscoped_candidates = [
+            info for _doc_id, info in candidates
+            if not (
+                info.get("track_id")
+                or (
+                    isinstance(info.get("metadata"), dict)
+                    and info["metadata"].get("task_id")
+                )
+                or (
+                    isinstance(info.get("metadata"), dict)
+                    and info["metadata"].get("file_hash")
+                )
+            )
+        ]
+        if unscoped_candidates:
+            raise WorkerProcessError({
+                "message": "无法确认重试残留归属（缺少 task_id/file_hash），重试已暂缓",
+                "stage": "cleanup",
+                "root_type": "RetryResidueCleanupUnscoped",
+                "retryable": True,
+            })
+
+        # The current retry is itself active.  Only block cleanup when another
+        # task for the same filename is also active.
+        if _pg_storage_ready():
+            from raganything.services.pg_state_repo import get_pg_pool
+
+            active_conflict = await get_pg_pool().fetchval(
+                "SELECT EXISTS(SELECT 1 FROM uploaded_files "
+                "WHERE kb_name=$1 AND filename=$2 "
+                "AND status IN ('queued','processing','retry_wait') "
+                "AND task_id IS DISTINCT FROM $3)",
+                kb_name,
+                search_name,
+                task_id,
+            )
+            if active_conflict:
+                raise WorkerProcessError({
+                    "message": "无法清理重试残留：同名文件仍有其他活动上传",
+                    "stage": "cleanup",
+                    "root_type": "RetryResidueCleanupConflict",
+                    "retryable": True,
+                })
+
+        rag = kb_instances.get(kb_name)
+        if rag is None:
+            rag = await get_kb(kb_name)
+        lightrag = getattr(rag, "lightrag", None) if rag is not None else None
+        if lightrag is None:
+            raise WorkerProcessError({
+                "message": "无法清理重试残留：知识库存储不可用",
+                "stage": "cleanup",
+                "root_type": "RetryResidueCleanupUnavailable",
+                "retryable": True,
+            })
+
+        workspace = "./rag_storage" if kb_name == "default" else f"./rag_storage_{kb_name}"
+        cleaned: list[str] = []
+        for doc_id, _info in candidates:
+            current = await lightrag.doc_status.get_by_id(doc_id)
+            if not isinstance(current, dict):
+                raise WorkerProcessError({
+                    "message": f"无法清理重试残留：文档状态不可见 ({doc_id})",
+                    "stage": "cleanup",
+                    "root_type": "RetryResidueStatusUnavailable",
+                    "retryable": True,
+                })
+            current_metadata = current.get("metadata")
+            current_metadata = (
+                dict(current_metadata) if isinstance(current_metadata, dict) else {}
+            )
+            if (
+                _status_text(current.get("status")) != "failed"
+                or current_metadata.get("cleanup_pending") is not True
+                or current_metadata.get("residual_data") is not True
+            ):
+                continue
+
+            declared_ids = {
+                str(value) for value in current.get("chunks_list") or [] if value
+            }
+            persisted_ids: set[str] = set()
+            if _pg_storage_ready():
+                from raganything.services.pg_state_repo import get_pg_pool
+
+                rows = await get_pg_pool().fetch(
+                    "SELECT id FROM LIGHTRAG_DOC_CHUNKS "
+                    "WHERE workspace=$1 AND full_doc_id=$2",
+                    workspace,
+                    doc_id,
+                )
+                persisted_ids = {str(row["id"]) for row in rows if row.get("id")}
+            all_ids = sorted(declared_ids | persisted_ids)
+            current_ids = [
+                str(value) for value in current.get("chunks_list") or [] if value
+            ]
+            if all_ids != current_ids:
+                await lightrag.doc_status.upsert({
+                    doc_id: {
+                        **current,
+                        "chunks_list": all_ids,
+                        "chunks_count": len(all_ids),
+                        "metadata": current_metadata,
+                    }
+                })
+                await lightrag.doc_status.index_done_callback()
+
+            try:
+                result = await lightrag.adelete_by_doc_id(
+                    doc_id, delete_llm_cache=True,
+                )
+                result_status = _status_text(getattr(result, "status", ""))
+                if result_status != "success":
+                    raise RuntimeError(
+                        f"LightRAG cleanup returned {result_status or 'unknown'}"
+                    )
+                vision_repo = getattr(lightrag, "image_vision_repo", None)
+                if vision_repo is not None and hasattr(vision_repo, "delete_by_doc_id"):
+                    await vision_repo.delete_by_doc_id(doc_id)
+                    if hasattr(vision_repo, "flush"):
+                        await vision_repo.flush()
+                cache = getattr(rag, "multimodal_status_cache", None)
+                if cache is not None and hasattr(cache, "delete"):
+                    await cache.delete([doc_id])
+                    if hasattr(cache, "index_done_callback"):
+                        await cache.index_done_callback()
+                cleaned.append(doc_id)
+            except Exception as exc:
+                # Keep the marker so a later retry can attempt cleanup again.
+                try:
+                    latest = await lightrag.doc_status.get_by_id(doc_id)
+                    if isinstance(latest, dict):
+                        latest_metadata = latest.get("metadata")
+                        latest_metadata = (
+                            dict(latest_metadata)
+                            if isinstance(latest_metadata, dict)
+                            else {}
+                        )
+                        latest_metadata.update({
+                            "content_ready": False,
+                            "multimodal_processed": False,
+                            "cleanup_pending": True,
+                            "residual_data": True,
+                            "failure_stage": "cleanup",
+                            "last_error": str(exc)[:4000],
+                            "task_id": task_id,
+                            "file_hash": file_hash,
+                        })
+                        await lightrag.doc_status.upsert({
+                            doc_id: {
+                                **latest,
+                                "status": DocStatus.FAILED,
+                                "metadata": latest_metadata,
+                            }
+                        })
+                        await lightrag.doc_status.index_done_callback()
+                except Exception:
+                    kb_logger.warning(
+                        "Unable to preserve retry cleanup marker for doc=%s",
+                        doc_id,
+                        exc_info=True,
+                    )
+                raise WorkerProcessError({
+                    "message": f"重试前清理文档残留失败: {exc}",
+                    "stage": "cleanup",
+                    "root_type": "RetryResidueCleanupError",
+                    "retryable": True,
+                }) from exc
+        return cleaned
 
 
 def _find_document_status_for_filename(
@@ -2473,7 +3823,32 @@ def _automatic_tag_chunk_id(chunk: dict[str, Any]) -> str:
     return str(chunk.get("chunk_id") or chunk.get("id") or "")
 
 
-def _automatic_tag_chunk_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _multimodal_tag_evidence(status_info: dict[str, Any], chunk_id: str) -> str:
+    metadata = status_info.get("metadata")
+    if not isinstance(metadata, dict):
+        return ""
+    chunks = metadata.get("multimodal_chunks")
+    if not isinstance(chunks, dict):
+        return ""
+    value = chunks.get(chunk_id)
+    if not isinstance(value, dict):
+        return ""
+    evidence: list[str] = []
+    for key in (
+        "caption", "description", "summary", "ocr_text", "text",
+        "table_content", "context", "nearby_heading", "title",
+    ):
+        item = value.get(key)
+        if isinstance(item, str) and item.strip():
+            evidence.append(item.strip())
+        elif isinstance(item, list):
+            evidence.extend(str(entry).strip() for entry in item if str(entry).strip())
+    return "\n".join(evidence)
+
+
+def _automatic_tag_chunk_records(
+    records: list[dict[str, Any]], status_info: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     """Normalize persisted records for the local automatic tag planner."""
     normalized: list[dict[str, Any]] = []
     for record in records:
@@ -2482,6 +3857,12 @@ def _automatic_tag_chunk_records(records: list[dict[str, Any]]) -> list[dict[str
         if not chunk_id:
             continue
         chunk["chunk_id"] = chunk_id
+        semantic_evidence = _multimodal_tag_evidence(status_info or {}, chunk_id)
+        if semantic_evidence:
+            chunk["content"] = "\n".join(
+                value for value in (str(chunk.get("content") or ""), semantic_evidence)
+                if value.strip()
+            )
         normalized.append(chunk)
     return normalized
 
@@ -2489,109 +3870,39 @@ def _automatic_tag_chunk_records(records: list[dict[str, Any]]) -> list[dict[str
 async def _load_automatic_tag_chunks(
     kb_name: str, document_id: str,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Load chunks for automatic tags despite delayed doc-status visibility."""
-    from raganything.services.kb_chunk_repo import (
-        PersistedChunkQueryError,
-        query_chunks_by_document_id,
+    """Load one document's authoritative chunk set without repairing status."""
+    status_info = await _load_doc_status_by_id(kb_name, document_id)
+    if not isinstance(status_info, dict):
+        raise RuntimeError(
+            f"document status is not visible for automatic tagging: {document_id}"
+        )
+
+    chunk_ids = [
+        str(value) for value in status_info.get("chunks_list") or [] if value
+    ]
+    if not chunk_ids:
+        raise RuntimeError(
+            f"document status has no chunk IDs for automatic tagging: {document_id}"
+        )
+
+    instance = await get_kb(kb_name)
+    records = await instance.lightrag.text_chunks.get_by_ids(chunk_ids)
+    chunks = _automatic_tag_chunk_records(
+        [dict(record) for record in (records or []) if isinstance(record, dict)],
+        status_info,
     )
-
-    status_info: dict[str, Any] = {}
-    instance = None
-    for attempt in range(3):
-        statuses = await _load_doc_status_json(kb_name)
-        candidate = statuses.get(document_id) if isinstance(statuses, dict) else None
-        if isinstance(candidate, dict):
-            status_info = dict(candidate)
-        chunk_ids = [
-            str(value) for value in status_info.get("chunks_list", []) if value
-        ]
-        if chunk_ids:
-            instance = await get_kb(kb_name)
-            records = await instance.lightrag.text_chunks.get_by_ids(chunk_ids)
-            chunks = _automatic_tag_chunk_records([
-                dict(record) for record in (records or []) if isinstance(record, dict)
-            ])
-            expected_ids = set(chunk_ids)
-            loaded_ids = {chunk["chunk_id"] for chunk in chunks}
-            if loaded_ids == expected_ids:
-                return chunks, {
-                    "chunk_count": len(chunks),
-                    "status_retries": attempt,
-                    "status_repaired": False,
-                    "chunk_source": "doc_status",
-                }
-            kb_logger.warning(
-                "[AUTO-TAGS] doc-status chunks incomplete; KB=%s doc=%s expected=%s loaded=%s",
-                kb_name, document_id, len(expected_ids), len(loaded_ids),
-            )
-        elif attempt < 2:
-            kb_logger.info(
-                "[AUTO-TAGS] doc-status chunks not visible; retry=%s/2 KB=%s doc=%s",
-                attempt + 1, kb_name, document_id,
-            )
-            await asyncio.sleep(0.2)
-
-    instance = instance or await get_kb(kb_name)
-    try:
-        chunks = _automatic_tag_chunk_records(
-            await query_chunks_by_document_id(instance.lightrag, document_id)
+    expected_ids = set(chunk_ids)
+    loaded_ids = {chunk["chunk_id"] for chunk in chunks}
+    if loaded_ids != expected_ids:
+        raise RuntimeError(
+            "persisted chunks are not fully visible for automatic tagging: "
+            f"expected={len(expected_ids)}, loaded={len(loaded_ids)}"
         )
-    except PersistedChunkQueryError:
-        kb_logger.warning(
-            "[AUTO-TAGS] persisted chunk fallback unavailable; KB=%s doc=%s",
-            kb_name, document_id, exc_info=True,
-        )
-        return [], {
-            "chunk_count": 0,
-            "status_retries": 2,
-            "status_repaired": False,
-            "chunk_source": "unavailable",
-        }
-    if not chunks:
-        kb_logger.warning(
-            "[AUTO-TAGS] no persisted chunks; upload remains available KB=%s doc=%s",
-            kb_name, document_id,
-        )
-        return [], {
-            "chunk_count": 0,
-            "status_retries": 2,
-            "status_repaired": False,
-            "chunk_source": "none",
-        }
-
-    recovered_ids = [chunk["chunk_id"] for chunk in chunks]
-    repaired = False
-    if status_info:
-        repaired_status = dict(status_info)
-        repaired_status["chunks_list"] = recovered_ids
-        repaired_status["chunks_count"] = len(recovered_ids)
-        try:
-            await instance.lightrag.doc_status.upsert({document_id: repaired_status})
-            await instance.lightrag.doc_status.index_done_callback()
-            repaired = True
-            kb_logger.info(
-                "[AUTO-TAGS] repaired doc-status from PG chunks; KB=%s doc=%s chunks=%s",
-                kb_name, document_id, len(recovered_ids),
-            )
-        except Exception:
-            kb_logger.warning(
-                "[AUTO-TAGS] PG chunk fallback succeeded but doc-status repair failed; KB=%s doc=%s",
-                kb_name, document_id, exc_info=True,
-            )
-    else:
-        kb_logger.warning(
-            "[AUTO-TAGS] PG chunk fallback found chunks but doc-status is unavailable; KB=%s doc=%s",
-            kb_name, document_id,
-        )
-    kb_logger.info(
-        "[AUTO-TAGS] using PG chunk fallback; KB=%s doc=%s chunks=%s",
-        kb_name, document_id, len(recovered_ids),
-    )
     return chunks, {
         "chunk_count": len(chunks),
-        "status_retries": 2,
-        "status_repaired": repaired,
-        "chunk_source": "postgres",
+        "status_retries": 0,
+        "status_repaired": False,
+        "chunk_source": "doc_status",
     }
 
 
@@ -2605,6 +3916,7 @@ async def _generate_uploaded_document_tags(
     """Generate local keyword tags for one canonical persisted document ID."""
     from raganything.services.auto_tagging import (
         automatic_tagging_enabled,
+        automatic_tagging_settings,
         build_automatic_tag_plan,
     )
     from raganything.services.kb_tag_repo import replace_automatic_document_tags
@@ -2621,15 +3933,102 @@ async def _generate_uploaded_document_tags(
             "assigned": 0, "skipped": 0, "document_tags": 0, "chunk_tags": 0,
             **recovery,
         }
-    plan = build_automatic_tag_plan(chunks, filename=filename)
+    async with _auto_tag_planning_semaphore:
+        plan = await asyncio.to_thread(
+            build_automatic_tag_plan,
+            chunks,
+            filename=filename,
+            **automatic_tagging_settings(),
+        )
     result = await replace_automatic_document_tags(
         kb_name,
         document_id,
         plan.document_tags,
         plan.chunk_tags,
         user_id=user_id,
+        document_tag_names_by_chunk=plan.document_tags_by_chunk,
     )
-    return {**result, **recovery}
+    raw_persisted_ids = result.get("tagged_chunk_ids")
+    if not isinstance(raw_persisted_ids, (list, tuple, set)):
+        raise RuntimeError("automatic tag persistence did not return coverage evidence")
+    persisted_tagged_ids = {str(chunk_id) for chunk_id in raw_persisted_ids}
+    tagged_chunk_count = len(set(plan.eligible_chunk_ids) & persisted_tagged_ids)
+    return {
+        **result,
+        **recovery,
+        "eligible_chunk_count": len(plan.eligible_chunk_ids),
+        "tagged_chunk_count": tagged_chunk_count,
+        "not_applicable_count": len(plan.not_applicable_chunk_ids),
+        "content_fingerprint": plan.content_fingerprint,
+    }
+
+
+async def _retry_deferred_uploaded_document_tags(
+    kb_name: str,
+    persisted_filename: str,
+    *,
+    display_filename: str = "",
+    user_id: int,
+) -> None:
+    """Compensate an upload whose PG document status was temporarily hidden."""
+    try:
+        document_id = await _resolve_uploaded_document_id(
+            kb_name, persisted_filename, attempts=10, retry_delay=2.0,
+        )
+        if not document_id:
+            kb_logger.error(
+                "[AUTO-TAGS] deferred retry exhausted; KB=%s file=%s",
+                kb_name, persisted_filename,
+            )
+            return
+        result = await _generate_uploaded_document_tags(
+            kb_name,
+            document_id,
+            filename=display_filename or persisted_filename,
+            user_id=user_id,
+        )
+        kb_logger.info(
+            "[AUTO-TAGS] deferred generation completed KB=%s doc=%s file=%s "
+            "source=%s assigned=%s",
+            kb_name, document_id, display_filename or persisted_filename,
+            result["chunk_source"], result["assigned"],
+        )
+    except Exception:
+        kb_logger.exception(
+            "[AUTO-TAGS] deferred generation failed; KB=%s file=%s",
+            kb_name, persisted_filename,
+        )
+
+
+def _schedule_deferred_uploaded_document_tags(
+    kb_name: str,
+    persisted_filename: str,
+    *,
+    display_filename: str = "",
+    user_id: int,
+) -> None:
+    task = asyncio.create_task(
+        _retry_deferred_uploaded_document_tags(
+            kb_name,
+            persisted_filename,
+            display_filename=display_filename,
+            user_id=user_id,
+        )
+    )
+    _deferred_auto_tag_tasks[task] = kb_name
+    task.add_done_callback(lambda completed: _deferred_auto_tag_tasks.pop(completed, None))
+
+
+async def _cancel_deferred_auto_tag_tasks(kb_name: str | None = None) -> None:
+    """Cancel tracked compensation before its KB or the process shuts down."""
+    tasks = [
+        task for task, task_kb in list(_deferred_auto_tag_tasks.items())
+        if kb_name is None or task_kb == kb_name
+    ]
+    for task in tasks:
+        task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 async def _process_uploaded_file(
@@ -2639,6 +4038,8 @@ async def _process_uploaded_file(
     enable_table: bool | None = None,
     enable_equation: bool | None = None,
     enable_video: bool | None = None,
+    retry_job_id: int | None = None,
+    retry_lease_token: str | None = None,
 ):
     """Background upload processing via isolated subprocess.
 
@@ -2673,6 +4074,8 @@ async def _process_uploaded_file(
     # Register for dedup tracking (inside try — file I/O can fail)
     file_hash = None
     worker_progress_state = {"track": "text"}
+    worker_slot: asyncio.Semaphore | None = None
+    worker_slot_acquired = False
     try:
         # Compute file hash and register for dedup (may fail if file was removed)
         file_hash = _compute_file_hash(file_path)
@@ -2684,6 +4087,13 @@ async def _process_uploaded_file(
             "processing",
             kb_name=kb_name,
             error_message="",
+        )
+        await _cleanup_retry_document_residue(
+            kb_name,
+            filename,
+            task_id,
+            file_hash or "",
+            retry_job_id=retry_job_id,
         )
         kb_logger.info(f"[UPLOAD] 任务={task_id} 文件={filename} KB={kb_name} 策略={actual_strategy}")
 
@@ -2708,6 +4118,9 @@ async def _process_uploaded_file(
             cmd.append("--enable-video")
             cmd.append("true" if enable_video else "false")
 
+        worker_slot = _get_ocr_worker_slot()
+        await worker_slot.acquire()
+        worker_slot_acquired = True
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
@@ -2720,6 +4133,9 @@ async def _process_uploaded_file(
         _kb_worker_procs.setdefault(kb_name, []).append((proc, task_id))
 
         worker_output_lines: list[str] = []
+        worker_started_at = time.monotonic()
+        worker_progress_state["last_progress_at"] = worker_started_at
+        worker_progress_event = asyncio.Event()
 
         async def _read_stream(stream):
             while True:
@@ -2729,50 +4145,106 @@ async def _process_uploaded_file(
                 text = line.decode("utf-8", errors="replace").strip()
                 if text:
                     worker_output_lines.append(text)
+                    if len(worker_output_lines) > 2000:
+                        del worker_output_lines[:-1000]
                     kb_logger.info(f"[WORKER:{task_id}] {text}")
-                    # Parse structured progress lines from worker
-                    m = re.match(
-                        r"\[PROGRESS\]\s+phase=(\S+)\s+status=(\S+)(?:\s+file=(.+))?",
-                        text,
-                    )
                     progress_update = _parse_worker_progress_line(text, worker_progress_state)
-                    if progress_update and task_id in processing_tasks:
-                        current_pct = processing_tasks[task_id].get("progress", 0) or 0
-                        next_pct = progress_update.get("progress")
-                        if next_pct is None:
-                            next_pct = current_pct
-                        else:
-                            next_pct = max(current_pct, next_pct)
-                        await update_task_progress(
-                            task_id,
-                            next_pct,
-                            message=progress_update.get("message", ""),
-                            phase=progress_update.get("phase", ""),
-                            phase_status=progress_update.get("phase_status", ""),
-                        )
-                        await ws_broadcast({
-                            "type": "progress",
-                            "task_id": task_id,
-                            "progress": next_pct,
-                            "phase": progress_update.get("phase", ""),
-                            "phase_status": progress_update.get("phase_status", ""),
-                            "message": progress_update.get("message", ""),
-                        })
+                    if progress_update:
+                        # A parsed page/chunk/stage update is a real Worker
+                        # heartbeat, even if the upload state was concurrently
+                        # removed during shutdown.
+                        worker_progress_state["last_progress_at"] = time.monotonic()
+                        worker_progress_state["last_progress"] = dict(progress_update)
+                        worker_progress_event.set()
+                        if task_id in processing_tasks:
+                            current_pct = processing_tasks[task_id].get("progress", 0) or 0
+                            next_pct = progress_update.get("progress")
+                            if next_pct is None:
+                                next_pct = current_pct
+                            else:
+                                next_pct = max(current_pct, next_pct)
+                            await update_task_progress(
+                                task_id,
+                                next_pct,
+                                message=progress_update.get("message", ""),
+                                phase=progress_update.get("phase", ""),
+                                phase_status=progress_update.get("phase_status", ""),
+                            )
+                            await ws_broadcast({
+                                "type": "progress",
+                                "task_id": task_id,
+                                "progress": next_pct,
+                                "phase": progress_update.get("phase", ""),
+                                "phase_status": progress_update.get("phase_status", ""),
+                                "message": progress_update.get("message", ""),
+                            })
 
         stdout_task = asyncio.ensure_future(_read_stream(proc.stdout))
         stderr_task = asyncio.ensure_future(_read_stream(proc.stderr))
         try:
-            timeout_sec = int(os.getenv("PROCESS_TIMEOUT", "3600"))
-            await asyncio.wait_for(proc.wait(), timeout=timeout_sec)
-        except asyncio.TimeoutError:
-            proc.kill()
-            await proc.wait()
-            raise RuntimeError(
-                f"子进程处理超时（{timeout_sec // 60}分钟），"
-                "文档过大或图片过多，可设置环境变量 PROCESS_TIMEOUT 调整"
+            idle_timeout_sec, max_elapsed_sec = _worker_watchdog_config()
+            await _wait_for_worker_with_watchdog(
+                proc,
+                worker_progress_event,
+                worker_progress_state,
+                idle_timeout=idle_timeout_sec,
+                max_elapsed=max_elapsed_sec,
+                started_at=worker_started_at,
             )
+        except asyncio.TimeoutError:
+            elapsed_sec = max(0.0, time.monotonic() - worker_started_at)
+            timeout_kind = worker_progress_state.get("watchdog_timeout", "idle")
+            last_progress = worker_progress_state.get("last_progress") or {}
+            resources_before_kill = _worker_resource_snapshot(proc)
+            returncode_before_kill = proc.returncode
+            if proc.returncode is None:
+                try:
+                    proc.kill()
+                except ProcessLookupError:
+                    # The child can exit between the watchdog decision and
+                    # kill(); still collect its final return code/output.
+                    pass
+            await proc.wait()
+            await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+            output_tail = "\n".join(worker_output_lines[-20:])[-4000:]
+            kb_logger.error(
+                "[WORKER-TIMEOUT] task=%s kb=%s file=%s kind=%s stage=%s "
+                "elapsed=%.1fs idle_timeout=%.1fs max_timeout=%.1fs "
+                "last_progress=%s returncode_before_kill=%s returncode=%s "
+                "resources=%s output_tail=%r",
+                task_id,
+                kb_name,
+                filename,
+                timeout_kind,
+                worker_progress_state.get("track", "unknown"),
+                elapsed_sec,
+                idle_timeout_sec,
+                max_elapsed_sec,
+                last_progress,
+                returncode_before_kill,
+                proc.returncode,
+                resources_before_kill,
+                output_tail,
+             )
+            raise WorkerProcessError({
+                "message": (
+                    f"子进程处理因{('总时长' if timeout_kind == 'max_elapsed' else '无进度')}超时 "
+                    f"（已运行 {elapsed_sec / 60:.1f} 分钟，"
+                    f"空闲阈值 {idle_timeout_sec / 60:.1f} 分钟）"
+                ),
+                "stage": "timeout",
+                "root_type": "WorkerWatchdogTimeout",
+                "retryable": True,
+                "secondary": [
+                    f"last_progress={last_progress}",
+                    f"resources={resources_before_kill}",
+                    f"output_tail={output_tail[-2000:]}",
+                ],
+            })
         await stdout_task
         await stderr_task
+        worker_slot.release()
+        worker_slot_acquired = False
 
         # Worker completed — remove from tracking list
         try:
@@ -2789,77 +4261,100 @@ async def _process_uploaded_file(
         if proc.returncode != 0:
             # Exit code 3 = worker conflict (file already locked by another worker)
             if proc.returncode == 3:
-                conflict_lines = [l for l in worker_output_lines if "already being processed" in l or "active processor" in l]
+                conflict_lines = [
+                    line for line in worker_output_lines
+                    if "already being processed" in line or "active processor" in line
+                ]
                 conflict_detail = conflict_lines[0] if conflict_lines else "文件正在被另一个 Worker 处理"
                 raise RuntimeError(f"处理冲突: {conflict_detail}")
-            failure_lines = [
-                line for line in worker_output_lines
-                if (
-                    "ERROR" in line
-                    or "未捕获异常:" in line
-                    or "处理失败:" in line
-                    or "Traceback (most recent call last)" in line
-                    or "OpenBLAS" in line
-                    or "MemoryError" in line
-                    or "Exception:" in line
-                )
-            ]
-            readable_lines = [line for line in failure_lines if "Traceback" not in line]
-            if readable_lines:
-                error_detail = "; ".join(readable_lines[-2:])
-            else:
-                diagnostic_tail = [line for line in worker_output_lines[-12:] if line]
-                error_detail = "; ".join(diagnostic_tail[-3:]) if diagnostic_tail else f"exit code {proc.returncode}"
-            error_detail = error_detail[:600]
-            raise RuntimeError(f"子进程处理失败: {error_detail}")
+            raise WorkerProcessError(
+                _parse_worker_error(worker_output_lines, proc.returncode)
+            )
 
         if worker_has_errors:
-            error_lines = [l for l in worker_output_lines if "ERROR:" in l and "Merging" in l]
+            error_lines = [
+                line for line in worker_output_lines
+                if "ERROR:" in line and "Merging" in line
+            ]
             error_detail = error_lines[0] if error_lines else "Merging stage failed"
             raise RuntimeError(f"子进程实体提取失败 (chunks=0): {error_detail}")
 
         # Verify data was actually persisted: the worker may exit 0 even when
         # LightRAG internally marked the document as failed.
         persisted_filename = os.path.basename(file_path)
-        document_id = await _verify_document_persisted(kb_name, persisted_filename)
+        document_id = await _resolve_uploaded_document_id(
+            kb_name, persisted_filename,
+        )
 
-        # Clear cached instance so next query reloads from disk.
-        # ⚠️ Do NOT call finalize_storages() on the cached instance — the
-        # worker subprocess already persisted the latest data to disk via
-        # RAGAnything.finalize_storages().  The server's cached instance
-        # holds PRE-WORKER state and would overwrite fresh data.
-        if kb_name in kb_instances:
-            del kb_instances[kb_name]
-            kb_logger.info(f"[KB] 清除缓存实例: {kb_name}（子进程写入新数据）")
-
-        await emit_progress(task_id, 100, "处理完成")
-        # Tags are generated after every chunk is durable. They improve linking
-        # and scoped Q&A, but must not make an otherwise successful upload fail.
+        await emit_progress(task_id, 96, "文档主体处理完成，正在生成标签")
+        # Tags are the final upload stage. Keep the task non-terminal until the
+        # durable tag job reaches a successful or explicit terminal state.
         if document_id:
             try:
-                tag_result = await _generate_uploaded_document_tags(
-                    kb_name, document_id, filename=filename, user_id=user_id,
+                from raganything.services.document_tagging import (
+                    enqueue_document_tagging,
+                    wait_for_document_tagging,
                 )
+
+                try:
+                    tag_job = await enqueue_document_tagging(
+                        kb_name,
+                        document_id,
+                        filename=filename,
+                        user_id=user_id,
+                        task_id=task_id,
+                    )
+                except Exception as exc:
+                    raise DocumentTaggingSchedulePendingError(
+                        f"自动标签任务暂时无法入队: {exc}", doc_id=document_id,
+                    ) from exc
                 kb_logger.info(
-                    "[AUTO-TAGS] generated KB=%s doc=%s file=%s source=%s assigned=%s document_tags=%s chunk_tags=%s skipped=%s",
-                    kb_name, document_id, filename, tag_result["chunk_source"],
-                    tag_result["assigned"], tag_result["document_tags"],
-                    tag_result["chunk_tags"], tag_result["skipped"],
+                    "[AUTO-TAGS] queued KB=%s doc=%s file=%s job=%s status=%s",
+                    kb_name, document_id, filename, tag_job["id"], tag_job["status"],
                 )
-            except Exception:
-                kb_logger.warning(
-                    "[AUTO-TAGS] generation failed but upload remains available: kb=%s doc=%s file=%s",
-                    kb_name, document_id, filename, exc_info=True,
-                )
+                await emit_progress(task_id, 97, "标签生成中")
+                try:
+                    tag_health = await wait_for_document_tagging(kb_name, document_id)
+                except TimeoutError as exc:
+                    raise DocumentTaggingSchedulePendingError(
+                        f"自动标签仍在后台处理中: {exc}", doc_id=document_id,
+                    ) from exc
+                else:
+                    if tag_health.get("tag_status") in {"failed", "disabled"}:
+                        raise DocumentTaggingStageError(
+                            tag_health.get("tag_error_message")
+                            or "文档主体已处理，但自动标签未完成",
+                            doc_id=document_id,
+                        )
+            except (DocumentTaggingStageError, DocumentTaggingSchedulePendingError):
+                raise
+            except Exception as exc:
+                raise DocumentTaggingStageError(
+                    f"自动标签阶段失败: {exc}", doc_id=document_id,
+                ) from exc
         else:
-            kb_logger.warning(
-                "[AUTO-TAGS] deferred because canonical document ID is unavailable; KB=%s file=%s",
-                kb_name, filename,
+            raise RuntimeError(
+                f"无法确认文档 ID，不能确认自动标签是否完成: {filename}"
             )
+        if retry_job_id is not None:
+            from raganything.services.upload_retry import complete_upload_retry
+
+            if not retry_lease_token or not await complete_upload_retry(
+                retry_job_id, retry_lease_token
+            ):
+                kb_logger.warning(
+                    "Ignoring stale retry completion: job=%s task=%s",
+                    retry_job_id, task_id,
+                )
+                return
+        await emit_progress(task_id, 100, "处理完成（含标签）")
         await complete_task(task_id)
         if task_id in processing_tasks:
             processing_tasks[task_id]["chunking_strategy"] = actual_strategy
-        await add_event("upload_complete", file=filename, task_id=task_id, kb=kb_name, user_id=user_id)
+        await add_event(
+            "upload_complete", file=filename, task_id=task_id, kb=kb_name,
+            user_id=user_id, outcome="", warning="",
+        )
         await ws_broadcast({"type": "upload_done", "task_id": task_id, "filename": filename, "kb": kb_name})
         # Update PG uploaded_files status → completed
         await pg_update_upload_status_by_task_id(
@@ -2867,6 +4362,8 @@ async def _process_uploaded_file(
             "completed",
             kb_name=kb_name,
             error_message="",
+            outcome="",
+            warning_message="",
         )
         _unregister_processing_file(kb_name, file_hash)
 
@@ -2887,6 +4384,169 @@ async def _process_uploaded_file(
             )
             return
 
+        if isinstance(e, DocumentTaggingSchedulePendingError):
+            if retry_job_id is not None and retry_lease_token:
+                try:
+                    from raganything.services.upload_retry import complete_upload_retry
+
+                    await complete_upload_retry(retry_job_id, retry_lease_token)
+                except Exception:
+                    kb_logger.warning(
+                        "Unable to close upload retry while tagging waits for scheduling: job=%s",
+                        retry_job_id,
+                        exc_info=True,
+                    )
+            await _defer_tagging_schedule(
+                task_id,
+                kb_name,
+                filename,
+                e.doc_id,
+                str(e),
+                file_hash,
+            )
+            return
+
+        if isinstance(e, DocumentTaggingStageError):
+            if retry_job_id is not None and retry_lease_token:
+                try:
+                    from raganything.services.upload_retry import complete_upload_retry
+
+                    await complete_upload_retry(retry_job_id, retry_lease_token)
+                except Exception:
+                    kb_logger.warning(
+                        "Unable to close upload retry after terminal tagging failure: job=%s",
+                        retry_job_id,
+                        exc_info=True,
+                    )
+            await _finalize_tagging_failure(
+                task_id,
+                kb_name,
+                filename,
+                user_id,
+                e.doc_id,
+                str(e),
+                file_hash,
+            )
+            return
+
+        if isinstance(e, WorkerProcessError) and e.stage in {"embedding", "vlm_ocr"}:
+            try:
+                residual_doc_id = await _resolve_uploaded_document_id(
+                    kb_name, os.path.basename(file_path),
+                )
+                if residual_doc_id:
+                    from raganything.services.document_quality import (
+                        cleanup_failed_invalid_residue,
+                    )
+
+                    await cleanup_failed_invalid_residue(
+                        kb_dir(kb_name),
+                        residual_doc_id,
+                        expected_filename=filename,
+                        allow_task_id=task_id,
+                        require_zero_vectors=False,
+                        require_path_placeholders=False,
+                    )
+            except ValueError as cleanup_error:
+                kb_logger.info(
+                    "Partial upload cleanup skipped: task=%s reason=%s",
+                    task_id, cleanup_error,
+                )
+            except Exception:
+                kb_logger.warning(
+                    "Partial upload cleanup failed: task=%s", task_id,
+                    exc_info=True,
+                )
+
+        if isinstance(e, WorkerProcessError) and e.stage in {
+            "multimodal", "finalize", "timeout",
+        }:
+            # Retry scheduling must not bypass document failure persistence.
+            # Mark the row incomplete first so tagging/degraded recovery cannot
+            # consume chunks written before the worker stopped.
+            await _fix_stuck_doc_status(
+                kb_name,
+                filename,
+                str(e),
+                task_id,
+                actual_strategy,
+                file_hash or "",
+            )
+
+        if isinstance(e, WorkerProcessError) and e.retryable:
+            from raganything.services.upload_retry import schedule_upload_retry
+
+            retry_job = await schedule_upload_retry(
+                task_id=task_id,
+                kb_name=kb_name,
+                file_path=file_path,
+                filename=filename,
+                file_hash=file_hash or "",
+                user_id=user_id,
+                stage=e.stage,
+                root_type=e.root_type,
+                error=str(e),
+                chunking_strategy=actual_strategy,
+                enable_image=enable_image,
+                enable_table=enable_table,
+                enable_equation=enable_equation,
+                enable_video=enable_video,
+                retry_job_id=retry_job_id,
+                lease_token=retry_lease_token,
+            )
+            if retry_job is not None:
+                retry_count = int(retry_job.get("attempt_count") or 0)
+                max_retries = int(retry_job.get("max_attempts") or 5)
+                retry_status = str(retry_job.get("status") or "retry_wait")
+                task = processing_tasks.setdefault(task_id, {"id": task_id})
+                task.update({
+                    "status": "failed" if retry_status == "terminal_failed" else "retry_wait",
+                    "retryable": retry_status != "terminal_failed",
+                    "failure_stage": e.stage,
+                    "retry_count": retry_count,
+                    "max_retries": max_retries,
+                    "next_retry_at": (
+                        retry_job["next_attempt_at"].isoformat()
+                        if retry_job.get("next_attempt_at") else None
+                    ),
+                    "error": str(e),
+                    "error_message": str(e),
+                })
+                await ws_broadcast({
+                    "type": "upload_retry_wait",
+                    "task_id": task_id,
+                    "filename": filename,
+                    "kb": kb_name,
+                    "retry_count": retry_count,
+                    "max_retries": max_retries,
+                    "next_retry_at": task.get("next_retry_at"),
+                })
+                if file_hash is not None:
+                    _unregister_processing_file(kb_name, file_hash)
+                return
+
+        if isinstance(e, WorkerProcessError) and e.stage in {
+            "model_preflight", "embedding", "vlm_ocr", "ocr",
+        }:
+            from raganything.services.state_service import fail_task
+
+            await fail_task(
+                task_id,
+                str(e),
+                failure_stage=e.stage,
+                retryable=False if e.stage == "ocr" else e.retryable,
+            )
+            await add_event(
+                "upload_error", file=filename, task_id=task_id,
+                error=str(e), failure_stage=e.stage, user_id=user_id,
+            )
+            await pg_update_upload_status_by_task_id(
+                task_id, "failed", kb_name=kb_name, error_message=str(e),
+            )
+            if file_hash is not None:
+                _unregister_processing_file(kb_name, file_hash)
+            return
+
         await _finalize_failed_upload(
             task_id,
             kb_name,
@@ -2896,6 +4556,9 @@ async def _process_uploaded_file(
             file_hash,
             actual_strategy,
         )
+    finally:
+        if worker_slot_acquired and worker_slot is not None:
+            worker_slot.release()
 
 
 # ── Per-KB Queue Drain ────────────────────────────────────
@@ -3316,7 +4979,10 @@ async def _reprocess_multimodal_for_kb(kb_name: str, user_id: int = 1):
                 kb_logger.info(
                     f"[REPROCESS-MULTIMODAL] 文档无多模态内容，标记完成: {file_ref}"
                 )
-                await instance._mark_multimodal_processing_complete(doc_id)
+                if not await instance._mark_multimodal_processing_complete(doc_id):
+                    raise RuntimeError(
+                        "multimodal completion marker could not be persisted"
+                    )
                 processed += 1
                 continue
 
@@ -3373,7 +5039,6 @@ __all__ = [
     "save_kb_meta",
     "kb_dir",
     "get_kb",
-    "create_kb",
     "delete_kb",
     "list_kbs",
     "list_kbs_by_domain",

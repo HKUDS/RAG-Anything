@@ -76,6 +76,15 @@ test_*
 !tests/test_upload_tasks.py
 !tests/test_semantic_chunking.py
 !tests/test_recovery_lifecycle.py
+!tests/test_agent_activity_sort.py
+!tests/test_agent_activity_sort_integration.py
+!tests/test_knowledge_delete_lifecycle.py
+!tests/test_pg_doc_status_read.py
+!tests/test_document_health_contract.py
+!tests/test_document_repair.py
+!tests/test_partial_upload_status.py
+!tests/test_document_tagging.py
+!tests/test_upload_retry_resilience.py
 
 # Cline files
 memory-bank/

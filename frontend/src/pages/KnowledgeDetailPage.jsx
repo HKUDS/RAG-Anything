@@ -2,8 +2,8 @@
 import {
   Search, Eye, Trash2, X, FileText, Clock, Filter, ZoomIn, ZoomOut, RotateCcw,
   Plus, Layers, Upload, Globe, FolderOpen, ClipboardPaste,
-  Loader2, CheckCircle2, XCircle, Scissors, ChevronDown, ChevronUp, Zap, Image,
-  ArrowLeft, Download, Pencil, Link2, Save, Table, Sigma, Video, ImageIcon
+  Loader2, CheckCircle2, XCircle, AlertTriangle, Scissors, ChevronDown, ChevronUp, Zap, Image,
+  ArrowLeft, Download, Pencil, Link2, Save, Table, Sigma, Video, ImageIcon, Tag
 } from 'lucide-react'
 import * as d3 from 'd3'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -11,6 +11,12 @@ import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { api, setCurrentKB } from '../utils/api'
 import ChunkingStrategySelector from '../components/ChunkingStrategySelector'
 import { getChunkingStrategyPresentation } from '../utils/chunkingStrategyPresentation'
+import { getDocumentTagPresentation } from '../utils/documentTagHealth'
+import {
+  getDocumentHealth,
+  getUploadTaskMessages,
+  getUploadTaskStatus,
+} from '../utils/documentHealth'
 import SideDrawer from '../components/SideDrawer'
 import TagRelationsPanel from '../components/TagRelationsPanel'
 import { useAuth } from '../context/AuthContext'
@@ -22,6 +28,8 @@ const STATUS = {
   handling: 'badge-info',
   completed: 'badge-success',
   failed: 'badge-error',
+  retry_wait: 'badge-warning',
+  degraded: 'badge-warning',
 }
 const STATUS_CN = {
   queued: '排队中',
@@ -30,6 +38,15 @@ const STATUS_CN = {
   handling: '入库中',
   completed: '已完成',
   failed: '失败',
+  retry_wait: '等待自动重试',
+  degraded: '已入库，图谱待补全',
+}
+const TAG_TONE_CLASS = {
+  success: 'text-sage-600',
+  info: 'text-sky-600',
+  warning: 'text-amber-600',
+  error: 'text-rose-600',
+  muted: 'text-ink-muted',
 }
 const PHASE_CN = {
   initializing: '初始化环境',
@@ -147,7 +164,7 @@ function getPhaseTransitionBuffer(model, tempo) {
 }
 
 function getVisualTaskProgress(task, nowMs) {
-  if (task.status === 'completed') return { value: 100, simulated: false }
+  if (task.status === 'completed' || task.outcome === 'degraded') return { value: 100, simulated: false }
 
   if (task.status === 'failed') {
     const failedValue = Number.isFinite(task.progress) ? clampProgress(task.progress) : null
@@ -478,6 +495,26 @@ function UploadSection({
     }
   }
 
+  const handleRetryTaskNow = async (task) => {
+    try {
+      await api.retryUploadTaskNow(task.task_id)
+      onToast?.(`${task.filename} 已安排立即重试`, 'success')
+      await refreshUploadTasks({ silent: true })
+    } catch (e) {
+      onToast?.(`立即重试失败: ${e.message}`, 'error')
+    }
+  }
+
+  const handleCancelRetry = async (task) => {
+    try {
+      await api.cancelUploadRetry(task.task_id)
+      onToast?.(`${task.filename} 已取消自动重试`, 'success')
+      await refreshUploadTasks({ silent: true })
+    } catch (e) {
+      onToast?.(`取消重试失败: ${e.message}`, 'error')
+    }
+  }
+
   const pendingLocalCount = localFiles.filter(item => !item.submitting).length
   const uploadSummaryCount = localFiles.length + serverTasks.length
 
@@ -706,9 +743,10 @@ function UploadSection({
                     </div>
                   ) : (
                     <>
-                      <p className="text-2xs text-ink-muted">处理中任务显示的是预计进度动画，会参考文档体量、文件类型和多模态阶段调整快慢；完成和失败状态为真实结果。</p>
                       {serverTasks.map(task => {
                       const deleting = deletingTaskIds.includes(task.task_id)
+                      const taskStatus = getUploadTaskStatus(task)
+                      const taskMessages = getUploadTaskMessages(task)
                       const visualProgress = getVisualTaskProgress(task, progressNow)
                       const progressValue = visualProgress.value
                       const taskTimestamp = (task.updated_at || task.created_at || '').replace('T', ' ').slice(0, 16)
@@ -718,16 +756,18 @@ function UploadSection({
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 min-w-0">
-                                {task.status === 'processing'
+                                {['processing', 'retry_wait'].includes(taskStatus)
                                   ? <Loader2 size={14} className="animate-spin text-amber-500 shrink-0" />
-                                  : task.status === 'completed'
+                                  : taskStatus === 'completed'
                                     ? <CheckCircle2 size={14} className="text-sage-500 shrink-0" />
-                                    : task.status === 'failed'
+                                    : taskStatus === 'degraded'
+                                      ? <AlertTriangle size={14} className="text-amber-500 shrink-0" />
+                                      : taskStatus === 'failed'
                                       ? <XCircle size={14} className="text-rose-500 shrink-0" />
                                       : <Clock size={14} className="text-sky-500 shrink-0" />}
                                 <span className="text-ink-body truncate">{task.filename}</span>
-                                <span className={STATUS[task.status] || 'badge-info'}>
-                                  {STATUS_CN[task.status] || task.status}
+                                <span className={STATUS[taskStatus] || 'badge-info'}>
+                                  {STATUS_CN[taskStatus] || taskStatus}
                                 </span>
                               </div>
 
@@ -747,7 +787,7 @@ function UploadSection({
                                   </span>
                                 )}
                                 {progressValue !== null && (
-                                  <span>{visualProgress.simulated ? '预计进度' : '进度'} {Math.round(progressValue)}%</span>
+                                  <span>进度 {Math.round(progressValue)}%</span>
                                 )}
                               </div>
 
@@ -755,9 +795,11 @@ function UploadSection({
                                 <div className="mt-2 h-1.5 rounded-full bg-cloud-300/70 overflow-hidden">
                                   <div
                                     className={`h-full rounded-full transition-all ${
-                                      task.status === 'failed'
+                                      taskStatus === 'failed'
                                         ? 'bg-rose-400'
-                                        : task.status === 'completed'
+                                        : taskStatus === 'degraded'
+                                          ? 'bg-amber-400'
+                                          : taskStatus === 'completed'
                                           ? 'bg-sage-400'
                                           : visualProgress.simulated
                                             ? `bg-sky-400${prefersReducedMotion ? '' : ' animate-pulse'}`
@@ -768,8 +810,19 @@ function UploadSection({
                                 </div>
                               )}
 
-                              {task.error_message && (
-                                <p className="mt-2 text-2xs text-rose-500 break-all">{task.error_message}</p>
+                              {taskMessages.error && (
+                                <p className="mt-2 text-2xs text-rose-500 break-all">{taskMessages.error}</p>
+                              )}
+                              {taskMessages.warning && (
+                                <p className="mt-2 flex items-start gap-1 text-2xs text-amber-600 break-all">
+                                  <AlertTriangle size={11} className="mt-0.5 shrink-0" />
+                                  <span>{taskMessages.warning}</span>
+                                </p>
+                              )}
+                              {taskStatus === 'retry_wait' && task.next_retry_at && (
+                                <p className="mt-1 text-2xs text-ink-muted">
+                                  下次重试：{String(task.next_retry_at).replace('T', ' ').slice(0, 19)}
+                                </p>
                               )}
                             </div>
 
@@ -782,6 +835,24 @@ function UploadSection({
                               >
                                 {deleting ? '删除中…' : '删除'}
                               </button>
+                            )}
+                            {taskStatus === 'retry_wait' && (
+                              <div className="flex shrink-0 gap-1">
+                                <button
+                                  className="btn-ghost text-xs py-0.5 px-2"
+                                  onClick={() => handleRetryTaskNow(task)}
+                                  title="立即重试"
+                                >
+                                  <RotateCcw size={12} />
+                                </button>
+                                <button
+                                  className="btn-ghost text-xs py-0.5 px-2 text-rose-500"
+                                  onClick={() => handleCancelRetry(task)}
+                                  title="取消自动重试"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -815,6 +886,7 @@ export default function KnowledgeDetailPage() {
   const [detailDoc, setDetailDoc] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [retryingDocIds, setRetryingDocIds] = useState([])
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [batchDeleting, setBatchDeleting] = useState(false)
   const [reprocessingMultimodal, setReprocessingMultimodal] = useState(false)
@@ -1189,12 +1261,55 @@ export default function KnowledgeDetailPage() {
 
   const filteredDocs = docs.filter(d => d.file?.toLowerCase().includes(filter.toLowerCase()))
 
+  const handleRetryDocument = async (doc) => {
+    if (!doc?.id || retryingDocIds.includes(doc.id)) return
+    setRetryingDocIds(prev => [...prev, doc.id])
+    try {
+      await api.retryDocument(doc.id)
+      showToast(
+        getDocumentHealth(doc) === 'degraded' ? '图谱补偿已提交' : '文档重试已提交',
+        'success',
+      )
+      await loadKBData()
+    } catch (e) {
+      showToast('提交重试失败: ' + e.message, 'error')
+    } finally {
+      setRetryingDocIds(prev => prev.filter(id => id !== doc.id))
+    }
+  }
+
   const handleDelete = async () => {
-    if (!deleteConfirm) return
+    const documentToDelete = deleteConfirm
+    if (!documentToDelete) return
+
+    const removeDocumentFromList = () => {
+      setDocs(prev => prev.filter(doc => doc.id !== documentToDelete.id))
+      setSelectedIds(prev => {
+        if (!prev.has(documentToDelete.id)) return prev
+        const next = new Set(prev)
+        next.delete(documentToDelete.id)
+        return next
+      })
+      setDeleteConfirm(null)
+    }
+
     setDeleting(true)
-    try { await api.deleteDocument(deleteConfirm.id); setDeleteConfirm(null); loadKBData() }
-    catch(e) { showToast('删除失败: ' + e.message, 'error') }
-    setDeleting(false)
+    try {
+      await api.deleteDocument(documentToDelete.id)
+      removeDocumentFromList()
+      showToast(`${documentToDelete.file} 已从列表移除`, 'success')
+      await loadKBData()
+    } catch (e) {
+      if (e?.status === 404) {
+        removeDocumentFromList()
+        showToast(`${documentToDelete.file} 已不存在，已从列表移除`, 'info')
+        await loadKBData()
+        return
+      }
+      showToast('删除失败: ' + e.message, 'error')
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const toggleSelect = (id) => {
@@ -1366,7 +1481,12 @@ export default function KnowledgeDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredDocs.map(doc => (
+                {filteredDocs.map(doc => {
+                  const health = getDocumentHealth(doc)
+                  const tagPresentation = getDocumentTagPresentation(doc)
+                  const canRetry = health === 'degraded' || (health === 'failed' && doc.retryable !== false)
+                  const retrying = retryingDocIds.includes(doc.id)
+                  return (
                   <tr key={doc.id} className="border-b border-cloud-200 hover:bg-cloud-200/50 transition-colors">
                     <td className="py-2.5">
                       <input type="checkbox" checked={selectedIds.has(doc.id)}
@@ -1388,10 +1508,29 @@ export default function KnowledgeDetailPage() {
                       </div>
                     </td>
                     <td className="py-2.5">
-                      <span className={STATUS[doc.status] || 'badge-info'}>
-                        {STATUS_CN[doc.status] || doc.status}
+                      <span
+                        className={STATUS[health] || 'badge-info'}
+                        title={health === 'degraded' ? (doc.error_message || '文本内容已可用，知识图谱正在等待补偿') : undefined}
+                      >
+                        {STATUS_CN[health] || health}
                         {doc.phase && PHASE_CN[doc.phase] ? <span className="ml-1 text-2xs opacity-70">({PHASE_CN[doc.phase]})</span> : null}
                       </span>
+                      {health === 'degraded' && doc.failure_stage && (
+                        <p className="mt-1 text-2xs text-amber-600">失败阶段：{PHASE_CN[doc.failure_stage] || doc.failure_stage}</p>
+                      )}
+                      {health === 'degraded' && doc.graph_status && (
+                        <p className="mt-1 text-2xs text-amber-600">图谱状态：{doc.graph_status}</p>
+                      )}
+                      <p
+                        className={`mt-1 flex items-center gap-1 text-2xs ${TAG_TONE_CLASS[tagPresentation.tone]}`}
+                        title={doc.tag_error_message || tagPresentation.detail}
+                      >
+                        <Tag size={11} aria-hidden="true" />
+                        <span>{tagPresentation.headline}</span>
+                      </p>
+                      {tagPresentation.densitySummary ? (
+                        <p className="mt-0.5 text-2xs text-ink-400">{tagPresentation.densitySummary}</p>
+                      ) : null}
                     </td>
                     <td className="py-2.5">
                       {doc.chunks > 0 ? (
@@ -1417,14 +1556,23 @@ export default function KnowledgeDetailPage() {
                       {doc.file !== '?' && (
                         <a href={api.downloadDocumentUrl(doc.full_id)} className="btn-ghost text-xs py-1 px-2 text-sky-600" title="下载" download><Download size={14}/></a>
                       )}
-                      {doc.status === 'failed' && (
-                        <button className="btn-ghost text-xs py-1 px-2 text-amber-600" onClick={async () => { await api.retryDocument(doc.id); loadKBData() }} title="重试"><RotateCcw size={14}/></button>
+                      {canRetry && (
+                        <button
+                          className="btn-ghost text-xs py-1 px-2 text-amber-600"
+                          onClick={() => handleRetryDocument(doc)}
+                          disabled={retrying}
+                          title={health === 'degraded' ? '补偿图谱' : '重试'}
+                          aria-label={health === 'degraded' ? `补偿 ${doc.file} 的知识图谱` : `重试 ${doc.file}`}
+                        >
+                          {retrying ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14}/>}
+                        </button>
                       )}
                       <button className="btn-ghost text-xs py-1 px-2" onClick={() => setDetailDoc(doc)} title="详情"><Eye size={14}/></button>
                       <button className="btn-ghost text-xs py-1 px-2 text-rose-500" onClick={() => setDeleteConfirm(doc)} title="删除"><Trash2 size={14}/></button>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
             {filteredDocs.length === 0 && (
@@ -1655,7 +1803,8 @@ export default function KnowledgeDetailPage() {
             </div>
             <div className="space-y-3 text-sm">
               {[{ icon: FileText, label: '文件名', val: detailDoc.file },
-                { icon: FileText, label: '状态', val: STATUS_CN[detailDoc.status] || detailDoc.status },
+                { icon: FileText, label: '状态', val: STATUS_CN[getDocumentHealth(detailDoc)] || getDocumentHealth(detailDoc) },
+                { icon: Table, label: '图谱状态', val: detailDoc.graph_status || '-' },
                 { icon: Scissors, label: '切块方式', val: getChunkingStrategyPresentation(detailDoc.chunking_strategy).name },
                 { icon: FileText, label: '分块数', val: detailDoc.chunks },
                 { icon: FileText, label: '字数', val: (detailDoc.length || 0).toLocaleString() },

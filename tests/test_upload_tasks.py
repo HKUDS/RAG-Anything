@@ -9,6 +9,508 @@ from fastapi import HTTPException
 from starlette.datastructures import UploadFile
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filename", ["maintenance-manual.pdf", "maintenance-manual.docx"])
+async def test_uploaded_document_id_resolution_refreshes_stale_cache_for_all_formats(
+    monkeypatch, filename,
+):
+    import raganything.services.kb_service as kb_service
+
+    cache = {"demo": object()}
+    calls = 0
+    sleeps = []
+
+    async def fake_verify(kb_name, persisted_filename):
+        nonlocal calls
+        calls += 1
+        assert kb_name == "demo"
+        assert persisted_filename == filename
+        assert "demo" not in cache
+        return None if calls == 1 else "doc-current"
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(kb_service, "kb_instances", cache)
+    monkeypatch.setattr(kb_service, "_verify_document_persisted", fake_verify)
+    monkeypatch.setattr(kb_service.asyncio, "sleep", fake_sleep)
+
+    document_id = await kb_service._resolve_uploaded_document_id(
+        "demo", filename, attempts=3, retry_delay=0.25,
+    )
+
+    assert document_id == "doc-current"
+    assert calls == 2
+    assert sleeps == [0.25]
+
+
+@pytest.mark.asyncio
+async def test_uploaded_document_id_resolution_returns_pending_when_pg_stays_hidden(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    async def unavailable(_kb_name, _filename):
+        raise kb_service.DocumentStatusPendingError("not visible")
+
+    sleeps = []
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(kb_service, "kb_instances", {})
+    monkeypatch.setattr(kb_service, "_verify_document_persisted", unavailable)
+    monkeypatch.setattr(kb_service.asyncio, "sleep", fake_sleep)
+
+    document_id = await kb_service._resolve_uploaded_document_id(
+        "demo", "manual.pdf", attempts=2, retry_delay=0,
+    )
+
+    assert document_id is None
+    assert sleeps == [0.0]
+
+
+@pytest.mark.asyncio
+async def test_verify_document_persisted_treats_empty_pg_status_as_pending(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    async def no_statuses(_kb_name):
+        return {}
+
+    monkeypatch.setattr(kb_service, "_load_doc_status_json", no_statuses)
+    monkeypatch.setattr(kb_service, "_pg_storage_ready", lambda: True)
+
+    with pytest.raises(kb_service.DocumentStatusPendingError, match="暂时无数据"):
+        await kb_service._verify_document_persisted("demo", "manual.pdf")
+
+
+@pytest.mark.asyncio
+async def test_verify_document_persisted_treats_pg_no_match_as_pending(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    async def existing_statuses(_kb_name):
+        return {
+            "doc-other": {
+                "file_path": "other.pdf",
+                "status": "processed",
+                "chunks_count": 3,
+            }
+        }
+
+    monkeypatch.setattr(kb_service, "_load_doc_status_json", existing_statuses)
+    monkeypatch.setattr(kb_service, "_pg_storage_ready", lambda: True)
+
+    with pytest.raises(kb_service.DocumentStatusPendingError, match="暂未找到"):
+        await kb_service._verify_document_persisted("demo", "manual.pdf")
+
+
+@pytest.mark.asyncio
+async def test_uploaded_document_id_resolution_fails_fast_for_explicit_failure(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    sleeps = []
+
+    async def failed(_kb_name, _filename):
+        raise kb_service.DocumentProcessingFailedError("status=failed")
+
+    async def fake_sleep(seconds):
+        sleeps.append(seconds)
+
+    monkeypatch.setattr(kb_service, "kb_instances", {})
+    monkeypatch.setattr(kb_service, "_verify_document_persisted", failed)
+    monkeypatch.setattr(kb_service.asyncio, "sleep", fake_sleep)
+
+    with pytest.raises(kb_service.DocumentProcessingFailedError, match="status=failed"):
+        await kb_service._resolve_uploaded_document_id(
+            "demo", "manual.pdf", attempts=5, retry_delay=1,
+        )
+
+    assert sleeps == []
+
+
+@pytest.mark.asyncio
+async def test_verify_document_persisted_rejects_terminal_zero_chunk_row(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    async def terminal_status(_kb_name):
+        return {
+            "doc-current": {
+                "file_path": "manual.pdf",
+                "status": "processed",
+                "chunks_count": 0,
+            }
+        }
+
+    monkeypatch.setattr(kb_service, "_load_doc_status_json", terminal_status)
+    monkeypatch.setattr(kb_service, "_pg_storage_ready", lambda: True)
+
+    with pytest.raises(kb_service.DocumentProcessingFailedError, match="chunks=0"):
+        await kb_service._verify_document_persisted("demo", "manual.pdf")
+
+
+@pytest.mark.asyncio
+async def test_deferred_tag_generation_resolves_and_writes_tags(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    generated = []
+
+    async def fake_resolve(kb_name, filename, **kwargs):
+        assert kwargs == {"attempts": 10, "retry_delay": 2.0}
+        assert (kb_name, filename) == ("demo", "a1b2c3d4_manual.pdf")
+        return "doc-current"
+
+    async def fake_generate(kb_name, document_id, *, filename, user_id):
+        generated.append((kb_name, document_id, filename, user_id))
+        return {"chunk_source": "postgres", "assigned": 6}
+
+    monkeypatch.setattr(kb_service, "_resolve_uploaded_document_id", fake_resolve)
+    monkeypatch.setattr(kb_service, "_generate_uploaded_document_tags", fake_generate)
+
+    await kb_service._retry_deferred_uploaded_document_tags(
+        "demo",
+        "a1b2c3d4_manual.pdf",
+        display_filename="manual.pdf",
+        user_id=7,
+    )
+
+    assert generated == [("demo", "doc-current", "manual.pdf", 7)]
+
+
+@pytest.mark.asyncio
+async def test_deferred_tag_task_is_tracked_until_completion(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def fake_retry(
+        _kb_name, _persisted_filename, *, display_filename, user_id,
+    ):
+        assert user_id == 7
+        assert display_filename == "manual.pdf"
+        started.set()
+        await release.wait()
+
+    monkeypatch.setattr(
+        kb_service, "_retry_deferred_uploaded_document_tags", fake_retry,
+    )
+    kb_service._deferred_auto_tag_tasks.clear()
+
+    kb_service._schedule_deferred_uploaded_document_tags(
+        "demo",
+        "a1b2c3d4_manual.pdf",
+        display_filename="manual.pdf",
+        user_id=7,
+    )
+    await started.wait()
+    assert len(kb_service._deferred_auto_tag_tasks) == 1
+
+    task = next(iter(kb_service._deferred_auto_tag_tasks))
+    release.set()
+    await task
+    await asyncio.sleep(0)
+
+    assert kb_service._deferred_auto_tag_tasks == {}
+
+
+@pytest.mark.asyncio
+async def test_verify_document_persisted_prefers_newest_same_name_upload(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    async def duplicate_statuses(_kb_name):
+        return {
+            "doc-old": {
+                "file_path": "11111111_manual.pdf",
+                "status": "processed",
+                "chunks_count": 2,
+                "updated_at": "2026-07-19T10:00:00",
+            },
+            "doc-current": {
+                "file_path": "22222222_manual.pdf",
+                "status": "processed",
+                "chunks_count": 3,
+                "updated_at": "2026-07-20T10:00:00",
+            },
+        }
+
+    monkeypatch.setattr(kb_service, "_load_doc_status_json", duplicate_statuses)
+    monkeypatch.setattr(kb_service, "_pg_storage_ready", lambda: True)
+
+    document_id = await kb_service._verify_document_persisted("demo", "manual.pdf")
+
+    assert document_id == "doc-current"
+
+
+@pytest.mark.asyncio
+async def test_cancel_deferred_tag_tasks_only_cancels_requested_kb(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    release = asyncio.Event()
+
+    async def wait_forever():
+        await release.wait()
+
+    first = asyncio.create_task(wait_forever())
+    second = asyncio.create_task(wait_forever())
+    kb_service._deferred_auto_tag_tasks.clear()
+    kb_service._deferred_auto_tag_tasks.update({first: "first", second: "second"})
+    first.add_done_callback(
+        lambda completed: kb_service._deferred_auto_tag_tasks.pop(completed, None)
+    )
+    second.add_done_callback(
+        lambda completed: kb_service._deferred_auto_tag_tasks.pop(completed, None)
+    )
+
+    await kb_service._cancel_deferred_auto_tag_tasks("first")
+
+    assert first.cancelled()
+    assert not second.done()
+    release.set()
+    await second
+    await asyncio.sleep(0)
+    assert kb_service._deferred_auto_tag_tasks == {}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("display_filename", "persisted_filename"),
+    [
+        ("manual.pdf", "a1b2c3d4_manual.pdf"),
+        ("manual.docx", "a1b2c3d4_manual.docx"),
+    ],
+)
+async def test_successful_upload_stays_completed_when_document_id_is_deferred(
+    monkeypatch, tmp_path, display_filename, persisted_filename,
+):
+    import raganything.services.kb_service as kb_service
+    import raganything.services.state_service as state_service
+    import raganything.services.ws_service as ws_service
+
+    file_path = tmp_path / persisted_filename
+    file_path.write_bytes(b"document")
+    pg_statuses = []
+    completed = []
+    finalized = []
+
+    class EmptyStream:
+        async def readline(self):
+            return b""
+
+    class SuccessfulWorker:
+        returncode = 0
+        stdout = EmptyStream()
+        stderr = EmptyStream()
+
+        async def wait(self):
+            return 0
+
+    async def fake_subprocess(*_args, **_kwargs):
+        return SuccessfulWorker()
+
+    async def fake_pg_status(_task_id, status, **_kwargs):
+        pg_statuses.append(status)
+
+    async def fake_resolve(kb_name, filename, **_kwargs):
+        assert (kb_name, filename) == ("demo", persisted_filename)
+        return None
+
+    async def fake_complete(task_id):
+        completed.append(task_id)
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def fake_finalize(*args, **_kwargs):
+        finalized.append((args, _kwargs))
+
+    monkeypatch.setattr(kb_service.asyncio, "create_subprocess_exec", fake_subprocess)
+    monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", fake_pg_status)
+    monkeypatch.setattr(kb_service, "_resolve_uploaded_document_id", fake_resolve)
+    monkeypatch.setattr(kb_service, "_finalize_failed_upload", fake_finalize)
+    monkeypatch.setattr(kb_service, "_register_processing_file", lambda *_args: None)
+    monkeypatch.setattr(kb_service, "_unregister_processing_file", lambda *_args: None)
+    monkeypatch.setattr(kb_service, "_kb_worker_procs", {})
+    monkeypatch.setattr(state_service, "processing_tasks", {"task-current": {}})
+    monkeypatch.setattr(state_service, "upsert_task_state", no_op)
+    monkeypatch.setattr(state_service, "update_task_progress", no_op)
+    monkeypatch.setattr(state_service, "complete_task", fake_complete)
+    monkeypatch.setattr(ws_service, "emit_progress", no_op)
+    monkeypatch.setattr(ws_service, "add_event", no_op)
+    monkeypatch.setattr(ws_service, "ws_broadcast", no_op)
+
+    await kb_service._process_uploaded_file(
+        "task-current",
+        str(file_path),
+        display_filename,
+        kb_name="demo",
+        user_id=7,
+    )
+
+    assert completed == []
+    assert pg_statuses == ["processing"]
+    assert "不能确认自动标签是否完成" in finalized[0][0][4]
+
+
+@pytest.mark.asyncio
+async def test_terminal_tag_failure_bypasses_generic_worker_failure_finalizer(
+    monkeypatch, tmp_path,
+):
+    import raganything.services.document_tagging as document_tagging
+    import raganything.services.kb_service as kb_service
+    import raganything.services.state_service as state_service
+    import raganything.services.ws_service as ws_service
+
+    file_path = tmp_path / "manual.pdf"
+    file_path.write_bytes(b"document")
+    tag_failures = []
+    generic_failures = []
+
+    class EmptyStream:
+        async def readline(self):
+            return b""
+
+    class SuccessfulWorker:
+        returncode = 0
+        stdout = EmptyStream()
+        stderr = EmptyStream()
+
+        async def wait(self):
+            return 0
+
+    async def fake_subprocess(*_args, **_kwargs):
+        return SuccessfulWorker()
+
+    async def resolve(*_args, **_kwargs):
+        return "doc-1"
+
+    async def enqueue(*_args, **_kwargs):
+        return {"id": 1, "status": "queued"}
+
+    async def wait(*_args, **_kwargs):
+        return {
+            "tag_status": "failed",
+            "tag_error_message": "tagging attempts exhausted",
+        }
+
+    async def finalize_tagging(*args, **kwargs):
+        tag_failures.append((args, kwargs))
+
+    async def finalize_generic(*args, **kwargs):
+        generic_failures.append((args, kwargs))
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(kb_service.asyncio, "create_subprocess_exec", fake_subprocess)
+    monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", no_op)
+    monkeypatch.setattr(kb_service, "_resolve_uploaded_document_id", resolve)
+    monkeypatch.setattr(kb_service, "_finalize_tagging_failure", finalize_tagging)
+    monkeypatch.setattr(kb_service, "_finalize_failed_upload", finalize_generic)
+    monkeypatch.setattr(kb_service, "_register_processing_file", lambda *_args: None)
+    monkeypatch.setattr(kb_service, "_unregister_processing_file", lambda *_args: None)
+    monkeypatch.setattr(kb_service, "_kb_worker_procs", {})
+    monkeypatch.setattr(document_tagging, "enqueue_document_tagging", enqueue)
+    monkeypatch.setattr(document_tagging, "wait_for_document_tagging", wait)
+    monkeypatch.setattr(state_service, "processing_tasks", {"task-current": {}})
+    monkeypatch.setattr(state_service, "upsert_task_state", no_op)
+    monkeypatch.setattr(state_service, "update_task_progress", no_op)
+    monkeypatch.setattr(state_service, "complete_task", no_op)
+    monkeypatch.setattr(ws_service, "emit_progress", no_op)
+    monkeypatch.setattr(ws_service, "add_event", no_op)
+    monkeypatch.setattr(ws_service, "ws_broadcast", no_op)
+
+    await kb_service._process_uploaded_file(
+        "task-current",
+        str(file_path),
+        "manual.pdf",
+        kb_name="demo",
+        user_id=7,
+    )
+
+    assert len(tag_failures) == 1
+    assert tag_failures[0][0][4:6] == ("doc-1", "tagging attempts exhausted")
+    assert generic_failures == []
+
+
+@pytest.mark.asyncio
+async def test_tag_enqueue_failure_stays_recoverable_and_nonterminal(
+    monkeypatch, tmp_path,
+):
+    import raganything.services.document_tagging as document_tagging
+    import raganything.services.kb_service as kb_service
+    import raganything.services.state_service as state_service
+    import raganything.services.ws_service as ws_service
+
+    file_path = tmp_path / "manual.pdf"
+    file_path.write_bytes(b"document")
+    deferred = []
+    terminal = []
+    generic = []
+
+    class EmptyStream:
+        async def readline(self):
+            return b""
+
+    class SuccessfulWorker:
+        returncode = 0
+        stdout = EmptyStream()
+        stderr = EmptyStream()
+
+        async def wait(self):
+            return 0
+
+    async def fake_subprocess(*_args, **_kwargs):
+        return SuccessfulWorker()
+
+    async def resolve(*_args, **_kwargs):
+        return "doc-1"
+
+    async def enqueue(*_args, **_kwargs):
+        raise ConnectionError("tag queue database unavailable")
+
+    async def defer(*args, **kwargs):
+        deferred.append((args, kwargs))
+
+    async def finalize_tag(*args, **kwargs):
+        terminal.append((args, kwargs))
+
+    async def finalize_generic(*args, **kwargs):
+        generic.append((args, kwargs))
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr(kb_service.asyncio, "create_subprocess_exec", fake_subprocess)
+    monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", no_op)
+    monkeypatch.setattr(kb_service, "_resolve_uploaded_document_id", resolve)
+    monkeypatch.setattr(kb_service, "_defer_tagging_schedule", defer)
+    monkeypatch.setattr(kb_service, "_finalize_tagging_failure", finalize_tag)
+    monkeypatch.setattr(kb_service, "_finalize_failed_upload", finalize_generic)
+    monkeypatch.setattr(kb_service, "_register_processing_file", lambda *_args: None)
+    monkeypatch.setattr(kb_service, "_unregister_processing_file", lambda *_args: None)
+    monkeypatch.setattr(kb_service, "_kb_worker_procs", {})
+    monkeypatch.setattr(document_tagging, "enqueue_document_tagging", enqueue)
+    monkeypatch.setattr(state_service, "processing_tasks", {"task-current": {}})
+    monkeypatch.setattr(state_service, "upsert_task_state", no_op)
+    monkeypatch.setattr(state_service, "update_task_progress", no_op)
+    monkeypatch.setattr(state_service, "complete_task", no_op)
+    monkeypatch.setattr(ws_service, "emit_progress", no_op)
+    monkeypatch.setattr(ws_service, "add_event", no_op)
+    monkeypatch.setattr(ws_service, "ws_broadcast", no_op)
+
+    await kb_service._process_uploaded_file(
+        "task-current",
+        str(file_path),
+        "manual.pdf",
+        kb_name="demo",
+        user_id=7,
+    )
+
+    assert len(deferred) == 1
+    assert deferred[0][0][3] == "doc-1"
+    assert "暂时无法入队" in deferred[0][0][4]
+    assert terminal == []
+    assert generic == []
+
+
 def test_worker_subprocess_env_bounds_numeric_library_threads(monkeypatch):
     from raganything.services.kb_service import _worker_subprocess_env
 
@@ -206,6 +708,22 @@ def test_parse_worker_progress_line_maps_merge_milestones():
     assert event["progress"] == 99
 
 
+def test_parse_worker_progress_line_accepts_namespaced_phase_for_watchdog():
+    from raganything.services.kb_service import _parse_worker_progress_line
+
+    state = {"track": "text"}
+    event = _parse_worker_progress_line(
+        "[PROGRESS] phase=multimodal-tasks/graph-building "
+        "status=relations file=manual.pdf",
+        state,
+    )
+
+    assert event["phase"] == "multimodal-tasks/graph-building"
+    assert event["phase_status"] == "relations"
+    assert event["progress"] == 97
+    assert state["track"] == "multimodal"
+
+
 @pytest.mark.asyncio
 async def test_list_upload_tasks_merges_runtime_status(monkeypatch):
     from raganything.routers.knowledge import list_upload_tasks
@@ -226,6 +744,8 @@ async def test_list_upload_tasks_merges_runtime_status(monkeypatch):
             "file_size": 8192,
             "status": "completed",
             "error_message": "",
+            "outcome": "degraded",
+            "warning_message": "graph pending",
             "created_at": "2026-07-08T09:00:00",
             "updated_at": "2026-07-08T09:05:00",
         },
@@ -271,6 +791,8 @@ async def test_list_upload_tasks_merges_runtime_status(monkeypatch):
     assert result["tasks"][1]["status"] == "completed"
     assert result["tasks"][1]["progress"] == 100
     assert result["tasks"][1]["file_size"] == 8192
+    assert result["tasks"][1]["outcome"] == "degraded"
+    assert result["tasks"][1]["warning_message"] == "graph pending"
     assert result["tasks"][1]["can_delete"] is False
 
 
@@ -637,23 +1159,221 @@ async def test_parser_stage_failure_creates_retryable_doc_status(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_fix_stuck_status_does_not_rewrite_processed_exact_filename(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    saved = []
+
+    async def load(_kb_name):
+        return {
+            "doc-1": {
+                "file_path": "manual.pdf",
+                "status": "processed",
+                "chunks_count": 2,
+                "chunks_list": ["chunk-1", "chunk-2"],
+            }
+        }
+
+    async def save(_kb_name, data):
+        saved.append(data)
+
+    monkeypatch.setattr(kb_service, "_load_doc_status_json", load)
+    monkeypatch.setattr(kb_service, "_save_doc_status_json", save)
+
+    await kb_service._fix_stuck_doc_status(
+        "demo-kb", "manual.pdf", "tagging failed", "task-1",
+    )
+
+    assert saved == []
+
+
+@pytest.mark.asyncio
+async def test_fix_stuck_status_does_not_claim_unscoped_failed_residue(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    status = {
+        "doc-old": {
+            "file_path": "manual.pdf",
+            "status": "failed",
+            "chunks_count": 744,
+            "metadata": {"cleanup_pending": True, "residual_data": True},
+        }
+    }
+    saved = []
+
+    async def load(_kb_name):
+        return status
+
+    async def save(_kb_name, data):
+        saved.append(data)
+
+    monkeypatch.setattr(kb_service, "_load_doc_status_json", load)
+    monkeypatch.setattr(kb_service, "_save_doc_status_json", save)
+
+    await kb_service._fix_stuck_doc_status(
+        "demo-kb", "manual.pdf", "worker timeout", "new-task", file_hash="new-hash"
+    )
+
+    assert saved == []
+    assert status["doc-old"]["metadata"] == {
+        "cleanup_pending": True,
+        "residual_data": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_fix_stuck_status_skips_ambiguous_unscoped_active_rows(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    status = {
+        "doc-unscoped": {"file_path": "manual.pdf", "status": "handling"},
+        "doc-scoped": {
+            "file_path": "manual.pdf",
+            "status": "processing",
+            "track_id": "other-task",
+        },
+    }
+    saved = []
+
+    async def load(_kb_name):
+        return status
+
+    async def save(_kb_name, data):
+        saved.append(data)
+
+    monkeypatch.setattr(kb_service, "_load_doc_status_json", load)
+    monkeypatch.setattr(kb_service, "_save_doc_status_json", save)
+
+    await kb_service._fix_stuck_doc_status(
+        "demo-kb", "manual.pdf", "worker timeout", "new-task", file_hash="new-hash"
+    )
+
+    assert saved == []
+    assert status["doc-unscoped"]["status"] == "handling"
+    assert status["doc-scoped"]["status"] == "processing"
+
+
+@pytest.mark.asyncio
+async def test_find_degraded_document_requires_current_upload_provenance(monkeypatch):
+    import raganything.services.kb_service as kb_service
+
+    async def load(_kb_name):
+        return {
+            "doc-old": {
+                "file_path": "manual.pdf",
+                "status": "failed",
+                "metadata": {"content_ready": True},
+            },
+            "doc-current": {
+                "file_path": "a1b2c3d4_manual.pdf",
+                "status": "failed",
+                "track_id": "task-current",
+                "metadata": {
+                    "task_id": "task-current",
+                    "file_hash": "hash-current",
+                    "content_ready": True,
+                },
+            },
+        }
+
+    called = []
+
+    async def mark(_kb_name, doc_id, _info, *, error_message):
+        called.append((doc_id, error_message))
+        return {"content_ready": True}
+
+    monkeypatch.setattr(kb_service, "_load_doc_status_json", load)
+    monkeypatch.setattr(kb_service, "_mark_degraded_document", mark)
+
+    result = await kb_service._find_degraded_document(
+        "demo-kb",
+        "manual.pdf",
+        "worker timeout",
+        task_id="task-current",
+        file_hash="hash-current",
+    )
+
+    assert result == ("doc-current", {"content_ready": True})
+    assert called == [("doc-current", "worker timeout")]
+
+
+@pytest.mark.asyncio
+async def test_finalize_tagging_failure_preserves_document_and_marks_task(monkeypatch):
+    from raganything.services import kb_service, state_service, ws_service
+
+    calls = []
+
+    async def fail(task_id, error, **kwargs):
+        calls.append(("task", task_id, error, kwargs))
+
+    async def event(name, **kwargs):
+        calls.append(("event", name, kwargs))
+
+    async def broadcast(payload):
+        calls.append(("broadcast", payload))
+
+    async def update(task_id, status, **kwargs):
+        calls.append(("upload", task_id, status, kwargs))
+
+    monkeypatch.setattr(state_service, "fail_task", fail)
+    monkeypatch.setattr(ws_service, "add_event", event)
+    monkeypatch.setattr(ws_service, "ws_broadcast", broadcast)
+    monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", update)
+    monkeypatch.setattr(kb_service, "_unregister_processing_file", lambda *args: calls.append(("unregister", args)))
+
+    await kb_service._finalize_tagging_failure(
+        "task-1",
+        "demo-kb",
+        "manual.pdf",
+        7,
+        "doc-1",
+        "automatic tagging did not complete",
+        "hash-1",
+    )
+
+    assert calls[0] == (
+        "task",
+        "task-1",
+        "automatic tagging did not complete",
+        {"outcome": "terminal_failed", "failure_stage": "tagging", "retryable": False},
+    )
+    assert calls[1][0:2] == ("event", "upload_error")
+    assert calls[1][2]["doc_id"] == "doc-1"
+    assert calls[1][2]["failure_stage"] == "tagging"
+    assert calls[2][0] == "broadcast"
+    assert calls[3] == (
+        "upload",
+        "task-1",
+        "failed",
+        {"kb_name": "demo-kb", "error_message": "automatic tagging did not complete", "outcome": "terminal_failed"},
+    )
+    assert calls[4] == ("unregister", ("demo-kb", "hash-1"))
+
+
+@pytest.mark.asyncio
 async def test_failed_upload_persists_document_before_terminal_task(monkeypatch):
     from raganything.services import kb_service
     from raganything.services import state_service, ws_service
 
     calls = []
 
-    async def fake_fix(kb_name, filename, error_message, task_id):
-        calls.append(("document", kb_name, filename, error_message, task_id))
+    async def fake_fix(kb_name, filename, error_message, task_id, *provenance):
+        calls.append((
+            "document", kb_name, filename, error_message, task_id, provenance,
+        ))
 
-    async def fake_upsert(task_id, task_data):
-        calls.append(("task", task_id, task_data))
+    async def fake_fail(task_id, error, **kwargs):
+        calls.append(("task", task_id, {"status": "failed", "error": error, **kwargs}))
 
     async def fake_event(event_name, **kwargs):
         calls.append(("event", event_name, kwargs))
 
+    async def no_degraded_document(*_args, **_kwargs):
+        return None
+
     monkeypatch.setattr(kb_service, "_fix_stuck_doc_status", fake_fix)
-    monkeypatch.setattr(state_service, "upsert_task_state", fake_upsert)
+    monkeypatch.setattr(kb_service, "_find_degraded_document", no_degraded_document)
+    monkeypatch.setattr(state_service, "fail_task", fake_fail)
     monkeypatch.setattr(ws_service, "add_event", fake_event)
 
     await kb_service._finalize_failed_upload(
@@ -734,3 +1454,303 @@ async def test_retry_document_creates_visible_queued_task_and_resets_upload(monk
     assert upload_updates[0][1]["task_id"] == result["task_id"]
     assert queue.get_nowait()["task_id"] == result["task_id"]
     assert events[0][0][0] == "upload_retry_queued"
+
+
+@pytest.mark.asyncio
+async def test_completed_task_clears_recoverable_failure_fields(monkeypatch):
+    from raganything.services import state_service
+
+    task_id = "task-recovered"
+    monkeypatch.setattr(state_service, "_task_pg_ready", lambda: False)
+    monkeypatch.setattr(state_service, "processing_tasks", {
+        task_id: {
+            "status": "retry_wait",
+            "progress": 97,
+            "error": "temporary tag queue outage",
+            "error_message": "temporary tag queue outage",
+            "failure_stage": "tagging",
+            "retryable": True,
+        }
+    })
+
+    await state_service.complete_task(task_id)
+
+    task = state_service.processing_tasks[task_id]
+    assert task["status"] == "completed"
+    assert task["progress"] == 100
+    assert task["error_message"] == ""
+    assert task["failure_stage"] == ""
+    assert task["retryable"] is False
+
+
+@pytest.mark.asyncio
+async def test_degraded_graph_upload_waits_for_linked_tag_job(monkeypatch):
+    from raganything.services import document_tagging, kb_service, state_service, ws_service
+
+    calls = []
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def degraded(*_args, **_kwargs):
+        return "doc-1", {"retryable": False}
+
+    async def enqueue(*args, **kwargs):
+        calls.append(("enqueue", args, kwargs))
+        return {"id": 3, "status": "queued"}
+
+    async def wait(*args, **kwargs):
+        calls.append(("wait", args, kwargs))
+        return {"tag_status": "ready"}
+
+    async def complete(task_id, **kwargs):
+        calls.append(("complete", task_id, kwargs))
+
+    async def event(*args, **kwargs):
+        calls.append(("event", args, kwargs))
+
+    async def update(*args, **kwargs):
+        calls.append(("upload", args, kwargs))
+
+    monkeypatch.setattr(kb_service, "_fix_stuck_doc_status", no_op)
+    monkeypatch.setattr(kb_service, "_find_degraded_document", degraded)
+    monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", update)
+    monkeypatch.setattr(kb_service, "_unregister_processing_file", lambda *args: calls.append(("unregister", args)))
+    monkeypatch.setattr(document_tagging, "enqueue_document_tagging", enqueue)
+    monkeypatch.setattr(document_tagging, "wait_for_document_tagging", wait)
+    monkeypatch.setattr(state_service, "complete_task", complete)
+    monkeypatch.setattr(ws_service, "add_event", event)
+
+    await kb_service._finalize_failed_upload(
+        "task-1", "demo", "manual.pdf", 7, "graph timeout", "hash-1",
+    )
+
+    assert calls[0] == (
+        "enqueue",
+        ("demo", "doc-1"),
+        {"filename": "manual.pdf", "user_id": 7, "task_id": "task-1"},
+    )
+    assert calls[1][0] == "wait"
+    assert calls[2] == (
+        "complete", "task-1", {"outcome": "degraded", "warning": "文本内容已入库，知识图谱抽取待补全"},
+    )
+    assert calls[-1] == ("unregister", ("demo", "hash-1"))
+
+
+@pytest.mark.asyncio
+async def test_worker_watchdog_refreshes_on_progress(monkeypatch):
+    import asyncio
+    import time
+    from raganything.services import kb_service
+
+    class FakeProcess:
+        def __init__(self):
+            self.returncode = None
+            self.finished = asyncio.Event()
+
+        async def wait(self):
+            await self.finished.wait()
+            return self.returncode
+
+        def finish(self):
+            self.returncode = 0
+            self.finished.set()
+
+    process = FakeProcess()
+    progress_event = asyncio.Event()
+    state = {"last_progress_at": time.monotonic()}
+
+    async def emit_progress_then_finish():
+        await asyncio.sleep(0.05)
+        state["last_progress_at"] = time.monotonic()
+        progress_event.set()
+        await asyncio.sleep(0.05)
+        process.finish()
+
+    producer = asyncio.create_task(emit_progress_then_finish())
+    await kb_service._wait_for_worker_with_watchdog(
+        process, progress_event, state, idle_timeout=0.2, max_elapsed=1.0,
+    )
+    await producer
+    assert process.returncode == 0
+    assert "watchdog_timeout" not in state
+
+
+@pytest.mark.asyncio
+async def test_worker_watchdog_times_out_without_progress():
+    import asyncio
+    import time
+    from raganything.services import kb_service
+
+    class FakeProcess:
+        returncode = None
+
+        async def wait(self):
+            await asyncio.Event().wait()
+
+    state = {"last_progress_at": time.monotonic()}
+    with pytest.raises(asyncio.TimeoutError):
+        await kb_service._wait_for_worker_with_watchdog(
+            FakeProcess(), asyncio.Event(), state, idle_timeout=0.01,
+        )
+    assert state["watchdog_timeout"] == "idle"
+
+
+def test_worker_watchdog_config_preserves_process_timeout_fallback(monkeypatch):
+    from raganything.services import kb_service
+
+    monkeypatch.delenv("PROCESS_IDLE_TIMEOUT", raising=False)
+    monkeypatch.delenv("PROCESS_MAX_TIMEOUT", raising=False)
+    monkeypatch.setenv("PROCESS_TIMEOUT", "7200")
+    assert kb_service._worker_watchdog_config() == (7200.0, 0.0)
+
+    monkeypatch.setenv("PROCESS_IDLE_TIMEOUT", "45")
+    monkeypatch.setenv("PROCESS_MAX_TIMEOUT", "86400")
+    assert kb_service._worker_watchdog_config() == (45.0, 86400.0)
+
+
+@pytest.mark.asyncio
+async def test_degraded_state_rejects_partial_multimodal_document(monkeypatch):
+    from raganything.services import kb_service, document_quality
+
+    quality_calls = 0
+
+    async def quality(*_args, **_kwargs):
+        nonlocal quality_calls
+        quality_calls += 1
+        return {"ready": True}
+
+    monkeypatch.setattr(kb_service, "_load_text_chunks_json", lambda _kb: {})
+    monkeypatch.setattr(document_quality, "evaluate_content_readiness", quality)
+
+    result = await kb_service._mark_degraded_document(
+        "default",
+        "doc-partial",
+        {
+            "chunks_count": 1,
+            "chunks_list": ["chunk-1"],
+            "metadata": {
+                "content_ready": False,
+                "multimodal_processed": False,
+                "failure_stage": "worker_timeout",
+            },
+        },
+        error_message="worker timeout",
+    )
+
+    assert result is None
+    assert quality_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_degraded_state_rejects_extra_persisted_chunk(monkeypatch):
+    from raganything.services import kb_service, document_quality
+
+    quality_calls = 0
+
+    async def quality(*_args, **_kwargs):
+        nonlocal quality_calls
+        quality_calls += 1
+        return {"ready": True}
+
+    async def persisted(_kb_name, _doc_id):
+        return {"chunk-1", "chunk-multimodal"}
+
+    monkeypatch.setattr(
+        kb_service, "_load_persisted_chunk_ids_for_document", persisted,
+    )
+    monkeypatch.setattr(kb_service, "_load_text_chunks_json", lambda _kb: {})
+    monkeypatch.setattr(document_quality, "evaluate_content_readiness", quality)
+
+    result = await kb_service._mark_degraded_document(
+        "default",
+        "doc-partial",
+        {
+            "chunks_count": 1,
+            "chunks_list": ["chunk-1"],
+            "metadata": {
+                "content_ready": True,
+                "multimodal_processed": True,
+            },
+        },
+        error_message="graph extraction timed out",
+    )
+
+    assert result is None
+    assert quality_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_retry_cleanup_targets_marked_doc_and_accepts_enum_status(monkeypatch):
+    from enum import Enum
+    from raganything.services import kb_service
+
+    class Status(Enum):
+        FAILED = "failed"
+
+    target = {
+        "status": Status.FAILED,
+        "file_path": "manual.pdf",
+        "chunks_list": ["chunk-old"],
+        "metadata": {
+            "cleanup_pending": True,
+            "residual_data": True,
+            "task_id": "retry-task",
+            "file_hash": "hash-target",
+        },
+    }
+    other = {
+        "status": "failed",
+        "file_path": "manual.pdf",
+        "chunks_list": ["chunk-other"],
+        "metadata": {
+            "cleanup_pending": True,
+            "residual_data": True,
+            "task_id": "other-task",
+            "file_hash": "hash-other",
+        },
+    }
+
+    class FakeDocStatus:
+        def __init__(self):
+            self.records = {"doc-target": target}
+
+        async def get_by_id(self, doc_id):
+            return self.records.get(doc_id)
+
+        async def upsert(self, payload):
+            self.records.update(payload)
+
+        async def index_done_callback(self):
+            return None
+
+    class FakeLightRAG:
+        def __init__(self):
+            self.doc_status = FakeDocStatus()
+            self.deleted = []
+
+        async def adelete_by_doc_id(self, doc_id, delete_llm_cache=False):
+            self.deleted.append((doc_id, delete_llm_cache))
+            self.doc_status.records.pop(doc_id, None)
+            return SimpleNamespace(status="success")
+
+    fake_lightrag = FakeLightRAG()
+    fake_rag = SimpleNamespace(lightrag=fake_lightrag, multimodal_status_cache=None)
+
+    async def load_status(_kb_name):
+        return {"doc-target": target, "doc-other": other}
+
+    monkeypatch.setattr(kb_service, "_load_doc_status_json", load_status)
+    monkeypatch.setattr(kb_service, "_pg_storage_ready", lambda: False)
+    monkeypatch.setattr(kb_service, "kb_instances", {"default": fake_rag})
+
+    cleaned = await kb_service._cleanup_retry_document_residue(
+        "default",
+        "manual.pdf",
+        "retry-task",
+        "hash-target",
+        retry_job_id=42,
+    )
+
+    assert cleaned == ["doc-target"]
+    assert fake_lightrag.deleted == [("doc-target", True)]

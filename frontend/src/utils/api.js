@@ -87,6 +87,30 @@ async function readUploadJsonResponse(res) {
   return data
 }
 
+async function listAllKnowledgeTags({ kb, query = '', signal } = {}) {
+  const pageSize = 200
+  const tags = []
+  const seen = new Set()
+  let offset = 0
+  while (true) {
+    const result = await fetchJson(
+      `/knowledge/tags?kb=${encodeURIComponent(kb)}&q=${encodeURIComponent(query)}&limit=${pageSize}&offset=${offset}`,
+      { signal },
+    )
+    const page = Array.isArray(result.tags) ? result.tags : []
+    page.forEach(tag => {
+      const key = String(tag.id)
+      if (!seen.has(key)) {
+        seen.add(key)
+        tags.push(tag)
+      }
+    })
+    if (page.length < pageSize) break
+    offset += page.length
+  }
+  return { tags }
+}
+
 async function request(url, options = {}) {
   if (!currentKB) {
     console.warn(`[api] 跳过请求 ${url}：currentKB 未初始化`)
@@ -305,13 +329,20 @@ export const api = {
     `/knowledge/documents/${encodeURIComponent(docId)}/chunks?kb=${encodeURIComponent(kb)}`,
     { signal }
   ),
+  regenerateDocumentTags: (docId, { kb = currentKB } = {}) => request(
+    `/knowledge/documents/${encodeURIComponent(docId)}/tags/regenerate?kb=${encodeURIComponent(kb)}`,
+    { method: 'POST' },
+  ),
   getDocumentChunk: (docId, chunkId, { kb = currentKB, signal } = {}) => fetchJson(
     `/knowledge/documents/${encodeURIComponent(docId)}/chunks/${encodeURIComponent(chunkId)}?kb=${encodeURIComponent(kb)}`,
     { signal }
   ),
-  listKnowledgeTags: ({ kb = currentKB, query = '', limit = 100, signal } = {}) => fetchJson(
-    `/knowledge/tags?kb=${encodeURIComponent(kb)}&q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}`,
+  listKnowledgeTags: ({ kb = currentKB, query = '', limit = 100, offset = 0, signal } = {}) => fetchJson(
+    `/knowledge/tags?kb=${encodeURIComponent(kb)}&q=${encodeURIComponent(query)}&limit=${encodeURIComponent(limit)}&offset=${encodeURIComponent(offset)}`,
     { signal }
+  ),
+  listAllKnowledgeTags: ({ kb = currentKB, query = '', signal } = {}) => (
+    listAllKnowledgeTags({ kb, query, signal })
   ),
   getKnowledgeTagLinks: (tagId, { kb = currentKB, signal } = {}) => fetchJson(
     `/knowledge/tags/${encodeURIComponent(tagId)}/links?kb=${encodeURIComponent(kb)}`,
@@ -334,6 +365,8 @@ export const api = {
   retryDocument: (id) => request(`/knowledge/documents/${id}/retry`, { method: 'POST' }),
   getUploadTasks: () => request('/upload/tasks'),
   deleteUploadTask: (taskId) => request(`/upload/tasks/${encodeURIComponent(taskId)}`, { method: 'DELETE' }),
+  retryUploadTaskNow: (taskId) => request(`/upload/tasks/${encodeURIComponent(taskId)}/retry-now`, { method: 'POST' }),
+  cancelUploadRetry: (taskId) => request(`/upload/tasks/${encodeURIComponent(taskId)}/cancel-retry`, { method: 'POST' }),
   reprocessMultimodal: (kbName) => fetchJson(`/kb/${encodeURIComponent(kbName)}/reprocess-multimodal`, { method: 'POST' }),
   downloadDocumentUrl: (id, kb = currentKB) => {
     const token = getToken()

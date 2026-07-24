@@ -22,6 +22,7 @@ from lightrag.lightrag import LightRAG
 from raganything.modalprocessors.base import BaseModalProcessor
 from raganything.modalprocessors.context import ContextExtractor
 from raganything.prompt import PROMPTS
+from raganything.prompts_zh import PROMPTS_ZH
 from raganything.utils._image import encode_image_to_base64, image_mime_type
 
 
@@ -39,6 +40,36 @@ _IMAGE_TYPE_PROMPTS = {
 # Module-level for cross-document reuse within the same process lifetime.
 _vision_embed_cache: dict[str, "np.ndarray"] = {}
 _VISION_CACHE_MAX_SIZE = int(os.getenv("VISION_EMBED_CACHE_SIZE", "5000"))
+_IMAGE_PROMPT_VERSION = "image-description-zh-v2"
+
+
+def _image_prompt_language() -> str:
+    """Return the language used by future image descriptions."""
+    value = os.getenv("MULTIMODAL_PROMPT_LANGUAGE", "zh")
+    normalized = str(value or "zh").strip().lower().replace("_", "-")
+    return "zh" if normalized in {"zh", "zh-cn", "cmn"} else "en"
+
+
+def _image_prompt_registry() -> Any:
+    return PROMPTS_ZH if _image_prompt_language() == "zh" else PROMPTS
+
+
+def _vlm_cache_key(
+    image_hash: str,
+    rendered_prompt: str,
+    system_prompt: str,
+) -> str:
+    """Separate cached descriptions by language and prompt-relevant context."""
+    cache_context = {
+        "version": _IMAGE_PROMPT_VERSION,
+        "language": _image_prompt_language(),
+        "vision_model": os.getenv("VISION_MODEL", ""),
+        "image_hash": image_hash,
+        "rendered_prompt": rendered_prompt,
+        "system_prompt": system_prompt,
+    }
+    encoded = json.dumps(cache_context, ensure_ascii=False, sort_keys=True, default=str)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
 class ImageModalProcessor(BaseModalProcessor):
@@ -68,6 +99,22 @@ class ImageModalProcessor(BaseModalProcessor):
         self.vision_embed_func = vision_embed_func
         # Track pending vision embedding tasks for reliable completion
         self._pending_vision_tasks: list[asyncio.Task] = []
+        self._vision_stats = {
+            "scheduled": 0,
+            "attempted": 0,
+            "stored": 0,
+            "auth_disabled": 0,
+            "failed": 0,
+            "content_blocked": 0,
+            "invalid_response": 0,
+        }
+
+    def _record_vision_stat(self, name: str, amount: int = 1) -> None:
+        stats = getattr(self, "_vision_stats", None)
+        if not isinstance(stats, dict):
+            stats = {}
+            self._vision_stats = stats
+        stats[name] = int(stats.get(name, 0) or 0) + amount
 
     # Minimum image dimension in pixels; any side smaller → skip VLM call.
     _MIN_IMAGE_DIM = 14
@@ -160,26 +207,26 @@ class ImageModalProcessor(BaseModalProcessor):
         try:
             file_size = _os.path.getsize(str(image_path))
             if file_size < 100:
-                return (f"file_too_small_{file_size}B", "Decorative placeholder")
+                return (f"file_too_small_{file_size}B", "装饰性占位图")
         except OSError:
-            return ("unreadable_file", "Unreadable file")
+            return ("unreadable_file", "无法读取的图片")
 
         try:
             from PIL import Image as PILImage
             with PILImage.open(str(image_path)) as img:
                 w, h = img.size
                 if w < self._MIN_IMAGE_DIM or h < self._MIN_IMAGE_DIM:
-                    return (f"too_small_{w}x{h}px", "Decorative element")
+                    return (f"too_small_{w}x{h}px", "装饰性元素")
                 ratio = max(w / max(h, 1), h / max(w, 1))
                 if ratio > self._MAX_ASPECT_RATIO:
-                    return (f"extreme_aspect_{w}x{h}px", "Separator line")
+                    return (f"extreme_aspect_{w}x{h}px", "分隔线")
                 try:
                     rgb = img.convert("RGB") if img.mode not in ("RGB", "RGBA") else img
                     colors = rgb.getcolors(maxcolors=self._MIN_UNIQUE_COLORS)
                     if colors is not None and len(colors) < self._MIN_UNIQUE_COLORS:
                         return (
                             f"near_solid_{len(colors)}_colors",
-                            "Solid decorative fill",
+                            "纯色装饰填充",
                         )
                 except Exception:
                     pass  # color check is best-effort
@@ -250,25 +297,8 @@ class ImageModalProcessor(BaseModalProcessor):
             if not image_path_obj.exists():
                 raise FileNotFoundError(f"Image file not found: {image_path}")
 
-            # ── Content-hash dedup: skip VLM if identical image already processed ──
+            # Content hash is part of the later prompt-aware cache fingerprint.
             image_hash = self._get_image_content_hash(image_path_obj)
-            cached_vlm = self._vlm_result_cache.get(image_hash)
-            if cached_vlm is not None:
-                logger.info(
-                    f"VLM cache HIT for image {image_path} (hash={image_hash[:12]}...)"
-                )
-                enhanced_caption, entity_info = cached_vlm
-                # Still need to schedule vision embedding for THIS document
-                await self._schedule_vision_embed(
-                    image_path=image_path,
-                    entity_name=entity_info.get("entity_name", ""),
-                    entity_type=entity_info.get("entity_type", "image"),
-                    description=enhanced_caption,
-                    doc_id=doc_id,
-                    file_path=file_path,
-                    image_hash=image_hash,
-                )
-                return enhanced_caption, entity_info
 
             # Pre-filter: skip tiny/decorative images (<14px any side) before
             # wasting a VLM API call. Docx parsers often emit separator lines,
@@ -285,8 +315,8 @@ class ImageModalProcessor(BaseModalProcessor):
                 )
                 fallback_entity = {
                     "entity_name": (
-                        f"{caption_text} (image)" if caption_text
-                        else f"decorative_{image_path_obj.stem} (image)"
+                        f"{caption_text}（图片）" if caption_text
+                        else f"装饰性图片_{image_path_obj.stem}"
                     ),
                     "entity_type": "image",
                     "summary": (
@@ -313,18 +343,26 @@ class ImageModalProcessor(BaseModalProcessor):
             # ── Select type-specific prompt ──
             prompt_key = _IMAGE_TYPE_PROMPTS.get(image_type, "vision_prompt")
             # Fall back to default if type-specific prompt doesn't exist
-            vision_prompt_template = PROMPTS.get(prompt_key, PROMPTS["vision_prompt"])
+            image_prompts = _image_prompt_registry()
+            default_entity_name = (
+                "为该图片生成唯一且语义明确的中文名称"
+                if _image_prompt_language() == "zh"
+                else "unique descriptive name for this image"
+            )
+            vision_prompt_template = image_prompts.get(
+                prompt_key, image_prompts["vision_prompt"]
+            )
 
             # Build detailed visual analysis prompt with context
             if context:
-                vision_prompt = PROMPTS.get(
-                    "vision_prompt_with_context", PROMPTS["vision_prompt"]
+                vision_prompt = image_prompts.get(
+                    "vision_prompt_with_context", image_prompts["vision_prompt"]
                 ).format(
                     context=context,
                     section_path=section_path if section_path else "None",
                     entity_name=entity_name
                     if entity_name
-                    else "unique descriptive name for this image",
+                    else default_entity_name,
                     image_path=image_path,
                     captions=captions if captions else "None",
                     footnotes=footnotes if footnotes else "None",
@@ -334,11 +372,33 @@ class ImageModalProcessor(BaseModalProcessor):
                     section_path=section_path if section_path else "None",
                     entity_name=entity_name
                     if entity_name
-                    else "unique descriptive name for this image",
+                    else default_entity_name,
                     image_path=image_path,
                     captions=captions if captions else "None",
                     footnotes=footnotes if footnotes else "None",
                 )
+
+            image_system_prompt = image_prompts["IMAGE_ANALYSIS_SYSTEM"]
+            vlm_cache_key = _vlm_cache_key(
+                image_hash, vision_prompt, image_system_prompt
+            )
+            cached_vlm = self._vlm_result_cache.get(vlm_cache_key)
+            if cached_vlm is not None:
+                logger.info(
+                    f"VLM cache HIT for image {image_path} (hash={image_hash[:12]}...)"
+                )
+                enhanced_caption, entity_info = cached_vlm
+                # Still need to schedule vision embedding for THIS document.
+                await self._schedule_vision_embed(
+                    image_path=image_path,
+                    entity_name=entity_info.get("entity_name", ""),
+                    entity_type=entity_info.get("entity_type", "image"),
+                    description=enhanced_caption,
+                    doc_id=doc_id,
+                    file_path=file_path,
+                    image_hash=image_hash,
+                )
+                return enhanced_caption, entity_info
 
             # Encode image to base64
             image_base64 = self._encode_image_to_base64(image_path)
@@ -350,7 +410,7 @@ class ImageModalProcessor(BaseModalProcessor):
                 vision_prompt,
                 image_data=image_base64,
                 image_mime_type=image_mime_type(image_path),
-                system_prompt=PROMPTS["IMAGE_ANALYSIS_SYSTEM"],
+                system_prompt=image_system_prompt,
             )
 
             # Parse response (reuse existing logic)
@@ -361,7 +421,7 @@ class ImageModalProcessor(BaseModalProcessor):
                 # Evict oldest entry (FIFO)
                 oldest = next(iter(self._vlm_result_cache))
                 del self._vlm_result_cache[oldest]
-            self._vlm_result_cache[image_hash] = (enhanced_caption, entity_info)
+            self._vlm_result_cache[vlm_cache_key] = (enhanced_caption, entity_info)
 
             # ── Vision embedding (doubao-embedding-vision) ──
             # Tracked for reliable completion: all pending vision tasks are
@@ -379,14 +439,19 @@ class ImageModalProcessor(BaseModalProcessor):
             return enhanced_caption, entity_info
 
         except Exception as e:
+            message = str(e).lower()
+            if "data_inspection_failed" in message or "inappropriate content" in message:
+                self._record_vision_stat("content_blocked")
+            elif "missing required" in message or "json" in message:
+                self._record_vision_stat("invalid_response")
             logger.error(f"Error generating image description: {e}")
             # Fallback processing
             fallback_entity = {
                 "entity_name": entity_name
                 if entity_name
-                else f"image_{compute_mdhash_id(str(modal_content))}",
+                else f"图片_{compute_mdhash_id(str(modal_content))}",
                 "entity_type": "image",
-                "summary": f"Image content: {str(modal_content)[:100]}",
+                "summary": f"图片内容：{str(modal_content)[:100]}",
             }
             return str(modal_content), fallback_entity
 
@@ -410,6 +475,7 @@ class ImageModalProcessor(BaseModalProcessor):
             return
         try:
             from raganything.processor.batch_processor import register_background_task
+            self._record_vision_stat("scheduled")
             _vision_task = asyncio.create_task(
                 self._compute_and_store_vision(
                     image_path=image_path,
@@ -494,6 +560,9 @@ class ImageModalProcessor(BaseModalProcessor):
             await asyncio.gather(*still_pending, return_exceptions=True)
 
         self._pending_vision_tasks.clear()
+        stats = getattr(self, "_vision_stats", None)
+        if isinstance(stats, dict):
+            logger.info("[VISION] Embedding summary: %s", dict(stats))
         logger.info(
             "[VISION] Completed %d/%d vision embedding tasks",
             len(done),
@@ -563,19 +632,30 @@ class ImageModalProcessor(BaseModalProcessor):
             fallback_entity = {
                 "entity_name": entity_name
                 if entity_name
-                else f"image_{compute_mdhash_id(str(modal_content))}",
+                else f"图片_{compute_mdhash_id(str(modal_content))}",
                 "entity_type": "image",
-                "summary": f"Image content: {str(modal_content)[:100]}",
+                "summary": f"图片内容：{str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            # ``_create_entity_and_chunk`` returns a three-tuple. Keep that
+            # contract even when chunk creation itself fails so the individual
+            # multimodal fallback can detect and stop on partial persistence.
+            return str(modal_content), fallback_entity, []
 
     def _parse_response(
         self, response: str, entity_name: str = None
     ) -> Tuple[str, Dict[str, Any]]:
         """Parse model response"""
         try:
-            return self._parse_typed_response(response, entity_name, "image")
+            description, entity_info = self._parse_typed_response(
+                response, entity_name, "image"
+            )
+            if _image_prompt_language() == "zh":
+                name = str(entity_info.get("entity_name") or "")
+                if name.endswith(" (image)"):
+                    entity_info["entity_name"] = f"{name[:-8]}（图片）"
+            return description, entity_info
         except (json.JSONDecodeError, AttributeError, ValueError) as e:
+            self._record_vision_stat("invalid_response")
             logger.error(f"Error parsing image analysis response: {e}")
             logger.debug(f"Raw response: {response}")
             cleaned = self._strip_thinking_tags(response)
@@ -621,8 +701,17 @@ class ImageModalProcessor(BaseModalProcessor):
             if not image_hash:
                 image_hash = self._get_image_content_hash(Path(image_path))
 
+            # The embedding input includes the generated description, so cache
+            # entries must be isolated by model and description content.
+            description_digest = hashlib.sha256(
+                description[:500].encode("utf-8")
+            ).hexdigest()
+            vision_cache_key = (
+                f"{self.vision_embed_func.model}:{description_digest}:{image_hash}"
+            )
+
             # ── Check in-memory cache first ──
-            cached_vec = _vision_embed_cache.get(image_hash)
+            cached_vec = _vision_embed_cache.get(vision_cache_key)
             if cached_vec is not None:
                 logger.info(
                     "[VISION] Cache HIT for %s (hash=%s...)",
@@ -647,11 +736,22 @@ class ImageModalProcessor(BaseModalProcessor):
 
             # ── Compute fresh embedding ──
             logger.info("[VISION] Computing embedding for %s", entity_name)
+            self._record_vision_stat("attempted")
             vec = await self.vision_embed_func.embed_image(
                 image_path, caption_text=description[:500]
             )
             if vec is None:
-                logger.warning("[VISION] embed_image returned None for %s", entity_name)
+                reason = getattr(self.vision_embed_func, "_disabled_reason", None)
+                self._record_vision_stat(
+                    "auth_disabled" if reason in {
+                        "authentication_failed", "authorization_failed"
+                    } else "failed"
+                )
+                logger.warning(
+                    "[VISION] embed_image returned None for %s (reason=%s)",
+                    entity_name,
+                    reason or "provider_unavailable",
+                )
                 return  # embed_image logged the reason
 
             # ── Cache for cross-document reuse ──
@@ -659,7 +759,8 @@ class ImageModalProcessor(BaseModalProcessor):
                 # Evict oldest (FIFO via dict ordering since Python 3.7)
                 oldest = next(iter(_vision_embed_cache))
                 del _vision_embed_cache[oldest]
-            _vision_embed_cache[image_hash] = vec
+            _vision_embed_cache[vision_cache_key] = vec
+            self._record_vision_stat("stored")
 
             # ── Store in image_vision_repo ──
             await repo.upsert(
@@ -682,6 +783,7 @@ class ImageModalProcessor(BaseModalProcessor):
                 entity_name, image_hash[:12],
             )
         except Exception as e:
+            self._record_vision_stat("failed")
             logger.warning("[VISION] FAILED for %s: %s", image_path, e)
 
 

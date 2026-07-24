@@ -43,7 +43,7 @@ class MultimodalProcessorMixin:
 
         return await self.multimodal_status_cache.get_by_id(doc_id)
 
-    async def _set_multimodal_status_record(self, doc_id: str, processed: bool) -> None:
+    async def _set_multimodal_status_record(self, doc_id: str, processed: bool) -> bool:
         """Persist multimodal completion state in doc-status metadata when possible."""
         try:
             doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
@@ -65,7 +65,7 @@ class MultimodalProcessorMixin:
                     }
                 )
                 await self.lightrag.doc_status.index_done_callback()
-                return
+                return True
         except Exception as exc:
             self.logger.debug(
                 "Unable to persist multimodal status in doc metadata for %s: %s",
@@ -79,17 +79,26 @@ class MultimodalProcessorMixin:
             not hasattr(self, "multimodal_status_cache")
             or self.multimodal_status_cache is None
         ):
-            return
+            return False
 
-        await self.multimodal_status_cache.upsert(
-            {
-                doc_id: {
-                    "multimodal_processed": processed,
-                    "updated_at": self._current_doc_status_timestamp(),
+        try:
+            await self.multimodal_status_cache.upsert(
+                {
+                    doc_id: {
+                        "multimodal_processed": processed,
+                        "updated_at": self._current_doc_status_timestamp(),
+                    }
                 }
-            }
-        )
-        await self.multimodal_status_cache.index_done_callback()
+            )
+            await self.multimodal_status_cache.index_done_callback()
+            return True
+        except Exception as exc:
+            self.logger.warning(
+                "Unable to persist multimodal compatibility status for %s: %s",
+                doc_id,
+                exc,
+            )
+            return False
 
     async def _get_multimodal_processed_flag(
         self, doc_id: str, doc_status: Dict[str, Any] | None = None
@@ -142,7 +151,12 @@ class MultimodalProcessorMixin:
             self.logger.error(
                 "LightRAG initialization failed; skipping multimodal processing"
             )
-            return
+            raise RuntimeError(
+                "LightRAG initialization failed before multimodal processing"
+            )
+        # A later failure must not retry after chunks/entities have been
+        # persisted, because a second pass can create duplicate graph data.
+        self._multimodal_storage_started = False
 
         # Check multimodal processing status - handle LightRAG's early DocStatus.PROCESSED marking
         try:
@@ -186,12 +200,19 @@ class MultimodalProcessorMixin:
                 pipeline_status["history_messages"].append(log_message)
 
         try:
-            await self._process_multimodal_content_batch_type_aware(
+            processed = await self._process_multimodal_content_batch_type_aware(
                 multimodal_items=multimodal_items, file_path=file_path, doc_id=doc_id
             )
+            if processed is not True:
+                raise RuntimeError(
+                    "multimodal processing completed without processing every item"
+                )
 
             # Mark multimodal content as processed and update final status
-            await self._mark_multimodal_processing_complete(doc_id)
+            if not await self._mark_multimodal_processing_complete(doc_id):
+                raise RuntimeError(
+                    "multimodal processing completed but its status marker could not be persisted"
+                )
 
             log_message = "Multimodal content processing complete"
             self.logger.info(log_message)
@@ -212,24 +233,49 @@ class MultimodalProcessorMixin:
 
         except Exception as e:
             self.logger.error(f"Error in multimodal processing: {e}")
+            if getattr(self, "_multimodal_storage_started", False):
+                await self._set_multimodal_status_record(doc_id, False)
+                raise RuntimeError(
+                    "multimodal processing failed after persistence started; retry suppressed"
+                ) from e
             # Step 1: Retry in smaller batches (4 per batch) before individual fallback
             try:
                 self.logger.warning("Retrying multimodal processing in small batches (4/batch)")
                 batch_size = 4
                 for batch_start in range(0, len(multimodal_items), batch_size):
                     batch_items = multimodal_items[batch_start:batch_start + batch_size]
-                    await self._process_multimodal_content_batch_type_aware(
+                    processed = await self._process_multimodal_content_batch_type_aware(
                         batch_items, file_path, doc_id
                     )
+                    if processed is not True:
+                        raise RuntimeError(
+                            "multimodal retry did not process every item in its batch"
+                        )
+                recovered = True
             except Exception as e2:
                 self.logger.error(f"Batch retry also failed: {e2}")
+                if getattr(self, "_multimodal_storage_started", False):
+                    await self._set_multimodal_status_record(doc_id, False)
+                    raise RuntimeError(
+                        "multimodal retry failed after persistence started; fallback suppressed"
+                    ) from e2
                 self.logger.warning("Falling back to individual multimodal processing")
-                await self._process_multimodal_content_individual(
+                recovered = await self._process_multimodal_content_individual(
                     multimodal_items, file_path, doc_id
                 )
 
-            # Mark multimodal content as processed even after fallback
-            await self._mark_multimodal_processing_complete(doc_id)
+            if recovered:
+                if not await self._mark_multimodal_processing_complete(doc_id):
+                    raise RuntimeError(
+                        "multimodal retry completed but its status marker could not be persisted"
+                    )
+            else:
+                # Keep the explicit incomplete marker so degraded/tagging paths
+                # cannot treat partial multimodal chunks as a complete document.
+                await self._set_multimodal_status_record(doc_id, False)
+                raise RuntimeError(
+                    "multimodal processing failed before all items were completed"
+                )
 
     async def _process_multimodal_content_background(
         self,
@@ -242,6 +288,7 @@ class MultimodalProcessorMixin:
         Runs VLM/LLM calls asynchronously, marks completion when done.
         Failures are logged but don't affect the document's 'processed' status.
         """
+        completed = False
         try:
             self.logger.info(
                 f"Background multimodal processing started: {len(multimodal_items)} items for doc {doc_id}"
@@ -249,19 +296,50 @@ class MultimodalProcessorMixin:
             await self._process_multimodal_content(
                 multimodal_items, file_ref, doc_id
             )
+            completed = True
             self.logger.info(
                 f"Background multimodal processing completed for doc {doc_id}"
             )
+        except asyncio.CancelledError:
+            self.logger.warning(
+                "Background multimodal processing cancelled for doc %s", doc_id
+            )
+            raise
         except Exception as exc:
             self.logger.error(
                 f"Background multimodal processing failed for doc {doc_id}: {exc}"
             )
             try:
+                failure_metadata = {
+                    "content_ready": False,
+                    "multimodal_processed": False,
+                    "failure_stage": "multimodal",
+                    "cleanup_pending": True,
+                    "residual_data": True,
+                    "last_error": str(exc)[:4000],
+                }
+                current_status = None
+                doc_status_store = getattr(
+                    getattr(self, "lightrag", None), "doc_status", None
+                )
+                if doc_status_store is not None:
+                    current_status = await doc_status_store.get_by_id(doc_id)
+                existing_metadata = (
+                    current_status.get("metadata")
+                    if isinstance(current_status, dict) else {}
+                )
+                if isinstance(existing_metadata, dict):
+                    multimodal_chunks = existing_metadata.get("multimodal_chunks")
+                    if isinstance(multimodal_chunks, dict):
+                        failure_metadata["residual_multimodal_chunk_ids"] = [
+                            str(value) for value in multimodal_chunks if value
+                        ]
                 await self._upsert_doc_status(
                     doc_id,
                     file_ref,
                     status=DocStatus.FAILED,
                     error_msg=str(exc),
+                    metadata=failure_metadata,
                 )
             except Exception as status_exc:
                 self.logger.error(
@@ -269,13 +347,13 @@ class MultimodalProcessorMixin:
                     doc_id,
                     status_exc,
                 )
+            raise
         finally:
-            try:
-                await self._mark_multimodal_processing_complete(doc_id)
-            except Exception as exc:
-                self.logger.error(
-                    f"Failed to mark multimodal complete for doc {doc_id}: {exc}"
-                )
+            if completed:
+                if not await self._mark_multimodal_processing_complete(doc_id):
+                    raise RuntimeError(
+                        "multimodal completion marker could not be persisted"
+                    )
 
     async def _process_multimodal_content_individual(
         self, multimodal_items: List[Dict[str, Any]], file_path: str, doc_id: str
@@ -301,6 +379,8 @@ class MultimodalProcessorMixin:
             existing_doc_status.get("chunks_count", 0) if existing_doc_status else 0
         )
 
+        processed_count = 0
+        failed_count = 0
         for i, item in enumerate(multimodal_items):
             try:
                 content_type = item.get("type", "unknown")
@@ -320,11 +400,7 @@ class MultimodalProcessorMixin:
                     }
 
                     # Process content and get chunk results instead of immediately merging
-                    (
-                        _,
-                        entity_info,
-                        chunk_results,
-                    ) = await processor.process_multimodal_content(
+                    result = await processor.process_multimodal_content(
                         modal_content=item,
                         content_type=content_type,
                         file_path=file_name,
@@ -334,6 +410,15 @@ class MultimodalProcessorMixin:
                         chunk_order_index=existing_chunks_count
                         + i,  # Proper order index
                     )
+                    if not isinstance(result, tuple) or len(result) != 3:
+                        raise RuntimeError(
+                            "multimodal processor returned an invalid result contract"
+                        )
+                    _, entity_info, chunk_results = result
+                    if not isinstance(entity_info, dict) or not entity_info.get("chunk_id"):
+                        raise RuntimeError(
+                            "multimodal processor did not persist an indexable chunk"
+                        )
 
                     # Collect chunk results for batch processing
                     all_chunk_results.extend(chunk_results)
@@ -346,19 +431,37 @@ class MultimodalProcessorMixin:
                     self.logger.info(
                         f"{content_type} processing complete: {entity_info.get('entity_name', 'Unknown')}"
                     )
+                    processed_count += 1
                 else:
                     self.logger.warning(
                         f"No suitable processor found for {content_type} type content"
                     )
+                    failed_count += 1
 
             except Exception as e:
                 self.logger.error(f"Error processing multimodal content: {str(e)}")
                 self.logger.debug("Exception details:", exc_info=True)
+                failed_count += 1
                 continue
+
+        # The individual fallback is only a recovery path for providers that
+        # cannot handle a batch.  Do not persist a partial set: the document
+        # status can only describe one complete multimodal attempt, and
+        # retaining successful items here would make every later retry append
+        # duplicate chunks to the same document.
+        if failed_count:
+            self.logger.warning(
+                "Individual multimodal fallback failed for %d/%d items; "
+                "discarding collected results before persistence",
+                failed_count,
+                len(multimodal_items),
+            )
+            return False
 
         # Update doc_status to include multimodal chunks in the standard chunks_list
         if multimodal_chunk_ids:
             try:
+                self._multimodal_storage_started = True
                 # Get current document status
                 current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
 
@@ -398,6 +501,7 @@ class MultimodalProcessorMixin:
 
         # Batch merge all multimodal content results (similar to text content processing)
         if all_chunk_results:
+            self._multimodal_storage_started = True
             from lightrag.operate import merge_nodes_and_edges
             from lightrag.kg.shared_storage import (
                 get_namespace_data,
@@ -429,10 +533,17 @@ class MultimodalProcessorMixin:
 
             await self.lightrag._insert_done()
 
-        self.logger.info("Individual multimodal content processing complete")
-
-        # Mark multimodal content as processed
-        await self._mark_multimodal_processing_complete(doc_id)
+        completed = failed_count == 0 and processed_count == len(multimodal_items)
+        if completed:
+            self.logger.info("Individual multimodal content processing complete")
+        else:
+            self.logger.error(
+                "Individual multimodal content processing incomplete: processed=%d failed=%d total=%d",
+                processed_count,
+                failed_count,
+                len(multimodal_items),
+            )
+        return completed
 
     async def _process_multimodal_content_batch_type_aware(
         self, multimodal_items: List[Dict[str, Any]], file_path: str, doc_id: str
@@ -462,7 +573,11 @@ class MultimodalProcessorMixin:
         # Concurrency control for VLM/LLM description generation.
         # Uses MULTIMODAL_MAX_CONCURRENT env var (default 16), capped by
         # LightRAG's llm_model_max_async so we don't overwhelm the HTTP pool.
-        _mm_concurrency = int(os.getenv("MULTIMODAL_MAX_CONCURRENT", "16"))
+        try:
+            _mm_concurrency = int(os.getenv("MULTIMODAL_MAX_CONCURRENT", "16"))
+        except (TypeError, ValueError):
+            _mm_concurrency = 16
+        _mm_concurrency = max(1, min(_mm_concurrency, 128))
         _llm_max_async = getattr(self.lightrag, "llm_model_max_async", None)
         if _llm_max_async is not None and _llm_max_async > 0:
             _mm_concurrency = max(1, min(_mm_concurrency, _llm_max_async))
@@ -570,7 +685,18 @@ class MultimodalProcessorMixin:
                             index,
                             entity_info.get("analysis_source", "unknown"),
                         )
-                        return None
+                        return {
+                            "index": index,
+                            "content_type": content_type,
+                            "description": "",
+                            "entity_info": entity_info,
+                            "original_item": item,
+                            "item_info": item_info,
+                            "chunk_order_index": existing_chunks_count + index,
+                            "processor": processor,
+                            "file_path": file_path,
+                            "skipped": True,
+                        }
 
                     return {
                         "index": index,
@@ -602,29 +728,78 @@ class MultimodalProcessorMixin:
                     )
                     return None
 
-        # Process all items concurrently with correct processors
-        tasks = [
-            asyncio.create_task(
-                process_single_item_with_correct_processor(item, i, file_path)
-            )
-            for i, item in enumerate(multimodal_items)
-        ]
-
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Filter successful results
         multimodal_data_list = []
-        for result in results:
-            if isinstance(result, Exception):
-                self.logger.error(f"Task failed: {result}")
-                continue
-            if result is not None:
-                multimodal_data_list.append(result)
+        try:
+            _batch_size = int(os.getenv("MULTIMODAL_TASK_BATCH_SIZE", "32"))
+        except (TypeError, ValueError):
+            _batch_size = 32
+        _batch_size = max(1, min(_batch_size, 128))
+        self.logger.info(
+            "Processing multimodal descriptions in batches of %d", _batch_size
+        )
 
+        # Keep the semaphore for API concurrency, but also bound the number of
+        # coroutine/result objects retained at once. This matters for manuals
+        # with hundreds of images and prevents a large gather() from retaining
+        # every input payload until the whole description stage completes.
+        for batch_start in range(0, total_items, _batch_size):
+            batch_items = multimodal_items[batch_start:batch_start + _batch_size]
+            batch_tasks = [
+                asyncio.create_task(
+                    process_single_item_with_correct_processor(
+                        item, batch_start + offset, file_path
+                    )
+                )
+                for offset, item in enumerate(batch_items)
+            ]
+            try:
+                batch_results = await asyncio.gather(
+                    *batch_tasks, return_exceptions=True
+                )
+                for result in batch_results:
+                    if isinstance(result, Exception):
+                        self.logger.error(f"Task failed: {result}")
+                        continue
+                    if result is not None:
+                        multimodal_data_list.append(result)
+            finally:
+                # Explicitly release completed task references before starting
+                # the next batch; gather() has already collected exceptions.
+                for task in batch_tasks:
+                    if not task.done():
+                        task.cancel()
+                await asyncio.gather(*batch_tasks, return_exceptions=True)
+                batch_tasks.clear()
+                batch_items = None
+                if "batch_results" in locals():
+                    batch_results = None
+
+        if len(multimodal_data_list) != total_items:
+            self.logger.warning(
+                "Only %d/%d multimodal descriptions generated; "
+                "skip storage to avoid partial document residue",
+                len(multimodal_data_list),
+                total_items,
+            )
+            return False
+
+        skipped_count = sum(
+            1 for result in multimodal_data_list if result.get("skipped")
+        )
+        if skipped_count:
+            self.logger.info(
+                "Skipped %d non-indexable multimodal items while processing %d total",
+                skipped_count,
+                total_items,
+            )
+        multimodal_data_list = [
+            result for result in multimodal_data_list if not result.get("skipped")
+        ]
         if not multimodal_data_list:
-            self.logger.warning("No valid multimodal descriptions generated")
-            return
-
+            self.logger.info(
+                "All multimodal items were valid non-indexable fallbacks; no chunks to store"
+            )
+            return True
         self.logger.info(
             f"Generated descriptions for {len(multimodal_data_list)}/{len(multimodal_items)} multimodal items using correct processors"
         )
@@ -635,6 +810,7 @@ class MultimodalProcessorMixin:
         )
 
         # Stage 3: Store chunks to LightRAG storage
+        self._multimodal_storage_started = True
         await self._store_chunks_to_lightrag_storage_type_aware(lightrag_chunks)
 
         # Stage 3.5: Store multimodal main entities to entities_vdb and full_entities
@@ -668,14 +844,92 @@ class MultimodalProcessorMixin:
             )
 
         # Stage 7: Update doc_status with integrated chunks_list
-        await self._update_doc_status_with_chunks_type_aware(
+        status_updated = await self._update_doc_status_with_chunks_type_aware(
             doc_id, chunk_ids, lightrag_chunks
         )
-    async def _mark_multimodal_processing_complete(self, doc_id: str):
+        if status_updated is not True:
+            raise RuntimeError(
+                "multimodal chunks persisted but document status could not be updated"
+            )
+        return True
+
+    async def _persisted_chunk_ids_for_completion(
+        self, doc_id: str,
+    ) -> set[str] | None:
+        """Read the authoritative PG chunk set when the backend supports it."""
+        try:
+            from lightrag.kg.postgres_impl import PGKVStorage, namespace_to_table_name
+
+            store = getattr(self.lightrag, "text_chunks", None)
+            if not isinstance(store, PGKVStorage):
+                return None
+            table_name = namespace_to_table_name(store.namespace)
+            rows = await store.db.query(
+                f"SELECT id FROM {table_name} WHERE workspace=$1 AND full_doc_id=$2",
+                [store.workspace, doc_id],
+                multirows=True,
+            )
+            return {
+                str(row["id"])
+                for row in (rows or [])
+                if isinstance(row, dict) and row.get("id")
+            }
+        except Exception as exc:
+            self.logger.warning(
+                "Unable to verify persisted multimodal chunks for %s: %s",
+                doc_id,
+                exc,
+            )
+            # A PG-backed document must not be reported complete when its
+            # authoritative chunk set cannot be checked.
+            return set()
+
+    async def _mark_multimodal_processing_complete(self, doc_id: str) -> bool:
         """Mark multimodal content processing as complete in the document status."""
         try:
             current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
             if current_doc_status:
+                declared_ids = {
+                    str(value)
+                    for value in current_doc_status.get("chunks_list") or []
+                    if value
+                }
+                persisted_ids = await self._persisted_chunk_ids_for_completion(doc_id)
+                if persisted_ids is not None and persisted_ids != declared_ids:
+                    failure_metadata = current_doc_status.get("metadata") or {}
+                    failure_metadata = (
+                        dict(failure_metadata)
+                        if isinstance(failure_metadata, dict)
+                        else {}
+                    )
+                    failure_metadata.update({
+                        "content_ready": False,
+                        "multimodal_processed": False,
+                        "failure_stage": "multimodal",
+                        "cleanup_pending": True,
+                        "residual_data": True,
+                        "last_error": (
+                            "multimodal chunk set does not match document status: "
+                            f"declared={len(declared_ids)}, persisted={len(persisted_ids)}"
+                        ),
+                    })
+                    failed_payload = {
+                        **current_doc_status,
+                        "status": DocStatus.FAILED,
+                        "error_msg": failure_metadata["last_error"],
+                        "metadata": failure_metadata,
+                        "updated_at": self._current_doc_status_timestamp(),
+                    }
+                    await self.lightrag.doc_status.upsert({doc_id: failed_payload})
+                    await self.lightrag.doc_status.index_done_callback()
+                    await self._set_multimodal_status_record(doc_id, False)
+                    self.logger.error(
+                        "Refusing multimodal completion for %s: declared=%d persisted=%d",
+                        doc_id,
+                        len(declared_ids),
+                        len(persisted_ids),
+                    )
+                    return False
                 final_status = current_doc_status.get("status") or DocStatus.PROCESSED
                 if final_status != DocStatus.FAILED:
                     final_status = DocStatus.PROCESSED
@@ -685,6 +939,46 @@ class MultimodalProcessorMixin:
                     if isinstance(existing_metadata, dict)
                     else {}
                 )
+                declared_chunk_ids = {
+                    str(value)
+                    for value in current_doc_status.get("chunks_list") or []
+                    if value
+                }
+                multimodal_chunks = metadata.get("multimodal_chunks")
+                if isinstance(multimodal_chunks, dict):
+                    residual_ids = [
+                        str(value)
+                        for value in multimodal_chunks
+                        if value and str(value) not in declared_chunk_ids
+                    ]
+                    if residual_ids:
+                        # A prior attempt left multimodal rows that are not
+                        # represented by the authoritative doc-status list.
+                        # Do not claim completion or enqueue automatic tags.
+                        metadata.update({
+                            "multimodal_processed": False,
+                            "content_ready": False,
+                            "failure_stage": "multimodal",
+                            "cleanup_pending": True,
+                            "residual_data": True,
+                            "residual_multimodal_chunk_ids": residual_ids,
+                        })
+                        await self.lightrag.doc_status.upsert(
+                            {
+                                doc_id: {
+                                    **current_doc_status,
+                                    "metadata": metadata,
+                                    "updated_at": self._current_doc_status_timestamp(),
+                                }
+                            }
+                        )
+                        await self.lightrag.doc_status.index_done_callback()
+                        self.logger.warning(
+                            "Refusing multimodal completion for %s: %d residual chunks are not declared",
+                            doc_id,
+                            len(residual_ids),
+                        )
+                        return False
                 metadata["multimodal_processed"] = True
                 update_payload = {
                     **current_doc_status,
@@ -709,15 +1003,19 @@ class MultimodalProcessorMixin:
                         "updated_at": self._current_doc_status_timestamp(),
                     }
                     await self.lightrag.doc_status.upsert({doc_id: fallback_payload})
-                    await self._set_multimodal_status_record(doc_id, True)
+                    if not await self._set_multimodal_status_record(doc_id, True):
+                        return False
                 await self.lightrag.doc_status.index_done_callback()
                 self.logger.debug(
                     f"Marked multimodal content processing as complete for document {doc_id}"
                 )
+                return True
+            return await self._set_multimodal_status_record(doc_id, True)
         except Exception as e:
             self.logger.warning(
                 f"Error marking multimodal processing as complete for document {doc_id}: {e}"
             )
+            return False
 
     async def is_document_fully_processed(self, doc_id: str) -> bool:
         """

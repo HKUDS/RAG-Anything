@@ -251,7 +251,7 @@ export default function AgentChatPage({ onToast }) {
       return undefined
     }
     const controller = new AbortController()
-    api.listKnowledgeTags({ kb: agent.kb_name, signal: controller.signal })
+    api.listAllKnowledgeTags({ kb: agent.kb_name, signal: controller.signal })
       .then(result => setTagOptions(Array.isArray(result.tags) ? result.tags : []))
       .catch(() => setTagOptions([]))
     return () => controller.abort()

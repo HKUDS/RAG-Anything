@@ -88,6 +88,12 @@ version = {attr = "raganything.__version__"}
 [tool.ruff]
 target-version = "py310"
 
+[tool.ruff.lint.per-file-ignores]
+# These entry modules must load .env/runtime settings before importing
+# dependencies that read configuration at import time.
+"server.py" = ["E402"]
+"raganything/services/kb_service.py" = ["E402"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test*.py"]

@@ -106,6 +106,8 @@ def check_ocr_quality(
     *,
     min_char_validity: float = 0.70,
     min_text_density: int = 20,
+    source_total_pages: int | None = None,
+    page_coverage: Dict[str, Any] | None = None,
 ) -> Tuple[float, Dict[str, Any]]:
     """Validate extracted text quality from a MinerU content list.
 
@@ -116,6 +118,8 @@ def check_ocr_quality(
         content_list: MinerU content list (list of dicts with type/text/page_idx)
         min_char_validity: Minimum ratio of valid characters (default 0.70)
         min_text_density: Minimum average chars per page (default 20)
+        source_total_pages: Authoritative PDF page count when known.
+        page_coverage: Source-page manifest emitted by a parser.
 
     Returns:
         (quality_score, diagnostics) where diagnostics includes:
@@ -149,13 +153,43 @@ def check_ocr_quality(
 
     all_text = "".join(text_parts)
     total_chars = len(all_text)
-    total_pages = max_page + 1 if max_page >= 0 else 1
+    observed_pages = max_page + 1 if max_page >= 0 else 1
+    try:
+        total_pages = max(observed_pages, int(source_total_pages or 0))
+    except (TypeError, ValueError):
+        total_pages = observed_pages
+
+    failed_pages: list[Any] = []
+    skipped_pages: list[Any] = []
+    if isinstance(page_coverage, dict):
+        failed_pages = list(page_coverage.get("failed_pages") or [])
+        skipped_pages = list(page_coverage.get("skipped_pages") or [])
 
     diagnostics: Dict[str, Any] = {
         "total_chars": total_chars,
         "total_pages": total_pages,
+        "observed_content_pages": observed_pages,
+        "source_total_pages": total_pages,
         "text_blocks": len(text_parts),
+        "failed_pages": failed_pages,
+        "skipped_pages": skipped_pages,
     }
+
+    if failed_pages or skipped_pages:
+        missing = sorted({*failed_pages, *skipped_pages})
+        return 0.0, {
+            **diagnostics,
+            "char_validity_ratio": 0.0,
+            "chars_per_page": 0.0,
+            "chinese_ratio": 0.0,
+            "english_ratio": 0.0,
+            "garbling_count": 0,
+            "issues": [
+                "Source page coverage is incomplete: "
+                + ", ".join(str(page) for page in missing)
+            ],
+            "quality_label": "incomplete",
+        }
 
     # ── Empty / near-empty ──
     if total_chars < 10:
@@ -472,6 +506,8 @@ def validate_and_suggest(
     current_method: str = "auto",
     *,
     quality_threshold: float = 0.7,
+    source_total_pages: int | None = None,
+    page_coverage: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """Run quality check and get a parse-method suggestion in one call.
 
@@ -484,16 +520,21 @@ def validate_and_suggest(
             "diagnostics": {...},
         }
     """
-    quality_score, diagnostics = check_ocr_quality(content_list)
+    quality_score, diagnostics = check_ocr_quality(
+        content_list,
+        source_total_pages=source_total_pages,
+        page_coverage=page_coverage,
+    )
     suggestion = suggest_parse_method(
         content_list, current_method, quality_threshold=quality_threshold
     )
+    incomplete = diagnostics.get("quality_label") == "incomplete"
 
     return {
         "quality_score": round(quality_score, 3),
         "quality_label": diagnostics.get("quality_label", "unknown"),
-        "needs_retry": suggestion is not None,
-        "suggestion": suggestion,
+        "needs_retry": suggestion is not None and not incomplete,
+        "suggestion": None if incomplete else suggestion,
         "diagnostics": diagnostics,
     }
 

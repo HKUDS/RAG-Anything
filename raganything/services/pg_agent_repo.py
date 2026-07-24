@@ -95,6 +95,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
+import asyncpg
+
 logger = logging.getLogger("rag_server.pg_agent")
 
 
@@ -252,38 +254,72 @@ async def pg_list_agents(
     user_id: Optional[int] = None,
     is_admin: bool = False,
 ) -> list[dict[str, Any]]:
-    """List agents with user isolation (admin sees all).
+    """List agents with user isolation and conversation activity.
 
     Replaces: AgentManager.list_agents()
 
-    Query order: PG first → merge JSON fallback (dedup by id).
+    PostgreSQL is authoritative. Legacy JSON is deliberately not merged,
+    because migrated data must never reappear after a system reset.
 
     Returns:
-        List of agent dicts sorted by updated_at DESC.
+        List of agent dicts sorted by updated_at DESC. Regular users receive
+        activity for conversations they own; administrators receive all usage.
     """
     result: list[dict[str, Any]] = []
     try:
         pool = _get_pool()
+        activity_available = True
         if is_admin or user_id is None:
-            rows = await pool.fetch(
-                "SELECT * FROM agents ORDER BY updated_at DESC"
-            )
+            try:
+                rows = await pool.fetch(
+                    """
+                    SELECT a.*, activity.conversation_count, activity.last_conversation_at
+                    FROM agents AS a
+                    LEFT JOIN LATERAL (
+                        SELECT COUNT(*)::integer AS conversation_count,
+                               MAX(updated_at) AS last_conversation_at
+                        FROM agent_conversations
+                        WHERE agent_id = a.id
+                    ) AS activity ON TRUE
+                    ORDER BY a.updated_at DESC
+                    """
+                )
+            except Exception:
+                logger.debug("Agent activity aggregation failed, listing agents without activity")
+                activity_available = False
+                rows = await pool.fetch("SELECT * FROM agents ORDER BY updated_at DESC")
         else:
-            rows = await pool.fetch(
-                "SELECT * FROM agents WHERE owner_id = $1 OR owner_id = 0 "
-                "ORDER BY updated_at DESC",
-                user_id,
-            )
+            try:
+                rows = await pool.fetch(
+                    """
+                    SELECT a.*, activity.conversation_count, activity.last_conversation_at
+                    FROM agents AS a
+                    LEFT JOIN LATERAL (
+                        SELECT COUNT(*)::integer AS conversation_count,
+                               MAX(updated_at) AS last_conversation_at
+                        FROM agent_conversations
+                        WHERE agent_id = a.id AND owner_id = $1
+                    ) AS activity ON TRUE
+                    WHERE a.owner_id = $1 OR a.owner_id = 0
+                    ORDER BY a.updated_at DESC
+                    """,
+                    user_id,
+                )
+            except Exception:
+                logger.debug("Agent activity aggregation failed, listing agents without activity")
+                activity_available = False
+                rows = await pool.fetch(
+                    "SELECT * FROM agents WHERE owner_id = $1 OR owner_id = 0 ORDER BY updated_at DESC",
+                    user_id,
+                )
         result = [_agent_row_to_dict(r) for r in rows]
+        if not activity_available:
+            for agent in result:
+                agent["conversation_count"] = None
+                agent["last_conversation_at"] = None
     except Exception:
-        logger.debug("PG list_agents failed, using JSON fallback")
-
-    # Merge JSON fallback agents not already in PG
-    pg_ids = {a["id"] for a in result}
-    json_agents = _json_list_agents(user_id=user_id, is_admin=is_admin)
-    for ja in json_agents:
-        if ja.get("id") not in pg_ids:
-            result.append(ja)
+        logger.exception("PG list_agents failed")
+        raise
 
     result.sort(key=lambda a: a.get("updated_at", ""), reverse=True)
     return result
@@ -294,7 +330,7 @@ async def pg_get_agent(agent_id: str) -> Optional[dict[str, Any]]:
 
     Replaces: AgentManager.get_agent()
 
-    Query order: PG first → JSON file fallback.
+    PostgreSQL is the only runtime source of truth.
     """
     try:
         pool = _get_pool()
@@ -305,10 +341,8 @@ async def pg_get_agent(agent_id: str) -> Optional[dict[str, Any]]:
         if row:
             return _agent_row_to_dict(row)
     except Exception:
-        logger.debug("PG get_agent failed for %s, trying JSON fallback", agent_id)
-
-    # JSON fallback — agents created before PG migration
-    return _json_get_agent(agent_id)
+        logger.exception("PG get_agent failed for %s", agent_id)
+    return None
 
 
 async def pg_create_agent(
@@ -442,15 +476,7 @@ async def pg_update_agent(
     if updated_agent:
         return updated_agent
 
-    legacy_agent = _json_get_agent(agent_id)
-    if not legacy_agent:
-        return None
-
-    promoted_agent = await _promote_legacy_json_agent(agent_id, legacy_agent=legacy_agent)
-    if not promoted_agent:
-        return None
-
-    return await _run_update()
+    return None
 
 
 async def pg_delete_agent(agent_id: str) -> bool:
@@ -778,7 +804,7 @@ async def pg_delete_conversation(agent_id: str, thread_id: str) -> bool:
 def _agent_row_to_dict(row: Any) -> dict[str, Any]:
     """Convert an agents table row to a dict matching AgentConfig schema."""
     d = dict(row)
-    for ts_field in ("created_at", "updated_at"):
+    for ts_field in ("created_at", "updated_at", "last_conversation_at"):
         if isinstance(d.get(ts_field), datetime):
             d[ts_field] = d[ts_field].isoformat()
     # Map boolean fields
@@ -924,6 +950,9 @@ async def pg_get_summary_updated_at(thread_id: str) -> Optional[datetime]:
 async def pg_ensure_default_agent(
     llm_model: str = "qwen-plus",
     query_history: list[dict] | None = None,
+    *,
+    owner_id: int | None = None,
+    owner_username: str = "admin",
 ) -> tuple[Optional[dict], Optional[dict]]:
     """Ensure a default agent exists; optionally migrate legacy query_history.
 
@@ -934,30 +963,47 @@ async def pg_ensure_default_agent(
         (None, None) if one already existed.
     """
     pool = _get_pool()
+    if owner_id is None:
+        admin = await pool.fetchrow(
+            "SELECT id, username FROM users WHERE username = $1",
+            owner_username,
+        )
+        if not admin:
+            raise RuntimeError(f"Administrator not found: {owner_username}")
+        owner_id = int(admin["id"])
+        owner_username = str(admin["username"])
     existing = await pool.fetchval(
         "SELECT count(*) FROM agents WHERE kb_name = 'default' AND name IN ('通用助手', 'default')",
     )
     if existing:
         return None, None
 
-    agent = await pg_create_agent(
-        config={
-            "name": "通用助手",
-            "icon": "🤖",
-            "description": "默认智能体，关联默认知识库",
-            "welcome_message": "你好！我是通用助手，可以回答知识库中的任何问题。",
-            "kb_name": "default",
-            "llm_model": llm_model,
-            "system_prompt": "",
-            "use_default_prompt": True,
-        },
-        owner_id=1,
-        owner_username="admin",
-    )
+    try:
+        agent = await pg_create_agent(
+            config={
+                "id": "default",
+                "name": "通用助手",
+                "icon": "🤖",
+                "description": "默认智能体，关联默认知识库",
+                "welcome_message": "你好！我是通用助手，可以回答知识库中的任何问题。",
+                "kb_name": "default",
+                "llm_model": llm_model,
+                "system_prompt": "",
+                "use_default_prompt": True,
+            },
+            owner_id=owner_id,
+            owner_username=owner_username,
+        )
+    except asyncpg.UniqueViolationError:
+        # Concurrent startup workers use the same deterministic ID. The
+        # winner owns the row; the loser observes an already-complete baseline.
+        return None, None
     agent_id = agent["id"]
 
     if query_history:
-        thread = await pg_create_conversation(agent_id, title="旧查询记录", owner_id=1)
+        thread = await pg_create_conversation(
+            agent_id, title="旧查询记录", owner_id=owner_id
+        )
         thread_id = thread["id"]
         for record in reversed(query_history):
             await pg_add_message(agent_id, thread_id, {
@@ -978,8 +1024,11 @@ async def pg_ensure_default_agent(
     return agent, None
 
 
-async def pg_migrate_agents() -> int:
-    """Migrate owner_id=0 agents and conversations to admin (user_id=1).
+async def pg_migrate_agents(
+    owner_id: int | None = None,
+    owner_username: str = "admin",
+) -> int:
+    """Migrate ownerless agents and conversations to the current admin.
 
     Replaces: AgentManager.migrate_agents()
 
@@ -989,21 +1038,34 @@ async def pg_migrate_agents() -> int:
     pool = _get_pool()
     now = datetime.now(timezone.utc)
 
+    if owner_id is None:
+        admin = await pool.fetchrow(
+            "SELECT id, username FROM users WHERE username = $1",
+            owner_username,
+        )
+        if not admin:
+            raise RuntimeError(f"Administrator not found: {owner_username}")
+        owner_id = int(admin["id"])
+        owner_username = str(admin["username"])
+
     async with pool.acquire() as conn:
         async with conn.transaction():
             # Migrate agents
             agent_result = await conn.execute(
-                "UPDATE agents SET owner_id = 1, owner_username = 'admin', updated_at = $1 "
+                "UPDATE agents SET owner_id = $2, owner_username = $3, updated_at = $1 "
                 "WHERE owner_id = 0",
                 now,
+                owner_id,
+                owner_username,
             )
             agent_count = int(agent_result.split()[-1]) if agent_result else 0
 
             # Migrate conversations
             await conn.execute(
-                "UPDATE agent_conversations SET owner_id = 1, updated_at = $1 "
+                "UPDATE agent_conversations SET owner_id = $2, updated_at = $1 "
                 "WHERE owner_id = 0",
                 now,
+                owner_id,
             )
 
     if agent_count:

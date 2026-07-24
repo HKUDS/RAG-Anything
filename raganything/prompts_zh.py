@@ -16,9 +16,12 @@ PROMPTS_ZH: dict[str, Any] = {}
 # System prompts for different analysis types
 PROMPTS_ZH["IMAGE_ANALYSIS_SYSTEM"] = (
     "你是一位专业的图像分析专家。请提供详细、准确的描述。"
+    "所有自然语言输出，包括图片名称、详细描述和摘要，都必须使用简体中文；"
+    "图片中的原文、公式、型号和无法翻译的专有名词可以按需保留。"
 )
 PROMPTS_ZH["IMAGE_ANALYSIS_FALLBACK_SYSTEM"] = (
     "你是一位专业的图像分析专家。请根据现有信息提供详细分析。"
+    "所有自然语言输出必须使用简体中文；原文、公式、型号和专有名词可以按需保留。"
 )
 PROMPTS_ZH["TABLE_ANALYSIS_SYSTEM"] = (
     "你是一位专业的数据分析师。请提供包含具体洞察的详细表格分析。"
@@ -57,6 +60,7 @@ PROMPTS_ZH["vision_prompt"] = """请详细分析这张图片，并以以下JSON�
 - 脚注：{footnotes}
 
 请专注于提供准确、详细的视觉分析，以便于知识检索。
+输出语言要求：detailed_description、entity_name 和 summary 必须使用简体中文；图片原文、公式、型号和专有名词可保留原样。
 请生成语义化的 entity_name；不要返回文件名或图号（例如 figure_30_1），除非它们就是正式标题。"""
 
 # Image analysis prompt with context support
@@ -93,6 +97,7 @@ PROMPTS_ZH[
 - 脚注：{footnotes}
 
 请专注于提供融合上下文的准确、详细的视觉分析，以便于知识检索。
+输出语言要求：detailed_description、entity_name 和 summary 必须使用简体中文；图片原文、公式、型号和专有名词可保留原样。
 请生成语义化的 entity_name；不要返回文件名或图号（例如 figure_30_1），除非它们就是正式标题。"""
 
 # Image analysis prompt with text fallback

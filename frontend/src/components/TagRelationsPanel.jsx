@@ -11,7 +11,7 @@ export default function TagRelationsPanel({ kbName, selectedTagId, onSelectTag }
 
   useEffect(() => {
     const controller = new AbortController()
-    api.listKnowledgeTags({ kb: kbName, query, signal: controller.signal })
+    api.listAllKnowledgeTags({ kb: kbName, query, signal: controller.signal })
       .then(data => setTags(Array.isArray(data.tags) ? data.tags : []))
       .catch(() => setTags([]))
     return () => controller.abort()

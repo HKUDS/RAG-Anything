@@ -438,11 +438,23 @@ class ChunkProcessorMixin:
         doc_id: str,
         chunk_ids: List[str],
         chunks: Dict[str, Any] | None = None,
-    ):
-        """Update document status with multimodal chunks"""
+    ) -> bool:
+        """Update document status with multimodal chunks.
+
+        The completion marker is only valid after this durable status update
+        succeeds. Returning a boolean lets the caller keep an interrupted
+        document out of the completed/tagging path when the status store is
+        temporarily unavailable.
+        """
         try:
             # Get current document status
             current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
+            if not current_doc_status:
+                self.logger.warning(
+                    "Cannot update multimodal chunks: document status missing for %s",
+                    doc_id,
+                )
+                return False
 
             # Register chunk → doc source mappings for citation tracing
             file_path = current_doc_status.get("file_path", "") if current_doc_status else ""
@@ -503,8 +515,10 @@ class ChunkProcessorMixin:
                     f"Updated doc_status: added {len(chunk_ids)} multimodal chunks to standard chunks_list "
                     f"(total chunks: {updated_chunks_count})"
                 )
+                return True
 
         except Exception as e:
             self.logger.warning(
                 f"Error updating doc_status with multimodal chunks: {e}"
             )
+        return False

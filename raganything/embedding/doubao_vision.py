@@ -126,6 +126,26 @@ def _safe_response_diagnostics(response) -> dict[str, str | None]:
     }
 
 
+def _is_billing_or_account_denial(diagnostics: dict[str, str | None]) -> bool:
+    """Return whether a 400 represents a persistent account-side denial."""
+    code = str(diagnostics.get("provider_code") or "").casefold()
+    message = str(diagnostics.get("provider_message") or "").casefold()
+    if code in {
+        "arrearage",
+        "insufficient_balance",
+        "insufficientbalance",
+        "account_overdue",
+        "payment_required",
+    }:
+        return True
+    return any(marker in message for marker in (
+        "account is in good standing",
+        "overdue payment",
+        "arrearage",
+        "insufficient balance",
+    ))
+
+
 # ── Dimension Discovery ─────────────────────────────────────
 
 def _dim_cache_path(working_dir: str) -> str:
@@ -540,6 +560,13 @@ class DoubaoEmbeddingAdapter:
                     elif resp.status_code == 403:
                         error_cls = VisionEmbeddingAuthorizationError
                         self._disabled_reason = "authorization_failed"
+                    elif (
+                        resp.status_code == 400
+                        and _is_billing_or_account_denial(diagnostics)
+                    ):
+                        # This is persistent for the current worker process;
+                        # do not charge every image with the same rejected call.
+                        self._disabled_reason = "billing_unavailable"
                     error = error_cls(resp.status_code, **diagnostics)
                     self._last_failure = error.as_dict()
                     logger.error(

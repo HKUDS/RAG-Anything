@@ -1,20 +1,28 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, Bot, Trash2, Edit3, X, MessageSquare, Database,
-  Cpu, Search, Brain, Layers,
+  Clock, Cpu, Search, Brain, Layers,
 } from 'lucide-react'
 import { api } from '../utils/api'
 import { motion, AnimatePresence } from 'framer-motion'
 import Pagination from '../components/Pagination'
+import ResourceSortControl from '../components/ResourceSortControl'
 import { useAuth } from '../context/AuthContext'
+import { sortAgents } from '../utils/agentSorting'
+import { clampPage, getStoredPageSize, getTotalPages, storePageSize } from '../utils/pagination'
 
 const MODE_LABELS = { rrf: '融合', hybrid: '混合', local: '精确', global: '全局', naive: '快速' }
 const AGENT_MODE_LABELS = { none: '普通', react: 'ReAct', cot: 'CoT' }
 const AGENT_MODE_ICONS = { none: MessageSquare, react: Brain, cot: Layers }
 const AGENT_GRID_ROWS = 2
-const AGENTS_PER_PAGE = 8
+const PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:agents'
+const AGENT_SORT_OPTIONS = [
+  { value: 'updated', label: '更新时间', Icon: Clock, type: 'time' },
+  { value: 'lastConversation', label: '最近对话', Icon: MessageSquare, type: 'time' },
+  { value: 'conversationCount', label: '对话数量', Icon: Layers, type: 'number' },
+]
 
 const ANSWER_STYLE_PRESETS = [
   {
@@ -84,7 +92,10 @@ export default function AgentsPage({ onToast }) {
   const [form, setForm] = useState(getDefaultForm())
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [search, setSearch] = useState('')
+  const [sortField, setSortField] = useState('updated')
+  const [sortDirection, setSortDirection] = useState('desc')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(() => getStoredPageSize(PAGE_SIZE_STORAGE_KEY))
   const [gridColumns, setGridColumns] = useState(4)
   const [saving, setSaving] = useState(false)
   const [formError, setFormError] = useState('')
@@ -317,7 +328,7 @@ export default function AgentsPage({ onToast }) {
   }
 
   const normalizedSearch = search.trim().toLowerCase()
-  const filteredAgents = agents.filter(agent => {
+  const filteredAgents = useMemo(() => agents.filter(agent => {
     if (!normalizedSearch) return true
     return [
       agent.name,
@@ -328,11 +339,15 @@ export default function AgentsPage({ onToast }) {
       MODE_LABELS[agent.query_mode],
       AGENT_MODE_LABELS[agent.agent_mode],
     ].some(value => String(value || '').toLowerCase().includes(normalizedSearch))
-  })
+  }), [agents, normalizedSearch])
+  const sortedAgents = useMemo(
+    () => sortAgents(filteredAgents, sortField, sortDirection),
+    [filteredAgents, sortField, sortDirection]
+  )
 
-  const totalPages = Math.max(1, Math.ceil(filteredAgents.length / AGENTS_PER_PAGE))
-  const currentPage = Math.min(page, totalPages)
-  const paginatedAgents = filteredAgents.slice((currentPage - 1) * AGENTS_PER_PAGE, currentPage * AGENTS_PER_PAGE)
+  const totalPages = getTotalPages(sortedAgents.length, pageSize)
+  const currentPage = clampPage(page, totalPages)
+  const paginatedAgents = sortedAgents.slice((currentPage - 1) * pageSize, currentPage * pageSize)
   const agentGridRows = paginatedAgents.length > 0
     ? Math.max(AGENT_GRID_ROWS, Math.ceil(paginatedAgents.length / Math.max(1, gridColumns)))
     : AGENT_GRID_ROWS
@@ -348,6 +363,12 @@ export default function AgentsPage({ onToast }) {
       setPage(totalPages)
     }
   }, [page, totalPages])
+
+  const updatePageSize = value => {
+    const next = storePageSize(PAGE_SIZE_STORAGE_KEY, value)
+    setPageSize(next)
+    setPage(1)
+  }
 
 
   const activeAnswerStyle = ANSWER_STYLE_PRESETS.find(
@@ -383,23 +404,39 @@ export default function AgentsPage({ onToast }) {
             <input
               className="input-field w-full pl-10 pr-4 text-sm"
               placeholder="搜索智能体名称、描述、知识库或模型"
+              aria-label="搜索智能体名称、描述、知识库或模型"
               value={search}
               onChange={e => setSearch(e.target.value)}
             />
           </div>
-          <div className="resource-count">
-            共 {agents.length} 个智能体
-            {normalizedSearch ? `，匹配到 ${filteredAgents.length} 个结果` : ''}
+          <div className="resource-toolbar-actions">
+            <ResourceSortControl
+              sortOptions={AGENT_SORT_OPTIONS}
+              sortField={sortField}
+              sortDirection={sortDirection}
+              onSortFieldChange={field => {
+                setSortField(field)
+                setPage(1)
+              }}
+              onSortDirectionChange={direction => {
+                setSortDirection(direction)
+                setPage(1)
+              }}
+              menuId="agent-sort-options"
+              ariaLabel="智能体排序"
+            />
+            <div className="resource-count">
+              共 {agents.length} 个智能体
+              {normalizedSearch ? `，匹配到 ${filteredAgents.length} 个结果` : ''}
+            </div>
           </div>
         </div>
 
         {/* 智能体卡片 */}
         <div ref={gridRef} className={agentGridClassName} style={agentGridStyle}>
           {paginatedAgents.map(agent => (
-            <motion.div
+            <div
               key={agent.id}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
               className="directory-card resource-card resource-card-agent group cursor-pointer"
               onClick={() => startChat(agent)}
             >
@@ -457,12 +494,19 @@ export default function AgentsPage({ onToast }) {
               <button className="directory-footer resource-card-agent-footer w-full flex items-center justify-center gap-2 text-xs font-medium text-ink-primary hover:text-sky-600 transition-colors">
                 <MessageSquare size={13} /> 开始对话
               </button>
-            </motion.div>
+            </div>
           ))}
         </div>
 
-        {filteredAgents.length > 0 && (
-          <Pagination page={currentPage} totalPages={totalPages} onPageChange={setPage} className="resource-pagination resource-pagination-agents" />
+        {sortedAgents.length > 0 && (
+          <Pagination
+            page={currentPage}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            pageSize={pageSize}
+            onPageSizeChange={updatePageSize}
+            className="resource-pagination resource-pagination-agents"
+          />
         )}
 
         {agents.length === 0 && (

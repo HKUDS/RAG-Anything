@@ -318,6 +318,22 @@ export default function SettingsPage({ onToast }) {
             <span className="font-mono text-sky-500 dark:text-sky-400 font-medium w-10 text-right">{local.max_async || 4}</span>
           </div>
         </Field>
+        <Field label="LLM 请求超时（秒）" hint="单次模型请求超时，范围 30-600 秒；超时后由有限重试和补偿队列接管。">
+          <input
+            className="input-field text-sm"
+            type="number"
+            min="30"
+            max="600"
+            step="10"
+            value={local.llm_timeout || 180}
+            disabled={disabled}
+            onChange={e => setLocal({ ...local, llm_timeout: parseInt(e.target.value, 10) })}
+            onBlur={e => {
+              const value = parseInt(e.target.value, 10)
+              if (!Number.isNaN(value)) save({ llm_timeout: value }, 'llm_timeout')
+            }}
+          />
+        </Field>
       </section>
 
       <section className="card h-full p-5 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30 xl:col-span-4 min-w-0">
