@@ -756,6 +756,25 @@ class MineruParser(Parser):
         super().__init__()
 
     @classmethod
+    def _prepare_image_for_mineru(cls, img: "Image.Image") -> "Image.Image":
+        """Normalize image modes before writing PNG for MinerU.
+
+        RGBA/LA/P are composited onto white using the alpha channel. LA must be
+        converted to RGBA first; pasting LA without a mask drops transparency.
+        """
+        from PIL import Image
+
+        if img.mode in ("RGBA", "LA", "P"):
+            if img.mode in ("P", "LA"):
+                img = img.convert("RGBA")
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[-1])
+            return background
+        if img.mode not in ("RGB", "L"):
+            return img.convert("RGB")
+        return img
+
+    @classmethod
     def _is_mineru_unsafe_windows_path(cls, path: Union[str, Path]) -> bool:
         if not _IS_WINDOWS:
             return False
@@ -1348,24 +1367,7 @@ class MineruParser(Parser):
                 try:
                     # Open and convert image
                     with Image.open(image_path) as img:
-                        # Handle different image modes
-                        if img.mode in ("RGBA", "LA", "P"):
-                            # For images with transparency or palette, convert to RGB first
-                            if img.mode == "P":
-                                img = img.convert("RGBA")
-
-                            # Create white background for transparent images
-                            background = Image.new("RGB", img.size, (255, 255, 255))
-                            if img.mode == "RGBA":
-                                background.paste(
-                                    img, mask=img.split()[-1]
-                                )  # Use alpha channel as mask
-                            else:
-                                background.paste(img)
-                            img = background
-                        elif img.mode not in ("RGB", "L"):
-                            # Convert other modes to RGB
-                            img = img.convert("RGB")
+                        img = self._prepare_image_for_mineru(img)
 
                         # Save as PNG
                         img.save(temp_converted_file, "PNG", optimize=True)
