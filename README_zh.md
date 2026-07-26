@@ -974,6 +974,31 @@ if __name__ == "__main__":
 - 您需要将来自多个源的内容插入到单个知识库中
 - 您有想要重用的缓存解析结果
 
+#### 8. 切换存储后端后重新处理多模态内容
+
+默认情况下，`process_document_complete` 和 `insert_content_list` 会跳过已标记为"完全处理完成"文档的多模态（图像/表格/公式）处理，以避免重复的 LLM 调用。如果您切换到了**新的**图/向量存储后端（例如从默认的文件存储迁移到 Neo4j），新后端中还不会包含之前写入旧后端的多模态实体/关系——详见 [#154](https://github.com/HKUDS/RAG-Anything/issues/154)。
+
+传入 `force_multimodal_reprocess=True` 可以显式地重新运行多模态处理，将数据重新写入当前存储后端：
+
+```python
+# 重新运行多模态处理，让当前存储后端拥有图像/表格/公式的实体和关系
+# （默认值为 False，即对尚未切换后端的文档不改变原有行为）
+await rag.process_document_complete(
+    file_path="path/to/your/document.pdf",
+    doc_id="doc-already-processed-id",
+    force_multimodal_reprocess=True,
+)
+
+# insert_content_list 也支持相同的参数
+await rag.insert_content_list(
+    content_list=content_list,
+    doc_id="doc-already-processed-id",
+    force_multimodal_reprocess=True,
+)
+```
+
+该参数只影响多模态内容处理，是纯可选（opt-in）参数，默认值为 `False`，因此不会改变任何现有行为，除非您显式设置它。
+
 ---
 
 ## 🛠️ 示例

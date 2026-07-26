@@ -260,7 +260,9 @@ async def test_image_only_document_falls_back_when_multimodal_flag_is_unsupporte
             "doc-image",
         )
 
-    async def fake_process_multimodal_content(multimodal_items, file_name, doc_id):
+    async def fake_process_multimodal_content(
+        multimodal_items, file_name, doc_id, **kwargs
+    ):
         await processor._mark_multimodal_processing_complete(doc_id)
 
     processor._ensure_lightrag_initialized = fake_ensure_lightrag_initialized
