@@ -995,6 +995,39 @@ This method is particularly useful when:
 - You need to insert content from multiple sources into a single knowledge base
 - You have cached parsing results that you want to reuse
 
+#### 8. Re-processing Multimodal Content After a Storage Backend Change
+
+By default, `process_document_complete` and `insert_content_list` skip multimodal
+(image/table/equation) processing for a document that is already marked as fully
+processed, to avoid redundant LLM calls. If you switch to a **new** graph/vector
+storage backend (e.g. migrating from the default file-based storage to Neo4j),
+the new backend will not yet contain the multimodal entities/relations that were
+written to the old one — see [#154](https://github.com/HKUDS/RAG-Anything/issues/154).
+
+Pass `force_multimodal_reprocess=True` to explicitly re-run multimodal processing
+and re-populate the current storage backend for an already-processed document:
+
+```python
+# Re-run multimodal processing so the current storage backend has the
+# image/table/equation entities and relations (default is False, i.e. no change
+# to existing behavior for documents that have not switched backends)
+await rag.process_document_complete(
+    file_path="path/to/your/document.pdf",
+    doc_id="doc-already-processed-id",
+    force_multimodal_reprocess=True,
+)
+
+# Same flag is available for direct content list insertion
+await rag.insert_content_list(
+    content_list=content_list,
+    doc_id="doc-already-processed-id",
+    force_multimodal_reprocess=True,
+)
+```
+
+This flag only affects multimodal content; it is opt-in and defaults to `False`,
+so existing behavior is unchanged unless you explicitly set it.
+
 ---
 
 ## 🛠️ Examples
