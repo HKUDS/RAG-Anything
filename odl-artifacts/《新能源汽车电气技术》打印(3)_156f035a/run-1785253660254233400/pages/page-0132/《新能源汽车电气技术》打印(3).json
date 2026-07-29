@@ -1,0 +1,117 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 132,
+    "bounding box" : [ 111.0, 737.54, 509.89, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.车窗玻璃电动机 电动机：一般为双向永磁或绕线电动机，每扇车窗都配备一个，为车窗升降提供动力，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 132,
+    "bounding box" : [ 90.0, 717.021, 394.449, 727.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "通过开关控制电流方向来实现车窗的上升和下降。如图 4-3 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 4,
+    "page number" : 132,
+    "bounding box" : [ 161.88, 442.66, 433.44, 708.7 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 5,
+    "page number" : 132,
+    "bounding box" : [ 243.84, 425.54, 351.368, 435.99 ],
+    "linked content id" : 4,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-3 车窗玻璃电动机"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 132,
+    "bounding box" : [ 111.0, 386.54, 505.207, 417.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.前机舱配电盒 前机舱配电盒的继电器与熔丝，在控制电路中，起到控制电流通断的作用，能够保护电"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 132,
+    "bounding box" : [ 90.0, 366.14, 341.889, 376.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "机和其他部件，防止电路过载或短路。如图 4-4 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 132,
+    "bounding box" : [ 90.0, 151.66, 509.88, 357.7 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 9,
+    "page number" : 132,
+    "bounding box" : [ 249.0, 134.54, 346.089, 144.99 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-4 前机舱配电盒"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 132,
+    "bounding box" : [ 111.0, 95.661, 505.208, 126.511 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5.车窗控制开关 控制开关：包括主开关和分开关，主开关一般位于驾驶人侧车门扶手处，可控制每个车"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 132,
+    "bounding box" : [ 90.0, 75.14, 505.208, 85.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "窗的升降，还可能带有断路开关、全车车窗锁止功能、后视镜调节功能、车内中控门锁功能"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 132,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "132"
+  } ]
+}

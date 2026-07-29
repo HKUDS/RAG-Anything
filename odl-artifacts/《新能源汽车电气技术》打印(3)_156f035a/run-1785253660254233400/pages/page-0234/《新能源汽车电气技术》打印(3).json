@@ -1,0 +1,1075 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 234,
+    "bounding box" : [ 84.36, 82.92, 510.89, 769.9 ],
+    "number of rows" : 16,
+    "number of columns" : 4,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 84.6, 698.46, 123.8, 769.42 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 123.8, 698.46, 186.8, 769.42 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 745.76, 380.75, 769.42 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 752.241, 357.6, 762.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "开度、制冷剂高压/低压压力、蒸发器温度"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 380.75, 698.46, 510.65, 769.42 ],
+        "row number" : 1,
+        "column number" : 4,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 2,
+          "page number" : 234,
+          "bounding box" : [ 386.159, 752.241, 487.919, 762.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "5min 后进行（系统稳定）"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 234,
+          "bounding box" : [ 395.159, 728.841, 505.194, 738.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3.若无法读取压力数据，检"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 4,
+          "page number" : 234,
+          "bounding box" : [ 386.159, 706.425, 503.159, 715.425 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "查制冷剂压力传感器是否故障"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 698.46, 380.75, 745.76 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 728.36, 375.359, 738.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3.对比标准值，判断异常参数（如压缩机转速"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 6,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 704.96, 325.32, 714.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "＜1000rpm、低压压力＜0.1MPa）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 84.6, 532.66, 123.8, 698.46 ],
+        "row number" : 3,
+        "column number" : 1,
+        "row span" : 4,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 7,
+          "page number" : 234,
+          "bounding box" : [ 101.88, 610.16, 106.434, 619.16 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 123.8, 532.66, 186.8, 698.46 ],
+        "row number" : 3,
+        "column number" : 2,
+        "row span" : 4,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 8,
+          "page number" : 234,
+          "bounding box" : [ 132.84, 622.784, 177.84, 631.784 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "制冷剂压力"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 234,
+          "bounding box" : [ 146.28, 599.384, 164.28, 608.384 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "测量"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 651.16, 380.75, 698.46 ],
+        "row number" : 3,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 10,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 680.96, 375.359, 690.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "1.关闭空调，连接制冷剂回收加注机（高压管"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 11,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 658.544, 345.24, 667.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "接冷凝器出口，低压管接蒸发器入口）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 380.75, 532.66, 510.65, 698.46 ],
+        "row number" : 3,
+        "column number" : 4,
+        "row span" : 4,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "list",
+          "pdfua_tag" : "L",
+          "id" : 15,
+          "level" : "1",
+          "page number" : 234,
+          "bounding box" : [ 395.159, 563.96, 505.194, 690.944 ],
+          "numbering style" : "arabic numbers",
+          "number of list items" : 3,
+          "list items" : [ {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 234,
+            "bounding box" : [ 395.159, 680.96, 505.194, 690.944 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "1.连接软管时需拧紧，避免",
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 12,
+              "page number" : 234,
+              "bounding box" : [ 386.159, 658.544, 431.159, 667.544 ],
+              "font" : "SimSun",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "制冷剂泄漏"
+            } ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 234,
+            "bounding box" : [ 395.159, 634.16, 505.194, 644.144 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "2.禁止在系统高压状态下拆",
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 13,
+              "page number" : 234,
+              "bounding box" : [ 386.159, 611.744, 505.195, 620.744 ],
+              "font" : "SimSun",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "卸管路（可能导致制冷剂喷射"
+            }, {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 14,
+              "page number" : 234,
+              "bounding box" : [ 386.159, 588.344, 413.159, 597.344 ],
+              "font" : "SimSun",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "伤人）"
+            } ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 234,
+            "bounding box" : [ 395.159, 563.96, 505.194, 573.944 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "3.环境温度需记录（压力值",
+            "kids" : [ ]
+          } ]
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 16,
+          "page number" : 234,
+          "bounding box" : [ 386.159, 541.544, 440.159, 550.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "与温度相关）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 4,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 603.86, 380.75, 651.16 ],
+        "row number" : 4,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 17,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 633.68, 375.359, 643.664 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2.起动车辆，开启空调最大制冷模式，待系统"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 18,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 610.28, 258.0, 620.264 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "稳定（5min 后）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 5,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 579.96, 380.75, 603.86 ],
+        "row number" : 5,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 19,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 586.4, 360.959, 596.384 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3.记录高压侧、低压侧压力，对比标准值"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 6,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 532.66, 380.75, 579.96 ],
+        "row number" : 6,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 20,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 562.52, 375.359, 572.504 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "4.关闭空调，拆卸高低压管路（先关阀门，再"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 21,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 540.104, 228.24, 549.104 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "拆软管）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 7,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 84.6, 367.36, 123.8, 532.66 ],
+        "row number" : 7,
+        "column number" : 1,
+        "row span" : 3,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 22,
+          "page number" : 234,
+          "bounding box" : [ 101.88, 444.681, 106.434, 453.681 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "4"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 123.8, 367.36, 186.8, 532.66 ],
+        "row number" : 7,
+        "column number" : 2,
+        "row span" : 3,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 23,
+          "page number" : 234,
+          "bounding box" : [ 132.84, 468.944, 177.84, 477.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "制冷系统管"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 24,
+          "page number" : 234,
+          "bounding box" : [ 129.24, 445.544, 181.44, 454.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "路检漏（肥皂"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 25,
+          "page number" : 234,
+          "bounding box" : [ 141.84, 422.144, 168.84, 431.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "水法）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 461.96, 380.75, 532.66 ],
+        "row number" : 7,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 26,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 515.241, 378.959, 525.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "1.用喷壶将肥皂水均匀喷洒在待检部位表面，"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 27,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 492.825, 375.354, 501.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "或用毛刷蘸取肥皂水涂抹，确保覆盖整个接缝"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 28,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 469.425, 273.24, 478.425 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "和表面，无遗漏区域"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 380.75, 367.36, 510.65, 532.66 ],
+        "row number" : 7,
+        "column number" : 4,
+        "row span" : 3,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 29,
+          "page number" : 234,
+          "bounding box" : [ 390.6, 516.225, 505.2, 525.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "对于隐蔽部位（如底盘下的管"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 30,
+          "page number" : 234,
+          "bounding box" : [ 386.159, 492.825, 505.195, 501.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "路、蒸发器内部接头），可借"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 31,
+          "page number" : 234,
+          "bounding box" : [ 386.159, 469.425, 458.159, 478.425 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "助手电筒照射观察"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 8,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 414.66, 380.75, 461.96 ],
+        "row number" : 8,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 32,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 444.56, 375.359, 454.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2.观察气泡产生情况。观察发现接口处有小气"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 33,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 422.144, 201.24, 431.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "泡"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 9,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 367.36, 380.75, 414.66 ],
+        "row number" : 9,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 34,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 397.16, 375.359, 407.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3.确认泄漏点。对于疑似泄漏部位，可反复涂"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 35,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 374.744, 372.24, 383.744 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "抹肥皂水，确认气泡产生的稳定性，排除误判"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 10,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 84.6, 130.86, 123.8, 367.36 ],
+        "row number" : 10,
+        "column number" : 1,
+        "row span" : 5,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 36,
+          "page number" : 234,
+          "bounding box" : [ 101.88, 243.8, 106.434, 252.8 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "5"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 123.8, 130.86, 186.8, 367.36 ],
+        "row number" : 10,
+        "column number" : 2,
+        "row span" : 5,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 37,
+          "page number" : 234,
+          "bounding box" : [ 129.24, 267.944, 181.44, 276.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "故障修复（以"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 38,
+          "page number" : 234,
+          "bounding box" : [ 132.84, 244.544, 177.84, 253.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "管路接口漏"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 39,
+          "page number" : 234,
+          "bounding box" : [ 141.84, 221.144, 168.84, 230.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "为例）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 320.06, 380.75, 367.36 ],
+        "row number" : 10,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 40,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 349.88, 375.359, 359.864 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "1.回收系统内制冷剂（用回收机抽取，避免排"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 41,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 327.465, 210.24, 336.465 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "放）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 380.75, 130.86, 510.65, 367.36 ],
+        "row number" : 10,
+        "column number" : 4,
+        "row span" : 5,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "list",
+          "pdfua_tag" : "L",
+          "id" : 45,
+          "level" : "1",
+          "page number" : 234,
+          "bounding box" : [ 395.159, 232.881, 505.2, 359.864 ],
+          "numbering style" : "arabic numbers",
+          "number of list items" : 3,
+          "list items" : [ {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 234,
+            "bounding box" : [ 395.159, 349.88, 505.194, 359.864 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "1.回收制冷剂时需确认回收",
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 42,
+              "page number" : 234,
+              "bounding box" : [ 386.159, 327.465, 485.159, 336.465 ],
+              "font" : "SimSun",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "机压力正常（避免过载）"
+            } ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 234,
+            "bounding box" : [ 395.159, 303.081, 505.2, 313.065 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "2.抽真空后需保压 10min，若",
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 43,
+              "page number" : 234,
+              "bounding box" : [ 386.159, 279.681, 505.2, 289.665 ],
+              "font" : "SimSun",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "压力回升＞0.02MPa，说明仍有"
+            }, {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 44,
+              "page number" : 234,
+              "bounding box" : [ 386.159, 257.264, 404.159, 266.264 ],
+              "font" : "SimSun",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "漏点"
+            } ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 234,
+            "bounding box" : [ 395.159, 232.881, 505.194, 242.865 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "3.制冷剂加注量需精准（过",
+            "kids" : [ ]
+          } ]
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 46,
+          "page number" : 234,
+          "bounding box" : [ 386.159, 210.465, 505.195, 219.465 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "多导致高压过高，过少导致制"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 47,
+          "page number" : 234,
+          "bounding box" : [ 386.159, 187.065, 422.159, 196.065 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "冷不足）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 11,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 272.76, 380.75, 320.06 ],
+        "row number" : 11,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 48,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 302.6, 375.317, 312.584 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2.拆卸泄漏接口的螺栓，更换密封垫（如 O"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 49,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 280.184, 291.24, 289.184 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "形圈，材质为丁腈橡胶）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 12,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 225.46, 380.75, 272.76 ],
+        "row number" : 12,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 50,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 255.32, 379.8, 265.304 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3.重新安装接口，拧紧螺栓（按厂家规定扭矩，"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 51,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 231.92, 239.04, 241.904 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "如 15N・m）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 13,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 178.16, 380.75, 225.46 ],
+        "row number" : 13,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 52,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 208.041, 375.24, 218.025 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "4.使用制冷剂回收加注机进行系统抽真空，"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 53,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 184.641, 320.88, 194.625 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "30min 以上，确保真空度≤5Pa）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 14,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 130.86, 380.75, 178.16 ],
+        "row number" : 14,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 54,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 160.76, 375.24, 170.744 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "5.按厂家规定量加注制冷剂（如比亚迪元"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 55,
+          "page number" : 234,
+          "bounding box" : [ 192.24, 137.36, 305.159, 147.344 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "PLUS 需加注 R134a 约 600g）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 15,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 84.6, 83.4, 123.8, 130.86 ],
+        "row number" : 15,
+        "column number" : 1,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 56,
+          "page number" : 234,
+          "bounding box" : [ 101.88, 101.6, 106.434, 110.6 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "6"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 123.8, 83.4, 186.8, 130.86 ],
+        "row number" : 15,
+        "column number" : 2,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 57,
+          "page number" : 234,
+          "bounding box" : [ 137.28, 102.465, 173.28, 111.465 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "维修验证"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 106.96, 380.75, 130.86 ],
+        "row number" : 15,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 58,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 113.36, 342.959, 123.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "1.起动车辆，开启空调最大制冷模式"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 380.75, 83.4, 510.65, 130.86 ],
+        "row number" : 15,
+        "column number" : 4,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 59,
+          "page number" : 234,
+          "bounding box" : [ 395.159, 113.36, 505.2, 123.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "1.验证过程中需持续监测蓄"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 60,
+          "page number" : 234,
+          "bounding box" : [ 386.159, 90.944, 509.759, 99.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "电池电压（避免高压系统故障）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 16,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 234,
+        "bounding box" : [ 186.8, 83.4, 380.75, 106.96 ],
+        "row number" : 16,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 61,
+          "page number" : 234,
+          "bounding box" : [ 201.24, 89.481, 375.359, 99.465 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2.测量出风口温度（需≤10℃）、制冷剂压力"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 1,
+    "level" : "Doctitle",
+    "page number" : 234,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "heading level" : 1,
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "234"
+  } ]
+}

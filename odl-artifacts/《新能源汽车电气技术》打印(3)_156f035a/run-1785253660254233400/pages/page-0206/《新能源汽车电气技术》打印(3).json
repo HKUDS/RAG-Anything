@@ -1,0 +1,158 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 206,
+    "bounding box" : [ 166.44, 622.54, 427.68, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 3,
+    "page number" : 206,
+    "bounding box" : [ 237.24, 602.54, 357.847, 612.99 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-26 LIN 总线系统结构"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 206,
+    "bounding box" : [ 111.0, 561.74, 510.49, 592.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1.主节点 主节点是 LIN 网络的核心控制器与管理器，通常由车身控制模块、网关或智能开关担任。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 206,
+    "bounding box" : [ 90.0, 541.34, 194.887, 551.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "它承担三项核心职责："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 6,
+    "level" : "1",
+    "page number" : 206,
+    "bounding box" : [ 111.0, 480.021, 510.49, 531.39 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 206,
+      "bounding box" : [ 111.0, 520.94, 441.605, 531.39 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）通信调度——其内部预存“调度表”，严格决定何时发起何种通信。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 206,
+      "bounding box" : [ 111.0, 500.54, 510.49, 510.99 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）发送报文头——每次通信均由主节点发起，发送包含同步场和任务标识符的报文头。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 206,
+      "bounding box" : [ 111.0, 480.021, 505.203, 490.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）“网关”功能——作为 LIN 子网与上层 CAN 网络之间的桥梁，实现信息的中转与协",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 206,
+    "bounding box" : [ 90.0, 357.5, 505.209, 470.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "议的转换。 2.从节点 从节点是简单的执行器或传感器，如车窗电动机、门锁或温度传感器。它们的功能相对 单一：监听与响应。从节点始终监听总线，当收到报文头并确认标识符与自身匹配时，便在 规定时间内做出响应，发送数据或执行指令。从节点无法主动发起通信，也无须复杂的总线 仲裁逻辑。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 206,
+    "bounding box" : [ 90.0, 234.98, 505.208, 347.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.总线与物理连接 LIN 总线采用单线进行数据通信，物理层基于通用的串行接口。总线上通常在主节点端 接有上拉电阻，以保障信号的电平稳定性。所有节点均以并联方式接入这条单线，结构极为 简洁。LIN 总线通信过程为：主节点根据调度表发出报文头（包含标识符）→所有从节点接 收并解析该标识符→标识符匹配的从节点将数据响应接在报文头后，完成一帧传输→主节点 或其他相关从节点接收并使用该数据。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 206,
+    "bounding box" : [ 111.0, 194.06, 510.49, 225.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "三、LIN 总线系统工作原理 LIN 总线的工作原理基于其“单主多从”的核心结构，整个通信过程由主节点主动调度，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 206,
+    "bounding box" : [ 90.0, 153.261, 509.89, 184.111 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "从节点被动响应，可以概括为“一问一答”的确定式通信模式。其工作过程围绕“报文帧” 的传输展开，具体步骤如下："
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 206,
+    "bounding box" : [ 111.0, 112.34, 505.207, 143.19 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1.主节点发起通信 主节点作为网络的唯一管理者，其内部存有一个预先设定好的“调度表”。该表严格规"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 206,
+    "bounding box" : [ 90.0, 91.94, 509.89, 102.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "定了在什么时间、发送哪个报文帧。当需要通信时，主节点首先向总线发送一个信息标头，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 206,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "206"
+  } ]
+}

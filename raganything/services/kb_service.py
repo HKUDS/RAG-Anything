@@ -23,6 +23,7 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from collections import OrderedDict
+from collections.abc import Mapping
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -1573,7 +1574,9 @@ def _serialize_doc_status_record(record: Any) -> dict[str, Any]:
     else:
         if not hasattr(record, "chunks_list"):
             raise RuntimeError("full doc_status record is missing chunks_list")
-        get_value = lambda key, default=None: getattr(record, key, default)
+
+        def get_value(key: str, default: Any = None) -> Any:
+            return getattr(record, key, default)
 
     status = get_value("status")
     if hasattr(status, "value"):
@@ -1684,9 +1687,20 @@ async def _load_doc_status_by_id(
 
 def _serialize_doc_status_summary(record: Any) -> dict[str, Any]:
     """Normalize fields exposed by LightRAG's summary-only pagination API."""
-    get_value = record.get if isinstance(record, dict) else (
-        lambda key, default=None: getattr(record, key, default)
-    )
+    if isinstance(record, Mapping):
+        get_value = record.get
+    elif hasattr(record, "keys") and hasattr(record, "__getitem__"):
+        # asyncpg.Record is mapping-like but is not a dict.  Do not use
+        # getattr here: that silently drops every database column and turns a
+        # valid document into an empty list-view row.
+        def get_value(key: str, default: Any = None) -> Any:
+            try:
+                return record[key]
+            except (KeyError, IndexError):
+                return default
+    else:
+        def get_value(key: str, default: Any = None) -> Any:
+            return getattr(record, key, default)
     status = get_value("status")
     if hasattr(status, "value"):
         status = status.value
@@ -1704,9 +1718,55 @@ def _serialize_doc_status_summary(record: Any) -> dict[str, Any]:
     }
 
 
+async def _load_pg_doc_status_summaries_read_only(kb_name: str) -> dict[str, Any]:
+    """Read list-view doc-status fields directly from PostgreSQL.
+
+    This is deliberately limited to summary fields.  It lets read-only document
+    views remain available when constructing a RAG instance is impossible (for
+    example, because the configured default parser is not installed), without
+    weakening the authoritative LightRAG path used for full records or writes.
+    """
+    if not _pg_storage_ready():
+        raise RuntimeError("PG doc_status summary storage is unavailable")
+
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    workspace = kb_dir(kb_name)
+    pool = get_pg_pool()
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT id, file_path, status, content_summary, content_length,
+                          chunks_count, metadata, error_msg, created_at, updated_at,
+                          track_id
+                     FROM LIGHTRAG_DOC_STATUS
+                    WHERE workspace=$1
+                    ORDER BY updated_at DESC NULLS LAST, id""",
+                workspace,
+            )
+    except Exception as exc:
+        raise RuntimeError("PG doc_status summary read failed") from exc
+
+    return {
+        str(row["id"]): _serialize_doc_status_summary(row)
+        for row in rows
+    }
+
+
 async def _load_doc_status_summaries(kb_name: str) -> dict[str, Any]:
     """Load lightweight status rows for list views without transferring chunk IDs."""
-    ds = await _get_pg_doc_status_storage(kb_name)
+    try:
+        ds = await _get_pg_doc_status_storage(kb_name)
+    except RuntimeError:
+        # Do not fall back to legacy JSON after a PG-backed KB has been
+        # selected.  A parser-installation failure can prevent a query-only
+        # RAG instance from initializing, though, so the list view may use a
+        # bounded direct PG summary read instead.
+        kb_logger.warning(
+            "PG doc_status instance unavailable; using read-only summary fallback for KB %s",
+            kb_name,
+        )
+        return await _load_pg_doc_status_summaries_read_only(kb_name)
     if ds is None:
         return await _load_doc_status_json(kb_name)
 

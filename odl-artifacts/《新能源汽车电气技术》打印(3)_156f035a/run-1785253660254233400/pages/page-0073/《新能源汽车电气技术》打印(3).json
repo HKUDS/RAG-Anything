@@ -1,0 +1,98 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 73,
+    "bounding box" : [ 90.0, 737.54, 505.203, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "根据故障码可以明确预充接触器可能存在故障，而导致预充接触器不能正常吸合的可能 原因如下："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 8,
+    "level" : "1",
+    "page number" : 73,
+    "bounding box" : [ 111.0, 635.3, 505.208, 727.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 73,
+      "bounding box" : [ 111.0, 717.021, 252.606, 727.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）预充接触器自身机械故障。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 73,
+      "bounding box" : [ 111.0, 696.621, 252.606, 707.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）预充接触器控制线路故障。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 73,
+      "bounding box" : [ 111.0, 635.3, 505.208, 686.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）BMS 局部故障。 3.电路图及维修资料查询 秦 EV 车型的 BMS 有两个插接器如图 2-26 所示，分别为 BK45（A）和 BK45（B）,其电路",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 73,
+    "bounding box" : [ 90.0, 614.9, 213.249, 625.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "如图 2-27、图 2-28 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 13,
+    "page number" : 73,
+    "bounding box" : [ 163.44, 492.34, 431.52, 606.46 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 15,
+    "page number" : 73,
+    "bounding box" : [ 238.559, 472.221, 356.649, 482.671 ],
+    "linked content id" : 13,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-26 秦 EV BMS 插接器"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 73,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "73"
+  } ]
+}

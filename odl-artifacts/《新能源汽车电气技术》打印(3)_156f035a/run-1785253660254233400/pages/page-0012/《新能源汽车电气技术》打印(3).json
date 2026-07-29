@@ -1,0 +1,427 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 9,
+    "level" : "2",
+    "page number" : 12,
+    "bounding box" : [ 83.56, 494.62, 498.04, 769.9 ],
+    "number of rows" : 3,
+    "number of columns" : 4,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 83.8, 735.26, 142.6, 769.66 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 142.6, 735.26, 299.55, 769.66 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 12,
+          "bounding box" : [ 148.559, 750.225, 283.559, 759.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "电机三相电缆、直流充电网分线等"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 299.55, 735.26, 394.3, 769.66 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 394.3, 735.26, 497.8, 769.66 ],
+        "row number" : 1,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 83.8, 652.26, 142.6, 735.26 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 2,
+          "page number" : 12,
+          "bounding box" : [ 99.72, 688.544, 126.72, 697.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "插接器"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 142.6, 652.26, 299.55, 735.26 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 12,
+          "bounding box" : [ 157.559, 699.2, 298.08, 709.184 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "插头（凸形端子）+插座（凹形端子），"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 4,
+          "page number" : 12,
+          "bounding box" : [ 148.559, 675.8, 195.827, 685.784 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "带闭锁装置."
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 299.55, 652.26, 394.3, 735.26 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 12,
+          "bounding box" : [ 305.52, 700.184, 392.759, 709.184 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "直插式、附属线束式、"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 6,
+          "page number" : 12,
+          "bounding box" : [ 305.52, 676.784, 341.52, 685.784 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "中间插头"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 394.3, 652.26, 497.8, 735.26 ],
+        "row number" : 2,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 7,
+          "page number" : 12,
+          "bounding box" : [ 400.32, 658.9, 491.52, 727.54 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 83.8, 495.1, 142.6, 652.26 ],
+        "row number" : 3,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 8,
+          "page number" : 12,
+          "bounding box" : [ 95.159, 568.304, 131.159, 577.304 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "汽车线束"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 142.6, 495.1, 299.55, 652.26 ],
+        "row number" : 3,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 12,
+          "bounding box" : [ 157.559, 626.744, 292.559, 635.744 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "为了使全车线路不混乱、安装方便"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 10,
+          "page number" : 12,
+          "bounding box" : [ 148.559, 603.344, 298.08, 612.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "和导线绝缘层不至于损坏，将同区域、"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 11,
+          "page number" : 12,
+          "bounding box" : [ 148.559, 579.944, 292.559, 588.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "同功能的电器用电线捆绑包扎成束，"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 12,
+          "page number" : 12,
+          "bounding box" : [ 148.559, 556.544, 292.559, 565.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "将同区域的多根不同接头、导线用绝"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 13,
+          "page number" : 12,
+          "bounding box" : [ 148.559, 533.144, 292.559, 542.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "缘纸带或线束专用聚氯乙烯带等包裹"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 14,
+          "page number" : 12,
+          "bounding box" : [ 148.559, 509.744, 202.559, 518.744 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "组合包扎成束"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 299.55, 495.1, 394.3, 652.26 ],
+        "row number" : 3,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 15,
+          "page number" : 12,
+          "bounding box" : [ 305.52, 579.944, 388.318, 588.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "按区域分类（前机舱"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 16,
+          "page number" : 12,
+          "bounding box" : [ 305.52, 556.544, 386.52, 565.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "线束、仪表线束等）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 12,
+        "bounding box" : [ 394.3, 495.1, 497.8, 652.26 ],
+        "row number" : 3,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 17,
+          "page number" : 12,
+          "bounding box" : [ 400.32, 529.3, 491.4, 616.66 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 12,
+    "bounding box" : [ 111.0, 454.221, 515.765, 488.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.导线 汽车电气线路导线按电压等级可分为低压线和高压线两类。低压线适配汽车低电压电路，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 12,
+    "bounding box" : [ 90.0, 337.221, 505.209, 441.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "其中普通导线多为铜芯绝缘线，常用于灯光、仪表等小功率电路，负责传输小负荷电能；搭 铁电缆连接用电设备与车身金属部分，作为电路的接地回路，保障电流循环导通；屏蔽编织 线带有屏蔽层，主要用于传输传感器等敏感信号，能够有效抵抗电磁干扰。高压线包含多股 铜芯线和阻尼线，适用于汽车点火系统，其中阻尼线可抑制电磁干扰，保障点火过程稳定可 靠[6]。按电压等级分为低压线和高压线两大类："
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 12,
+    "bounding box" : [ 90.0, 290.421, 505.2, 324.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（1）低压线（工作电压≤24V） 用于低压负载与低压控制回路，材质、结构适配低压 小电流特性，具体分类如下："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 7,
+    "level" : "1",
+    "page number" : 12,
+    "bounding box" : [ 111.0, 103.221, 505.209, 277.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 12,
+      "bounding box" : [ 111.0, 267.021, 505.209, 277.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）普通低压导线：铜质多股软线，绝缘包层分为 QVR 型（聚氯乙烯）和 QFR 型（聚氯",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 12,
+        "bounding box" : [ 90.0, 196.821, 505.208, 254.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "乙烯-丁腈复合），具备良好的柔韧性和绝缘性。截面积根据用电设备电流选择，最小不小 于 0.5mm²（避免机械强度不足导致折断），例如尾灯、仪表灯回路常用 0.5mm²导线，前照 灯回路常用 1.0-1.5mm²导线。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 12,
+      "bounding box" : [ 111.0, 173.421, 505.207, 183.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）起动电缆：大截面积铜质或铝质多股软线，连接辅助蓄电池与 min 相关电路（如高",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 12,
+        "bounding box" : [ 90.0, 126.621, 507.25, 160.471 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "压系统预充回路辅助起动），截面积规格为 25mm²、35mm²、50mm²、70mm²等，允许电流 500~1000A，要求每 1A 电流产生的压降不超过 0.1~0.15V，确保起动过程中电能稳定传输。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 12,
+      "bounding box" : [ 111.0, 103.221, 505.195, 113.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）搭铁电缆：又称搭铁线，分为铜丝编织扁形软铜线和带绝缘层的多股软线，用于低",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 12,
+    "bounding box" : [ 90.0, 79.821, 510.49, 90.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "压系统的负极回路，连接蓄电池负极与车架、车架与车身、发动机（若有辅助电机）与车架，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 12,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "12"
+  } ]
+}

@@ -1,0 +1,106 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 194,
+    "bounding box" : [ 90.0, 737.54, 505.205, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "根据上面的故障现象怀疑是由于 BMS 相关故障导致的，而 BMS 和诊断仪无法通信进一步 确认了怀疑，那么可能的故障原因有："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 8,
+    "level" : "1",
+    "page number" : 194,
+    "bounding box" : [ 111.0, 635.3, 504.73, 727.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 194,
+      "bounding box" : [ 111.0, 717.021, 228.968, 727.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）BMS 电源及搭铁故障。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 194,
+      "bounding box" : [ 111.0, 696.621, 218.528, 707.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）BMS 的动力网故障。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 194,
+      "bounding box" : [ 111.0, 635.3, 504.73, 686.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）BMS 自身故障。 3.电路图及维修资料查询 秦 EV 车型的蓄电池管理器 BMS 有两个低压插接器，分别为 BK45（A）和 BK45（B）,如",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 194,
+    "bounding box" : [ 90.0, 614.9, 386.529, 625.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-17 所示。BK45（A）和 BK45（B）的电路图如图 5-18 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 13,
+    "page number" : 194,
+    "bounding box" : [ 150.24, 481.18, 444.6, 606.46 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 15,
+    "page number" : 194,
+    "bounding box" : [ 228.0, 462.38, 367.088, 472.83 ],
+    "linked content id" : 16,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-17 秦 EV BMS 低压插接器"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 16,
+    "page number" : 194,
+    "bounding box" : [ 17.04, 73.9, 589.44, 454.06 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 194,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "194"
+  } ]
+}

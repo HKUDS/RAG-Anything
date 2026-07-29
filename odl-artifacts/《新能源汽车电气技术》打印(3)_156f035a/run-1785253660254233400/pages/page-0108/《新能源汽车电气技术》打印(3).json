@@ -1,0 +1,260 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 108,
+    "bounding box" : [ 120.26, 392.52, 474.99, 769.9 ],
+    "number of rows" : 5,
+    "number of columns" : 2,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 108,
+        "bounding box" : [ 120.5, 691.16, 188.7, 769.66 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 108,
+          "bounding box" : [ 133.559, 725.18, 175.448, 735.63 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "右转向灯"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 108,
+        "bounding box" : [ 188.7, 691.16, 474.75, 769.66 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 2,
+          "page number" : 108,
+          "bounding box" : [ 216.96, 695.5, 446.4, 765.7 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 108,
+        "bounding box" : [ 120.5, 628.26, 188.7, 691.16 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 108,
+          "bounding box" : [ 144.12, 654.5, 165.01, 664.95 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "雾灯"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 108,
+        "bounding box" : [ 188.7, 628.26, 474.75, 691.16 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 4,
+          "page number" : 108,
+          "bounding box" : [ 236.4, 629.86, 426.72, 689.62 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 108,
+        "bounding box" : [ 120.5, 549.76, 188.7, 628.26 ],
+        "row number" : 3,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 108,
+          "bounding box" : [ 138.84, 583.821, 170.289, 594.271 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "制动灯"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 108,
+        "bounding box" : [ 188.7, 549.76, 474.75, 628.26 ],
+        "row number" : 3,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 6,
+          "page number" : 108,
+          "bounding box" : [ 243.24, 554.38, 420.0, 624.94 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 4,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 108,
+        "bounding box" : [ 120.5, 502.46, 188.7, 549.76 ],
+        "row number" : 4,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 7,
+          "page number" : 108,
+          "bounding box" : [ 138.84, 520.94, 170.289, 531.39 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "倒车灯"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 108,
+        "bounding box" : [ 188.7, 502.46, 474.75, 549.76 ],
+        "row number" : 4,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 8,
+          "page number" : 108,
+          "bounding box" : [ 194.16, 504.34, 468.96, 548.26 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile4.png"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 5,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 108,
+        "bounding box" : [ 120.5, 393.0, 188.7, 502.46 ],
+        "row number" : 5,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 108,
+          "bounding box" : [ 128.4, 442.34, 180.849, 452.79 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "危险警告灯"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 108,
+        "bounding box" : [ 188.7, 393.0, 474.75, 502.46 ],
+        "row number" : 5,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 10,
+          "page number" : 108,
+          "bounding box" : [ 195.24, 398.62, 467.16, 497.86 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile5.png"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 3,
+    "page number" : 108,
+    "bounding box" : [ 111.0, 339.621, 505.208, 390.99 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "常见的灯光系统故障为单个灯光不亮、多个灯光不亮，故障原因分析如下： 1.单个灯光不亮 由表 3-6 可知，单个灯光不亮通常是该灯自身故障或控制端故障。如单个左前近光灯故"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 108,
+    "bounding box" : [ 90.0, 278.421, 510.49, 329.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "障，说明“组合开关（前照灯挡）→左域→左前近光灯”存在故障，但组合开关（前照灯挡） 和左域的故障也会造成右前近光灯的故障，因此，故障范围锁定在左前近光灯及其控制端， 其在电路中的位置如图 3-26 红圈所示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 108,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "108"
+  } ]
+}

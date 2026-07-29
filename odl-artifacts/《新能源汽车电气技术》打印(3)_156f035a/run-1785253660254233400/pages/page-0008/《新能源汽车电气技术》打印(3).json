@@ -1,0 +1,130 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 8,
+    "bounding box" : [ 90.0, 752.166, 150.729, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 任务情景"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 8,
+    "bounding box" : [ 90.0, 652.821, 505.208, 744.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "新能源汽车维修技师小王接到一辆比亚迪秦 EV 故障车，车主反映车辆灯光闪烁、喇叭 时响时停。小张初步判断为电路元件接触不良或保护装置故障，但需要先通过电路图定位相 关元件位置，再在实车上检查导线、继电器、熔丝等部件。作为新手维修员，你需要跟随小 王学习电路图识读方法，掌握核心电路元件的识别与检修技巧，最终协助排查故障。你准备 好了吗？"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 8,
+    "bounding box" : [ 90.0, 580.7, 505.207, 638.244 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识准备 一、新能源汽车电路的组成 新能源汽车电路是基于用电设备工作特性，通过导线和车体（或专用回路）连接形成的"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 8,
+    "bounding box" : [ 90.0, 533.9, 505.207, 567.75 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "完整供用电系统，核心由电源、用电设备、电路控制装置、电路保护装置、导线五大模块构 成，各模块均适配新能源汽车高压、大电流、电子控制密集的特点，如图 1-1 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 8,
+    "bounding box" : [ 90.0, 296.38, 504.6, 525.94 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 7,
+    "page number" : 8,
+    "bounding box" : [ 233.28, 276.5, 382.809, 286.95 ],
+    "linked content id" : 6,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 1-1 新能源汽车电路基本组成"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 8,
+    "bounding box" : [ 111.0, 229.7, 505.209, 263.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1.电源：供能核心单元 电源的核心功能是为整车电气系统提供稳定电能，兼顾行驶与停车状态的用电需求，新"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 8,
+    "bounding box" : [ 90.0, 206.3, 226.446, 216.75 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "能源汽车专属电源配置如下："
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 8,
+    "bounding box" : [ 90.0, 159.5, 505.208, 193.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "低压电源：主要为 12V 或 24V 蓄电池，为低压用电设备（如灯光、仪表、控制器辅助电 路）供电，保障基础电气功能。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 8,
+    "bounding box" : [ 90.0, 112.7, 505.207, 146.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "高压电源：动力蓄电池包是核心高压电源，输出电压通常在 300V 以上，为驱动电机、 电动空调压缩机、PTC 加热器等高压负载供电。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 8,
+    "bounding box" : [ 111.0, 89.3, 515.769, 99.75 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电能转换装置：DC-DC 变换器，将动力蓄电池的高压直流电转换为低压直流电（12V/24V），"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 8,
+    "bounding box" : [ 295.32, 49.52, 299.874, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "8"
+  } ]
+}

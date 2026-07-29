@@ -1,0 +1,58 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 217,
+    "bounding box" : [ 90.0, 757.94, 357.608, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "T8cb/2 之间的电阻为 1.5Ω，如图 5-38 右图所示，异常。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 217,
+    "bounding box" : [ 168.72, 594.82, 375.0, 749.5 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 217,
+    "bounding box" : [ 111.0, 534.261, 505.207, 585.51 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-38 MX13 T8cb/1 LIN 总线与 MX13 T8cb/2 之间电阻 5.故障点确认及修复 通过以上的检测最终锁定故障点为 MX13 T8cb/1 至 MX13 T8cb/2 线路短路，在电路图的"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 217,
+    "bounding box" : [ 90.0, 513.74, 221.168, 524.19 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "位置如图 5-39 中红圈所示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 217,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "217"
+  } ]
+}

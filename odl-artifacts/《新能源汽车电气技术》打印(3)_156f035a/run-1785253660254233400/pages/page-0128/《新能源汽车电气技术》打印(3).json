@@ -1,0 +1,90 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 2,
+    "level" : "Doctitle",
+    "page number" : 128,
+    "bounding box" : [ 165.6, 746.248, 429.584, 762.198 ],
+    "heading level" : 1,
+    "font" : "SimHei",
+    "font size" : 15.95,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "项目四 新能源汽车辅助电气系统检修"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 128,
+    "bounding box" : [ 90.0, 400.18, 538.56, 735.1 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 128,
+    "bounding box" : [ 90.0, 342.621, 505.265, 393.99 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "在“双碳”目标驱动下，2024 年我国新能源汽车市场占有率已突破 40%，比亚迪秦 EV 作为全球销量领先的纯电轿车（2023 款累计销量超 80 万辆），其辅助电气系统技术架构具 有典型代表性。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 128,
+    "bounding box" : [ 90.0, 281.421, 505.208, 332.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "随着新能源汽车技术的高速发展，比亚迪秦 EV 作为国产纯电动车型的代表，其辅助电 气系统的可靠性与智能化水平显著提升。辅助电气系统涵盖电动车窗、刮水器系统、中控门 锁等子模块，不仅直接影响用户驾驶体验，更是保障行车安全的重要组成部分。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 128,
+    "bounding box" : [ 90.0, 179.18, 505.209, 271.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "与传统燃油车相比，新能源汽车的辅助电气系统深度集成高压平台与低压控制模块（如 BCM 车身控制器），检修逻辑更复杂。例如，秦 EV 的电动车窗，刮水器系统支持雨量感应 功能，通过车内的中控门锁按钮或遥控钥匙，可方便地同时控制所有车门的锁止和开启，无 须逐个车门进行操作，提高了使用的便利性。掌握这些系统的检修技能，是新能源汽车维修 从业人员的核心能力要求。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 128,
+    "bounding box" : [ 90.0, 117.98, 505.206, 169.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "比亚迪秦 EV 辅助电气系统的检修不仅是技术操作，更是对“安全意识、逻辑思维、工 匠精神”的综合考验。本项目以“实战化”为导向，助力学习者成为新能源汽车后市场的高 素质技术人才。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 128,
+    "bounding box" : [ 90.0, 77.18, 505.209, 108.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "比亚迪纯电动汽车的车窗、刮水器和中控门锁系统未来将朝着智能化、集成化、便捷化 方向大步迈进。车窗可能会采用分区调光等新技术，通过对 ITO 导电层调光区域的控制，实"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 128,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "128"
+  } ]
+}

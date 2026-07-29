@@ -1,0 +1,138 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 4,
+    "page number" : 85,
+    "bounding box" : [ 190.44, 570.1, 425.88, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 5,
+    "page number" : 85,
+    "bounding box" : [ 111.0, 479.18, 504.609, 561.63 ],
+    "linked content id" : 4,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-2 比亚迪秦 Pro DM 组合仪表位置 仪表系统作为车辆人机交互的核心界面，其功能模块可归纳为以下结构化分类： 1.计量表类信息显示 主要包括车速表（实时车速可视化）、燃油表（油箱剩余油量/电量指示）和发动机转"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 85,
+    "bounding box" : [ 90.0, 432.38, 247.45, 466.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "速表（动力系统工作状态监测）。 2.车辆状态信息显示"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 10,
+    "level" : "1",
+    "page number" : 85,
+    "bounding box" : [ 111.0, 268.58, 509.89, 419.43 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 85,
+      "bounding box" : [ 111.0, 408.98, 509.89, 419.43 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（1）基础状态 主要包括上电状态（OK/READY 显示）、档位信息（PRND 等档位状态）",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 85,
+        "bounding box" : [ 90.0, 385.58, 252.73, 396.03 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "和总里程/小计里程（ODO/TRIP）。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 85,
+      "bounding box" : [ 111.0, 268.58, 341.89, 372.63 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）行车电脑数据 动态数据：行驶时间、瞬时油耗。 统计性数据：平均车速、平均油耗、燃油消耗量。 预测性数据：续驶里程（根据当前工况估算）。 3.系统设置与配置",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 12,
+    "level" : "1",
+    "page number" : 85,
+    "bounding box" : [ 111.0, 128.18, 510.49, 255.63 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 85,
+      "bounding box" : [ 111.0, 245.18, 341.889, 255.63 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（1）车辆维护 维护设置（维护周期提醒/重置）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 85,
+      "bounding box" : [ 111.0, 221.78, 505.208, 232.23 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）个性化配置 包括显示语言设置、单位切换（km/mile，L/100km 等）和主题样式",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 85,
+        "bounding box" : [ 90.0, 198.38, 205.33, 208.83 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "调整（视车款设置）等。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 85,
+      "bounding box" : [ 111.0, 128.18, 510.49, 185.43 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（3）系统管理 主要包括恢复出厂设置和系统版本信息查阅等。 4.扩展功能接口（根据车型配置） 接口包括：故障告警指示（MIL 灯）、驾驶辅助系统状态显示、环境信息（室外温度等）。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 85,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "85"
+  } ]
+}

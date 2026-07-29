@@ -1,0 +1,620 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 241,
+    "bounding box" : [ 90.0, 752.166, 152.889, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 任务情景"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 241,
+    "bounding box" : [ 90.0, 658.158, 510.25, 740.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "某维修厂接到一辆 2021 款北汽 EU5 纯电动汽车，车主反馈：冬季开启暖风后，车内升 温缓慢，出风口温度最高仅 15℃（设定温度 25℃），且前风窗玻璃除霜效果差（半小时仍 有雾气）。维修技师小王需先分析该车暖风系统的类型（PTC 加热），结合诊断仪读取的 PTC 工作参数，排查是否存在 PTC 功率不足、暖风芯体堵塞或鼓风机故障，最终完成维修。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 241,
+    "bounding box" : [ 90.0, 636.021, 331.45, 646.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "你需要协助小王梳理维修流程，确保快速解决问题。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "level" : "1",
+    "page number" : 241,
+    "bounding box" : [ 90.0, 565.821, 505.209, 623.364 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识准备 一、新能源汽车暖风加热系统类型与特点 新能源汽车无发动机余热，需通过“电加热”或“热泵”实现暖风制热，主流类型分为"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 241,
+    "bounding box" : [ 90.0, 517.758, 363.488, 552.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "PTC 加热器和热泵系统，两者对比见表 6-4 所示。 表 6-4 PTC 和热泵系统对比表"
+  }, {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 7,
+    "level" : "2",
+    "page number" : 241,
+    "bounding box" : [ 102.46, 147.72, 492.84, 512.5 ],
+    "number of rows" : 7,
+    "number of columns" : 3,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 102.7, 488.36, 187.25, 512.26 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 241,
+          "bounding box" : [ 126.84, 495.825, 162.96, 504.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "对比维度"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 187.25, 488.36, 340.9, 512.26 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 2,
+          "page number" : 241,
+          "bounding box" : [ 233.4, 494.841, 294.6, 504.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "PTC 加热器系统"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 340.9, 488.36, 492.6, 512.26 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 241,
+          "bounding box" : [ 398.64, 495.825, 434.76, 504.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "热泵系统"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 102.7, 420.61, 187.25, 488.36 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 4,
+          "page number" : 241,
+          "bounding box" : [ 126.959, 449.984, 162.959, 458.984 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "工作原理"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 187.25, 420.61, 340.9, 488.36 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 241,
+          "bounding box" : [ 192.6, 461.744, 336.6, 470.744 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "利用电阻丝通电发热（焦耳效应），"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 6,
+          "page number" : 241,
+          "bounding box" : [ 205.559, 438.344, 322.559, 447.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "加热空热量（即使低温环境）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 340.9, 420.61, 492.6, 488.36 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 7,
+          "page number" : 241,
+          "bounding box" : [ 349.2, 461.744, 484.2, 470.744 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "通过循环气或冷却液吸收环境空气"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 8,
+          "page number" : 241,
+          "bounding box" : [ 398.759, 438.344, 434.759, 447.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "中的热量"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 102.7, 373.31, 187.25, 420.61 ],
+        "row number" : 3,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 241,
+          "bounding box" : [ 126.959, 392.384, 162.959, 401.384 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "能耗水平"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 187.25, 373.31, 340.9, 420.61 ],
+        "row number" : 3,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 10,
+          "page number" : 241,
+          "bounding box" : [ 199.44, 403.16, 328.68, 413.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "能耗高（15kW），续驶里程缩短"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 11,
+          "page number" : 241,
+          "bounding box" : [ 246.24, 379.88, 281.825, 388.88 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "30%~50%"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 340.9, 373.31, 492.6, 420.61 ],
+        "row number" : 3,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 12,
+          "page number" : 241,
+          "bounding box" : [ 349.92, 403.16, 483.6, 413.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "能耗低（2~5kW），续驶里程缩短"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 13,
+          "page number" : 241,
+          "bounding box" : [ 399.0, 379.88, 434.464, 388.88 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "10%~20%"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 4,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 102.7, 286.06, 187.25, 373.31 ],
+        "row number" : 4,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 14,
+          "page number" : 241,
+          "bounding box" : [ 126.959, 325.184, 162.959, 334.184 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "适用温度"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 187.25, 286.06, 340.9, 373.31 ],
+        "row number" : 4,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 15,
+          "page number" : 241,
+          "bounding box" : [ 255.0, 324.2, 273.12, 334.184 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "30℃"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 340.9, 286.06, 492.6, 373.31 ],
+        "row number" : 4,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 16,
+          "page number" : 241,
+          "bounding box" : [ 346.32, 347.6, 490.44, 357.584 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "40℃以上效率高（低温下仍可工作，"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 17,
+          "page number" : 241,
+          "bounding box" : [ 347.759, 324.2, 485.759, 334.184 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "但功率下降） 10℃-15℃以下需辅"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 18,
+          "page number" : 241,
+          "bounding box" : [ 403.2, 300.8, 430.436, 310.784 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "助 PTC"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 5,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 102.7, 238.76, 187.25, 286.06 ],
+        "row number" : 5,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 19,
+          "page number" : 241,
+          "bounding box" : [ 122.4, 257.865, 167.4, 266.865 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "结构复杂度"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 187.25, 238.76, 340.9, 286.06 ],
+        "row number" : 5,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 20,
+          "page number" : 241,
+          "bounding box" : [ 196.44, 256.881, 331.559, 266.865 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "结构简单（仅 PTC 加热器、管路）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 340.9, 238.76, 492.6, 286.06 ],
+        "row number" : 5,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 21,
+          "page number" : 241,
+          "bounding box" : [ 346.32, 269.625, 490.319, 278.625 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "结构复杂（含热泵压缩机、冷凝器、"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 22,
+          "page number" : 241,
+          "bounding box" : [ 380.759, 246.225, 452.759, 255.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "蒸发器、四通阀）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 6,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 102.7, 193.26, 187.25, 238.76 ],
+        "row number" : 6,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 23,
+          "page number" : 241,
+          "bounding box" : [ 135.959, 211.544, 153.959, 220.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "成本"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 187.25, 193.26, 340.9, 238.76 ],
+        "row number" : 6,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 24,
+          "page number" : 241,
+          "bounding box" : [ 250.559, 211.544, 277.559, 220.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "成本低"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 340.9, 193.26, 492.6, 238.76 ],
+        "row number" : 6,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 25,
+          "page number" : 241,
+          "bounding box" : [ 346.32, 210.56, 488.28, 220.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "成本高（比 PTC 系统高 30%-50%）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 7,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 102.7, 148.2, 187.25, 193.26 ],
+        "row number" : 7,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 26,
+          "page number" : 241,
+          "bounding box" : [ 126.959, 166.065, 162.959, 175.065 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "代表车型"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 187.25, 148.2, 340.9, 193.26 ],
+        "row number" : 7,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 27,
+          "page number" : 241,
+          "bounding box" : [ 205.8, 165.081, 322.263, 175.065 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "北汽 EU5、比亚迪秦 PLUS EV"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 241,
+        "bounding box" : [ 340.9, 148.2, 492.6, 193.26 ],
+        "row number" : 7,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 28,
+          "page number" : 241,
+          "bounding box" : [ 364.8, 165.081, 468.593, 175.065 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "特斯拉 Model Y、蔚来 ES6"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 241,
+    "bounding box" : [ 90.0, 106.157, 505.207, 141.271 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "目前，中低端新能源汽车多采用 PTC 加热器系统，成本低、可靠性高，中高端车型多采 用热泵和 PTC 复合系统，在低温下用使用 PTC 辅助制热，兼顾效率与可靠性。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 241,
+    "bounding box" : [ 111.0, 82.758, 247.567, 94.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "二、PTC 加热器系统硬件结构"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 241,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "241"
+  } ]
+}

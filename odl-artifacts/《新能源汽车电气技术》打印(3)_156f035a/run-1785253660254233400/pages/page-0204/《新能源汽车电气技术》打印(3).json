@@ -1,0 +1,140 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 204,
+    "bounding box" : [ 90.0, 752.166, 152.889, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 任务情景"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 204,
+    "bounding box" : [ 90.0, 693.621, 509.89, 744.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "汽车维修工小李接到维修任务，自己和师傅将一起维修某顾客的大众 ID.4 故障车，这 辆故障车近光灯无法正常开启，为了能够迅速解决问题，你需要学习相关知识和实践操作， 你准备好了吗？"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 204,
+    "bounding box" : [ 90.0, 626.421, 510.49, 679.164 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识准备 一、LIN 总线特点 LIN（Local Interconnect Network）中文译为“局部互联网络”。它是一种低成本的、"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 204,
+    "bounding box" : [ 90.0, 544.7, 505.209, 616.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "串行的、主从结构的车载网络通信协议。LIN 总线是一种面向汽车分布式电子系统、基于串 行通信、采用单主多从结构的低成本车载网络协议。它主要作为 CAN 总线的辅助和补充，用 于实现对通信速率和容错能力要求不高的车身控制与舒适性功能单元之间的互联，如图 5-25 所示为空调 LIN 总线系统。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 204,
+    "bounding box" : [ 113.88, 354.22, 481.2, 536.26 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 7,
+    "page number" : 204,
+    "bounding box" : [ 235.92, 336.38, 359.17, 346.83 ],
+    "linked content id" : 6,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-25 空调 LIN 总线系统"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 204,
+    "bounding box" : [ 111.0, 276.98, 505.208, 328.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "LIN 总线具有如下特点。 1.成本低廉 LIN 总线最核心的竞争力在于其极致的低成本，这主要通过单线传输减少线束、基于廉"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 204,
+    "bounding box" : [ 90.0, 236.18, 505.196, 267.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "价的通用 UART 硬件以及相对简单的软件协议来实现，使其成为对成本敏感的车身控制应用 的理想选择。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 204,
+    "bounding box" : [ 111.0, 195.38, 505.209, 226.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.单主多从结构 LIN 总线采用严格的单主多从网络结构，即一个主节点作为“指挥”负责调度通信，多"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 204,
+    "bounding box" : [ 90.0, 154.461, 505.208, 185.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "个从节点作为“乐手”仅在收到指令后响应，这种结构避免了总线仲裁，从根源上简化了系 统设计与成本。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 204,
+    "bounding box" : [ 111.0, 113.661, 505.209, 144.51 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.通信速率低 LIN 总线定位于低速应用，其最高通信速率被限制在 20kbps，这完全能够满足车窗、刮"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 204,
+    "bounding box" : [ 90.0, 93.261, 488.876, 103.711 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "水器等车身附件对实时性要求不高的控制需求，但无法胜任动力系统等高速应用场景。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 204,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "204"
+  } ]
+}

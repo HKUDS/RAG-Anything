@@ -1,0 +1,385 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 5,
+    "level" : "1",
+    "page number" : 10,
+    "bounding box" : [ 111.0, 565.821, 505.209, 763.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 10,
+      "bounding box" : [ 111.0, 753.021, 505.195, 763.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）熔丝：用于保护低压局部电路或高压支路电路，限额电流标注在外壳上，核心元件",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 10,
+        "bounding box" : [ 90.0, 706.221, 505.208, 740.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "为锌、锡铅、铜等合金熔丝片，按外形分为插片式、熔管式等，过载时熔丝片熔断，切断故 障回路。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 10,
+      "bounding box" : [ 111.0, 682.821, 505.208, 693.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）手动维修开关（MSD）：新能源汽车高压系统专属核心保护元件，安装在高压主回路",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 10,
+        "bounding box" : [ 90.0, 636.021, 505.208, 669.871 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "中，维修高压部件（如动力蓄电池、驱动电机）前，必须断开 MSD，切断高压回路，避免触 电风险，是高压安全的关键保障。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 10,
+      "bounding box" : [ 111.0, 612.621, 505.209, 623.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）熔断器：适配高压大电流场景，额定电流大于普通熔丝，用于高压主电路（如动力",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 10,
+        "bounding box" : [ 90.0, 589.221, 415.32, 599.671 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "蓄电池输出回路、驱动电机供电回路）保护，过载或短路时快速熔断。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 10,
+      "bounding box" : [ 111.0, 565.821, 505.195, 576.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）电路断电器：分为自动复位和手动复位两类，适配充电桩、高压配电盒等场景，检",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 10,
+    "bounding box" : [ 90.0, 542.421, 467.877, 552.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "测到漏电、超负荷时自动断开电路，故障排除后可复位复用，避免频繁更换元件。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 10,
+    "bounding box" : [ 90.0, 448.821, 505.207, 529.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "易熔线：截面积小于被保护电线的铜芯或合金导线，用于保护高压总电路或大电流支路 （如动力蓄电池至高压配电箱回路），外部包裹聚乙烯护套，长度 50-200mm，通过插接件 接入电路，过载时优先熔断，且不得绑扎于线束内或被其他物品包裹，确保熔断时能快速切 断电路。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 10,
+    "bounding box" : [ 111.0, 402.021, 510.49, 435.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5.导线：电路连接载体 导线是连接电源、用电设备、控制装置、保护装置的核心载体，需满足新能源汽车高压、"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 10,
+    "bounding box" : [ 90.0, 308.421, 360.25, 389.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "大电流、抗电磁干扰的特殊要求。 二、电路元件识别 1.汽车导线、插接器及线束的说明 汽车导线、插接器及线束的结构特性、参数见表 1-1。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 10,
+    "bounding box" : [ 224.159, 285.021, 371.046, 295.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "表 1-1 导线、插接器、线束说明"
+  }, {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 11,
+    "level" : "2",
+    "page number" : 10,
+    "bounding box" : [ 83.56, 116.92, 498.04, 256.3 ],
+    "number of rows" : 2,
+    "number of columns" : 4,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 10,
+        "bounding box" : [ 83.8, 227.66, 142.6, 256.06 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 10,
+          "bounding box" : [ 95.04, 236.625, 131.16, 245.625 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "元件名称"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 10,
+        "bounding box" : [ 142.6, 227.66, 299.55, 256.06 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 2,
+          "page number" : 10,
+          "bounding box" : [ 203.04, 236.625, 239.16, 245.625 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "结构特性"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 10,
+        "bounding box" : [ 299.55, 227.66, 394.3, 256.06 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 10,
+          "bounding box" : [ 317.88, 235.641, 375.84, 245.625 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "核心参数/分类"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 10,
+        "bounding box" : [ 394.3, 227.66, 497.8, 256.06 ],
+        "row number" : 1,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 4,
+          "page number" : 10,
+          "bounding box" : [ 441.48, 236.625, 459.48, 245.625 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "实物"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 10,
+        "bounding box" : [ 83.8, 117.4, 142.6, 227.66 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 10,
+          "bounding box" : [ 90.72, 178.784, 135.72, 187.784 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "普通低压导"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 6,
+          "page number" : 10,
+          "bounding box" : [ 108.72, 155.384, 117.72, 164.384 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "线"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 10,
+        "bounding box" : [ 142.6, 117.4, 299.55, 227.66 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 7,
+          "page number" : 10,
+          "bounding box" : [ 157.559, 202.184, 292.559, 211.184 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "铜质多股软线，根据导线外皮绝缘"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 8,
+          "page number" : 10,
+          "bounding box" : [ 148.559, 178.784, 292.559, 187.784 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "包裹材料的不同又分为 QVR 型（聚氯"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 10,
+          "bounding box" : [ 148.559, 155.384, 292.559, 164.384 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "乙烯绝缘层）和 QFR 型（氯丁橡胶—"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 10,
+          "page number" : 10,
+          "bounding box" : [ 148.559, 131.984, 238.559, 140.984 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "丁腈复合绝缘层）两种"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 10,
+        "bounding box" : [ 299.55, 117.4, 394.3, 227.66 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 11,
+          "page number" : 10,
+          "bounding box" : [ 305.52, 190.544, 388.32, 199.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "截面积 0.5~16mm²，"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 12,
+          "page number" : 10,
+          "bounding box" : [ 305.52, 167.144, 388.32, 176.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "双色线（≤4mm²）、"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 13,
+          "page number" : 10,
+          "bounding box" : [ 305.52, 143.744, 377.52, 152.744 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "单色线（＞4mm²）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 10,
+        "bounding box" : [ 394.3, 117.4, 497.8, 227.66 ],
+        "row number" : 2,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 14,
+          "page number" : 10,
+          "bounding box" : [ 400.32, 141.34, 481.08, 201.94 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 10,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "10"
+  } ]
+}

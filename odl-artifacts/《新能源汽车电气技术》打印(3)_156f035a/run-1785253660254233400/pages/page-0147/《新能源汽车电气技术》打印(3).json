@@ -1,0 +1,110 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 147,
+    "bounding box" : [ 90.0, 752.166, 152.889, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 任务情景"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 147,
+    "bounding box" : [ 90.0, 673.221, 505.209, 744.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "汽车维修工小迪接到维修任务，自己和师傅将一起维修某顾客的比亚迪秦 EV 故障车， 客户描述车辆故障为：驾驶人拨动刮水器开关后刮水器无反应，首先他需要将所有涉及刮水 器系统整理一下，得出一张完整刮水器系统控制逻辑图后再排除该车的刮水器供电故障，为 了能够迅速解决问题，你需要学习相关知识和实践操作，你准备好了吗？"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 147,
+    "bounding box" : [ 90.0, 606.021, 505.209, 658.644 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识准备 一、刮水器系统的组成 刮水器系统主要由刮水器片、刮水器臂、电动机、连杆机构、控制模块、传感器、喷水"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 147,
+    "bounding box" : [ 90.0, 524.3, 509.89, 596.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "系统、控制开关等。 刮水器系统各部件的作用： 1.刮水器片 刮水器片：日常行驶中，刮水器片能清除风窗玻璃上的灰尘、泥土及昆虫尸体等杂物，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 147,
+    "bounding box" : [ 90.0, 462.98, 505.209, 514.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "保持玻璃清洁，使驾驶人获得良好的视野，减少视觉疲劳。保护风窗玻璃：刮水器片在工作 时可防止雨水、灰尘等长时间附着在玻璃上形成污渍，避免其对玻璃造成腐蚀或磨损，延长 风窗玻璃的使用寿命。如图 4-18 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 147,
+    "bounding box" : [ 203.4, 281.98, 391.8, 454.54 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 147,
+    "bounding box" : [ 256.92, 265.221, 338.29, 275.671 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-18 刮水器片"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 147,
+    "bounding box" : [ 111.0, 226.34, 505.207, 257.19 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.刮水器臂 刮水器臂：为刮水器片提供稳固的支撑，使其能贴合在风窗玻璃表面。通过合理的设计"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 147,
+    "bounding box" : [ 90.0, 83.3, 510.49, 216.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "和结构，刮水器臂可保证刮水器片在不同的工作状态下，如不同车速、不同角度等，都能与 玻璃保持良好的接触，从而有效地刮除雨水和杂物。将刮水器电动机的动力传递给刮水器片， 带动刮水器片做往复运动。刮水器臂通常与刮水器电动机的输出轴相连，电动机的转动通过 刮水器臂转化为刮水器片在风窗玻璃上的摆动，实现对玻璃的清洁功能。可以通过调整刮水 器臂的角度，使刮水器片更好地适应风窗玻璃的曲率和不同的清洁区域，确保刮水效果。同 时，刮水器臂还能根据需要施加适当的压力在刮水器片上，使刮水器片与玻璃之间保持合适 的摩擦力，既保证刮水效果，又不会因压力过大损伤玻璃或加速刮水器片的磨损。如图 4-19"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 147,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "147"
+  } ]
+}

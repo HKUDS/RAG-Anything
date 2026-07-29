@@ -1,0 +1,17 @@
+{
+  "file name" : "2021年大众ID.4 CROZZ维修电路图-全自动空调.pdf",
+  "number of pages" : 12,
+  "author" : "",
+  "title" : "",
+  "creation date" : "D:20210201192630+08'00'",
+  "modification date" : "D:20210527104407+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 1,
+    "page number" : 1,
+    "bounding box" : [ 512.22, 5.67, 589.606, 102.79 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile1.png"
+  } ]
+}

@@ -72,6 +72,8 @@ tiktoken_cache/
 
 # unit-test files
 test_*
+!tests/test_query_image_recall.py
+!tests/test_odl_media_manifest.py
 !tests/test_chunk_maintenance.py
 !tests/test_upload_tasks.py
 !tests/test_semantic_chunking.py

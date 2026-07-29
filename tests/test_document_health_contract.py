@@ -141,3 +141,33 @@ async def test_document_list_uses_summary_status_without_full_hydration(monkeypa
     assert result["documents"][0]["full_id"] == "doc-1"
     assert result["documents"][0]["status"] == "processed"
     assert result["documents"][0]["chunks"] == 20
+
+
+@pytest.mark.asyncio
+async def test_document_list_does_not_merge_rows_with_missing_file_paths(monkeypatch):
+    from raganything.routers import knowledge
+
+    async def cleanup():
+        return None
+
+    async def summaries(_kb):
+        return {
+            "doc-a": {"file_path": "", "status": "processed", "chunks_count": 2},
+            "doc-b": {"file_path": None, "status": "processed", "chunks_count": 3},
+        }
+
+    async def tag_health(_kb, doc_ids):
+        return {
+            doc_id: {"tag_status": "unmanaged", "tag_raw_status": "missing"}
+            for doc_id in doc_ids
+        }
+
+    monkeypatch.setattr(knowledge, "cleanup_completed_tasks", cleanup)
+    monkeypatch.setattr(knowledge, "_load_doc_status_summaries", summaries)
+    monkeypatch.setattr(knowledge, "_document_tag_health_contract", tag_health)
+    monkeypatch.setattr(knowledge, "processing_tasks", {})
+
+    result = await knowledge.list_documents(kb="demo", current_user={"id": 7})
+
+    assert result["total"] == 2
+    assert {doc["full_id"] for doc in result["documents"]} == {"doc-a", "doc-b"}

@@ -1,0 +1,77 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 55,
+    "bounding box" : [ 27.0, 347.26, 586.68, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 55,
+    "bounding box" : [ 217.559, 328.1, 377.649, 338.55 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-9 智能钥匙模块（IK）电路图"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 55,
+    "bounding box" : [ 111.0, 266.78, 510.49, 318.15 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.检测过程及数据记录 查阅完电路图，接下来进行相关线路的测量，具体测量步骤如下： 1）使用万用表电压档来测量 keyless-ECU 的常供电 KG25(A)/1 引脚对地电压，小于 1V，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 55,
+    "bounding box" : [ 90.0, 246.38, 289.33, 256.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "如图 2-10 所示，说明 IK 模块常供电异常。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 55,
+    "bounding box" : [ 208.44, 101.38, 385.8, 234.58 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 55,
+    "bounding box" : [ 218.88, 85.58, 376.329, 96.03 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-10 IK KG25（A）/1 对地电压"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 55,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "55"
+  } ]
+}

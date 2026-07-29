@@ -1,0 +1,90 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 84,
+    "bounding box" : [ 90.0, 752.166, 152.889, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 任务情景"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 84,
+    "bounding box" : [ 90.0, 652.821, 510.49, 744.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "汽车维修工小陈接到维修任务，自己和师傅将一起维修某顾客的比亚迪秦 EV 故障车， 这辆故障车能够正常解锁，进入车内并尝试起动后，灯光、车窗等都能操作，但是仪表一直 黑屏，顾客看不到车辆状况，非常焦虑。小陈认为，他首先需要将该车型仪表系统的结构框 架整理一下，得出一张完整的仪表系统图后再排除该车的仪表故障，为了能够迅速解决问题， 你需要学习相关知识和实践操作，你准备好了吗？"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 84,
+    "bounding box" : [ 90.0, 585.621, 505.209, 638.244 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识准备 一、仪表系统功能 汽车仪表系统是指以组合仪表为主的汽车电气连接系统，图 3-1 所示为比亚迪秦 EV 的"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 84,
+    "bounding box" : [ 90.0, 565.1, 299.89, 575.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电气系统架构图，图中红圈位置为仪表系统。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 84,
+    "bounding box" : [ 90.0, 483.38, 505.208, 555.15 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "组合仪表位于驾驶人正前方、转向管柱的上部，如图 3-2 所示。包括安装件和电气连接 等部分。所有组合仪表的电路组成单一线束，用插接器在组合仪表壳体背面连接。组合仪表 的表盘和指示灯保护在一整块透明面罩后面。透明面罩使仪表的表面免受环境光照和反射的 影响，以达到减轻眩光的效果[12]。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 84,
+    "bounding box" : [ 90.0, 207.58, 577.56, 475.06 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 84,
+    "bounding box" : [ 220.2, 189.621, 374.888, 200.071 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-1 比亚迪秦 EV 电气系统架构"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 84,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "84"
+  } ]
+}

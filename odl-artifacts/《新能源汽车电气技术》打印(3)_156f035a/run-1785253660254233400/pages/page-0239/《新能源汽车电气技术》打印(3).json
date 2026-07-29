@@ -1,0 +1,210 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "level" : "1",
+    "page number" : 239,
+    "bounding box" : [ 90.0, 734.54, 163.449, 763.764 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 课后习题 一、选择题"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 4,
+    "level" : "2",
+    "page number" : 239,
+    "bounding box" : [ 111.0, 509.78, 499.33, 724.59 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 5,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 693.621, 420.728, 724.59 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.新能源汽车制冷系统的核心动力部件是（ ）。 A. 机械压缩机 B. 高压电动压缩机 C. 冷凝器风扇 D. 电子膨胀阀",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 652.821, 499.33, 683.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.正常工况下（环境温度 30℃，R134a 制冷剂），制冷系统低压侧压力应为（ ）。 A. 0.1-0.2MPa B. 0.2-0.5MPa C. 1.5-2.2MPa D. 2.5-3.0MPa",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 611.9, 441.728, 642.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.电子膨胀阀的作用是（ ）。 A. 压缩制冷剂 B. 冷却制冷剂 C. 调节制冷剂流量 D. 过滤制冷剂杂质",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 571.1, 431.17, 601.95 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.若制冷系统高压侧压力过高（＞2.5MPa），最可能的故障是（ ）。 A. 制冷剂泄漏 B. 冷凝器风扇不转 C. 压缩机不工作 D. 蒸发器结霜",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 509.78, 389.17, 561.15 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5.新能源汽车空调最大制冷模式下，出风口温度应≤（ ）。 A. 5℃ B. 10℃ C. 15℃ D. 20℃ 二、填空题",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 5,
+    "level" : "2",
+    "page number" : 239,
+    "bounding box" : [ 111.0, 428.18, 499.448, 499.83 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 489.38, 499.448, 499.83 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.新能源汽车制冷系统的工作循环分为______、______、______、______四个阶段。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 468.98, 499.44, 479.43 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.制冷系统中，______的作用是将低温低压液态制冷剂蒸发为气态，吸收车内热量。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 428.18, 483.73, 459.03 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.目前新能源汽车常用的环保制冷剂是______，其 GWP 值远低于传统的 R134a。 三、判断题",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 6,
+    "level" : "2",
+    "page number" : 239,
+    "bounding box" : [ 111.0, 264.74, 505.209, 418.11 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 6,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 407.66, 473.17, 418.11 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.开启除霜功能时，空调控制器会控制鼓风机高速运转，除霜风口全开。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 387.261, 505.204, 397.711 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.新能源汽车制冷系统的压缩机由动力蓄电池供电，与传统燃油车的皮带驱动压缩机完",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 239,
+        "bounding box" : [ 90.0, 366.861, 158.17, 377.311 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "全不同。（ ）"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 346.461, 399.73, 356.911 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.制冷系统低压侧压力过低，一定是制冷剂泄漏导致的。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 325.94, 441.73, 336.39 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.电子膨胀阀可通过空调控制器精准调节开度，避免蒸发器结霜。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 305.54, 347.17, 315.99 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5.制冷剂可以直接排放到大气中，无须回收。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 239,
+      "bounding box" : [ 111.0, 264.74, 505.209, 295.59 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "6.制冷系统与蓄电池热管理系统集成，可实现 “空调制冷” 与 “蓄电池散热” 的协 同控制。（ ）",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 239,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "239"
+  } ]
+}

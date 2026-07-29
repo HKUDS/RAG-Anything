@@ -1,0 +1,334 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 19,
+    "bounding box" : [ 210.6, 662.98, 384.24, 767.74 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 6,
+    "page number" : 19,
+    "bounding box" : [ 261.84, 642.558, 333.369, 654.271 ],
+    "linked content id" : 5,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 1-7 剥线过程"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 7,
+    "level" : "1",
+    "page number" : 19,
+    "bounding box" : [ 111.0, 204.5, 505.197, 630.871 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 19,
+      "bounding box" : [ 111.0, 619.158, 505.197, 630.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）连接 在导线检修过程中，针对单根断裂导线的修复或两根导线的对接连接，需",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 19,
+        "bounding box" : [ 90.0, 572.358, 505.207, 607.471 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "遵循标准化操作流程。导线连接的标准方式为：采用专用接线配件，配合压线钳等专业工具 完成压接操作，详细操作规范如图 1-8 所示。"
+      }, {
+        "type" : "table",
+        "pdfua_tag" : "Table",
+        "id" : 2,
+        "level" : "2",
+        "page number" : 19,
+        "bounding box" : [ 84.36, 244.82, 510.94, 567.1 ],
+        "number of rows" : 4,
+        "number of columns" : 4,
+        "rows" : [ {
+          "type" : "table row",
+          "row number" : 1,
+          "cells" : [ {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 84.6, 457.4, 137.75, 566.62 ],
+            "row number" : 1,
+            "column number" : 1,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 1,
+              "page number" : 19,
+              "bounding box" : [ 90.0, 506.78, 121.449, 517.23 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "压线钳"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 137.75, 457.4, 510.7, 566.62 ],
+            "row number" : 1,
+            "column number" : 2,
+            "row span" : 1,
+            "column span" : 3,
+            "kids" : [ {
+              "type" : "image",
+              "pdfua_tag" : "Figure",
+              "id" : 2,
+              "page number" : 19,
+              "bounding box" : [ 233.4, 463.18, 414.24, 561.46 ],
+              "alt_source" : "missing",
+              "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+            } ]
+          } ]
+        }, {
+          "type" : "table row",
+          "row number" : 2,
+          "cells" : [ {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 84.6, 433.26, 510.7, 457.4 ],
+            "row number" : 2,
+            "column number" : 1,
+            "row span" : 1,
+            "column span" : 4,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 3,
+              "page number" : 19,
+              "bounding box" : [ 266.04, 439.94, 329.167, 450.39 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[1.0, 1.0, 1.0]",
+              "content" : "导线连接步骤"
+            } ]
+          } ]
+        }, {
+          "type" : "table row",
+          "row number" : 3,
+          "cells" : [ {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 84.6, 323.56, 137.75, 433.26 ],
+            "row number" : 3,
+            "column number" : 1,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 4,
+              "page number" : 19,
+              "bounding box" : [ 90.0, 371.958, 118.928, 383.671 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[1.0, 1.0, 1.0]",
+              "content" : "步骤 1"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 137.75, 323.56, 288.2, 433.26 ],
+            "row number" : 3,
+            "column number" : 2,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "image",
+              "pdfua_tag" : "Figure",
+              "id" : 5,
+              "page number" : 19,
+              "bounding box" : [ 143.16, 327.34, 270.0, 429.34 ],
+              "alt_source" : "missing",
+              "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 288.2, 323.56, 329.25, 433.26 ],
+            "row number" : 3,
+            "column number" : 3,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 6,
+              "page number" : 19,
+              "bounding box" : [ 293.64, 371.958, 322.568, 383.671 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[1.0, 1.0, 1.0]",
+              "content" : "步骤 3"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 329.25, 323.56, 510.7, 433.26 ],
+            "row number" : 3,
+            "column number" : 4,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "image",
+              "pdfua_tag" : "Figure",
+              "id" : 7,
+              "page number" : 19,
+              "bounding box" : [ 334.68, 332.38, 475.32, 425.62 ],
+              "alt_source" : "missing",
+              "source" : "《新能源汽车电气技术》打印(3)_images/imageFile4.png"
+            } ]
+          } ]
+        }, {
+          "type" : "table row",
+          "row number" : 4,
+          "cells" : [ {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 84.6, 245.3, 137.75, 323.56 ],
+            "row number" : 4,
+            "column number" : 1,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 8,
+              "page number" : 19,
+              "bounding box" : [ 90.0, 277.879, 118.928, 289.59 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[1.0, 1.0, 1.0]",
+              "content" : "步骤 2"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 137.75, 245.3, 288.2, 323.56 ],
+            "row number" : 4,
+            "column number" : 2,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "image",
+              "pdfua_tag" : "Figure",
+              "id" : 9,
+              "page number" : 19,
+              "bounding box" : [ 143.16, 251.14, 284.88, 318.1 ],
+              "alt_source" : "missing",
+              "source" : "《新能源汽车电气技术》打印(3)_images/imageFile5.png"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 288.2, 245.3, 329.25, 323.56 ],
+            "row number" : 4,
+            "column number" : 3,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 10,
+              "page number" : 19,
+              "bounding box" : [ 293.64, 277.879, 322.568, 289.59 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[1.0, 1.0, 1.0]",
+              "content" : "步骤 4"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 19,
+            "bounding box" : [ 329.25, 245.3, 510.7, 323.56 ],
+            "row number" : 4,
+            "column number" : 4,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "image",
+              "pdfua_tag" : "Figure",
+              "id" : 11,
+              "page number" : 19,
+              "bounding box" : [ 334.68, 262.42, 476.4, 306.46 ],
+              "alt_source" : "missing",
+              "source" : "《新能源汽车电气技术》打印(3)_images/imageFile6.png"
+            } ]
+          } ]
+        } ]
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 19,
+        "bounding box" : [ 259.559, 227.9, 356.528, 238.35 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 1-8 导线连接步骤"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 19,
+      "bounding box" : [ 111.0, 204.5, 504.599, 214.95 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（3）焊接 焊接是导线连接的常用基础方式之一，其专用工具为电烙铁，需依据实际",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 19,
+    "bounding box" : [ 90.0, 181.1, 362.889, 191.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "工况选用对应功率的型号。导线的焊接流程如图 1-9 所示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 19,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "19"
+  } ]
+}

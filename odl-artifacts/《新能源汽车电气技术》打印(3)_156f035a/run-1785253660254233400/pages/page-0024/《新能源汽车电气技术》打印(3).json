@@ -1,0 +1,637 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 24,
+    "bounding box" : [ 83.76, 94.32, 536.74, 769.9 ],
+    "number of rows" : 4,
+    "number of columns" : 4,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 84.0, 554.06, 121.55, 769.66 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 121.55, 554.06, 239.2, 769.66 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 239.2, 554.06, 423.85, 769.66 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 749.241, 417.84, 759.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "形 、 凸 形 ） 2. 插 接 器 名 称 ："
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 2,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 725.841, 417.838, 735.825 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "___________________ 插 头 连 接 方 式 ："
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 702.441, 417.84, 712.425 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "_______________（直插式、附属线束式、中"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 4,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 680.025, 272.159, 689.025 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "间插）"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 655.641, 411.48, 665.625 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "端子外观：_____________（凹形、凸形）"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 6,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 632.241, 417.839, 642.225 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3.插接器名称：___________________ 插头"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 7,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 608.841, 417.84, 618.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "连接方式：_______________（直插式、附属"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 8,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 586.425, 317.159, 595.425 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "线束式、中间插）"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 562.041, 411.48, 572.025 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "端子外观：_____________（凹形、凸形）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 423.85, 554.06, 536.5, 769.66 ],
+        "row number" : 1,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 84.0, 385.26, 121.55, 554.06 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 10,
+          "page number" : 24,
+          "bounding box" : [ 100.44, 463.52, 104.994, 472.52 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "5"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 121.55, 385.26, 239.2, 554.06 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 11,
+          "page number" : 24,
+          "bounding box" : [ 136.559, 486.8, 233.159, 496.784 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "选择比亚迪秦 EV 实车中"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 12,
+          "page number" : 24,
+          "bounding box" : [ 127.559, 463.4, 233.158, 473.384 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "的 3 类不同开关进行识别"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 13,
+          "page number" : 24,
+          "bounding box" : [ 127.559, 440.984, 154.559, 449.984 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "与检查"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 239.2, 385.26, 423.85, 554.06 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "list",
+          "pdfua_tag" : "L",
+          "id" : 16,
+          "level" : "1",
+          "page number" : 24,
+          "bounding box" : [ 245.159, 440.0, 377.677, 543.584 ],
+          "numbering style" : "arabic numbers",
+          "number of list items" : 3,
+          "list items" : [ {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 24,
+            "bounding box" : [ 245.159, 533.6, 377.677, 543.584 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "1.开关名称：__________________",
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 14,
+              "page number" : 24,
+              "bounding box" : [ 245.159, 510.2, 375.155, 520.184 ],
+              "font" : "Calibri",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "作用：_______________________"
+            } ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 24,
+            "bounding box" : [ 245.159, 486.8, 377.677, 496.784 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "2.开关名称：__________________",
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 15,
+              "page number" : 24,
+              "bounding box" : [ 249.72, 463.4, 379.716, 473.384 ],
+              "font" : "Calibri",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "作用：_______________________"
+            } ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 24,
+            "bounding box" : [ 245.159, 440.0, 377.677, 449.984 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "3.开关名称：__________________",
+            "kids" : [ ]
+          } ]
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 17,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 416.6, 375.155, 426.584 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "作用：_______________________"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 423.85, 385.26, 536.5, 554.06 ],
+        "row number" : 2,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 18,
+          "page number" : 24,
+          "bounding box" : [ 429.84, 463.4, 499.236, 473.384 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "已完成□ 未完成□"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 84.0, 239.86, 121.55, 385.26 ],
+        "row number" : 3,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 19,
+          "page number" : 24,
+          "bounding box" : [ 100.44, 306.441, 104.994, 315.441 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "6"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 121.55, 239.86, 239.2, 385.26 ],
+        "row number" : 3,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 20,
+          "page number" : 24,
+          "bounding box" : [ 136.559, 329.72, 233.159, 339.704 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "选择比亚迪秦 EV 实车中"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 21,
+          "page number" : 24,
+          "bounding box" : [ 127.559, 306.32, 233.158, 316.304 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "的 3 类不同电路保护元件"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 22,
+          "page number" : 24,
+          "bounding box" : [ 127.559, 283.904, 190.559, 292.904 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "进行识别与检查"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 239.2, 239.86, 423.85, 385.26 ],
+        "row number" : 3,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 23,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 364.76, 388.836, 374.744 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "保护元件名称：__________________"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 24,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 341.36, 375.155, 351.344 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "作用：_______________________"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 25,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 317.96, 388.836, 327.944 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "保护元件名称：__________________"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 26,
+          "page number" : 24,
+          "bounding box" : [ 249.72, 294.56, 379.716, 304.544 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "作用：_______________________"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 27,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 271.16, 388.836, 281.144 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "保护元件名称：__________________"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 28,
+          "page number" : 24,
+          "bounding box" : [ 249.72, 247.76, 379.716, 257.744 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "作用：_______________________"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 423.85, 239.86, 536.5, 385.26 ],
+        "row number" : 3,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 29,
+          "page number" : 24,
+          "bounding box" : [ 429.84, 306.32, 499.236, 316.304 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "已完成□ 未完成□"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 4,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 84.0, 94.8, 121.55, 239.86 ],
+        "row number" : 4,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 30,
+          "page number" : 24,
+          "bounding box" : [ 100.44, 161.0, 104.994, 170.0 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "7"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 121.55, 94.8, 239.2, 239.86 ],
+        "row number" : 4,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 31,
+          "page number" : 24,
+          "bounding box" : [ 136.559, 184.28, 233.159, 194.264 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "选择比亚迪秦 EV 实车中"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 32,
+          "page number" : 24,
+          "bounding box" : [ 127.559, 160.881, 233.158, 170.865 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "的 2 类不同继电器进行识"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 33,
+          "page number" : 24,
+          "bounding box" : [ 127.559, 138.465, 163.559, 147.465 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "别与检查"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 239.2, 94.8, 423.85, 239.86 ],
+        "row number" : 4,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 34,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 219.441, 422.4, 229.425 ],
+          "font" : "Calibri",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "1.继电器名称：___________________ 外形："
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 35,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 196.041, 353.04, 206.025 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "__________（方形、圆形）"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 36,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 172.641, 422.4, 182.625 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "插脚数目：_________________（三、四、五、"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 37,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 150.225, 263.159, 159.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "六）"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 38,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 125.841, 420.359, 135.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "触点的状态：_________________（常开型、"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 39,
+          "page number" : 24,
+          "bounding box" : [ 245.159, 103.425, 335.159, 112.425 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "常闭型、开闭混合型）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 24,
+        "bounding box" : [ 423.85, 94.8, 536.5, 239.86 ],
+        "row number" : 4,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 40,
+          "page number" : 24,
+          "bounding box" : [ 429.84, 160.881, 499.236, 170.865 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "已完成□ 未完成□"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 1,
+    "level" : "Doctitle",
+    "page number" : 24,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "heading level" : 1,
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "24"
+  } ]
+}

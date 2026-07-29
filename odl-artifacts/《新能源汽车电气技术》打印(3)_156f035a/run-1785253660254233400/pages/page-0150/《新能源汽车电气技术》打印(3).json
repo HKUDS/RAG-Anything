@@ -1,0 +1,88 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 150,
+    "bounding box" : [ 90.0, 676.221, 505.209, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "污等污渍，使刮水器片更容易将其刮除，从而有效提高风窗玻璃的清洁程度，为驾驶人提供 更清晰的视野。喷水系统喷出的清洁液可以在刮水器片与风窗玻璃之间形成一层润滑膜，减 少两者之间的摩擦，降低刮水器片的磨损程度，延长其使用寿命。在炎热天气下，风窗玻璃 表面温度较高，喷水可以降低玻璃温度，防止因热胀冷缩导致玻璃出现裂纹或损坏，同时也 能减少刮水器片因高温而老化变形的风险。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 150,
+    "bounding box" : [ 172.8, 526.42, 422.28, 667.78 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 150,
+    "bounding box" : [ 256.92, 509.18, 338.169, 519.63 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-24 喷水系统"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 150,
+    "bounding box" : [ 111.0, 470.18, 510.49, 501.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "8.组合开关 通过操作开关，驾驶人可以在需要时开启刮水器，如遇到降雨、下雪或风窗玻璃脏污时，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 150,
+    "bounding box" : [ 90.0, 286.34, 505.209, 460.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "让刮水器开始工作以保持视野清晰；在不需要刮水器工作时，又能及时关闭，避免不必要的 磨损和能耗。控制开关可让驾驶人选择不同的刮水器工作模式，如低速连续刮水模式适用于 小雨天气，高速连续刮水模式用于大雨或暴雨天气，而间歇刮水模式则可根据实际情况调整 刮水的间隔时间，在毛毛雨或玻璃上有少量积水时使用，既能保持视野清晰，又能节省能源 并减少刮水器片的磨损。部分控制开关集成了喷水功能按钮，驾驶人按下该按钮时，喷水系 统会将清洁液喷到风窗玻璃上，配合刮水器的工作，增强清洁效果。一些车辆的刮水器控制 开关具有自动控制档位，当开关处于此档位时，刮水器系统会根据雨量传感器等检测到的信 息自动调整刮水器的工作状态，实现智能化的刮水控制，驾驶人无须频繁手动调节，提高了 驾驶的便利性和安全性，如图 4-25 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 150,
+    "bounding box" : [ 197.88, 127.54, 396.24, 277.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 8,
+    "level" : "Doctitle",
+    "page number" : 150,
+    "bounding box" : [ 111.0, 86.18, 338.169, 120.03 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-25 组合开关 二、刮水器系统的作用"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 150,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "150"
+  } ]
+}

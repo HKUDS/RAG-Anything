@@ -1,0 +1,129 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 131,
+    "bounding box" : [ 90.0, 752.166, 152.889, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 任务情景"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 131,
+    "bounding box" : [ 90.0, 632.421, 505.209, 744.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "汽车维修工小迪接到维修任务，自己和师傅将一起维修某顾客的比亚迪秦 EV 故障车， 客户描述车辆故障为：驾驶人无法用主驾玻璃升降器开关去控制车辆右前玻璃下降，但驾驶 人可以用主驾玻璃升降器开关去控制车辆右前玻璃上升，车辆其他玻璃升降功能正常。首先 他需要了解玻璃升降系统组成、作用、工作原理，再将所有涉及整车玻璃升降控制系统整理 一下，得出一套完整玻璃升降系统控制逻辑图后，排除该车的玻璃升降故障，为了能够迅速 解决问题，你需要学习相关知识和实践操作，你准备好了吗？"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 131,
+    "bounding box" : [ 90.0, 565.1, 505.208, 617.844 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识准备 一、电动车窗系统的组成 电动车窗系统主要由车窗玻璃、车窗玻璃升降器、电动机、继电器、开关、ECU（电子"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 131,
+    "bounding box" : [ 90.0, 483.38, 509.89, 555.15 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "控制单元）和传感器（防夹传感器）、车窗密封条、车窗导轨等组成。 电动车窗系统各部件的作用： 1.车窗玻璃 车窗玻璃：通常采用安全玻璃，是车窗系统的主体部分，为车内人员提供视野和防护。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 131,
+    "bounding box" : [ 90.0, 462.98, 163.449, 473.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "如图 4-1 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 131,
+    "bounding box" : [ 183.6, 326.38, 411.6, 454.54 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 131,
+    "bounding box" : [ 259.559, 309.38, 335.529, 319.83 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-1 车窗玻璃"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 131,
+    "bounding box" : [ 111.0, 270.5, 505.208, 301.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.车窗玻璃升降器 车窗玻璃升降器：是核心部件，常见的形式有绳轮式、叉臂式和软轴式，通过机械升降"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 131,
+    "bounding box" : [ 90.0, 250.1, 299.889, 260.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "机构带动车窗玻璃上下运动。如图 4-2 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 11,
+    "page number" : 131,
+    "bounding box" : [ 195.6, 97.78, 399.48, 241.66 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 12,
+    "page number" : 131,
+    "bounding box" : [ 243.84, 80.78, 351.368, 91.23 ],
+    "linked content id" : 11,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-2 车窗玻璃升降器"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 131,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "131"
+  } ]
+}

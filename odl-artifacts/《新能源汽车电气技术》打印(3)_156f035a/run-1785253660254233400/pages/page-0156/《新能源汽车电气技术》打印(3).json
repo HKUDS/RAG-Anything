@@ -1,0 +1,135 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 156,
+    "bounding box" : [ 111.0, 757.94, 415.45, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "查阅完电路图，接下来进行相关线路的测量，具体测量步骤如下："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 9,
+    "level" : "1",
+    "page number" : 156,
+    "bounding box" : [ 111.0, 129.621, 505.265, 747.99 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 156,
+      "bounding box" : [ 111.0, 737.54, 505.209, 747.99 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）车辆上电，用万用表测量刮水器熔丝 F1/43 上端对地电压，正常+B，实测 13.2V，",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 156,
+        "bounding box" : [ 90.0, 717.021, 200.169, 727.471 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "正常，如图 4-29 所示。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 2,
+        "page number" : 156,
+        "bounding box" : [ 146.16, 479.5, 447.96, 708.7 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 156,
+        "bounding box" : [ 209.64, 462.261, 385.447, 472.711 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 4-29 测量刮水器熔丝上端对地电压"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 156,
+      "bounding box" : [ 111.0, 443.78, 505.265, 454.23 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）用万用表测量刮水器熔丝 F1/43 下端端对地电压，正常+B，实测 0V，异常，如图 4-30",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 4,
+        "page number" : 156,
+        "bounding box" : [ 90.0, 423.261, 121.449, 433.711 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "所示。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 5,
+        "page number" : 156,
+        "bounding box" : [ 133.44, 168.94, 460.56, 414.94 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 6,
+        "page number" : 156,
+        "bounding box" : [ 204.48, 150.14, 390.728, 160.59 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 4-30 测量刮水器熔丝下端端对地电压"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 156,
+      "bounding box" : [ 111.0, 129.621, 505.265, 140.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）车辆下电，断开蓄电池负极，拔下熔丝 F1/43，用万用表测量其电阻，正常小于 1",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 156,
+    "bounding box" : [ 90.0, 109.221, 336.729, 119.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "欧，实测为无穷大，说明熔丝损坏，如图 4-31 所示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 156,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "156"
+  } ]
+}

@@ -59,3 +59,26 @@
 - [ ] 6.1 Run the focused parser, processor, worker, injection-defense, and upload-task test suites; run the repository lint/format/type checks required by the changed modules and record exact commands/results.
 - [ ] 6.2 Review the final diff for accidental global/default parser changes, optional dependency leakage into defaults, missing hashes/notices, unsafe command/path/symlink handling, forbidden hybrid/remote options, incomplete process-tree/output cleanup, and public provenance-path exposure.
 - [x] 6.3 Run `openspec validate add-opendataloader-pdf-parser --strict` and resolve every validation failure before requesting implementation review or beginning `/opsx:apply`.
+
+## 7. OpenDataLoader Image Retrieval and Controlled Media Contract
+
+- [x] 7.1 Update the OpenSpec design/spec/tasks for dual image-marker compatibility, controlled path validation, manifest/catalog persistence, ordered recall, non-blocking graph expansion, SSE/frontend delivery, and isolated rebuild acceptance.
+- [x] 7.2 Add one shared query-time parser/validator for English and Chinese markers, including full-width/half-width colons, normalization, deduplication, controlled-root/manifest authorization, and aggregate path-free telemetry. Reject traversal, symlink escape, missing/non-image/non-controlled files.
+- [x] 7.3 Route direct context, BM25/bigram, and graph discovery through the shared validator; order recall as direct, local/BM25/bigram, then optional graph; use one default graph budget no greater than two seconds and preserve earlier results on timeout.
+- [x] 7.4 Persist a document-scoped ODL media manifest and opaque KB media catalog with relative path, SHA-256, MIME, page, element ID, caption, provenance, document ID, and persisted image chunk ID; read the catalog back before completion.
+- [x] 7.5 Make each valid ODL image produce an independent description/chunk with the English `Image Path:` contract; mark `image_media_incomplete` unless eligible image, valid manifest, catalog, and persisted chunk counts are equal and bound.
+- [ ] 7.6 Replace raw-path image delivery with RBAC-protected media-ID delivery; remove local paths and URL query-string bearer tokens from API, SSE, history, image search, and frontend rendering; fail closed when catalog ownership is absent.
+- [x] 7.7 Add tests for marker protocols, empty/duplicate candidates, traversal, symlink escape, missing/unsupported/out-of-root media, shared discovery behavior, graph timeout preservation, and no-image queries.
+- [ ] 7.8 Add manifest-to-chunk-to-recall, multimodal completion, RBAC, injection-scan, upload-validation, SSE/frontend loading, and MinerU/Docling/non-PDF regression tests.
+- [ ] 7.9 Verify legacy query compatibility on existing `odl解析` without modifying chunks or PostgreSQL; record source/raw/filtered/final evidence for image-focused smoke queries.
+- [ ] 7.10 Re-ingest the same PDF into isolated `odl解析_图片修复` without deleting legacy data; audit image element/manifest/catalog/chunk equality and complete the twenty-question URL/frontend/performance comparison.
+- [ ] 7.11 Run focused pytest, Ruff, relevant frontend tests/build, and `openspec validate add-opendataloader-pdf-parser --strict`; check only tasks with implementation and acceptance evidence, then recommend but do not perform an agent-binding switch.
+
+## 8. Knowledge-Base Detail First-Frame Data
+
+- [x] 8.1 Add explicit KB-scoped detail reads plus a bounded, authentication-generation-scoped in-memory cache with thirty-second TTL, twenty-KB capacity, in-flight deduplication, six-second prefetch timeout, and targeted/full invalidation.
+- [x] 8.2 Prefetch document summaries and statistics on pointer/focus intent, wait on click before navigation, expose an accessible per-card opening state, and make only the latest click eligible to navigate.
+- [x] 8.3 Bind detail document/stat states to the route KB; seed from a fresh cache, show skeletons for uncached direct navigation, reserve the empty state for a successful zero-row response, preserve stale data on refresh failure, and provide initial-error retry behavior.
+- [x] 8.4 Use explicit KB identity, abort, and generation checks for detail reads; reset KB-bound selections and invalidate detail cache after content/stat mutations, KB deletion, logout, and authentication expiry without weakening RBAC.
+- [x] 8.5 Add dependency-free Node tests for explicit KB URLs, cache isolation/deduplication/TTL/capacity/invalidation/auth generation, latest-click arbitration, and loading/empty/error/stale state semantics; run the frontend unit suite and production build.
+- [ ] 8.6 Complete browser smoke acceptance for cached list navigation, uncached direct URLs, real empty KBs, failures/retry, stale refresh, mutation invalidation, keyboard access, and rapid KB switching before checking these tasks complete.

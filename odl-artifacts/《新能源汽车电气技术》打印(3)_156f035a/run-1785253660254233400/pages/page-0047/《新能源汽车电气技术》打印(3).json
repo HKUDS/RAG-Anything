@@ -1,0 +1,87 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 47,
+    "bounding box" : [ 90.0, 654.558, 510.49, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "比亚迪汽车车外探测天线通常安装在车门把手内或附近等位置，如图 2-3 所示。其结构 一般较为紧凑，主要由天线本体、连接线束等组成。天线本体负责发送信号，连接线束则用 于将天线与车辆的智能钥匙模块连接起来。车外探测天线智能钥匙模块驱动工作，发出含有 加密报文的 125kHz 低频信号，用于车辆合法钥匙的认证。一般无钥匙进入系统会配备有 3~5 个室外天线，分布在前门、后门以及行李舱的位置，每个室外探测天线的工作范围一般在 1.5m 以内，所以当驾驶人处于车辆 1.5 米以内的各个位置都能使智能钥匙接收到低频信号。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 47,
+    "bounding box" : [ 157.8, 474.82, 437.28, 647.38 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 47,
+    "bounding box" : [ 239.52, 454.518, 355.568, 466.11 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-3 车外探测天线位置"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 47,
+    "bounding box" : [ 111.0, 413.597, 510.49, 445.711 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.车身控制模块（BCM） 车身控制模块（BCM）控制车门解锁、上锁，在无钥匙进入系统中，车身控制模块（BCM）"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 6,
+    "page number" : 47,
+    "bounding box" : [ 90.0, 372.797, 509.05, 404.911 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "通过起动子网收到智能钥匙模块（Key-less Ecu）的认证信息后，控制车门门锁解锁、上锁， 转向灯闪烁。BCM 一般安装在转向盘下方，与仪配集成在一起，如图 2-4 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 47,
+    "bounding box" : [ 142.8, 129.7, 452.28, 365.62 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 47,
+    "bounding box" : [ 111.0, 89.238, 355.568, 121.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-4 车身控制模块位置 5.微动开关"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 47,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "47"
+  } ]
+}

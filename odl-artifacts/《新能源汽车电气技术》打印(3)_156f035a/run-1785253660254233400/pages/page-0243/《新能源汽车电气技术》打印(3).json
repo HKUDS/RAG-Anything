@@ -1,0 +1,169 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 243,
+    "bounding box" : [ 111.0, 728.358, 394.45, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "开启除霜开关时，ACU 控制鼓风机高速运转，除霜风口全开。 三、PTC 暖风系统工作原理（液体加热型）"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 7,
+    "level" : "1",
+    "page number" : 243,
+    "bounding box" : [ 111.0, 494.357, 510.49, 716.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 6,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 243,
+      "bounding box" : [ 111.0, 704.958, 505.209, 716.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）制热起动：车主开启暖风，设定温度 25℃，ACU 检测到车内温度（如 10℃）低于",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 243,
+        "bounding box" : [ 90.0, 681.558, 307.93, 693.271 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "设定值，向高压配电盒发送“PTC 工作指令”。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 243,
+      "bounding box" : [ 111.0, 658.158, 510.49, 669.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）PTC 加热：高压配电盒闭合 PTC 继电器，动力蓄电电池向 PTC 加热器供电（如 350V），",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 243,
+        "bounding box" : [ 90.0, 634.758, 314.05, 646.471 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "PTC 陶瓷发热体发热，将冷却液加热至 60-80℃。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 243,
+      "bounding box" : [ 111.0, 611.358, 494.16, 623.071 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）冷却液循环：ACU 控制冷却液循环泵运转，将加热后的冷却液输送至暖风芯体；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 243,
+      "bounding box" : [ 111.0, 587.958, 505.198, 599.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）暖风输出：ACU 控制鼓风机运转（根据风量需求调整转速），空气吹过暖风芯体，",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 243,
+        "bounding box" : [ 90.0, 564.558, 400.57, 576.271 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "吸收热量后变为暖风（出风口温度 30-40℃），通过风道送入车内。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 243,
+      "bounding box" : [ 111.0, 541.158, 505.208, 552.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5）温度调节：当车内温度接近设定温度（如 23℃）时，ACU 降低 PTC 功率（或间歇性",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 4,
+        "page number" : 243,
+        "bounding box" : [ 90.0, 519.021, 310.45, 529.471 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "断电），调整循环泵转速，维持车内温度稳定。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 243,
+      "bounding box" : [ 111.0, 494.357, 505.25, 506.071 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "6）保护机制：若 PTC 温度＞85℃（过温）或电流＞20A（过流），ACU 立即切断 PTC",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 243,
+    "bounding box" : [ 90.0, 330.557, 505.209, 482.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "高压供电，确保安全。 四、暖风系统关键参数与测量 PTC 工作参数通过诊断仪读取 PTC 相关数据流： PTC 供电电压：300-400V（与动力蓄电池电压匹配）。 PTC 工作电流：5~15A（功率 2~5kW，电流随功率变化）。 PTC 温度：正常工作温度 40~85℃（超过 85℃触发保护）。 出风口温度暖风最大制热模式下（设定温度 25℃，环境温度 5℃），出风口温度应≥"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 243,
+    "bounding box" : [ 90.0, 307.157, 394.805, 318.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "30℃。若温度＜20℃，需检查 PTC 是否工作、暖风芯体是否堵塞。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 243,
+    "bounding box" : [ 90.0, 261.621, 505.208, 295.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "鼓风机转速通常分为 3~5 档，高速档转速约 2000r/min，低速档约 800v。通过诊断仪读 取转速数据，或直接观察出风口风量（转速低则风量小）。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 243,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "243"
+  } ]
+}

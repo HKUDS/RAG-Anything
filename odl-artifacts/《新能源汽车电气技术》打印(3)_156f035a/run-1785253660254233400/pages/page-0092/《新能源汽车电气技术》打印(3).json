@@ -1,0 +1,84 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 92,
+    "bounding box" : [ 197.16, 630.94, 421.2, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 3,
+    "level" : "1",
+    "page number" : 92,
+    "bounding box" : [ 90.0, 292.461, 505.209, 621.03 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 92,
+      "bounding box" : [ 90.0, 528.98, 505.208, 621.03 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "图 3-9 机械式汽车仪表板 随着电子技术在工业领域的崛起，纯机械式仪表很快被淘汰，数字显示技术在仪表上大 量应用。通常保留指针式车速和转速显示表盘，而其他信息则通过薄膜晶体管驱动像素显示 的方式进行展示，这种仪表板被称作电子式仪表板，如图 3-10 所示，这类仪表板相较于机 械式仪表板，能显示更多信息，也更方便驾驶者快速掌握车辆关键信息，应用较为广泛。",
+      "kids" : [ {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 1,
+        "page number" : 92,
+        "bounding box" : [ 173.16, 373.66, 444.84, 520.54 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 92,
+      "bounding box" : [ 90.0, 292.461, 505.209, 364.23 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "图 3-10 电子式汽车仪表板 数字式显示方式除了技术上速度快、功能强、逻辑性优越等优势外，还具有科技感与时 尚感，符合如今社会的主流审美，因此，完全采用数字化显示的全液晶仪表板流行起来，越 来越多的汽车采用这种设计，如图 3-11 所示，为比亚迪秦 PLUS-EV 的全液晶仪表板。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 4,
+    "page number" : 92,
+    "bounding box" : [ 191.88, 116.02, 426.12, 284.02 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 5,
+    "page number" : 92,
+    "bounding box" : [ 111.0, 74.3, 505.208, 105.15 ],
+    "linked content id" : 4,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-11 全液晶仪表板 全液晶仪表板也有缺点，如稳定性和使用寿命不如非全液晶仪表板，制造与维护成本都"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 92,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "92"
+  } ]
+}

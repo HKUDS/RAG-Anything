@@ -1,0 +1,68 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 57,
+    "bounding box" : [ 90.0, 737.54, 505.265, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5）断开 KJG01 插头，测量 KG25（A）/1 对地电阻为小于 1Ω，异常，说明 KG25（A）/1 到 KJG01/15 线路对地短路，如图 2-14 所示，检查线路发现绝缘层破损与车身接触。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 57,
+    "bounding box" : [ 202.44, 586.3, 392.88, 729.1 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 57,
+    "bounding box" : [ 226.8, 566.18, 368.409, 576.63 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-14 KG25（A）/1 对地电阻"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 57,
+    "bounding box" : [ 111.0, 525.38, 505.206, 556.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5.故障点确认及修复 通过以上的检测最终锁定故障点为 KG25（A）/1 到 KJG01/15 线路绝缘层破损与车身接"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 57,
+    "bounding box" : [ 90.0, 504.98, 347.168, 515.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "触，对地短路，在电路图的位置如图 2-15 中红圈所示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 57,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "57"
+  } ]
+}

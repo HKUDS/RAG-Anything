@@ -1,0 +1,525 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 2,
+    "level" : "Doctitle",
+    "page number" : 14,
+    "bounding box" : [ 233.04, 753.021, 383.045, 763.471 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "表 1-2 汽车电路中插接器的表示"
+  }, {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 3,
+    "level" : "1",
+    "page number" : 14,
+    "bounding box" : [ 83.76, 143.62, 498.24, 746.5 ],
+    "number of rows" : 7,
+    "number of columns" : 4,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 84.0, 705.86, 142.8, 746.02 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 14,
+          "bounding box" : [ 90.0, 720.825, 108.0, 729.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "项目"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 142.8, 705.86, 255.9, 746.02 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 2,
+          "page number" : 14,
+          "bounding box" : [ 148.8, 720.825, 243.598, 729.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "插头/搭铁（对应部件）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 255.9, 705.86, 394.5, 746.02 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 14,
+          "bounding box" : [ 261.84, 720.825, 297.96, 729.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "形象图标"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 394.5, 705.86, 498.0, 746.02 ],
+        "row number" : 1,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 4,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 720.825, 418.44, 729.825 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "内容"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 84.0, 302.56, 142.8, 705.86 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 4,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 14,
+          "bounding box" : [ 90.0, 510.584, 135.0, 519.584 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "端子及插头"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 6,
+          "page number" : 14,
+          "bounding box" : [ 90.0, 487.184, 117.0, 496.184 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "的表示"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 142.8, 525.46, 255.9, 705.86 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 7,
+          "page number" : 14,
+          "bounding box" : [ 148.8, 593.74, 249.96, 690.34 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 255.9, 636.06, 394.5, 705.86 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 8,
+          "page number" : 14,
+          "bounding box" : [ 279.84, 680.384, 315.84, 689.384 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "凸形端子"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 394.5, 302.56, 498.0, 705.86 ],
+        "row number" : 2,
+        "column number" : 4,
+        "row span" : 4,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 14,
+          "bounding box" : [ 409.44, 569.144, 490.44, 578.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "端子的形象图标中，"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 10,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 545.744, 481.44, 554.744 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "插入的端子叫凸形端"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 11,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 522.344, 490.44, 531.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "子，被插入的端子叫凹"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 12,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 498.944, 496.44, 507.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "形端子（以图示表示）；"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 13,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 475.544, 490.44, 484.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "装有凸形端子的插头叫"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 14,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 452.144, 490.44, 461.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "凸侧插头，装有凹形端"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 15,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 428.744, 481.44, 437.744 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "子的插头叫凹侧插头"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 255.9, 525.46, 394.5, 636.06 ],
+        "row number" : 3,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 16,
+          "page number" : 14,
+          "bounding box" : [ 261.96, 537.94, 378.96, 622.42 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 4,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 142.8, 302.56, 255.9, 525.46 ],
+        "row number" : 4,
+        "column number" : 2,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 17,
+          "page number" : 14,
+          "bounding box" : [ 148.8, 412.3, 249.84, 511.06 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 255.9, 413.16, 394.5, 525.46 ],
+        "row number" : 4,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 18,
+          "page number" : 14,
+          "bounding box" : [ 279.84, 500.025, 315.84, 509.025 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "凹形端子"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 5,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 255.9, 302.56, 394.5, 413.16 ],
+        "row number" : 5,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 19,
+          "page number" : 14,
+          "bounding box" : [ 261.96, 316.42, 376.2, 398.02 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile4.png"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 6,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 84.0, 144.1, 142.8, 302.56 ],
+        "row number" : 6,
+        "column number" : 1,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 20,
+          "page number" : 14,
+          "bounding box" : [ 90.0, 229.544, 135.0, 238.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "表示插头形"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 21,
+          "page number" : 14,
+          "bounding box" : [ 90.0, 206.144, 126.0, 215.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "象的符号"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 142.8, 223.16, 255.9, 302.56 ],
+        "row number" : 6,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 22,
+          "page number" : 14,
+          "bounding box" : [ 148.8, 232.18, 249.84, 292.54 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile5.png"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 255.9, 144.1, 394.5, 302.56 ],
+        "row number" : 6,
+        "column number" : 3,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 23,
+          "page number" : 14,
+          "bounding box" : [ 273.84, 205.54, 376.44, 287.74 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile6.png"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 394.5, 144.1, 498.0, 302.56 ],
+        "row number" : 6,
+        "column number" : 4,
+        "row span" : 2,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 24,
+          "page number" : 14,
+          "bounding box" : [ 409.44, 276.344, 490.44, 285.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "与设备的连接采用设"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 25,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 252.944, 490.44, 261.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "备侧插头形象，中间插"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 26,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 229.544, 490.44, 238.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "头采用凸侧插头形象，"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 27,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 206.144, 486.0, 215.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "备用/检测用插头因未"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 28,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 182.744, 490.44, 191.744 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "装设备，采用线束侧插"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 29,
+          "page number" : 14,
+          "bounding box" : [ 400.44, 159.344, 445.44, 168.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "头形象表示"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 7,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 14,
+        "bounding box" : [ 142.8, 144.1, 255.9, 223.16 ],
+        "row number" : 7,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 30,
+          "page number" : 14,
+          "bounding box" : [ 148.8, 155.98, 249.84, 209.74 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile7.png"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 14,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "14"
+  } ]
+}

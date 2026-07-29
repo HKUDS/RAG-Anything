@@ -1,0 +1,1361 @@
+{
+  "file name" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1).pdf",
+  "number of pages" : 3,
+  "author" : "",
+  "title" : "",
+  "creation date" : "D:20210201193319+08'00'",
+  "modification date" : "D:20210527104259+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 1,
+    "page number" : 3,
+    "bounding box" : [ 68.52, 651.33, 269.88, 669.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 13,
+    "page number" : 3,
+    "bounding box" : [ 122.76, 579.57, 124.56, 592.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile2.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 14,
+    "page number" : 3,
+    "bounding box" : [ 121.2, 579.21, 124.56, 579.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile3.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 15,
+    "page number" : 3,
+    "bounding box" : [ 120.0, 575.49, 127.2, 579.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile4.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 3,
+    "bounding box" : [ 215.04, 524.13, 267.72, 525.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile5.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 3,
+    "bounding box" : [ 211.44, 513.69, 271.44, 524.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile6.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 3,
+    "bounding box" : [ 143.16, 514.89, 151.56, 523.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile7.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 3,
+    "bounding box" : [ 215.04, 512.61, 267.72, 513.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile8.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 17,
+    "page number" : 3,
+    "bounding box" : [ 105.36, 500.13, 108.24, 500.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile9.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 18,
+    "page number" : 3,
+    "bounding box" : [ 104.16, 496.41, 111.36, 500.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile10.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 19,
+    "page number" : 3,
+    "bounding box" : [ 106.92, 468.93, 108.72, 496.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile11.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 11,
+    "page number" : 3,
+    "bounding box" : [ 95.04, 420.33, 103.44, 428.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile12.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 9,
+    "page number" : 3,
+    "bounding box" : [ 237.6, 420.33, 245.16, 428.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile13.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 21,
+    "page number" : 3,
+    "bounding box" : [ 326.16, 701.49, 327.6, 702.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile14.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 22,
+    "page number" : 3,
+    "bounding box" : [ 325.44, 700.77, 328.32, 701.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile15.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 23,
+    "page number" : 3,
+    "bounding box" : [ 324.72, 700.05, 329.04, 700.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile16.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 24,
+    "page number" : 3,
+    "bounding box" : [ 324.0, 699.33, 329.76, 700.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile17.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 25,
+    "page number" : 3,
+    "bounding box" : [ 323.28, 698.61, 331.2, 699.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile18.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 26,
+    "page number" : 3,
+    "bounding box" : [ 322.56, 697.89, 331.92, 698.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile19.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 27,
+    "page number" : 3,
+    "bounding box" : [ 321.84, 697.17, 332.64, 697.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile20.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 28,
+    "page number" : 3,
+    "bounding box" : [ 321.12, 696.45, 333.36, 697.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile21.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 29,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 695.73, 333.36, 696.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile22.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 30,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 695.01, 334.08, 695.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile23.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 31,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 694.29, 326.88, 695.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile24.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 32,
+    "page number" : 3,
+    "bounding box" : [ 328.32, 694.29, 334.8, 695.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile25.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 33,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 693.57, 326.88, 694.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile26.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 34,
+    "page number" : 3,
+    "bounding box" : [ 329.04, 693.57, 335.52, 694.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile27.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 35,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 692.85, 326.16, 693.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile28.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 36,
+    "page number" : 3,
+    "bounding box" : [ 329.76, 692.85, 335.52, 693.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile29.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 37,
+    "page number" : 3,
+    "bounding box" : [ 321.12, 692.13, 325.44, 692.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile30.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 38,
+    "page number" : 3,
+    "bounding box" : [ 330.48, 692.13, 334.8, 692.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile31.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 39,
+    "page number" : 3,
+    "bounding box" : [ 321.84, 691.41, 324.72, 692.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile32.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 40,
+    "page number" : 3,
+    "bounding box" : [ 331.2, 691.41, 334.08, 692.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile33.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 41,
+    "page number" : 3,
+    "bounding box" : [ 322.56, 690.69, 324.0, 691.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile34.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 42,
+    "page number" : 3,
+    "bounding box" : [ 331.92, 690.69, 333.36, 691.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile35.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 43,
+    "page number" : 3,
+    "bounding box" : [ 309.6, 682.05, 310.32, 682.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile36.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 44,
+    "page number" : 3,
+    "bounding box" : [ 308.88, 681.33, 311.04, 682.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile37.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 45,
+    "page number" : 3,
+    "bounding box" : [ 308.16, 680.61, 311.76, 681.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile38.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 46,
+    "page number" : 3,
+    "bounding box" : [ 307.44, 679.89, 312.48, 680.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile39.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 47,
+    "page number" : 3,
+    "bounding box" : [ 306.72, 679.17, 313.2, 679.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile40.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 48,
+    "page number" : 3,
+    "bounding box" : [ 306.0, 678.45, 313.92, 679.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile41.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 49,
+    "page number" : 3,
+    "bounding box" : [ 305.28, 677.73, 313.92, 678.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile42.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 50,
+    "page number" : 3,
+    "bounding box" : [ 304.56, 677.01, 313.2, 677.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile43.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 51,
+    "page number" : 3,
+    "bounding box" : [ 303.84, 676.29, 312.48, 677.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile44.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 52,
+    "page number" : 3,
+    "bounding box" : [ 303.12, 675.57, 311.76, 676.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile45.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 53,
+    "page number" : 3,
+    "bounding box" : [ 302.4, 674.85, 311.04, 675.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile46.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 54,
+    "page number" : 3,
+    "bounding box" : [ 302.4, 674.13, 309.6, 674.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile47.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 55,
+    "page number" : 3,
+    "bounding box" : [ 303.12, 673.41, 309.6, 674.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile48.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 56,
+    "page number" : 3,
+    "bounding box" : [ 303.84, 672.69, 311.04, 673.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile49.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 57,
+    "page number" : 3,
+    "bounding box" : [ 304.56, 671.97, 311.76, 672.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile50.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 58,
+    "page number" : 3,
+    "bounding box" : [ 305.28, 671.25, 312.48, 671.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile51.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 59,
+    "page number" : 3,
+    "bounding box" : [ 306.0, 670.53, 313.2, 671.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile52.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 60,
+    "page number" : 3,
+    "bounding box" : [ 306.72, 669.81, 313.92, 670.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile53.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 61,
+    "page number" : 3,
+    "bounding box" : [ 307.44, 669.09, 313.92, 669.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile54.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 62,
+    "page number" : 3,
+    "bounding box" : [ 308.16, 668.37, 313.2, 669.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile55.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 63,
+    "page number" : 3,
+    "bounding box" : [ 309.6, 667.65, 312.48, 668.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile56.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 64,
+    "page number" : 3,
+    "bounding box" : [ 310.32, 666.93, 311.76, 667.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile57.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 65,
+    "page number" : 3,
+    "bounding box" : [ 344.16, 682.05, 344.88, 682.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile58.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 66,
+    "page number" : 3,
+    "bounding box" : [ 343.44, 681.33, 344.88, 682.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile59.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 67,
+    "page number" : 3,
+    "bounding box" : [ 342.72, 680.61, 346.32, 681.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile60.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 68,
+    "page number" : 3,
+    "bounding box" : [ 342.0, 679.89, 347.04, 680.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile61.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 69,
+    "page number" : 3,
+    "bounding box" : [ 341.28, 679.17, 347.76, 679.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile62.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 70,
+    "page number" : 3,
+    "bounding box" : [ 341.28, 678.45, 348.48, 679.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile63.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 71,
+    "page number" : 3,
+    "bounding box" : [ 342.0, 677.73, 349.2, 678.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile64.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 72,
+    "page number" : 3,
+    "bounding box" : [ 342.72, 677.01, 349.92, 677.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile65.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 73,
+    "page number" : 3,
+    "bounding box" : [ 343.44, 676.29, 350.64, 677.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile66.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 74,
+    "page number" : 3,
+    "bounding box" : [ 344.16, 675.57, 351.36, 676.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile67.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 75,
+    "page number" : 3,
+    "bounding box" : [ 345.6, 674.85, 352.08, 675.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile68.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 76,
+    "page number" : 3,
+    "bounding box" : [ 345.6, 674.13, 352.8, 674.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile69.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 77,
+    "page number" : 3,
+    "bounding box" : [ 344.16, 673.41, 352.8, 674.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile70.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 78,
+    "page number" : 3,
+    "bounding box" : [ 343.44, 672.69, 352.08, 673.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile71.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 79,
+    "page number" : 3,
+    "bounding box" : [ 342.72, 671.97, 351.36, 672.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile72.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 80,
+    "page number" : 3,
+    "bounding box" : [ 342.0, 671.25, 350.64, 671.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile73.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 81,
+    "page number" : 3,
+    "bounding box" : [ 341.28, 670.53, 349.92, 671.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile74.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 82,
+    "page number" : 3,
+    "bounding box" : [ 341.28, 669.81, 349.2, 670.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile75.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 83,
+    "page number" : 3,
+    "bounding box" : [ 342.0, 669.09, 348.48, 669.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile76.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 84,
+    "page number" : 3,
+    "bounding box" : [ 342.72, 668.37, 347.76, 669.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile77.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 85,
+    "page number" : 3,
+    "bounding box" : [ 343.44, 667.65, 347.04, 668.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile78.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 86,
+    "page number" : 3,
+    "bounding box" : [ 344.16, 666.93, 345.6, 667.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile79.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 87,
+    "page number" : 3,
+    "bounding box" : [ 321.84, 657.57, 323.28, 658.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile80.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 88,
+    "page number" : 3,
+    "bounding box" : [ 331.2, 657.57, 332.64, 658.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile81.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 89,
+    "page number" : 3,
+    "bounding box" : [ 321.12, 656.85, 324.0, 657.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile82.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 90,
+    "page number" : 3,
+    "bounding box" : [ 330.48, 656.85, 333.36, 657.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile83.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 91,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 656.13, 324.72, 656.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile84.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 92,
+    "page number" : 3,
+    "bounding box" : [ 329.76, 656.13, 334.08, 656.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile85.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 93,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 655.41, 325.44, 656.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile86.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 94,
+    "page number" : 3,
+    "bounding box" : [ 329.04, 655.41, 334.8, 656.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile87.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 95,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 654.69, 326.16, 655.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile88.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 96,
+    "page number" : 3,
+    "bounding box" : [ 328.32, 654.69, 335.52, 655.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile89.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 97,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 653.97, 335.52, 654.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile90.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 98,
+    "page number" : 3,
+    "bounding box" : [ 321.12, 653.25, 334.8, 653.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile91.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 99,
+    "page number" : 3,
+    "bounding box" : [ 321.84, 652.53, 334.08, 653.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile92.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 100,
+    "page number" : 3,
+    "bounding box" : [ 322.56, 651.81, 333.36, 652.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile93.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 101,
+    "page number" : 3,
+    "bounding box" : [ 323.28, 651.09, 332.64, 651.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile94.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 102,
+    "page number" : 3,
+    "bounding box" : [ 324.0, 650.37, 331.92, 651.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile95.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 103,
+    "page number" : 3,
+    "bounding box" : [ 324.72, 649.65, 331.2, 650.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile96.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 104,
+    "page number" : 3,
+    "bounding box" : [ 324.72, 648.93, 330.48, 649.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile97.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 105,
+    "page number" : 3,
+    "bounding box" : [ 325.44, 648.21, 329.76, 648.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile98.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 106,
+    "page number" : 3,
+    "bounding box" : [ 326.16, 647.49, 329.04, 648.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile99.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 107,
+    "page number" : 3,
+    "bounding box" : [ 326.88, 646.77, 328.32, 647.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile100.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 108,
+    "page number" : 3,
+    "bounding box" : [ 322.56, 622.29, 326.88, 623.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile101.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 109,
+    "page number" : 3,
+    "bounding box" : [ 321.12, 621.57, 328.32, 622.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile102.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 110,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 620.85, 329.04, 621.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile103.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 111,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 620.13, 330.48, 620.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile104.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 112,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 619.41, 330.48, 620.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile105.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 113,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 618.69, 331.2, 619.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile106.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 114,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 617.97, 331.2, 618.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile107.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 115,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 617.25, 331.2, 617.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile108.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 116,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 616.53, 331.2, 617.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile109.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 117,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 615.81, 331.2, 616.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile110.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 118,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 615.09, 331.2, 615.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile111.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 119,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 614.37, 330.48, 615.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile112.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 120,
+    "page number" : 3,
+    "bounding box" : [ 321.12, 613.65, 331.2, 614.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile113.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 121,
+    "page number" : 3,
+    "bounding box" : [ 321.84, 612.93, 331.92, 613.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile114.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 122,
+    "page number" : 3,
+    "bounding box" : [ 321.84, 612.21, 332.64, 612.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile115.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 123,
+    "page number" : 3,
+    "bounding box" : [ 323.28, 611.49, 327.6, 612.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile116.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 124,
+    "page number" : 3,
+    "bounding box" : [ 328.32, 611.49, 333.36, 612.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile117.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 125,
+    "page number" : 3,
+    "bounding box" : [ 329.04, 610.77, 334.08, 611.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile118.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 126,
+    "page number" : 3,
+    "bounding box" : [ 329.76, 610.05, 334.8, 610.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile119.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 127,
+    "page number" : 3,
+    "bounding box" : [ 330.48, 609.33, 334.8, 610.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile120.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 128,
+    "page number" : 3,
+    "bounding box" : [ 331.2, 608.61, 335.52, 609.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile121.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 129,
+    "page number" : 3,
+    "bounding box" : [ 331.92, 607.89, 335.52, 608.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile122.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 130,
+    "page number" : 3,
+    "bounding box" : [ 333.36, 607.17, 334.8, 607.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile123.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 131,
+    "page number" : 3,
+    "bounding box" : [ 323.28, 600.69, 326.16, 601.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile124.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 132,
+    "page number" : 3,
+    "bounding box" : [ 322.56, 599.97, 326.88, 600.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile125.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 133,
+    "page number" : 3,
+    "bounding box" : [ 321.12, 599.25, 328.32, 599.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile126.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 134,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 598.53, 329.04, 599.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile127.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 135,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 597.81, 330.48, 598.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile128.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 136,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 597.09, 330.48, 597.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile129.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 137,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 596.37, 331.2, 597.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile130.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 138,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 595.65, 331.2, 596.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile131.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 139,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 594.93, 331.2, 595.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile132.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 140,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 594.21, 331.2, 594.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile133.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 141,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 593.49, 331.2, 594.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile134.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 142,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 592.77, 331.2, 593.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile135.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 143,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 592.05, 331.2, 592.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile136.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 144,
+    "page number" : 3,
+    "bounding box" : [ 321.12, 591.33, 331.92, 592.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile137.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 145,
+    "page number" : 3,
+    "bounding box" : [ 321.84, 590.61, 332.64, 591.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile138.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 146,
+    "page number" : 3,
+    "bounding box" : [ 323.28, 589.89, 333.36, 590.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile139.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 147,
+    "page number" : 3,
+    "bounding box" : [ 329.04, 589.17, 334.08, 589.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile140.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 148,
+    "page number" : 3,
+    "bounding box" : [ 329.76, 588.45, 334.8, 589.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile141.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 149,
+    "page number" : 3,
+    "bounding box" : [ 330.48, 587.73, 334.8, 588.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile142.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 150,
+    "page number" : 3,
+    "bounding box" : [ 331.2, 587.01, 335.52, 587.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile143.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 151,
+    "page number" : 3,
+    "bounding box" : [ 331.92, 586.29, 335.52, 587.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile144.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 152,
+    "page number" : 3,
+    "bounding box" : [ 333.36, 585.57, 334.8, 586.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile145.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 153,
+    "page number" : 3,
+    "bounding box" : [ 322.56, 578.37, 326.88, 579.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile146.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 154,
+    "page number" : 3,
+    "bounding box" : [ 321.12, 577.65, 328.32, 578.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile147.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 155,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 576.93, 329.04, 577.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile148.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 156,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 576.21, 330.48, 576.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile149.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 157,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 575.49, 330.48, 576.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile150.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 158,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 574.77, 331.2, 575.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile151.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 159,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 574.05, 331.2, 574.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile152.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 160,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 573.33, 331.2, 574.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile153.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 161,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 572.61, 331.2, 573.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile154.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 162,
+    "page number" : 3,
+    "bounding box" : [ 319.68, 571.89, 331.2, 572.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile155.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 163,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 571.17, 331.2, 571.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile156.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 164,
+    "page number" : 3,
+    "bounding box" : [ 320.4, 570.45, 330.48, 571.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile157.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 165,
+    "page number" : 3,
+    "bounding box" : [ 321.12, 569.73, 331.2, 570.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile158.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 166,
+    "page number" : 3,
+    "bounding box" : [ 321.84, 569.01, 331.92, 569.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile159.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 167,
+    "page number" : 3,
+    "bounding box" : [ 321.84, 568.29, 332.64, 569.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile160.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 168,
+    "page number" : 3,
+    "bounding box" : [ 323.28, 567.57, 327.6, 568.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile161.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 169,
+    "page number" : 3,
+    "bounding box" : [ 328.32, 567.57, 333.36, 568.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile162.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 170,
+    "page number" : 3,
+    "bounding box" : [ 329.04, 566.85, 334.08, 567.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile163.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 171,
+    "page number" : 3,
+    "bounding box" : [ 329.76, 566.13, 334.8, 566.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile164.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 172,
+    "page number" : 3,
+    "bounding box" : [ 330.48, 565.41, 334.8, 566.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile165.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 173,
+    "page number" : 3,
+    "bounding box" : [ 331.2, 564.69, 335.52, 565.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile166.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 174,
+    "page number" : 3,
+    "bounding box" : [ 331.92, 563.97, 335.52, 564.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile167.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 175,
+    "page number" : 3,
+    "bounding box" : [ 333.36, 563.25, 334.8, 563.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile168.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 176,
+    "page number" : 3,
+    "bounding box" : [ 512.22, 5.67, 589.606, 102.79 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile169.png"
+  } ]
+}

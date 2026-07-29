@@ -1,6 +1,7 @@
 ﻿import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 
 import { synchronizeSystemDataEpoch } from '../utils/systemDataEpoch'
+import { advanceKnowledgeDetailAuthGeneration } from '../utils/api'
 
 const AuthContext = createContext(null)
 
@@ -61,6 +62,7 @@ export function AuthProvider({ children }) {
                     try { const s = localStorage.getItem(AUTH_KEY); fullUser = s ? JSON.parse(s).user : null } catch { fullUser = null }
                   }
                   setUser(fullUser)
+                  advanceKnowledgeDetailAuthGeneration()
                   localStorage.setItem(AUTH_KEY, JSON.stringify({
                     token: refreshed.access_token,
                     refreshToken: refreshed.refresh_token,
@@ -80,12 +82,14 @@ export function AuthProvider({ children }) {
   }, [])
 
   const saveAuth = useCallback((t, rt, u) => {
+    advanceKnowledgeDetailAuthGeneration()
     setToken(t)
     setUser(u)
     localStorage.setItem(AUTH_KEY, JSON.stringify({ token: t, refreshToken: rt, user: u }))
   }, [])
 
   const clearAuth = useCallback(() => {
+    advanceKnowledgeDetailAuthGeneration()
     setToken(null)
     setUser(null)
     localStorage.removeItem(AUTH_KEY)

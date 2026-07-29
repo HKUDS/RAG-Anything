@@ -1,10 +1,10 @@
 """AutoRepair Router — /api/autorepair/*"""
 import json
+import inspect
 import logging
 import os
 import uuid as _uuid
-from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query as QueryParam
 from fastapi.responses import StreamingResponse
@@ -12,11 +12,119 @@ from pydantic import BaseModel
 
 from lightrag.llm.openai import openai_complete_if_cache
 from raganything.routers import shared
-from raganything.dependencies import get_current_user, require_permission
+from raganything.dependencies import (
+    get_current_user,
+    require_permission,
+    verify_kb_access,
+)
 from raganything.permissions import Permission
 from raganything.utils.security import validate_query_input
 
+if TYPE_CHECKING:
+    from raganything.autorepair.agent.qa_engine import QAEngine
+
 router = APIRouter(tags=["autorepair"])
+logger = logging.getLogger(__name__)
+
+
+async def _resolve_autorepair_media_payload(kb_name: str, image_path: str) -> dict | None:
+    """Return opaque controlled-media metadata for authenticated browser delivery."""
+    resolver = getattr(shared, "resolve_controlled_media_payload", None)
+    if not callable(resolver):
+        return None
+    try:
+        result = resolver(kb_name=kb_name, image_path=image_path)
+        if inspect.isawaitable(result):
+            result = await result
+    except Exception as exc:
+        logger.warning(
+            "AutoRepair media directory lookup failed: error_type=%s",
+            type(exc).__name__,
+        )
+        return None
+    return result if isinstance(result, dict) else None
+
+
+async def _resolve_autorepair_media_url(kb_name: str, image_path: str) -> str | None:
+    """Backward-compatible internal helper for callers that need only the URL."""
+    payload = await _resolve_autorepair_media_payload(kb_name, image_path)
+    value = payload.get("url") if isinstance(payload, dict) else None
+    return value if isinstance(value, str) else None
+
+
+def _sanitize_sse_text(value: object) -> str:
+    from raganything.autorepair.agent.qa_engine import _sanitize_client_text
+
+    return _sanitize_client_text(value)
+
+
+def _sanitize_media_payloads(value: object, kb_name: str) -> list[dict]:
+    from raganything.autorepair.agent.qa_engine import (
+        _is_controlled_media_url,
+        _sanitize_client_text,
+    )
+
+    if not isinstance(value, list):
+        return []
+    result: list[dict] = []
+    for raw in value[:3]:
+        if not isinstance(raw, dict):
+            continue
+        media_url = raw.get("url") or raw.get("data_url")
+        if not _is_controlled_media_url(media_url, kb_name):
+            continue
+        try:
+            page = int(raw["page"]) if raw.get("page") is not None else None
+            page = page if page is None or page >= 0 else None
+        except (TypeError, ValueError):
+            page = None
+        try:
+            relevance = min(max(float(raw.get("relevance", 0.0)), 0.0), 1.0)
+        except (TypeError, ValueError):
+            relevance = 0.0
+        result.append({
+            "data_url": media_url,
+            "url": media_url,
+            **({"media_id": raw["media_id"]} if isinstance(raw.get("media_id"), str) else {}),
+            **({"legacy_grant": raw["legacy_grant"]} if isinstance(raw.get("legacy_grant"), str) else {}),
+            "kb": kb_name,
+            "caption": _sanitize_client_text(raw.get("caption") or "Related image")[:300],
+            "page": page,
+            "relevance": relevance,
+        })
+    return result
+
+
+def _sanitize_client_value(value):
+    if isinstance(value, str):
+        return _sanitize_sse_text(value)
+    if isinstance(value, list):
+        return [_sanitize_client_value(item) for item in value]
+    if isinstance(value, dict):
+        return {
+            _sanitize_sse_text(key) if isinstance(key, str) else key:
+            _sanitize_client_value(item)
+            for key, item in value.items()
+        }
+    return value
+
+
+def _sanitize_trace(value: object) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    result = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        action = item.get("action", "")
+        result.append({
+            "step": item.get("step", 0),
+            "thought": "",
+            "action": action if action in {"search", "reason", "answer"} else "",
+            "observation": "",
+            "elapsed_ms": item.get("elapsed_ms", 0),
+        })
+    return result
 
 # ── Pydantic models ────────────────────────────────────
 
@@ -212,9 +320,14 @@ async def _get_ar_qa_engine(kb: str = "default") -> "QAEngine":
                 api_key=shared.API_KEY, base_url=shared.BASE_URL, **kw,
             )
 
+        async def _media_url_resolver(image_path: str) -> dict | None:
+            return await _resolve_autorepair_media_payload(kb, image_path)
+
         m[cache_key] = QAEngine(
             rag_client=instance,
             llm_client=_llm_func,
+            kb_name=kb,
+            media_url_resolver=_media_url_resolver,
             query_mode="rrf",
             max_steps=3,
         )
@@ -226,28 +339,41 @@ async def _get_ar_qa_engine(kb: str = "default") -> "QAEngine":
 @router.get("/autorepair/knowledge-graph/summary")
 async def ar_kg_summary(kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.AUTOREPAIR_READ)), current_user: dict = Depends(get_current_user)):
     """知识图谱统计摘要（按 KB 过滤）。"""
-    return _get_ar_graph(kb).get_graph_summary()
+    actual_kb = await verify_kb_access(kb=kb, current_user=current_user)
+    return _get_ar_graph(actual_kb).get_graph_summary()
 
 
 @router.get("/autorepair/knowledge-graph/nodes")
 async def ar_kg_nodes(track: str = "", node_type: str = "", limit: int = 100, offset: int = 0,
                         kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.AUTOREPAIR_READ)), current_user: dict = Depends(get_current_user)):
     """知识节点列表（按 KB 过滤）。"""
-    return _get_ar_graph(kb).get_nodes(competition_track=track, node_type=node_type, limit=limit, offset=offset)
+    actual_kb = await verify_kb_access(kb=kb, current_user=current_user)
+    return _get_ar_graph(actual_kb).get_nodes(
+        competition_track=track,
+        node_type=node_type,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @router.get("/autorepair/knowledge-graph/edges")
 async def ar_kg_edges(source_id: str = "", relation_type: str = "", limit: int = 200,
                         kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.AUTOREPAIR_READ)), current_user: dict = Depends(get_current_user)):
     """知识图谱边列表（按 KB 过滤）。"""
-    return _get_ar_graph(kb).get_edges(source_id=source_id, relation_type=relation_type, limit=limit)
+    actual_kb = await verify_kb_access(kb=kb, current_user=current_user)
+    return _get_ar_graph(actual_kb).get_edges(
+        source_id=source_id,
+        relation_type=relation_type,
+        limit=limit,
+    )
 
 
 @router.get("/autorepair/knowledge-graph/nodes/{node_id}")
 async def ar_kg_node_detail(node_id: str, kb: str = QueryParam("default"),
                               _perm: None = Depends(require_permission(Permission.AUTOREPAIR_READ)), current_user: dict = Depends(get_current_user)):
     """节点详情 + 关联边（按 KB 过滤）。"""
-    detail = _get_ar_graph(kb).get_node(node_id)
+    actual_kb = await verify_kb_access(kb=kb, current_user=current_user)
+    detail = _get_ar_graph(actual_kb).get_node(node_id)
     if not detail:
         raise HTTPException(404, "节点不存在")
     return detail
@@ -257,7 +383,12 @@ async def ar_kg_node_detail(node_id: str, kb: str = QueryParam("default"),
 async def ar_kg_lineage(node_id: str, upstream: int = 3, downstream: int = 3,
                           kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.AUTOREPAIR_READ)), current_user: dict = Depends(get_current_user)):
     """知识谱系树（按 KB 过滤）。"""
-    lineage = _get_ar_graph(kb).get_lineage(node_id, upstream_depth=upstream, downstream_depth=downstream)
+    actual_kb = await verify_kb_access(kb=kb, current_user=current_user)
+    lineage = _get_ar_graph(actual_kb).get_lineage(
+        node_id,
+        upstream_depth=upstream,
+        downstream_depth=downstream,
+    )
     if not lineage:
         raise HTTPException(404, "节点不存在")
     return lineage
@@ -431,11 +562,12 @@ async def ar_code_parse(body: AutoRepairQuery, _perm: None = Depends(require_per
 @router.get("/autorepair/dashboard")
 async def ar_dashboard(kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.AUTOREPAIR_READ)), current_user: dict = Depends(get_current_user)):
     """制造智能体数据看板（按 KB 过滤图谱数据）。"""
+    actual_kb = await verify_kb_access(kb=kb, current_user=current_user)
     m = _get_autorepair()
     return await m["dashboard"].get_snapshot(
-        knowledge_graph_api=_get_ar_graph(kb),
+        knowledge_graph_api=_get_ar_graph(actual_kb),
         case_library=m.get("case_library"),
-        kb_name=kb,
+        kb_name=actual_kb,
     )
 
 
@@ -454,8 +586,9 @@ async def ar_institutions(_perm: None = Depends(require_permission(Permission.AU
 async def ar_qa(body: AutoRepairAgentQuery, kb: str = QueryParam("default"),
                  _perm: None = Depends(require_permission(Permission.AUTOREPAIR_WRITE)), current_user: dict = Depends(get_current_user)):
     """智能制造文本问答 — AgenticRAG 多步推理。"""
+    actual_kb = await verify_kb_access(kb=kb, current_user=current_user)
     validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
-    engine = await _get_ar_qa_engine(kb)
+    engine = await _get_ar_qa_engine(actual_kb)
     response = await engine.answer(body.query, context=body.context)
     m = _get_autorepair()
     await m["dashboard"].log_query(
@@ -464,17 +597,17 @@ async def ar_qa(body: AutoRepairAgentQuery, kb: str = QueryParam("default"),
         query=body.query,
         query_type="qa",
         response_ms=response.processing_time_ms,
-        kb_name=kb,
+        kb_name=actual_kb,
     )
     return {
-        "query": response.query,
-        "answer": response.answer,
-        "citations": response.citations,
-        "related_images": response.related_images,
+        "query": _sanitize_sse_text(response.query),
+        "answer": _sanitize_sse_text(response.answer),
+        "citations": _sanitize_client_value(response.citations),
+        "related_images": _sanitize_media_payloads(response.related_images, actual_kb),
         "confidence": response.confidence,
         "processing_time_ms": response.processing_time_ms,
         "needs_human_review": response.needs_human_review,
-        "trace": response.trace,
+        "trace": _sanitize_trace(response.trace),
     }
 
 
@@ -482,6 +615,8 @@ async def ar_qa(body: AutoRepairAgentQuery, kb: str = QueryParam("default"),
 async def ar_qa_stream(body: AutoRepairAgentQuery, kb: str = QueryParam("default"),
                         _perm: None = Depends(require_permission(Permission.AUTOREPAIR_WRITE)), current_user: dict = Depends(get_current_user)):
     """智能制造文本问答 — AgenticRAG 真流式 SSE（与通用智能体一致）。"""
+    actual_kb = await verify_kb_access(kb=kb, current_user=current_user)
+    validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
     if not shared.API_KEY or not shared.BASE_URL:
         raise HTTPException(503, "LLM 服务未配置")
 
@@ -489,31 +624,46 @@ async def ar_qa_stream(body: AutoRepairAgentQuery, kb: str = QueryParam("default
         import time as _time
         start_time = _time.time()
         query_id = str(_uuid.uuid4())[:8]
+        token_buffer = ""
 
         try:
-            engine = await _get_ar_qa_engine(kb)
+            engine = await _get_ar_qa_engine(actual_kb)
 
             async for event_data in engine.answer_stream(body.query):
                 event_type = event_data.get("type", "")
 
                 if event_type == "thinking":
-                    thought_preview = (event_data.get("thought", "") or "")[:200]
-                    obs_preview = (event_data.get("observation", "") or "")[:150]
+                    action = event_data.get("action", "")
                     thinking_data = {
                         'type': 'thinking',
                         'step': event_data.get('step', 0),
-                        'thought': thought_preview,
-                        'action': event_data.get('action', ''),
-                        'observation_preview': obs_preview,
+                        'thought': '',
+                        'action': action if action in {"search", "reason", "answer", "retrieve"} else '',
+                        # Retrieval observations can contain controlled local
+                        # media references; they are never an SSE payload.
+                        'observation_preview': '',
                         'elapsed_ms': event_data.get('elapsed_ms', 0),
                     }
                     yield f"data: {json.dumps(thinking_data, ensure_ascii=False)}\n\n"
 
                 elif event_type == "token":
-                    token_data = {'type': 'token', 'content': event_data.get('content', '')}
-                    yield f"data: {json.dumps(token_data, ensure_ascii=False)}\n\n"
+                    token_buffer += str(event_data.get('content', '') or '')
+                    while "\n" in token_buffer:
+                        line, token_buffer = token_buffer.split("\n", 1)
+                        token_data = {
+                            'type': 'token',
+                            'content': _sanitize_sse_text(f"{line}\n"),
+                        }
+                        yield f"data: {json.dumps(token_data, ensure_ascii=False)}\n\n"
 
                 elif event_type == "done":
+                    if token_buffer:
+                        token_data = {
+                            'type': 'token',
+                            'content': _sanitize_sse_text(token_buffer),
+                        }
+                        yield f"data: {json.dumps(token_data, ensure_ascii=False)}\n\n"
+                        token_buffer = ""
                     try:
                         m = _get_autorepair()
                         response_ms = event_data.get("elapsed_ms", (_time.time() - start_time) * 1000)
@@ -523,13 +673,16 @@ async def ar_qa_stream(body: AutoRepairAgentQuery, kb: str = QueryParam("default
                             query=body.query,
                             query_type="qa",
                             response_ms=response_ms,
-                            kb_name=kb,
+                            kb_name=actual_kb,
                         )
                     except Exception:
                         pass
 
-                    if event_data.get("images"):
-                        img_data = {'type': 'images', 'images': event_data['images']}
+                    safe_images = _sanitize_media_payloads(
+                        event_data.get("images"), actual_kb
+                    )
+                    if safe_images:
+                        img_data = {'type': 'images', 'images': safe_images}
                         yield f"data: {json.dumps(img_data, ensure_ascii=False)}\n\n"
 
                     elapsed = event_data.get("elapsed_ms", (_time.time() - start_time) * 1000) / 1000
@@ -539,12 +692,20 @@ async def ar_qa_stream(body: AutoRepairAgentQuery, kb: str = QueryParam("default
                         'elapsed': round(elapsed, 2),
                         'confidence': event_data.get('confidence', 0),
                         'citations_count': len(event_data.get('citations', [])),
-                        'images_count': len(event_data.get('images', [])),
+                        'images_count': len(safe_images),
                     }
                     yield f"data: {json.dumps(done_data, ensure_ascii=False)}\n\n"
 
         except Exception as exc:
-            yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
+            logger.warning(
+                "AutoRepair QA stream failed: error_type=%s",
+                type(exc).__name__,
+            )
+            error_data = {
+                "type": "error",
+                "content": "AutoRepair query failed",
+            }
+            yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -561,7 +722,8 @@ async def ar_qa_stream(body: AutoRepairAgentQuery, kb: str = QueryParam("default
 async def ar_diagnosis_start(body: AutoRepairDiagnosisStart, kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.AUTOREPAIR_WRITE)), current_user: dict = Depends(get_current_user)):
     """故障诊断 — 开始新会话。"""
     validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
-    m = await _get_ar_agent_components(kb=kb)
+    actual_kb = await verify_kb_access(kb=kb, current_user=current_user)
+    m = await _get_ar_agent_components(kb=actual_kb)
     sid = str(_uuid.uuid4())[:8]
     result = await m["fault_diagnosis"].start_diagnosis(sid, body.query)
     return result
@@ -571,7 +733,8 @@ async def ar_diagnosis_start(body: AutoRepairDiagnosisStart, kb: str = QueryPara
 async def ar_diagnosis_continue(body: AutoRepairDiagnosisContinue, kb: str = QueryParam("default"), _perm: None = Depends(require_permission(Permission.AUTOREPAIR_WRITE)), current_user: dict = Depends(get_current_user)):
     """故障诊断 — 继续会话。"""
     validate_query_input(body.query, user_id=str(current_user.get("id", "anonymous")))
-    m = await _get_ar_agent_components(kb=kb)
+    actual_kb = await verify_kb_access(kb=kb, current_user=current_user)
+    m = await _get_ar_agent_components(kb=actual_kb)
     result = await m["fault_diagnosis"].continue_diagnosis(body.session_id, body.query)
     return result
 
@@ -580,33 +743,22 @@ async def ar_diagnosis_continue(body: AutoRepairDiagnosisContinue, kb: str = Que
 
 @router.get("/autorepair/kb-list")
 async def ar_kb_list(_perm: None = Depends(require_permission(Permission.AUTOREPAIR_READ)), current_user: dict = Depends(get_current_user)):
-    """制造智能体可用 KB 列表（仅制造领域 KB，无则自动创建）。"""
-    from raganything.services.kb_service import (
-        load_kb_meta, save_kb_meta, list_kbs_by_domain, get_kb,
-    )
+    """List only AutoRepair KBs the current user may access."""
+    from raganything.services.kb_service import list_kbs_by_domain
 
-    # Filter to autorepair-domain KBs only
     ar_kbs = await list_kbs_by_domain("autorepair")
-
-    # Auto-create autorepair KB on first access if none exists
-    if not ar_kbs:
-        kb_name = "autorepair"
-        label = "制造知识库"
-        meta = await load_kb_meta()
-        meta[kb_name] = {
-            "name": label,
-            "created": datetime.now().isoformat(),
-            "domain": "autorepair",
-        }
-        await save_kb_meta(meta)
-        await get_kb(kb_name)  # initialize storage directory
-        ar_kbs = {kb_name: meta[kb_name]}
 
     kbs = []
     for name, info in ar_kbs.items():
+        try:
+            actual_kb = await verify_kb_access(kb=name, current_user=current_user)
+        except HTTPException as exc:
+            if exc.status_code in (403, 404):
+                continue
+            raise
         kbs.append({
-            "name": name,
-            "label": info.get("name", name),
+            "name": actual_kb,
+            "label": info.get("name", actual_kb),
             "created": info.get("created", ""),
             "owner_username": info.get("owner_username", ""),
         })

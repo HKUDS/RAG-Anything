@@ -1,0 +1,89 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 137,
+    "bounding box" : [ 90.0, 737.54, 499.329, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "根据上面的故障现象怀疑是由于主驾璃升降控开关控制右前玻璃升降下降功能控相关 故障，那么可能的故障原因有："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 8,
+    "level" : "1",
+    "page number" : 137,
+    "bounding box" : [ 111.0, 661.221, 378.73, 722.43 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 137,
+      "bounding box" : [ 111.0, 711.98, 378.73, 722.43 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）左前窗控开关控制右前玻璃升降器下降档位功能损坏。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 137,
+      "bounding box" : [ 111.0, 686.66, 378.73, 697.11 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）左前窗控开关到右前窗控开关控制下降档位线路损坏。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 137,
+      "bounding box" : [ 111.0, 661.221, 231.607, 671.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）右前窗控开关局部损坏",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 137,
+    "bounding box" : [ 111.0, 615.38, 510.49, 646.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.电路图及维修资料查询 秦 EV 车型的主驾车门与副驾车门玻璃升降器控制开关插接器，分别为 T105（A）和 U05。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 137,
+    "bounding box" : [ 90.0, 594.98, 502.089, 605.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "其中 T105（A）和 U05 的插接器图，如图 4-9 所示，玻璃升降器电路图，如图 4-10 所示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 137,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "137"
+  } ]
+}

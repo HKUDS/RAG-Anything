@@ -1,0 +1,88 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 230,
+    "bounding box" : [ 197.88, 617.26, 397.2, 766.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 230,
+    "bounding box" : [ 90.0, 503.421, 505.208, 607.471 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-8 高压压力传感器 高压压力传感器是电子控制型空调系统的核心感知元件，替代了传统机械触点式高压压 力开关，安装在空调冷凝器出口或高压管路处，通过实时监测高压侧制冷剂压力，将压力信 号转化为电信号传递给空调 ACU（或整车控制器），由控制单元控制压缩机和冷凝风扇的工 作状态，实现对空调系统的智能调控与精准保护。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 230,
+    "bounding box" : [ 111.0, 480.021, 510.49, 490.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "当系统压力过高（如冷凝器散热不良、制冷剂过量），超过设定上限（约 2.7～3.0 MPa）"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 230,
+    "bounding box" : [ 90.0, 409.821, 505.209, 467.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "时，ECU 接收信号后切断压缩机电磁离合器电路，停止压缩机工作，避免管路爆裂、压缩机 损坏。当系统压力过低（如制冷剂泄漏），低于设定下限（约 0.2～0.3 MPa）时，ECU 触发 保护逻辑，防止压缩机无润滑空转烧毁。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 230,
+    "bounding box" : [ 111.0, 385.157, 202.808, 396.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "6.蒸发器温度传感器"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 230,
+    "bounding box" : [ 90.0, 269.421, 505.209, 373.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "蒸发器温度传感器一般安装在蒸发器的表面，如图 6-9 所示，该传感器插在蒸发器鳍片 之间或安装在蒸发器后的冷空气气流中。通过测量蒸发器表面温度，在需要时接通和关闭压 缩机的电磁离合器，可防止因冷凝水凝结而造成蒸发器鳍片结冰。该传感器通常将信号传递 给空调控制单元，由控制单元控制在蒸发器表面温度约 1 °C 时关闭压缩机，在约 3 °C 时再 次接通压缩机（该温度值视车型不同有所区别）。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 230,
+    "bounding box" : [ 90.0, 222.621, 505.208, 256.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "蒸发器温度传感器采用负温度系数的热敏电阻，即热敏电阻随着温度的升高，电阻会减 小；随着温度的降低，电阻会增大。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 230,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "230"
+  } ]
+}

@@ -1,0 +1,261 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 3,
+    "level" : "Doctitle",
+    "page number" : 222,
+    "bounding box" : [ 230.759, 747.234, 406.447, 761.284 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 14.05,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务一 制冷系统检测与维修"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 4,
+    "level" : "Subtitle",
+    "page number" : 222,
+    "bounding box" : [ 90.0, 720.966, 153.128, 732.564 ],
+    "heading level" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 学习目标"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 222,
+    "bounding box" : [ 111.0, 688.9, 135.72, 713.98 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 222,
+    "bounding box" : [ 135.72, 687.021, 177.609, 697.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "知识目标"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 7,
+    "level" : "1",
+    "page number" : 222,
+    "bounding box" : [ 111.0, 595.758, 454.799, 677.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 665.958, 454.799, 677.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.理解新能源汽车制冷系统的概念、特点及与传统燃油车制冷系统的差异；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 642.558, 297.364, 654.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.掌握制冷系统的结构组成及工作原理；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 619.158, 339.362, 630.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.掌握制冷系统常见故障的诊断逻辑与排除方法；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 595.758, 328.803, 607.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.熟悉制冷系统制冷剂的特性及规范操作要求。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 222,
+    "bounding box" : [ 111.0, 564.7, 135.48, 588.46 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 9,
+    "level" : "Subtitle",
+    "page number" : 222,
+    "bounding box" : [ 135.72, 562.94, 177.848, 573.39 ],
+    "heading level" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "能力目标"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 10,
+    "level" : "1",
+    "page number" : 222,
+    "bounding box" : [ 111.0, 447.557, 505.209, 552.871 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 541.158, 391.924, 552.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.能够查询原车电路图，绘制制冷系统的核心部件连接框图；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 517.758, 465.358, 529.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.能够规范使用制冷剂回收机，完成压力测量、抽真空、制冷剂回收与加注；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 494.357, 505.209, 506.071 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.能够通过数据流（如压缩机转速、蒸发箱温度、制冷剂压力）分析制冷系统工况，定",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 222,
+        "bounding box" : [ 90.0, 472.221, 152.888, 482.671 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "位故障部件；"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 447.557, 391.801, 459.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.能够独立完成制冷系统检测（如肥皂水检漏）及密封修复。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 11,
+    "page number" : 222,
+    "bounding box" : [ 111.0, 416.86, 134.4, 440.26 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 12,
+    "level" : "Subtitle",
+    "page number" : 222,
+    "bounding box" : [ 135.0, 414.74, 177.128, 425.19 ],
+    "heading level" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "素养目标"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 13,
+    "level" : "1",
+    "page number" : 222,
+    "bounding box" : [ 111.0, 322.758, 496.925, 404.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 392.958, 370.802, 404.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.养成严格遵守制冷剂操作规范的习惯，树立环保意识；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 369.557, 496.925, 381.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.培养逻辑分析能力——通过“现象→数据→故障点”的推导，高效排查复杂故障；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 346.157, 381.361, 357.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.提升团队协作能力，在实训中明确分工，确保操作安全；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 222,
+      "bounding box" : [ 111.0, 322.758, 423.363, 334.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.形成“先诊断后维修”的思维，避免盲目拆装导致部件二次损坏。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 222,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "222"
+  } ]
+}

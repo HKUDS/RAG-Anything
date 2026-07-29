@@ -1,0 +1,292 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "level" : "1",
+    "page number" : 178,
+    "bounding box" : [ 90.0, 752.166, 152.889, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 课后习题"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 8,
+    "level" : "Doctitle",
+    "page number" : 178,
+    "bounding box" : [ 111.0, 729.621, 163.568, 740.071 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "一、选择题"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 9,
+    "level" : "2",
+    "page number" : 178,
+    "bounding box" : [ 111.0, 73.157, 505.208, 716.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 7,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 178,
+      "bounding box" : [ 111.0, 659.421, 410.17, 716.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.比亚迪秦 EV 电动车窗的主控开关集成在哪个位置。（ ） A.副驾驶车门扶手 B.驾驶人侧车门扶手处 C.中控屏操作界面 D.转向盘左侧控制区",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 178,
+      "bounding box" : [ 111.0, 589.221, 431.17, 646.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.比亚迪秦 EV 电动车窗的防夹功能通过什么传感器实现。（ ） A.无线感应传感器 B.霍尔传感器（电机转速监测） C.超声波传感器 D.摄像头图像识别",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 178,
+      "bounding box" : [ 111.0, 565.821, 362.89, 576.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.以下哪项是高端车电动车窗的特殊功能。（ ）",
+      "kids" : [ {
+        "type" : "list",
+        "pdfua_tag" : "L",
+        "id" : 1,
+        "level" : "3",
+        "page number" : 178,
+        "bounding box" : [ 111.0, 472.221, 305.168, 552.871 ],
+        "numbering style" : "english letters",
+        "number of list items" : 4,
+        "list items" : [ {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 542.421, 305.168, 552.871 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "A.遥控钥匙长按升降（解锁/锁车键控制）",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 519.021, 215.887, 529.471 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "B.车速较高会自动锁窗",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 495.621, 289.329, 506.071 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "C.语音指令“打开主驾车窗”直接控制",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 472.221, 163.329, 482.671 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "D.以上都是",
+          "kids" : [ ]
+        } ]
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 178,
+      "bounding box" : [ 111.0, 400.758, 370.93, 459.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.中控锁无法解锁，可能的故障原因不包括（ ）。 A.解锁按钮故障 B.门锁执行器损坏 C.车辆蓄电池亏电 D.轮胎气压不足",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 178,
+      "bounding box" : [ 111.0, 377.357, 505.208, 389.071 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5.用诊断仪检测中控锁系统，发现有故障码显示“中控锁控制模块通信故障”，最有可能",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 178,
+        "bounding box" : [ 90.0, 355.221, 205.45, 365.671 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "的故障点是（ ）。"
+      }, {
+        "type" : "list",
+        "pdfua_tag" : "L",
+        "id" : 3,
+        "level" : "3",
+        "page number" : 178,
+        "bounding box" : [ 111.0, 260.358, 287.285, 342.271 ],
+        "numbering style" : "english letters",
+        "number of list items" : 4,
+        "list items" : [ {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 330.557, 256.205, 342.271 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "A.中控锁控制模块电源线路断路",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 307.157, 287.285, 318.871 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "B.车门线束与中控锁控制模块连接不良",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 283.758, 213.61, 295.471 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "C.某个门锁电动机烧毁",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 260.358, 193.209, 272.071 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "D.行李舱锁扣损坏",
+          "kids" : [ ]
+        } ]
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 178,
+      "bounding box" : [ 111.0, 236.957, 486.36, 248.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "6.一辆车只有驾驶人侧车门中控锁不能正常工作，其他车门正常，故障原因可能是",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 4,
+        "page number" : 178,
+        "bounding box" : [ 90.0, 214.821, 152.89, 225.271 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "（ ）。"
+      }, {
+        "type" : "list",
+        "pdfua_tag" : "L",
+        "id" : 5,
+        "level" : "3",
+        "page number" : 178,
+        "bounding box" : [ 111.0, 119.957, 266.77, 201.871 ],
+        "numbering style" : "english letters",
+        "number of list items" : 4,
+        "list items" : [ {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 190.157, 224.646, 201.871 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "A.中控锁主控制单元故障",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 166.758, 255.727, 178.471 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "B.驾驶人侧车门门锁执行器故障",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 143.358, 213.606, 155.071 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "C.车辆防盗系统误触发",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 178,
+          "bounding box" : [ 111.0, 119.957, 266.77, 131.671 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "D.所有车门的门锁电动机熔丝熔断",
+          "kids" : [ ]
+        } ]
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 178,
+      "bounding box" : [ 111.0, 73.157, 495.25, 108.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "7.中控锁工作时，有异常的“咔咔”声，以下哪种情况最可能导致此现象（ ）。 A.中控锁控制模块程序错误",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 178,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "178"
+  } ]
+}

@@ -1,0 +1,309 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 2,
+    "page number" : 107,
+    "bounding box" : [ 90.0, 729.621, 505.265, 763.471 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "BCM 的左域位于驾驶人侧仪表板左侧方，右域位于副驾驶人侧仪表板右侧方，如图 3-25 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 107,
+    "bounding box" : [ 135.24, 602.74, 290.16, 718.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 4,
+    "page number" : 107,
+    "bounding box" : [ 306.24, 603.1, 459.48, 718.06 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 107,
+    "bounding box" : [ 188.64, 585.26, 406.447, 595.71 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-25 比亚迪秦 PLUS EV 车身控制模块的位置"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 107,
+    "bounding box" : [ 111.0, 547.34, 505.209, 576.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.灯体 灯体是灯光系统的发光部件。现在新能源汽车的前照灯和尾灯一般以组合形式设计，组"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 107,
+    "bounding box" : [ 90.0, 442.221, 510.49, 537.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "合灯除了发光的灯体以外，还具有调光电机、流水同步等设置。 4.连接线路 连接线路负责灯光系统各部件之间的连接，包括信号线，CAN 总线、LIN 线和控制线等。 三、灯光系统控制原理 新能源汽车的灯光系统控制原理一般为“灯光开关→车身控制模块→灯体”。根据图"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 9,
+    "page number" : 107,
+    "bounding box" : [ 90.0, 401.3, 509.89, 432.271 ],
+    "linked content id" : 10,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3-23 所示的灯光系统架构，可以总结出比亚迪秦 PLUS EV 的灯光系统控制原理，见表 3-6。 表 3-6 比亚迪秦 PLUS EV 灯光控制原理"
+  }, {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 10,
+    "level" : "1",
+    "page number" : 107,
+    "bounding box" : [ 120.26, 93.62, 474.99, 392.9 ],
+    "number of rows" : 5,
+    "number of columns" : 2,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 107,
+        "bounding box" : [ 120.5, 376.56, 188.7, 392.66 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 107,
+          "bounding box" : [ 133.559, 379.461, 175.449, 389.911 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "灯光名称"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 107,
+        "bounding box" : [ 188.7, 376.56, 474.75, 392.66 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 2,
+          "page number" : 107,
+          "bounding box" : [ 310.68, 379.461, 352.569, 389.911 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "工作逻辑"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 107,
+        "bounding box" : [ 120.5, 282.46, 188.7, 376.56 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 107,
+          "bounding box" : [ 128.4, 316.58, 180.849, 342.63 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.251, 0.251, 0.251]",
+          "content" : "位置灯 （示宽灯）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 107,
+        "bounding box" : [ 188.7, 282.46, 474.75, 376.56 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 4,
+          "page number" : 107,
+          "bounding box" : [ 223.56, 286.9, 439.92, 372.1 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 107,
+        "bounding box" : [ 120.5, 235.16, 188.7, 282.46 ],
+        "row number" : 3,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 107,
+          "bounding box" : [ 138.84, 253.58, 170.289, 264.03 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "近光灯"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 107,
+        "bounding box" : [ 188.7, 235.16, 474.75, 282.46 ],
+        "row number" : 3,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 6,
+          "page number" : 107,
+          "bounding box" : [ 230.76, 236.98, 432.84, 280.78 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile4.png"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 4,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 107,
+        "bounding box" : [ 120.5, 172.26, 188.7, 235.16 ],
+        "row number" : 4,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 7,
+          "page number" : 107,
+          "bounding box" : [ 138.84, 198.5, 170.289, 208.95 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "远光灯"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 107,
+        "bounding box" : [ 188.7, 172.26, 474.75, 235.16 ],
+        "row number" : 4,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 8,
+          "page number" : 107,
+          "bounding box" : [ 223.68, 176.14, 439.32, 231.34 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile5.png"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 5,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 107,
+        "bounding box" : [ 120.5, 94.1, 188.7, 172.26 ],
+        "row number" : 5,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 107,
+          "bounding box" : [ 133.559, 127.821, 175.448, 138.271 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "左转向灯"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 107,
+        "bounding box" : [ 188.7, 94.1, 474.75, 172.26 ],
+        "row number" : 5,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "image",
+          "pdfua_tag" : "Figure",
+          "id" : 10,
+          "page number" : 107,
+          "bounding box" : [ 207.96, 95.5, 454.8, 170.5 ],
+          "alt_source" : "missing",
+          "source" : "《新能源汽车电气技术》打印(3)_images/imageFile6.png"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 107,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "107"
+  } ]
+}

@@ -1,0 +1,210 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "level" : "1",
+    "page number" : 40,
+    "bounding box" : [ 90.0, 706.221, 221.17, 740.364 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 课后习题 一、选择题（共 10 题）"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 4,
+    "level" : "2",
+    "page number" : 40,
+    "bounding box" : [ 111.0, 191.421, 478.45, 693.271 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 10,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 659.421, 352.33, 693.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.汽车电路的基本组成不包括以下哪项？（ ） A. 电源 B. 用电设备 C. 机械传动装置 D. 导线",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 612.621, 478.45, 646.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.以下哪种电路图专门用于标记接线与插接器的实际位置、色码、线型？（ ） A. 原理框图 B. 接线图 C. 电气原理图 D. 线束图",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 565.821, 420.73, 599.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.新能源汽车高压电缆的设计特点不包括（ ） A. 双绝缘层 B. 屏蔽层 C. 单根导线传输 D. 耐温等级≥125℃",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 519.021, 331.45, 552.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.汽车低压导线中，搭铁线的标准颜色是（ ） A. 红色 B. 黑色 C. 蓝色 D. 黄色",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 472.221, 373.45, 506.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5.以下哪种继电器的触点平时断开，通电后接通？（ ） A. 常开型 B. 常闭型 C. 混合型 D. 双线圈型",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 425.421, 331.449, 459.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "6.剥线时应使用的专用工具是（ ） A. 普通钳子 B. 剪刀 C. 剥线钳 D. 螺丝刀",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 378.621, 425.89, 412.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "7.汽车电路保护元件中，常用于保护总电路或大电流电路的是（ ） A. 熔断器 B. 易熔线 C. 电路断路保护器 D. 中央控制盒",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 331.821, 320.89, 365.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "8.线束安装时，固定线束应使用（ ） A. 铁丝 B. 胶带 C. 夹箍或线卡 D. 绳子",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 285.021, 394.445, 318.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "9.汽车电气原理图的核心作用是（ ） A. 展示线束安装位置 B. 表明电气设备工作原理及元件关联",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 40,
+        "bounding box" : [ 116.28, 261.621, 336.608, 272.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "C. 标记插接器端子编号 D. 体现导线实际走向"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 191.421, 336.665, 248.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "10.汽车低压导线的最小截面积不得小于（ ） A. 0.35mm² B. 0.5mm² C. 1.0mm² D. 1.5mm² 二、填空题（共 5 题）",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 5,
+    "level" : "2",
+    "page number" : 40,
+    "bounding box" : [ 111.0, 74.421, 510.49, 178.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 5,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 168.021, 509.89, 178.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.汽车电路由电源、________、电路控制装置、电路保护装置和________五部分组成。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 144.621, 499.449, 155.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.现代汽车电路图主要分为接线图、线束图、________、原理框图和________五类。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 121.221, 373.449, 131.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.汽车开关按操作方式可分为________和________两种。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 97.821, 415.328, 108.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.继电器的工作电压主要有________和________两种，不可混用。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 40,
+      "bounding box" : [ 111.0, 74.421, 510.49, 84.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5.电路保护装置的核心功能是当电路中流过________时，自动切断电路，防止设备损坏。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 40,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "40"
+  } ]
+}

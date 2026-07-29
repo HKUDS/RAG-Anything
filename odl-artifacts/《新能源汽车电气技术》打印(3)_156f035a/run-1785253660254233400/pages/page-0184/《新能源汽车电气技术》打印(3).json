@@ -1,0 +1,138 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 184,
+    "bounding box" : [ 90.0, 717.021, 505.209, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "不等。在不同的应用场景中，可以选择合适的通信速率，以满足系统的性能要求。CAN 总线 的节点数量可以灵活扩展，最多可连接 110 个节点。在系统升级或扩展时，只需增加相应的 节点即可，无须对整个系统进行大规模的改造。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 184,
+    "bounding box" : [ 111.0, 676.221, 505.209, 707.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.成本低 CAN 总线的硬件接口简单，只需要一对双绞线和一些简单的接口电路即可实现通信，硬"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 184,
+    "bounding box" : [ 90.0, 614.9, 507.25, 666.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "件成本较低。CAN 总线的协议相对简单，开发工具和开发平台也比较成熟，开发成本较低。 5.易于维护和诊断 CAN 总线具有完善的错误检测和诊断功能，当出现故障时，可以通过诊断工具快速定位"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 184,
+    "bounding box" : [ 90.0, 574.1, 505.207, 604.95 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "故障节点和故障原因，方便维护人员进行维修。CAN 总线的节点可以独立工作，当某个节点 出现故障时，只需更换该节点即可，无须对整个系统进行大规模的维护。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 184,
+    "bounding box" : [ 111.0, 530.18, 505.206, 559.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "二、CAN 总线系统硬件结构 新能源汽车的 CAN 总线系统是整车电子控制系统的核心通信网络，负责各控制单元之间"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 184,
+    "bounding box" : [ 90.0, 489.38, 505.204, 520.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "的数据交互。其硬件结构主要包括：CAN 控制器、CAN 收发器、数据传输线、网关、终端电 阻等，如图 5-2 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 184,
+    "bounding box" : [ 132.96, 268.3, 461.52, 475.3 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 9,
+    "page number" : 184,
+    "bounding box" : [ 229.44, 245.661, 365.768, 256.111 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-2 CAN 总线系统硬件结构"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 184,
+    "bounding box" : [ 111.0, 206.78, 507.25, 237.63 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1.CAN 控制器 CAN 控制器是 CAN 总线系统的核心部件，负责实现 CAN 协议，包括数据的发送、接收、"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 184,
+    "bounding box" : [ 90.0, 145.461, 505.207, 196.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "错误检测和处理等功能，CAN 控制器通常集成在微控制器或专用的通信芯片中。 2.CAN 收发器 CAN 收发器是连接 CAN 控制器和物理总线的桥梁，主要实现电平转换、输出驱动和输入"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 184,
+    "bounding box" : [ 90.0, 104.661, 510.49, 135.51 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "采样等功能。它将 CAN 控制器的逻辑信号转换为能够在总线上传输的差分信号，反之亦然。 常见的 CAN 收发器有 TJA1050、SN65HVD230 等，这些收发器支持不同的通信速率和工作电压。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 184,
+    "bounding box" : [ 111.0, 84.14, 173.889, 94.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.数据传输线"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 184,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "184"
+  } ]
+}

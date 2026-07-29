@@ -1,0 +1,252 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 220,
+    "bounding box" : [ 90.0, 752.166, 152.889, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 课后习题"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 3,
+    "level" : "Doctitle",
+    "page number" : 220,
+    "bounding box" : [ 111.0, 729.621, 163.568, 740.071 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "一、选择题"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 4,
+    "level" : "2",
+    "page number" : 220,
+    "bounding box" : [ 111.0, 425.421, 462.783, 716.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 5,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 682.821, 462.783, 716.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1. LIN 总线的最高通信速率为（ ）。 A. 10 kbit/s B. 20 kbit/s C. 50 kbit/s D. 100 kbit/s",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 636.021, 454.809, 669.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2. LIN 总线采用的主从结构中，总线上最多可以连接多少个从节点？（ ） A. 8 个 B. 16 个 C. 32 个 D. 64 个",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 565.821, 328.809, 623.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3. LIN 总线常用于以下哪个汽车子系统？（ ） A. 发动机控制 B. 防抱死制动系统 C. 车门、车窗、座椅调节 D. 主动悬架系统",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 519.021, 452.169, 552.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4. LIN 总线的物理层采用哪种信号传输方式？（ ） A. 差分双绞线 B. 单线（对地参考） C. 光纤 D. 同轴电缆",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 425.421, 420.61, 506.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5. 关于 LIN 总线与 CAN 总线的比较，下列说法正确的是（ ）。 A. LIN 总线速率高于 CAN 总线 B. LIN 总线成本低于 CAN 总线 C. LIN 总线支持多主通信 D. LIN 总线使用双绞线介质 二、填空题",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 5,
+    "level" : "2",
+    "page number" : 220,
+    "bounding box" : [ 111.0, 214.821, 491.528, 412.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 8,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 402.021, 438.962, 412.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1. LIN 是__________的缩写，是一种低成本、低速率的串行通信网络。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 378.621, 386.528, 389.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2. LIN 总线网络由____个主节点和最多____个从节点组成。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 355.221, 491.528, 365.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3. LIN 总线基于常见的__________接口，通常内置于单片机中，无须专用控制器。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 331.821, 396.968, 342.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4. LIN 总线的数据帧由__________和__________两部分组成。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 308.421, 452.165, 318.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5. 在 LIN 总线中，主节点负责__________，从节点仅响应主节点的指令。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 285.021, 454.807, 295.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "6. LIN 总线的传输介质一般为__________，使用__________ V 电平信号。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 261.621, 491.525, 272.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "7. 为保证通信的实时性，LIN 总线采用__________调度表来安排各帧的发送时间。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 214.821, 417.967, 248.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "8. LIN 总线的最大通信距离约为__________米（在最高速率下）。 三、判断题",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 6,
+    "level" : "2",
+    "page number" : 220,
+    "bounding box" : [ 111.0, 97.821, 510.49, 201.871 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 5,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 191.421, 475.809, 201.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1. LIN 总线支持多主多从的通信方式，任何节点都可以主动发送数据。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 168.021, 510.49, 178.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2. LIN 总线的通信速率虽然较低，但其成本优势使其广泛应用于车身电子系统。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 144.621, 475.809, 155.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3. LIN 总线需要进行严格的位仲裁和冲突检测，因此硬件复杂度较高。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 121.221, 496.809, 131.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4. LIN 总线的数据帧包含标识符、数据场和校验和，但不包含源地址信息。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 220,
+      "bounding box" : [ 111.0, 97.821, 510.49, 108.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5. 在 LIN 网络中，从节点可以主动向主节点发送事件触发帧，无须主节点请求。（ ）",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 220,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "220"
+  } ]
+}

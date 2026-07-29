@@ -1,0 +1,139 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 9,
+    "bounding box" : [ 90.0, 729.621, 505.205, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "为低压系统持续供电；BSC 电机及控制器，用于电能调节与分配，实现高压与低压系统的能 量协同。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 9,
+    "bounding box" : [ 111.0, 682.821, 505.204, 716.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.用电设备：能量消耗终端 用电设备又称“负载”，是电能的消耗载体，按电压等级和功能可分为低压负载和高压"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 9,
+    "bounding box" : [ 90.0, 659.421, 299.883, 669.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "负载，覆盖整车行驶、控制、舒适等全场景："
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 9,
+    "bounding box" : [ 90.0, 589.221, 505.208, 646.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "低压负载：包括常规灯光（尾灯、顶灯、仪表灯）、车载仪表、普通传感器（温度传感 器、速度传感器）、刮水器电动机、洗涤电动机、多媒体主机、智能进入控制器等，工作电 压为 12V/24V。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 9,
+    "bounding box" : [ 90.0, 495.621, 507.25, 576.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "高压负载：新能源汽车专属核心负载，包括驱动电机（提供行驶动力）、动力蓄电池包 （储能核心，兼具充放电功能）、车载充电机（OBC，将交流充电电压转换为高压直流电为 动力蓄电池充电）、PTC 加热器（冬季车内供暖）、电动空调压缩机（制冷循环动力源）、 直流充电相关部件（充电口、充电控制模块）等。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 9,
+    "bounding box" : [ 90.0, 402.021, 505.208, 482.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电子控制类负载：各类电子控制器件，如动力蓄电池管理系统（BMS，监控动力蓄电池 状态）、电机控制器（MCU，调节驱动电机转速与扭矩）、车身控制器（BCM，控制车身电气 功能）、底盘域控制器、左/右域控制器等，这类设备需单独的工作电源，且依赖配套传感 器获取信号。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 9,
+    "bounding box" : [ 111.0, 355.221, 509.89, 389.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.电路控制装置：通断与调节核心 负责控制电路通断、能量分配及工作模式切换，以电子控制为主导，机械控制为辅助，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 9,
+    "bounding box" : [ 90.0, 331.821, 236.885, 342.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "适配新能源汽车精准控制需求："
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 9,
+    "bounding box" : [ 90.0, 238.221, 509.89, 318.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电子控制装置：核心为各类电子控制单元（ECU），包括 BMS、MCU、BCM 等，通过接收 传感器信号（如车速、蓄电池温度、踏板位置），实现对高压负载、低压设备的精准控制， 例如 BMS 控制动力蓄电池充放电电流，MCU 调节驱动电机输出功率。此外还包括简单电子模 块（如电子式电压调节器），用于稳定低压电源输出电压。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 9,
+    "bounding box" : [ 90.0, 168.021, 505.208, 225.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "机械控制装置：传统手动开关的优化适配版本，包括灯光开关、刮水器开关、危险警告 开关等，通过机械接触实现低压电路通断，结构简单、操作直观；部分高压回路的辅助控制 开关（如充电口盖控制开关），需配合绝缘设计。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 9,
+    "bounding box" : [ 111.0, 121.221, 509.89, 155.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.电路保护装置：安全防护屏障 核心功能是当电路出现短路、过载（电流超额定值）、漏电等故障时，自动切断电路，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 9,
+    "bounding box" : [ 90.0, 74.421, 505.207, 108.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "防止导线烧毁、设备损坏，限制故障范围，保障整车电气系统安全，新能源汽车专属保护元 件如下："
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 9,
+    "bounding box" : [ 295.32, 49.52, 299.874, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "9"
+  } ]
+}

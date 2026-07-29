@@ -1,0 +1,86 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 86,
+    "bounding box" : [ 90.0, 706.221, 505.205, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "该架构采用分层设计原则，将基础信息显示与高级功能分离，同时预留了智能网联车辆 的扩展接口。现代仪表系统正逐步向全液晶化、多模态交互方向发展，集成 ADAS 显示和场 景化智能提示功能。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 86,
+    "bounding box" : [ 111.0, 664.34, 505.208, 693.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "二、仪表系统组成 新能源汽车的仪表系统是车辆各类信息对外显示的窗口，负责接收和显示汽车各电气系"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 86,
+    "bounding box" : [ 90.0, 623.421, 505.205, 654.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "统的重要信息。其硬件结构主要包括：组合仪表电源、组合仪表模块和组合仪表数据传输线 等，如图 3-3 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 86,
+    "bounding box" : [ 91.44, 352.3, 503.88, 612.392 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 18,
+    "page number" : 86,
+    "bounding box" : [ 132.0, 428.98, 188.04, 479.26 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 9,
+    "page number" : 86,
+    "bounding box" : [ 235.92, 332.9, 359.168, 343.35 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-3 秦 EV 仪表系统电路"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 86,
+    "bounding box" : [ 90.0, 148.7, 509.89, 324.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1.组合仪表电源 组合仪表电源是仪表系统的供电部件，为组合仪表模块提供工作电压，包含电源正极和 电源负极。其中，组合仪表正极电源一般分为常火电源和点火电源。常火电源直接来自蓄电 池正极，用于为模块的存储记忆、初始工作与通信供电；点火电源是指点火开关打开后，模 块接收到的正极电源，一般为激活模块并使模块进入工作状态的信号电源。如图 3-4 所示， 比亚迪秦 EV 的组合仪表设置有常火电源（常电）和点火电源（IG 电）。随着现代汽车环保 精简理念的发展，有些汽车仪表模块取消了点火电源（IG 电），通过模块的 CAN 总线替代 了点火电源的功能，如图 3-5 所示的比亚迪秦 PLUS-EV 车型的仪表电源。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 86,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "86"
+  } ]
+}

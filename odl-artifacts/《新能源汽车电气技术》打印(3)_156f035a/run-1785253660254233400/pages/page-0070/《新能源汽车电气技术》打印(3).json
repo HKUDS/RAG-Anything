@@ -1,0 +1,91 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 3,
+    "level" : "1",
+    "page number" : 70,
+    "bounding box" : [ 111.0, 676.221, 505.205, 768.39 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 70,
+      "bounding box" : [ 111.0, 757.94, 505.088, 768.39 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（1）功率半导体升级 传统 IGBT 器件难以满足 800V 平台的耐压需求，碳化硅半导体",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 70,
+        "bounding box" : [ 90.0, 696.621, 505.209, 747.99 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "成为核心部件。碳化硅半导体器件的能效转化率达 98.5%，相较于 IGBT 提升 4 个百分点， 可降低高压上电过程中的开关损耗 30%以上，同时减少散热系统负荷。比亚迪汉 EV、保时捷 Taycan 等车型均采用碳化硅半导体模块构建 800V 上电回路。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 70,
+      "bounding box" : [ 111.0, 676.221, 505.205, 686.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）预充电路优化 800V 平台的母线电容容量更大，传统单电阻预充方案难以满足快",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 70,
+    "bounding box" : [ 90.0, 614.9, 505.206, 666.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "速预充需求，新技术采用“分段预充+智能预充电阻”方案：先通过小功率电阻完成初步充 电，再切换至大功率电阻加速充电，预充时间可控制在 200~500ms 内；同时预充电阻采用可 恢复式热敏电阻，避免传统电阻烧毁导致的上电故障。"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 5,
+    "level" : "Doctitle",
+    "page number" : 70,
+    "bounding box" : [ 111.0, 594.5, 226.926, 604.95 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.高压互锁监测技术升级"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 70,
+    "bounding box" : [ 90.0, 492.38, 505.209, 584.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电动汽车高压互锁监测的新技术正从传统的单一回路通断检测，向精确定位故障点、提 升抗干扰能力和验证检测逻辑等方向发展，核心目标是提高安全性和维修效率。为不同高压 部件或连接点，设定不同的电阻值、电流值或电信号特征。当故障发生时，检测电路通过测 量变化的电阻、电流或电平信号，即可反向推导出具体的故障位置。改变了传统串联回路只 能报“有故障”的局限，能快速定位到具体部件，极大缩短排查时间。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 70,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "70"
+  } ]
+}

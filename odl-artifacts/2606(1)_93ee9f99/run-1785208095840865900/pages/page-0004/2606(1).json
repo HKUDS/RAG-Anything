@@ -1,0 +1,331 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 4,
+    "bounding box" : [ 107.641, 685.465, 505.245, 719.91 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Algorithm 1 Self-Harness Require: fixed model M, initial harness h0, held-in split Din, held-out split Dho, evaluator E,"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 4,
+    "bounding box" : [ 108.0, 669.814, 236.514, 693.325 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "proposal width K, rounds T Ensure: final harness hT"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 5,
+    "level" : "1",
+    "page number" : 4,
+    "bounding box" : [ 108.0, 363.495, 504.001, 671.866 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 24,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 113.754, 652.738, 230.688, 671.866 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "1: for t = 0,1,...,T − 1 do",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 113.754, 641.829, 374.806, 660.598 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "2: (Pin(ht),Pho(ht),Rt) ← EVALUATE(M,ht,Din,Dho,E)",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 113.754, 630.92, 503.995, 649.689 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "3: Bt ← BUILDEVIDENCEBUNDLE(Rt) ▷ from held-in verifier-grounded failures",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 113.754, 620.011, 503.504, 638.78 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "4: Pt ← PARALLELPROPOSE(M,ht,Bt,K) ▷ Pt = {(∆j,aj)}Kj=1",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 113.754, 609.102, 174.591, 627.832 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "5: At ← ∅",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 113.754, 598.193, 237.621, 617.321 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "6: for all (∆j,aj) ∈ Pt do",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 113.754, 583.941, 215.982, 603.91 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "7: h(tj) ← ∆j(ht)",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 113.754, 569.689, 417.494, 589.658 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "8: (Pin(h(tj)),Pho(h(tj)),Rt(j)) ← EVALUATE(M,h(tj),Din,Dho,E)",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 113.754, 555.796, 269.234, 575.765 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "9: ∆(inj) ← Pin(h(tj)) − Pin(ht)",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 541.542, 272.666, 561.511 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "10: ∆(hoj) ← Pho(h(tj)) − Pho(ht)",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 527.135, 387.218, 547.104 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "11: if ∆(inj) ≥ 0 and ∆(hoj) ≥ 0 and max(∆(inj),∆(hoj)) > 0 then",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 512.728, 330.265, 532.697 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "12: At ← At ∪ {(h(tj),∆j,aj,∆(inj),∆(hoj))}",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 508.145, 503.998, 520.588 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "13: ACCEPT(∆j) ▷ passed acceptance rule",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 497.077, 170.316, 510.038 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "14: else",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 486.327, 222.644, 498.77 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "15: REJECT(∆j)",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 475.258, 178.903, 488.219 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "16: end if",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 464.349, 170.346, 477.31 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "17: end for",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 447.273, 202.265, 466.401 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "18: if At = ∅ then",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 436.364, 504.001, 455.133 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "19: ht+1 ← ht ▷ no accepted candidate",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 431.622, 155.372, 444.583 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "20: else",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 414.546, 503.996, 433.315 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "21: ht+1 ← MERGEACCEPTED(ht,At) ▷ accepted edits are merged",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 409.804, 163.96, 422.765 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "22: end if",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 109.769, 398.895, 155.402, 411.856 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "23: end for",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 4,
+      "bounding box" : [ 108.0, 363.495, 503.502, 400.947 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 11.955,
+      "text color" : "[0.0]",
+      "content" : "24: return hT 3 Self-Harness: An Iterative Loop for Model-Specific Harness Improvement",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 4,
+    "bounding box" : [ 107.641, 243.478, 505.241, 353.663 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Human harness engineering improves agent harnesses through expert inspection and manual revision, while external optimizer approaches treat harness design choices as a searchable space. Self-Harness studies a middle ground in which a fixed model iteratively improves the harness around itself through an explicit self-improvement loop driven by execution evidence. In each iteration, the evaluation system runs the current harness and mines recurring failure patterns from clustered execution traces to produce structured evidence. Given this evidence, the same model is invoked in a proposer role to generate a set of diverse yet minimal candidate harness modifications, each targeting a specific failure mechanism without replacing the overall control architecture. Candidate edits are then validated through regression testing on held-out tasks, and an explicit acceptance rule promotes only those edits that improve performance without introducing unacceptable regressions."
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 8,
+    "level" : "Doctitle",
+    "page number" : 4,
+    "bounding box" : [ 108.0, 218.421, 181.703, 231.382 ],
+    "heading level" : 1,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "3.1 Preliminary"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 4,
+    "bounding box" : [ 107.532, 155.408, 505.241, 211.048 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "We use harness to denote the non-parametric scaffolding that governs how a fixed language model is deployed as an agent. A harness includes the instructions, the available tools, memory and state-management mechanisms, etc. The harness does not modify the model parameters; instead, it specifies the execution protocol through which the model observes a task, takes actions, invokes tools, checks intermediate artifacts, and produces a final answer."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 4,
+    "bounding box" : [ 107.641, 73.565, 505.244, 151.023 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Formally, let M be a fixed language model and let h denote an agent harness. Given a task instance x, running M under harness h produces an execution trace τ and an output y. The trace records the messages, tool calls, and verifier outcomes. An evaluator then maps the task, trace, and output to a behavioral outcome, such as pass/fail. In this work, the model M and evaluator E are held fixed, while the harness is treated as the object of improvement. Self-Harness therefore operates over a lineage of harnesses h0,h1,..., where each transition corresponds to a bounded edit to the execution protocol rather than an update to the model weights."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 4,
+    "bounding box" : [ 303.509, 39.313, 308.49, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "4"
+  } ]
+}

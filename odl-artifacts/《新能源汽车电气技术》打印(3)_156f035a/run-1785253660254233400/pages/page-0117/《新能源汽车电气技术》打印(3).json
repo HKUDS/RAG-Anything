@@ -1,0 +1,123 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 117,
+    "bounding box" : [ 90.0, 717.021, 505.209, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "实用性。 二、未来车灯趋势 未来汽车车灯技术将继续向智能化、交互化、高分辨率化和能源高效化方向发展，结合"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 117,
+    "bounding box" : [ 90.0, 676.221, 505.206, 707.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "AI、AR、V2X 通信、新材料等技术，车灯将不再仅是照明工具，而是成为车辆与外界交互的 “智能终端”。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 117,
+    "bounding box" : [ 111.0, 614.9, 505.209, 666.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1. 车路协同通信灯（V2X-Enabled Lighting） 技术原理：车灯与 5G/V2X（车联网）结合，实现车与车、车与基础设施的实时通信。 应用场景：前车急刹时，尾灯自动闪烁红色警示后车；交通信号灯信息直接投射在风窗"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 117,
+    "bounding box" : [ 90.0, 594.5, 415.322, 604.95 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "玻璃或路面上；自动驾驶车队通过灯光信号协调行驶（如变道提示）。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "level" : "1",
+    "page number" : 117,
+    "bounding box" : [ 111.0, 533.18, 510.49, 584.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2. 自修复与变色车灯（Self-Healing & Adaptive Color） 技术原理：采用特殊聚合物材料，轻微划痕可自动修复（类似手机屏幕自修复技术）。 应用场景：根据天气调节色温（雨天偏黄穿透雾霾，晴天偏白提高亮度）；法规允许后，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 117,
+    "bounding box" : [ 90.0, 512.78, 289.443, 523.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "可自定义车灯颜色（如转向时渐变提示）。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "level" : "1",
+    "page number" : 117,
+    "bounding box" : [ 111.0, 451.58, 505.208, 502.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3. 太阳能辅助照明（Solar-Powered Lighting） 技术原理：车灯表面集成透明太阳能薄膜，白天充电，夜间辅助供电，降低能耗。 应用场景：电动车续航优化，减少前照灯对蓄电池的消耗；露营时，车灯可作为户外照"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 117,
+    "bounding box" : [ 90.0, 431.06, 131.889, 441.51 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "明电源。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "level" : "1",
+    "page number" : 117,
+    "bounding box" : [ 111.0, 369.861, 505.206, 421.11 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4. 生物识别互动灯（Biometric Interaction） 技术原理：车灯集成摄像头或红外传感器，识别驾驶人或行人的动作、手势。 应用场景：车主靠近时，车灯投射欢迎动画；检测到行人过马路，自动降低亮度并投射"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 117,
+    "bounding box" : [ 90.0, 349.34, 352.444, 359.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "“请先行”提示；结合人脸识别，个性化调整灯光模式。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 117,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "117"
+  } ]
+}

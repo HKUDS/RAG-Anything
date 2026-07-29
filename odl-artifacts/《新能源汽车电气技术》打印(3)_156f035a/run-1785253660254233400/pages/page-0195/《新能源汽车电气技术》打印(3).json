@@ -1,0 +1,114 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 195,
+    "bounding box" : [ 17.04, 373.18, 575.64, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 195,
+    "bounding box" : [ 252.959, 353.54, 342.249, 363.99 ],
+    "linked content id" : 6,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-18 BMS 电路图"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 195,
+    "bounding box" : [ 111.0, 312.74, 415.45, 343.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.检测过程及数据记录 查阅完电路图，接下来进行相关线路的测量，具体测量步骤如下："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 10,
+    "level" : "1",
+    "page number" : 195,
+    "bounding box" : [ 111.0, 90.621, 510.49, 302.79 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 195,
+      "bounding box" : [ 111.0, 292.34, 510.49, 302.79 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）使用万用表电压档来分别测量 BMS 的常供电 BK45(B)/1 与 BK45(A)/28 引脚对地电压，",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 195,
+        "bounding box" : [ 90.0, 271.94, 339.247, 282.39 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "均为 13.98V，如图 5-19 所示，说明 BMS 常供电正常。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 2,
+        "page number" : 195,
+        "bounding box" : [ 96.24, 124.47, 297.0, 260.07 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 3,
+        "page number" : 195,
+        "bounding box" : [ 302.52, 124.4, 498.6, 262.28 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 4,
+        "page number" : 195,
+        "bounding box" : [ 176.88, 111.14, 418.329, 121.59 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 5-19 BMS BK45（B）/1 和 BK45（A）/28 对地电压"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 195,
+      "bounding box" : [ 111.0, 90.621, 505.265, 101.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）车辆下低压电，断开蓄电池负极，使用万用表电阻档测量 BMS 的搭铁引脚 BK45(B)/2",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 195,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "195"
+  } ]
+}

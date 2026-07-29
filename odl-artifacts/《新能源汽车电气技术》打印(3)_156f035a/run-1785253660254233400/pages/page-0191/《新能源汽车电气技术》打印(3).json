@@ -1,0 +1,116 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 2,
+    "page number" : 191,
+    "bounding box" : [ 90.0, 737.54, 505.208, 768.39 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "向下兼容：CAN FD 协议完全向下兼容传统的 CAN 协议，可以在现有的 CAN 网络中无缝 集成。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 4,
+    "page number" : 191,
+    "bounding box" : [ 296.88, 592.18, 504.6, 729.1 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 191,
+    "bounding box" : [ 90.6, 592.06, 296.88, 727.54 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 191,
+    "bounding box" : [ 99.0, 575.625, 499.44, 584.625 ],
+    "font" : "SimSun",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "从 500 kBit 切换到 2Mbit 的 CAN FD 消息的报头 从 2 Mbit 切换到 500kBit 的 CAN FD 消息的报尾"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 191,
+    "bounding box" : [ 218.88, 556.34, 376.328, 566.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-14 CAN FD 报文传输速率切换"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 191,
+    "bounding box" : [ 111.0, 515.54, 505.195, 546.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "三、CAN FD 应用领域 汽车电子：CAN FD 广泛应用于需要高带宽和高实时性的汽车电子系统中，如高级驾驶"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 191,
+    "bounding box" : [ 90.0, 474.74, 505.09, 505.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "辅助系统（ADAS）和无人驾驶系统（AV）。这些应用场景要求快速、可靠的数据传输，以支 持雷达系统、摄像头传感器、自动紧急制动系统（AEB）和自动驾驶功能。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 191,
+    "bounding box" : [ 90.0, 433.821, 505.202, 464.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "工业控制：在工业自动化和机器人领域，CAN FD 被用于需要高数据传输速率和大容量 数据传输的应用，如高分辨率传感器数据和复杂控制指令。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 191,
+    "bounding box" : [ 90.0, 393.021, 505.195, 423.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "车辆联网：CAN FD 支持车辆与云服务、其他车辆和智能设备的实时数据交换和通信， 如实时数据传输、车载诊断和远程服务。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 191,
+    "bounding box" : [ 90.0, 270.38, 505.209, 383.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "CAN FD 通过提供更高的数据传输速率、更大的数据帧容量和灵活的数据传输能力，为 现代汽车的高级驾驶辅助系统和车辆联网技术带来了显著的技术优势和应用扩展能力。这些 优势使得 CAN FD 成了越来越多汽车制造商在新车型中采用的首选通信协议之一。随着技术 的不断进步，CAN FD 将与以太网、FlexRay 等其他高速通信技术共存，并在不同的应用场景 中发挥各自的优势。预计 CAN FD 将与物联网（IoT）技术结合，扩展到智能家居、智慧城市 等新兴领域。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 191,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "191"
+  } ]
+}

@@ -1,0 +1,165 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 7,
+    "level" : "1",
+    "page number" : 72,
+    "bounding box" : [ 111.0, 611.9, 510.49, 763.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 5,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 72,
+      "bounding box" : [ 111.0, 753.021, 494.17, 763.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）实训开始前，提前准备好需要使用的个人防护用品，并检查是否符合使用标准。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 72,
+      "bounding box" : [ 111.0, 734.54, 510.49, 744.99 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）实训开始前，提前做好场地防护，设置警告标识、在操作位置布置好绝缘防护措施。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 72,
+      "bounding box" : [ 111.0, 714.14, 510.49, 724.59 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）检查实训场地和设备设施是否清洁及存在安全隐患配电箱、插座是否符合用电需求，",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 5,
+        "page number" : 72,
+        "bounding box" : [ 90.0, 693.621, 247.45, 704.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "如不正常请汇报老师并进行处理。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 72,
+      "bounding box" : [ 111.0, 673.221, 326.17, 683.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）记录车辆铭牌信息，并做好检测结果记录。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 72,
+      "bounding box" : [ 111.0, 611.9, 368.17, 663.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5）实训结束后，必须清理场地和设备，撤除警示标识。 四、实施过程 1.确认故障现象",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 8,
+    "level" : "1",
+    "page number" : 72,
+    "bounding box" : [ 111.0, 344.421, 510.49, 601.95 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 72,
+      "bounding box" : [ 111.0, 591.5, 505.203, 601.95 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）一位客户的比亚迪秦 EV 出现了故障，故障现象表现为踩下制动踏板并打开一键起动",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 72,
+        "bounding box" : [ 90.0, 550.7, 509.89, 581.55 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "开关，仪表正常点亮，蓄电池电量显示正常，但仪表上的“OK”灯无法点亮，主警告灯点， 仪表提示“EV 功能受限”，车辆无法换入 D 档或 R 档，如图 2-24 所示。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 2,
+        "page number" : 72,
+        "bounding box" : [ 165.6, 384.22, 429.36, 542.26 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 4,
+        "page number" : 72,
+        "bounding box" : [ 245.159, 364.821, 350.048, 375.271 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 2-24 秦 EV 仪表显示"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 72,
+      "bounding box" : [ 111.0, 344.421, 510.49, 354.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）连接故障诊断仪，BMS 模块中，故障码为 P1A3400，预充失败故障，如图 2-25 所示。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 9,
+    "page number" : 72,
+    "bounding box" : [ 171.6, 140.14, 423.6, 329.14 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 72,
+    "bounding box" : [ 111.0, 97.821, 369.727, 126.75 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-25 解码器报预充失败故障 2.可能的故障原因分析"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 72,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "72"
+  } ]
+}

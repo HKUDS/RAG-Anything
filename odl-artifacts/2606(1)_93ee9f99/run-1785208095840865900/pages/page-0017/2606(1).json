@@ -1,0 +1,59 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 17,
+    "bounding box" : [ 128.911, 684.632, 505.74, 719.242 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "(Volume 1: Long Papers), pages 4081–4108, Vienna, Austria, July 2025. Association for Computational Linguistics. ISBN 979-8-89176-251-0. doi: 10.18653/v1/2025.acl-long.206. URL https://aclanthology.org/2025.acl-long.206/."
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 17,
+    "bounding box" : [ 108.0, 603.237, 507.664, 678.545 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 17,
+      "bounding box" : [ 108.0, 643.935, 505.243, 678.545 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "[36] Ningyan Zhu, Huacan Wang, Jie Zhou, Feiyu Chen, Shuo Zhang, Ge Chen, Chen Liu, Jiarou Wu, Wangyi Chen, Xiaofeng Mou, and Yi Xu. Semaclaw: A step towards general-purpose personal ai agents through harness engineering, 2026. URL https://arxiv.org/abs/2604.11548.",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 17,
+      "bounding box" : [ 108.0, 603.237, 507.664, 637.848 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 9.963,
+      "text color" : "[0.0]",
+      "content" : "[37] Mingchen Zhuge, Wenyi Wang, Louis Kirsch, Francesco Faccio, Dmitrii Khizbullin, and Juergen Schmidhuber. Language agents as optimizable graphs, 2024. URL https://arxiv. org/abs/2402.16823.",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 17,
+    "bounding box" : [ 301.019, 39.313, 310.982, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "17"
+  } ]
+}

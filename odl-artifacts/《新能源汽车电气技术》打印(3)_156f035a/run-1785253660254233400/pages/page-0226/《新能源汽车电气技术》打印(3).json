@@ -1,0 +1,84 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 226,
+    "bounding box" : [ 149.88, 614.26, 445.08, 769.54 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 226,
+    "bounding box" : [ 111.0, 572.358, 397.565, 607.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-1 新能源汽车空调制冷系统的组成 1.电动压缩机"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 226,
+    "bounding box" : [ 90.0, 455.357, 510.49, 560.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电动压缩机是新能源汽车空调制冷系统的心脏，其作用是维持制冷剂在制冷系统中的循 环，吸入来自蒸发器的低温、低压气态制冷剂，压缩转变为高温高压的气态制冷剂送往冷凝 器。目前纯电动汽车空调上的电动压缩机是高压核心动力部件，由动力蓄电池（如 300~400V） 供电，常见类型为涡旋式压缩机，具有体积小、噪声低、效率高的特点（如比亚迪的 12V 直流压缩机、特斯拉的 400V 高压压缩机）。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 226,
+    "bounding box" : [ 111.0, 431.958, 179.169, 443.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（1）结构组成"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 226,
+    "bounding box" : [ 161.88, 247.78, 453.72, 402.94 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 226,
+    "bounding box" : [ 183.6, 93.34, 432.12, 245.74 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 226,
+    "bounding box" : [ 202.32, 73.157, 413.769, 84.871 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-2 电动压缩机的组成（北汽 EV160 车型）"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 226,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "226"
+  } ]
+}

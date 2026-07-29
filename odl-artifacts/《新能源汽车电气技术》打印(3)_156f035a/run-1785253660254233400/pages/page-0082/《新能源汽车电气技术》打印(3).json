@@ -1,0 +1,60 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 2,
+    "level" : "Doctitle",
+    "page number" : 82,
+    "bounding box" : [ 157.68, 746.248, 437.509, 762.198 ],
+    "heading level" : 1,
+    "font" : "SimHei",
+    "font size" : 15.95,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "项目三 新能源汽车仪表及灯光系统检修"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 82,
+    "bounding box" : [ 122.52, 526.54, 472.32, 732.7 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 82,
+    "bounding box" : [ 90.0, 447.021, 505.314, 518.79 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "汽车的仪表系统是继汽车进入和起动后，车辆使用者最为依赖的汽车电气系统，可直 接通过仪表系统观察车辆上电状态、行驶状态和故障提示等情况。汽车的灯光系统是车辆使 用者最常用的汽车电气系统之一，随着人们对新能源汽车使用体验感的需求提升，车辆灯光 系统除照明和提示功能外，还增加了美观和个性化的设计。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 82,
+    "bounding box" : [ 90.0, 385.7, 510.49, 437.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "新能源汽车的仪表和灯光系统不仅承载着车辆的状态显示、照明和提示功能，还与车辆 的安全性、可靠性和用户体验密切相关。因此，掌握新能源汽车仪表及灯光系统的检修技术， 对于保障车辆的正常运行、提升维修效率和质量具有重要意义。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 82,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "82"
+  } ]
+}

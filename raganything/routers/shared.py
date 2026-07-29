@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """
+
 RAG-Anything Router Shared Module — Backward-Compatibility Facade.
 
 Layer: Router
@@ -17,19 +18,26 @@ WebSocket, state, auth, utilities). Those have been extracted into:
     - raganything.utils.security         (prompt injection detection)
 """
 
+# Runtime settings must be bootstrapped before importing the service modules
+# re-exported by this compatibility hub.
+# ruff: noqa: E402
+
 import asyncio
+import dataclasses
 import os
 import re as _re
 import logging
+import time
 from pathlib import Path
 from raganything.services.runtime_settings import bootstrap_runtime_settings
+from raganything.services.odl_media_delivery import validate_legacy_media_path
 
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env", override=False)
 
 bootstrap_runtime_settings()
 
-from fastapi import WebSocket, Request
+from fastapi import Request
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -109,9 +117,7 @@ from raganything.utils.security import (  # noqa: F401 — re-export
 )
 
 # ── Prompt / Query Helpers (still local — no other home yet) ──
-from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc, logger as lightrag_logger  # noqa: F401
-from raganything import RAGAnything, RAGAnythingConfig
 
 
 _DEGRADED_HINT = (
@@ -175,42 +181,228 @@ _MAX_CONCURRENT_FILES: int = int(
 server_logger = logging.getLogger("rag_server")
 
 
-# ── Image Path Validation ──────────────────────────────────
+# ── Controlled Image Path Extraction and Validation ────────
+
+_IMAGE_SUFFIXES = frozenset({
+    ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif",
+})
+_IMAGE_PATH_PROTOCOLS = (
+    ("english", _re.compile(
+        r"Image\s+Path\s*[:：]\s*(?P<path>[^\r\n]*)$",
+        _re.IGNORECASE | _re.MULTILINE,
+    )),
+    ("chinese", _re.compile(
+        r"\[\s*图片路径\s*[:：]\s*(?P<path>[^\r\n\]]*)\s*\]",
+        _re.IGNORECASE,
+    )),
+)
+
+
+@dataclasses.dataclass(frozen=True)
+class ImagePathExtraction:
+    """Bounded, path-free accounting for a retrieval image-path scan."""
+
+    paths: list[str]
+    candidate_count: int
+    protocol_counts: dict[str, int]
+    rejection_counts: dict[str, int]
+
+
+def _registered_odl_media_roots() -> tuple[Path, ...]:
+    """Return explicitly controlled roots accepted for legacy ODL media.
+
+    Legacy chunks have no per-image manifest.  They are intentionally accepted
+    only below the dedicated artifact root or roots explicitly provisioned by
+    the operator; a marker can never widen this allow-list.
+    """
+    configured: list[str] = []
+    primary = os.getenv("ODL_ARTIFACT_ROOT", "").strip()
+    if primary:
+        configured.append(primary)
+    legacy = os.getenv("ODL_LEGACY_MEDIA_ROOTS", "").strip()
+    if legacy:
+        configured.extend(part.strip() for part in legacy.split(os.pathsep))
+
+    # The project-owned dedicated root is a stable compatibility root for
+    # previously parsed local ODL documents.  Do not derive a root from a KB,
+    # document marker, or the process current directory.
+    project_root = Path(__file__).resolve().parents[2]
+    project_artifacts = project_root / "odl-artifacts"
+    if project_artifacts.is_dir():
+        configured.append(str(project_artifacts))
+
+    roots: list[Path] = []
+    for raw in configured:
+        try:
+            root = Path(raw)
+            if not root.is_absolute() or not root.is_dir() or root.is_symlink():
+                continue
+            resolved = root.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if resolved not in roots:
+            roots.append(resolved)
+    return tuple(roots)
+
+
+def _contains_symlink(path: Path, root: Path) -> bool:
+    """Reject every symlinked child even when it resolves back into *root*."""
+    try:
+        relative = path.relative_to(root)
+    except ValueError:
+        return True
+    current = root
+    for component in relative.parts:
+        current /= component
+        if current.is_symlink():
+            return True
+    return False
+
+
+def _validate_single_image_path(candidate: str) -> tuple[str | None, str | None]:
+    """Fail closed for a marker path and return only an approved local path."""
+    if not isinstance(candidate, str) or not candidate.strip():
+        return None, "empty"
+    raw_path = candidate.strip().strip("\"'")
+    resolved, reason = validate_legacy_media_path(raw_path)
+    return (str(resolved), None) if resolved is not None else (None, reason)
+
+
+def _resolve_image_path_candidates(
+    candidates: list[tuple[str, str]],
+) -> ImagePathExtraction:
+    protocols: dict[str, int] = {}
+    rejected: dict[str, int] = {}
+    paths: list[str] = []
+    seen: set[str] = set()
+    for protocol, candidate in candidates:
+        protocols[protocol] = protocols.get(protocol, 0) + 1
+        valid, reason = _validate_single_image_path(candidate)
+        if valid is None:
+            rejected[reason or "invalid"] = rejected.get(reason or "invalid", 0) + 1
+            continue
+        if valid not in seen:
+            seen.add(valid)
+            paths.append(valid)
+    return ImagePathExtraction(
+        paths=paths,
+        candidate_count=len(candidates),
+        protocol_counts=protocols,
+        rejection_counts=rejected,
+    )
+
+
+def extract_image_paths_with_stats(text: str) -> ImagePathExtraction:
+    """Parse both retrieval protocols and resolve candidates through one gate."""
+    if not text:
+        return ImagePathExtraction([], 0, {}, {})
+    candidates: list[tuple[str, str]] = []
+    for protocol, pattern in _IMAGE_PATH_PROTOCOLS:
+        for match in pattern.finditer(text):
+            candidates.append((protocol, match.group("path")))
+    return _resolve_image_path_candidates(candidates)
+
 
 def _validate_image_paths(paths: list[str]) -> list[str]:
-    """Filter out image paths that don't exist on disk.
+    """Validate already-extracted paths through the same controlled-media gate."""
+    return _resolve_image_path_candidates([("unknown", path) for path in paths]).paths
 
-    Extracted paths from chunk content may reference files that have been
-    deleted or moved since document processing.  This validator ensures
-    the frontend only receives paths it can actually load.
-    """
-    if not paths:
-        return []
-    valid: list[str] = []
-    for p in paths:
-        if p and Path(p).exists():
-            valid.append(p)
-    return valid
-
-
-# ── Image Path Extraction ──────────────────────────────────
 
 def extract_image_paths(text: str) -> list[str]:
-    """Extract image paths from retrieval context text."""
-    if not text:
-        return []
-    pattern = _re.compile(
-        r"Image Path:\s*([^\r\n]*?\.(?:jpg|jpeg|png|gif|bmp|webp|tiff|tif))",
-        _re.IGNORECASE,
+    """Return only controlled image paths found in retrieval context text."""
+    return extract_image_paths_with_stats(text).paths
+
+
+async def resolve_controlled_media_payload(
+    *, kb_name: str, image_path: str
+) -> dict | None:
+    """Resolve one backend-only path through the KB's persisted media catalog.
+
+    Callers must pass the already-authorised KB name. Legacy controlled-root
+    validation is intentionally insufficient for delivery ownership.
+    """
+    from raganything.services.kb_service import _load_doc_status_json
+    from raganything.services.odl_media_delivery import (
+        catalog_media_payload,
+        issue_owned_legacy_media_grant,
+        validate_legacy_media_path,
     )
-    seen = set()
-    paths = []
-    for m in pattern.finditer(text):
-        p = m.group(1).strip()
-        if p not in seen:
-            seen.add(p)
-            paths.append(p)
-    return paths
+
+    try:
+        statuses = await _load_doc_status_json(kb_name)
+    except Exception as exc:
+        lightrag_logger.warning(
+            "[IMG-MEDIA] KB=%s outcome=status_unavailable error_type=%s",
+            kb_name,
+            type(exc).__name__,
+        )
+        return None
+    catalog: list[dict] = []
+    for status in statuses.values():
+        metadata = status.get("metadata") if isinstance(status, dict) else None
+        entries = metadata.get("odl_media_catalog") if isinstance(metadata, dict) else None
+        if isinstance(entries, list):
+            catalog.extend(entry for entry in entries if isinstance(entry, dict))
+    payload = catalog_media_payload(catalog, kb_name=kb_name, path=image_path)
+    if payload is not None:
+        return payload
+
+    # Old ODL chunks have no catalog. A controlled root alone is not enough:
+    # prove that this exact canonical image path was persisted in this KB's
+    # chunk content before issuing a short-lived, ownership-bound grant.
+    validated, _reason = validate_legacy_media_path(image_path)
+    if validated is None:
+        return None
+    try:
+        instance = await get_kb(kb_name)
+        storage = getattr(getattr(instance, "lightrag", None), "text_chunks", None)
+        if storage is None:
+            return None
+        for document_id, status in statuses.items():
+            if not isinstance(status, dict):
+                continue
+            chunk_ids = [str(value) for value in status.get("chunks_list", []) if value]
+            for start in range(0, len(chunk_ids), 200):
+                records = await storage.get_by_ids(chunk_ids[start:start + 200])
+                for record in records or []:
+                    if not isinstance(record, dict):
+                        continue
+                    for candidate in extract_image_paths(str(record.get("content") or "")):
+                        if candidate != str(validated):
+                            continue
+                        chunk_id = str(record.get("chunk_id") or record.get("id") or "")
+                        grant = issue_owned_legacy_media_grant(
+                            kb_name=kb_name,
+                            path=validated,
+                            document_id=str(document_id),
+                            chunk_id=chunk_id,
+                        )
+                        if not grant:
+                            return None
+                        from urllib.parse import quote, urlencode
+
+                        lightrag_logger.info(
+                            "[IMG-MEDIA] KB=%s source=legacy_owned_chunk outcome=granted",
+                            kb_name,
+                        )
+                        return {
+                            "media_id": f"legacy:{grant.split('.', 1)[0]}",
+                            "legacy_grant": grant,
+                            "kb": kb_name,
+                            "url": (
+                                f"/api/knowledge/media/legacy/{quote(grant, safe='')}?"
+                                f"{urlencode({'kb': kb_name})}"
+                            ),
+                            "caption": "",
+                            "page": None,
+                        }
+    except Exception as exc:
+        lightrag_logger.warning(
+            "[IMG-MEDIA] KB=%s source=legacy_owned_chunk outcome=error error_type=%s",
+            kb_name,
+            type(exc).__name__,
+        )
+    return None
 
 
 # ── Graph-based Image Discovery ─────────────────────────────
@@ -258,7 +450,7 @@ def _build_backfill_context(scored_texts: list, max_chars: int = 4800) -> tuple:
 
 
 async def _discover_images_via_graph(instance, query: str, kb_name: str,
-                                      ctx: str = ""):
+                                      ctx: str = "", timeout_budget_seconds: float = 2.0):
     """Discover related images via entity graph traversal (mode-agnostic).
 
     Uses the knowledge graph's ``belongs_to`` edges to find image entities
@@ -283,37 +475,27 @@ async def _discover_images_via_graph(instance, query: str, kb_name: str,
     if graph_retriever is None:
         return [], ""
 
+    started = time.perf_counter()
+    attempt_count = 0
+    timeout_budget_seconds = max(0.05, min(float(timeout_budget_seconds), 2.0))
     try:
-        # Step 1: Entity matching + neighbor traversal (with timeout + retry)
-        max_attempts = 3  # 1 initial + 2 retries
-        matched = []
-        results = []
-        for attempt in range(max_attempts):
-            try:
-                result = await asyncio.wait_for(
-                    graph_retriever.search_with_paths(query, top_k=30),
-                    timeout=8.0,
-                )
-                matched = result.get("matched_entities", [])
-                results = result.get("results", [])
-                if matched:
-                    break  # entities found, proceed
-                if attempt < max_attempts - 1:
-                    await asyncio.sleep(1.0)
-            except asyncio.TimeoutError:
-                if attempt < max_attempts - 1:
-                    lightrag_logger.debug(
-                        "[IMG-GRAPH] KB=%s attempt %d/%d: search_with_paths timed out, retrying...",
-                        kb_name, attempt + 1, max_attempts,
-                    )
-                    await asyncio.sleep(1.0)
-                else:
-                    raise  # last attempt timed out → handled by outer except
+        # Graph is an optional extension.  A single deadline avoids turning
+        # image recall into three serial eight-second waits.
+        attempt_count = 1
+        result = await asyncio.wait_for(
+            graph_retriever.search_with_paths(query, top_k=30),
+            timeout=timeout_budget_seconds,
+        )
+        matched = result.get("matched_entities", [])
+        results = result.get("results", [])
 
         if not matched:
             lightrag_logger.info(
-                "[IMG-GRAPH] KB=%s 图谱未匹配到实体 (重试 %d 次后仍为空)，回退到 bigram 兜底",
-                kb_name, max_attempts,
+                "[IMG-GRAPH] KB=%s outcome=no_match elapsed_ms=%.1f attempt_count=%d timeout_budget_ms=%d",
+                kb_name,
+                (time.perf_counter() - started) * 1000,
+                attempt_count,
+                int(timeout_budget_seconds * 1000),
             )
             return [], ""
 
@@ -385,7 +567,8 @@ async def _discover_images_via_graph(instance, query: str, kb_name: str,
             "\n\n".join(backfill_parts[:5]) if backfill_parts else ""
         )
 
-        # Validate paths exist on disk before returning
+        # A second call is intentionally harmless: graph chunks are parsed by
+        # the same resolver as direct/local recall, then de-duplicated here.
         image_paths = _validate_image_paths(image_paths)
 
         if image_paths:
@@ -398,12 +581,21 @@ async def _discover_images_via_graph(instance, query: str, kb_name: str,
 
     except asyncio.TimeoutError:
         lightrag_logger.warning(
-            "[IMG-GRAPH] KB=%s 图谱图片发现超时 (8s)", kb_name
+            "[IMG-GRAPH] KB=%s outcome=timeout elapsed_ms=%.1f attempt_count=%d timeout_budget_ms=%d",
+            kb_name,
+            (time.perf_counter() - started) * 1000,
+            attempt_count,
+            int(timeout_budget_seconds * 1000),
         )
         return [], ""
     except Exception as exc:
         lightrag_logger.warning(
-            "[IMG-GRAPH] KB=%s 图谱图片发现失败: %s", kb_name, exc
+            "[IMG-GRAPH] KB=%s outcome=error error_type=%s elapsed_ms=%.1f attempt_count=%d timeout_budget_ms=%d",
+            kb_name,
+            type(exc).__name__,
+            (time.perf_counter() - started) * 1000,
+            attempt_count,
+            int(timeout_budget_seconds * 1000),
         )
         return [], ""
 
@@ -531,13 +723,8 @@ async def _bigram_image_scan(kb_dir_path, query: str, ctx: str = "", instance=No
         seed = int(hashlib.md5(query.encode()).hexdigest()[:8], 16)
         rng = _random.Random(seed)
         rng.shuffle(_all_paths)
-        # Validate before returning — stop at first 2 that exist
-        image_paths = []
-        for _p in _all_paths:
-            if Path(_p).exists():
-                image_paths.append(_p)
-                if len(image_paths) >= 2:
-                    break
+        # Values were resolved through the shared controlled-media gate.
+        image_paths = _validate_image_paths(_all_paths)[:2]
         if image_paths:
             lightrag_logger.info(
                 "[IMG-FALLBACK] bigram得分全零，降级为hash-random选择 query_hash=%s candidates=%d",
@@ -553,7 +740,7 @@ async def _bigram_image_scan(kb_dir_path, query: str, ctx: str = "", instance=No
     # ── Diversity: one image per chunk ──
     # Within a chunk, pick the FIRST image (position bias: images that appear
     # earlier in the text are more likely to be topically relevant).  Across
-    # chunks, rank by normalized score.  Skip paths that don't exist on disk.
+    # chunks, rank by normalized score.  Paths are already controlled.
     _chunk_results.sort(key=lambda x: -x[1])
     image_paths = []
     seen_chunks = set()
@@ -562,9 +749,8 @@ async def _bigram_image_scan(kb_dir_path, query: str, ctx: str = "", instance=No
             continue
         seen_chunks.add(_cid)
         for _p in _paths:
-            if Path(_p).exists():
-                image_paths.append(_p)
-                break  # first existing image in chunk
+            image_paths.append(_p)
+            break  # first validated image in chunk
         if len(image_paths) >= 3:
             break
 
@@ -626,14 +812,13 @@ async def _bm25_image_scan(bm25_mgr, query: str, ctx: str = "") -> tuple:
         if cid not in best_per_chunk or score > best_per_chunk[cid][0]:
             best_per_chunk[cid] = (score, path, dname)
 
-    # Top-3 images from different chunks (validate existence)
+    # Top-3 images from different chunks (already validated at extraction)
     ranked = sorted(best_per_chunk.items(), key=lambda x: -x[1][0])
     image_paths = []
     for _, (_, path, _) in ranked:
-        if Path(path).exists():
-            image_paths.append(path)
-            if len(image_paths) >= 3:
-                break
+        image_paths.append(path)
+        if len(image_paths) >= 3:
+            break
 
     # Build backfill from top-scoring chunks
     scored_texts = []
@@ -762,46 +947,76 @@ async def recall_query_images(
     kb_name: str,
     ctx: str = "",
 ) -> tuple[list[str], str, str]:
-    """Recall query-related images with a unified multi-stage strategy."""
-    source = "none"
+    """Recall controlled images: context, local index, then optional graph."""
     backfill_text = ""
-    raw_paths = extract_image_paths(ctx)
+    direct = extract_image_paths_with_stats(ctx)
+    direct_paths = direct.paths
+    lightrag_logger.info(
+        "[IMG-PATHS] stage=direct KB=%s candidates=%d protocols=%s valid=%d rejected=%s",
+        kb_name,
+        direct.candidate_count,
+        direct.protocol_counts,
+        len(direct_paths),
+        direct.rejection_counts,
+    )
 
-    if raw_paths:
-        source = "direct"
-    else:
-        raw_paths, backfill_text = await _discover_images_via_graph(
+    local_paths: list[str] = []
+    local_backfill = ""
+    # Direct context remains authoritative, but local image chunks may add
+    # relevant media until the response cap is reached.
+    if len(direct_paths) < 3:
+        local_paths, local_backfill = await _bigram_image_scan(
+            kb_dir(kb_name), query, ctx, instance
+        )
+        local_paths = _validate_image_paths(local_paths)
+        local_paths = [path for path in local_paths if path not in set(direct_paths)]
+        if local_paths:
+            backfill_text = local_backfill
+
+    graph_paths: list[str] = []
+    graph_backfill = ""
+    # Graph association is an optional final expansion.  Its own total budget
+    # is bounded and a failure cannot remove direct/local results.
+    if len(direct_paths) + len(local_paths) < 3:
+        graph_paths, graph_backfill = await _discover_images_via_graph(
             instance, query, kb_name, ctx
         )
-        if raw_paths:
-            source = "graph"
-        else:
-            raw_paths, backfill_text = await _bigram_image_scan(
-                kb_dir(kb_name), query, ctx, instance
-            )
-            if raw_paths:
-                source = "bigram"
+        graph_paths = _validate_image_paths(graph_paths)
+        seen = set(direct_paths) | set(local_paths)
+        graph_paths = [path for path in graph_paths if path not in seen]
+        if graph_paths and not backfill_text:
+            backfill_text = graph_backfill
 
-    raw_count = len(raw_paths)
-    valid_paths = _validate_image_paths(raw_paths)
-    filtered_paths = list(valid_paths)
+    if direct_paths:
+        source = "direct"
+    elif local_paths:
+        source = "bigram"
+    elif graph_paths:
+        source = "graph"
+    else:
+        source = "none"
 
-    if source in ("graph", "bigram") and valid_paths:
+    fallback_paths = local_paths + graph_paths
+    filtered_fallback = list(fallback_paths)
+    if fallback_paths:
         relevance_ctx = ctx or ""
         if backfill_text:
             relevance_ctx = (
                 f"{relevance_ctx}\n\n{backfill_text}"
                 if relevance_ctx else backfill_text
             )
-        filtered_paths = _filter_images_by_relevance(
-            valid_paths,
+        filtered_fallback = _filter_images_by_relevance(
+            fallback_paths,
             query,
             relevance_ctx,
             min_overlap=1,
         )
-        if not filtered_paths and valid_paths:
-            filtered_paths = valid_paths[:1]
+        if not filtered_fallback:
+            filtered_fallback = fallback_paths[:1]
 
+    raw_paths = direct_paths + fallback_paths
+    filtered_paths = direct_paths + filtered_fallback
+    raw_count = len(raw_paths)
     final_paths = filtered_paths[:3]
     lightrag_logger.info(
         "[IMG-RECALL] KB=%s source=%s raw=%d filtered=%d final=%d",
@@ -908,7 +1123,7 @@ __all__ = [
     "validate_query_input", "PROMPT_INJECTION_REGEX",
     # Local
     "MAX_UPLOAD_SIZE", "MAX_BODY_SIZE", "RequestSizeMiddleware",
-    "server_logger", "extract_image_paths",
+    "server_logger", "extract_image_paths", "resolve_controlled_media_payload",
     "_discover_images_via_graph", "_build_backfill_context",
     "_bigram_image_scan",
     "recall_query_images",

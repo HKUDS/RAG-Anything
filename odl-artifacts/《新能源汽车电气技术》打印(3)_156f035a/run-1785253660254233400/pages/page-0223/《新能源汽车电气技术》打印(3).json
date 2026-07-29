@@ -1,0 +1,161 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "level" : "1",
+    "page number" : 223,
+    "bounding box" : [ 90.0, 728.358, 510.49, 763.764 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 任务情景 某汽车 4S 店接到一辆 2022 款比亚迪元 PLUS 纯电动汽车，车主反馈：夏季开启空调后，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 223,
+    "bounding box" : [ 90.0, 636.021, 505.328, 716.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "车内降温缓慢，出风口温度最高可达 18℃（正常应≤10℃），且车辆续驶里程较之前明显 缩短。维修技师张师傅需先分析制冷系统的工作流程，结合诊断设备读取的数据流（如压缩 机电压、冷凝器风扇转速），逐步排查故障原因，最终完成维修。你需要协助张师傅完成从 故障分析全流程。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "level" : "1",
+    "page number" : 223,
+    "bounding box" : [ 90.0, 565.821, 505.208, 623.364 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识准备 一、汽车空调系统的功能 新能源汽车空调系统具有三个主要功能：舒适性调节功能、核心热管理功能、特殊行车"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 223,
+    "bounding box" : [ 90.0, 495.621, 505.204, 552.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "场景安全辅助功能。 1.舒适性调节功能 调系统的舒适性调节功能是指汽车车厢内的温度、湿度、空气清洁度及空气流动调整和"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 223,
+    "bounding box" : [ 90.0, 447.557, 499.326, 482.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "控制在最佳状态，为乘员提供舒适的乘坐环境，减少旅途疲劳，满足驾乘环境核心需求。 （1）温度控制：实现车内“冬暖夏凉”​"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 223,
+    "bounding box" : [ 90.0, 353.958, 505.209, 435.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1）制冷功能：通过压缩机压缩制冷剂，经冷凝器散热、膨胀阀节流、蒸发器吸热，将 车内热量转移至车外，降低车内温度。传统燃油车依赖发动机驱动压缩机，新能源汽车采用 高压电动压缩机（如比亚迪元 PLUS 的 12V 直流压缩机），制冷效率受蓄电池电量影响（低 电量时可能限制功率）。​"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 223,
+    "bounding box" : [ 90.0, 307.157, 505.206, 342.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "夏季高温环境下，5~10min 可将车内温度从 45℃降至 25℃左右，多数车型支持分区制 冷（如主驾 22℃、副驾 25℃），适配不同乘客需求。​"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 223,
+    "bounding box" : [ 90.0, 213.557, 505.326, 295.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2）制热功能：新能源汽车通过 PTC（Positive Temperature Coefficient）即正温度系数热 敏电阻加热空气或者采用热泵系统给空气加热，实现空调的制热效果。例如北汽 EU5 采用 的制热系统是 2-5kW 高压 PTC。特斯拉 Model Y 采用的是热泵系统。制热功能会消耗蓄电池 电能，冬季可能导致续航缩短 30%-50%。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 223,
+    "bounding box" : [ 111.0, 190.157, 305.28, 201.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（2）风量与风向调节：精准控制气流分布​"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 12,
+    "level" : "2",
+    "page number" : 223,
+    "bounding box" : [ 111.0, 96.557, 505.209, 178.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 223,
+      "bounding box" : [ 111.0, 166.758, 505.209, 178.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）风量调节：由鼓风机转速控制，通常分 3~6 档（手动档）或无级调速（自动档），",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 223,
+        "bounding box" : [ 90.0, 119.957, 505.197, 155.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "风量范围 50~500m³/h。自动空调可根据设定温度与车内实际温度差，动态调整风量（如温 度差大时高风量大，接近设定温度时低风量静音运行）。​"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 223,
+      "bounding box" : [ 111.0, 96.557, 505.207, 108.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）风向调节：通过风道内的风门叶片切换，实现“面部吹风”（降温/升温快速作用于",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 223,
+    "bounding box" : [ 90.0, 74.421, 505.209, 84.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "人体）、“脚部吹风”（冬季避免脚部冰凉）、“除霜吹风”（前风窗玻璃除雾除霜）、“面"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 223,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "223"
+  } ]
+}

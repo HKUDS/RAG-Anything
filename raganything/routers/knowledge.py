@@ -6,7 +6,6 @@ import hashlib
 import json
 import os
 import re
-import secrets
 import uuid
 import shutil
 import time
@@ -29,9 +28,7 @@ from raganything.services.state_service import (
 from .shared import (
     limiter,
     verify_kb_access,
-    get_current_user,
     CHUNKING_STRATEGY,
-    _process_uploaded_file,
     _reprocess_multimodal_for_kb,
     _compute_file_hash,
     _is_file_being_processed,
@@ -55,13 +52,11 @@ from raganything.services.kb_service import (
     pg_update_upload_status,
     pg_update_upload_status_by_task_id,
     pg_get_upload_by_task_id,
-    pg_claim_upload_task,
     pg_list_uploads,
     pg_get_latest_content_updates_batch,
     _unregister_processing_file,
     _load_doc_status_json,
     _load_doc_status_summaries,
-    _load_full_docs_json,
     _generate_uploaded_document_tags,
     _resolve_uploaded_document_id,
     _kb_worker_procs,
@@ -372,6 +367,38 @@ class KBStatsBatchRequest(BaseModel):
 KB_STATS_BATCH_TIMEOUT_SECONDS = 6.0
 
 
+async def _resolve_upload_vlm_snapshot(user_id: int):
+    from raganything.services import vision_models
+
+    try:
+        return await vision_models.resolve_user_vlm_selection(user_id)
+    except (KeyError, ValueError, RuntimeError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "profile_unavailable",
+                "message": "selected image-understanding profile is unavailable",
+            },
+        ) from exc
+
+
+async def _ensure_vision_index_mutable(kb: str) -> None:
+    from raganything.services import vision_models
+    if await vision_models._pg_pool() is None:
+        return
+    meta = (await load_kb_meta()).get(kb, {})
+    extra = meta.get("extra", {}) if isinstance(meta, dict) else {}
+    state = extra.get("vision_embedding", {}) if isinstance(extra, dict) else {}
+    if isinstance(state, dict) and state.get("index_state") == "reindexing":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "reindex_in_progress",
+                "task_id": (state.get("task") or {}).get("id"),
+            },
+        )
+
+
 # ── Upload handlers ────────────────────────────────────
 
 @router.post("/upload")
@@ -383,6 +410,8 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
                        _perm: None = Depends(require_permission(Permission.KB_WRITE)),
                        current_user: dict = Depends(get_current_user)):
     """Upload a single file — immediate return, background processing"""
+    await _ensure_vision_index_mutable(kb)
+    vlm_snapshot = await _resolve_upload_vlm_snapshot(current_user["id"])
     actual_strategy = _resolve_chunking_strategy(chunking_strategy)
     task_id = str(uuid.uuid4())
     upload_dir = Path("./uploads")
@@ -458,6 +487,8 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
         "kb_name": kb,
         "chunking_strategy": actual_strategy,
         "user_id": current_user["id"],
+        "vision_vlm_profile_id": vlm_snapshot.profile.id,
+        "vision_vlm_profile_fingerprint": vlm_snapshot.fingerprint,
         "enable_image": enable_image.lower() == "true" if enable_image else None,
         "enable_table": enable_table.lower() == "true" if enable_table else None,
         "enable_equation": enable_equation.lower() == "true" if enable_equation else None,
@@ -484,12 +515,14 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
     """批量上传文件 - 接收多个文件，逐个后台处理"""
     if not files:
         raise HTTPException(400, "请至少选择一个文件")
+    await _ensure_vision_index_mutable(kb)
 
     actual_strategy = _resolve_chunking_strategy(chunking_strategy)
 
     upload_dir = Path("./uploads")
     upload_dir.mkdir(exist_ok=True)
 
+    vlm_snapshot = await _resolve_upload_vlm_snapshot(current_user["id"])
     tasks = []
     skipped: list[str] = []
     queue_size = 0
@@ -555,6 +588,8 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
             "kb_name": kb,
             "chunking_strategy": actual_strategy,
             "user_id": current_user["id"],
+            "vision_vlm_profile_id": vlm_snapshot.profile.id,
+            "vision_vlm_profile_fingerprint": vlm_snapshot.fingerprint,
             "enable_image": enable_image.lower() == "true" if enable_image else None,
             "enable_table": enable_table.lower() == "true" if enable_table else None,
             "enable_equation": enable_equation.lower() == "true" if enable_equation else None,
@@ -989,6 +1024,7 @@ async def upload_from_url(url: str = QueryParam(...), kb: str = Depends(verify_k
                 str(fp.absolute()),
                 output_dir="./output",
                 chunking_strategy=actual_strategy,
+                odl_owner_kb=kb,
             )
             tag_warnings = await _settle_in_process_upload(
                 kb, [fname], current_user.get("id", 0),
@@ -1282,13 +1318,17 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
 
         # Deduplicate doc_status entries by original filename: keep only the
         # most recently updated entry per stripped filename.
-        best_doc: dict[str, tuple[str, dict]] = {}  # orig_name → (doc_id, info)
+        best_doc: dict[str, tuple[str, dict]] = {}  # dedupe key → (doc_id, info)
         for doc_id, info in data.items():
             if not isinstance(info, dict):
                 continue  # skip non-dict entries (corrupted data)
             orig = _strip_hash_prefix(info.get("file_path", "") or "")
-            if orig not in best_doc or (info.get("updated_at") or "") > (best_doc[orig][1].get("updated_at") or ""):
-                best_doc[orig] = (doc_id, info)
+            # A missing filename is not proof that two document-status rows
+            # describe the same document.  Preserve every such row by its ID;
+            # valid filenames retain the existing retry/re-upload dedupe rule.
+            dedupe_key = orig or f"__missing_doc__:{doc_id}"
+            if dedupe_key not in best_doc or (info.get("updated_at") or "") > (best_doc[dedupe_key][1].get("updated_at") or ""):
+                best_doc[dedupe_key] = (doc_id, info)
 
         tag_health_by_doc = await _document_tag_health_contract(
             kb, [doc_id for doc_id, _info in best_doc.values()]
@@ -1296,7 +1336,8 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
 
         docs = []
         seen_files = set()
-        for orig_name, (doc_id, info) in best_doc.items():
+        for dedupe_key, (doc_id, info) in best_doc.items():
+            orig_name = _strip_hash_prefix(info.get("file_path", "") or "")
             # Check if there's a matching processing task with phase info
             doc_phase = ""
             for tid, task in processing_tasks.items():
@@ -1341,7 +1382,8 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                 "phase": doc_phase,
                 "chunking_strategy": stored_strategy if isinstance(stored_strategy, str) else None,
             })
-            seen_files.add(orig_name)
+            if orig_name:
+                seen_files.add(orig_name)
 
         # 合并处理中的任务（还未写入 doc_status），仅限当前 KB
         for tid, task in processing_tasks.items():
@@ -1525,15 +1567,92 @@ async def _load_document_chunk_records(
     return result
 
 
+def _controlled_odl_chunk_media(
+    *,
+    status_info: dict[str, Any] | None,
+    kb: str | None,
+    chunk_id: str,
+) -> dict[str, Any] | None:
+    """Return a path-free media payload for a catalog-bound ODL image chunk.
+
+    The generic chunk endpoints predate the ODL delivery contract and still
+    support non-ODL media paths.  An ODL chunk with an audited catalog record
+    must not use that compatibility representation: browser-visible data is
+    restricted to the same controlled URL/data-URL boundary as Agent SSE.
+    """
+    if not status_info or not kb or not chunk_id:
+        return None
+    metadata = status_info.get("metadata") or {}
+    if not isinstance(metadata, dict):
+        return None
+    catalog = metadata.get("odl_media_catalog")
+    if not isinstance(catalog, list):
+        return None
+    from raganything.services.odl_media_delivery import (
+        catalog_media_payload,
+        resolve_catalog_media,
+    )
+
+    matches = [
+        entry for entry in catalog
+        if isinstance(entry, dict) and entry.get("chunk_id") == chunk_id
+    ]
+    if len(matches) != 1:
+        return None
+    media_id = matches[0].get("media_id")
+    if not isinstance(media_id, str):
+        return None
+    resolved = resolve_catalog_media(catalog, kb_name=kb, media_id=media_id)
+    if resolved is None:
+        return None
+    payload = catalog_media_payload(catalog, kb_name=kb, path=str(resolved.path))
+    if payload is None or payload.get("media_id") != resolved.media_id:
+        return None
+    return {
+        "media_id": resolved.media_id,
+        "media_kb": kb,
+        "media_url": payload["url"],
+        "media_available": True,
+    }
+
+
 def _serialize_document_chunk(
-    chunk_data: dict[str, Any], multimodal_metadata: dict[str, dict[str, Any]]
+    chunk_data: dict[str, Any],
+    multimodal_metadata: dict[str, dict[str, Any]],
+    *,
+    status_info: dict[str, Any] | None = None,
+    kb: str | None = None,
 ) -> dict[str, Any]:
     chunk_id = _stored_chunk_id(chunk_data)
     fields = _infer_multimodal_fields(chunk_data, multimodal_metadata.get(chunk_id))
     media_path = fields.get("media_path") or _extract_media_path(chunk_data)
     media_available = bool(media_path and Path(media_path).exists())
     media_url = None
-    if media_available:
+    media_id = None
+    media_kb = None
+    metadata = status_info.get("metadata") if isinstance(status_info, dict) else None
+    metadata = metadata if isinstance(metadata, dict) else {}
+    is_odl_document = any(
+        key in metadata
+        for key in ("odl_media_catalog", "image_media_counts", "provenance_ref")
+    )
+    controlled_media = _controlled_odl_chunk_media(
+        status_info=status_info, kb=kb, chunk_id=chunk_id,
+    )
+    if controlled_media is not None:
+        # Do not leak the local ODL parser artifact path through chunk detail
+        # responses.  The catalog has revalidated the media before exposure.
+        media_path = None
+        media_available = controlled_media["media_available"]
+        media_url = controlled_media["media_url"]
+        media_id = controlled_media["media_id"]
+        media_kb = controlled_media["media_kb"]
+    elif is_odl_document:
+        # ODL parser paths are not delivery authority. Missing catalog ownership
+        # must fail closed rather than falling back to a local path.
+        media_path = None
+        media_available = False
+    elif media_available:
         base_url = os.environ.get("RAGANYTHING_PUBLIC_ASSET_BASE_URL", "").strip()
         strip_prefix = os.environ.get("RAGANYTHING_PUBLIC_ASSET_STRIP_PREFIX", "").strip()
         if base_url and strip_prefix:
@@ -1553,6 +1672,8 @@ def _serialize_document_chunk(
         "modal_entity_name": chunk_data.get("modal_entity_name") or fields.get("modal_entity_name"),
         "page_idx": chunk_data.get("page_idx")
         if chunk_data.get("page_idx") is not None else fields.get("page_idx"),
+        "media_id": media_id,
+        "media_kb": media_kb,
         "media_path": media_path,
         "media_url": media_url,
         "media_available": media_available,
@@ -1774,7 +1895,10 @@ async def get_document_chunks(
         full_id, status_info = _resolve_chunk_document(all_status or {}, doc_id)
         records = await _load_document_chunk_records(instance.lightrag, full_id, status_info, kb)
         metadata = _multimodal_chunk_metadata(status_info)
-        chunks = [_serialize_document_chunk(record, metadata) for record in records]
+        chunks = [
+            _serialize_document_chunk(record, metadata, status_info=status_info, kb=kb)
+            for record in records
+        ]
         tags_by_chunk = await _get_tags_for_chunks_best_effort(
             kb, full_id, [value["chunk_id"] for value in chunks]
         )
@@ -1844,7 +1968,8 @@ async def get_document_chunk(
             raise HTTPException(404, f"Chunk {chunk_id} does not exist")
 
         chunk = _serialize_document_chunk(
-            dict(record), _multimodal_chunk_metadata(status_info)
+            dict(record), _multimodal_chunk_metadata(status_info),
+            status_info=status_info, kb=kb,
         )
         if chunk["chunk_id"] != chunk_id:
             raise HTTPException(404, f"Chunk {chunk_id} does not exist")
@@ -1923,7 +2048,12 @@ async def get_knowledge_tag_links(
         for chunk_id in chunk_ids:
             record = by_id.get(chunk_id)
             if record:
-                serialized = _serialize_document_chunk(record, _multimodal_chunk_metadata(status_info))
+                serialized = _serialize_document_chunk(
+                    record,
+                    _multimodal_chunk_metadata(status_info),
+                    status_info=status_info,
+                    kb=kb,
+                )
                 serialized["tags"] = [{"id": tag["id"], "name": tag["name"]}]
                 matched.append(serialized)
         if matched:
@@ -2128,7 +2258,12 @@ async def update_document_chunk(
             response = {
                 "status": "updated", "doc_id": full_id, "old_chunk_id": chunk_id,
                 "new_chunk_id": new_id,
-                "chunk": _serialize_document_chunk(new_chunk, _multimodal_chunk_metadata(new_status)),
+                "chunk": _serialize_document_chunk(
+                    new_chunk,
+                    _multimodal_chunk_metadata(new_status),
+                    status_info=new_status,
+                    kb=kb,
+                ),
                 "total": len(updated_records),
                 "total_tokens": sum(int(value.get("tokens") or 0) for value in updated_records),
                 "graph_sync_state": "stale",
@@ -3218,13 +3353,61 @@ async def download_document(
     )
 
 
-def _cleanup_document_files(kb_name: str, file_path: str, doc_id: str = "") -> None:
+def _cleanup_document_files(
+    kb_name: str, file_path: str, doc_id: str = ""
+) -> dict[str, bool]:
     """Delete uploaded file and parse output for a document.
 
     Called when a document or KB is deleted from the frontend.  Ensures the
     ``uploads/`` directory and per-KB parser output directory stay in sync
     with the knowledge base.
     """
+    lifecycle_result = {"artifact_cleanup_pending": False}
+
+    # OpenDataLoader artifacts are not authorized by a filename prefix or a
+    # doc_status/cache path.  If a server-side registry owns this doc, delete
+    # exactly that registered run; unsupported Windows cleanup is explicitly
+    # reported as pending and never falls through to rmtree().
+    output_base = "./output" if kb_name == "default" else f"./output_{kb_name}"
+    output_dir = Path(output_base)
+    registered_odl_artifact = False
+    legacy_odl_registry_present = (output_dir / ".odl-artifact-registry.sqlite3").is_file()
+    if doc_id:
+        from raganything.services.odl_artifact_lifecycle import (
+            ArtifactLifecycleCapabilityError,
+            ArtifactOwner,
+            OpenDataLoaderArtifactLifecycle,
+            configured_odl_artifact_root,
+        )
+        artifact_root = configured_odl_artifact_root()
+        if artifact_root is not None and artifact_root.is_dir():
+            lifecycle = OpenDataLoaderArtifactLifecycle(artifact_root)
+            owner = ArtifactOwner(kb_name, doc_id)
+            record = lifecycle.get(owner)
+            if record is not None and record.state != "deleted":
+                registered_odl_artifact = True
+                workers_exited = all(
+                    getattr(process, "returncode", None) is not None
+                    for process, _task_id in _kb_worker_procs.get(kb_name, [])
+                )
+                try:
+                    lifecycle.delete(
+                        owner,
+                        expected_generation=record.generation,
+                        worker_exited=workers_exited,
+                    )
+                    lightrag_logger.info("[CLEANUP] Deleted registered OpenDataLoader artifact")
+                except ArtifactLifecycleCapabilityError:
+                    lifecycle_result["artifact_cleanup_pending"] = True
+                    lightrag_logger.warning(
+                        "[CLEANUP] OpenDataLoader artifact retained: secure cleanup is unsupported on this runtime"
+                    )
+        # A pre-isolation registry proves this legacy output tree may contain
+        # ODL artifacts.  It is never eligible for prefix deletion, even when
+        # the requested document lacks a registry row.
+        if legacy_odl_registry_present:
+            lifecycle_result["artifact_cleanup_pending"] = True
+
     # 1. Delete the original uploaded file from uploads/
     if file_path:
         real = _find_upload_file(file_path)
@@ -3235,10 +3418,10 @@ def _cleanup_document_files(kb_name: str, file_path: str, doc_id: str = "") -> N
             except (FileNotFoundError, OSError):
                 pass  # 已被并发请求删除或无权限
 
-    # 2. Delete the parser output subdirectory for this document
-    output_base = "./output" if kb_name == "default" else f"./output_{kb_name}"
-    output_dir = Path(output_base)
-    if output_dir.exists():
+    # 2. Legacy parsers retain their historical prefix cleanup.  An ODL run
+    # registered above never uses this path, which would otherwise allow a
+    # filename collision to widen the destructive scope.
+    if output_dir.exists() and not registered_odl_artifact and not legacy_odl_registry_present:
         file_stem = Path(file_path).stem
         for d in output_dir.iterdir():
             if d.is_dir() and d.name.startswith(file_stem):
@@ -3246,20 +3429,29 @@ def _cleanup_document_files(kb_name: str, file_path: str, doc_id: str = "") -> N
                 lightrag_logger.info(f"[CLEANUP] 已删除解析输出: {d}")
                 break  # one document → one output directory
 
-    # 3. Remove parse cache entry for this doc_id
+    # 3. Invalidate only cache entries whose stored document identity matches.
+    # Cache keys are configuration hashes, not doc IDs, so indexing by the
+    # filename or a provenance reference would be both incorrect and unsafe.
     if doc_id:
         cache_path = Path(kb_dir(kb_name)) / "kv_store_parse_cache.json"
         if cache_path.exists():
             try:
                 cache = json.loads(cache_path.read_text("utf-8"))
-                if doc_id in cache:
-                    del cache[doc_id]
+                matching_keys = [
+                    key
+                    for key, value in cache.items()
+                    if isinstance(value, dict) and value.get("doc_id") == doc_id
+                ]
+                if matching_keys:
+                    for key in matching_keys:
+                        del cache[key]
                     cache_path.write_text(
                         json.dumps(cache, ensure_ascii=False, indent=2), "utf-8"
                     )
                     lightrag_logger.info(f"[CLEANUP] 已删除解析缓存: {doc_id[:16]}...")
             except Exception:
                 pass
+    return lifecycle_result
 
 
 async def _cleanup_document_vision_vectors(instance, doc_ids: list[str]) -> None:
@@ -3796,8 +3988,9 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _per
     await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
 
     needs_orphan_repair = False
+    cleanup_result = {"artifact_cleanup_pending": False}
     if result.status == "success":
-        _cleanup_document_files(kb, file_name, full_id)
+        cleanup_result = _cleanup_document_files(kb, file_name, full_id) or {}
         # Clean up multimodal status cache entry for this document
         if hasattr(instance, "multimodal_status_cache") and instance.multimodal_status_cache is not None:
             try:
@@ -3837,7 +4030,7 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _per
             except Exception:
                 pass
             # Clean up file system leftovers and multimodal status cache
-            _cleanup_document_files(kb, file_name, full_id)
+            cleanup_result = _cleanup_document_files(kb, file_name, full_id) or {}
             if hasattr(instance, "multimodal_status_cache") and instance.multimodal_status_cache is not None:
                 try:
                     await instance.multimodal_status_cache.delete([full_id])
@@ -3883,6 +4076,8 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _per
                 full_id,
                 exc_info=True,
             )
+    if cleanup_result.get("artifact_cleanup_pending"):
+        _delete_response["artifact_cleanup_pending"] = True
     return _delete_response
 
 
@@ -3903,6 +4098,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
 
     deleted_full_ids: list[str] = []  # for multimodal_status_cache batch cleanup
     not_found_full_ids: list[str] = []  # for LightRAG orphan cleanup
+    artifact_cleanup_pending: list[str] = []
 
     for doc_id in req.doc_ids:
         full_id = None
@@ -3940,7 +4136,9 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
                 del doc_status[full_id]
                 deleted.append(doc_id)
                 deleted_full_ids.append(full_id)
-                _cleanup_document_files(kb, file_name, full_id)
+                cleanup_result = _cleanup_document_files(kb, file_name, full_id) or {}
+                if cleanup_result.get("artifact_cleanup_pending"):
+                    artifact_cleanup_pending.append(full_id)
                 await pg_release_upload_for_deleted_document(kb, file_name)
                 await _remove_document_processing_tasks(kb, full_id, file_name)
                 await add_event("doc_delete", file=file_name, doc_id=full_id, kb=kb, user_id=current_user["id"])
@@ -4006,12 +4204,15 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
             )
 
     return {"deleted": deleted, "not_found": not_found, "errors": errors,
+            "artifact_cleanup_pending": artifact_cleanup_pending,
             "total_deleted": len(deleted), "total_failed": len(errors)}
 
 
 @router.post("/knowledge/documents/{doc_id}/retry")
 async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm: None = Depends(require_permission(Permission.KB_WRITE)), current_user: dict = Depends(get_current_user), background_tasks: BackgroundTasks = None):
     """重试处理失败的文档 — PG-backed"""
+    await _ensure_vision_index_mutable(kb)
+    vlm_snapshot = await _resolve_upload_vlm_snapshot(current_user["id"])
     # PG-backed doc_status lookup
     data = await _load_doc_status_json(kb)
     if not data:
@@ -4069,6 +4270,57 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
     if not file_path or not file_path.exists():
         raise HTTPException(404, f"原始文件不存在: {file_name}")
 
+    # A retry must replace its previous ODL generation through the registry
+    # before it removes the failed doc_status.  This prevents an old retry from
+    # leaving two active runs or deleting a newer run by filename prefix.
+    output_base = "./output" if kb == "default" else f"./output_{kb}"
+    legacy_registry_file = Path(output_base) / ".odl-artifact-registry.sqlite3"
+    from raganything.services.odl_artifact_lifecycle import configured_odl_artifact_root
+
+    artifact_root = configured_odl_artifact_root()
+    registry_file = (
+        artifact_root / ".odl-artifact-registry.sqlite3"
+        if artifact_root is not None
+        else None
+    )
+    if legacy_registry_file.is_file():
+        raise HTTPException(
+            409,
+            "OpenDataLoader legacy artifact root is retained for controlled cleanup; "
+            "retry cannot use filename-based deletion",
+        )
+    if registry_file is not None and registry_file.is_file():
+        from raganything.services.odl_artifact_lifecycle import (
+            ArtifactLifecycleCapabilityError,
+            ArtifactOwner,
+            OpenDataLoaderArtifactLifecycle,
+        )
+
+        lifecycle = OpenDataLoaderArtifactLifecycle(artifact_root)
+        owner = ArtifactOwner(kb, full_id)
+        record = lifecycle.get(owner)
+        if record is not None and record.state != "deleted":
+            if record.state != "active":
+                raise HTTPException(
+                    409,
+                    "OpenDataLoader artifact cleanup is pending; recover it before retrying",
+                )
+            workers_exited = all(
+                getattr(process, "returncode", None) is not None
+                for process, _task_id in _kb_worker_procs.get(kb, [])
+            )
+            try:
+                lifecycle.delete(
+                    owner,
+                    expected_generation=record.generation,
+                    worker_exited=workers_exited,
+                )
+            except ArtifactLifecycleCapabilityError as exc:
+                raise HTTPException(
+                    409,
+                    "odl_artifact_cleanup_unsupported_windows: artifact retained for controlled cleanup",
+                ) from exc
+
     # 删除旧的失败记录 via LightRAG PG (trigger reprocessing)
     try:
         kb_instance = await get_kb(kb)
@@ -4089,6 +4341,8 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
         "kb_name": kb,
         "chunking_strategy": actual_strategy,
         "user_id": current_user["id"],
+        "vision_vlm_profile_id": vlm_snapshot.profile.id,
+        "vision_vlm_profile_fingerprint": vlm_snapshot.fingerprint,
     }
     await upsert_task_state(
         task_id,
@@ -4141,14 +4395,15 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
 async def reprocess_multimodal(
     kb_name: str,
     background_tasks: BackgroundTasks,
-    _perm: None = Depends(require_permission(Permission.SETTINGS_WRITE)),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_permission(Permission.KB_WRITE)),
 ):
     """回溯处理知识库中文档的多模态内容（图片/表格/公式）。
 
     扫描 KB 中 ``multimodal_processed`` 不为 ``true`` 的文档，从原始文件
     重新解析（优先走解析缓存），仅执行多模态处理——不重新插入文本。
     """
+    await verify_kb_access(kb_name, current_user)
+    await _ensure_vision_index_mutable(kb_name)
     try:
         # Scan first to get count — PG-backed
         all_docs = await _load_doc_status_json(kb_name)
@@ -4177,9 +4432,6 @@ async def reprocess_multimodal(
     except Exception as e:
         lightrag_logger.error(f"[REPROCESS-API] 回溯处理失败 kb={kb_name}: {e}")
         raise HTTPException(500, f"回溯处理失败: {e}")
-
-    return {"status": "ok", **result}
-
 
 # ── KB management handlers ─────────────────────────────
 
@@ -4267,11 +4519,31 @@ async def create_kb(kb_name: str = QueryParam(...), _perm: None = Depends(requir
     if kb_name in meta:
         raise HTTPException(400, f"知识库 '{kb_name}' 已存在")
     label = label or kb_name
+    from raganything.services import vision_models
+    vision_defaults = await vision_models.get_platform_defaults()
+    embedding_profile_id = (
+        vision_defaults.get("vision_embedding_profile_id")
+        or "legacy-doubao-embedding"
+    )
+    try:
+        embedding_profile = vision_models.get_entry(embedding_profile_id, "embedding")
+    except KeyError as exc:
+        raise HTTPException(503, "平台默认视觉向量模型不可用") from exc
     meta[kb_name] = {
         "name": label, "created": datetime.now().isoformat(),
         "owner_id": current_user["id"],
         "owner_username": current_user["username"],
         "domain": domain,
+        "extra": {
+            "vision_embedding": {
+                "profile_id": embedding_profile_id,
+                "profile_fingerprint": embedding_profile.fingerprint,
+                "embedding_dim": embedding_profile.profile.embedding_dim,
+                "index_state": "idle",
+                "target_profile_id": None,
+                "task": None,
+            }
+        },
     }
     await save_kb_meta(meta)
     # 预加载
@@ -4348,8 +4620,11 @@ async def image_search(
 
     if repo is None or vision_func is None:
         raise HTTPException(
-            501,
-            "视觉嵌入搜索未启用。请配置 VISION_EMBEDDING_MODEL 环境变量。",
+            503,
+            detail={
+                "code": "profile_unavailable",
+                "message": "当前视觉向量模型不可用",
+            },
         )
 
     # Reload VDB from disk to pick up data written by worker subprocesses
@@ -4373,13 +4648,41 @@ async def image_search(
                 400, "无法从上传图片中提取视觉特征，请确认图片格式正确。"
             )
 
-        # Query similar images
+        # Query similar images, then convert only catalog-owned matches to the
+        # path-free media contract. A vision-vector path is never API authority.
         results = await repo.query(vec, top_k=top_k)
+        statuses = await _load_doc_status_json(kb)
+        catalog: list[dict[str, Any]] = []
+        for status in statuses.values():
+            metadata = status.get("metadata") if isinstance(status, dict) else None
+            entries = metadata.get("odl_media_catalog") if isinstance(metadata, dict) else None
+            if isinstance(entries, list):
+                catalog.extend(entry for entry in entries if isinstance(entry, dict))
+
+        from raganything.services.odl_media_delivery import catalog_media_payload
+
+        controlled_results = []
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            payload = catalog_media_payload(
+                catalog,
+                kb_name=kb,
+                path=str(result.get("image_path") or ""),
+            )
+            if payload is None:
+                continue
+            controlled_results.append({
+                **payload,
+                "entity_name": str(result.get("entity_name") or ""),
+                "description": str(result.get("description") or ""),
+                "score": round(float(result.get("_score") or 0), 3),
+            })
 
         return {
             "query": image.filename,
-            "results": results,
-            "count": len(results),
+            "results": controlled_results,
+            "count": len(controlled_results),
             "repo_count": repo.count(),
         }
     finally:
@@ -4391,30 +4694,66 @@ async def image_search(
 
 # ── File serving ───────────────────────────────────────
 
-@router.get("/files/image")
-async def serve_image(
-    path: str = QueryParam(...),
-    token: Optional[str] = QueryParam(None, description="认证 Token（用于 img 标签等无法设置 Header 的场景）"),
-    current_user: Optional[dict] = Depends(get_optional_user),
+@router.get("/knowledge/media/{media_id}")
+async def serve_odl_media(
+    media_id: str,
+    kb: str = QueryParam(...),
+    _perm: None = Depends(require_permission(Permission.KB_READ)),
+    current_user: dict = Depends(get_current_user),
 ):
-    """服务图片文件 — 支持 query 参数 token 或 Authorization header。
+    """Serve one persisted ODL asset after KB-scoped authorization."""
+    actual_kb = await verify_kb_access(kb, current_user)
+    from raganything.services.odl_media_delivery import resolve_catalog_media
 
-    浏览器 <img> 标签无法设置 Authorization header，因此额外支持 ?token=xxx 认证。
-    """
-    if current_user is None and token:
-        current_user = await get_current_user_from_token(token=token)
-    if current_user is None:
-        raise HTTPException(401, "请提供有效的认证 Token（query 参数 ?token= 或 Authorization header）")
+    records = await _load_doc_status_json(actual_kb)
+    resolved = []
+    for status in records.values():
+        metadata = status.get("metadata") if isinstance(status, dict) else None
+        media = resolve_catalog_media(
+            metadata.get("odl_media_catalog") if isinstance(metadata, dict) else None,
+            kb_name=actual_kb,
+            media_id=media_id,
+        )
+        if media is not None:
+            resolved.append(media)
+    if len(resolved) != 1:
+        raise HTTPException(404, "media unavailable")
+    media = resolved[0]
+    return FileResponse(
+        str(media.path),
+        media_type=media.mime,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
-    abs_path = Path(path).resolve()
-    cwd = Path.cwd().resolve()
-    # 安全检查：只允许项目目录内的文件
-    try:
-        abs_path.relative_to(cwd)
-    except ValueError:
-        raise HTTPException(403, "不允许访问项目目录外的文件")
-    if not abs_path.exists():
-        raise HTTPException(404, "图片文件不存在")
-    if abs_path.suffix.lower() not in (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"):
-        raise HTTPException(400, "不支持的文件类型")
-    return FileResponse(str(abs_path))
+
+@router.get("/knowledge/media/legacy/{grant}")
+async def serve_legacy_odl_media(
+    grant: str,
+    kb: str = QueryParam(...),
+    _perm: None = Depends(require_permission(Permission.KB_READ)),
+    current_user: dict = Depends(get_current_user),
+):
+    """Serve a short-lived grant created from a persisted KB chunk marker."""
+    actual_kb = await verify_kb_access(kb, current_user)
+    from raganything.services.odl_media_delivery import resolve_legacy_media_grant
+
+    media = resolve_legacy_media_grant(actual_kb, grant)
+    if media is None:
+        raise HTTPException(404, "media unavailable")
+    return FileResponse(
+        str(media.path),
+        media_type=media.mime,
+        headers={
+            "Cache-Control": "private, no-store",
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
+
+
+@router.get("/files/image")
+async def serve_image():
+    """Retired raw-path endpoint; use KB-scoped opaque media IDs."""
+    raise HTTPException(410, "raw-path image delivery is unavailable")

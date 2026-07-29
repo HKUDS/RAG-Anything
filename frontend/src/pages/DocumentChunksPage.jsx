@@ -4,13 +4,14 @@ import {
   AlertTriangle, ArrowLeft, Check, Download, FileText, ImageIcon, Loader2,
   Pencil, RotateCcw, Search, Sigma, Table, Tag, Trash2, Video, X, Zap,
 } from 'lucide-react'
-import { api, getToken, setCurrentKB } from '../utils/api'
+import { api, setCurrentKB } from '../utils/api'
 import { getChunkingStrategyPresentation } from '../utils/chunkingStrategyPresentation'
 import { getChunkPresentation } from '../utils/chunkPresentation'
 import { getDocumentTagPresentation } from '../utils/documentTagHealth'
 import { useAuth } from '../context/AuthContext'
 import { UserDialogConfirmation } from '../components/UserDialog'
 import Pagination from '../components/Pagination'
+import { useControlledMediaSource } from '../components/ControlledMedia'
 import { clampPage, getStoredPageSize, getTotalPages, storePageSize } from '../utils/pagination'
 
 const PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:document-chunks'
@@ -47,15 +48,9 @@ function formatDate(value) {
   }).format(date)
 }
 
-function mediaSource(chunk, token) {
-  if (chunk.media_url) return chunk.media_url
-  if (!chunk.media_path) return ''
-  return `/api/files/image?path=${encodeURIComponent(chunk.media_path)}&token=${encodeURIComponent(token)}`
-}
-
 function MediaPreview({ chunk, type, onOpen, detailLabel }) {
   const [failed, setFailed] = useState(false)
-  const source = mediaSource(chunk, getToken())
+  const source = useControlledMediaSource(chunk)
 
   useEffect(() => setFailed(false), [chunk.chunk_id, source])
 

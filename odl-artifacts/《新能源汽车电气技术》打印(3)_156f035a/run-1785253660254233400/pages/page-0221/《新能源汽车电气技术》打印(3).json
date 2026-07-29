@@ -1,0 +1,59 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 2,
+    "level" : "Doctitle",
+    "page number" : 221,
+    "bounding box" : [ 181.68, 746.248, 413.505, 762.198 ],
+    "heading level" : 1,
+    "font" : "SimHei",
+    "font size" : 15.95,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "项目六 新能源汽车空调系统检修"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 221,
+    "bounding box" : [ 90.24, 536.38, 504.48, 722.86 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 221,
+    "bounding box" : [ 90.0, 370.821, 505.207, 498.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "随着新能源汽车技术的飞速发展，用户对车内舒适性的要求日益提高，空调系统作为核 心舒适性配置，其功能已从传统的“制冷/制热”升级为覆盖整车热流调控的综合系统。与 传统燃油车空调不同，新能源汽车（尤其是纯电动汽车）无发动机余热可利用，需依赖电加 热（如 PTC 加热器）、热泵等技术实现制热，同时空调系统还需与动力蓄电池、驱动电机等 核心部件的热管理需求深度耦合——通过精准调控各部件工作温度，在保障驾乘舒适性的前 提下，最大化延长车辆续驶里程。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 221,
+    "bounding box" : [ 90.0, 253.821, 505.209, 357.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "新能源汽车空调系统的性能直接影响车辆的能耗、续航及核心部件使用寿命。例如，冬 季使用 PTC 制热会显著增加蓄电池功耗，导致续驶里程下降 30%-50%；而夏季若制冷系统效 率不足，会导致蓄电池温度过高，触发限功率保护。因此，掌握新能源汽车空调系统（含制 冷、暖风、热管理子系统）的检修技术，对保障车辆可靠性、提升用户体验及延长部件使用 寿命具有关键意义。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 221,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "221"
+  } ]
+}

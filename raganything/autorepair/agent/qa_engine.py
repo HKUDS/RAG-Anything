@@ -10,12 +10,11 @@
 
 import inspect
 import logging
-import os
 import re
 import time
 import asyncio
-from pathlib import Path
-from typing import Callable, Optional
+from typing import AsyncIterator, Callable, Optional
+from urllib.parse import parse_qs, unquote, urlsplit
 
 import jieba
 
@@ -25,30 +24,60 @@ from ..knowledge_graph.models import AgentResponse
 
 logger = logging.getLogger(__name__)
 
+_CONTROLLED_MEDIA_PREFIXES = (
+    "/api/knowledge/media/",
+    "/knowledge/media/",
+)
+_OPAQUE_MEDIA_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_-]{8,512}$")
+_LEGACY_GRANT_RE = re.compile(r"^[A-Za-z0-9_-]{20,128}\.[a-f0-9]{64}$")
+_SENSITIVE_TEXT_PATTERNS = (
+    re.compile(r"(?i)data:image/[^\s,;]+;base64,[A-Za-z0-9+/=_-]+"),
+    re.compile(r"(?i)file://[^\r\n\s<>\"']+"),
+    re.compile(r"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n<>\"']+"),
+    re.compile(r"/(?:home|Users|var|tmp|etc|root|opt|mnt)/[^\r\n<>\"']+"),
+)
 
-def _encode_image_data_url(image_path: str) -> str | None:
-    """将图片文件编码为 base64 data URL。"""
-    import base64
-    import os
-    if not image_path or not os.path.isfile(image_path):
-        return None
+
+def _sanitize_client_text(value: object) -> str:
+    """Remove local-path and inline-image material from client-visible text."""
+    text = value if isinstance(value, str) else str(value or "")
+    for pattern in _SENSITIVE_TEXT_PATTERNS:
+        text = pattern.sub("[redacted-media-reference]", text)
+    return text
+
+
+def _is_controlled_media_url(value: object, kb_name: str) -> bool:
+    """Accept only opaque catalog/grant URLs scoped to the verified KB."""
+    if not isinstance(value, str) or not value or any(ord(ch) < 32 for ch in value):
+        return False
     try:
-        ext = os.path.splitext(image_path)[1].lower()
-        mime_map = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-                    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp"}
-        mime = mime_map.get(ext, "image/png")
-        with open(image_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode("utf-8")
-        # 限制大小：超过 2MB 的图片跳过
-        if len(b64) > 2 * 1024 * 1024:
-            logger.warning(f"Image too large ({len(b64)} bytes), skipping: {image_path}")
-            return None
-        return f"data:{mime};base64,{b64}"
-    except Exception as e:
-        logger.warning(f"Failed to encode image {image_path}: {e}")
-        return None
-
-
+        parsed = urlsplit(value)
+    except ValueError:
+        return False
+    if parsed.scheme or parsed.netloc or parsed.fragment:
+        return False
+    decoded_path = unquote(parsed.path)
+    prefix = next(
+        (item for item in _CONTROLLED_MEDIA_PREFIXES if decoded_path.startswith(item)),
+        None,
+    )
+    if prefix is None:
+        return False
+    tail = decoded_path[len(prefix):]
+    segments = tail.split("/")
+    if len(segments) == 1:
+        if not _OPAQUE_MEDIA_SEGMENT_RE.fullmatch(segments[0]):
+            return False
+    elif len(segments) == 2 and segments[0] == "legacy":
+        if not _LEGACY_GRANT_RE.fullmatch(segments[1]):
+            return False
+    else:
+        return False
+    try:
+        query = parse_qs(parsed.query, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return False
+    return query == {"kb": [kb_name]}
 # 制造领域专用 ReAct system prompt
 MFG_SYSTEM_PROMPT = (
     "你是智能制造教学专家，擅长设备操作、PLC编程、数控加工、故障诊断。"
@@ -66,6 +95,8 @@ class QAEngine:
     def __init__(self, rag_client=None, llm_client=None,
                  top_k: int = 10, citation_required: bool = True,
                  image_paths: list = None,
+                 kb_name: str = "default",
+                 media_url_resolver: Callable[[str], object] | None = None,
                  query_mode: str = "rrf",
                  max_steps: int = 3):
         """
@@ -86,6 +117,8 @@ class QAEngine:
         self.source_tracer = SourceTracer()
         self._llm_adapter = self._resolve_llm_adapter(llm_client)
         self.image_paths = image_paths or []  # [(path, page_idx, caption?), ...]
+        self.kb_name = kb_name
+        self._media_url_resolver = media_url_resolver
         self._query_mode = query_mode
         self._max_steps = max_steps
 
@@ -197,21 +230,55 @@ class QAEngine:
         except asyncio.TimeoutError:
             logger.warning(f"直接检索超时 ({timeout}s)")
             return ""
-        except Exception as e:
-            logger.warning(f"直接检索失败: {e}")
+        except Exception as exc:
+            logger.warning(
+                "Direct retrieval failed: error_type=%s",
+                type(exc).__name__,
+            )
             return ""
 
-    def _guess_kb_name(self) -> str:
-        working_dir = getattr(self.rag_client, "working_dir", None)
-        if not working_dir:
-            return "default"
-        name = Path(str(working_dir)).name
-        if name == "rag_storage":
-            return "default"
-        if name.startswith("rag_storage_"):
-            suffix = name[len("rag_storage_"):].strip()
-            return suffix or "default"
-        return "default"
+    async def _resolve_media_payload(self, image_path: str) -> dict | None:
+        """Resolve recalled media as opaque metadata without reading its bytes."""
+        if self._media_url_resolver is None:
+            return None
+        try:
+            result = self._media_url_resolver(image_path)
+            if inspect.isawaitable(result):
+                result = await result
+        except Exception as exc:
+            logger.warning(
+                "Controlled media URL resolution failed: error_type=%s",
+                type(exc).__name__,
+            )
+            return None
+        if isinstance(result, str):
+            payload = {"url": result.strip(), "data_url": result.strip()}
+        elif isinstance(result, dict):
+            payload = dict(result)
+        else:
+            return None
+        media_url = payload.get("url") or payload.get("data_url")
+        if not _is_controlled_media_url(media_url, self.kb_name):
+            logger.warning("Controlled media URL resolution rejected: category=invalid_url")
+            return None
+        safe = {
+            "url": media_url,
+            "data_url": media_url,
+        }
+        has_opaque_delivery_identity = False
+        for key in ("media_id", "legacy_grant"):
+            if isinstance(payload.get(key), str):
+                safe[key] = payload[key]
+                has_opaque_delivery_identity = True
+        if has_opaque_delivery_identity:
+            safe["kb"] = self.kb_name
+        return safe
+
+    async def _resolve_media_url(self, image_path: str) -> str | None:
+        """Compatibility wrapper for legacy callers/tests using URL-only media."""
+        payload = await self._resolve_media_payload(image_path)
+        value = payload.get("url") if isinstance(payload, dict) else None
+        return value if isinstance(value, str) else None
 
     @staticmethod
     def _normalize_optional_page(page) -> int | None:
@@ -251,31 +318,42 @@ class QAEngine:
                 if match:
                     caption = match.group(1).strip().strip("[]")
                     if caption:
-                        return caption[:300]
-        filename = os.path.splitext(os.path.basename(image_path or ""))[0].strip()
-        return filename or "Related image"
+                        return _sanitize_client_text(caption)[:300]
+        return "Related image"
 
-    def _encode_recalled_paths(self, image_paths: list[str], ctx: str, source: str) -> list[dict]:
+    async def _encode_recalled_paths(
+        self, image_paths: list[str], ctx: str, source: str
+    ) -> list[dict]:
         images: list[dict] = []
         relevance = self._source_relevance(source)
         for image_path in image_paths:
-            data_url = _encode_image_data_url(image_path)
-            if not data_url:
+            media_payload = await self._resolve_media_payload(image_path)
+            if not media_payload:
                 continue
             images.append({
-                "data_url": data_url,
+                **media_payload,
                 "caption": self._parse_caption_from_context(ctx, image_path),
                 "page": None,
                 "relevance": relevance,
             })
         return images
 
-    def _fallback_match_images(self, query: str, docs: list[dict]) -> list[dict]:
-        images = self._match_relevant_images(query, docs)
-        for image in images:
+    async def _fallback_match_images(self, query: str, docs: list[dict]) -> list[dict]:
+        candidates = self._match_relevant_images(query, docs)
+        images: list[dict] = []
+        for candidate in candidates:
+            image_path = candidate.pop("_local_path", "")
+            media_payload = await self._resolve_media_payload(image_path)
+            if not media_payload:
+                continue
+            image = {
+                **candidate,
+                **media_payload,
+            }
             image["page"] = self._normalize_optional_page(image.get("page"))
             image["caption"] = (image.get("caption") or "Related image").strip() or "Related image"
             image["relevance"] = float(image.get("relevance", self._source_relevance("fallback")))
+            images.append(image)
         return images
 
     async def _recall_images_from_context(self, query: str, ctx: str, docs: list[dict] | None = None) -> list[dict]:
@@ -285,32 +363,52 @@ class QAEngine:
                 image_paths, _backfill_text, source = await recall_query_images(
                     self.rag_client,
                     query,
-                    self._guess_kb_name(),
+                    self.kb_name,
                     ctx,
                 )
-                images = self._encode_recalled_paths(image_paths, ctx, source)
+                images = await self._encode_recalled_paths(image_paths, ctx, source)
                 if images:
                     return images
             except Exception as exc:
-                logger.warning(f"Shared image recall failed: {exc}")
-        return self._fallback_match_images(query, docs)
+                logger.warning(
+                    "Shared image recall failed: error_type=%s",
+                    type(exc).__name__,
+                )
+        return await self._fallback_match_images(query, docs)
 
     async def _post_process(self, query: str, answer_text: str, retrieved_texts: list[str],
                             start_time: float, trace: list[dict] | None = None) -> AgentResponse:
         """后处理：图片匹配 + 引用溯源 + 置信度。"""
-        docs = [{"content": t, "score": 0.8} for t in retrieved_texts]
+        safe_answer = _sanitize_client_text(answer_text)
+        docs = [
+            {"content": _sanitize_client_text(t), "score": 0.8}
+            for t in retrieved_texts
+        ]
         if answer_text:
-            docs.insert(0, {"content": answer_text, "score": 0.9})
+            docs.insert(0, {"content": safe_answer, "score": 0.9})
 
         ctx = "\n\n".join([t for t in retrieved_texts if t])
         images = await self._recall_images_from_context(query, ctx, docs)
-        citations = self.source_tracer.extract_citations(answer_text, docs)
+        citations = self.source_tracer.extract_citations(safe_answer, docs)
         confidence = self._estimate_confidence(docs)
         ms = round((time.time() - start_time) * 1000, 2)
+        safe_trace = [
+            {
+                "step": item.get("step", 0),
+                "thought": "",
+                "action": item.get("action", "")
+                if item.get("action", "") in {"search", "reason", "answer"}
+                else "",
+                "observation": "",
+                "elapsed_ms": item.get("elapsed_ms", 0),
+            }
+            for item in (trace or [])
+            if isinstance(item, dict)
+        ]
 
         return AgentResponse(
-            query=query, answer=answer_text, citations=citations,
-            related_images=images, trace=trace or [],
+            query=query, answer=safe_answer, citations=citations,
+            related_images=images, trace=safe_trace,
             confidence=confidence, processing_time_ms=ms,
         )
 
@@ -325,12 +423,13 @@ class QAEngine:
 
         # ═══ Tier 1: 直接 RRF 检索 ═══
         ctx = await self._direct_retrieve(query)
+        safe_ctx = _sanitize_client_text(ctx)
 
         if len(ctx) >= 200:
             # 上下文充分 → 直接 prompt+LLM（与通用智能体一致）
             prompt = (
                 f"你是智能制造教学专家。基于以下检索内容回答用户问题。\n\n"
-                f"## 检索内容\n{ctx}\n\n"
+                f"## 检索内容\n{safe_ctx}\n\n"
                 f"## 问题\n{query}\n\n"
                 f"## 要求\n"
                 f"从检索内容提取事实和数据。有数字必须引用 [来源 1]。"
@@ -349,7 +448,7 @@ class QAEngine:
         # 50-200 字符 → 生成后评估
         prompt = (
             f"你是智能制造教学专家。基于以下检索内容回答。\n\n"
-            f"## 检索内容\n{ctx}\n\n## 问题\n{query}\n\n"
+            f"## 检索内容\n{safe_ctx}\n\n## 问题\n{query}\n\n"
             f"从检索内容提取事实。不编造。用 markdown 格式。"
         )
         result = self._llm_adapter(prompt)
@@ -371,14 +470,17 @@ class QAEngine:
 
         try:
             agent_result = await self._agentic_rag.run(query)
-        except Exception as e:
-            logger.error(f"AgenticRAG 失败: {e}")
-            return AgentResponse(query=query, answer=f"推理出错: {e}",
+        except Exception as exc:
+            logger.error(
+                "AgenticRAG failed: error_type=%s",
+                type(exc).__name__,
+            )
+            return AgentResponse(query=query, answer="推理服务暂时不可用。",
                                  citations=[], confidence=0.0,
                                  processing_time_ms=round((time.time() - start_time) * 1000, 2))
 
-        trace = [{"step": s.step_number, "thought": s.thought,
-                  "action": s.action, "observation": s.observation,
+        trace = [{"step": s.step_number, "thought": "",
+                  "action": s.action, "observation": "",
                   "elapsed_ms": s.elapsed_ms} for s in agent_result.trace]
         contexts = [s.observation for s in agent_result.trace
                     if s.observation and s.action == "search"]
@@ -400,6 +502,7 @@ class QAEngine:
 
         # ═══ Tier 1: 直接 RRF 检索 ═══
         ctx = await self._direct_retrieve(query)
+        safe_ctx = _sanitize_client_text(ctx)
         yield {"type": "thinking", "step": 0, "thought": f"检索到 {len(ctx)} 字符上下文", "action": "retrieve"}
 
         if len(ctx) < 50 and self._agentic_rag is not None:
@@ -410,8 +513,9 @@ class QAEngine:
             try:
                 async for event in self._agentic_rag.run_stream(query):
                     if event.type == "thinking":
-                        sd = {"step": event.step or 0, "thought": event.thought or "",
-                              "action": event.action or "", "observation": event.observation or "",
+                        action = event.action if event.action in {"search", "reason", "answer"} else ""
+                        sd = {"step": event.step or 0, "thought": "",
+                              "action": action, "observation": "",
                               "elapsed_ms": event.elapsed_ms}
                         trace_steps.append(sd)
                         if event.action == "search" and event.observation:
@@ -419,24 +523,40 @@ class QAEngine:
                         yield {"type": "thinking", **sd}
                     elif event.type == "token":
                         full_answer += (event.content or "")
-                        yield {"type": "token", "content": event.content or ""}
+                        yield {
+                            "type": "token",
+                            "content": _sanitize_client_text(event.content or ""),
+                        }
                     elif event.type == "done":
                         if event.answer and len(event.answer) > len(full_answer):
-                            full_answer = event.answer
+                            full_answer = _sanitize_client_text(event.answer)
                         break
-            except Exception as e:
-                logger.error(f"AgenticRAG stream 失败: {e}")
-                yield {"type": "done", "content": str(e), "images": [], "citations": [], "confidence": 0.0}
+            except Exception as exc:
+                logger.error(
+                    "AgenticRAG stream failed: error_type=%s",
+                    type(exc).__name__,
+                )
+                yield {
+                    "type": "done",
+                    "content": "推理服务暂时不可用。",
+                    "images": [],
+                    "citations": [],
+                    "confidence": 0.0,
+                }
                 return
 
-            docs = [{"content": c, "score": 0.8} for c in retrieved_contexts]
+            safe_answer = _sanitize_client_text(full_answer)
+            docs = [
+                {"content": _sanitize_client_text(c), "score": 0.8}
+                for c in retrieved_contexts
+            ]
             if full_answer:
-                docs.insert(0, {"content": full_answer, "score": 0.9})
+                docs.insert(0, {"content": safe_answer, "score": 0.9})
             yield {
                 "type": "done",
-                "answer": full_answer,
+                "answer": safe_answer,
                 "images": await self._recall_images_from_context(query, "\n\n".join(retrieved_contexts), docs),
-                "citations": self.source_tracer.extract_citations(full_answer, docs),
+                "citations": self.source_tracer.extract_citations(safe_answer, docs),
                 "confidence": self._estimate_confidence(docs),
                 "elapsed_ms": round((time.time() - start_time) * 1000, 2),
                 "trace": trace_steps,
@@ -446,7 +566,7 @@ class QAEngine:
         # ═══ Tier 1 快速路径：直接 LLM stream ═══
         prompt = (
             f"你是智能制造教学专家。基于以下检索内容回答。\n\n"
-            f"## 检索内容\n{ctx}\n\n## 问题\n{query}\n\n"
+            f"## 检索内容\n{safe_ctx}\n\n## 问题\n{query}\n\n"
             f"从检索内容提取事实和数据。有数字必须引用 [来源 1]。"
             f"没有就说未找到。不编造。用 markdown 格式。"
         )
@@ -458,25 +578,29 @@ class QAEngine:
             if hasattr(result, '__aiter__'):
                 async for token in result:
                     full_answer += token
-                    yield {"type": "token", "content": token}
+                    yield {"type": "token", "content": _sanitize_client_text(token)}
             elif isinstance(result, str):
                 full_answer = result
-                yield {"type": "token", "content": result}
+                yield {"type": "token", "content": _sanitize_client_text(result)}
             else:
                 full_answer = str(result) if result else ""
-                yield {"type": "token", "content": full_answer}
-        except Exception as e:
-            logger.error(f"Tier 1 LLM stream 失败: {e}")
-            full_answer = ctx[:500]
+                yield {"type": "token", "content": _sanitize_client_text(full_answer)}
+        except Exception as exc:
+            logger.error(
+                "Tier 1 LLM stream failed: error_type=%s",
+                type(exc).__name__,
+            )
+            full_answer = "回答生成服务暂时不可用。"
 
-        docs = [{"content": ctx, "score": 0.8}]
+        safe_answer = _sanitize_client_text(full_answer)
+        docs = [{"content": safe_ctx, "score": 0.8}]
         if full_answer:
-            docs.insert(0, {"content": full_answer, "score": 0.9})
+            docs.insert(0, {"content": safe_answer, "score": 0.9})
         yield {
             "type": "done",
-            "answer": full_answer,
+            "answer": safe_answer,
             "images": await self._recall_images_from_context(query, ctx, docs),
-            "citations": self.source_tracer.extract_citations(full_answer, docs),
+            "citations": self.source_tracer.extract_citations(safe_answer, docs),
             "confidence": self._estimate_confidence(docs),
             "elapsed_ms": round((time.time() - start_time) * 1000, 2),
         }
@@ -550,19 +674,16 @@ class QAEngine:
     def _encode_matched_images(
         self, candidates: list[tuple[int, int, str]]
     ) -> list[dict]:
-        """将候选图片列表编码为 base64 data URL 的结果格式。"""
-        result = []
-        for kw_count, page, img_path in candidates:
-            data_url = _encode_image_data_url(img_path)
-            if data_url:
-                caption_text = self._image_captions.get(img_path, "")
-                result.append({
-                    "data_url": data_url,
-                    "caption": caption_text or "相关图片",
-                    "page": page,
-                    "relevance": min(0.5 + kw_count * 0.15, 0.95),
-                })
-        return result
+        """Build private candidates for controlled media URL resolution."""
+        return [
+            {
+                "_local_path": img_path,
+                "caption": self._image_captions.get(img_path, "") or "Related image",
+                "page": page,
+                "relevance": min(0.5 + kw_count * 0.15, 0.95),
+            }
+            for kw_count, page, img_path in candidates
+        ]
 
     def _match_relevant_images(self, query: str, docs: list[dict]) -> list[dict]:
         """从检索到的文本中匹配最相关的图片（三级策略）。
@@ -595,15 +716,12 @@ class QAEngine:
                     item = sorted_images[idx]
                     img_path = item[0]
                     page = item[1] if len(item) >= 2 else 0
-                    data_url = _encode_image_data_url(img_path)
-                    if data_url:
-                        caption_text = self._image_captions.get(img_path, f"图{fig_num}")
-                        result_images.append({
-                            "data_url": data_url,
-                            "caption": caption_text or f"图{fig_num}",
-                            "page": page,
-                            "relevance": 0.9 - (idx * 0.05),
-                        })
+                    result_images.append({
+                        "_local_path": img_path,
+                        "caption": self._image_captions.get(img_path, "") or f"Figure {fig_num}",
+                        "page": page,
+                        "relevance": 0.9 - (idx * 0.05),
+                    })
             if result_images:
                 return result_images[:2]
 

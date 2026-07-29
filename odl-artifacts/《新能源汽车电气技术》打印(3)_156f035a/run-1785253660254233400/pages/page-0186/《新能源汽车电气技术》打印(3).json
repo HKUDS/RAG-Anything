@@ -1,0 +1,116 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 186,
+    "bounding box" : [ 303.24, 617.5, 502.56, 766.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 186,
+    "bounding box" : [ 92.52, 617.02, 302.88, 766.18 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 186,
+    "bounding box" : [ 237.24, 597.021, 357.847, 607.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-5 秦 EV 车型网关位置"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 186,
+    "bounding box" : [ 111.0, 558.14, 504.665, 588.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5.终端电阻 在 CAN 总线的两端需要添加终端电阻，通常 CAN 总线使用 120Ω的终端电阻，如图 5-6"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 6,
+    "page number" : 186,
+    "bounding box" : [ 90.0, 517.221, 505.206, 548.071 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "所示。终端电阻的作用是防止信号回波反射，确保数据传输的准确性。终端电阻的阻值与总 线的特性阻抗相匹配，可以消除信号在传输线上的反射并提高信号质量。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 186,
+    "bounding box" : [ 147.36, 370.9, 447.84, 506.86 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 8,
+    "level" : "Doctitle",
+    "page number" : 186,
+    "bounding box" : [ 111.0, 329.838, 355.328, 366.871 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-6 CAN 总线终端电阻 三、CAN 总线系统数据传输原理"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 186,
+    "bounding box" : [ 90.0, 230.9, 505.209, 323.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "被传输的数据称为信息，在 CAN 总线系统的任何控制单元都可以发送或接收信息。一条 信息包括一些物理量，例如在图 5-7 中，电机转速用一串二进制数值 00010101 表示。在发 送之前，控制单元 A 先把二进制数值转换成一个串行比特流。通过 TX 导线(发送线路)把比 特流发送至发射接收器(放大器)。发射接收器把比特流转换成相应的电压值，然后这些电压 值被一个接一个地通过总线传送。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 186,
+    "bounding box" : [ 90.0, 169.58, 505.209, 220.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "在接收过程中，发射接收器把电压值重新转换并通过 RX 导线(接收线路)把它们传送至 控制单元。然后，控制单元把串行二进制数值转换成信息(例如数值 00010101 被转换成 1800r/min)。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 186,
+    "bounding box" : [ 90.0, 108.38, 505.207, 159.63 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任何控制单元都可以接收这个被传送的信息，这个原理也被叫作广播信息，这一创意起 源于发射机原理。发射机发射的节目可以被调谐器(接收器)接收到。广播过程保证与总线连 接的控制单元都具有相同的信息状态。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 186,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "186"
+  } ]
+}

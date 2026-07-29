@@ -1,6 +1,6 @@
 ﻿import { useState, useEffect, useCallback, useRef, lazy, Suspense, Component } from 'react'
 import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, GitBranch, ScrollText, AlertTriangle } from 'lucide-react'
+import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, GitBranch, ScrollText, AlertTriangle, Image } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -12,6 +12,7 @@ const KnowledgeDetailPage        = lazy(() => import('./pages/KnowledgeDetailPag
 const DocumentChunksPage         = lazy(() => import('./pages/DocumentChunksPage'))
 const DocumentChunkDetailPage    = lazy(() => import('./pages/DocumentChunkDetailPage'))
 const SettingsPage                = lazy(() => import('./pages/SettingsPage'))
+const PreferencesPage             = lazy(() => import('./pages/PreferencesPage'))
 const MonitorPage                 = lazy(() => import('./pages/MonitorPage'))
 const AgentsPage                  = lazy(() => import('./pages/AgentsPage'))
 const AgentChatPage               = lazy(() => import('./pages/AgentChatPage'))
@@ -142,6 +143,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/monitor', icon: Activity, label: '监控', desc: '服务状态与指标', requiredPermission: 'monitor:read' },
       { to: '/settings', icon: Settings, label: '设置', desc: '模型与系统配置', requiredPermission: 'settings:read' },
+      { to: '/preferences', icon: Image, label: '个人偏好', desc: '图片理解模型选择', requiredPermission: null },
       { to: '/admin/users', icon: Shield, label: '用户管理', desc: '角色与权限', requiredPermission: 'users:read' },
       { to: '/admin/audit-logs', icon: ScrollText, label: '审计日志', desc: '操作追踪', requiredPermission: 'audit:read' },
     ],
@@ -159,6 +161,7 @@ const ROUTE_META = [
   { test: p => p.startsWith('/autorepair'), kicker: '场景实验室', title: '汽修智能制造工作台', subtitle: '面向专业教学与竞赛场景的知识图谱和智能问答系统。' },
   { test: p => p.startsWith('/monitor'), kicker: '运行管理', title: '运行监控', subtitle: '观察服务状态、处理吞吐和知识系统运行指标。' },
   { test: p => p.startsWith('/settings'), kicker: '系统配置', title: '系统设置', subtitle: '管理模型、接口、检索和平台级配置。' },
+  { test: p => p.startsWith('/preferences'), kicker: '个人设置', title: '个人偏好', subtitle: '选择后续图片理解任务使用的模型。' },
   { test: p => p.startsWith('/admin/users'), kicker: '管理后台', title: '用户与权限', subtitle: '管理账号、角色、部门和访问边界。' },
   { test: p => p.startsWith('/admin/audit-logs'), kicker: '管理后台', title: '审计日志', subtitle: '追踪关键操作与安全事件。' },
 ]
@@ -328,6 +331,16 @@ function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
                 <RoleBadge roleName={roleName} isAdmin={isAdmin} />
               </p>
             </div>
+
+            <NavLink
+              to="/preferences"
+              onClick={() => setOpen(false)}
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-ink-body hover:bg-cloud-200 transition-colors"
+              role="menuitem"
+            >
+              <Image size={14} className="text-sky-500" />
+              个人偏好
+            </NavLink>
 
             {/* 主题切换 */}
             <button
@@ -654,6 +667,7 @@ export default function App() {
                   <Route path="/autorepair/knowledge" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairKnowledgePage /></ProtectedRoute>} />
                   <Route path="/autorepair/agent" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairAgentPage /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute requiredPermission="settings:read"><SettingsPage onToast={showToast} /></ProtectedRoute>} />
+                  <Route path="/preferences" element={<ProtectedRoute><PreferencesPage onToast={showToast} /></ProtectedRoute>} />
                   <Route path="/monitor" element={<ProtectedRoute requiredPermission="monitor:read"><MonitorPage onToast={showToast} /></ProtectedRoute>} />
                   <Route path="/admin/users" element={<ProtectedRoute requiredPermission="users:read"><AdminUsersPage /></ProtectedRoute>} />
                   <Route path="/admin/audit-logs" element={<ProtectedRoute requiredPermission="audit:read"><AdminAuditLogsPage /></ProtectedRoute>} />

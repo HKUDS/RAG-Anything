@@ -1,0 +1,148 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 13,
+    "bounding box" : [ 90.0, 729.621, 505.209, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "形成低压电流回路。国产新能源汽车常用搭铁线长度为 300mm、450mm、600mm、760mm 四种 规格，确保连接可靠、压降最小。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 13,
+    "bounding box" : [ 90.0, 659.421, 505.209, 716.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4）屏蔽线：又称同轴射频电缆，绝缘层内带有金属纺织网和套装护套，核心作用是隔 离外界电磁干扰，避免低压弱信号（如传感器信号）失真，常用于氧传感器信号电路、曲轴 位置传感器电路、智能进入天线电路等。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 13,
+    "bounding box" : [ 90.0, 589.221, 505.324, 646.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（2）高压线（图 1-2）（工作电压≥300V） 新能源汽车专属导线，用于传输动力蓄电 池输出的高电压、大电流，结构为“双绝缘层+屏蔽层”，屏蔽层可有效防止大电流充放电 时产生的电磁干扰，避免影响低压控制系统和周边电子设备，具体分类如下："
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 13,
+    "bounding box" : [ 198.24, 422.02, 396.96, 556.3 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 13,
+    "bounding box" : [ 257.88, 400.758, 337.209, 412.471 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 1-2 高压线束"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 9,
+    "level" : "1",
+    "page number" : 13,
+    "bounding box" : [ 111.0, 261.621, 510.49, 389.071 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 13,
+      "bounding box" : [ 111.0, 378.621, 510.49, 389.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）动力蓄电池高压母线：连接动力蓄电池包与高压配电箱，是高压电能分配的主干线，",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 13,
+        "bounding box" : [ 90.0, 355.221, 339.248, 365.671 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "截面积通常为 35mm²，适配动力蓄电池输出电流需求。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 13,
+      "bounding box" : [ 111.0, 331.821, 505.195, 342.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）电机三相电缆：连接电机控制器与驱动电机，传输驱动电机工作所需的三相高压交",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 13,
+        "bounding box" : [ 90.0, 285.021, 510.49, 318.871 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "流电，部分集成式动力总成（驱动电机、电机控制器、减速器一体化）已取消独立三相电缆， 通过内部接线直接连接。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 13,
+      "bounding box" : [ 111.0, 261.621, 505.206, 272.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）充电高压线：连接交流/直流充电口与充配电总成（或 OBC），传输充电过程中的高",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 13,
+    "bounding box" : [ 90.0, 191.421, 505.207, 248.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "压电能，直流充电高压线截面积通常为 70mm²，适配大电流快充需求。 3.插接器 插接件由插头与插座两部分构成，通常用涂黑表示插头，不涂黑表示插座；有倒角的表"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 13,
+    "bounding box" : [ 90.0, 144.621, 510.49, 178.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "示插头插脚呈柱状，直角的表示插头插脚为片状。插接器表示见表 1-2，每个厂家略有不同， 详细资料请参阅厂家维修资料。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 13,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "13"
+  } ]
+}

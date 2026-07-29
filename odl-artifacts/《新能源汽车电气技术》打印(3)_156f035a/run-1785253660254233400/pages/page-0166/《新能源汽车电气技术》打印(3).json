@@ -1,0 +1,141 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 166,
+    "bounding box" : [ 111.0, 737.54, 505.204, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.行李舱控制 部分比亚迪秦 EV 车型的中控门锁系统还能控制行李舱的开启，通过遥控钥匙或车内按"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 166,
+    "bounding box" : [ 90.0, 676.221, 505.197, 727.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "钮，可方便地开启行李舱，便于装载和取用物品。 三、中控门锁系统的工作原理 比亚迪秦 EV 中控门锁系统主要由门锁控制模块、门锁执行机构、遥控钥匙、车内中控"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 166,
+    "bounding box" : [ 90.0, 614.9, 509.89, 666.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "按钮等组成，其工作原理如下： 1.遥控控制 当按下遥控钥匙上的开锁或锁车按钮时，遥控钥匙会发出包含特定编码的无线电信号。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 166,
+    "bounding box" : [ 90.0, 553.58, 505.207, 604.95 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "车辆上的遥控接收器接收到信号后，将其传输给车身控制模块（BCM）。BCM 对信号进行解 码，确认信号合法后，根据信号指令向门锁控制模块发送相应的控制信号，门锁控制模块驱 动门锁执行机构，实现车门的开锁或锁止动作。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 166,
+    "bounding box" : [ 111.0, 512.78, 505.207, 543.63 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.车内中控按钮控制 当按下车内中控门锁按钮时，按钮的信号会直接传输给门锁控制模块。门锁控制模块接"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 166,
+    "bounding box" : [ 90.0, 390.261, 515.769, 502.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "收到信号后，按照相应的指令控制门锁执行机构工作，从而实现所有车门的同时开锁或锁止。， 3.自动锁止与解锁 车辆行驶过程中，当车速达到一定值（如 15km/h）时，车速传感器会将车速信号传输 给 BCM。BCM 判断车速满足自动锁止条件后，向门锁控制模块发送锁止信号，实现车门自动 锁止。当车辆停车并挂入 P 档后，BCM 接收到变速箱的 P 档信号，会向门锁控制模块发送解 锁信号，自动解除车门锁止状态，方便乘客下车。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 166,
+    "bounding box" : [ 111.0, 349.34, 505.204, 380.311 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.防盗报警联动 当车辆处于防盗警戒状态时，如果车门被非法打开，车门锁中的位置传感器会检测到车"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 166,
+    "bounding box" : [ 90.0, 308.54, 505.202, 339.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "门状态的变化，并将信号传输给 BCM。BCM 接收到异常信号后，触发防盗报警系统，使喇叭 鸣响、灯光闪烁，以起到警示作用。"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 10,
+    "level" : "Doctitle",
+    "page number" : 166,
+    "bounding box" : [ 111.0, 288.14, 226.805, 298.59 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "四、中控门锁的遥控原理"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 166,
+    "bounding box" : [ 90.0, 186.021, 505.208, 278.19 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "当驾驶人操作左前门的门锁总开关时，开关信号通过线路传送给门锁控制器，即车身集 成控制模块（BCM）。BCM 接收到信号后，会根据信号类型（闭锁或解锁）来控制门锁执行 机构的动作。例如，按下闭锁按钮，BCM 会使左前门锁电动机正转，带动锁具动作实现左前 门闭锁；按下解锁按钮，则控制左前门锁电动机反转来解锁。其他车门的分开关也能单独控 制所在车门的闭锁或解锁，信号同样传至 BCM 进行处理。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 166,
+    "bounding box" : [ 90.0, 124.7, 510.49, 176.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "当使用遥控钥匙时，遥控钥匙内的发射机发出微弱电波信号，汽车天线接收到该信号后， 传送给 I - key ECU，I - key ECU 再将解闭锁信号发送给 BCM，BCM 驱动相应的门锁电动机 进行解锁或闭锁操作。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 166,
+    "bounding box" : [ 90.0, 83.78, 505.318, 114.75 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "此外，比亚迪秦 EV 的中控门锁控制系统还有速度感应和碰撞解锁等功能。当车速超过 一定值（如 20km/h）时，BCM 会接收到车速信号，自动控制门锁电动机将所有车门落锁，防"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 166,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "166"
+  } ]
+}

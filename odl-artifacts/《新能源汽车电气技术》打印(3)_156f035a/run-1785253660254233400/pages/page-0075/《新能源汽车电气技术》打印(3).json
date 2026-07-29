@@ -1,0 +1,98 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 75,
+    "bounding box" : [ 17.04, 363.7, 589.08, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 5,
+    "page number" : 75,
+    "bounding box" : [ 228.0, 344.54, 367.089, 354.99 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-28 BMS BK45（B）电路图"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 75,
+    "bounding box" : [ 111.0, 303.74, 415.45, 334.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.检测过程及数据记录 查阅完电路图，接下来进行相关线路的测量，具体测量步骤如下："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 7,
+    "level" : "1",
+    "page number" : 75,
+    "bounding box" : [ 111.0, 222.021, 505.207, 293.79 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 75,
+      "bounding box" : [ 111.0, 283.34, 505.205, 293.79 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）踩下制动踏板，打开一键起动开关，用万用表测量 BMS 端预充接触器线圈的工作电",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 75,
+        "bounding box" : [ 90.0, 242.54, 505.088, 273.39 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "压：BK45(A)/7 与 BK45(A)/21 之间的工作电压，正常为 0V→+B→0V，实测为 0V 不变，说 明 BMS 并未控制预充接触器线圈工作，异常。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 75,
+      "bounding box" : [ 111.0, 222.021, 505.207, 232.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）踩下制动踏板，打开一键起动开关，按顺序用万用表测量 BMS 端预充接触器线圈的",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 75,
+    "bounding box" : [ 90.0, 160.821, 507.25, 212.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "负极和正极：BK45(A)/21 的对地电压，正常为 0V→+B→0V，实测为 0V 不变，BK45(A)/7 的对地电压，正常为 0V→+B→+B，实测为 0V 不变，由此说 BMS 并未提供 12V 供电，异常， 如图 2-29 所示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 75,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "75"
+  } ]
+}

@@ -1,0 +1,67 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 32,
+    "bounding box" : [ 199.2, 753.021, 416.886, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "表 1-9 比亚迪秦 EV 前机舱配电盒总成熔丝规格"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 32,
+    "bounding box" : [ 90.0, 422.26, 504.84, 727.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 32,
+    "bounding box" : [ 111.0, 246.021, 505.208, 396.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.继电器编码规则 继电器用于控制高功率电器的通断，编码格式与熔丝类似，核心规则如下： 前缀“K”：表示元件类型为外置继电器； 配电盒编号：“1”表示前机舱主配电盒，“2”表示仪表板配电盒； 分隔符“/”：区分配电盒与排序代码； 排序代码：数字表示继电器在配电盒中的位置序号； 外挂继电器：编号随所属线束，格式为“线束编码/排序”，如“KC/1”表示管梁线束"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 32,
+    "bounding box" : [ 90.0, 222.621, 184.448, 233.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "的 1 号外挂继电器。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 32,
+    "bounding box" : [ 90.0, 152.421, 505.265, 209.671 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "示例：“K1/10”表示前机舱主配电盒的 10 号继电器；“K2/2”表示仪表板配电盒的 2 号继电器。图 1-13 所示是 比亚迪秦低速/高速风扇继电器、前洗涤继电器、刮水器开关继 电器。图 1-14 所示为比亚迪秦 EV 前机舱继电器安装位置。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 32,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "32"
+  } ]
+}

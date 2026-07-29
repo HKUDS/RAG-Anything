@@ -1,0 +1,490 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 232,
+    "bounding box" : [ 111.0, 729.621, 505.208, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "四、制冷系统关键参数与测量 制冷剂压力通过制冷剂回收加注机的高低压表测量系统高压侧（冷凝器出口）与低压侧"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 232,
+    "bounding box" : [ 90.0, 704.958, 460.204, 716.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（蒸发器入口）压力，正常工况下（环境温度 30℃，空调最大制冷）参数如下："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 232,
+    "bounding box" : [ 111.0, 634.758, 510.49, 693.271 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 232,
+      "bounding box" : [ 111.0, 681.558, 412.33, 693.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）高压侧压力：1.5-2.2MPa（R134a）、1.4-2.0MPa（R1234yf）；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 232,
+      "bounding box" : [ 111.0, 634.758, 510.49, 669.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）低压侧压力：0.2-0.5MPa（R134a）、0.15-0.45MPa（R1234yf）。 若高压过高（＞2.5MPa），可能是冷凝器脏堵、风扇不转；若低压过低（＜0.1MPa），",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 232,
+    "bounding box" : [ 90.0, 612.621, 247.445, 623.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "可能是制冷剂泄漏、膨胀阀堵塞。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 232,
+    "bounding box" : [ 90.0, 564.558, 505.207, 599.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "出风口温度空调最大制冷模式下，出风口温度应≤10℃（环境温度 30℃）。若温度＞ 15℃，需检查压缩机转速、电子膨胀阀开度、蒸发器是否结霜。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 232,
+    "bounding box" : [ 111.0, 542.421, 352.442, 552.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "压缩机工作参数通过诊断仪读取压缩机相关数据流："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 8,
+    "level" : "1",
+    "page number" : 232,
+    "bounding box" : [ 111.0, 425.421, 510.49, 529.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 232,
+      "bounding box" : [ 111.0, 517.758, 510.49, 529.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）压缩机电压：高压压缩机通常为 300~400V（与蓄电池电压匹配），低压压缩机为 12V。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 232,
+      "bounding box" : [ 111.0, 494.357, 415.809, 506.071 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）压缩机转速：正常范围 1000-6000rpm（根据制冷需求调整）。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 232,
+      "bounding box" : [ 111.0, 425.421, 510.49, 482.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）压缩机电流：高压压缩机电流通常为 5~15A（负荷越大，电流越大）。 五、新能源汽车制冷系统特点 新能源汽车制冷系统以“电动化”为核心，与传统燃油车相比，主要有以下差异与特点，",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 232,
+    "bounding box" : [ 90.0, 400.758, 137.89, 412.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "见表 6-1。"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 10,
+    "page number" : 232,
+    "bounding box" : [ 213.24, 377.357, 381.845, 389.071 ],
+    "linked content id" : 11,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "表 6-1 新能源汽车制冷系统特点对比"
+  }, {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 11,
+    "level" : "2",
+    "page number" : 232,
+    "bounding box" : [ 84.36, 235.72, 510.94, 372.1 ],
+    "number of rows" : 5,
+    "number of columns" : 3,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 84.6, 351.71, 145.4, 371.86 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 232,
+          "bounding box" : [ 96.959, 357.225, 132.959, 366.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "对比维度"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 145.4, 351.71, 297.9, 371.86 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 2,
+          "page number" : 232,
+          "bounding box" : [ 181.2, 357.225, 262.2, 366.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "传统燃油车制冷系统"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 297.9, 351.71, 510.7, 371.86 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 232,
+          "bounding box" : [ 363.84, 357.225, 444.84, 366.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "新能源汽车制冷系统"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 84.6, 331.51, 145.4, 351.71 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 4,
+          "page number" : 232,
+          "bounding box" : [ 96.959, 337.065, 132.959, 346.065 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "动力来源"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 145.4, 331.51, 297.9, 351.71 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 232,
+          "bounding box" : [ 163.2, 337.065, 280.2, 346.065 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "依赖发动机传动带驱动压缩机"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 297.9, 331.51, 510.7, 351.71 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 6,
+          "page number" : 232,
+          "bounding box" : [ 327.84, 337.065, 480.84, 346.065 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "采用电动压缩机（由动力蓄电池供电）"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 84.6, 299.66, 145.4, 331.51 ],
+        "row number" : 3,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 7,
+          "page number" : 232,
+          "bounding box" : [ 96.959, 311.144, 132.959, 320.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "控制逻辑"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 145.4, 299.66, 297.9, 331.51 ],
+        "row number" : 3,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 8,
+          "page number" : 232,
+          "bounding box" : [ 162.48, 310.16, 280.8, 320.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "机械温控开关或简单 ECU 控制"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 297.9, 299.66, 510.7, 331.51 ],
+        "row number" : 3,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 232,
+          "bounding box" : [ 304.32, 305.264, 506.64, 325.904 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "由整车控制器（VCU）与空调控制器（ACU）协同， 结合蓄电池温度、车速动态调节"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 4,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 84.6, 267.81, 145.4, 299.66 ],
+        "row number" : 4,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 10,
+          "page number" : 232,
+          "bounding box" : [ 96.959, 279.344, 132.959, 288.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "能耗影响"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 145.4, 267.81, 297.9, 299.66 ],
+        "row number" : 4,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 11,
+          "page number" : 232,
+          "bounding box" : [ 172.2, 273.465, 271.2, 294.104 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "不直接消耗燃油 （发动机怠速负荷增加）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 297.9, 267.81, 510.7, 299.66 ],
+        "row number" : 4,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 12,
+          "page number" : 232,
+          "bounding box" : [ 336.84, 279.344, 471.84, 288.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "直接消耗高压电能，影响续驶里程"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 5,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 84.6, 236.2, 145.4, 267.81 ],
+        "row number" : 5,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 13,
+          "page number" : 232,
+          "bounding box" : [ 96.959, 247.425, 132.959, 256.425 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "核心部件"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 145.4, 236.2, 297.9, 267.81 ],
+        "row number" : 5,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 14,
+          "page number" : 232,
+          "bounding box" : [ 151.8, 241.544, 291.48, 262.184 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "机械压缩机、膨胀阀、冷凝器、蒸发 器"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 232,
+        "bounding box" : [ 297.9, 236.2, 510.7, 267.81 ],
+        "row number" : 5,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 15,
+          "page number" : 232,
+          "bounding box" : [ 305.28, 241.544, 503.28, 262.184 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "电动压缩机、电子膨胀阀、高效冷凝器（部分集成 热泵）、蒸发器"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 232,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "232"
+  } ]
+}

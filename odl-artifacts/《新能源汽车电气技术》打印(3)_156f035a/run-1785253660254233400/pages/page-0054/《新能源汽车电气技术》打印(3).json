@@ -1,0 +1,179 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 54,
+    "bounding box" : [ 111.0, 757.94, 215.887, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.可能的故障原因分析"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 15,
+    "level" : "1",
+    "page number" : 54,
+    "bounding box" : [ 111.0, 594.5, 505.265, 747.99 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 54,
+      "bounding box" : [ 111.0, 737.54, 499.501, 747.99 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）触摸微动开关无法解锁车门，钥匙指示灯不闪烁，说明“微动开关→keyless-ECU",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "level" : "2",
+        "page number" : 54,
+        "bounding box" : [ 90.0, 717.021, 236.889, 727.471 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "→天线→智能钥匙”工作异常。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 54,
+      "bounding box" : [ 111.0, 696.621, 494.165, 707.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）按下智能钥匙，车辆无反应，但钥匙指示灯闪烁，说明智能钥匙本身工作正常，",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 6,
+        "page number" : 54,
+        "bounding box" : [ 90.0, 676.221, 310.448, 686.671 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "“keyless-ECU→BCM→门锁电动机”工作异常。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 54,
+      "bounding box" : [ 111.0, 655.821, 505.265, 666.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）踩下制动踏板，同时按下一键起动按钮，提示“未检测到钥匙”，说明“制动开关&",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 9,
+        "page number" : 54,
+        "bounding box" : [ 90.0, 635.3, 462.728, 645.75 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "一键起动开关→BCM”正常，“BCM→keyless-ECU→天线→智能钥匙”工作异常。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 54,
+      "bounding box" : [ 111.0, 594.5, 504.608, 625.35 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）BCM 无法和 keyless-ECU 通信，说明“BCM→keyless-ECU”工作异常。 综合上述，所有异常都与 keyless-ECU 有关，故障可能为 keyless-ECU 工作异常，那",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 18,
+    "page number" : 54,
+    "bounding box" : [ 90.0, 574.1, 163.448, 584.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "么可能原因有："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 20,
+    "level" : "1",
+    "page number" : 54,
+    "bounding box" : [ 111.0, 492.38, 504.73, 564.03 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 54,
+      "bounding box" : [ 111.0, 553.58, 242.169, 564.03 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）keyless-ECU 自身故障。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 54,
+      "bounding box" : [ 111.0, 492.38, 504.73, 543.63 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）keyless-ECU 供电、接地故障。 3.电路图及维修资料查询 秦 EV 车型的 keyless-ECU 有两个插接器，分别为 KG25（A）和 KG25（B）,如图 2-8 所",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 24,
+    "page number" : 54,
+    "bounding box" : [ 90.0, 471.98, 286.808, 482.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "示。keyless-ECU 的电路图如图 2-9 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 25,
+    "page number" : 54,
+    "bounding box" : [ 117.24, 307.9, 477.72, 463.54 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 27,
+    "page number" : 54,
+    "bounding box" : [ 220.2, 288.74, 375.008, 299.19 ],
+    "linked content id" : 25,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-8 秦 EV keyless-ECU 插接器"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 54,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "54"
+  } ]
+}

@@ -1,0 +1,108 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 242,
+    "bounding box" : [ 90.0, 728.358, 510.49, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "以北汽 EU5 的 PTC 暖风系统为例，主要由高压 PTC 加热器、暖风芯体、冷却液循环泵、 鼓风机、空调控制器（ACU）、高压配电盒（HVJB）组成，如图 6-11 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 242,
+    "bounding box" : [ 200.88, 572.74, 394.32, 717.82 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 242,
+    "bounding box" : [ 226.44, 548.958, 368.647, 560.671 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-11 PTC 暖风加热系统结构"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 242,
+    "bounding box" : [ 90.0, 408.557, 510.49, 537.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "高压 PTC 加热器核心制热部件，由动力蓄电池（如 300~400V）供电，内部为正温度系 数（PTC）陶瓷发热体——温度越低，电阻越小，功率越大（自动调节）。常见功率为 2-5kW， 分为“空气加热型”（直接加热空气，如鼓风机风道内的 PTC）和“液体加热型”（加热冷 却液，再通过暖风芯体换热），北汽 EU5 采用液体加热型 PTC。PTC 加热器工作受 ACU 控制， 通过高压配电盒的继电器实现通断，同时具备过温保护（温度＞85℃时自动断电）、过流保 护（电流＞20A 时切断高压）。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 242,
+    "bounding box" : [ 90.0, 316.221, 510.49, 396.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "暖风芯体位于车内仪表板风道内，结构类似小型散热器，内部流通经 PTC 加热后的冷却 液。鼓风机将空气吹过暖风芯体，空气吸收冷却液热量后变为暖风，通过出风口送入车内（如 脚部、面部、除霜风口）。若暖风芯体脏堵（如灰尘、冷却液杂质），会导致换热效率下降， 制热不足。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 242,
+    "bounding box" : [ 90.0, 246.021, 505.209, 303.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "冷却液循环泵位于冷却液管路中，由 12V 低压电驱动，作用是将 PTC 加热后的冷却液 输送至暖风芯体，再将冷却后的冷却液回流至 PTC，形成循环。循环泵转速由 ACU 控制（制 热需求高时高速运转，若泵不工作，冷却液无法循环，暖风芯体无热量输出。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 242,
+    "bounding box" : [ 90.0, 175.821, 505.207, 233.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "鼓风机位于暖风芯体后方，由 12V 电动机驱动，通过调节转速控制送风量（如低速、 中速、高速）。鼓风机转速受 ACU 控制（通过 PWM 信号），若转速过低，即使暖风芯体温 度足够，出风口风量小，制热效果差。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 242,
+    "bounding box" : [ 111.0, 151.157, 505.207, 162.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "控制单元以空调控制器（ACU）为核心，接收车内温度传感器、PTC 温度传感器、除霜"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 242,
+    "bounding box" : [ 90.0, 80.957, 486.488, 139.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "开关的信号，控制 PTC 加热器通断、冷却液循环泵转速、鼓风机转速。例如： 当车内温度＜设定温度时，ACU 控制高压配电盒闭合 PTC 继电器，PTC 开始加热； 当 PTC 温度＞85℃时，ACU 切断 PTC 供电，避免过热；"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 242,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "242"
+  } ]
+}

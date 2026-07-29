@@ -1,0 +1,156 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 45,
+    "bounding box" : [ 90.0, 752.166, 152.889, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 任务情景"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 45,
+    "bounding box" : [ 90.0, 673.221, 505.208, 744.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "一位客户的比亚迪秦 EV 出现了故障，故障现象表现为触摸微动开关无法解锁车门，按 下智能钥匙，车辆无反应，但使用机械钥匙可以解锁车辆进入车内。进入车内后，踩下制动 踏板，同时按下一键起动按钮，提示“未检测到钥匙”，如果你是维修专员，请排除上述故 障。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 45,
+    "bounding box" : [ 90.0, 606.021, 505.207, 658.644 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识准备 一、新能源汽车进入及防盗系统功能 汽车进入及防盗系统是指防止汽车本身或车上的物品被盗所设的系统。它由电子控制的"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 45,
+    "bounding box" : [ 90.0, 483.38, 510.49, 596.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "遥控器或钥匙、电子控制电路、报警装置和执行机构等组成。最早的汽车门锁是机械式门锁， 只是用于汽车行驶时防止车门自动打开而发生意外，只起行车安全作用，不起防盗作用。随 着社会的进步、科学技术的发展和汽车保有量的不断增加，后来制造的轿车、货车车门都上 装了带钥匙的门锁。这种门锁只控制一个车门，其他车门是靠车内门上的门锁按钮进行开启 或锁止。随着电子技术的发展，汽车防盗技术也进入了电子锁阶段，电子锁采用电子密码或 射频识别等技术，大大提高了防盗的安全性和可靠性。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 45,
+    "bounding box" : [ 90.0, 381.38, 510.49, 473.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "随着新能源汽车在电气系统方面的不断升级，以及汽车电子技术的发展，新能源汽车的 进入及防盗系统的使用越来越智能和便利，例如比亚迪秦 EV 配备的无钥匙进入及起动系统， 业内称为 Kessy 系统（Keyless Entry Start & Exit Security System），有的整车厂也称为 PEPS 系统（Passive Entry & Passive Start）。新能源汽车的无钥匙进入及防盗系统是一种汽车新型 智能电子防盗系统，可以实现以下功能。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "level" : "2",
+    "page number" : 45,
+    "bounding box" : [ 111.0, 339.319, 510.49, 371.311 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1. 无钥匙进入 当驾驶人携带智能钥匙或者手机 APP 靠近车辆时，触摸门把手开关车门会自动解闭锁，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 45,
+    "bounding box" : [ 90.0, 299.661, 509.89, 330.51 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "甚至有些车型不需要触摸门把手开关，只要靠近车门一定距离（如 1 米或 1.5 米）即可自动 解锁，远离车门即可自动落锁，使进入车辆更加的便捷，省去了传统钥匙解锁的烦琐步骤。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "level" : "2",
+    "page number" : 45,
+    "bounding box" : [ 111.0, 257.995, 505.204, 290.07 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.2, 0.2, 0.2]",
+    "content" : "2. 寻车功能 在停车场中，车主可以通过智能钥匙或手机 APP 快速找到自己的车辆，节省时间和精"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 45,
+    "bounding box" : [ 90.0, 238.34, 110.89, 248.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.2, 0.2, 0.2]",
+    "content" : "力。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "level" : "2",
+    "page number" : 45,
+    "bounding box" : [ 111.0, 196.795, 505.202, 228.87 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.2, 0.2, 0.2]",
+    "content" : "3. 遥控起动 通过智能钥匙或手机 APP，车主可以在远程起动车辆，调节车内温度，如开启空调和"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 45,
+    "bounding box" : [ 90.0, 135.476, 505.195, 187.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.2, 0.2, 0.2]",
+    "content" : "座椅加热等，提升使用体验。 4. 远程监控和防盗 通过 TBOX 和整车控制器，系统可以实时监控车辆状态，并在异常情况下进行远程限"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 45,
+    "bounding box" : [ 90.0, 115.821, 205.45, 126.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.2, 0.2, 0.2]",
+    "content" : "制运行，确保车辆安全。"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 14,
+    "level" : "Doctitle",
+    "page number" : 45,
+    "bounding box" : [ 111.0, 90.5, 290.043, 100.95 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "二、新能源汽车进入及防盗系统的组成"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 45,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "45"
+  } ]
+}

@@ -1,0 +1,213 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 16,
+    "bounding box" : [ 111.0, 706.221, 510.49, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "注意：①插接前核对：先确认两侧插接器的端子编号排列是否呈镜像关系，再进行插接； ②对齐方向标识：以插接器上的箭头（或定位卡扣）为参照，确保插接方向与标识一致。 4.汽车开关"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 16,
+    "bounding box" : [ 90.0, 659.421, 505.205, 693.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "汽车开关是用于控制汽车电路中各类用电设备的装置，其分类方式及具体类型如下述内 容所示，可帮助理解其功能与应用。"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 5,
+    "level" : "1",
+    "page number" : 16,
+    "bounding box" : [ 111.0, 541.158, 389.165, 646.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 16,
+      "bounding box" : [ 111.0, 634.758, 389.165, 646.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（1）汽车开关的分类 汽车开关可依据不同维度划分类别：",
+      "kids" : [ {
+        "type" : "list",
+        "pdfua_tag" : "L",
+        "id" : 1,
+        "level" : "2",
+        "page number" : 16,
+        "bounding box" : [ 111.0, 564.558, 389.29, 623.071 ],
+        "numbering style" : "arabic numbers",
+        "number of list items" : 3,
+        "list items" : [ {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 16,
+          "bounding box" : [ 111.0, 611.358, 336.73, 623.071 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "1）按操作方式：分为手动操作式与脚踏式两类。",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 16,
+          "bounding box" : [ 111.0, 587.958, 336.73, 599.671 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2）按结构原理：分为机械开关与电磁开关两类。",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 16,
+          "bounding box" : [ 111.0, 564.558, 389.29, 576.271 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3）按用途：主要包括起动开关、组合开关及灯光开关三种。",
+          "kids" : [ ]
+        } ]
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 16,
+      "bounding box" : [ 111.0, 541.158, 311.29, 552.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）汽车开关的具体类型与功能（图 1-4）",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 16,
+    "bounding box" : [ 90.0, 431.98, 215.64, 530.74 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 16,
+    "bounding box" : [ 224.16, 431.74, 357.96, 530.74 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 16,
+    "bounding box" : [ 366.48, 431.98, 507.84, 531.22 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 16,
+    "bounding box" : [ 130.68, 385.157, 467.289, 420.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "起动开关 组合开关 灯光开关 图 1-4 汽车开关"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 16,
+    "bounding box" : [ 111.0, 339.621, 510.49, 373.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1）起动开关。 功能作用：操作方式分为钥匙提起操作与一键起动操作，可实现起动主电路的自由通断，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 16,
+    "bounding box" : [ 90.0, 274.34, 510.49, 326.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "同时亦可适用于其他车载电路的控制。 2）组合开关。 功能作用：为提升行车安全性与操作便捷性，汽车电气系统将转向开关、危险警告开关、"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 16,
+    "bounding box" : [ 90.0, 233.421, 505.204, 264.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "示廓灯及前照灯开关、变光开关、刮水器开关、洗涤器开关、喇叭开关等功能部件集成于同 一装置内，即组合开关。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 16,
+    "bounding box" : [ 111.0, 192.621, 505.204, 223.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3）灯光开关。 功能作用：负责控制前照灯、仪表灯、牌照灯、超车灯、变光装置及转向信号指示灯等"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 14,
+    "page number" : 16,
+    "bounding box" : [ 90.0, 135.38, 505.209, 182.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "车载灯光设备的电路通断。 5.汽车电路保护元件（如图 1-5 所示） 汽车电路保护元件的作用是：当电路或电气设备发生短路及过载时，自动切断电路，防"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 15,
+    "page number" : 16,
+    "bounding box" : [ 90.0, 94.58, 505.208, 125.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "止线束或电气设备损坏。汽车常见的电路保护元件包括电路断路保护器、熔断器及中央控制 盒，具体说明如下："
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 16,
+    "page number" : 16,
+    "bounding box" : [ 111.0, 74.18, 505.317, 84.63 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（1）熔断器 常用于保护局部电路，其额定电流较小且标注在本体上。核心元件是熔"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 16,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "16"
+  } ]
+}

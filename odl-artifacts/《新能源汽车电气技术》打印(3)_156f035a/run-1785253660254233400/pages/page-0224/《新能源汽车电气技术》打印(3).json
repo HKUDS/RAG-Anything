@@ -1,0 +1,219 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 224,
+    "bounding box" : [ 90.0, 728.358, 347.159, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "部+脚部混合吹风”（兼顾全身舒适性）四种核心模式。​ （3）湿度与空气质量控制：提升驾乘健康度"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 6,
+    "level" : "1",
+    "page number" : 224,
+    "bounding box" : [ 111.0, 634.758, 505.209, 716.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 224,
+      "bounding box" : [ 111.0, 704.958, 505.197, 716.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）除湿功能：制冷过程中，空气中的水分遇蒸发器冷凝成水排出车外，可将车内湿度",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 224,
+        "bounding box" : [ 90.0, 658.158, 505.195, 693.271 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "从 80%降至 40%~60%（人体舒适湿度区间）。冬季制热时，部分车型（如丰田凯美瑞）通 过“制热+外循环”组合，避免玻璃起雾（湿度过高易导致雾气凝结）。​"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 224,
+      "bounding box" : [ 111.0, 634.758, 505.209, 646.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）空气净化功能：空调系统配备空气滤清器。基础车型配备 PM2.5 滤芯，过滤效率达",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 224,
+    "bounding box" : [ 90.0, 565.821, 505.207, 623.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "95%以上，可拦截花粉、灰尘、雾霾颗粒；高端车型搭载活性炭滤芯+负离子发生器，活性 炭吸附甲醛、异味，负离子发生器释放负氧离子（浓度达 10000 个/cm³），改善车内空气质 量。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 224,
+    "bounding box" : [ 111.0, 541.158, 192.368, 552.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.核心热管理功能"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 224,
+    "bounding box" : [ 90.0, 425.421, 505.209, 529.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "新能源汽车空调系统的核心热管理功能是指通过对动力蓄电池的降温（超 40℃时借蓄 电池冷却器换热维持 25~40℃最佳区间）与预热（低于 5℃时用 PTC 或热泵升温至 15℃以 上），以及对驱动电机（控温 40~80℃避免动力衰减）和电控系统（控温 60~85℃保障电能 转换效率）的精准冷却，实现对车辆核心部件温度的动态调控，最终在保障动力蓄电池续航 与安全、维持电机电控稳定输出的基础上，延长整体部件使用寿命。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 224,
+    "bounding box" : [ 111.0, 400.758, 305.286, 412.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（1）动力蓄电池热管理：平衡续航与安全"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 11,
+    "level" : "1",
+    "page number" : 224,
+    "bounding box" : [ 111.0, 283.758, 505.209, 389.071 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 224,
+      "bounding box" : [ 111.0, 377.357, 505.208, 389.071 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）降温功能：当蓄电池温度＞40℃（如快充、高速行驶时），空调系统通过“蓄电池",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 224,
+        "bounding box" : [ 90.0, 307.157, 515.769, 365.671 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "冷却器（Chiller）”将制冷剂与蓄电池冷却液换热，使蓄电池温度维持在最佳工作区间 25~40℃。 例如特斯拉 Model 3 的集成式热管理系统，可在 30min 内将蓄电池温度从 50℃降至 35℃， 避免蓄电池过热导致的限功率或使用寿命缩短。​"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 224,
+      "bounding box" : [ 111.0, 283.758, 505.209, 295.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）预热功能：当蓄电池温度＜5℃（冬季低温环境），通过 PTC 加热器或热泵系统为蓄",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 224,
+    "bounding box" : [ 90.0, 236.957, 505.197, 272.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电池预热，使蓄电池温度升至 15℃以上再进行充电或行驶，避免低温导致的充电速度变慢 （充电时间可能延长 2 倍）、续航缩水（续航可能下降 40%）。​"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 224,
+    "bounding box" : [ 111.0, 213.557, 357.722, 225.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（2）驱动电机与电控系统热管理：确保动力稳定输出"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 14,
+    "level" : "1",
+    "page number" : 224,
+    "bounding box" : [ 111.0, 73.157, 505.209, 201.871 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 224,
+      "bounding box" : [ 111.0, 190.157, 505.198, 201.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）电机冷却功能：传统燃油车无此需求，新能源汽车的驱动电机工作时会产生大量热",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 224,
+        "bounding box" : [ 90.0, 119.957, 505.206, 178.471 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "量（温度可达 120℃），空调系统通过“电机散热器+电动水泵”组合，将电机冷却液温度 控制在 40~80℃。例如小鹏 P7 的电机冷却回路与空调制冷回路部分集成，冷却效率比独立 回路提升 20%，避免电机过热导致的动力衰减（如高速行驶时功率限制）。​"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 224,
+      "bounding box" : [ 111.0, 96.557, 401.648, 108.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）电控系统冷却功能：电控系统（逆变器、DC/DC 转换器）是",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 224,
+      "bounding box" : [ 111.0, 73.157, 505.209, 84.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）电能转换核心部件，工作温度过高会导致转换效率下降（如从 97%降至 90%），空",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 224,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "224"
+  } ]
+}

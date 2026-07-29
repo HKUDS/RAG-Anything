@@ -1,0 +1,167 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 231,
+    "bounding box" : [ 205.44, 608.398, 389.28, 763.3 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 6,
+    "page number" : 231,
+    "bounding box" : [ 239.88, 581.421, 355.328, 591.871 ],
+    "linked content id" : 5,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-9 蒸发器温度传感器"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 231,
+    "bounding box" : [ 111.0, 533.358, 510.49, 568.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "三、制冷系统工作原理 制冷系统基于“制冷剂相变（汽态-液态）”实现热量转移，核心流程分为压缩、冷凝、"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 231,
+    "bounding box" : [ 90.0, 509.957, 271.808, 521.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "节流、蒸发四个阶段，如图 6-10 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 9,
+    "page number" : 231,
+    "bounding box" : [ 146.52, 335.74, 472.68, 502.54 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 10,
+    "page number" : 231,
+    "bounding box" : [ 235.92, 316.221, 359.168, 326.671 ],
+    "linked content id" : 9,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-10 制冷系统工作循环"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 11,
+    "level" : "1",
+    "page number" : 231,
+    "bounding box" : [ 111.0, 127.758, 505.328, 303.271 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 231,
+      "bounding box" : [ 111.0, 291.557, 505.209, 303.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）压缩阶段：高压电动压缩机将蒸发器回流的低温低压气态制冷剂压缩为高温高压气",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 231,
+        "bounding box" : [ 90.0, 268.157, 388.09, 279.871 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "态（温度约 80~100℃，压力约 1.5~2.5MPa），并输送至冷凝器。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 231,
+      "bounding box" : [ 111.0, 244.758, 505.195, 256.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）冷凝阶段：高温高压液态制冷剂流经冷凝器，在风冷（冷凝器风扇）作用下，热量",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 231,
+        "bounding box" : [ 90.0, 221.358, 390.009, 233.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "被散发到大气中，制冷剂温度降至 50-60℃，变为中温高压液态。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 231,
+      "bounding box" : [ 111.0, 197.957, 505.195, 209.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）节流阶段：中温高压液态制冷剂经过储液干燥器过滤干燥后，进入电子膨胀阀。电",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 231,
+        "bounding box" : [ 90.0, 152.421, 505.208, 186.271 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "子膨胀阀通过阀芯节流，将制冷剂压力骤降至 0.2-0.5MPa，温度降至 5-10℃，变为低温低压 液态；"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 231,
+      "bounding box" : [ 111.0, 127.758, 505.328, 139.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）蒸发阶段：低温低压液态制冷剂进入蒸发器，与车内高温空气进行热交换——制冷",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 231,
+    "bounding box" : [ 90.0, 82.221, 505.205, 116.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "剂吸收热量蒸发为气态（温度降至 0~5℃），车内空气温度降低，经鼓风机吹入车内实现制 冷；气态制冷剂再回流至压缩机，完成循环。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 231,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "231"
+  } ]
+}

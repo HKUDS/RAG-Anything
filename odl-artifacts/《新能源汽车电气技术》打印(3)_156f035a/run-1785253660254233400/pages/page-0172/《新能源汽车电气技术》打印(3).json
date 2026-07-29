@@ -1,0 +1,77 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 172,
+    "bounding box" : [ 174.6, 493.3, 420.6, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 3,
+    "page number" : 172,
+    "bounding box" : [ 178.2, 481.1, 416.889, 491.55 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-43 测量 T05（A）/17 和 T05（A）/18 对地波形"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 172,
+    "bounding box" : [ 90.0, 419.9, 509.89, 471.15 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2）车辆下电，断开蓄电池负极,拔下 T05（A）插头，测量 T05（A）/17 与 T05（A）/18 电阻，实测电阻无穷的如图 4-44 左侧所示，正常终端电阻约 60 欧如下图右侧所示；异常， 如图 4-44 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 172,
+    "bounding box" : [ 170.88, 183.34, 423.84, 411.46 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 6,
+    "page number" : 172,
+    "bounding box" : [ 178.2, 170.661, 416.889, 181.111 ],
+    "linked content id" : 5,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-44 测量 T05（A）/17 与 T05（A）/18 终端电阻"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 172,
+    "bounding box" : [ 90.0, 129.861, 505.208, 160.711 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3)拔下网关插头，测量舒适网 1，T05（A）/18 与 G19/7 电阻，实测电阻图 4-45 左侧所 示，正常电阻为下图右侧所示；异常，如图 4-45 所示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 172,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "172"
+  } ]
+}

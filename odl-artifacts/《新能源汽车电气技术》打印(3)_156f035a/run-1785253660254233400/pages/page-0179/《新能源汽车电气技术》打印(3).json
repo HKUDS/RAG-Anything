@@ -1,0 +1,309 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 6,
+    "level" : "1",
+    "page number" : 179,
+    "bounding box" : [ 111.0, 704.958, 276.845, 763.471 ],
+    "numbering style" : "english letters",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 751.758, 276.845, 763.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "B.门锁内部机械部件磨损或润滑不良",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 728.358, 234.605, 740.071 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "C.车辆遥控钥匙电池电量低",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 704.958, 203.768, 716.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "D.车身控制模块故障",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 7,
+    "level" : "2",
+    "page number" : 179,
+    "bounding box" : [ 111.0, 190.157, 505.208, 693.271 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 6,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 681.558, 505.208, 693.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "8.遥控钥匙能正常开锁，但用钥匙插入车门锁芯手动开锁时，中控锁无反应，故障原因",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 179,
+        "bounding box" : [ 90.0, 611.358, 369.486, 669.871 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "可能是（ ）。 A.钥匙齿形磨损 B.车门锁芯内的机械开关故障 C.遥控接收器故障 D.中控锁控制模块故障"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 541.158, 496.93, 599.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "9.中控锁频繁自动上锁和解锁，以下哪个部件故障最有可能引发此现象（ ）。 A.车门位置传感器故障 B.中控锁电动机故障 C.制动灯开关故障 D.点火开关故障",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 517.758, 470.65, 529.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "10.车辆在行驶过程中，中控锁突然全部解锁，最不可能的原因是（ ）。",
+      "kids" : [ {
+        "type" : "list",
+        "pdfua_tag" : "L",
+        "id" : 2,
+        "level" : "1",
+        "page number" : 179,
+        "bounding box" : [ 111.0, 424.157, 287.644, 506.071 ],
+        "numbering style" : "english letters",
+        "number of list items" : 4,
+        "list items" : [ {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 179,
+          "bounding box" : [ 111.0, 494.357, 287.644, 506.071 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "A.某个车门未关好，车门开关信号异常",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 179,
+          "bounding box" : [ 111.0, 470.958, 255.846, 482.671 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "B.中控锁控制模块受到电磁干扰",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 179,
+          "bounding box" : [ 111.0, 447.557, 234.605, 459.271 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "C.车辆加速踏板传感器故障",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 179,
+          "bounding box" : [ 111.0, 424.157, 214.327, 435.871 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "D.中控锁系统线路虚接",
+          "kids" : [ ]
+        } ]
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 400.758, 502.077, 412.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "11.更换新的中控锁控制模块后，中控锁仍然不能正常工作，接下来首先应该检查的是",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 179,
+        "bounding box" : [ 90.0, 330.557, 374.767, 389.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "（ ）。 A.新模块的编程是否正确 B.所有车门的门锁执行器 C.车辆的熔丝 D.遥控钥匙电池"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 307.157, 502.209, 318.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "12.检测中控锁系统时，发现所有车门的中控锁动作缓慢，可能的原因是（ ）。",
+      "kids" : [ {
+        "type" : "list",
+        "pdfua_tag" : "L",
+        "id" : 4,
+        "level" : "1",
+        "page number" : 179,
+        "bounding box" : [ 111.0, 213.557, 245.645, 295.471 ],
+        "numbering style" : "english letters",
+        "number of list items" : 4,
+        "list items" : [ {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 179,
+          "bounding box" : [ 111.0, 283.758, 245.645, 295.471 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "A.某个车门的门锁执行器卡滞",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 179,
+          "bounding box" : [ 111.0, 260.358, 213.847, 272.071 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "B.中控锁控制模块故障",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 179,
+          "bounding box" : [ 111.0, 236.957, 203.047, 248.671 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "C.车辆供电电压过低",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 179,
+          "bounding box" : [ 111.0, 213.557, 224.767, 225.271 ],
+          "font" : "Calibri",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "D.某扇车门的密封条老化",
+          "kids" : [ ]
+        } ]
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 190.157, 502.077, 201.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "13.当使用遥控钥匙锁车时，转向灯不闪烁，而中控锁能正常锁止，可能的故障原因是",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 179,
+    "bounding box" : [ 90.0, 168.021, 152.89, 178.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（ ）。"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 9,
+    "level" : "1",
+    "page number" : 179,
+    "bounding box" : [ 111.0, 73.157, 350.282, 155.071 ],
+    "numbering style" : "english letters",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 143.358, 214.206, 155.071 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "A.转向灯灯泡全部烧毁",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 119.957, 350.282, 131.671 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "B.中控锁控制模块与转向灯控制线路之间的连接故障",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 96.557, 224.046, 108.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "C.遥控钥匙电池电量不足",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 179,
+      "bounding box" : [ 111.0, 73.157, 214.327, 84.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "D.车辆的防盗喇叭故障",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 179,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "179"
+  } ]
+}

@@ -1,0 +1,238 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 106,
+    "bounding box" : [ 90.0, 737.54, 505.209, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "亚迪秦 PLUS EV 的组合开关，其位置在转向盘左下侧位置，调节功能涵盖前照灯旋钮、雾灯 旋钮、变光切换和转向切换四部分。"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 5,
+    "level" : "1",
+    "page number" : 106,
+    "bounding box" : [ 111.0, 574.1, 505.203, 727.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 106,
+      "bounding box" : [ 111.0, 717.021, 505.203, 727.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（1）前照灯旋钮 分为关闭、自动灯光（AUTO）、位置灯（示宽灯或示廓灯）、近光",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 106,
+        "bounding box" : [ 90.0, 655.821, 505.209, 707.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "灯（前照灯）四个挡位，其中旋钮旋至 AUTO 挡时，系统会通过光线传感器感知外界环境明 暗度，当外界光线暗于设置值时，会自动打开近光灯，当外界光线强度高于设置值时，会自 动关闭近光灯。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 106,
+      "bounding box" : [ 111.0, 635.3, 462.601, 645.75 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）雾灯旋钮 负责打开或关闭雾灯，操作有效的前提是近光灯打开状态。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 106,
+      "bounding box" : [ 111.0, 614.9, 505.198, 625.35 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（3）变光切换 在近光灯开启的前提下，将开关向后拨动，打开远光灯，向前拨动，",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 106,
+        "bounding box" : [ 90.0, 594.5, 152.888, 604.95 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "打开超车灯。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 106,
+      "bounding box" : [ 111.0, 574.1, 473.16, 584.55 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（4）转向切换 将开关向下拨动，打开左转向灯，向上拨动，打开右转向灯。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 106,
+    "bounding box" : [ 115.56, 294.22, 509.673, 562.464 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 16,
+    "page number" : 106,
+    "bounding box" : [ 185.52, 522.98, 227.409, 533.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "前照灯旋"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 26,
+    "page number" : 106,
+    "bounding box" : [ 231.72, 467.66, 273.609, 478.11 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "雾灯旋钮"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 30,
+    "page number" : 106,
+    "bounding box" : [ 314.64, 463.34, 356.529, 473.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "变光切换"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 18,
+    "page number" : 106,
+    "bounding box" : [ 131.28, 457.1, 173.169, 467.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "灯光关闭"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 20,
+    "page number" : 106,
+    "bounding box" : [ 123.84, 414.621, 165.729, 425.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "自动前照"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 22,
+    "page number" : 106,
+    "bounding box" : [ 134.159, 353.66, 165.608, 364.11 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "位置灯"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 28,
+    "page number" : 106,
+    "bounding box" : [ 303.24, 353.66, 355.688, 364.11 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "转向灯切换"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 24,
+    "page number" : 106,
+    "bounding box" : [ 192.72, 305.421, 224.169, 315.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "近光灯"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 7,
+    "page number" : 106,
+    "bounding box" : [ 214.92, 267.98, 380.169, 278.43 ],
+    "linked content id" : 6,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-24 比亚迪秦 PLUS EV 组合开关"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 106,
+    "bounding box" : [ 90.0, 208.58, 509.89, 259.95 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "广义的灯光开关还包括制动开关、换档操纵机构的倒车挡、车钥匙、车门位置开关等， 因为这些部件的操作会带来部分灯光的表达，如踩制动时，制动灯亮起；挂倒挡时，倒车灯 亮起等。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 106,
+    "bounding box" : [ 111.0, 167.78, 505.2, 198.63 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.车身控制模块 新能源汽车的车身控制模块（BCM）主要负责车身电气部件的控制，包含门锁、门窗、"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 106,
+    "bounding box" : [ 90.0, 147.38, 425.888, 157.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "天窗、刮水器、灯光等多个系统的控制，灯光控制只是 BCM 的功能之一。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 106,
+    "bounding box" : [ 90.0, 75.261, 510.49, 132.511 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "如图 3-23 所示，比亚迪秦 PLUS EV 的 BCM 通过车身 CAN 总线接收组合开关的操作信息， 通过能量 CAN 总线接收倒车档位信息，通过制动开关信号线接收制动信息；BCM 在接收到信 息后，进行分析与决策，由左域或右域给相关灯体提供控制电源或信号，使对应灯光点亮。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 106,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "106"
+  } ]
+}

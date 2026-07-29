@@ -1,0 +1,231 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 2,
+    "level" : "Doctitle",
+    "page number" : 5,
+    "bounding box" : [ 90.0, 716.034, 322.209, 761.284 ],
+    "heading level" : 1,
+    "font" : "SimHei",
+    "font size" : 14.05,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "目 录 前言"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 5,
+    "bounding box" : [ 90.0, 686.66, 505.265, 697.11 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "项目一 新能源汽车电气系统认知 ............................................... 6"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 655.46, 505.265, 665.91 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务一 电气元件的识别和检修 .............................................. 7"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 624.26, 505.264, 634.71 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务二 比亚迪车系电路图识读 ............................................. 27"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 5,
+    "bounding box" : [ 90.0, 593.06, 505.264, 603.51 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "项目二 新能源汽车进入及起动系统检修 ......................................... 42"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 561.861, 505.264, 572.311 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务一 新能源汽车进入及防盗系统检测与维修 ............................... 44"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 530.66, 505.264, 541.11 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务二 新能源汽车起动系统检测与维修 ..................................... 61"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 5,
+    "bounding box" : [ 90.0, 499.46, 505.264, 509.91 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "项目三 新能源汽车仪表及灯光系统检修 ......................................... 82"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 468.261, 505.264, 478.711 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务一 仪表系统检测与维修 ............................................... 83"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 437.06, 505.384, 447.51 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务二 灯光系统检测与维修 .............................................. 103"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 5,
+    "bounding box" : [ 90.0, 405.861, 505.384, 416.311 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "项目四 新能源汽车辅助电气系统检修 .......................................... 128"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 374.66, 505.384, 385.11 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务一 电动车窗系统检测与维修 .......................................... 130"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 14,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 343.461, 505.384, 353.911 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务二 刮水器系统检测与维修 ............................................ 146"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 15,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 312.261, 505.384, 322.711 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务三 中控门锁系统检测与维修 .......................................... 162"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 16,
+    "page number" : 5,
+    "bounding box" : [ 90.0, 281.06, 505.384, 291.51 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "项目五 新能源汽车车载网络系统检修 .......................................... 181"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 17,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 249.861, 505.384, 260.311 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务一 CAN 总线系统检测与维修 ...........................................182"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 18,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 218.661, 505.384, 229.111 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务二 LIN 总线系统检测与维修 ...........................................203"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 19,
+    "page number" : 5,
+    "bounding box" : [ 90.0, 187.461, 505.384, 197.911 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "项目六 新能源汽车空调系统检修 .............................................. 221"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 20,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 156.261, 505.384, 166.711 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务一 制冷系统检测与维修 .............................................. 222"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 21,
+    "page number" : 5,
+    "bounding box" : [ 111.0, 125.06, 505.384, 135.51 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务二 暖风加热系统检测与维修 .......................................... 240"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 22,
+    "page number" : 5,
+    "bounding box" : [ 90.0, 92.661, 131.889, 103.111 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "参考文献"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 5,
+    "bounding box" : [ 295.32, 49.52, 299.874, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5"
+  } ]
+}

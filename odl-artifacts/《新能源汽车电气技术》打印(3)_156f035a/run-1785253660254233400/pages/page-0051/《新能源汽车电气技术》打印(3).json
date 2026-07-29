@@ -1,0 +1,109 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 51,
+    "bounding box" : [ 90.0, 717.021, 505.209, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "特斯拉 Cybertruck 的无线钥匙采用量子随机数生成器（QRNG），每次通信生成 128 位 动态密钥，这种加密机制从物理层阻断了攻击的可能性，其安全等级已通过 EAL5+认证，与 银行 U 盾同级。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 51,
+    "bounding box" : [ 111.0, 635.3, 505.206, 707.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "三、智能防盗系统 1.电池防盗的全链条防护 东风汽车的专利技术构建了“监测-拦截-追踪”三位一体的电池防盗体系。 硬件防护：蓄电池包螺栓内置位移传感器，精度达 0.1mm，异常移动立即触发机械锁舌"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 51,
+    "bounding box" : [ 90.0, 614.9, 163.448, 625.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "物理阻断拆卸。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 51,
+    "bounding box" : [ 90.0, 574.1, 505.209, 604.95 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "智能判读：通过蓄电池与车身的双定位模块，结合地电位接口状态变化，可在 10s 内区 分正常脱落与盗窃行为。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 51,
+    "bounding box" : [ 111.0, 553.58, 505.207, 564.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "能耗优化：分级唤醒机制将待机功耗降至 0.1W，较传统方案降低 95%，彻底解决电瓶亏"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 51,
+    "bounding box" : [ 90.0, 492.38, 505.205, 543.63 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电问题。 2.AI 驱动的行为分析 蔚来 ET9 的智能防盗系统集成步态识别与 IMU 惯性分析功能。钥匙内置的六轴传感器可"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 51,
+    "bounding box" : [ 90.0, 451.58, 510.49, 482.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "识别用户行走姿态，正常步频（1.5~2Hz）触发解锁，而奔跑状态（步频＞3Hz）则激活双闪 警示并记录周边环境影像。这种行为模式的学习能力，使系统能够适应不同用户的使用习惯。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 51,
+    "bounding box" : [ 111.0, 410.66, 505.209, 441.51 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.充电设施的联动防护 针对充电桩盗窃频发的问题，Swtch Energy 推出的 AI 安防方案通过边缘计算实现实时"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 51,
+    "bounding box" : [ 90.0, 368.478, 505.208, 400.711 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电缆切割检测。当系统识别到异常拉力或电流波动时，会立即发送警报至车主手机，并联动 周边摄像头进行 360追踪。实测显示，该方案可将充电设施盗窃事件减少 83%。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 51,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "51"
+  } ]
+}

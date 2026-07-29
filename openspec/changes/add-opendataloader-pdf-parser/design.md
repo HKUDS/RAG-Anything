@@ -66,6 +66,79 @@ Add structured parser events and metrics for selected backend, package version, 
 
 OpenDataLoader's safety filters remain enabled, but do not replace the system's own ingestion injection scan, upload authorization, path validation, file locking, status lifecycle, or audit logging. The backend inherits the same permission-checked upload path and the same worker-only execution model. No API endpoint or RBAC behavior changes.
 
+### 7. Make OpenDataLoader images controlled retrieval assets
+
+Legacy OpenDataLoader chunks may contain either `Image Path: <path>` or
+`[图片路径：<path>]`, with a full-width or half-width colon. Query compatibility
+parses both protocols, but a marker is never authority to read a file. One
+shared resolver normalizes and deduplicates candidates, accepts only regular
+supported images recorded in a document media manifest or under a registered
+ODL artifact root, and rejects traversal, symlink escape, missing files,
+unsupported extensions, and paths outside controlled roots. Direct context,
+BM25/bigram lookup, and graph expansion all use this resolver. Telemetry contains
+only aggregate protocol, candidate, valid, and rejection counts.
+
+New ingestion uses an auditable, document-scoped media contract. Every eligible
+ODL image creates a manifest entry containing a controlled relative path,
+SHA-256, MIME, page, element ID, caption, and provenance. Multimodal insertion
+creates an independent image description/chunk with the English `Image Path:`
+retrieval marker, then binds the persisted chunk ID and document ID to an opaque
+media ID in a KB-scoped catalog. The catalog is read back before completion is
+reported. Eligible image count, valid manifest count, catalog count, and
+persisted image-chunk count must agree; otherwise the document reports
+`image_media_incomplete` and does not claim `multimodal_processed` completion.
+Unsafe or missing media may yield a provenance-backed text fallback, never a
+successful image asset.
+
+The catalog is the authorization boundary for new media delivery. API and SSE
+payloads expose only opaque media IDs and fixed same-origin URLs; they never
+expose a local path or place bearer tokens in URLs. The media endpoint enforces
+the existing KB read permission and revalidates catalog ownership, manifest
+identity, containment, regular-file state, MIME/extension, and SHA-256 before
+serving bytes. A generic raw-path file endpoint is not an ODL delivery path.
+Legacy compatibility may be used only when an audited KB/document ownership
+mapping exists; otherwise legacy media delivery fails closed.
+
+Recall order is direct context, then local image/BM25/bigram indexes, then
+optional graph association. Graph expansion has one total timeout budget,
+defaulting to no more than two seconds, and never removes results already found
+by earlier stages. Logs record elapsed milliseconds, attempt count, and total
+budget without content or paths.
+
+Existing knowledge bases are not rewritten in place. Compatibility is verified
+against the existing `odl解析` data first. Permanent ingestion behavior is then
+validated by re-ingesting into the isolated `odl解析_图片修复` knowledge base,
+retaining the legacy KB, source PDF, and artifacts until a twenty-question image
+acceptance comparison has passed and an operator explicitly approves any agent
+binding change.
+
+### 8. Preload knowledge-base detail data without false empty states
+
+The knowledge-base list preloads the document summary and knowledge statistics
+for a specific authorised KB before navigation. Desktop pointer intent and
+keyboard focus may warm the same request, while click waits for the shared
+in-flight result for at most six seconds. A newer click supersedes an older one,
+so a late response can populate only its own cache entry and cannot navigate to
+or render another KB.
+
+Detail prefetch uses explicit KB-scoped API calls rather than the mutable global
+`currentKB`. Its in-memory cache is bounded to twenty KBs, expires after thirty
+seconds, and is partitioned by an authentication-session generation. Document
+rows are never persisted to browser storage. Logout, authentication expiry, KB
+deletion, and successful mutations that can change document summaries or stats
+invalidate the relevant entries. A marker or cache entry is never treated as an
+authorization decision; every network fill still passes the normal RBAC-protected
+endpoint.
+
+The detail page binds every display state to the route KB. A fresh cached result
+may seed the first render, but an uncached direct URL shows existing skeleton
+styles. Documents and stats have independent loading, ready, refreshing, and
+error states. Only a successful ready document response with zero rows may show
+the true empty state. Refresh failures preserve already rendered data, while an
+initial failure produces an explicit retry state. Entity and graph loading stays
+asynchronous and does not block document/stat readiness. Abort, request KB, and
+generation checks prevent late responses and stale selections from crossing KBs.
+
 ## Risks / Trade-offs
 
 - **JVM startup increases latency and memory for individual uploads** -> restrict initial use to an isolated staging deployment/KB, rely on worker/process timeouts and heap caps, record P50/P95 duration and RSS, and consider an explicitly designed batch/service architecture only after measurement.

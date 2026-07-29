@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Plus, Layers, Trash2, Clock, Database, FileText, CircleDot, X, Search, UserRound } from 'lucide-react'
+import { Plus, Layers, Trash2, Clock, Database, FileText, CircleDot, X, Search, UserRound, Loader2 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { api, setCurrentKB, getCurrentKB } from '../utils/api'
@@ -7,61 +7,15 @@ import Pagination from '../components/Pagination'
 import ResourceSortControl from '../components/ResourceSortControl'
 import { sortKnowledgeBases } from '../utils/kbSorting'
 import { clampPage, getStoredPageSize, getTotalPages, storePageSize } from '../utils/pagination'
+import { createLatestRequestGate } from '../utils/knowledgeDetailState'
 
 const PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:knowledge-bases'
 const KB_GRID_ROWS = 3
-const KB_LIST_CACHE_KEY = 'raganything:kb-list-cache'
-const KB_STATS_CACHE_KEY = 'raganything:kb-stats-cache'
 const SORT_OPTIONS = [
   { value: 'updated', label: '更新时间', Icon: Clock, type: 'time' },
   { value: 'entities', label: '实体数量', Icon: CircleDot, type: 'number' },
   { value: 'documents', label: '文档数量', Icon: FileText, type: 'number' },
 ]
-
-function readCachedKBList() {
-  if (typeof window === 'undefined') return []
-  try {
-    const raw = sessionStorage.getItem(KB_LIST_CACHE_KEY)
-    if (!raw) return []
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
-
-function writeCachedKBList(kbs) {
-  if (typeof window === 'undefined') return
-  try {
-    sessionStorage.setItem(KB_LIST_CACHE_KEY, JSON.stringify(Array.isArray(kbs) ? kbs : []))
-  } catch {
-    // Ignore storage quota / privacy mode failures.
-  }
-}
-
-function readCachedKBStats() {
-  if (typeof window === 'undefined') return {}
-  try {
-    const raw = sessionStorage.getItem(KB_STATS_CACHE_KEY)
-    if (!raw) return {}
-    const parsed = JSON.parse(raw)
-    return parsed && typeof parsed === 'object' ? parsed : {}
-  } catch {
-    return {}
-  }
-}
-
-function writeCachedKBStats(stats) {
-  if (typeof window === 'undefined') return
-  try {
-    const persistedStats = Object.fromEntries(
-      Object.entries(stats).filter(([, value]) => value?.unavailable !== true)
-    )
-    sessionStorage.setItem(KB_STATS_CACHE_KEY, JSON.stringify(persistedStats))
-  } catch {
-    // Ignore storage quota / privacy mode failures.
-  }
-}
 
 function areStatsEqual(a, b) {
   return Boolean(a) === Boolean(b)
@@ -80,7 +34,7 @@ function shouldReplaceStats(currentStats, incomingStats) {
 }
 
 // ====================== 知识库选择器（卡片网格） ======================
-function KBSelector({ kbs, kbStats, onSwitch, onDelete, deletingKB, gridRef, reserveRows = false }) {
+function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, deletingKB, gridRef, reserveRows = false }) {
   const [showDelete, setShowDelete] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const gridClassName = reserveRows
@@ -92,6 +46,7 @@ function KBSelector({ kbs, kbStats, onSwitch, onDelete, deletingKB, gridRef, res
 
   const handleDeleteClick = (e, kb) => {
     e.stopPropagation()
+    if (openingKB === kb.name) return
     setDeleteTarget(kb)
     setShowDelete(true)
   }
@@ -120,16 +75,24 @@ function KBSelector({ kbs, kbStats, onSwitch, onDelete, deletingKB, gridRef, res
         const entityCount = Number(stats?.entities || 0)
         const hasStats = stats !== undefined
         const isUnavailable = stats?.unavailable === true
+        const isOpening = openingKB === kb.name
 
         return (
           <article
             key={kb.name}
             className="directory-card resource-card resource-card-kb group cursor-pointer"
+            onPointerEnter={event => {
+              if (event.pointerType === 'mouse') onPrefetch(kb.name)
+            }}
           >
             <button
               type="button"
-              className="resource-card-kb-hitarea"
+              className={`resource-card-kb-hitarea ${isOpening ? 'cursor-progress' : ''}`}
+              style={isOpening ? { cursor: 'progress' } : undefined}
               onClick={() => onSwitch(kb.name)}
+              onFocus={() => onPrefetch(kb.name)}
+              disabled={isOpening}
+              aria-busy={isOpening}
               aria-label={`打开知识库 ${kb.label || kb.name}`}
             />
 
@@ -141,6 +104,12 @@ function KBSelector({ kbs, kbStats, onSwitch, onDelete, deletingKB, gridRef, res
                 <h3 className="resource-card-kb-title text-ink-primary">
                   {kb.label || kb.name}
                 </h3>
+                {isOpening && (
+                  <span className="mt-1 inline-flex items-center gap-1 text-2xs text-sky-600" role="status" aria-live="polite">
+                    <Loader2 size={11} className="animate-spin" aria-hidden="true" />
+                    正在打开…
+                  </span>
+                )}
               </div>
             </div>
 
@@ -183,6 +152,7 @@ function KBSelector({ kbs, kbStats, onSwitch, onDelete, deletingKB, gridRef, res
                 type="button"
                 onClick={(e) => handleDeleteClick(e, kb)}
                 onKeyDown={e => e.stopPropagation()}
+                disabled={isOpening || deletingKB}
                 className="resource-card-kb-delete absolute opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity rounded-lg text-ink-muted hover:text-rose-500 hover:bg-rose-50"
                 title="删除知识库"
                 aria-label={`删除 ${kb.label || kb.name}`}
@@ -235,15 +205,13 @@ function KBSelector({ kbs, kbStats, onSwitch, onDelete, deletingKB, gridRef, res
 // ====================== 主页面 ======================
 export default function KnowledgePage() {
   const navigate = useNavigate()
-  const initialCachedKBListRef = useRef(readCachedKBList())
-  const initialCachedStatsRef = useRef(readCachedKBStats())
-  const [kbs, setKBs] = useState(() => initialCachedKBListRef.current)
-  const [kbsLoaded, setKbsLoaded] = useState(() => initialCachedKBListRef.current.length > 0)
+  const [kbs, setKBs] = useState([])
+  const [kbsLoaded, setKbsLoaded] = useState(false)
   const [deletingKB, setDeletingKB] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
   const [newKBName, setNewKBName] = useState('')
   const [toast, setToast] = useState(null)
-  const [kbStats, setKbStats] = useState(() => initialCachedStatsRef.current)
+  const [kbStats, setKbStats] = useState({})
   const [loadError, setLoadError] = useState(false)
   const [search, setSearch] = useState('')
   const [sortField, setSortField] = useState('updated')
@@ -253,10 +221,15 @@ export default function KnowledgePage() {
   const gridRef = useRef(null)
   const createInputRef = useRef()
   const kbStatsRef = useRef({})
-  const staleStatsRef = useRef(new Set(Object.keys(initialCachedStatsRef.current)))
+  const staleStatsRef = useRef(new Set())
   const pendingStatsRef = useRef(new Set())
   const statsGenRef = useRef(0)
   const [statsReloadKey, setStatsReloadKey] = useState(0)
+  const [openingKB, setOpeningKB] = useState('')
+  const openRequestGateRef = useRef(null)
+  if (!openRequestGateRef.current) openRequestGateRef.current = createLatestRequestGate()
+
+  useEffect(() => () => openRequestGateRef.current?.invalidate(), [])
 
   const loadStatsForKBs = useCallback(async (kbNames) => {
     const names = [...new Set((kbNames || []).filter(Boolean))]
@@ -321,12 +294,7 @@ export default function KnowledgePage() {
 
   useEffect(() => {
     kbStatsRef.current = kbStats
-    writeCachedKBStats(kbStats)
   }, [kbStats])
-
-  useEffect(() => {
-    writeCachedKBList(kbs)
-  }, [kbs])
 
   useEffect(() => { if (showCreate && createInputRef.current) createInputRef.current.focus() }, [showCreate])
 
@@ -404,10 +372,23 @@ export default function KnowledgePage() {
 
   useEffect(() => { loadKBs() }, [loadKBs])
 
-  // 跳转到知识库详情页
-  const switchKB = useCallback((name) => {
+  const prefetchKB = useCallback((name) => {
+    if (!name || globalThis.navigator?.connection?.saveData) return
+    api.prefetchKnowledgeDetail(name).catch(() => {})
+  }, [])
+
+  // 跳转到知识库详情页：等待目标 KB 的文档与统计预取，避免详情首帧误报为空。
+  const switchKB = useCallback(async (name) => {
+    const requestId = openRequestGateRef.current.begin()
+    setOpeningKB(name)
+    try {
+      await api.prefetchKnowledgeDetail(name, { timeoutMs: 6_000 })
+    } catch {
+      // 失败也进入详情页，由详情页展示对应错误与重试状态。
+    }
+    if (!openRequestGateRef.current.isLatest(requestId)) return
     setCurrentKB(name)
-    navigate(`/knowledge/${name}`)
+    navigate(`/knowledge/${encodeURIComponent(name)}`)
   }, [navigate])
 
   // 创建知识库
@@ -440,6 +421,8 @@ export default function KnowledgePage() {
 
   // 删除知识库
   const deleteKB = useCallback(async (name, onDone) => {
+    openRequestGateRef.current.invalidate()
+    setOpeningKB('')
     setDeletingKB(true)
     try {
       await api.deleteKB(name)
@@ -549,6 +532,8 @@ export default function KnowledgePage() {
           kbs={paginatedKBs}
           kbStats={kbStats}
           onSwitch={switchKB}
+          onPrefetch={prefetchKB}
+          openingKB={openingKB}
           onDelete={deleteKB}
           deletingKB={deletingKB}
           gridRef={gridRef}

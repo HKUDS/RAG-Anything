@@ -1,0 +1,97 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 46,
+    "bounding box" : [ 111.0, 756.679, 505.208, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "新能源汽车的进入及防盗系统主要由智能钥匙模块（Key-less Ecu）、遥控钥匙、车外探"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 46,
+    "bounding box" : [ 90.0, 593.238, 505.209, 747.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "测天线、车身控制模块（BCM）、微动开关等组成。 1.智能钥匙模块（Key-less Ecu） 智能钥匙模块（Key-less Ecu）是无钥匙进入的主控单元，也是钥匙授权识别代码的解码 器，模块上连接有内外部探测天线、车门微动开关等，智能钥匙模块的主要作用包括：接收 车门微动开关的信号变化，通过低频发射驱动芯片驱动天线产生 125KHz 的低频信号（包括 钥匙唤醒信息、ID 码询问信息等），通过内部的高频接收模块接收钥匙发出的高频信号进 行车门防盗验证，同时通过起动子网与车身控制模块进行通信、信息交互等。比亚迪秦 EV 的智能钥匙模块安装在行李舱左上部，如图 2-1 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 4,
+    "page number" : 46,
+    "bounding box" : [ 194.88, 414.94, 399.84, 586.06 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 5,
+    "page number" : 46,
+    "bounding box" : [ 223.8, 394.037, 371.405, 405.63 ],
+    "linked content id" : 4,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-1 智能钥匙模块及安装位置"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 46,
+    "bounding box" : [ 111.0, 353.119, 508.09, 385.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.遥控钥匙 遥控钥匙由三维天线、高频发射模块、遥控按钮、主控制芯片等组成，如图 2-2 所示。"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 7,
+    "page number" : 46,
+    "bounding box" : [ 90.0, 312.318, 510.49, 344.311 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "三维天线是低频信号的接收天线，保证遥控钥匙在任意角度都能接收到 125KHz 的低频信号， 当钥匙接收到低频信号后通过高频发射模块向外发送带有认证信息的 433.92MHz 高频信号。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 46,
+    "bounding box" : [ 176.16, 125.98, 418.56, 305.02 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 46,
+    "bounding box" : [ 111.0, 86.9, 355.568, 117.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-2 遥控钥匙拆解结构 3.车外探测天线"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 46,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "46"
+  } ]
+}

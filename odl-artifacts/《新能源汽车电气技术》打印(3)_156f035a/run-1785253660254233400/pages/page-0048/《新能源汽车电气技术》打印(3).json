@@ -1,0 +1,130 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 48,
+    "bounding box" : [ 90.0, 676.221, 510.49, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "比亚迪秦 EV 微动开关通常位于车门把手钥匙孔旁边以及行李舱中间开启位置附近，是 一个拇指头大小的正方形按钮。其结构主要由外壳、驱动机构、触点系统和弹簧等部分组成， 微动开关通过线束与智能钥匙模块相连，当被按压后会给 Key-less Ecu 电压拉低信号传递解 闭锁需求信息。微动开关根据车辆的配置不同安装数量也不一样，低配车型只配备了驾驶人 侧门把手，高配车型会增加副驾、后排和行李舱微动开关。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 48,
+    "bounding box" : [ 111.0, 632.421, 505.208, 661.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "三、新能源汽车进入及防盗系统的工作原理 新能源汽车的无钥匙进入主要包括两个过程，一个合法钥匙的认证过程，一个车门解闭"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 48,
+    "bounding box" : [ 90.0, 611.9, 420.73, 622.35 ],
+    "linked content id" : 5,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "锁过程。下面主要以比亚迪秦 EV 为例讲解其工作原理，如图 2-5 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 48,
+    "bounding box" : [ 90.24, 412.06, 504.84, 603.58 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 48,
+    "bounding box" : [ 111.0, 350.718, 505.204, 403.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-5 进入及防盗系统工作原理 1.天线通过低频信号找钥匙 当驾驶人携带合法钥匙在车辆 1.5 米范围内操作车门微动开关，智能钥匙模块（Key-less"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 48,
+    "bounding box" : [ 90.0, 309.797, 505.191, 341.911 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "Ecu）获取到解闭锁需求后，通过内部的低频发射驱动芯片驱动与之相连的室外探测天线产 生 125KHz 的低频信号寻找钥匙，低频信号中包含钥匙唤醒信息、ID 码询问信息等。"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 8,
+    "level" : "Doctitle",
+    "page number" : 48,
+    "bounding box" : [ 111.0, 289.398, 245.404, 300.99 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.钥匙通过高频信号反馈信息"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 48,
+    "bounding box" : [ 90.0, 208.94, 505.267, 280.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "遥控钥匙通过三维接收天线接收 125kHz 低频信号唤醒，已授权的钥匙被唤醒后指示灯 会闪烁，验证 ID 码，若合法，则发出 433MHz 的高频信息，包含钥匙 ID 码、钥匙接收到的 天线信息给智能钥匙模块，智能钥匙模块通过内置高频接收模块接受钥匙信息，验证钥匙 ID 码是否合法。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 48,
+    "bounding box" : [ 111.0, 166.878, 509.05, 198.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.车门解闭锁过程 智能钥匙模块（Key-less Ecu）通过高频接收模块获取钥匙信息，并验证钥匙为合法后，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 48,
+    "bounding box" : [ 90.0, 127.221, 505.203, 158.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "通过起动子网通知车身控制模块（BCM），BCM 根据当前门锁状态向微动开关侧门锁提供 解锁或者闭锁电源，进行解闭锁。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 48,
+    "bounding box" : [ 111.0, 85.157, 508.93, 117.15 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "四、工作电压信号 电控系统正常工作的条件包括：模块的供电系统正常，ECU 自身正常，信号输入正常，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 48,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "48"
+  } ]
+}

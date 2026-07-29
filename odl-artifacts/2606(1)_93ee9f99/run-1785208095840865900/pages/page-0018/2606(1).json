@@ -1,0 +1,134 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 3,
+    "level" : "Doctitle",
+    "page number" : 18,
+    "bounding box" : [ 108.0, 705.96, 305.93, 721.514 ],
+    "heading level" : 1,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 11.955,
+    "text color" : "[0.0]",
+    "content" : "A Additional Implementation Details"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 4,
+    "level" : "Subtitle",
+    "page number" : 18,
+    "bounding box" : [ 108.0, 683.527, 220.906, 696.488 ],
+    "heading level" : 2,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "A.1 Experimental details"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 18,
+    "bounding box" : [ 108.0, 630.635, 503.999, 676.513 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Model inference services MiniMax M2.5 and GLM-5 were accessed through hosted inference services, using MiniMax’s hosted API and OpenRouter, respectively.2 Qwen3.5-35B-A3B was deployed locally on four NVIDIA H200 GPUs using an internal image derived from the public SGLang Docker image lmsysorg/sglang:v0.5.12-cu129.3"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 18,
+    "bounding box" : [ 107.641, 510.128, 505.65, 621.168 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Terminal-Bench-2.0 configuration. We use Harbor4 as the execution environment for all TerminalBench-2.0 tasks. Evaluations are run on an isolated machine with 64 CPU cores, 256 GB of memory, and a 2 MB/s outbound network bandwidth cap. We use a default concurrency of 32 tasks for MiniMax M2.5 and GLM-5, and a concurrency of 48 tasks for the locally deployed Qwen3.5-35BA3B backend. To reduce failures caused by incidental network latency rather than agent behavior, we mirror a subset of external resources required by Terminal-Bench-2.0 tasks when the original resources are stable but slow to download. Tasks that depend on external resources that cannot be accessed reliably, as well as tasks requiring multimodal inputs unsupported by the initial harness, are excluded from the main 64-case evaluation set. This configuration keeps the benchmark environment controlled while preserving the core terminal-interaction setting of Terminal-Bench-2.0."
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 7,
+    "level" : "Subtitle",
+    "page number" : 18,
+    "bounding box" : [ 108.0, 485.071, 248.881, 498.032 ],
+    "heading level" : 2,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "A.2 Additional GLM-5 analysis"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 18,
+    "bounding box" : [ 127.801, 194.717, 484.195, 473.892 ],
+    "alt_source" : "missing",
+    "source" : "2606(1)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 9,
+    "page number" : 18,
+    "bounding box" : [ 108.0, 126.747, 505.743, 193.296 ],
+    "linked content id" : 8,
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Figure 9: Case study of a GLM-5 harness edit on the Terminal-Bench-2.0 build-pov-ray task. Left: a failed trace under the initial harness, where long monolithic external downloads consume large tool budgets and the agent later finalizes despite repeated non-zero sanity checks. Right: a successful trace under the edited harness, where the agent uses bounded staged operations, checks external archive evidence before committing more work, and repairs the failed sanity check before finalizing."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 18,
+    "bounding box" : [ 108.0, 88.549, 505.109, 109.21 ],
+    "font" : "SFTT0800",
+    "font size" : 7.97,
+    "text color" : "[0.0]",
+    "content" : "2MiniMax token plan: https://platform.minimax.io/subscribe/token-plan; OpenRouter GLM-5 endpoint: https://openrouter.ai/z-ai/glm-5. Accessed on 2026/05."
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 12,
+    "level" : "1",
+    "page number" : 18,
+    "bounding box" : [ 118.859, 69.139, 417.414, 90.041 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 18,
+      "bounding box" : [ 118.859, 78.844, 395.755, 90.041 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 7.97,
+      "text color" : "[0.0]",
+      "content" : "3https://hub.docker.com/r/lmsysorg/sglang/tags?name=v0.5.12-cu129.",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 18,
+      "bounding box" : [ 118.859, 69.139, 417.414, 80.336 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 7.97,
+      "text color" : "[0.0]",
+      "content" : "4https://www.harborframework.com/docs/tutorials/running-terminal-bench.",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 18,
+    "bounding box" : [ 301.019, 39.313, 310.982, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "18"
+  } ]
+}

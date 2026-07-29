@@ -1,0 +1,130 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 127,
+    "bounding box" : [ 90.0, 737.54, 505.208, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "8. 新能源汽车的灯光系统常与__________（如激光雷达、摄像头）协同工作，实现自 适应照明。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 127,
+    "bounding box" : [ 111.0, 717.021, 163.449, 727.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "三、判断题"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 4,
+    "level" : "2",
+    "page number" : 127,
+    "bounding box" : [ 111.0, 553.58, 509.89, 707.071 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 8,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 127,
+      "bounding box" : [ 111.0, 696.621, 394.45, 707.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.比亚迪秦 PLUS EV 的 BCM 左域控制右前位置灯。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 127,
+      "bounding box" : [ 111.0, 676.221, 373.45, 686.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.雾灯可以在示宽灯关闭的状态下单独开启。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 127,
+      "bounding box" : [ 111.0, 655.821, 415.45, 666.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.多个灯光同时不亮时，应先检查各灯体的独立线路。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 127,
+      "bounding box" : [ 111.0, 635.3, 412.809, 645.75 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.制动灯的信号直接由制动开关通过硬线传输至 BCM。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 127,
+      "bounding box" : [ 111.0, 614.9, 373.45, 625.35 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5.灯光亮度不足一定是由灯体自身故障导致。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 127,
+      "bounding box" : [ 111.0, 594.5, 509.89, 604.95 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "6.汽车仪表上每个信息的显示都来自特定的模块，都有着特定的工作逻辑。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 127,
+      "bounding box" : [ 111.0, 574.1, 436.45, 584.55 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "7.汽车仪表上的车速表信息是仪表模块自行存储和显示的。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 127,
+      "bounding box" : [ 111.0, 553.58, 404.89, 564.03 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "8.组合仪表的常火电源电压与蓄电池电压大小无关。（ ）",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 127,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "127"
+  } ]
+}

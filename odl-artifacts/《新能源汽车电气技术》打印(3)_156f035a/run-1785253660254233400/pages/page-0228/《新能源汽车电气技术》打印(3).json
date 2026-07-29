@@ -1,0 +1,107 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 228,
+    "bounding box" : [ 228.6, 617.26, 387.48, 766.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 3,
+    "page number" : 228,
+    "bounding box" : [ 250.44, 597.021, 365.768, 607.471 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-4 冷凝器结构示意图"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 228,
+    "bounding box" : [ 111.0, 550.221, 505.209, 584.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.蒸发器 蒸发器位于车内仪表板内部，作用是将节流后的低温低压液态制冷剂蒸发为气态，吸收"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 5,
+    "page number" : 228,
+    "bounding box" : [ 90.0, 502.157, 505.209, 537.271 ],
+    "linked content id" : 6,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "车内空气热量（实现降温）。蒸发器表面装有温度传感器（NTC），用于监测蒸发温度，防 止结霜；同时配备鼓风机，将冷却后的空气吹入车内，如图 6-5 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 228,
+    "bounding box" : [ 200.88, 344.14, 393.36, 494.62 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 228,
+    "bounding box" : [ 142.44, 275.957, 452.65, 334.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-5 蒸发器上的空气冷却过程 1-进入蒸发器的低压制冷剂越 2bar 2-蒸发器内的制冷剂沸点-10℃ 3-进入蒸发器的热空气例 30℃ 4-从蒸发器出来的热空气例 12℃"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 228,
+    "bounding box" : [ 111.0, 207.021, 505.204, 240.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.膨胀阀 传统燃油车辆使用的膨胀阀是热力膨胀阀，而电动汽车上通常使用电子膨胀阀"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 228,
+    "bounding box" : [ 90.0, 160.221, 510.49, 194.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（Electronic Expansion Valve, EEV）。电子膨胀阀（EEV）是一种利用电子技术控制阀芯开度， 从而自动调节制冷剂流量的装置。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 228,
+    "bounding box" : [ 90.0, 88.758, 507.369, 147.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电子膨胀阀（EEV）位于蒸发器入口处，是制冷系统的“节流部件”，如图 6-6 所示。 电子膨胀阀可通过 ACU 精准控制阀芯开度（0~500 步），根据蒸发器温度、车内设定温度 调节制冷剂流量，避免蒸发器结霜或制冷不足。例如：当蒸发器温度过低（接近 0℃）时，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 228,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "228"
+  } ]
+}

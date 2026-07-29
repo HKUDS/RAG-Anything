@@ -1,0 +1,148 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 16,
+    "level" : "Doctitle",
+    "page number" : 1,
+    "bounding box" : [ 14.04, 228.79, 36.36, 563.21 ],
+    "heading level" : 1,
+    "font" : "Times-Roman",
+    "font size" : 20.0,
+    "text color" : "[0.5, 0.5, 0.5]",
+    "content" : "arXiv:2606.09498v1 [cs.CL] 8 Jun 2026"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 2,
+    "level" : "Subtitle",
+    "page number" : 1,
+    "bounding box" : [ 118.715, 673.083, 493.288, 695.48 ],
+    "heading level" : 2,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 17.215,
+    "text color" : "[0.0]",
+    "content" : "Self-Harness: Harnesses That Improve Themselves"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 1,
+    "bounding box" : [ 181.572, 608.887, 430.428, 632.757 ],
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Hangfan Zhang, Shao Zhang, Kangcong Li, Chen Zhang, Yang Chen, Yiqun Zhang, Lei Bai∗, Shuyue Hu∗"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 1,
+    "bounding box" : [ 220.088, 598.576, 391.913, 610.58 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Shanghai Artificial Intelligence Laboratory"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 1,
+    "bounding box" : [ 197.757, 587.246, 414.245, 598.033 ],
+    "font" : "SFTT0900",
+    "font size" : 8.966,
+    "text color" : "[0.0]",
+    "content" : "{zhanghangfan,zhangshao,hushuyue}@pjlab.org.cn"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H3",
+    "id" : 7,
+    "level" : "Subtitle",
+    "page number" : 1,
+    "bounding box" : [ 283.758, 545.207, 328.243, 560.761 ],
+    "heading level" : 3,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 11.955,
+    "text color" : "[0.0]",
+    "content" : "Abstract"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 1,
+    "bounding box" : [ 143.507, 305.356, 469.878, 535.541 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "The performance of LLM-based agents is jointly shaped by their base models and the harnesses that mediate their interaction with the environment. Because different models exhibit distinct behaviors, effective harness design is inherently model-specific. Yet agent harnesses are still largely engineered by human experts, a paradigm that scales poorly as modern LLMs become increasingly diverse and rapidly evolving. In this paper, we introduce Self-Harness, a new paradigm in which an LLM-based agent improves its own operating harness, without relying on human engineers or stronger external agents. We operationalize Self-Harness as an iterative loop with three stages: Weakness Mining, which identifies model-specific failure patterns from execution traces; Harness Proposal, which generates diverse yet minimal harness modifications tied to these failures; and Proposal Validation, which accepts candidate edits only after regression testing. We instantiate SelfHarness on Terminal-Bench-2.0 using a minimal initial harness and three base models from diverse families: MiniMax M2.5, Qwen3.5-35B-A3B, and GLM-5. Across all three models, Self-Harness consistently improves performance, with held-out pass rates increasing from 40.5% to 61.9%, 23.8% to 38.1%, and 42.9% to 57.1%, respectively. Qualitative analyses further show that Self-Harness does not simply add generic instructions, but effectively turns model-specific weaknesses into concrete, executable harness changes. These results suggest a path toward LLM-based agents that are not merely shaped by their harnesses, but can also participate in reshaping them."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 1,
+    "bounding box" : [ 143.866, 269.533, 468.131, 292.337 ],
+    "font" : "NimbusRomNo9L-ReguItal",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "For a conscious being, to exist is to change, to change is to mature, to mature is to go on creating oneself endlessly."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "level" : "1",
+    "page number" : 1,
+    "bounding box" : [ 320.55, 258.624, 468.136, 270.519 ],
+    "font" : "NimbusRomNo9L-ReguItal",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "—Henri Bergson, Creative Evolution"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H3",
+    "id" : 11,
+    "level" : "Subtitle",
+    "page number" : 1,
+    "bounding box" : [ 108.0, 229.083, 190.814, 244.637 ],
+    "heading level" : 3,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 11.955,
+    "text color" : "[0.0]",
+    "content" : "1 Introduction"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 1,
+    "bounding box" : [ 107.641, 152.941, 505.745, 219.49 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "To date, LLM-based agents are not shaped by their base model alone, but also by their harness: the surrounding system that situates the model and mediates its interaction with the environment. Although there is no universally accepted definition, a harness may include system prompts, tools, runtime mechanisms, verification rules, orchestration logic, and failure-recovery procedures. The same base model can thus exhibit substantially different performance under different harnesses [28, 5, 8]."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 1,
+    "bounding box" : [ 107.641, 82.007, 505.246, 148.556 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "From early frameworks such as ReAct [29] to product- and platform-level systems such as Claude Code, Codex, and OpenHands, harnesses have largely been engineered by human experts [9, 16, 24, 36, 35]. While effective, this human-centered paradigm does not scale well with the diversity and rapid evolution of modern LLMs. Different models can exhibit distinct behavioral patterns, tool-use habits, error modes, and sensitivities to prompting [22, 21, 18]; consequently, a harness that works well for one model may be suboptimal for another [22, 5, 8]. As new models continue to be released"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 15,
+    "page number" : 1,
+    "bounding box" : [ 108.0, 49.667, 197.392, 75.1 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 7.97,
+    "text color" : "[0.0]",
+    "content" : "∗Corresponding Authors Preprint."
+  } ]
+}

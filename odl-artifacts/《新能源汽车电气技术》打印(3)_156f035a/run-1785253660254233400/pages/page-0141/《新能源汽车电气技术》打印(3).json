@@ -1,0 +1,69 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 141,
+    "bounding box" : [ 90.0, 741.26, 505.207, 767.31 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "为小于 1 欧，实测为无穷大,异常；最终通过排查电路锁定最小故障点为 U05/9→UJG01/34 线路断路，经查找发现 U05/9→UJG01/34 线路断路故障，如图 4-14 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 141,
+    "bounding box" : [ 101.88, 448.3, 492.48, 732.94 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 141,
+    "bounding box" : [ 201.84, 430.34, 393.248, 440.79 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-14 测量 U05/9 与 UJG01/34 线路断路"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "level" : "1",
+    "page number" : 141,
+    "bounding box" : [ 111.0, 389.421, 505.207, 420.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5. 故障点确认 通过以上的检测最终锁定故障点为 U05/9→UJG01/34 线路断路，在电路图的位置如图中"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 141,
+    "bounding box" : [ 90.0, 369.021, 242.168, 379.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "红圈所示如图 4-15 中红圈所示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 141,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "141"
+  } ]
+}

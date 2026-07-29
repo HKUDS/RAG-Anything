@@ -1,0 +1,163 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 11,
+    "level" : "Doctitle",
+    "page number" : 7,
+    "bounding box" : [ 108.0, 706.64, 471.515, 719.601 ],
+    "heading level" : 1,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "3.4 Proposal Validation: Ensuring Robust Improvement through Regression Testing"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 7,
+    "bounding box" : [ 107.641, 676.354, 504.004, 699.267 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "A candidate harness edit is not adopted immediately after it is proposed. Instead, each candidate branch is treated as a new harness variant and evaluated under the same evaluator used to diagnose"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 7,
+    "bounding box" : [ 107.532, 615.816, 505.744, 676.0 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "the current harness. For a proposal ∆j, let h(tj) = ∆j(ht) denote the resulting candidate harness. We evaluate both the current harness ht and the candidate harness h(tj) on the held-in split Din and the held-out split Dho. The held-in split measures whether the proposal addresses the evidence that motivated it, while the held-out split serves as a regression test for behaviors that were not visible to the proposer."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 14,
+    "page number" : 7,
+    "bounding box" : [ 107.532, 584.14, 505.739, 611.432 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Let Pin(h) and Pho(h) denote the number of passed tasks for harness h on Din and Dho, respectively. We define the split-wise improvements of candidate h(tj) over the current harness as"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 15,
+    "page number" : 7,
+    "bounding box" : [ 108.0, 546.825, 363.482, 577.912 ],
+    "font" : "CMR7",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "∆(inj) = Pin(h(tj)) − Pin(ht), and"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 16,
+    "page number" : 7,
+    "bounding box" : [ 246.802, 529.151, 365.198, 549.12 ],
+    "font" : "CMR7",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "∆(hoj) = Pho(h(tj)) − Pho(ht)."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 17,
+    "page number" : 7,
+    "bounding box" : [ 107.641, 521.022, 460.546, 533.026 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "A candidate is accepted only if it improves at least one split without degrading the other:"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 18,
+    "page number" : 7,
+    "bounding box" : [ 207.11, 492.673, 404.892, 512.642 ],
+    "font" : "CMR10",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "∆(inj) ≥ 0, ∆(hoj) ≥ 0, max ∆(inj),∆(hoj) > 0."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 19,
+    "page number" : 7,
+    "bounding box" : [ 107.641, 380.056, 505.742, 490.241 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "This rule implements a conservative promotion criterion. Proposals that only trade off one split against the other are rejected, even if their total pass count increases. When evaluation is stochastic, we repeat candidate evaluation and apply the same rule to aggregate pass counts across repeats. This reduces the chance that a harness edit is promoted due to a single favorable run. If multiple compatible candidates satisfy the rule in the same round, their edits are merged into the next harness; rejected candidates remain logged but do not change the active harness. In addition to the pass-count rule, validation rejects proposals that do not modify any editable surface or fail execution before a valid evaluation result is obtained. For each evaluated candidate, the system records the changed surfaces, split-wise outcomes, evaluation repeats, proposal summary, and accept/reject decision, making each transition in the harness lineage auditable."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 20,
+    "page number" : 7,
+    "bounding box" : [ 108.0, 350.384, 191.017, 365.938 ],
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 11.955,
+    "text color" : "[0.0]",
+    "content" : "4 Experiments"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 21,
+    "page number" : 7,
+    "bounding box" : [ 107.532, 284.912, 503.997, 340.553 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "We evaluate whether Self-Harness can improve agent performance by modifying only the harness around a fixed language model. Our experiments use Terminal-Bench-2.0, which tests terminal interaction in containerized environments. Across multiple model backends, we start from the same minimal DeepAgent-based harness and let Self-Harness propose, validate, and promote bounded edits using held-in execution evidence and held-out regression gates."
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 22,
+    "level" : "Subtitle",
+    "page number" : 7,
+    "bounding box" : [ 108.0, 259.856, 154.774, 272.817 ],
+    "heading level" : 1,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "4.1 Setup"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 23,
+    "page number" : 7,
+    "bounding box" : [ 107.751, 153.206, 505.652, 252.842 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Benchmarks. We evaluate Self-Harness on Terminal-Bench-2.0 [13], a multi-turn agentic benchmark in which agents interact with realistic execution environments and are judged by deterministic verifiers. Terminal-Bench-2.0 contains 89 containerized terminal tasks that test general tool-based execution, including artifact management, command use, verification behavior, and recovery from execution errors. We evaluate on a fixed 64-case subset, excluding tasks that depend on unstable external web resources or require multimodal inputs. This filtering reduces evaluation noise from factors outside the harness. In particular, multimodal tasks require modality-specific input handling that is not exposed by our minimal initial harness; including them would primarily measure unsupported harness functionality rather than the effect of Self-Harness edits."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 24,
+    "page number" : 7,
+    "bounding box" : [ 107.641, 75.548, 505.655, 142.456 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Models. We evaluate Self-Harness with three models: MiniMax M2.5 [14], Qwen3.5-35BA3B [20], and GLM-5 [2]. The model is held fixed across all harness variants and is also used in the proposal stage to generate edits from evaluator feedback. All comparisons are therefore within-model comparisons: the decoding configuration, budget, tool set, benchmark environment, and evaluator are kept unchanged while only the harness is allowed to vary. This isolates the effect of Self-Harness from changes in model capability or evaluation protocol."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 25,
+    "page number" : 7,
+    "bounding box" : [ 303.509, 39.313, 308.49, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "7"
+  } ]
+}

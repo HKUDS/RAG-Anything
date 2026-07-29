@@ -1,0 +1,2083 @@
+{
+  "file name" : "2021年大众ID.4 CROZZ维修电路图-全自动空调.pdf",
+  "number of pages" : 12,
+  "author" : "",
+  "title" : "",
+  "creation date" : "D:20210201192630+08'00'",
+  "modification date" : "D:20210527104407+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 14,
+    "page number" : 11,
+    "bounding box" : [ 110.28, 665.73, 113.4, 666.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 15,
+    "page number" : 11,
+    "bounding box" : [ 86.28, 655.17, 130.68, 665.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile2.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 16,
+    "page number" : 11,
+    "bounding box" : [ 87.0, 655.05, 129.0, 655.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile3.png"
+  }, {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 1,
+    "level" : "1",
+    "page number" : 11,
+    "bounding box" : [ 69.117, 594.81, 159.713, 652.17 ],
+    "number of rows" : 2,
+    "number of columns" : 4,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 69.297, 612.485, 92.7, 650.67 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 92.7, 612.485, 124.14, 650.67 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 124.14, 612.485, 159.533, 650.67 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 2,
+        "kids" : [ ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 69.297, 596.31, 92.7, 612.485 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 92.7, 596.31, 124.14, 612.485 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 124.14, 596.31, 155.58, 612.485 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 155.58, 596.31, 159.533, 612.485 ],
+        "row number" : 2,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      } ]
+    } ]
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 38,
+    "page number" : 11,
+    "bounding box" : [ 168.48, 636.81, 171.48, 637.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile4.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 42,
+    "page number" : 11,
+    "bounding box" : [ 247.2, 636.81, 250.44, 637.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile5.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 39,
+    "page number" : 11,
+    "bounding box" : [ 167.64, 633.09, 174.84, 636.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile6.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 43,
+    "page number" : 11,
+    "bounding box" : [ 246.36, 633.09, 253.56, 636.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile7.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 46,
+    "page number" : 11,
+    "bounding box" : [ 184.56, 636.21, 189.12, 636.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile8.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 47,
+    "page number" : 11,
+    "bounding box" : [ 183.36, 632.49, 190.56, 636.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile9.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 40,
+    "page number" : 11,
+    "bounding box" : [ 170.4, 594.81, 172.2, 633.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile10.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 44,
+    "page number" : 11,
+    "bounding box" : [ 249.12, 594.81, 250.92, 633.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile11.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 48,
+    "page number" : 11,
+    "bounding box" : [ 186.12, 594.69, 187.92, 632.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile12.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 22,
+    "page number" : 11,
+    "bounding box" : [ 91.44, 547.77, 99.84, 548.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile13.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 18,
+    "page number" : 11,
+    "bounding box" : [ 122.88, 547.77, 131.28, 548.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile14.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 11,
+    "bounding box" : [ 153.0, 547.77, 252.84, 548.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile15.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 23,
+    "page number" : 11,
+    "bounding box" : [ 86.28, 537.33, 99.84, 547.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile16.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 19,
+    "page number" : 11,
+    "bounding box" : [ 117.72, 537.33, 131.28, 547.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile17.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 11,
+    "bounding box" : [ 149.16, 537.33, 256.44, 547.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile18.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 24,
+    "page number" : 11,
+    "bounding box" : [ 91.44, 536.61, 99.84, 537.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile19.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 20,
+    "page number" : 11,
+    "bounding box" : [ 122.88, 536.61, 131.28, 537.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile20.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 11,
+    "bounding box" : [ 153.0, 536.61, 252.84, 537.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile21.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 34,
+    "page number" : 11,
+    "bounding box" : [ 262.92, 529.29, 266.28, 529.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile22.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 35,
+    "page number" : 11,
+    "bounding box" : [ 262.08, 525.57, 269.28, 529.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile23.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 36,
+    "page number" : 11,
+    "bounding box" : [ 264.6, 516.09, 266.76, 525.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile24.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 50,
+    "page number" : 11,
+    "bounding box" : [ 326.88, 517.89, 327.6, 518.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile25.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 51,
+    "page number" : 11,
+    "bounding box" : [ 326.16, 517.17, 328.32, 517.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile26.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 52,
+    "page number" : 11,
+    "bounding box" : [ 325.44, 516.45, 328.32, 517.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile27.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 53,
+    "page number" : 11,
+    "bounding box" : [ 324.72, 515.73, 329.76, 516.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile28.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 54,
+    "page number" : 11,
+    "bounding box" : [ 324.0, 515.01, 330.48, 515.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile29.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 55,
+    "page number" : 11,
+    "bounding box" : [ 323.28, 514.29, 331.2, 515.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile30.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 56,
+    "page number" : 11,
+    "bounding box" : [ 322.56, 513.57, 331.92, 514.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile31.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 57,
+    "page number" : 11,
+    "bounding box" : [ 321.84, 512.85, 332.64, 513.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile32.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 58,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 512.13, 333.36, 512.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile33.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 59,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 511.41, 334.08, 512.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile34.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 60,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 510.69, 334.8, 511.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile35.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 61,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 509.97, 326.88, 510.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile36.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 62,
+    "page number" : 11,
+    "bounding box" : [ 329.04, 509.97, 335.52, 510.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile37.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 63,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 509.25, 326.16, 509.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile38.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 64,
+    "page number" : 11,
+    "bounding box" : [ 329.76, 509.25, 335.52, 509.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile39.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 65,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 508.53, 325.44, 509.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile40.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 66,
+    "page number" : 11,
+    "bounding box" : [ 330.48, 508.53, 334.8, 509.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile41.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 67,
+    "page number" : 11,
+    "bounding box" : [ 321.84, 507.81, 324.72, 508.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile42.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 68,
+    "page number" : 11,
+    "bounding box" : [ 331.2, 507.81, 334.08, 508.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile43.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 69,
+    "page number" : 11,
+    "bounding box" : [ 322.56, 507.09, 324.0, 507.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile44.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 70,
+    "page number" : 11,
+    "bounding box" : [ 331.92, 507.09, 333.36, 507.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile45.png"
+  }, {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 12,
+    "level" : "2",
+    "page number" : 11,
+    "bounding box" : [ 231.48, 469.05, 252.72, 506.13 ],
+    "number of rows" : 2,
+    "number of columns" : 2,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 233.58, 495.45, 249.9, 504.63 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 249.9, 495.45, 252.54, 504.63 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 233.58, 470.1, 249.9, 495.45 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 11,
+        "bounding box" : [ 249.9, 470.1, 252.54, 495.45 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ ]
+      } ]
+    } ]
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 26,
+    "page number" : 11,
+    "bounding box" : [ 91.44, 500.61, 99.84, 501.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile46.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 30,
+    "page number" : 11,
+    "bounding box" : [ 122.88, 500.61, 131.28, 501.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile47.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 27,
+    "page number" : 11,
+    "bounding box" : [ 86.28, 490.17, 99.84, 500.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile48.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 31,
+    "page number" : 11,
+    "bounding box" : [ 117.72, 490.17, 131.28, 500.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile49.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 71,
+    "page number" : 11,
+    "bounding box" : [ 309.6, 497.73, 311.04, 498.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile50.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 93,
+    "page number" : 11,
+    "bounding box" : [ 343.44, 497.73, 344.88, 498.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile51.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 72,
+    "page number" : 11,
+    "bounding box" : [ 308.16, 497.01, 311.76, 497.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile52.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 94,
+    "page number" : 11,
+    "bounding box" : [ 342.72, 497.01, 345.6, 497.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile53.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 73,
+    "page number" : 11,
+    "bounding box" : [ 307.44, 496.29, 312.48, 497.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile54.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 95,
+    "page number" : 11,
+    "bounding box" : [ 342.0, 496.29, 347.04, 497.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile55.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 74,
+    "page number" : 11,
+    "bounding box" : [ 306.72, 495.57, 313.2, 496.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile56.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 96,
+    "page number" : 11,
+    "bounding box" : [ 341.28, 495.57, 347.76, 496.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile57.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 75,
+    "page number" : 11,
+    "bounding box" : [ 306.0, 494.85, 313.92, 495.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile58.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 97,
+    "page number" : 11,
+    "bounding box" : [ 341.28, 494.85, 348.48, 495.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile59.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 76,
+    "page number" : 11,
+    "bounding box" : [ 305.28, 494.13, 313.92, 494.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile60.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 98,
+    "page number" : 11,
+    "bounding box" : [ 342.0, 494.13, 349.2, 494.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile61.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 77,
+    "page number" : 11,
+    "bounding box" : [ 304.56, 493.41, 313.2, 494.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile62.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 99,
+    "page number" : 11,
+    "bounding box" : [ 342.72, 493.41, 349.92, 494.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile63.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 78,
+    "page number" : 11,
+    "bounding box" : [ 303.84, 492.69, 312.48, 493.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile64.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 100,
+    "page number" : 11,
+    "bounding box" : [ 343.44, 492.69, 350.64, 493.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile65.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 79,
+    "page number" : 11,
+    "bounding box" : [ 303.12, 491.97, 311.76, 492.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile66.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 101,
+    "page number" : 11,
+    "bounding box" : [ 344.16, 491.97, 351.36, 492.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile67.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 80,
+    "page number" : 11,
+    "bounding box" : [ 302.4, 491.25, 311.04, 491.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile68.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 102,
+    "page number" : 11,
+    "bounding box" : [ 345.6, 491.25, 352.08, 491.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile69.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 81,
+    "page number" : 11,
+    "bounding box" : [ 302.4, 490.53, 309.6, 491.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile70.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 103,
+    "page number" : 11,
+    "bounding box" : [ 345.6, 490.53, 352.8, 491.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile71.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 82,
+    "page number" : 11,
+    "bounding box" : [ 303.12, 489.81, 309.6, 490.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile72.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 104,
+    "page number" : 11,
+    "bounding box" : [ 344.88, 489.81, 352.8, 490.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile73.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 28,
+    "page number" : 11,
+    "bounding box" : [ 91.44, 489.33, 99.84, 490.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile74.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 32,
+    "page number" : 11,
+    "bounding box" : [ 122.88, 489.33, 131.28, 490.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile75.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 203,
+    "page number" : 11,
+    "bounding box" : [ 342.72, 487.65, 349.92, 489.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile76.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 83,
+    "page number" : 11,
+    "bounding box" : [ 303.84, 489.09, 310.32, 489.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile77.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 105,
+    "page number" : 11,
+    "bounding box" : [ 343.44, 489.09, 352.08, 489.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile78.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 204,
+    "page number" : 11,
+    "bounding box" : [ 342.72, 486.93, 349.92, 489.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile79.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 84,
+    "page number" : 11,
+    "bounding box" : [ 304.56, 488.37, 311.04, 489.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile80.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 106,
+    "page number" : 11,
+    "bounding box" : [ 342.72, 488.37, 351.36, 489.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile81.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 205,
+    "page number" : 11,
+    "bounding box" : [ 342.0, 486.21, 349.92, 488.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile82.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 85,
+    "page number" : 11,
+    "bounding box" : [ 305.28, 487.65, 311.76, 488.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile83.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 107,
+    "page number" : 11,
+    "bounding box" : [ 342.0, 487.65, 350.64, 488.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile84.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 86,
+    "page number" : 11,
+    "bounding box" : [ 306.0, 486.93, 312.48, 487.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile85.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 108,
+    "page number" : 11,
+    "bounding box" : [ 342.0, 486.93, 349.92, 487.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile86.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 206,
+    "page number" : 11,
+    "bounding box" : [ 342.0, 485.49, 349.2, 487.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile87.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 207,
+    "page number" : 11,
+    "bounding box" : [ 342.0, 484.77, 349.2, 486.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile88.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 87,
+    "page number" : 11,
+    "bounding box" : [ 306.72, 486.21, 313.2, 486.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile89.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 109,
+    "page number" : 11,
+    "bounding box" : [ 341.28, 486.21, 349.2, 486.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile90.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 88,
+    "page number" : 11,
+    "bounding box" : [ 307.44, 485.49, 313.92, 486.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile91.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 110,
+    "page number" : 11,
+    "bounding box" : [ 342.0, 485.49, 347.04, 486.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile92.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 208,
+    "page number" : 11,
+    "bounding box" : [ 345.6, 484.05, 348.48, 486.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile93.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 89,
+    "page number" : 11,
+    "bounding box" : [ 308.16, 484.77, 313.2, 485.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile94.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 111,
+    "page number" : 11,
+    "bounding box" : [ 342.72, 484.77, 347.76, 485.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile95.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 90,
+    "page number" : 11,
+    "bounding box" : [ 308.88, 484.05, 312.48, 484.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile96.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 112,
+    "page number" : 11,
+    "bounding box" : [ 343.44, 484.05, 347.04, 484.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile97.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 91,
+    "page number" : 11,
+    "bounding box" : [ 309.6, 483.33, 312.48, 484.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile98.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 113,
+    "page number" : 11,
+    "bounding box" : [ 344.16, 483.33, 346.32, 484.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile99.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 92,
+    "page number" : 11,
+    "bounding box" : [ 310.32, 482.61, 311.04, 483.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile100.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 114,
+    "page number" : 11,
+    "bounding box" : [ 344.88, 482.61, 345.6, 483.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile101.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 115,
+    "page number" : 11,
+    "bounding box" : [ 321.84, 473.97, 323.28, 474.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile102.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 116,
+    "page number" : 11,
+    "bounding box" : [ 331.2, 473.97, 332.64, 474.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile103.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 117,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 473.25, 324.0, 473.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile104.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 118,
+    "page number" : 11,
+    "bounding box" : [ 330.48, 473.25, 333.36, 473.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile105.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 119,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 472.53, 324.72, 473.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile106.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 210,
+    "page number" : 11,
+    "bounding box" : [ 324.72, 471.09, 326.88, 473.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile107.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 211,
+    "page number" : 11,
+    "bounding box" : [ 328.32, 471.09, 330.48, 473.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile108.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 120,
+    "page number" : 11,
+    "bounding box" : [ 329.76, 472.53, 334.08, 473.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile109.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 121,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 471.81, 325.44, 472.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile110.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 212,
+    "page number" : 11,
+    "bounding box" : [ 324.72, 470.37, 326.88, 472.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile111.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 213,
+    "page number" : 11,
+    "bounding box" : [ 327.6, 470.37, 336.24, 472.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile112.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 122,
+    "page number" : 11,
+    "bounding box" : [ 329.04, 471.81, 334.8, 472.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile113.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 214,
+    "page number" : 11,
+    "bounding box" : [ 325.44, 469.65, 327.6, 471.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile114.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 215,
+    "page number" : 11,
+    "bounding box" : [ 326.88, 469.65, 336.24, 471.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile115.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 123,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 471.09, 326.16, 471.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile116.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 124,
+    "page number" : 11,
+    "bounding box" : [ 329.04, 471.09, 335.52, 471.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile117.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 216,
+    "page number" : 11,
+    "bounding box" : [ 325.44, 468.93, 335.52, 471.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile118.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 125,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 470.37, 326.16, 471.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile119.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 126,
+    "page number" : 11,
+    "bounding box" : [ 329.04, 470.37, 334.8, 471.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile120.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 217,
+    "page number" : 11,
+    "bounding box" : [ 325.44, 468.21, 335.52, 470.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile121.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 127,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 469.65, 334.8, 470.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile122.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 128,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 468.93, 334.8, 469.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile123.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 218,
+    "page number" : 11,
+    "bounding box" : [ 326.16, 467.49, 331.2, 469.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile124.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 219,
+    "page number" : 11,
+    "bounding box" : [ 326.16, 466.77, 331.2, 468.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile125.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 129,
+    "page number" : 11,
+    "bounding box" : [ 321.84, 468.21, 334.08, 468.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile126.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 130,
+    "page number" : 11,
+    "bounding box" : [ 322.56, 467.49, 333.36, 468.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile127.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 220,
+    "page number" : 11,
+    "bounding box" : [ 326.16, 466.05, 331.2, 468.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile128.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 221,
+    "page number" : 11,
+    "bounding box" : [ 326.88, 465.33, 331.2, 467.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile129.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 131,
+    "page number" : 11,
+    "bounding box" : [ 323.28, 466.77, 332.64, 467.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile130.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 132,
+    "page number" : 11,
+    "bounding box" : [ 324.0, 466.05, 331.92, 466.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile131.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 222,
+    "page number" : 11,
+    "bounding box" : [ 326.88, 464.61, 331.92, 466.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile132.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 133,
+    "page number" : 11,
+    "bounding box" : [ 324.72, 465.33, 331.2, 466.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile133.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 223,
+    "page number" : 11,
+    "bounding box" : [ 326.88, 463.89, 330.48, 466.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile134.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 224,
+    "page number" : 11,
+    "bounding box" : [ 327.6, 463.17, 329.76, 465.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile135.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 134,
+    "page number" : 11,
+    "bounding box" : [ 325.44, 464.61, 328.32, 465.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile136.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 225,
+    "page number" : 11,
+    "bounding box" : [ 327.6, 462.45, 329.76, 464.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile137.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 135,
+    "page number" : 11,
+    "bounding box" : [ 326.16, 463.89, 328.32, 464.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile138.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 136,
+    "page number" : 11,
+    "bounding box" : [ 326.88, 463.17, 328.32, 463.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile139.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 237,
+    "page number" : 11,
+    "bounding box" : [ 321.84, 437.97, 326.16, 440.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile140.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 238,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 437.25, 325.44, 439.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile141.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 137,
+    "page number" : 11,
+    "bounding box" : [ 324.0, 438.69, 326.88, 439.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile142.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 239,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 436.53, 324.72, 438.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile143.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 138,
+    "page number" : 11,
+    "bounding box" : [ 323.28, 437.97, 328.32, 438.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile144.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 240,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 435.81, 325.44, 437.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile145.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 139,
+    "page number" : 11,
+    "bounding box" : [ 323.28, 437.25, 329.04, 437.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile146.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 241,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 435.09, 326.16, 437.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile147.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 140,
+    "page number" : 11,
+    "bounding box" : [ 324.0, 436.53, 329.76, 437.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile148.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 242,
+    "page number" : 11,
+    "bounding box" : [ 318.96, 434.37, 326.88, 436.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile149.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 141,
+    "page number" : 11,
+    "bounding box" : [ 324.72, 435.81, 330.48, 436.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile150.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 243,
+    "page number" : 11,
+    "bounding box" : [ 318.96, 433.65, 327.6, 435.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile151.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 142,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 435.09, 330.48, 435.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile152.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 244,
+    "page number" : 11,
+    "bounding box" : [ 318.96, 432.93, 328.32, 435.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile153.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 143,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 434.37, 331.2, 435.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile154.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 245,
+    "page number" : 11,
+    "bounding box" : [ 321.84, 432.21, 329.04, 434.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile155.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 144,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 433.65, 331.2, 434.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile156.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 145,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 432.93, 331.2, 433.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile157.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 246,
+    "page number" : 11,
+    "bounding box" : [ 322.56, 431.49, 329.76, 433.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile158.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 247,
+    "page number" : 11,
+    "bounding box" : [ 323.28, 430.77, 330.48, 432.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile159.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 146,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 432.21, 331.2, 432.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile160.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 147,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 431.49, 331.2, 432.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile161.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 248,
+    "page number" : 11,
+    "bounding box" : [ 324.0, 430.05, 331.2, 432.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile162.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 249,
+    "page number" : 11,
+    "bounding box" : [ 324.72, 429.33, 331.92, 431.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile163.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 148,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 430.77, 331.2, 431.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile164.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 149,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 430.05, 331.2, 430.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile165.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 250,
+    "page number" : 11,
+    "bounding box" : [ 325.44, 428.61, 332.64, 430.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile166.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 11,
+    "bounding box" : [ 95.04, 429.81, 198.72, 430.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile167.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 150,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 429.33, 331.92, 430.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile168.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 251,
+    "page number" : 11,
+    "bounding box" : [ 326.16, 427.89, 333.36, 430.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile169.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 11,
+    "bounding box" : [ 86.28, 419.37, 209.16, 429.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile170.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 252,
+    "page number" : 11,
+    "bounding box" : [ 326.88, 427.17, 334.08, 429.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile171.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 151,
+    "page number" : 11,
+    "bounding box" : [ 321.84, 428.61, 332.64, 429.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile172.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 11,
+    "page number" : 11,
+    "bounding box" : [ 230.04, 420.33, 238.44, 428.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile173.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 9,
+    "page number" : 11,
+    "bounding box" : [ 253.32, 420.33, 261.72, 428.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile174.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 253,
+    "page number" : 11,
+    "bounding box" : [ 328.32, 426.45, 334.8, 428.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile175.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 152,
+    "page number" : 11,
+    "bounding box" : [ 323.28, 427.89, 329.04, 428.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile176.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 153,
+    "page number" : 11,
+    "bounding box" : [ 329.04, 427.17, 329.76, 427.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile177.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 254,
+    "page number" : 11,
+    "bounding box" : [ 329.04, 425.73, 334.8, 427.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile178.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 154,
+    "page number" : 11,
+    "bounding box" : [ 333.36, 426.45, 334.8, 427.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile179.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 255,
+    "page number" : 11,
+    "bounding box" : [ 329.76, 425.01, 334.08, 427.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile180.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 256,
+    "page number" : 11,
+    "bounding box" : [ 330.48, 424.29, 333.36, 426.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile181.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 155,
+    "page number" : 11,
+    "bounding box" : [ 332.64, 425.73, 334.8, 426.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile182.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 257,
+    "page number" : 11,
+    "bounding box" : [ 331.2, 423.57, 333.36, 425.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile183.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 156,
+    "page number" : 11,
+    "bounding box" : [ 331.92, 425.01, 335.52, 425.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile184.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 157,
+    "page number" : 11,
+    "bounding box" : [ 331.92, 424.29, 335.52, 425.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile185.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 158,
+    "page number" : 11,
+    "bounding box" : [ 333.36, 423.57, 334.8, 424.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile186.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 258,
+    "page number" : 11,
+    "bounding box" : [ 322.56, 415.65, 324.72, 417.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile187.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 227,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 414.93, 322.56, 417.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile188.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 159,
+    "page number" : 11,
+    "bounding box" : [ 322.56, 416.37, 326.88, 417.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile189.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 228,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 414.21, 323.28, 416.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile190.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 160,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 415.65, 328.32, 416.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile191.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 229,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 413.49, 324.0, 415.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile192.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 161,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 414.93, 329.04, 415.65 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile193.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 230,
+    "page number" : 11,
+    "bounding box" : [ 318.96, 412.77, 324.72, 414.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile194.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 162,
+    "page number" : 11,
+    "bounding box" : [ 321.84, 414.21, 330.48, 414.93 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile195.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 163,
+    "page number" : 11,
+    "bounding box" : [ 322.56, 413.49, 330.48, 414.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile196.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 231,
+    "page number" : 11,
+    "bounding box" : [ 318.96, 412.05, 324.72, 414.21 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile197.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 232,
+    "page number" : 11,
+    "bounding box" : [ 318.96, 411.33, 324.72, 413.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile198.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 164,
+    "page number" : 11,
+    "bounding box" : [ 323.28, 412.77, 331.2, 413.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile199.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 165,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 412.05, 331.2, 412.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile200.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 233,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 410.61, 324.0, 412.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile201.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 166,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 411.33, 331.2, 412.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile202.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 234,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 409.89, 323.28, 412.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile203.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 235,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 409.17, 323.28, 411.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile204.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 167,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 410.61, 331.2, 411.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile205.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 168,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 409.89, 331.2, 410.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile206.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 169,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 409.17, 331.2, 409.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile207.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 170,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 408.45, 331.2, 409.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile208.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 171,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 407.73, 331.92, 408.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile209.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 172,
+    "page number" : 11,
+    "bounding box" : [ 321.84, 407.01, 332.64, 407.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile210.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 173,
+    "page number" : 11,
+    "bounding box" : [ 323.28, 406.29, 333.36, 407.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile211.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 174,
+    "page number" : 11,
+    "bounding box" : [ 328.32, 405.57, 333.36, 406.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile212.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 175,
+    "page number" : 11,
+    "bounding box" : [ 329.76, 404.85, 334.08, 405.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile213.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 176,
+    "page number" : 11,
+    "bounding box" : [ 329.76, 404.13, 334.8, 404.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile214.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 177,
+    "page number" : 11,
+    "bounding box" : [ 330.48, 403.41, 334.8, 404.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile215.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 178,
+    "page number" : 11,
+    "bounding box" : [ 331.2, 402.69, 335.52, 403.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile216.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 179,
+    "page number" : 11,
+    "bounding box" : [ 331.92, 401.97, 335.52, 402.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile217.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 180,
+    "page number" : 11,
+    "bounding box" : [ 333.36, 401.25, 334.8, 401.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile218.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 181,
+    "page number" : 11,
+    "bounding box" : [ 322.56, 394.77, 326.88, 395.49 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile219.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 182,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 394.05, 328.32, 394.77 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile220.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 183,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 393.33, 329.04, 394.05 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile221.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 184,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 392.61, 329.76, 393.33 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile222.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 185,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 391.89, 330.48, 392.61 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile223.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 186,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 391.17, 330.48, 391.89 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile224.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 187,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 390.45, 331.2, 391.17 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile225.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 188,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 389.73, 331.2, 390.45 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile226.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 189,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 389.01, 331.2, 389.73 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile227.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 190,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 388.29, 331.2, 389.01 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile228.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 191,
+    "page number" : 11,
+    "bounding box" : [ 319.68, 387.57, 331.2, 388.29 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile229.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 192,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 386.85, 331.2, 387.57 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile230.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 193,
+    "page number" : 11,
+    "bounding box" : [ 320.4, 386.13, 331.2, 386.85 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile231.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 194,
+    "page number" : 11,
+    "bounding box" : [ 321.12, 385.41, 331.92, 386.13 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile232.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 195,
+    "page number" : 11,
+    "bounding box" : [ 321.84, 384.69, 332.64, 385.41 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile233.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 196,
+    "page number" : 11,
+    "bounding box" : [ 323.28, 383.97, 333.36, 384.69 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile234.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 197,
+    "page number" : 11,
+    "bounding box" : [ 329.04, 383.25, 334.08, 383.97 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile235.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 198,
+    "page number" : 11,
+    "bounding box" : [ 329.76, 382.53, 334.8, 383.25 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile236.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 199,
+    "page number" : 11,
+    "bounding box" : [ 330.48, 381.81, 334.8, 382.53 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile237.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 200,
+    "page number" : 11,
+    "bounding box" : [ 331.2, 381.09, 335.52, 381.81 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile238.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 201,
+    "page number" : 11,
+    "bounding box" : [ 331.92, 380.37, 335.52, 381.09 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile239.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 202,
+    "page number" : 11,
+    "bounding box" : [ 333.36, 379.65, 334.8, 380.37 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile240.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 260,
+    "page number" : 11,
+    "bounding box" : [ 512.22, 5.67, 589.606, 102.79 ],
+    "alt_source" : "missing",
+    "source" : "2021年大众ID.4 CROZZ维修电路图-全自动空调_images/imageFile241.png"
+  } ]
+}

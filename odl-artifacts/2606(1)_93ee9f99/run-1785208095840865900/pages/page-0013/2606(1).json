@@ -1,0 +1,90 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 1,
+    "page number" : 13,
+    "bounding box" : [ 127.801, 470.523, 484.195, 719.999 ],
+    "alt_source" : "missing",
+    "source" : "2606(1)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 2,
+    "page number" : 13,
+    "bounding box" : [ 108.0, 391.644, 505.743, 469.103 ],
+    "linked content id" : 1,
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Figure 8: Case study of a Qwen3.5 harness edit on the Terminal-Bench-2.0 extract-elf task. Left: a failed trace under the initial harness, where the agent creates the required extractor script but then enters repeated overwrite and edit-file failures; before stopping, it deletes /app/extract.js, causing the verifier to fail because the required artifact is missing. Right: a successful trace under the edited harness, where a tool-error-triggered system prompt redirects the agent to recover the missing artifact, recreate the extractor, validate the generated JSON output, and leave the required file present for the verifier."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 13,
+    "bounding box" : [ 107.751, 294.075, 505.746, 382.443 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "For GLM-5, the accepted edits focus on persistent environment changes and the transition from exploration to implementation. The edited harness instructs the agent to make installed tools or path changes persist across shell sessions and to verify tool accessibility after modifying the environment. It also adds a verification-stage constraint: if the agent has been exploring without producing required artifacts, it should transition to implementing and testing a solution. Figure 9 shows this behavior in a build task. The initial harness spends substantial budget on long external downloads and later rationalizes failed sanity checks, whereas the edited harness switches strategy after timeout evidence, validates alternative sources early, repairs the failing render check, and only then finalizes."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 13,
+    "bounding box" : [ 107.691, 223.141, 505.388, 289.691 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Together, these examples support the interpretation of the quantitative gains in Figure 4. The promoted edits change observable execution behavior in ways aligned with the diagnosed failure mechanisms: Qwen3.5 reduces repeated ineffective actions, GLM-5 better preserves environment changes and moves from exploration to implementation, and MiniMax M2.5 creates and verifies required artifacts earlier. This suggests that Self-Harness improves performance by inducing targeted workflow changes rather than by relying on unrelated stochastic variation or a uniformly stronger prompt."
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 5,
+    "level" : "Doctitle",
+    "page number" : 13,
+    "bounding box" : [ 108.0, 193.47, 183.067, 209.024 ],
+    "heading level" : 1,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 11.955,
+    "text color" : "[0.0]",
+    "content" : "5 Conclusion"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 13,
+    "bounding box" : [ 107.691, 117.089, 505.247, 183.639 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "This paper studied whether a fixed language model can improve the harness that governs its own agent behavior. We introduced Self-Harness, a propose–evaluate–accept framework in which the model is evaluated under the current harness, receives structured evidence from its own execution traces, and proposes bounded edits to declared harness surfaces. Candidate harnesses are then re-evaluated under the same benchmark protocol, and only edits that satisfy a non-regressive acceptance rule are promoted into the harness lineage."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 13,
+    "bounding box" : [ 107.691, 78.882, 505.25, 112.705 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "The main lesson is that harness improvement should be treated as an empirical state transition. A useful harness edit must specify the behavior it aims to change, the surface it modifies, the evidence that motivates it, and the evaluation result that justifies promotion. By keeping the model, evaluator,"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 13,
+    "bounding box" : [ 301.019, 39.313, 310.982, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "13"
+  } ]
+}

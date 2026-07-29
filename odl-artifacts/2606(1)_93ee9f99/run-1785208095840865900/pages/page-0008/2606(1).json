@@ -1,0 +1,846 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "text block",
+    "id" : 1,
+    "page number" : 8,
+    "bounding box" : [ 102.62, 218.68, 509.38, 715.617 ],
+    "kids" : [ {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 2,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 702.154, 230.229, 710.593 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "def build_system_prompt() -> str:"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 4,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 630.423, 385.798, 702.622 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.70589, 0.32549, 0.0353]",
+      "content" : "return \"\"\" You are running inside a Terminal Bench 2 Harbor task environment. Use the built-in filesystem and shell tools to inspect the workspace, make concrete edits, and verify outcomes against the actual task environment. Do not assume synthetic datasets, domain-specific tools, or hidden fixtures unless you discover them in the repo or runtime. \"\"\".strip()"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 16,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 606.512, 278.379, 614.951 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "BASELINE_SYSTEM_PROMPT = build_system_prompt()"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 20,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 574.632, 256.155, 591.041 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "def build_memory_sources() -> list[str]: return [\"/AGENTS.md\"]"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 25,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 542.751, 278.384, 559.16 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "def build_subagents() -> list[dict[str, Any]]: return []"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 30,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 510.871, 226.525, 527.28 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "def build_skills() -> list[str]: return []"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 35,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 478.99, 470.987, 495.4 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.70589, 0.32549, 0.0353]",
+      "content" : "def build_bootstrap_instruction() -> str: return \"Start by inspecting the workspace and identifying the smallest relevant edit surface.\""
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 40,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 447.11, 496.911, 463.519 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.70589, 0.32549, 0.0353]",
+      "content" : "def build_execution_instruction() -> str: return \"Prefer concrete repo changes over generic advice, and keep edits tightly scoped to the task.\""
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 45,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 407.259, 489.504, 431.639 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.70589, 0.32549, 0.0353]",
+      "content" : "def build_verification_instruction() -> str: return \"Before concluding, verify the result with the most targeted command, file read, or test you can run.\""
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 51,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 375.379, 482.095, 391.788 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.70589, 0.32549, 0.0353]",
+      "content" : "def build_failure_recovery_instruction() -> str: return \"If a tool call fails, inspect the error and adapt; do not blindly retry the same action.\""
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 56,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 351.469, 304.311, 359.908 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "def build_runtime_control_policy() -> dict[str, Any]:"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 58,
+      "page number" : 8,
+      "bounding box" : [ 122.818, 311.618, 256.158, 351.938 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.70589, 0.32549, 0.0353]",
+      "content" : "return { \"enabled\": False, \"max_recent_tool_errors\": None, \"max_total_tool_messages\": None, \"instruction\": None,"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 64,
+      "page number" : 8,
+      "bounding box" : [ 122.818, 303.648, 126.522, 312.087 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "}"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 68,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 271.768, 230.233, 288.177 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "def build_fixed_harness_agent( model: \"BaseChatModel | str\","
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 71,
+      "level" : "1",
+      "page number" : 8,
+      "bounding box" : [ 122.818, 255.827, 222.824, 272.236 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "*, backend: Any | None = None,"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 74,
+      "page number" : 8,
+      "bounding box" : [ 107.999, 247.857, 115.407, 256.296 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "):"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 76,
+      "page number" : 8,
+      "bounding box" : [ 122.818, 239.887, 208.003, 248.326 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "if backend is not None:"
+    }, {
+      "type" : "paragraph",
+      "pdfua_tag" : "P",
+      "id" : 78,
+      "page number" : 8,
+      "bounding box" : [ 122.818, 223.947, 478.391, 240.356 ],
+      "font" : "SFTT0800",
+      "font size" : 6.974,
+      "text color" : "[0.0]",
+      "content" : "return create_deep_agent(model=model, system_prompt=BASELINE_SYSTEM_PROMPT, backend=backend) return create_deep_agent(model=model, system_prompt=BASELINE_SYSTEM_PROMPT)"
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 8,
+    "bounding box" : [ 96.045, 224.771, 102.023, 710.181 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 60,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 99.034, 702.978, 102.023, 710.181 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "1",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 99.034, 695.007, 102.023, 702.21 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "2",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 99.034, 687.037, 102.023, 694.24 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "3",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 99.034, 679.067, 102.023, 686.27 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "4",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 99.034, 671.097, 102.023, 678.3 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "5",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 99.034, 663.127, 102.023, 670.33 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "6",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 99.034, 655.157, 102.023, 662.36 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "7",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 99.034, 647.187, 102.023, 654.39 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "8",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 99.034, 639.217, 102.023, 646.42 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "9",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 631.247, 102.023, 638.45 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "10",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 623.276, 102.023, 630.479 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "11",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 615.306, 102.023, 622.509 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "12",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 607.336, 102.023, 614.539 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "13",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 599.366, 102.023, 606.569 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "14",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 591.396, 102.023, 598.599 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "15",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 583.426, 102.023, 590.629 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "16",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 575.456, 102.023, 582.659 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "17",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 567.486, 102.023, 574.689 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "18",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 559.516, 102.023, 566.719 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "19",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 551.545, 102.023, 558.748 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "20",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 543.575, 102.023, 550.778 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "21",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 535.605, 102.023, 542.808 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "22",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 527.635, 102.023, 534.838 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "23",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 519.665, 102.023, 526.868 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "24",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 511.695, 102.023, 518.898 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "25",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 503.725, 102.023, 510.928 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "26",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 495.755, 102.023, 502.958 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "27",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 487.785, 102.023, 494.988 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "28",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 479.814, 102.023, 487.017 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "29",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 471.844, 102.023, 479.047 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "30",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 463.874, 102.023, 471.077 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "31",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 455.904, 102.023, 463.107 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "32",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 447.934, 102.023, 455.137 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "33",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 439.964, 102.023, 447.167 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "34",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 431.994, 102.023, 439.197 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "35",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 424.024, 102.023, 431.227 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "36",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 416.054, 102.023, 423.257 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "37",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 400.113, 102.023, 407.316 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "38",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 392.143, 102.023, 399.346 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "39",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 384.173, 102.023, 391.376 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "40",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 376.203, 102.023, 383.406 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "41",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 368.233, 102.023, 375.436 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "42",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 360.263, 102.023, 367.466 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "43",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 352.293, 102.023, 359.496 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "44",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 344.323, 102.023, 351.526 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "45",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 336.352, 102.023, 343.555 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "46",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 328.382, 102.023, 335.585 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "47",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 320.412, 102.023, 327.615 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "48",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 312.442, 102.023, 319.645 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "49",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 304.472, 102.023, 311.675 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "50",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 296.502, 102.023, 303.705 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "51",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 288.532, 102.023, 295.735 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "52",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 280.562, 102.023, 287.765 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "53",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 272.592, 102.023, 279.795 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "54",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 264.621, 102.023, 271.824 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "55",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 256.651, 102.023, 263.854 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "56",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 248.681, 102.023, 255.884 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "57",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 240.711, 102.023, 247.914 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "58",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 232.741, 102.023, 239.944 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "59",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 8,
+      "bounding box" : [ 96.045, 224.771, 102.023, 231.974 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 5.978,
+      "text color" : "[0.41962, 0.44707, 0.50195]",
+      "content" : "60",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 8,
+    "bounding box" : [ 108.0, 166.551, 504.001, 211.282 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Figure 3: Initial harness and editable interface used as the starting point for Self-Harness. The harness is intentionally kept minimal, consisting only of the Terminal-Bench-2.0 default system prompt, the default DeepAgent tools (basic file reading, file writing, file editing, and shell execution), and the declared interfaces that Self-Harness is allowed to modify."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 8,
+    "bounding box" : [ 108.0, 123.527, 505.381, 157.709 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Harness. The initial harness builds upon the DeepAgent [4] SDK but is intentionally kept minimal: a short benchmark-facing system prompt, and the default filesystem and shell tools. Self-Harness can only change the harness definition file that configures how DeepAgent is instantiated and controlled"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 8,
+    "bounding box" : [ 108.0, 88.151, 504.003, 123.173 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "to build a new harness candidate h(tj). The editable surfaces correspond to declared configuration points in this harness, such as instruction, tools, verification guidance, etc. Figure 3 shows the initial harness implementation."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 8,
+    "bounding box" : [ 303.509, 39.313, 308.49, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "8"
+  } ]
+}

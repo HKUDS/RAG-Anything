@@ -1,0 +1,189 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 225,
+    "bounding box" : [ 90.0, 728.358, 505.088, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "调系统通过“电控冷却器”与制冷剂换热，将电控温度维持在 60-85℃，保障电能转换效率 稳定。​"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 225,
+    "bounding box" : [ 111.0, 681.558, 505.206, 716.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.特殊行车场景安全辅助功能 汽车空调系统的安全辅助功能，是通过“高风量+针对性风温”的前挡风除霜除雾、加"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 225,
+    "bounding box" : [ 90.0, 612.621, 509.89, 669.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "热元件配合除湿的后挡风与外后视镜除雾，以及智能切换内外循环的通风（含远程通风）， 在冬季冰霜、夏季雨天、停车后有害物质积聚等特殊行车场景下，保障行车视野清晰与车内 空气安全，降低潜在安全风险。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 225,
+    "bounding box" : [ 111.0, 587.958, 294.84, 599.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（1）除霜除雾功能：保障行车视野清晰​"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 8,
+    "level" : "1",
+    "page number" : 225,
+    "bounding box" : [ 111.0, 494.357, 505.209, 576.271 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 225,
+      "bounding box" : [ 111.0, 564.558, 505.209, 576.271 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）前风窗玻璃除霜：开启除霜模式时，空调系统以“高风量+热风（冬季）/ 冷风（夏",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 225,
+        "bounding box" : [ 90.0, 519.021, 510.49, 552.871 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "季）”直吹前风窗玻璃，热风快速融化冰霜（冬季- 10℃环境下，10min 可除净前风窗玻璃 冰霜），冷风快速降低玻璃温度，避免车内湿热空气在玻璃表面凝结成雾（夏季雨天常见）。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 225,
+      "bounding box" : [ 111.0, 494.357, 505.208, 506.071 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）后风窗玻璃与外后视镜除雾：通过玻璃内嵌入的加热丝（后风窗玻璃）或外后视镜",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 225,
+    "bounding box" : [ 90.0, 447.557, 502.69, 482.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "背面的加热片，配合空调系统的除湿功能，5~8min 可清除雾气或薄霜，部分车型（如奥迪 A6L）支持“自动除雾”，通过湿度传感器检测玻璃雾气，自动起动加热与空调除湿。​"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 225,
+    "bounding box" : [ 111.0, 424.157, 315.84, 435.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（2）应急通风功能：避免车内有害物质积聚​"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 11,
+    "level" : "1",
+    "page number" : 225,
+    "bounding box" : [ 111.0, 307.157, 505.208, 412.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 225,
+      "bounding box" : [ 111.0, 400.758, 505.198, 412.471 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）外循环通风：开启外循环时，空调系统引入车外新鲜空气，排出车内污浊空气（如",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 225,
+        "bounding box" : [ 90.0, 330.557, 505.209, 389.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "停车后车内残留的甲醛、二氧化碳），适合长时间行车或车内有异味时使用。部分车型（如 大众迈腾）支持“智能外循环”，当车外空气质量差（如 PM2.5＞150μg/m³）时，自动切换 为内循环，避免污染物进入车内。​"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 225,
+      "bounding box" : [ 111.0, 307.157, 505.208, 318.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）远程通风功能：新能源汽车与部分高端燃油车（如宝马 5 系）支持手机 APP 远程开",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 225,
+    "bounding box" : [ 90.0, 260.358, 508.33, 295.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "启空调外循环，停车后若忘记关窗，可远程起动通风，避免车内温度过高（夏季暴晒后车内 温度可达 65℃，通风 10min 可降至 45℃）或有害物质（如塑料件释放的苯、甲苯）积聚。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 225,
+    "bounding box" : [ 111.0, 214.821, 509.89, 248.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "二、新能源汽车空调制冷系统的组成 新能源汽车空调制冷系统主要由电动压缩机、冷凝器、蒸发器、膨胀阀、储液干燥器、"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 14,
+    "page number" : 225,
+    "bounding box" : [ 90.0, 190.157, 505.45, 201.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "高压管和低压管、空调压力开关、室外温度传感器和蒸发器温度传感器等组成（图 6-1）。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 225,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "225"
+  } ]
+}

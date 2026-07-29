@@ -1,0 +1,465 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 10,
+    "level" : "1",
+    "page number" : 235,
+    "bounding box" : [ 84.36, 650.92, 510.89, 769.9 ],
+    "number of rows" : 3,
+    "number of columns" : 4,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 235,
+        "bounding box" : [ 84.6, 651.4, 123.8, 769.42 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 3,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 235,
+        "bounding box" : [ 123.8, 651.4, 186.8, 769.42 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 3,
+        "column span" : 1,
+        "kids" : [ ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 235,
+        "bounding box" : [ 186.8, 745.76, 380.75, 769.42 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 235,
+          "bounding box" : [ 192.24, 753.225, 255.24, 762.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "（符合标准值）"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 235,
+        "bounding box" : [ 380.75, 651.4, 510.65, 769.42 ],
+        "row number" : 1,
+        "column number" : 4,
+        "row span" : 3,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "list",
+          "pdfua_tag" : "L",
+          "id" : 4,
+          "level" : "1",
+          "page number" : 235,
+          "bounding box" : [ 395.159, 682.041, 505.194, 762.225 ],
+          "numbering style" : "arabic numbers",
+          "number of list items" : 2,
+          "list items" : [ {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 235,
+            "bounding box" : [ 395.159, 752.241, 505.194, 762.225 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "2.若出风口温度仍偏高，需",
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 2,
+              "page number" : 235,
+              "bounding box" : [ 386.159, 729.825, 505.195, 738.825 ],
+              "font" : "SimSun",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "重新检查膨胀阀开度、蒸发器"
+            }, {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 3,
+              "page number" : 235,
+              "bounding box" : [ 386.159, 706.425, 422.159, 715.425 ],
+              "font" : "SimSun",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "是否脏堵"
+            } ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 235,
+            "bounding box" : [ 395.159, 682.041, 505.194, 692.025 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "3.填写维修记录，注明故障",
+            "kids" : [ ]
+          } ]
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 235,
+          "bounding box" : [ 386.159, 659.625, 485.159, 668.625 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "点、修复措施、验证结果"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 235,
+        "bounding box" : [ 186.8, 698.46, 380.75, 745.76 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 6,
+          "page number" : 235,
+          "bounding box" : [ 201.24, 728.36, 375.359, 738.344 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3.读取数据流，确认压缩机转速、膨胀阀开度"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 7,
+          "page number" : 235,
+          "bounding box" : [ 192.24, 705.944, 210.24, 714.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "正常"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 235,
+        "bounding box" : [ 186.8, 651.4, 380.75, 698.46 ],
+        "row number" : 3,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 8,
+          "page number" : 235,
+          "bounding box" : [ 201.24, 680.96, 375.359, 690.944 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "4.运行 30min，观察是否有异响、漏点，记录"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 235,
+          "bounding box" : [ 192.24, 658.544, 318.24, 667.544 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "续航变化（修复后续航应回升）"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 11,
+    "level" : "Doctitle",
+    "page number" : 235,
+    "bounding box" : [ 111.0, 633.98, 247.805, 644.43 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "三、实训安全要求及注意事项"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 12,
+    "level" : "2",
+    "page number" : 235,
+    "bounding box" : [ 111.0, 445.638, 505.204, 621.03 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 609.438, 505.195, 621.03 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）高压安全：新能源汽车制冷系统的压缩机为高压部件，操作前需确认车辆下高压电",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 6,
+        "page number" : 235,
+        "bounding box" : [ 90.0, 563.78, 505.208, 597.63 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "（关闭点火开关，断开辅助蓄电池负极，等待 5min 以上），佩戴高压绝缘手套，禁止在未 断电时拆卸压缩机高压插头。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 539.238, 505.195, 550.83 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）制冷剂安全：制冷剂为低温易挥发气体，泄漏时可能导致冻伤，操作时需佩戴护目",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 7,
+        "page number" : 235,
+        "bounding box" : [ 90.0, 516.98, 415.45, 527.43 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "镜、防毒面具；禁止将制冷剂直接排放到大气中（需用回收机回收）。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 492.437, 505.204, 504.03 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）设备安全：回收机需接地（避免漏电）；测量管路使用前需检查软管是否老化（避",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 8,
+        "page number" : 235,
+        "bounding box" : [ 90.0, 470.18, 163.45, 480.63 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "免破裂泄漏）。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 445.638, 505.195, 457.23 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）操作规范：拆卸制冷剂管路前需先回收制冷剂；抽真空后需保压，确认无漏点后再",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 235,
+    "bounding box" : [ 90.0, 423.38, 289.443, 433.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "加注制冷剂；禁止用明火加热制冷剂管路。"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 14,
+    "level" : "Doctitle",
+    "page number" : 235,
+    "bounding box" : [ 111.0, 399.98, 174.128, 410.43 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "四、实施过程"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 15,
+    "level" : "3",
+    "page number" : 235,
+    "bounding box" : [ 111.0, 258.437, 505.208, 387.03 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 375.437, 505.208, 387.03 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（1）故障现象确认 起动比亚迪元 PLUS，开启空调最大制冷模式，5min 后出风口温",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 4,
+        "page number" : 235,
+        "bounding box" : [ 90.0, 328.638, 510.49, 363.63 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "度为 18℃（标准≤10℃），诊断仪读取数据流显示：低压侧压力 0.05MPa（标准 0.2~0.5MPa）， 压缩机转速 2000r/min（正常），判断为制冷剂不足（可能泄漏）。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 305.238, 505.208, 316.83 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）泄漏检测 通过肥皂水法检测发现冷凝器与储液干燥器的接口处有小气泡，表示",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 5,
+        "page number" : 235,
+        "bounding box" : [ 90.0, 282.98, 205.327, 293.43 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "有泄漏（密封垫老化）。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 258.437, 179.169, 270.03 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（3）故障修复",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 16,
+    "level" : "2",
+    "page number" : 235,
+    "bounding box" : [ 111.0, 94.638, 510.49, 246.63 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 235.037, 510.49, 246.63 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）回收制冷剂：连接回收机，抽取系统内剩余制冷剂（回收量约 200g，标准需 600g，",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 235,
+        "bounding box" : [ 90.0, 212.78, 226.45, 223.23 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "确认泄漏导致制冷剂流失）。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 188.238, 505.209, 199.83 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）更换密封垫：拆卸冷凝器与储液干燥器的连接螺栓，更换新的丁腈橡胶 O 形圈（规",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 235,
+        "bounding box" : [ 90.0, 164.837, 191.89, 176.43 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "格φ10mm×2mm）。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 141.437, 505.208, 153.03 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）抽真空：连接制冷剂回收加注机，运行 40min，真空度稳定在 3Pa（符合要求），",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 235,
+        "bounding box" : [ 90.0, 118.037, 185.048, 129.63 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "保压 10min 无回升；"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 235,
+      "bounding box" : [ 111.0, 94.638, 326.29, 106.23 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）加注制冷剂：按厂家规定加注 R134a 600g。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 235,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "235"
+  } ]
+}

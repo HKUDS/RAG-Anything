@@ -1,0 +1,144 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 8,
+    "level" : "1",
+    "page number" : 56,
+    "bounding box" : [ 111.0, 267.74, 505.208, 768.39 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 56,
+      "bounding box" : [ 111.0, 757.94, 504.73, 768.39 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）使用万用表电压档来测量熔丝 F2/46 两端电压，一端为 12V，一端为 0V，说明熔丝",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 56,
+        "bounding box" : [ 90.0, 737.54, 229.089, 747.99 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "F2/46 损坏，如图 2-11 所示。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 2,
+        "page number" : 56,
+        "bounding box" : [ 90.0, 576.34, 438.84, 729.1 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 56,
+        "bounding box" : [ 242.52, 557.18, 352.689, 567.63 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 2-11 F2/46 两端电压"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 56,
+      "bounding box" : [ 111.0, 536.78, 505.203, 547.23 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）车辆下低压电，断开蓄电池负极，拔下熔丝 F2/46，测量其电阻为无穷大，说明熔",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 4,
+        "page number" : 56,
+        "bounding box" : [ 90.0, 516.38, 242.169, 526.83 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "丝 F2/46 损坏，如图 2-12 所示。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 5,
+        "page number" : 56,
+        "bounding box" : [ 221.86, 307.06, 372.58, 507.94 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 6,
+        "page number" : 56,
+        "bounding box" : [ 252.959, 288.14, 342.13, 298.59 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 2-12 F2/46 电阻"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 56,
+      "bounding box" : [ 111.0, 267.74, 505.208, 278.19 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）测量熔丝 F2/46 插座下游对地电阻，为小于 1Ω，异常，说明熔丝 F2/46 插座下游",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 56,
+    "bounding box" : [ 90.0, 247.34, 284.169, 257.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "对地短路导致熔丝熔断，如图 2-13 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 10,
+    "page number" : 56,
+    "bounding box" : [ 208.39, 105.3, 386.59, 238.86 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 11,
+    "page number" : 56,
+    "bounding box" : [ 231.959, 85.1, 363.128, 95.55 ],
+    "linked content id" : 10,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-13 F2/46 下游对地电阻"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 56,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "56"
+  } ]
+}

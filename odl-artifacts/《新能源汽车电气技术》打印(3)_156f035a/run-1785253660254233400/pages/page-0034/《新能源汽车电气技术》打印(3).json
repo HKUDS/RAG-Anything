@@ -1,0 +1,254 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 4,
+    "page number" : 34,
+    "bounding box" : [ 90.0, 650.5, 256.2, 765.22 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 34,
+    "bounding box" : [ 288.84, 653.02, 480.72, 762.22 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 6,
+    "level" : "1",
+    "page number" : 34,
+    "bounding box" : [ 246.48, 464.421, 348.728, 638.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 34,
+      "bounding box" : [ 246.48, 628.221, 348.728, 638.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "图 1-15 插头引脚标号",
+      "kids" : [ {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 1,
+        "page number" : 34,
+        "bounding box" : [ 90.0, 483.94, 228.0, 618.94 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 2,
+        "page number" : 34,
+        "bounding box" : [ 348.24, 483.34, 454.8, 620.5 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile4.png"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 34,
+      "bounding box" : [ 246.48, 464.421, 348.728, 474.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "图 1-16 插座引脚标号",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 7,
+    "page number" : 34,
+    "bounding box" : [ 90.0, 394.221, 505.209, 428.071 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "混合型引脚：插接件中央部分的插孔需单独标明编号，边缘引脚按普通型规则编号，确 保编号唯一且易识别，如图 1-17 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 34,
+    "bounding box" : [ 133.32, 281.26, 248.16, 385.54 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile5.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 9,
+    "page number" : 34,
+    "bounding box" : [ 355.44, 279.82, 452.28, 387.1 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile6.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 34,
+    "bounding box" : [ 241.2, 261.621, 354.007, 272.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 1-17 混合型引脚识别"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "level" : "2",
+    "page number" : 34,
+    "bounding box" : [ 90.0, 175.94, 323.53, 225.564 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.071, 0.071, 0.071]",
+    "content" : " 任务实施 一、实训车辆、设备及工具准备 实训中所需要的车辆、设备及工具见表 1-10。"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 12,
+    "page number" : 34,
+    "bounding box" : [ 237.24, 155.421, 378.846, 165.871 ],
+    "linked content id" : 13,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "表 1-10 车辆、设备及工具清单"
+  }, {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 13,
+    "level" : "3",
+    "page number" : 34,
+    "bounding box" : [ 83.76, 104.52, 538.19, 147.0 ],
+    "number of rows" : 1,
+    "number of columns" : 5,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 34,
+        "bounding box" : [ 84.0, 105.0, 114.65, 146.76 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 34,
+          "bounding box" : [ 90.24, 120.465, 108.24, 129.465 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "序号"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 34,
+        "bounding box" : [ 114.65, 105.0, 221.75, 146.76 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 2,
+          "page number" : 34,
+          "bounding box" : [ 136.559, 120.465, 199.798, 129.465 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "设备及工具名称"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 34,
+        "bounding box" : [ 221.75, 105.0, 260.5, 146.76 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 34,
+          "bounding box" : [ 232.08, 120.465, 250.08, 129.465 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "数量"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 34,
+        "bounding box" : [ 260.5, 105.0, 459.4, 146.76 ],
+        "row number" : 1,
+        "column number" : 4,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 4,
+          "page number" : 34,
+          "bounding box" : [ 341.88, 120.465, 378.0, 129.465 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "技术要点"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 34,
+        "bounding box" : [ 459.4, 105.0, 537.95, 146.76 ],
+        "row number" : 1,
+        "column number" : 5,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 5,
+          "page number" : 34,
+          "bounding box" : [ 467.04, 112.665, 530.279, 137.264 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "设备及工具是否 完好"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 34,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "34"
+  } ]
+}

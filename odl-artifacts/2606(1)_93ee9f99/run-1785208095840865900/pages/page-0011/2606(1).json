@@ -1,0 +1,393 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 80,
+    "page number" : 11,
+    "bounding box" : [ 387.079, 709.548, 409.09, 714.147 ],
+    "font" : "DejaVuSerif",
+    "font size" : 3.95,
+    "text color" : "[0.6039215686, 0.2039215686, 0.0705882353]",
+    "content" : "Tool errors"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 81,
+    "level" : "Subtitle",
+    "page number" : 11,
+    "bounding box" : [ 370.906, 704.24, 425.746, 709.912 ],
+    "heading level" : 1,
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.828,
+    "text color" : "[0.1215686275, 0.4352941176, 0.262745098]",
+    "content" : "> middleware guard"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 74,
+    "page number" : 11,
+    "bounding box" : [ 310.525, 701.897, 345.657, 706.496 ],
+    "font" : "DejaVuSerif",
+    "font size" : 3.95,
+    "text color" : "[0.6039215686, 0.2039215686, 0.0705882353]",
+    "content" : "Exploration loops"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 75,
+    "level" : "Doctitle",
+    "page number" : 11,
+    "bounding box" : [ 305.536, 696.589, 351.14, 702.262 ],
+    "heading level" : 1,
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.828,
+    "text color" : "[0.1215686275, 0.4352941176, 0.262745098]",
+    "content" : "> force a change"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 57,
+    "page number" : 11,
+    "bounding box" : [ 376.055, 695.697, 387.149, 701.047 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.554,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "36.7"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 55,
+    "page number" : 11,
+    "bounding box" : [ 302.337, 685.642, 313.431, 690.993 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.554,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "34.4"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 34,
+    "page number" : 11,
+    "bounding box" : [ 166.973, 685.37, 172.556, 690.479 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.389,
+    "text color" : "[0.0]",
+    "content" : "36"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 65,
+    "page number" : 11,
+    "bounding box" : [ 215.238, 684.141, 249.765, 688.739 ],
+    "font" : "DejaVuSerif",
+    "font size" : 3.95,
+    "text color" : "[0.6039215686, 0.2039215686, 0.0705882353]",
+    "content" : "Late deliverables"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 66,
+    "level" : "Subtitle",
+    "page number" : 11,
+    "bounding box" : [ 198.469, 679.33, 266.371, 684.616 ],
+    "heading level" : 2,
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.499,
+    "text color" : "[0.1215686275, 0.4352941176, 0.262745098]",
+    "content" : "> artifact-ensure subagent"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 52,
+    "page number" : 11,
+    "bounding box" : [ 192.136, 672.09, 203.23, 677.44 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.554,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "31.3"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 56,
+    "page number" : 11,
+    "bounding box" : [ 331.314, 671.8, 342.408, 677.15 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.554,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "32.8"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 32,
+    "page number" : 11,
+    "bounding box" : [ 166.973, 667.883, 172.556, 672.993 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.389,
+    "text color" : "[0.0]",
+    "content" : "32"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 35,
+    "page number" : 11,
+    "bounding box" : [ 158.545, 648.738, 164.932, 672.328 ],
+    "font" : "DejaVuSerif",
+    "font size" : 5.487,
+    "text color" : "[0.0]",
+    "content" : "Pass (%)"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 77,
+    "page number" : 11,
+    "bounding box" : [ 368.574, 661.627, 393.885, 666.225 ],
+    "font" : "DejaVuSerif",
+    "font size" : 3.95,
+    "text color" : "[0.6039215686, 0.2039215686, 0.0705882353]",
+    "content" : "Missing files"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 78,
+    "page number" : 11,
+    "bounding box" : [ 352.1, 656.756, 410.158, 662.042 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.499,
+    "text color" : "[0.1215686275, 0.4352941176, 0.262745098]",
+    "content" : "> create within 2 steps"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 71,
+    "page number" : 11,
+    "bounding box" : [ 258.73, 656.646, 292.511, 661.245 ],
+    "font" : "DejaVuSerif",
+    "font size" : 3.95,
+    "text color" : "[0.6039215686, 0.2039215686, 0.0705882353]",
+    "content" : "Missing modules"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 72,
+    "page number" : 11,
+    "bounding box" : [ 249.261, 651.278, 302.499, 656.951 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.828,
+    "text color" : "[0.1215686275, 0.4352941176, 0.262745098]",
+    "content" : "> precheck imports"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 30,
+    "page number" : 11,
+    "bounding box" : [ 166.973, 650.396, 172.556, 655.506 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.389,
+    "text color" : "[0.0]",
+    "content" : "28"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 68,
+    "page number" : 11,
+    "bounding box" : [ 225.402, 640.642, 258.365, 645.241 ],
+    "font" : "DejaVuSerif",
+    "font size" : 3.95,
+    "text color" : "[0.6039215686, 0.2039215686, 0.0705882353]",
+    "content" : "Skipped imports"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 54,
+    "page number" : 11,
+    "bounding box" : [ 288.354, 637.351, 299.448, 642.701 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.554,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "24.2"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 69,
+    "page number" : 11,
+    "bounding box" : [ 207.831, 635.832, 275.728, 641.118 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.499,
+    "text color" : "[0.1215686275, 0.4352941176, 0.262745098]",
+    "content" : "> dependency-verifier skill"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 28,
+    "page number" : 11,
+    "bounding box" : [ 166.973, 632.909, 172.556, 638.019 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.389,
+    "text color" : "[0.0]",
+    "content" : "24"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 53,
+    "page number" : 11,
+    "bounding box" : [ 204.63, 626.712, 215.724, 632.062 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.554,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "21.1"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 51,
+    "page number" : 11,
+    "bounding box" : [ 179.641, 624.002, 190.735, 629.352 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.554,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "20.3"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 26,
+    "page number" : 11,
+    "bounding box" : [ 166.973, 615.423, 172.556, 620.532 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.389,
+    "text color" : "[0.0]",
+    "content" : "20"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 63,
+    "page number" : 11,
+    "bounding box" : [ 190.002, 608.485, 218.821, 613.083 ],
+    "font" : "DejaVuSerif",
+    "font size" : 3.95,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "Initial harness"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 11,
+    "bounding box" : [ 183.752, 596.799, 437.828, 601.909 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.389,
+    "text color" : "[0.0]",
+    "content" : "0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 24,
+    "page number" : 11,
+    "bounding box" : [ 300.901, 589.262, 328.028, 595.649 ],
+    "font" : "DejaVuSerif",
+    "font size" : 5.487,
+    "text color" : "[0.0]",
+    "content" : "Iterations"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 59,
+    "page number" : 11,
+    "bounding box" : [ 218.881, 576.702, 422.764, 581.812 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.389,
+    "text color" : "[0.0]",
+    "content" : "accepted harness candidate rejected harness candidate abandoned branch"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 82,
+    "level" : "1",
+    "page number" : 11,
+    "bounding box" : [ 107.737, 261.66, 504.001, 569.8 ],
+    "numbering style" : "english letters",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 11,
+      "bounding box" : [ 107.737, 531.803, 504.001, 569.8 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 7.97,
+      "text color" : "[0.0]",
+      "content" : "(a) Self-Harness evolution trajectory. Green markers denote accepted harness candidates and gray crosses denote rejected harness candidates. Step lines connect accepted candidates and keep performance flat across rejected iterations. The subagent and skill branches were discarded due to no further improvement. The remaining four accepted edits are merged to form the final harness.",
+      "kids" : [ {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 1,
+        "page number" : 11,
+        "bounding box" : [ 167.401, 281.982, 444.609, 530.21 ],
+        "alt_source" : "missing",
+        "source" : "2606(1)_images/imageFile1.png"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 11,
+      "bounding box" : [ 107.737, 261.66, 504.001, 280.728 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 7.97,
+      "text color" : "[0.0]",
+      "content" : "(b) Differences for the four harness modifications accepted by Self-Harness and retained in the final harness. Red rows denote code removed from the initial harness, and green rows denote the updated harness behavior.",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 83,
+    "page number" : 11,
+    "bounding box" : [ 107.641, 224.324, 505.247, 258.146 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Figure 6: Qwen3.5 Self-Harness run. Panel (a) summarizes the Self-Harness evolution trajectory, while panel (b) expands the accepted updates from this trajectory into their retained code-level edits in the final harness."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 84,
+    "page number" : 11,
+    "bounding box" : [ 108.0, 192.209, 503.997, 215.122 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "error-triggered middleware. These changes mainly improve the agent’s ability to recover from file-editing or tool failures and still leave verifier-required artifacts in place."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 85,
+    "page number" : 11,
+    "bounding box" : [ 108.0, 143.093, 504.001, 187.825 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "For GLM-5, the harness improves from 46.1% to 57.0% through edits targeting late artifacts, external computation, session-scoped tools, and implementation-oriented exploration. These edits make environment changes persist across shell commands and encourage the agent to move from prolonged exploration toward implementation and testing."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 86,
+    "page number" : 11,
+    "bounding box" : [ 108.0, 72.159, 505.654, 138.709 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "In summary, the three runs show both a shared pattern and model-specific adaptation. A common theme is artifact reliability: all three promoted harnesses add mechanisms that improve artifact delivery, including \"create output early\" for M2.5, \"artifact middleware\" for Qwen3.5, and \"transition from exploration\" to implementation for GLM-5. The model-specific differences indicate that the same initial harness exposes different execution pathologies for different models, and that SelfHarness adapts by selecting targeted edits grounded in the failure mechanisms observed for each"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 87,
+    "page number" : 11,
+    "bounding box" : [ 301.019, 39.313, 310.982, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "11"
+  } ]
+}

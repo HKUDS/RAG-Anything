@@ -1,0 +1,147 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 213,
+    "bounding box" : [ 126.24, 619.42, 468.96, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 10,
+    "page number" : 213,
+    "bounding box" : [ 229.44, 600.74, 365.769, 611.19 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-32 大众 ID.4 X 仪表显示"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 213,
+    "bounding box" : [ 90.0, 559.94, 505.207, 590.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2）连接故障诊断仪，读取车载电网控制单元 J519 的故障码与数据流，发现诊断仪无法 与车载电网控制单元 J519 进行通信。"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 13,
+    "level" : "1",
+    "page number" : 213,
+    "bounding box" : [ 111.0, 416.9, 507.25, 549.99 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 213,
+      "bounding box" : [ 111.0, 519.021, 483.73, 549.99 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.可能的故障原因分析 根据上面的故障现象怀疑是由于 J519 相关故障导致的，那么可能的故障原因有：",
+      "kids" : [ {
+        "type" : "list",
+        "pdfua_tag" : "L",
+        "id" : 5,
+        "level" : "1",
+        "page number" : 213,
+        "bounding box" : [ 111.0, 457.821, 234.247, 509.071 ],
+        "numbering style" : "arabic numbers",
+        "number of list items" : 3,
+        "list items" : [ {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 213,
+          "bounding box" : [ 111.0, 498.621, 234.247, 509.071 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "1）J519 电源及搭铁故障。",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 213,
+          "bounding box" : [ 111.0, 478.221, 213.247, 488.671 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2）J519 的信号故障。",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 213,
+          "bounding box" : [ 111.0, 457.821, 202.808, 468.271 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3）J519 自身故障。",
+          "kids" : [ ]
+        } ]
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 213,
+      "bounding box" : [ 111.0, 416.9, 507.25, 447.75 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.电路图及维修资料查询 大众 ID.4 X 车型的后尾灯低压插头插接器为 T8cb,如图 5-33 所示。后尾灯的电路图，",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 16,
+    "page number" : 213,
+    "bounding box" : [ 90.0, 396.5, 168.729, 406.95 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "如图 5-34 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 17,
+    "page number" : 213,
+    "bounding box" : [ 193.44, 256.18, 401.04, 388.06 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 19,
+    "page number" : 213,
+    "bounding box" : [ 205.8, 237.261, 389.408, 247.711 ],
+    "linked content id" : 17,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-33 大众 ID.4 X 后尾灯低压插接器"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 213,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "213"
+  } ]
+}

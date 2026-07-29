@@ -1,0 +1,719 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "level" : "1",
+    "page number" : 28,
+    "bounding box" : [ 90.0, 752.166, 150.729, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 任务情景"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 28,
+    "bounding box" : [ 90.0, 636.021, 505.209, 740.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "某汽车 4S 店维修技师接到一辆比亚迪秦 EV 故障车，故障现象为车窗升降功能失效。维 修过程中，技师需要通过识读车身电气系统电路图，找到车窗控制相关的线束、熔丝、继电 器及插接件位置，分析电路连接关系，进而排查故障原因。为了高效完成维修任务，你需要 系统学习比亚迪车系电路图的识读方法，掌握相关元件的编码规则与实车定位技巧，你准备 好了吗？"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "level" : "1",
+    "page number" : 28,
+    "bounding box" : [ 90.0, 542.421, 505.208, 623.364 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识准备 一、比亚迪电路图中线束、插接件编码 1.线束编码 注意事项：本章节涉及的线束零部件详细编号、插接器称谓、配电盒接口名称，以及电"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 28,
+    "bounding box" : [ 90.0, 519.021, 467.877, 529.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "路维修图纸中熔丝、继电器的命名规则等，均依据比亚迪相关标准予以规范确定。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 28,
+    "bounding box" : [ 90.0, 472.221, 505.208, 506.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "线束是汽车电路的连接载体，比亚迪车系电路图通过特定编码明确线束的位置、类型及 连接关系，核心规则如下："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 8,
+    "level" : "2",
+    "page number" : 28,
+    "bounding box" : [ 90.0, 160.58, 509.89, 459.271 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 28,
+      "bounding box" : [ 111.0, 448.821, 210.728, 459.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（1）线色与线径标识",
+      "kids" : [ {
+        "type" : "list",
+        "pdfua_tag" : "L",
+        "id" : 1,
+        "level" : "3",
+        "page number" : 28,
+        "bounding box" : [ 111.0, 308.421, 510.49, 435.871 ],
+        "numbering style" : "arabic numbers",
+        "number of list items" : 4,
+        "list items" : [ {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 28,
+          "bounding box" : [ 111.0, 425.421, 505.208, 435.871 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "1）线色编码：采用单个字母表示，例如“R”代表红色、“G”代表绿色、“B”代表蓝",
+          "kids" : [ {
+            "type" : "paragraph",
+            "pdfua_tag" : "P",
+            "id" : 1,
+            "page number" : 28,
+            "bounding box" : [ 90.0, 402.021, 223.809, 412.471 ],
+            "font" : "SimSun",
+            "font size" : 10.45,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "色，具体线色表示见表 1-6。"
+          } ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 28,
+          "bounding box" : [ 111.0, 378.621, 510.49, 389.071 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "2）双色线标识：采用“主色/辅色”格式，如“R/G”表示红色为主色、绿色为辅助色。",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 28,
+          "bounding box" : [ 111.0, 355.221, 507.25, 365.671 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "3）线径标识：数字表示导线横截面积（单位：mm²），如“0.5”表示线径为 0.5mm²。",
+          "kids" : [ ]
+        }, {
+          "type" : "list item",
+          "pdfua_tag" : "LI",
+          "page number" : 28,
+          "bounding box" : [ 111.0, 308.421, 346.089, 342.271 ],
+          "font" : "SimSun",
+          "font size" : 10.45,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "4）附加标识：“ALL”表示该线束为全车通用型。 表 1-6 线色标准",
+          "kids" : [ ]
+        } ]
+      }, {
+        "type" : "table",
+        "pdfua_tag" : "Table",
+        "id" : 2,
+        "level" : "4",
+        "page number" : 28,
+        "bounding box" : [ 83.76, 224.32, 526.89, 301.9 ],
+        "number of rows" : 2,
+        "number of columns" : 13,
+        "rows" : [ {
+          "type" : "table row",
+          "row number" : 1,
+          "cells" : [ {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 84.0, 262.21, 118.05, 301.66 ],
+            "row number" : 1,
+            "column number" : 1,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 1,
+              "page number" : 28,
+              "bounding box" : [ 90.0, 277.821, 111.009, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[1.0, 1.0, 1.0]",
+              "content" : "代码"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 118.05, 262.21, 152.1, 301.66 ],
+            "row number" : 1,
+            "column number" : 2,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 2,
+              "page number" : 28,
+              "bounding box" : [ 124.08, 277.821, 129.305, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "B"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 152.1, 262.21, 186.15, 301.66 ],
+            "row number" : 1,
+            "column number" : 3,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 3,
+              "page number" : 28,
+              "bounding box" : [ 158.04, 277.821, 163.265, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "L"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 186.15, 262.21, 220.2, 301.66 ],
+            "row number" : 1,
+            "column number" : 4,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 4,
+              "page number" : 28,
+              "bounding box" : [ 192.12, 277.821, 202.625, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "Br"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 220.2, 262.21, 254.25, 301.66 ],
+            "row number" : 1,
+            "column number" : 5,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 5,
+              "page number" : 28,
+              "bounding box" : [ 226.2, 277.821, 231.425, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "G"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 254.25, 262.21, 288.3, 301.66 ],
+            "row number" : 1,
+            "column number" : 6,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 6,
+              "page number" : 28,
+              "bounding box" : [ 260.28, 277.821, 270.785, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "Gr"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 288.3, 262.21, 322.35, 301.66 ],
+            "row number" : 1,
+            "column number" : 7,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 7,
+              "page number" : 28,
+              "bounding box" : [ 294.24, 277.821, 304.745, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "Lg"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 322.35, 262.21, 356.4, 301.66 ],
+            "row number" : 1,
+            "column number" : 8,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 8,
+              "page number" : 28,
+              "bounding box" : [ 328.32, 277.821, 333.545, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "O"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 356.4, 262.21, 390.45, 301.66 ],
+            "row number" : 1,
+            "column number" : 9,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 9,
+              "page number" : 28,
+              "bounding box" : [ 362.4, 277.821, 367.625, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "P"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 390.45, 262.21, 424.5, 301.66 ],
+            "row number" : 1,
+            "column number" : 10,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 10,
+              "page number" : 28,
+              "bounding box" : [ 396.48, 277.821, 401.705, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "R"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 424.5, 262.21, 458.55, 301.66 ],
+            "row number" : 1,
+            "column number" : 11,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 11,
+              "page number" : 28,
+              "bounding box" : [ 430.44, 277.821, 435.665, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "V"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 458.55, 262.21, 492.6, 301.66 ],
+            "row number" : 1,
+            "column number" : 12,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 12,
+              "page number" : 28,
+              "bounding box" : [ 464.52, 277.821, 469.745, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "W"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 492.6, 262.21, 526.65, 301.66 ],
+            "row number" : 1,
+            "column number" : 13,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 13,
+              "page number" : 28,
+              "bounding box" : [ 498.6, 277.821, 503.825, 288.271 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "Y"
+            } ]
+          } ]
+        }, {
+          "type" : "table row",
+          "row number" : 2,
+          "cells" : [ {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 84.0, 224.8, 118.05, 262.21 ],
+            "row number" : 2,
+            "column number" : 1,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 14,
+              "page number" : 28,
+              "bounding box" : [ 90.0, 238.34, 111.009, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[1.0, 1.0, 1.0]",
+              "content" : "颜色"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 118.05, 224.8, 152.1, 262.21 ],
+            "row number" : 2,
+            "column number" : 2,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 15,
+              "page number" : 28,
+              "bounding box" : [ 124.08, 238.34, 134.53, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "黑"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 152.1, 224.8, 186.15, 262.21 ],
+            "row number" : 2,
+            "column number" : 3,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 16,
+              "page number" : 28,
+              "bounding box" : [ 158.04, 238.34, 168.49, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "蓝"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 186.15, 224.8, 220.2, 262.21 ],
+            "row number" : 2,
+            "column number" : 4,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 17,
+              "page number" : 28,
+              "bounding box" : [ 192.12, 238.34, 202.57, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "棕"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 220.2, 224.8, 254.25, 262.21 ],
+            "row number" : 2,
+            "column number" : 5,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 18,
+              "page number" : 28,
+              "bounding box" : [ 226.2, 238.34, 236.65, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "绿"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 254.25, 224.8, 288.3, 262.21 ],
+            "row number" : 2,
+            "column number" : 6,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 19,
+              "page number" : 28,
+              "bounding box" : [ 260.28, 238.34, 270.73, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "灰"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 288.3, 224.8, 322.35, 262.21 ],
+            "row number" : 2,
+            "column number" : 7,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 20,
+              "page number" : 28,
+              "bounding box" : [ 294.24, 238.34, 315.13, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "浅绿"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 322.35, 224.8, 356.4, 262.21 ],
+            "row number" : 2,
+            "column number" : 8,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 21,
+              "page number" : 28,
+              "bounding box" : [ 328.32, 238.34, 349.21, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "橙黄"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 356.4, 224.8, 390.45, 262.21 ],
+            "row number" : 2,
+            "column number" : 9,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 22,
+              "page number" : 28,
+              "bounding box" : [ 362.4, 238.34, 383.29, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "粉红"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 390.45, 224.8, 424.5, 262.21 ],
+            "row number" : 2,
+            "column number" : 10,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 23,
+              "page number" : 28,
+              "bounding box" : [ 396.48, 238.34, 406.93, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "红"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 424.5, 224.8, 458.55, 262.21 ],
+            "row number" : 2,
+            "column number" : 11,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 24,
+              "page number" : 28,
+              "bounding box" : [ 430.44, 238.34, 440.89, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "紫"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 458.55, 224.8, 492.6, 262.21 ],
+            "row number" : 2,
+            "column number" : 12,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 25,
+              "page number" : 28,
+              "bounding box" : [ 464.52, 238.34, 474.97, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "白"
+            } ]
+          }, {
+            "type" : "table cell",
+            "pdfua_tag" : "TD",
+            "page number" : 28,
+            "bounding box" : [ 492.6, 224.8, 526.65, 262.21 ],
+            "row number" : 2,
+            "column number" : 13,
+            "row span" : 1,
+            "column span" : 1,
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 26,
+              "page number" : 28,
+              "bounding box" : [ 498.6, 238.34, 509.05, 248.79 ],
+              "font" : "SimSun",
+              "font size" : 10.45,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "黄"
+            } ]
+          } ]
+        } ]
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 28,
+      "bounding box" : [ 90.0, 160.58, 509.89, 217.83 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）线束位置编码 编码首字母代表线束装配位置，第二位字符代表线束类型或连接 对象：“2”表示仪表板主配电盒、“J”表示线束间对接插接件、空位表示一般类插接件； 后续数字或字母为排序代码，用于区分同一位置的不同线束或插接件。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 28,
+    "bounding box" : [ 111.0, 113.78, 505.209, 147.63 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "典型编码示例： 编码“C2X”：“C”（仪表板线束）+“2”（仪表板主配电盒）+“X”（配电盒 X 口插"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 28,
+    "bounding box" : [ 90.0, 90.38, 299.89, 100.83 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "接件），表示仪表板主配电盒 X 口的插接件。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 28,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "28"
+  } ]
+}

@@ -1,0 +1,475 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 21,
+    "bounding box" : [ 90.0, 729.621, 505.206, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "进行插接器的连接操作时，需先将部件的导向槽对齐重合，使插头与插孔精准对位后适 度施力插入，以此实现稳固的连接效果。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 21,
+    "bounding box" : [ 90.0, 659.421, 505.209, 716.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "为避免汽车行驶过程中插接器松脱，所有该部件均配备闭锁机构。拆卸插接器时，需先 按压闭锁部件，再进行分离操作。若未按压闭锁，严禁强行拉扯导线，以免损坏闭锁机构或 导线本身，如图 1-10 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 4,
+    "page number" : 21,
+    "bounding box" : [ 158.76, 531.22, 390.6, 650.14 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 5,
+    "page number" : 21,
+    "bounding box" : [ 223.8, 511.221, 326.047, 521.671 ],
+    "linked content id" : 4,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 1-10 插接件的拆卸"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 21,
+    "bounding box" : [ 90.0, 451.821, 505.209, 503.19 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "若检测到插头、插座出现损坏或严重锈蚀，可使用小型一字螺丝刀从插口端伸入，撬开 锁紧环后取出线头。对于锈蚀严重的线头，需用细砂纸打磨去除锈层；若部件已损坏，则应 及时更换插头与插座。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 21,
+    "bounding box" : [ 111.0, 411.021, 505.207, 441.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.继电器的检修 诊断继电器的核心方法，是对其电路进行测试。开展这一测试的首要任务，是厘清继电"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 21,
+    "bounding box" : [ 90.0, 370.1, 509.89, 401.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "器的各个引脚。通常情况下，生产厂家会在继电器的外壳上标注出引脚信息与内部接线图， 借助这些标识，就能辨别出对应控制电路和负载电路的引脚，继电器的检修见表 1-3。"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 9,
+    "page number" : 21,
+    "bounding box" : [ 249.0, 344.78, 346.088, 355.23 ],
+    "linked content id" : 10,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "表 1-3 继电器的检修"
+  }, {
+    "type" : "table",
+    "pdfua_tag" : "Table",
+    "id" : 10,
+    "level" : "1",
+    "page number" : 21,
+    "bounding box" : [ 83.76, 107.22, 535.19, 338.3 ],
+    "number of rows" : 4,
+    "number of columns" : 3,
+    "rows" : [ {
+      "type" : "table row",
+      "row number" : 1,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 84.0, 309.66, 172.65, 338.06 ],
+        "row number" : 1,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 1,
+          "page number" : 21,
+          "bounding box" : [ 110.28, 318.584, 146.4, 327.584 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "检测方法"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 172.65, 309.66, 387.85, 338.06 ],
+        "row number" : 1,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 2,
+          "page number" : 21,
+          "bounding box" : [ 262.2, 318.584, 298.32, 327.584 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "操作步骤"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 387.85, 309.66, 534.95, 338.06 ],
+        "row number" : 1,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 3,
+          "page number" : 21,
+          "bounding box" : [ 443.28, 318.584, 479.4, 327.584 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[1.0, 1.0, 1.0]",
+          "content" : "判断标准"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 2,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 84.0, 211.06, 172.65, 309.66 ],
+        "row number" : 2,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 4,
+          "page number" : 21,
+          "bounding box" : [ 90.0, 255.104, 144.0, 264.104 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "万用表电阻档"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 172.65, 211.06, 387.85, 309.66 ],
+        "row number" : 2,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "list",
+          "pdfua_tag" : "L",
+          "id" : 6,
+          "level" : "1",
+          "page number" : 21,
+          "bounding box" : [ 187.68, 219.081, 381.84, 299.264 ],
+          "numbering style" : "arabic numbers",
+          "number of list items" : 3,
+          "list items" : [ {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 21,
+            "bounding box" : [ 187.68, 289.28, 338.04, 299.264 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "1.识别控制线圈引脚（阻值 50~120Ω）",
+            "kids" : [ ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 21,
+            "bounding box" : [ 187.68, 265.881, 381.84, 275.865 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "2.测量负载触点阻值（常开型无穷大，常闭型接近",
+            "kids" : [ {
+              "type" : "paragraph",
+              "pdfua_tag" : "P",
+              "id" : 5,
+              "page number" : 21,
+              "bounding box" : [ 178.68, 242.481, 198.12, 252.465 ],
+              "font" : "Calibri",
+              "font size" : 9.0,
+              "text color" : "[0.0, 0.0, 0.0]",
+              "content" : "0Ω）"
+            } ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 21,
+            "bounding box" : [ 187.68, 219.081, 377.52, 229.065 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "3. 给线圈通电，听“咔嗒”声，再次测量触点阻值",
+            "kids" : [ ]
+          } ]
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 387.85, 211.06, 534.95, 309.66 ],
+        "row number" : 2,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 7,
+          "page number" : 21,
+          "bounding box" : [ 402.84, 266.865, 528.96, 275.865 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "线圈阻值异常、无动作声或触点"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 8,
+          "page number" : 21,
+          "bounding box" : [ 393.84, 243.465, 465.84, 252.465 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "阻值不变，需更换"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 3,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 84.0, 159.26, 172.65, 211.06 ],
+        "row number" : 3,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 9,
+          "page number" : 21,
+          "bounding box" : [ 90.0, 179.984, 135.0, 188.984 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "测试灯检测"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 172.65, 159.26, 387.85, 211.06 ],
+        "row number" : 3,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "list",
+          "pdfua_tag" : "L",
+          "id" : 10,
+          "level" : "1",
+          "page number" : 21,
+          "bounding box" : [ 187.68, 167.241, 338.4, 200.625 ],
+          "numbering style" : "arabic numbers",
+          "number of list items" : 2,
+          "list items" : [ {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 21,
+            "bounding box" : [ 187.68, 190.641, 338.4, 200.625 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "1.连接测试灯至负载触点，另一端接地",
+            "kids" : [ ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 21,
+            "bounding box" : [ 187.68, 167.241, 239.4, 177.225 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "2.给线圈通电",
+            "kids" : [ ]
+          } ]
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 387.85, 159.26, 534.95, 211.06 ],
+        "row number" : 3,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 11,
+          "page number" : 21,
+          "bounding box" : [ 402.84, 191.625, 528.96, 200.625 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "测试灯点亮，断电后熄灭，说明"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 12,
+          "page number" : 21,
+          "bounding box" : [ 393.84, 168.225, 438.84, 177.225 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "继电器正常"
+        } ]
+      } ]
+    }, {
+      "type" : "table row",
+      "row number" : 4,
+      "cells" : [ {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 84.0, 107.7, 172.65, 159.26 ],
+        "row number" : 4,
+        "column number" : 1,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 13,
+          "page number" : 21,
+          "bounding box" : [ 90.0, 128.144, 144.0, 137.144 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "万用表电压档"
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 172.65, 107.7, 387.85, 159.26 ],
+        "row number" : 4,
+        "column number" : 2,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "list",
+          "pdfua_tag" : "L",
+          "id" : 14,
+          "level" : "1",
+          "page number" : 21,
+          "bounding box" : [ 187.68, 115.4, 338.4, 148.784 ],
+          "numbering style" : "arabic numbers",
+          "number of list items" : 2,
+          "list items" : [ {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 21,
+            "bounding box" : [ 187.68, 138.8, 338.4, 148.784 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "1.连接万用表至负载触点，另一端接地",
+            "kids" : [ ]
+          }, {
+            "type" : "list item",
+            "pdfua_tag" : "LI",
+            "page number" : 21,
+            "bounding box" : [ 187.68, 115.4, 239.4, 125.384 ],
+            "font" : "Calibri",
+            "font size" : 9.0,
+            "text color" : "[0.0, 0.0, 0.0]",
+            "content" : "2.给线圈通电",
+            "kids" : [ ]
+          } ]
+        } ]
+      }, {
+        "type" : "table cell",
+        "pdfua_tag" : "TD",
+        "page number" : 21,
+        "bounding box" : [ 387.85, 107.7, 534.95, 159.26 ],
+        "row number" : 4,
+        "column number" : 3,
+        "row span" : 1,
+        "column span" : 1,
+        "kids" : [ {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 15,
+          "page number" : 21,
+          "bounding box" : [ 402.84, 138.8, 531.719, 148.784 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "显示电源电压，断电后显示 0V，"
+        }, {
+          "type" : "paragraph",
+          "pdfua_tag" : "P",
+          "id" : 16,
+          "page number" : 21,
+          "bounding box" : [ 393.84, 116.384, 456.84, 125.384 ],
+          "font" : "SimSun",
+          "font size" : 9.0,
+          "text color" : "[0.0, 0.0, 0.0]",
+          "content" : "说明继电器正常"
+        } ]
+      } ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 21,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "21"
+  } ]
+}

@@ -1,0 +1,68 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 31,
+    "bounding box" : [ 90.0, 479.26, 505.2, 764.14 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 3,
+    "page number" : 31,
+    "bounding box" : [ 224.759, 455.357, 370.448, 467.071 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 1-12 比亚迪秦 EV 部分插接件"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 31,
+    "bounding box" : [ 111.0, 409.821, 505.265, 443.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.熔丝编码 熔丝用于保护电路免受过载或短路损坏，比亚迪车系熔丝编码格式为“F+配电盒编号/"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 31,
+    "bounding box" : [ 90.0, 269.421, 505.265, 396.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "排序代码”。 前缀“F”：表示元件类型为熔丝； 配电盒编号：“1”表示前机舱主配电盒，“2”表示仪表板配电盒； 分隔符“/”：区分配电盒与排序代码； 排序代码：数字表示熔丝在配电盒中的位置序号。 示例：“F1/15”表示前机舱主配电盒的 15 号熔丝；“F2/46”表示仪表板配电盒的 46"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 31,
+    "bounding box" : [ 90.0, 222.621, 505.209, 256.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "号熔丝。表 1-16 所示为比亚迪秦 EV 的前机舱配电盒熔丝编号。表 1-9 为比亚迪秦 EV 的仪 表板配电盒熔丝编号。注意：F2/46 熔丝在熔丝盒盖上直接用 46 标识。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 31,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "31"
+  } ]
+}

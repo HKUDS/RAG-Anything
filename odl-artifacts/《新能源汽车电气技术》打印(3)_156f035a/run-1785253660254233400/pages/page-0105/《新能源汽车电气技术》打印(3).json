@@ -1,0 +1,198 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 3,
+    "level" : "1",
+    "page number" : 105,
+    "bounding box" : [ 111.0, 589.221, 510.49, 763.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 5,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 105,
+      "bounding box" : [ 111.0, 753.021, 504.719, 763.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（4）转向灯 黄色闪烁灯光，位于车头、车尾及后视镜（侧转向灯），提示转弯或变",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 105,
+        "bounding box" : [ 90.0, 729.621, 110.89, 740.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "道。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 105,
+      "bounding box" : [ 111.0, 706.221, 446.882, 716.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（5）示宽灯（位置灯） 夜间或光线不足时显示车辆轮廓，前后均配备。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 105,
+      "bounding box" : [ 111.0, 682.821, 510.49, 693.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（6）制动灯 红色高强度灯，制动时自动点亮，部分车型配备高位制动灯（更醒目）。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 105,
+      "bounding box" : [ 111.0, 659.421, 410.162, 669.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（7）倒车灯 白色灯光，挂倒挡时点亮，部分车型带蜂鸣提示。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 105,
+      "bounding box" : [ 111.0, 589.221, 473.162, 646.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（8）危险警告灯（双闪） 所有转向灯同时闪烁，用于故障停车或紧急情况。 2.内部灯光 内部灯光的作用主要是车内照明和氛围营造，不同灯光的作用和特点如下：",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 5,
+    "level" : "1",
+    "page number" : 105,
+    "bounding box" : [ 111.0, 519.021, 368.166, 576.271 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 105,
+      "bounding box" : [ 111.0, 565.821, 294.726, 576.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（1）阅读灯 车内照明，多位于顶棚。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 105,
+      "bounding box" : [ 111.0, 542.421, 368.166, 552.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）氛围灯 装饰性彩色 LED 灯带，提升车内美观度。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 105,
+      "bounding box" : [ 111.0, 519.021, 305.168, 529.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（3）行李舱灯 开启行李舱时自动照明。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 105,
+    "bounding box" : [ 111.0, 477.14, 505.208, 506.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "二、灯光系统架构 新能源汽车的灯光系统一般由控制单元进行控制和通信。其硬件结构主要包括：灯光开"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 105,
+    "bounding box" : [ 90.0, 456.74, 289.45, 467.925 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "关、车身控制模块、灯体和连接线路等[13]。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 105,
+    "bounding box" : [ 90.0, 395.421, 505.208, 446.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "比亚迪秦 PLUS EV 的车身控制模块（BCM）分为左域、右域和后域，与灯光控制有关的 模块主要为左域和右域，其中右域主要负责车内灯光的控制，对车外灯光控制极少，多数车 外灯光的控制由左域负责，具体架构如图 3-23 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 9,
+    "page number" : 105,
+    "bounding box" : [ 103.44, 153.82, 491.64, 386.98 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 10,
+    "page number" : 105,
+    "bounding box" : [ 204.48, 136.1, 390.728, 146.55 ],
+    "linked content id" : 9,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-23 比亚迪秦 PLUS EV 灯光系统架构"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 105,
+    "bounding box" : [ 111.0, 97.1, 505.203, 128.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1.灯光开关 侠义的灯光开关指的是前照灯开关和组合开关，现在许多新能源汽车的设计取消了前照"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 105,
+    "bounding box" : [ 90.0, 76.7, 505.209, 87.15 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "灯开关，将其与负责转向、变光调节的组合开关融合为一体组合开关，如图 3-24 所示为比"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 105,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "105"
+  } ]
+}

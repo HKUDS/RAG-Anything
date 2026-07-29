@@ -1,0 +1,77 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 210,
+    "bounding box" : [ 145.92, 571.54, 449.28, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 3,
+    "page number" : 210,
+    "bounding box" : [ 237.24, 551.54, 357.847, 561.99 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-30 LIN 总线信号波形"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 210,
+    "bounding box" : [ 90.0, 490.34, 505.265, 541.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "这种显性与隐性电平的对抗式设计，不仅实现了简单可靠的数字信号传输，也为 LIN 总线的容错、冲突检测和唤醒机制提供了物理层的支持，是其能够以低成本实现可靠单线通 信的关键。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 210,
+    "bounding box" : [ 90.0, 326.9, 510.49, 480.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "为确保 LIN 总线在车载电气环境下实现稳定可靠的数据传输，其物理层协议明确规定了 隐性电平和显性电平在发送与接收环节的电压容差范围。对于发送节点，要求输出电平必须 严格控制在标称值的 20%偏差以内，例如显性电平需稳定在接近地的低电压范围，而隐性电 平则需维持在接近蓄电池电压的高位，以此保证从源头发出信号的清晰与准确。相比之下， 接收节点的判定标准更为宽松，允许输入电平存在 40%的容许偏差，如图 5-31 所示。这种 “严发送、宽接收”的设计，显著增强了系统对导线压降、电源波动及电磁干扰的适应能力， 确保即使在复杂噪声环境下，接收端仍能正确辨识逻辑状态，从而在硬件成本与通信鲁棒性 之间取得了有效平衡。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 210,
+    "bounding box" : [ 90.0, 108.22, 505.32, 318.46 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 7,
+    "page number" : 210,
+    "bounding box" : [ 237.24, 88.94, 357.847, 99.39 ],
+    "linked content id" : 6,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-31 LIN 总线容错机制"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 210,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "210"
+  } ]
+}

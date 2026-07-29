@@ -1,0 +1,126 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 148,
+    "bounding box" : [ 90.0, 757.94, 121.449, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 148,
+    "bounding box" : [ 180.6, 654.82, 414.36, 749.5 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 148,
+    "bounding box" : [ 256.92, 636.621, 338.29, 647.071 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-19 刮水器臂"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 148,
+    "bounding box" : [ 111.0, 597.621, 505.209, 628.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.刮水器电动机 电动机：将汽车电源的电能转化为机械能，通过齿轮传动机构降低转速、增大扭矩，然"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 148,
+    "bounding box" : [ 90.0, 556.821, 505.208, 587.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "后驱动刮水器臂带动刮水器片做往复摆动，从而实现对风窗玻璃的清洁，确保驾驶人在雨天 或其他恶劣天气条件下有清晰的视野。如图 4-20 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 148,
+    "bounding box" : [ 194.16, 365.86, 400.44, 527.98 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 148,
+    "bounding box" : [ 246.48, 347.54, 348.728, 357.99 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-20 刮水器电动机"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 148,
+    "bounding box" : [ 90.0, 247.34, 505.209, 339.511 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.连杆机构 连杆机构；将刮水器电动机的旋转运动转化为刮水器臂的往复摆动运动，并将电动机的 动力传递到各个刮水器臂，带动刮水器片在风窗玻璃上进行刮水动作。保证多个刮水器臂之 间的运动协调一致，使它们能够按照一定的规律和节奏同步工作，确保风窗玻璃的不同区域 都能被有效清洁，避免出现刮水盲区或刮水器片相互干扰的情况。如图 4-21 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 10,
+    "page number" : 148,
+    "bounding box" : [ 199.8, 133.9, 395.04, 238.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 11,
+    "page number" : 148,
+    "bounding box" : [ 256.92, 117.021, 338.169, 127.471 ],
+    "linked content id" : 10,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-21 连杆机构"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 148,
+    "bounding box" : [ 111.0, 78.14, 505.201, 108.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5.前机舱供电模块继电器 供电模块与继电器：通过车身控制模块（BCM）控制供电模块继电器，可实现多种运行"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 148,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "148"
+  } ]
+}

@@ -1,0 +1,277 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 4,
+    "level" : "Doctitle",
+    "page number" : 240,
+    "bounding box" : [ 195.72, 747.234, 399.488, 761.284 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 14.05,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "任务二 暖风加热系统检测与维修"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 5,
+    "level" : "Subtitle",
+    "page number" : 240,
+    "bounding box" : [ 132.12, 705.366, 195.128, 716.964 ],
+    "heading level" : 2,
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 学习目标"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 240,
+    "bounding box" : [ 111.0, 666.82, 135.72, 691.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 240,
+    "bounding box" : [ 135.72, 664.94, 177.609, 675.39 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "知识目标"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 8,
+    "level" : "1",
+    "page number" : 240,
+    "bounding box" : [ 111.0, 537.079, 505.324, 642.39 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 630.679, 505.208, 642.39 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.理解新能源汽车暖风加热系统的核心作用（冬季制热、除霜除雾）及与传统燃油车的",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 240,
+        "bounding box" : [ 90.0, 608.54, 121.449, 618.99 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "差异；"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 583.879, 441.845, 595.59 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.掌握暖风加热系统的主要类型（PTC 加热器、热泵系统）及工作原理；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 560.478, 497.043, 572.19 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.熟悉暖风加热系统的硬件结构（如 PTC 加热器、暖风芯体、鼓风机、控制单元）；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 537.079, 505.324, 548.79 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.掌握暖风加热系统常见故障（如制热不足、PTC 不工作、除霜效果差）的诊断与排除",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 240,
+    "bounding box" : [ 90.0, 514.94, 121.449, 525.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "方法。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 10,
+    "page number" : 240,
+    "bounding box" : [ 111.0, 476.86, 135.48, 500.62 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 240,
+    "bounding box" : [ 135.72, 475.1, 177.609, 485.55 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "能力目标"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 12,
+    "level" : "1",
+    "page number" : 240,
+    "bounding box" : [ 111.0, 370.638, 510.49, 452.43 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 440.838, 510.49, 452.43 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.能够查询电路图，绘制暖风加热系统的控制逻辑框图（如 PTC 与高压配电盒的连接）；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 417.437, 434.045, 429.03 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.能够使用万用表、诊断仪检测 PTC 加热器的供电、接地及通信信号；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 394.037, 507.49, 405.63 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.能够通过数据流（如 PTC 工作电流、暖风芯体温度）分析系统工况，定位故障部件；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 370.638, 454.922, 382.23 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.能够独立完成 PTC 加热器的拆装、暖风芯体的清洁及鼓风机的故障排查。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 13,
+    "page number" : 240,
+    "bounding box" : [ 111.0, 334.18, 134.4, 357.58 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 14,
+    "page number" : 240,
+    "bounding box" : [ 135.0, 332.061, 176.889, 342.511 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "素养目标"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 15,
+    "level" : "1",
+    "page number" : 240,
+    "bounding box" : [ 111.0, 204.197, 507.369, 309.39 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 297.797, 265.805, 309.39 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.养成高压系统操作的安全意识；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 274.398, 505.208, 285.99 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.培养“能耗与制热效果平衡”的思维——理解 PTC 制热对续航的影响，避免盲目维修",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 240,
+        "bounding box" : [ 90.0, 252.14, 163.448, 262.59 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "导致能耗增加；"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 227.597, 433.799, 239.19 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.提升细节把控能力，如暖风芯体脏堵会导致制热不足，需定期清洁；",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 240,
+      "bounding box" : [ 111.0, 204.197, 507.369, 215.79 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.树立“用户需求导向”的维修理念，如除霜除雾故障需优先修复（影响行车安全）。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 240,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "240"
+  } ]
+}

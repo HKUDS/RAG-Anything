@@ -1,0 +1,109 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 63,
+    "bounding box" : [ 90.0, 717.021, 505.208, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "继电器、预充继电器进入预充阶段，预充完成后闭合主正继电器，断开预充继电器，完成上 高压过程。接下来通过比亚迪秦 EV 的低压上电和高压上电过程介绍新能源汽车起动系统的 组成及工作原理[10]。"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 3,
+    "level" : "Doctitle",
+    "page number" : 63,
+    "bounding box" : [ 111.0, 696.621, 184.686, 707.071 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1.低压上电流程"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 63,
+    "bounding box" : [ 90.0, 594.5, 505.208, 686.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "驾驶人持有合法的智能钥匙进入到车内，踩下制动踏板时，按下制动按钮；制动开关和 起动开关将制动信号和起动信号通过低压导线传递的电信号传递给 BCM，BCM 获取驾驶人意 图后通过起动子网通知智能钥匙模块验证钥匙的合法性，智能钥匙模块驱动车内天线寻找钥 匙并进行验证，验证通过后 BCM 控制 IG 继电器吸合，唤醒各高压部件控制模块工作，如图 2-16 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 63,
+    "bounding box" : [ 90.0, 410.38, 461.64, 586.06 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 6,
+    "page number" : 63,
+    "bounding box" : [ 241.2, 385.821, 354.007, 396.271 ],
+    "linked content id" : 5,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-16 低压上电流程图"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 63,
+    "bounding box" : [ 90.0, 304.758, 505.322, 377.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（1）制动开关信号 制动开关的作用是反映驾驶人对车辆速度控制的操作意图，一方 面用于高压上电时钥匙认证的低压唤醒信号，另一方面控制制动灯线路的导通与截止，同时 在踩下制动踏板时切断巡航控制、起动 ABS 控制系统、起动电机控制器实现能量回收，比 亚迪秦 EV 的制动开关结构如图 2-17 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 63,
+    "bounding box" : [ 194.16, 178.42, 399.72, 297.58 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 9,
+    "page number" : 63,
+    "bounding box" : [ 248.64, 157.998, 346.447, 169.59 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-17 制动开关结构"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 63,
+    "bounding box" : [ 90.0, 99.437, 510.49, 147.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "比亚迪秦 EV 的制动开关模块通过 2 条低压导线与车身控制单元 BCM 的 G2E 插头 11 号 端子以及 G2I 插头 24 号端子相连。制动开关内部有 2 个触点，分别是常开触点和常闭触点。 通过踩下制动踏板改变触点的状态给 BCM 传递制动踏板踩下信号，只有当 BCM 的 G2E 插头"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 63,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "63"
+  } ]
+}

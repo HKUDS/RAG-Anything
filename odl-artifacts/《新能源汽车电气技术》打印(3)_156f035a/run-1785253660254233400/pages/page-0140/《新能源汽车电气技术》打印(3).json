@@ -1,0 +1,106 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 140,
+    "bounding box" : [ 142.44, 508.06, 452.16, 767.74 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 6,
+    "page number" : 140,
+    "bounding box" : [ 151.92, 492.74, 443.17, 503.19 ],
+    "linked content id" : 5,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-12 操作主驾控制副驾玻璃升降器下降过程测量 U05/9 电压"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 7,
+    "level" : "1",
+    "page number" : 140,
+    "bounding box" : [ 111.0, 91.998, 510.49, 482.79 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 140,
+      "bounding box" : [ 111.0, 472.34, 505.205, 482.79 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）车辆下低压电，断开蓄电池负极。使用万用表电阻档，借助探针，测量主驾玻璃升",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 140,
+        "bounding box" : [ 90.0, 431.421, 505.209, 462.271 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "降器开关插接器 T05（A）引脚 T05（A）/8 与副驾玻璃升降器开关插接器 U05 端子 U05/9 之 间的线路电阻，正常为小于 1 欧，实测为无穷大，异常,如图 4-13 所示。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 2,
+        "page number" : 140,
+        "bounding box" : [ 114.6, 129.94, 480.6, 419.5 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 140,
+        "bounding box" : [ 196.559, 114.621, 398.529, 125.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 4-13 测量 T05（A）/8 与 U05/9 线路电阻"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 140,
+      "bounding box" : [ 111.0, 91.998, 510.49, 103.59 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）为确定最小故障点，需分段查找线路，车辆下电，断开蓄电池负极。通过检查线路，",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 140,
+    "bounding box" : [ 90.0, 76.398, 505.09, 87.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "分别拔下 U05 与 UJG01 插接器，用万用表电阻档测 U05/9 端子与 UJG01/34 线路电阻，正常"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 140,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "140"
+  } ]
+}

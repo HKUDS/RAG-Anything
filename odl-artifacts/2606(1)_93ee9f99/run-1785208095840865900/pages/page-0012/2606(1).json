@@ -1,0 +1,78 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 1,
+    "page number" : 12,
+    "bounding box" : [ 127.801, 476.463, 484.195, 719.999 ],
+    "alt_source" : "missing",
+    "source" : "2606(1)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 2,
+    "page number" : 12,
+    "bounding box" : [ 107.477, 407.705, 505.649, 475.043 ],
+    "linked content id" : 1,
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Figure 7: Case study of a MiniMax M2.5 harness edit on the Terminal-Bench-2.0 count-dataset-tokens task. Left: a failed trace under the initial harness, where the agent continues dataset exploration after finding the relevant metadata configuration and times out without creating the required answer artifact. Right: a successful trace under the edited harness, where the agent identifies the metadata-backed science subset, computes the required token total, writes /app/answer.txt, and reads it back for verification."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 12,
+    "bounding box" : [ 108.0, 343.652, 505.651, 399.292 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "model. For example, M2.5 emphasizes correct formation of content tags and redirection after long tool calls. Qwen3.5 introduces dependency precheck and mitigation of exact command retries. GLM5 tries to keep command environment persistent across shell sessions. These differences indicate that Self-Harness successfully captures specific failure modes of different models and produces suitable proposals to improve the model-harness behavior."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 12,
+    "bounding box" : [ 108.0, 276.902, 504.502, 332.901 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Trace-Level Analysis of Accepted Edits. To better understand how accepted harness edits change agent behavior, we inspect representative before–after traces from Terminal-Bench-2.0 in Figures 7 and 8, with the GLM-5 trace shown in Appendix Figure 9. The accepted edits are not a single generic instruction added to all backends. Instead, Self-Harness promotes model-specific changes that target the dominant failure mechanisms observed for each initial harness."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 12,
+    "bounding box" : [ 107.691, 195.059, 505.745, 272.517 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "For MiniMax M2.5, the accepted edits emphasize early artifact creation and bounded execution. The bootstrap instruction is changed from merely identifying the smallest relevant edit surface to identifying the required output artifact and creating an initial version as early as possible. The runtime policy is also enabled with a limit on total tool messages, encouraging the agent to redirect rather than continue open-ended tool use. Figure 7 shows that this changes the agent from prolonged dataset exploration to a concrete workflow: identifying the relevant metadata split, computing the required count, writing the answer file, and reading it back before stopping."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 12,
+    "bounding box" : [ 107.751, 91.398, 505.247, 190.674 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "For Qwen3.5, the promoted harness adds constraints for dependency prechecking, loop breaking, command-retry discipline, and artifact-focused recovery after tool errors. Figure 8 illustrates how these edits change failure recovery behavior. Under the initial harness, the agent creates the required extractor script, encounters overwrite and edit failures, repeatedly tries to modify the same artifact, and ultimately deletes /app/extract.js before stopping; the verifier therefore fails because the required file is missing. Under the edited harness, a tool-error-triggered system prompt redirects the agent toward the missing artifact: it recreates the extractor, fixes the parsing logic, writes the output file, performs targeted validation of the JSON result, and leaves the required artifact present for the verifier."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 12,
+    "bounding box" : [ 301.019, 39.313, 310.982, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "12"
+  } ]
+}

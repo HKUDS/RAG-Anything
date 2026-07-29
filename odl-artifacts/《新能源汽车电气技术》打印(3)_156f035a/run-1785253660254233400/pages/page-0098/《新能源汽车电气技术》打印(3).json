@@ -1,0 +1,158 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 9,
+    "page number" : 98,
+    "bounding box" : [ 203.88, 629.86, 390.72, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 10,
+    "page number" : 98,
+    "bounding box" : [ 234.6, 617.54, 360.489, 627.99 ],
+    "linked content id" : 9,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-17 G01_3A/1 对地电压"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 11,
+    "level" : "1",
+    "page number" : 98,
+    "bounding box" : [ 111.0, 144.74, 505.209, 607.59 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 98,
+      "bounding box" : [ 111.0, 597.14, 505.209, 607.59 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）再使用万用表电压档测量组合仪表的常供电熔丝 IF05 下游对地电压，为 0.01V，如",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 98,
+        "bounding box" : [ 90.0, 556.221, 507.25, 587.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 3-18a 所示，异常；接着测量 IF05 上游对地电压，为 13.81V，如图 3-18b 所示，正常， 怀疑 IF05 出现了断路故障。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 2,
+        "page number" : 98,
+        "bounding box" : [ 119.16, 406.3, 307.92, 547.78 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 3,
+        "page number" : 98,
+        "bounding box" : [ 308.16, 406.06, 497.16, 547.78 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 4,
+        "page number" : 98,
+        "bounding box" : [ 155.88, 366.861, 439.329, 397.711 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "a）IF05 下游对地电压 b)IF05 上游对地电压 图 3-18 IF05 上下游对地电压"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 98,
+      "bounding box" : [ 111.0, 346.34, 505.209, 356.79 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）车辆下低压电，断开蓄电池负极，拔下 IF05 熔丝，用万用表电阻挡测量 IF05 两端",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 5,
+        "page number" : 98,
+        "bounding box" : [ 90.0, 325.94, 284.17, 336.39 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "的电阻为无穷大，如图 3-19 所示，异常。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 6,
+        "page number" : 98,
+        "bounding box" : [ 207.84, 177.94, 387.48, 316.78 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile4.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 7,
+        "page number" : 98,
+        "bounding box" : [ 239.88, 165.14, 355.33, 175.59 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 3-19 IF05 两端的电阻"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 98,
+      "bounding box" : [ 111.0, 144.74, 504.608, 155.19 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）再使用万用表电阻档测量 IF05 下游的对地电阻为无穷大，如图 3-20 所示，正常。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 13,
+    "page number" : 98,
+    "bounding box" : [ 310.395, 485.6, 447.05, 576.905 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile5.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 12,
+    "page number" : 98,
+    "bounding box" : [ 148.745, 483.15, 288.4, 571.155 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile6.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 98,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "98"
+  } ]
+}

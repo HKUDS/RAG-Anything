@@ -1,0 +1,193 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 17,
+    "bounding box" : [ 90.0, 737.54, 505.207, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "丝（片），材质多为锌、铅锡、铜等金属合金。按外形可分为插片式、熔管式、绝缘式子等 类型。"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 17,
+    "bounding box" : [ 111.0, 676.221, 510.49, 727.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 17,
+      "bounding box" : [ 111.0, 717.021, 505.326, 727.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）电路断路保护器（充电座） 主要用于充电桩内部电路，当检测到漏电电流达到",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 17,
+        "bounding box" : [ 90.0, 696.621, 478.436, 707.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "上限时，会自动断开充电桩的输出电流；若充电桩超负荷工作，也会自动切断电路。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 17,
+      "bounding box" : [ 111.0, 676.221, 510.49, 686.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（3）中央控制盒 为便于故障诊断、规范布线，现代汽车会将熔断器、断路器保护器、",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 17,
+    "bounding box" : [ 90.0, 635.3, 510.49, 666.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "继电器等电器配件集中布置在配电板上，配电板再通过导线连接，这种配电板加外盖的组合， 就是中央控制盒。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 17,
+    "bounding box" : [ 77.52, 463.18, 219.24, 604.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 17,
+    "bounding box" : [ 227.16, 463.18, 368.88, 604.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 17,
+    "bounding box" : [ 377.16, 463.18, 518.88, 604.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 17,
+    "bounding box" : [ 123.24, 420.38, 481.448, 430.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "a）熔断器 b）电路断路保护器 c）中央控制盒"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 17,
+    "bounding box" : [ 239.88, 393.261, 355.328, 403.711 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 1-5 汽车电路保护元件"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 17,
+    "bounding box" : [ 111.0, 346.461, 373.441, 380.311 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "6.汽车继电器 汽车用继电器可分为功能继电器与电控控制继电器两类："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 12,
+    "level" : "2",
+    "page number" : 17,
+    "bounding box" : [ 111.0, 298.518, 505.195, 333.51 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 17,
+      "bounding box" : [ 111.0, 321.917, 483.73, 333.51 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）功能继电器：像闪光继电器、刮水间歇继电器都属于这一类，承担特定功能。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 17,
+      "bounding box" : [ 111.0, 298.518, 505.195, 310.111 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）电控控制继电器：仅负责电路的通断与转换，核心作用是减小开关的电流负荷，避",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 17,
+    "bounding box" : [ 90.0, 229.461, 505.208, 286.711 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "免开关触点被烧蚀——靠流经开关的小电流，来控制用电装置的大电流。这类继电器在汽车 上常见的有卸荷继电器、前照灯继电器、喇叭继电器、起动继电器、鼓风机继电器、空调压 缩机电磁离合器继电器等。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 14,
+    "page number" : 17,
+    "bounding box" : [ 90.0, 159.261, 505.207, 216.51 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "继电器的外形多为方形或长方形（一般由电磁铁和触点组构成），按插脚数量可分为三 插脚、四插脚、五插脚、六插脚等多种。部分继电器的磁化线圈两端会并联放电电阻或续流 二极管，用来防止断电时产生的自感电动势损坏电子设备。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 15,
+    "page number" : 17,
+    "bounding box" : [ 111.0, 89.061, 499.436, 146.311 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "根据触点的初始状态，继电器可分为三类： 常开（动合触点）型：触点平时是断开的，继电器动作后触点接通，连通控制电路； 常闭（动断触点）型：触点平时是闭合的，继电器动作后触点断开，切断控制电路；"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 17,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "17"
+  } ]
+}

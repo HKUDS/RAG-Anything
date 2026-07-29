@@ -1,0 +1,75 @@
+{
+  "entries": [
+    {
+      "caption": "",
+      "chunk_id": "chunk-7b1c59832a62c0298dcab2d1b42f30d2",
+      "document_id": "doc-9b50a248f172d9afd7b4ad620413ce9e",
+      "element_id": "1",
+      "media_id": "3ed72d82a18b6a85e967fa5a4fa4deec",
+      "media_root_relative_path": "pages/page-0001",
+      "mime": "image/png",
+      "page": 1,
+      "provenance": "odl-parser",
+      "relative_path": "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile1.png",
+      "sha256": "568452ae0042964bcf5202fb8978057bc4c4864b00eed267427579f3a5fca7dd",
+      "status": "persisted"
+    },
+    {
+      "caption": "",
+      "chunk_id": "chunk-a8e41683cd85ff56febb993257341649",
+      "document_id": "doc-9b50a248f172d9afd7b4ad620413ce9e",
+      "element_id": "1",
+      "media_id": "6842859f80a798faff7af0daa1972eaf",
+      "media_root_relative_path": "pages/page-0002",
+      "mime": "image/png",
+      "page": 2,
+      "provenance": "odl-parser",
+      "relative_path": "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile65.png",
+      "sha256": "c16cfefa5aa4f26292aac74d4899c9490dee868a073b2aae2357594eb6454fed",
+      "status": "persisted"
+    },
+    {
+      "caption": "",
+      "chunk_id": "chunk-965a259e8d738c0cd682ddbf39689991",
+      "document_id": "doc-9b50a248f172d9afd7b4ad620413ce9e",
+      "element_id": "page-render-2",
+      "media_id": "488fec857e46def953de79a25808365e",
+      "media_root_relative_path": "pages/page-0002",
+      "mime": "image/png",
+      "page": 2,
+      "provenance": "odl-page-render-fallback",
+      "relative_path": "odl_page_render.png",
+      "sha256": "ba0fd4104c56124bc132451b65808d81ab05d1f9d7f95130676f46e888b8d035",
+      "status": "persisted"
+    },
+    {
+      "caption": "",
+      "chunk_id": "chunk-329a083e3a25f2c05debe4440881c51e",
+      "document_id": "doc-9b50a248f172d9afd7b4ad620413ce9e",
+      "element_id": "1",
+      "media_id": "fc54b3ff3175a22bce7e89ee459c4561",
+      "media_root_relative_path": "pages/page-0003",
+      "mime": "image/png",
+      "page": 3,
+      "provenance": "odl-parser",
+      "relative_path": "2021年大众ID.4 CROZZ维修电路图-转向柱电子装置 (1)_images/imageFile1.png",
+      "sha256": "357b87f9cd1a963f63045bdb87e41d3aecd2a6bc0dd7f04ca44729d795149789",
+      "status": "persisted"
+    },
+    {
+      "caption": "",
+      "chunk_id": "chunk-03159a417ac3a37f2a7577dfb41b8b9b",
+      "document_id": "doc-9b50a248f172d9afd7b4ad620413ce9e",
+      "element_id": "page-render-3",
+      "media_id": "2512e3d89bbd4843567bad6eea1b409c",
+      "media_root_relative_path": "pages/page-0003",
+      "mime": "image/png",
+      "page": 3,
+      "provenance": "odl-page-render-fallback",
+      "relative_path": "odl_page_render.png",
+      "sha256": "ae28476f881b2df10c7d2b357742519728725b66069547f46b69320859ad0154",
+      "status": "persisted"
+    }
+  ],
+  "schema": "odl-media-manifest-v1"
+}

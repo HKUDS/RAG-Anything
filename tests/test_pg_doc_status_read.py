@@ -9,6 +9,43 @@ class _Cache(dict):
     """Small dict-compatible cache for exercising cache recovery."""
 
 
+class _DirectSummaryConnection:
+    def __init__(self, rows):
+        self.rows = rows
+        self.calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return False
+
+    async def fetch(self, query, workspace):
+        self.calls.append((query, workspace))
+        return self.rows
+
+
+class _DirectSummaryPool:
+    def __init__(self, connection):
+        self.connection = connection
+
+    def acquire(self):
+        return self.connection
+
+
+class _RecordLike:
+    """Mimic asyncpg.Record's item-access protocol without dict inheritance."""
+
+    def __init__(self, values):
+        self.values = values
+
+    def keys(self):
+        return self.values.keys()
+
+    def __getitem__(self, key):
+        return self.values[key]
+
+
 class _PagedDocStatus:
     def __init__(self, docs, *, full_docs=None, db=object()):
         self.db = db
@@ -111,6 +148,75 @@ async def test_pg_doc_status_summary_read_does_not_hydrate_chunk_lists(monkeypat
     assert result["doc-1"]["chunks_count"] == 2
     assert "chunks_list" not in result["doc-1"]
     assert store.by_ids_calls == []
+
+
+def test_pg_doc_status_summary_keeps_asyncpg_record_like_columns():
+    result = kb_service._serialize_doc_status_summary(
+        _RecordLike({
+            "file_path": "manual.pdf",
+            "status": "processed",
+            "content_summary": "summary",
+            "content_length": 7,
+            "chunks_count": 2,
+            "metadata": {},
+            "error_msg": None,
+            "created_at": "2026-07-21T00:00:00+00:00",
+            "updated_at": "2026-07-21T00:00:00+00:00",
+            "track_id": None,
+        })
+    )
+
+    assert result["file_path"] == "manual.pdf"
+    assert result["status"] == "processed"
+    assert result["chunks_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_pg_doc_status_summary_uses_read_only_pg_fallback_when_rag_instance_is_unavailable(
+    monkeypatch,
+):
+    row = {
+        "id": "doc-1",
+        "file_path": "manual.pdf",
+        "status": "processed",
+        "content_summary": "summary",
+        "content_length": 7,
+        "chunks_count": 2,
+        "metadata": {"chunking_strategy": "recursive"},
+        "error_msg": None,
+        "created_at": "2026-07-21T00:00:00+00:00",
+        "updated_at": "2026-07-21T00:00:00+00:00",
+        "track_id": None,
+    }
+    connection = _DirectSummaryConnection([row])
+
+    async def unavailable(_name):
+        raise RuntimeError("PG doc_status storage is unavailable")
+
+    monkeypatch.setattr(kb_service, "_get_pg_doc_status_storage", unavailable)
+    monkeypatch.setattr(kb_service, "_pg_storage_ready", lambda: True)
+    monkeypatch.setattr(kb_service, "kb_dir", lambda _name: "./rag_storage_demo")
+    from raganything.services import pg_state_repo
+
+    monkeypatch.setattr(pg_state_repo, "get_pg_pool", lambda: _DirectSummaryPool(connection))
+
+    result = await kb_service._load_doc_status_summaries("demo")
+
+    assert result == {
+        "doc-1": {
+            "file_path": "manual.pdf",
+            "status": "processed",
+            "content_summary": "summary",
+            "content_length": 7,
+            "chunks_count": 2,
+            "metadata": {"chunking_strategy": "recursive"},
+            "error_msg": None,
+            "created_at": "2026-07-21T00:00:00+00:00",
+            "updated_at": "2026-07-21T00:00:00+00:00",
+            "track_id": None,
+        }
+    }
+    assert connection.calls[0][1] == "./rag_storage_demo"
 
 
 @pytest.mark.asyncio

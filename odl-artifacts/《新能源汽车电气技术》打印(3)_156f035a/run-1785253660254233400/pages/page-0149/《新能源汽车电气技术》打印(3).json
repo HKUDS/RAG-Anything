@@ -1,0 +1,87 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 149,
+    "bounding box" : [ 90.0, 655.821, 509.89, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "模式，如间歇刮水模式，能根据雨量大小自动调节刮水器的刮水频率；还有低速、高速连续 刮水模式，以满足不同降雨强度下的需求。通过接收各种传感器信号及驾驶人的操作指令， 精确控制刮水器电动机的起动、停止、转速以及刮水器臂的摆动角度和位置，确保刮水器准 确地完成刮水任务。实时监测刮水器系统的工作状态，一旦检测到故障，如电动机过载、短 路等，会及时采取保护措施，如切断电源，防止故障进一步扩大，并通过故障指示灯或车辆 信息系统向驾驶人发出警报，如图 4-22 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 149,
+    "bounding box" : [ 144.6, 416.38, 449.52, 647.38 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 149,
+    "bounding box" : [ 225.48, 397.94, 369.728, 408.39 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-22 前机舱供电模块继电器"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 149,
+    "bounding box" : [ 90.0, 297.74, 505.209, 389.911 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "6.传感器 传感器：一般安装在风窗玻璃内侧，能通过光学原理检测风窗玻璃上的雨量大小。当雨 滴落在玻璃上时，会改变玻璃表面的光学特性，雨量传感器将这种变化转化为电信号，传递 给刮水器控制模块，控制模块根据信号强度来自动调整刮水器的刮水频率，雨量越大，刮水 频率越高，如图 4-23 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 149,
+    "bounding box" : [ 200.16, 134.5, 393.96, 289.3 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 7,
+    "page number" : 149,
+    "bounding box" : [ 262.2, 116.421, 333.008, 126.871 ],
+    "linked content id" : 6,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-23 传感器"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 149,
+    "bounding box" : [ 111.0, 77.54, 505.082, 108.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "7.喷水系统 喷水系统（图 4-24）：通过将清洁液喷到风窗玻璃上，能湿润并软化灰尘、泥土、油"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 149,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "149"
+  } ]
+}

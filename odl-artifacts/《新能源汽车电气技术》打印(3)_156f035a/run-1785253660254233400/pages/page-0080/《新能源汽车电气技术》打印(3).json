@@ -1,0 +1,262 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 15,
+    "level" : "1",
+    "page number" : 80,
+    "bounding box" : [ 90.0, 752.166, 152.889, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 课后习题"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 16,
+    "level" : "Doctitle",
+    "page number" : 80,
+    "bounding box" : [ 111.0, 729.621, 163.568, 740.071 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "一、选择题"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 17,
+    "level" : "2",
+    "page number" : 80,
+    "bounding box" : [ 111.0, 425.421, 452.17, 716.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 5,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 658.158, 452.17, 716.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.在新能源汽车起动过程中，哪个模块控制 IG 继电器的吸合（ ）。 A.智能钥匙模块（Key-less Ecu） B.车身电控单元（BCM） C.蓄电池管理系统（BMS） D.整车控制器（VCU）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 612.621, 452.17, 646.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.比亚迪秦 EV BCM 获取的制动开关由不踩到踩下的电压变化（ ）。 A.0V--12V B.12V--0V C.12V--12V D.0V--0V",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 565.821, 452.17, 599.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.比亚迪秦 EV BCM 获取的起动按钮由不按到按下的电压变化（ ）。 A.0V--12V B.12V--0V C.12V--12V D.0V--0V",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 495.621, 310.45, 552.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.以下不属于高压上电条件的是( )。 A.绝缘测试通过 B.高压互锁正常 C.无充电连接信号 D.预充成功",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 425.421, 326.17, 482.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5.比亚迪秦 EV 有几个车内探测天线( )。 A.2 B.3 C.4 D.5 二、填空题",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 18,
+    "level" : "2",
+    "page number" : 80,
+    "bounding box" : [ 111.0, 144.621, 505.329, 412.471 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 8,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 402.021, 505.329, 412.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.所谓高压互锁也叫高压互锁回路，是电动汽车中使用的一种安全设计措施，其本质",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 80,
+        "bounding box" : [ 90.0, 378.621, 467.89, 389.071 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "是 。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 355.221, 410.17, 365.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.预充的核心作用： 。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 331.821, 505.209, 342.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.IG3 继电器吸合后 、 、 被供",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 7,
+        "page number" : 80,
+        "bounding box" : [ 90.0, 308.421, 131.89, 318.871 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "电激活。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 285.021, 488.888, 295.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.动力蓄电池包内接触器的工作电压是由 BMS 的 来提供的。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 261.621, 326.17, 272.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5.汽车智能钥匙系统简称 。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 238.221, 362.89, 248.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "6.比亚迪秦车身控制模块的安装在 。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 214.821, 505.21, 225.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "7.KG25(B)/1 代 表 ， 其 电 压 变 化",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 12,
+        "page number" : 80,
+        "bounding box" : [ 90.0, 191.421, 278.89, 201.871 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "为 。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 144.621, 394.45, 178.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "8.比亚迪秦 EV 探测天线的探测范围为 。 三、判断题",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 20,
+    "level" : "2",
+    "page number" : 80,
+    "bounding box" : [ 111.0, 74.421, 510.49, 131.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 120.197, 510.49, 131.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.智能钥匙远程遥控正常，无钥匙进入功能失效，一定不是 IK 的供电问题。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 97.821, 341.89, 108.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.按压微动开关，四个车门全部解锁。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 80,
+      "bounding box" : [ 111.0, 74.421, 425.89, 84.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.按压微动开关，钥匙闪烁，说明车外天线正常工作了。（ ）",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 14,
+    "page number" : 80,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "80"
+  } ]
+}

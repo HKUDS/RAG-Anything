@@ -1,0 +1,9 @@
+{
+  "schema_version": "opendataloader-runner-request-v1",
+  "source_pdf": "C:\\Users\\98014\\知元\\uploads\\《新能源汽车电气技术》打印(3).pdf",
+  "output_root": "C:\\Users\\98014\\知元\\odl-artifacts\\《新能源汽车电气技术》打印(3)_156f035a\\run-1785253660254233400\\pages\\page-0235",
+  "source_total_pages": 249,
+  "page": 235,
+  "java_heap": "-Xmx1024m",
+  "max_output_bytes": 1073741824
+}

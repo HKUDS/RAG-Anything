@@ -1,0 +1,134 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 216,
+    "bounding box" : [ 195.24, 606.22, 404.04, 762.82 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 9,
+    "page number" : 216,
+    "bounding box" : [ 226.8, 586.34, 368.409, 596.79 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-35 MX13 T8cb/2 对地电压"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 10,
+    "level" : "1",
+    "page number" : 216,
+    "bounding box" : [ 111.0, 82.461, 505.383, 576.39 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 216,
+      "bounding box" : [ 111.0, 565.94, 505.265, 576.39 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）车辆下低压电，断开蓄电池负极，使用万用表电阻档测量 MX13 的搭铁引脚 T8cb/3",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 216,
+        "bounding box" : [ 90.0, 545.421, 381.248, 555.871 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "对车身电阻均小于 1Ω，如图 5-36 所示，说明 MX13 搭铁正常。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 2,
+        "page number" : 216,
+        "bounding box" : [ 163.56, 375.7, 378.72, 537.1 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 216,
+        "bounding box" : [ 226.8, 356.18, 368.409, 366.63 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 5-36 MX13 T8cb/3 接地电阻"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 216,
+      "bounding box" : [ 111.0, 335.78, 505.265, 346.23 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）接下来测量 J519 的 LIN 总线，接上蓄电池负极，ON 档，用示波器测量 MX13 T8cb/1",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 4,
+        "page number" : 216,
+        "bounding box" : [ 90.0, 294.98, 505.209, 325.83 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "对地波形，如图 5-37 所示，绿色线条为 MX13 T8cb/1 LIN 总线波形，可以看出和 LIN 总线 正常波形不同，异常，怀疑 LIN 总线出现了短路故障。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 5,
+        "page number" : 216,
+        "bounding box" : [ 187.44, 118.9, 406.56, 283.3 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 6,
+        "page number" : 216,
+        "bounding box" : [ 234.6, 102.98, 360.49, 113.43 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 5-37 MX13 LIN 总线波形"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 216,
+      "bounding box" : [ 111.0, 82.461, 505.383, 92.911 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）车辆下低压电，断开蓄电池负极，使用万用表电阻档测量 MX13 T8cb/1 引脚与 MX13",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 216,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "216"
+  } ]
+}

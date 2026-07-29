@@ -1,0 +1,29 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 236,
+    "bounding box" : [ 90.0, 704.958, 505.207, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "维修验证开启空调最大制冷模式，5min 后出风口温度降至 8℃，制冷剂高压侧压力 1.8MPa、低压侧压力 0.3MPa（符合标准），数据流显示压缩机转速 3500rpm、电子膨胀阀 开度 300 步（正常），运行 30min 无漏点，故障排除。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 236,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "236"
+  } ]
+}

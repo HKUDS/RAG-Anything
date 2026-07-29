@@ -1,0 +1,151 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 5,
+    "page number" : 196,
+    "bounding box" : [ 90.0, 757.94, 454.807, 768.39 ],
+    "linked content id" : 6,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "与 BK45(B)/21 的对车身电阻均小于 1Ω，如图 5-20 所示，说明 BMS 搭铁正常。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 196,
+    "bounding box" : [ 280.56, 624.88, 469.68, 749.44 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 196,
+    "bounding box" : [ 90.0, 625.22, 280.44, 747.86 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 196,
+    "bounding box" : [ 187.44, 612.74, 407.769, 623.19 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-20 BMS BK45(B)/2 和 BK45(B)/21 接地电阻"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 9,
+    "level" : "1",
+    "page number" : 196,
+    "bounding box" : [ 111.0, 307.7, 510.49, 602.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 196,
+      "bounding box" : [ 111.0, 592.221, 510.49, 602.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）接下来测量 BMS 的动力总线，接上蓄电池负极，ON 档，用示波器测量 BMS BK45（B）",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 196,
+        "bounding box" : [ 90.0, 551.421, 510.49, 582.271 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "/16 和 BK45（B）/17 对地波形，如图 5-21 所示，绿色线条为 CAN-High 波形，黄色线条为 CAN-Low 波形，可以看出和 CAN 总线正常波形不同，异常，怀疑 BMS 动力网出现了断路故障。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 2,
+        "page number" : 196,
+        "bounding box" : [ 172.44, 349.15, 422.28, 535.27 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 196,
+        "bounding box" : [ 242.52, 328.221, 352.688, 338.671 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 5-21 BMS 动力网波形"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 196,
+      "bounding box" : [ 111.0, 307.7, 505.209, 318.15 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4）车辆下低压电，断开蓄电池负极，使用万用表电阻档测量 BMS CAN-Low 引脚",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 10,
+    "page number" : 196,
+    "bounding box" : [ 90.0, 246.5, 505.209, 297.75 ],
+    "linked content id" : 11,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "BK45(B)/17 与驱动电机 B30/14 之间的电阻为 0.5Ω，如图 5-22 左图所示，正常，接着测量 BMS CAN-High 引脚 BK45(B)/16 与驱动电机 B30/9 之间的电阻为无穷大，如图 5-22 右图所 示，异常。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 11,
+    "page number" : 196,
+    "bounding box" : [ 90.0, 101.56, 283.92, 238.12 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile4.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 12,
+    "page number" : 196,
+    "bounding box" : [ 285.0, 102.66, 458.76, 238.02 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile5.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 196,
+    "bounding box" : [ 189.959, 83.18, 426.244, 93.63 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-22 BMS 动力网与驱动电机动力网线路之间电阻"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 196,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "196"
+  } ]
+}

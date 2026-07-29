@@ -1,0 +1,9 @@
+{
+  "schema_version": "opendataloader-runner-request-v1",
+  "source_pdf": "C:\\Users\\98014\\知元\\uploads\\2606(1).pdf",
+  "output_root": "C:\\Users\\98014\\知元\\odl-artifacts\\2606(1)_93ee9f99\\run-1785208095840865900\\pages\\page-0019",
+  "source_total_pages": 19,
+  "page": 19,
+  "java_heap": "-Xmx1024m",
+  "max_output_bytes": 1073741824
+}

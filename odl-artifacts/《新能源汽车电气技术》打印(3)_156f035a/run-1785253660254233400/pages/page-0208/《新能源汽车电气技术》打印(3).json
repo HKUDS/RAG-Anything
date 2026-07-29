@@ -1,0 +1,87 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 208,
+    "bounding box" : [ 190.44, 585.94, 404.52, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 3,
+    "page number" : 208,
+    "bounding box" : [ 252.959, 566.54, 342.248, 576.99 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-28 从节点响应"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 208,
+    "bounding box" : [ 111.0, 525.74, 505.207, 556.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.通信完成与信息使用 LIN 总线的工作模式可概括为由主节点主导的周期性标识符轮询机制。这一过程可以通"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 208,
+    "bounding box" : [ 90.0, 403.221, 510.49, 515.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "过一个空调系统的工作原理解释，如图 5-29 所示。主节点（空调操作和显示单元），按照 既定的调度表依次点名提问（广播任务标识符），例如：“请鼓风机单元回答当前转速？” 总线上所有从节点都能听到问题，但只有被点名的鼓风机（标识符匹配的从节点）获得发言 权并发送响应：“当前转速为 150rpm。”整个总线都能听到这份回答，其他节点均可按需 使用该数据。随后，主节点继续按调度表点名提问下一个从节点，如此循环往复，形成有序、 可靠且高效的问答式通信流程。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 208,
+    "bounding box" : [ 98.88, 200.38, 495.84, 394.78 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 7,
+    "page number" : 208,
+    "bounding box" : [ 226.8, 180.98, 368.409, 191.43 ],
+    "linked content id" : 6,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-29 空调系统 LIN 通信原理"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 208,
+    "bounding box" : [ 90.0, 78.861, 507.25, 171.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "此外，LIN 总线还包含一套有效的睡眠与唤醒机制，用于在不需通信时降低系统功耗。 当主节点发送特定的睡眠命令后，总线上的所有节点均会转入低功耗睡眠模式，从而显著减 少能耗。在需要恢复通信时，唤醒机制可由任一节点触发：例如，某个检测到用户操作（如 按下开关）的从节点可向总线发送一个唤醒信号（通常表现为一个显性电平脉冲），该信号 将激活总线上的所有节点。随后，主节点重新起动调度流程，网络即恢复正常通信状态。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 208,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "208"
+  } ]
+}

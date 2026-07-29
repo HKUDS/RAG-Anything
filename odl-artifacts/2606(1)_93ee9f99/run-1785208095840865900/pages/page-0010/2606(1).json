@@ -1,0 +1,336 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 52,
+    "page number" : 10,
+    "bounding box" : [ 197.713, 708.41, 235.2, 713.526 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.395,
+    "text color" : "[0.6039215686, 0.2039215686, 0.0705882353]",
+    "content" : "Missing artifacts"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 58,
+    "page number" : 10,
+    "bounding box" : [ 283.328, 708.047, 335.772, 713.163 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.395,
+    "text color" : "[0.6039215686, 0.2039215686, 0.0705882353]",
+    "content" : "Schema-invalid content"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 53,
+    "level" : "Subtitle",
+    "page number" : 10,
+    "bounding box" : [ 180.752, 702.028, 252.421, 709.094 ],
+    "heading level" : 2,
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 6.015,
+    "text color" : "[0.1215686275, 0.4352941176, 0.262745098]",
+    "content" : "> create output early"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 59,
+    "level" : "Subtitle",
+    "page number" : 10,
+    "bounding box" : [ 265.052, 701.728, 354.398, 708.794 ],
+    "heading level" : 2,
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 6.015,
+    "text color" : "[0.1215686275, 0.4352941176, 0.262745098]",
+    "content" : "> use correct content tags"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 45,
+    "page number" : 10,
+    "bounding box" : [ 368.132, 700.67, 380.107, 706.445 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.916,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "53.9"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 26,
+    "page number" : 10,
+    "bounding box" : [ 163.631, 695.779, 169.516, 701.164 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.627,
+    "text color" : "[0.0]",
+    "content" : "54"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 44,
+    "page number" : 10,
+    "bounding box" : [ 279.783, 685.448, 291.758, 691.223 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.916,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "51.6"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 43,
+    "page number" : 10,
+    "bounding box" : [ 209.104, 674.858, 221.078, 680.633 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.916,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "50.0"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 42,
+    "page number" : 10,
+    "bounding box" : [ 191.434, 669.564, 203.408, 675.339 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.916,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "49.2"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 24,
+    "page number" : 10,
+    "bounding box" : [ 163.631, 669.305, 169.516, 674.691 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.627,
+    "text color" : "[0.0]",
+    "content" : "50"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 27,
+    "page number" : 10,
+    "bounding box" : [ 154.747, 648.473, 161.479, 673.336 ],
+    "font" : "DejaVuSerif",
+    "font size" : 5.783,
+    "text color" : "[0.0]",
+    "content" : "Pass (%)"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 61,
+    "page number" : 10,
+    "bounding box" : [ 356.668, 657.983, 400.385, 663.368 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.627,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "Combined harness"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 62,
+    "level" : "Subtitle",
+    "page number" : 10,
+    "bounding box" : [ 331.81, 651.719, 425.498, 658.785 ],
+    "heading level" : 2,
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 6.015,
+    "text color" : "[0.1215686275, 0.4352941176, 0.262745098]",
+    "content" : "artifacts + schemas + loops"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 55,
+    "page number" : 10,
+    "bounding box" : [ 250.488, 647.448, 289.14, 652.564 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.395,
+    "text color" : "[0.6039215686, 0.2039215686, 0.0705882353]",
+    "content" : "Stalled tool loops"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 22,
+    "page number" : 10,
+    "bounding box" : [ 163.631, 642.831, 169.516, 648.217 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.627,
+    "text color" : "[0.0]",
+    "content" : "46"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 56,
+    "page number" : 10,
+    "bounding box" : [ 222.155, 641.129, 317.816, 648.195 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 6.015,
+    "text color" : "[0.1215686275, 0.4352941176, 0.262745098]",
+    "content" : "> redirect after 50 tool calls"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 50,
+    "page number" : 10,
+    "bounding box" : [ 211.463, 624.452, 245.214, 629.838 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.627,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "Initial harness"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 41,
+    "page number" : 10,
+    "bounding box" : [ 173.764, 623.235, 185.739, 629.01 ],
+    "font" : "DejaVuSerif-Bold",
+    "font size" : 4.916,
+    "text color" : "[0.1254901961, 0.1490196078, 0.1764705882]",
+    "content" : "42.2"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 20,
+    "page number" : 10,
+    "bounding box" : [ 163.631, 616.358, 169.516, 621.743 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.627,
+    "text color" : "[0.0]",
+    "content" : "42"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 10,
+    "bounding box" : [ 178.282, 597.315, 447.742, 602.701 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.627,
+    "text color" : "[0.0]",
+    "content" : "0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 18,
+    "page number" : 10,
+    "bounding box" : [ 300.629, 589.37, 329.222, 596.102 ],
+    "font" : "DejaVuSerif",
+    "font size" : 5.783,
+    "text color" : "[0.0]",
+    "content" : "Iterations"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 47,
+    "level" : "1",
+    "page number" : 10,
+    "bounding box" : [ 246.515, 577.424, 396.727, 582.809 ],
+    "font" : "DejaVuSerif",
+    "font size" : 4.627,
+    "text color" : "[0.0]",
+    "content" : "accepted harness candidate rejected harness candidate"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 63,
+    "level" : "2",
+    "page number" : 10,
+    "bounding box" : [ 107.737, 296.202, 504.001, 570.217 ],
+    "numbering style" : "english letters",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 10,
+      "bounding box" : [ 107.737, 541.684, 504.001, 570.217 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 7.97,
+      "text color" : "[0.0]",
+      "content" : "(a) Self-Harness evolution trajectory. Green markers denote accepted harness candidates and gray crosses denote rejected harness candidates. Step lines connect accepted candidates and keep performance flat across rejected iterations; the two accepted lineages meet at the final success-combined harness.",
+      "kids" : [ {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 1,
+        "page number" : 10,
+        "bounding box" : [ 147.599, 316.524, 464.407, 540.09 ],
+        "alt_source" : "missing",
+        "source" : "2606(1)_images/imageFile1.png"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 10,
+      "bounding box" : [ 107.737, 296.202, 503.997, 315.271 ],
+      "font" : "NimbusRomNo9L-Regu",
+      "font size" : 7.97,
+      "text color" : "[0.0]",
+      "content" : "(b) Differences for the three harness modifications accepted by Self-Harness and retained in the final harness. Red rows denote code removed from the initial harness, and green rows denote the updated harness behavior.",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 64,
+    "page number" : 10,
+    "bounding box" : [ 108.0, 258.866, 503.997, 292.688 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Figure 5: MiniMax M2.5 Self-Harness run. Panel (a) summarizes the Self-Harness evolution trajectory, while panel (b) expands the accepted updates from this trajectory into their retained code-level edits in the final harness."
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 65,
+    "level" : "Doctitle",
+    "page number" : 10,
+    "bounding box" : [ 108.0, 237.063, 227.003, 250.024 ],
+    "heading level" : 1,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "4.3 Experimental Analysis"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 66,
+    "page number" : 10,
+    "bounding box" : [ 107.751, 163.14, 504.352, 230.048 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Harness evolution and retained edits. Figures 5 and 6 summarize both the evolution trajectory and the retained code-level edits for MiniMax M2.5 and Qwen3.5, with the corresponding GLM-5 run shown in Appendix Figure 10. In each figure, the evolution plot distinguishes accepted candidates from rejected proposals, while the code diff records the harness interfaces retained in the final promoted variant. Across models, Self-Harness reaches the final harness through a small number of validation-gated edits rather than through a smooth sequence of uniformly successful proposals."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 67,
+    "page number" : 10,
+    "bounding box" : [ 108.0, 114.024, 504.0, 158.755 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "For MiniMax M2.5, the harness improves from 42.2% to 53.9% pass rate. The retained edits address missing required artifacts, schema-invalid tool content, and stalled tool-use loops, yielding a harness that creates required outputs earlier, handles structured tool content more carefully, and redirects execution after prolonged tool interaction."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 68,
+    "page number" : 10,
+    "bounding box" : [ 107.691, 86.727, 505.655, 109.64 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "The Qwen3.5 evolution run shown in Figure 6 starts at 20.3% pass rate and reaches 36.7% after merging edits that emphasize artifact checking, missing-artifact recovery, retry discipline, and tool-"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 69,
+    "page number" : 10,
+    "bounding box" : [ 301.019, 39.313, 310.982, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "10"
+  } ]
+}

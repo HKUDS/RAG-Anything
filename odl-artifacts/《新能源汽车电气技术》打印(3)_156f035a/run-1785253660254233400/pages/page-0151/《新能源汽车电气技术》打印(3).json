@@ -1,0 +1,139 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 151,
+    "bounding box" : [ 111.0, 737.54, 505.209, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1.确保视野清晰 在雨天、雪天或风窗玻璃有污渍时，刮水器系统通过刮水动作，及时清除风窗玻璃上的"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 151,
+    "bounding box" : [ 90.0, 676.221, 505.208, 727.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "雨水、雪花、灰尘、泥污等，使驾驶人能保持良好的前方视野，有助于安全驾驶。 2.提升驾驶安全性 清晰的视野能让驾驶人及时发现道路上的障碍物、交通信号和其他车辆行人等，减少因"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 151,
+    "bounding box" : [ 90.0, 614.9, 505.208, 666.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "视线受阻导致的交通事故，保障行车安全。 3.保护风窗玻璃 刮水器片在刮水过程中，可防止雨水、污渍等长时间附着在玻璃上，避免对玻璃造成腐"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 151,
+    "bounding box" : [ 90.0, 574.1, 505.208, 604.95 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "蚀或损伤。同时，喷水系统配合刮水器工作，还能降低刮水器片与玻璃间的摩擦，保护玻璃 表面的光洁度。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 151,
+    "bounding box" : [ 111.0, 533.18, 505.207, 564.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.提高舒适性 自动刮水器系统能根据雨量自动调节刮水频率，无须驾驶人频繁手动操作，提高了驾驶"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 151,
+    "bounding box" : [ 90.0, 512.78, 373.33, 523.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "的舒适性。此外，良好的视野也能减轻驾驶人的视觉疲劳。。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 151,
+    "bounding box" : [ 111.0, 468.98, 505.087, 497.91 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "三、刮水器系统的工作原理 刮水器系统主要由刮水器电动机、刮水器控制模块、刮水器片、喷水装置以及相关的传"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 151,
+    "bounding box" : [ 90.0, 448.58, 268.444, 459.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "感器和开关等组成，其工作原理如下："
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 151,
+    "bounding box" : [ 90.0, 387.261, 505.209, 438.63 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "动力驱动：刮水器电动机作为刮水器系统的动力源，通电后产生旋转运动。电动机的转 动通过传动机构，通常是齿轮和连杆机构，将旋转运动转化为刮水器片的往复摆动运动，使 刮水器片能够在风窗玻璃上进行刮水动作。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 151,
+    "bounding box" : [ 90.0, 325.94, 510.49, 377.311 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "控制逻辑：手动控制，驾驶人通过操作刮水器控制开关，将信号传递给刮水器控制模块。 控制模块根据开关的不同挡位信号，如低速、高速、间歇等，来控制刮水器电动机以相应的 速度运转，实现不同的刮水频率。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 151,
+    "bounding box" : [ 90.0, 244.34, 505.208, 315.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "自动控制：对于配备自动刮水器系统的车辆，刮水器传感器会发挥作用。例如光学雨量 传感器，它利用光学原理，通过发射和接收光线来检测风窗玻璃上的雨滴情况。当传感器检 测到雨量变化时，会将信号传送给刮水器控制模块，控制模块根据信号自动调整刮水器电动 机的运行速度，从而实现刮水器频率的自动调节。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 151,
+    "bounding box" : [ 90.0, 183.021, 505.209, 234.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "喷水辅助：当驾驶人操作喷水开关时，喷水系统中的水泵将储液罐中的清洁液抽出，通 过喷头喷到风窗玻璃上。清洁液可以湿润和溶解玻璃表面的污渍，配合刮水器片的刮动，提 高清洁效果。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 151,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "151"
+  } ]
+}

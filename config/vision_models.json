@@ -1,0 +1,33 @@
+{
+  "profiles": [
+    {
+      "id": "legacy-vlm",
+      "kind": "vlm",
+      "display_name": "Legacy VLM",
+      "provider": "openai_compatible",
+      "model": "${VISION_MODEL}",
+      "capabilities": ["ocr", "image_description", "video_frame", "question_answering"],
+      "private": {
+        "base_url": "${LLM_BINDING_HOST}",
+        "api_key_env": "LLM_BINDING_API_KEY",
+        "timeout": 180,
+        "concurrency": 4
+      }
+    },
+    {
+      "id": "legacy-doubao-embedding",
+      "kind": "embedding",
+      "display_name": "Legacy Doubao Vision Embedding",
+      "provider": "doubao_multimodal_embedding",
+      "model": "${VISION_EMBEDDING_MODEL}",
+      "capabilities": ["image_similarity"],
+      "embedding_dim": "${VISION_EMBEDDING_DIM}",
+      "private": {
+        "base_url": "${VISION_EMBEDDING_HOST}",
+        "api_key_env": "VISION_EMBEDDING_API_KEY",
+        "timeout": 60,
+        "concurrency": 4
+      }
+    }
+  ]
+}

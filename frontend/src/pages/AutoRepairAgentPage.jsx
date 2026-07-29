@@ -10,6 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { api, getToken } from '../utils/api'
 import { useAutoRepairKB } from '../hooks/useAutoRepairKB'
 import AutoRepairKBSelector from '../components/AutoRepairKBSelector'
+import { ControlledMediaImage } from '../components/ControlledMedia'
 import GCodeEditor from '../components/GCodeEditor'
 
 const TABS = [
@@ -455,7 +456,7 @@ export default function AutoRepairAgentPage() {
                           <div className="mt-3 space-y-2">
                             {msg._images.map((img, ii) => (
                               <div key={ii} className="rounded-lg overflow-hidden border border-cloud-300">
-                                <img src={img.data_url} alt={img.caption || 'Related image'} className="w-full max-h-48 object-contain bg-cloud-200" />
+                                <ControlledMediaImage media={img} alt={img.caption || 'Related image'} className="w-full max-h-48 object-contain bg-cloud-200" />
                                 <p className="text-2xs text-ink-muted px-2 py-1">{(img.caption && String(img.caption).trim()) || 'Related image'}{Number.isFinite(img.page) ? ` (page ${img.page})` : ''}</p>
                               </div>
                             ))}

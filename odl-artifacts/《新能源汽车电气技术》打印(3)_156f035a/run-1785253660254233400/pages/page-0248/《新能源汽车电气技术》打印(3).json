@@ -1,0 +1,200 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "level" : "1",
+    "page number" : 248,
+    "bounding box" : [ 90.0, 729.621, 163.449, 763.764 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 课后习题 一、选择题"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 3,
+    "level" : "2",
+    "page number" : 248,
+    "bounding box" : [ 111.0, 355.221, 478.45, 716.671 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 5,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 659.421, 389.17, 716.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.新能源汽车无发动机余热，主流的暖风加热方式是（ ）。 A. 发动机余热加热 B. PTC 加热器 C. 燃油加热器 D. 电阻丝加热（低压）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 589.221, 462.605, 646.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.PTC 加热器的核心特点是（ ）。 A. 温度越高，电阻越小 B. 温度越高，电阻越大（正温度系数） C. 电阻恒定 D. 仅能加热空气",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 519.021, 431.167, 576.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.液体加热型 PTC 暖风系统中，冷却液的作用是（ ）。 A. 冷却 PTC 加热器 B. 传递 PTC 产生的热量到暖风芯体 C. 润滑循环泵 D. 清洁暖风芯体",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 448.821, 478.45, 506.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.若暖风系统出风口温度低，但 PTC 电流、温度正常，最可能的故障是（ ）。 A. PTC 加热器断路 B. 暖风芯体脏堵 C. 高压配电盒故障 D. ACU 无指令",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 355.221, 320.889, 435.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5.热泵暖风系统的优势是（ ）。 A. 能耗低，续航影响小 B. 结构简单 C. 低温（-20℃）效率高 D. 成本低 二、填空题",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 4,
+    "level" : "2",
+    "page number" : 248,
+    "bounding box" : [ 111.0, 214.821, 509.89, 342.271 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 5,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 331.821, 486.245, 342.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.PTC 暖风系统分为______（直接加热空气）和______（加热冷却液）两种类型。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 308.421, 509.89, 318.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.液体加热型 PTC 系统中，______的作用是将 PTC 加热后的冷却液输送至暖风芯体。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 285.021, 496.806, 295.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.PTC 加热器的保护机制包括______（温度过高断电）和______（电流过大断电）。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 261.621, 494.168, 272.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.暖风系统中，______的转速决定送风量大小，由空调控制器通过 PWM 信号控制。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 214.821, 494.168, 248.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "5.热泵系统在低温环境（如-15℃以下）效率下降，需辅助______制热，确保效果。 三、判断题",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 5,
+    "level" : "2",
+    "page number" : 248,
+    "bounding box" : [ 111.0, 121.221, 449.53, 201.871 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 4,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 191.421, 449.53, 201.871 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1.PTC 加热器为高压部件，维修时必须先下高压电，佩戴绝缘手套。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 168.021, 399.73, 178.471 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2.暖风芯体脏堵会导致换热效率下降，出风口温度降低。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 144.621, 449.53, 155.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3.冷却液循环泵不工作，PTC 加热器仍能正常制热（仅空气不热）。（ ）",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 248,
+      "bounding box" : [ 111.0, 121.221, 389.17, 131.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "4.热泵系统的能耗比 PTC 系统低，适合所有温度环境。（ ）",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 248,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "248"
+  } ]
+}

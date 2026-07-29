@@ -1,0 +1,9 @@
+{
+  "schema_version": "opendataloader-runner-request-v1",
+  "source_pdf": "C:\\Users\\98014\\知元\\uploads\\2021年大众ID.4 CROZZ维修电路图-全自动空调.pdf",
+  "output_root": "C:\\Users\\98014\\知元\\odl-artifacts\\2021年大众ID.4 CROZZ维修电路图-全自动空调_fcf40603\\run-1785237845484287400\\pages\\page-0005",
+  "source_total_pages": 12,
+  "page": 5,
+  "java_heap": "-Xmx1024m",
+  "max_output_bytes": 1073741824
+}

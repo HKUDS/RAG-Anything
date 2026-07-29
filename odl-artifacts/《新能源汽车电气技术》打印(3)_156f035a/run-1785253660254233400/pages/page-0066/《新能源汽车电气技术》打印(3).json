@@ -1,0 +1,97 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 66,
+    "bounding box" : [ 90.0, 715.879, 505.209, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "关进行转换后再通过舒适 CAN-1 发送至 BCM 进行认证。若 VCU 认证通过，则 BCM 再通过 舒适 CAN-1、网关、动力 CAN 告知 VCU 和组合仪表，因此组合仪表会解除防盗信息显示功 能，同时 VCU 向 BMS 发送高压上电指令，也就是要求 BMS 控制接触器闭合。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 66,
+    "bounding box" : [ 136.92, 561.58, 458.4, 708.7 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 66,
+    "bounding box" : [ 247.32, 540.558, 347.768, 552.15 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-21 模块认证过程"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 66,
+    "bounding box" : [ 90.0, 480.38, 510.49, 531.75 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（2）高压上电条件确认 BMS 通过动力 CAN 接收到 VCU 的上电指令后要进行高压上 电条件的确认：确认高压互锁线路是否正常，绝缘测试是否通过，蓄电池电压温度是否正常， 有无充电连接信号。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 66,
+    "bounding box" : [ 90.0, 419.18, 515.757, 470.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "高压互锁，简写 HVIL，所谓高压互锁也叫高压互锁回路，是电动汽车中使用的一种安 全设计措施，其本质是利用低压信号监测电动汽车上所有与高压部件连接的完整性及连续性。 简单来说就是通过低压线路的通断来检查高压线路的连接。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 66,
+    "bounding box" : [ 90.0, 254.597, 510.49, 409.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "高压互锁回路包括直流互锁和交流互锁两部分，下面以比亚迪秦 EV 为例讲解直流互锁 的工作原理，如图 2-22 所示。BMS 作为直流高压互锁的判断模块，通过输出互锁信号通过 完整的低压回路再接收互锁信号，进而判断回路是否完整且连续。其信号的路径如下：BMS BK45(B)/4-蓄电池包 BK51/30-蓄电池包低压插头 BK51/29-充配电总成 BK46/12-PTC 高压插头 中的低压互锁端子-压缩机高压插头中的互锁端子-蓄电池包高压插头中的互锁端子-充配电 总成 BK46/13-BMS BK45(B)/5。BMS BK45(B)/4 会发出 0-5V 的方波信号，如果低压互锁回路 完整连续，那么通过以上信号传递路径，BMS BK45(B)/5 会收到相同的方波信号，若线路中 有任何一个插头出现松动或者脱落，那么 BMS 就不会收到正确的信号，则高压互锁不通过。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 66,
+    "bounding box" : [ 225.6, 100.06, 390.24, 247.3 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 9,
+    "page number" : 66,
+    "bounding box" : [ 223.44, 79.278, 392.768, 90.871 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 2-22 比亚迪秦 EV 高压直流互锁图"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 66,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "66"
+  } ]
+}

@@ -8,8 +8,9 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
-import { api, getToken } from '../utils/api'
+import { api } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
+import { ControlledMediaImage } from '../components/ControlledMedia'
 
 // ── 模式定义 ───────────────────────────────────────────
 const RETRIEVAL_MODES = [
@@ -1220,16 +1221,13 @@ export default function AgentChatPage({ onToast }) {
                           <div className="grid grid-cols-2 gap-2">
                             {m.similar_images.map((sim, si) => (
                               <div key={si} className="bg-white dark:bg-sky-950/60 rounded-lg p-2 border border-cloud-200 dark:border-sky-800/30">
-                                {sim.url && (
-                                  <img
-                                    src={sim.url}
-                                    alt={sim.name || ''}
-                                    className="w-full h-24 object-cover rounded-md mb-1.5"
-                                    loading="lazy"
-                                  />
-                                )}
+                                <ControlledMediaImage
+                                  media={sim}
+                                  alt={sim.name || sim.entity_name || ''}
+                                  className="w-full h-24 object-cover rounded-md mb-1.5"
+                                />
                                 <p className="text-2xs text-ink-body dark:text-cloud-300 font-medium truncate">
-                                  {sim.name || sim.entity_name || sim.image_path?.split('/').pop()}
+                                  {sim.name || sim.entity_name || sim.caption || '知识库图片'}
                                 </p>
                                 <p className="text-2xs text-sky-500 dark:text-sky-400 font-mono">
                                   相似度 {(sim.score * 100).toFixed(1)}%
@@ -1248,19 +1246,19 @@ export default function AgentChatPage({ onToast }) {
                           </p>
                           <div className="grid grid-cols-2 gap-2">
                             {m.images.map((img, idx) => {
-                              const token = getToken()
-                              const imgUrl = `/api/files/image?path=${encodeURIComponent(img)}${token ? '&token=' + encodeURIComponent(token) : ''}`
+                              const hasControlledMedia = img && typeof img === 'object'
+                                && img.media_id && img.kb
+                              if (!hasControlledMedia) return null
                               return (
-                                <a key={idx} href={imgUrl} target="_blank" rel="noopener"
+                                <div key={idx}
                                   className="block rounded-lg overflow-hidden border border-cloud-200 dark:border-sky-800/30 hover:border-sky-300 dark:hover:border-sky-700 transition-colors"
                                 >
-                                  <img
-                                    src={imgUrl}
-                                    alt={`引用图片 ${idx + 1}`}
+                                  <ControlledMediaImage
+                                    media={img}
+                                    alt={img.caption || `引用图片 ${idx + 1}`}
                                     className="w-full h-28 object-cover"
-                                    loading="lazy"
                                   />
-                                </a>
+                                </div>
                               )
                             })}
                           </div>

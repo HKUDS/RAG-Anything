@@ -1,0 +1,107 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 165,
+    "bounding box" : [ 90.0, 757.94, 362.881, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "传递到锁舌，使锁舌伸出或缩回，实现车门的锁定与解锁。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 165,
+    "bounding box" : [ 212.88, 580.0, 382.44, 749.56 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 165,
+    "bounding box" : [ 256.92, 563.06, 338.169, 573.51 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-38 传动部分"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 5,
+    "page number" : 165,
+    "bounding box" : [ 90.0, 524.18, 505.208, 555.03 ],
+    "linked content id" : 6,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "此外，一些中控锁系统还可能包括遥控钥匙、防盗控制模块等部件，以实现远程控制和 防盗报警等功能。比亚迪秦 EV 中控门锁组成如图 4-39 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 165,
+    "bounding box" : [ 90.0, 320.38, 505.32, 515.74 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 165,
+    "bounding box" : [ 111.0, 240.74, 505.209, 313.59 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-39 亚迪秦 EV 中控门锁组成 二、中控门锁系统的作用 1.便捷开关车门 通过车内的中控门锁按钮或遥控钥匙，可方便地同时控制所有车门的锁止和开启，无须"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 165,
+    "bounding box" : [ 90.0, 179.54, 505.209, 230.79 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "逐个车门进行操作，提高了使用的便利性。 2.行车安全保护 车辆行驶过程中，中控门锁系统可自动锁止车门，防止车内人员误操作打开车门，降低"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 165,
+    "bounding box" : [ 90.0, 118.221, 505.208, 169.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "了因车门意外打开而导致的安全风险。 3.防盗功能 停车后，使用中控门锁系统锁止车门，能有效防止不法分子未经授权进入车内，保护车"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 165,
+    "bounding box" : [ 90.0, 77.3, 510.49, 108.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "内财物安全。一些车型的中控门锁系统还与车辆的防盗报警系统联动，当车门被非法打开时， 会触发报警装置。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 165,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "165"
+  } ]
+}

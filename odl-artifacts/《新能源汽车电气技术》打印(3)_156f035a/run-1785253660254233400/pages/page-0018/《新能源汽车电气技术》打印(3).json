@@ -1,0 +1,129 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 18,
+    "bounding box" : [ 90.0, 729.621, 505.206, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "开闭混合型：同时包含常通的常闭触点、常断的常开触点，继电器动作时触点状态会相 互反转。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 18,
+    "bounding box" : [ 111.0, 706.221, 510.49, 716.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "有些继电器带有两个线圈，双线圈继电器主要有两种类型：一种是两个线圈需同时通电，"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 18,
+    "bounding box" : [ 90.0, 636.021, 505.244, 693.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "触点才会动作；另一种是只需其中一个线圈通电，触点就能动作。继电器的工作电压有 12V 和 24V 两种，需匹配对应标称电压的汽车使用，这两种电压的继电器不能混用。如图 1-6 所 示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 18,
+    "bounding box" : [ 68.64, 567.82, 216.84, 629.02 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 6,
+    "page number" : 18,
+    "bounding box" : [ 227.88, 570.46, 378.96, 626.02 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 18,
+    "bounding box" : [ 390.24, 569.38, 526.2, 627.58 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 18,
+    "bounding box" : [ 95.64, 549.38, 484.688, 559.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "常开（动合触点）型 常闭（动断触点）型 开闭混合型"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 12,
+    "page number" : 18,
+    "bounding box" : [ 90.0, 431.38, 504.72, 512.62 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile4.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 13,
+    "page number" : 18,
+    "bounding box" : [ 90.0, 347.74, 504.6, 424.54 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile5.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 18,
+    "bounding box" : [ 111.0, 283.1, 436.682, 340.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 1-6 JD 系列小型通用继电器的外形、管脚排列与内部电路 五、汽车电路元件的检修 1.导线的检修"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 18,
+    "bounding box" : [ 90.0, 142.7, 505.208, 270.15 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（1）剥线 剥线是导线检修流程中基础且关键的操作环节。随着现代汽车电气系统的 日益复杂，车载高端电器对配套组件的技术要求愈发严苛，导线作为电器设备的“信号传输 通道与能量供给载体”，其处理质量直接影响电气系统的稳定性，因此在操作过程中需予以 高度重视。若剥线操作不规范，如出现导线拉伸、线芯损伤等情况，易引发电气系统故障或 安全隐患。例如，信号传输类导线受拉伸后，线芯电阻会异常增大，导致信号衰减、传输延 迟等问题，影响电器设备的正常工作。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 18,
+    "bounding box" : [ 90.0, 95.9, 505.208, 129.75 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "剥线的标准操作需选用专用剥线钳，根据导线规格（线径、材质）匹配剥线钳的对应档 位，必要时更换适配型号的剥线工具，如图 1-7 所示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 18,
+    "bounding box" : [ 293.04, 49.52, 302.153, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "18"
+  } ]
+}

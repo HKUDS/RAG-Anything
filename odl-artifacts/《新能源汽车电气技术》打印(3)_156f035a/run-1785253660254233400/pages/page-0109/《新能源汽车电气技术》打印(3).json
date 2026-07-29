@@ -1,0 +1,108 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 109,
+    "bounding box" : [ 90.0, 350.38, 581.76, 768.58 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 3,
+    "page number" : 109,
+    "bounding box" : [ 246.48, 331.821, 369.728, 342.271 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-26 左前近光灯故障点"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 109,
+    "bounding box" : [ 111.0, 285.021, 505.206, 318.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.多个灯光不亮 多个灯光不亮的可能原因是多个灯光或其控制端同时故障，也可能是多个灯光的共同开"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 109,
+    "bounding box" : [ 90.0, 238.221, 505.208, 272.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "关、控制单元或线路故障，从概率角度考虑，多个灯光同时故障的概率较小，应优先排查这 多个灯光在控制线路上的重合点。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 109,
+    "bounding box" : [ 90.0, 168.021, 510.49, 225.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "如左前和右前近光灯均不亮，说明“组合开关（前照灯挡）→左域→左前、右前近光灯” 存在故障，左前和右前近光灯的控制路线重合点有组合开关的近光灯挡位、左域和左域到两 个近光灯的公共控制线路。仍以图 3-26 为例，应优先排查故障："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 7,
+    "level" : "1",
+    "page number" : 109,
+    "bounding box" : [ 111.0, 74.421, 331.328, 155.071 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 109,
+      "bounding box" : [ 111.0, 144.621, 263.166, 155.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）组合开关前照灯挡接触故障。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 109,
+      "bounding box" : [ 111.0, 121.221, 200.168, 131.671 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）左域局部故障。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 109,
+      "bounding box" : [ 111.0, 74.421, 331.328, 108.271 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）左域 BG64(C)/2 至 SP1113 之间的线路故障。 3.灯光亮度不够",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 109,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "109"
+  } ]
+}

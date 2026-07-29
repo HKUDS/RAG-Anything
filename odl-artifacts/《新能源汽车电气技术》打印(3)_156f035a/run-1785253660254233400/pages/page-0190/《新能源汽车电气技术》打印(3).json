@@ -1,0 +1,139 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 190,
+    "bounding box" : [ 90.0, 621.58, 456.72, 763.18 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 3,
+    "page number" : 190,
+    "bounding box" : [ 231.959, 597.021, 363.248, 607.471 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-12 CAN 总线抗干扰机制"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 4,
+    "level" : "Doctitle",
+    "page number" : 190,
+    "bounding box" : [ 90.0, 564.966, 195.425, 576.564 ],
+    "heading level" : 1,
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识拓展：CAN FD"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 190,
+    "bounding box" : [ 90.0, 498.621, 510.49, 549.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "CAN FD（Controller Area Network with Flexible Data-rate）是一种改进的 CAN 协 议，旨在克服传统 CAN 协议在数据传输速率和数据帧大小上的限制，由博世在 2012 年推出， CAN FD 标准化为 ISO11898-1:2015。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 190,
+    "bounding box" : [ 111.0, 416.9, 505.208, 488.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "一、CAN FD 技术规格 传输速率：CAN FD 的平均比特率可以达到 2-4 Mbit/s，最高可达 8 Mbit/s。 数据字段：每个 CAN 帧的数据字节数从最多 8 个扩展到 64 个，如图 5-13 所示。 帧格式：通过修改 CAN 帧格式，比特率可以在 CAN 帧内切换到更快的值，并通过新的数"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 190,
+    "bounding box" : [ 90.0, 396.5, 184.447, 406.95 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "据长度编码来实现。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 190,
+    "bounding box" : [ 90.0, 355.7, 505.195, 386.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "错误检测：CAN FD 协议具有更强的错误检测和纠正机制，确保数据传输的高可靠性和 完整性。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 9,
+    "page number" : 190,
+    "bounding box" : [ 90.0, 212.38, 504.6, 342.34 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 10,
+    "page number" : 190,
+    "bounding box" : [ 239.88, 189.98, 355.329, 200.43 ],
+    "linked content id" : 9,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-13 CAN FD 数据格式"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 190,
+    "bounding box" : [ 111.0, 150.98, 505.195, 181.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "二、CAN FD 优势 高带宽：CAN FD 的传输速率和数据帧大小的提升，使其能够处理更多的数据量，适应"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 190,
+    "bounding box" : [ 90.0, 130.58, 257.885, 141.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "现代汽车系统日益增长的数据需求。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 190,
+    "bounding box" : [ 90.0, 89.78, 505.205, 120.63 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "灵活性：CAN FD 支持灵活的数据传输速率，如图 5-14 所示，可以根据不同的应用场景 调整传输速率，确保数据传输的稳定性和准确性。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 190,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "190"
+  } ]
+}

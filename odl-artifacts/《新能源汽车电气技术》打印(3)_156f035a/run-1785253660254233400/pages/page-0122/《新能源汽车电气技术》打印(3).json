@@ -1,0 +1,125 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 122,
+    "bounding box" : [ 156.96, 618.94, 438.12, 765.1 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 6,
+    "page number" : 122,
+    "bounding box" : [ 212.28, 601.94, 382.809, 612.39 ],
+    "linked content id" : 5,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-36 右前组合灯 B06/12 对地波形"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 7,
+    "level" : "1",
+    "page number" : 122,
+    "bounding box" : [ 111.0, 348.621, 509.89, 591.99 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 2,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 122,
+      "bounding box" : [ 111.0, 581.54, 509.89, 591.99 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）接下来，使用示波器测量 BCM 左域的右前转向灯驱动引脚 BG64(B)/58 的对地波形，",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 122,
+        "bounding box" : [ 90.0, 561.021, 457.449, 571.471 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "如图 3-37 所示，为 0~+B 之间的方波，说明 BCM 左域给右前转向灯的供电正常。"
+      }, {
+        "type" : "image",
+        "pdfua_tag" : "Figure",
+        "id" : 2,
+        "page number" : 122,
+        "bounding box" : [ 189.6, 386.38, 405.0, 547.9 ],
+        "alt_source" : "missing",
+        "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+      }, {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 3,
+        "page number" : 122,
+        "bounding box" : [ 218.88, 369.021, 376.33, 379.471 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "图 3-37 BCM BG64(B)/58 对地波形"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 122,
+      "bounding box" : [ 111.0, 348.621, 505.208, 359.071 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）车辆下低压电，断开蓄电池负极，使用万用表电阻档测量 BCM 左域的右前转向灯驱",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 122,
+    "bounding box" : [ 90.0, 307.7, 505.209, 338.671 ],
+    "linked content id" : 9,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "动引脚 BG64(B)/58 与右前组合灯的右前转向灯电源引脚 B06/12 之间的电阻为无穷大，如图 3-38 右图所示，异常。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 9,
+    "page number" : 122,
+    "bounding box" : [ 190.44, 138.82, 404.64, 299.38 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile3.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 122,
+    "bounding box" : [ 111.0, 78.861, 505.208, 130.111 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-38 BCM BG64(B)/58 与右前组合灯 B06/12 之间电阻 5.故障点确认及修复 通过以上的检测最终锁定故障点为 BCM 的 BG64(B)/58 至右前组合灯 B06/12 之间线路断"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 122,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "122"
+  } ]
+}

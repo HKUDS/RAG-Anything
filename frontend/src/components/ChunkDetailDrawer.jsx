@@ -4,8 +4,8 @@ import {
   X, Search, ChevronRight, Loader2, FileText, Scissors, Zap,
   ImageIcon, Table, Sigma, Video
 } from 'lucide-react'
-import { getToken } from '../utils/api'
 import SideDrawer from './SideDrawer'
+import { ControlledMediaImage } from './ControlledMedia'
 
 const TYPE_ICONS = { image: ImageIcon, table: Table, equation: Sigma, video: Video }
 const TYPE_LABELS = { image: '图片', table: '表格', equation: '公式', video: '视频' }
@@ -104,7 +104,6 @@ export default function ChunkDetailDrawer({
   onCollapseAll,
   onFilterChange,
 }) {
-  const authToken = useMemo(() => getToken(), [])
 
   const totalTokens = useMemo(
     () => chunksData.reduce((s, c) => s + (c.tokens || 0), 0),
@@ -206,11 +205,6 @@ export default function ChunkDetailDrawer({
               const preview = displayContent.replace(/\n/g, ' ').slice(0, 120)
               const hasMore = displayContent.length > 120
 
-              const imageUrl = chunk.media_url
-                || (chunk.media_path
-                  ? `/api/files/image?path=${encodeURIComponent(chunk.media_path)}&token=${encodeURIComponent(authToken)}`
-                  : null)
-
               return (
                 <div
                   key={chunk.chunk_id || idx}
@@ -260,9 +254,9 @@ export default function ChunkDetailDrawer({
                           {/* 多模态信息 */}
                           {isMultimodal && (
                             <div className="mt-3 flex flex-wrap items-start gap-3">
-                              {imageUrl && (
-                                <img
-                                  src={imageUrl}
+                              {chunk.media_available && (
+                                <ControlledMediaImage
+                                  media={chunk}
                                   alt={chunk.modal_entity_name || '切块图片'}
                                   className="rounded border border-cloud-200 shrink-0"
                                   style={{ width: '120px', height: '80px', objectFit: 'cover' }}
@@ -275,9 +269,6 @@ export default function ChunkDetailDrawer({
                                 )}
                                 {chunk.page_idx != null && (
                                   <p><span className="font-medium">位置：</span>第 {chunk.page_idx} 页</p>
-                                )}
-                                {chunk.media_path && (
-                                  <p className="truncate"><span className="font-medium">路径：</span>{chunk.media_path.split(/[/\\]/).pop()}</p>
                                 )}
                               </div>
                             </div>

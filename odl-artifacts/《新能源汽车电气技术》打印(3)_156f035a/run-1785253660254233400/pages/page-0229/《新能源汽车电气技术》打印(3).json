@@ -1,0 +1,107 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 229,
+    "bounding box" : [ 90.0, 729.621, 510.49, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "ACU 减小阀芯开度，减少制冷剂流入。与传统热力膨胀阀相比，电子膨胀阀具有调节精度高、 响应速度快、适应性强等显著优势。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 229,
+    "bounding box" : [ 215.88, 543.94, 376.1, 715.78 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 229,
+    "bounding box" : [ 255.24, 517.758, 339.848, 529.471 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-6 电子膨胀阀"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 229,
+    "bounding box" : [ 111.0, 470.958, 505.207, 506.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4.储液干燥器 储液干燥器位于冷凝器与电子膨胀阀之间，如图 6-7 所示，作用是：①过滤制冷剂中的"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 229,
+    "bounding box" : [ 90.0, 425.421, 505.209, 459.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "杂质；②吸收制冷剂中的水分（避免水分在膨胀阀处结冰堵塞）；③储存多余的制冷剂，确 保系统稳定供液。目前车辆的储液干燥器通常和冷凝器是一体的。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 229,
+    "bounding box" : [ 203.88, 247.66, 390.84, 387.94 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 229,
+    "bounding box" : [ 238.559, 222.621, 377.527, 233.071 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-7 储液干燥器的安装位置"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 229,
+    "bounding box" : [ 111.0, 175.821, 505.209, 209.671 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5.高压压力传感器 目前，汽车空调制冷系统一般安装在高压管路上设置有高压开关或高压压力传感器，如"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 229,
+    "bounding box" : [ 90.0, 105.621, 509.945, 162.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-8 所示。安装高压开关的系统主要作用:若系统高压过高,高压开关将自动切断电磁离合 器回路,使压缩机停机,保护制冷系统零部件特别是压缩机不被损坏;当高压管路压力过高时, 它会接通冷凝器风扇高速挡电路,自动提高风扇转速,以降低冷凝器的温度和压力。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 229,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "229"
+  } ]
+}

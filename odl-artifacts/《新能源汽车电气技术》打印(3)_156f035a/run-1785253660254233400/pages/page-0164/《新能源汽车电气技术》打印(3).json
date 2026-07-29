@@ -1,0 +1,98 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 164,
+    "bounding box" : [ 90.0, 717.021, 505.207, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "人员进入。对门锁系统的状态进行监测和诊断，若发现故障，会通过车辆仪表板上的指示灯 或故障码提示车主，便于及时维修。同时，部分门锁控制器还能将门锁状态信息反馈给车辆 的其他系统，如车身控制系统，以便实现更智能化的功能集成。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 3,
+    "page number" : 164,
+    "bounding box" : [ 126.12, 561.46, 390.12, 708.7 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 164,
+    "bounding box" : [ 231.959, 543.261, 363.305, 553.711 ],
+    "linked content id" : 3,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-36 车身门锁控模块 BCM"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 164,
+    "bounding box" : [ 111.0, 504.261, 505.208, 535.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3.门锁执行机构与电动机 门锁执行机构（图 4-37）常见的有电动机式和电磁式。电动机式通过电动机驱动齿轮"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 164,
+    "bounding box" : [ 90.0, 463.461, 505.207, 494.311 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "或连杆机构，实现门锁的开锁和关锁动作；电磁式则利用电磁力吸引衔铁，带动门锁机构动 作。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 7,
+    "page number" : 164,
+    "bounding box" : [ 179.52, 180.34, 415.56, 455.02 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 8,
+    "page number" : 164,
+    "bounding box" : [ 246.48, 162.861, 348.728, 173.311 ],
+    "linked content id" : 7,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-37 门锁执行机构"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "level" : "1",
+    "page number" : 164,
+    "bounding box" : [ 90.0, 83.061, 505.209, 154.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "4. 传动部分 传动部分（图 4-38）将门锁执行机构的动力传递到车门锁扣，使车门锁止或解锁。一 般由连杆、拉线等组成。通常由齿轮、齿条、连杆、钢丝绳等部件组成。例如在电动机驱动 的门锁系统中，电动机的旋转运动通过齿轮传动转化为齿条的直线运动，再通过连杆将运动"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 164,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "164"
+  } ]
+}

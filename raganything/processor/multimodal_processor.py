@@ -8,26 +8,15 @@ from __future__ import annotations
 
 import os
 import time
-import hashlib
-import json
-from typing import Dict, List, Any, Tuple, Optional
-from pathlib import Path
+from typing import Dict, List, Any, Optional
 
 from raganything.base import DocStatus
-from raganything.parser import MineruParser, MineruExecutionError, get_parser
 from raganything.utils import (
     beijing_now,
-    separate_content,
-    insert_text_content,
-    insert_text_content_with_multimodal_content,
     get_processor_for_type,
     is_multimodal_processed,
-    get_equation_text_and_format,
-    get_table_body,
-    normalize_caption_list,
 )
 import asyncio
-from lightrag.utils import compute_mdhash_id
 
 
 
@@ -245,7 +234,10 @@ class MultimodalProcessorMixin:
                 for batch_start in range(0, len(multimodal_items), batch_size):
                     batch_items = multimodal_items[batch_start:batch_start + batch_size]
                     processed = await self._process_multimodal_content_batch_type_aware(
-                        batch_items, file_path, doc_id
+                        batch_items,
+                        file_path,
+                        doc_id,
+                        defer_odl_media_audit=True,
                     )
                     if processed is not True:
                         raise RuntimeError(
@@ -265,6 +257,10 @@ class MultimodalProcessorMixin:
                 )
 
             if recovered:
+                if not await self._finalize_odl_image_media_contract(
+                    doc_id, multimodal_items
+                ):
+                    raise RuntimeError("image_media_incomplete")
                 if not await self._mark_multimodal_processing_complete(doc_id):
                     raise RuntimeError(
                         "multimodal retry completed but its status marker could not be persisted"
@@ -546,7 +542,12 @@ class MultimodalProcessorMixin:
         return completed
 
     async def _process_multimodal_content_batch_type_aware(
-        self, multimodal_items: List[Dict[str, Any]], file_path: str, doc_id: str
+        self,
+        multimodal_items: List[Dict[str, Any]],
+        file_path: str,
+        doc_id: str,
+        *,
+        defer_odl_media_audit: bool = False,
     ):
         """
         Type-aware batch processing that selects correct processors based on content type.
@@ -851,7 +852,223 @@ class MultimodalProcessorMixin:
             raise RuntimeError(
                 "multimodal chunks persisted but document status could not be updated"
             )
+        if not await self._bind_and_audit_odl_image_media(
+            doc_id,
+            multimodal_data_list,
+            lightrag_chunks,
+            finalize=not defer_odl_media_audit,
+        ):
+            raise RuntimeError("image_media_incomplete")
         return True
+
+    async def _bind_and_audit_odl_image_media(
+        self,
+        doc_id: str,
+        multimodal_data_list: List[Dict[str, Any]],
+        lightrag_chunks: Dict[str, Any],
+        *,
+        finalize: bool = True,
+    ) -> bool:
+        """Bind ODL image chunks only after storage, then audit completion.
+
+        Non-ODL parsers do not carry the private ``_odl_media`` marker and
+        retain their existing completion behavior.  An ODL media mismatch is
+        explicit and prevents ``multimodal_processed`` from becoming true.
+        """
+        expected: dict[str, str] = {}
+        manifest_paths: set[str] = set()
+        chunk_by_order = {
+            int(chunk.get("chunk_order_index", -1)): chunk_id
+            for chunk_id, chunk in lightrag_chunks.items()
+        }
+        for item in multimodal_data_list:
+            original = item.get("original_item") or {}
+            media = original.get("_odl_media")
+            manifest_path = original.get("_odl_media_manifest_path")
+            if not isinstance(media, dict) and not manifest_path:
+                continue
+            media_id = media.get("media_id") if isinstance(media, dict) else None
+            chunk_id = chunk_by_order.get(int(item.get("chunk_order_index", -1)))
+            if not isinstance(media_id, str) or not isinstance(manifest_path, str) or not chunk_id:
+                return await self._record_odl_image_media_incomplete(doc_id, 0, 0, 0)
+            expected[media_id] = chunk_id
+            manifest_paths.add(manifest_path)
+
+        if not expected:
+            return True
+
+        from raganything.services.odl_media_manifest import bind_persisted_image_chunk
+
+        for item in multimodal_data_list:
+            original = item.get("original_item") or {}
+            media = original.get("_odl_media")
+            manifest_path = original.get("_odl_media_manifest_path")
+            if not isinstance(media, dict) or not isinstance(manifest_path, str):
+                continue
+            media_id = media.get("media_id")
+            chunk_id = expected.get(media_id)
+            if not chunk_id or not bind_persisted_image_chunk(
+                manifest_path,
+                media_id=media_id,
+                document_id=doc_id,
+                chunk_id=chunk_id,
+            ):
+                return await self._record_odl_image_media_incomplete(
+                    doc_id, len(expected), 0, 0
+                )
+
+        if not finalize:
+            # Retry batches bind durable chunk IDs, but a document-level
+            # catalog must be written only after every batch has succeeded.
+            return True
+        return await self._finalize_odl_image_media_contract(
+            doc_id, multimodal_data_list
+        )
+
+    async def _finalize_odl_image_media_contract(
+        self,
+        doc_id: str,
+        items: List[Dict[str, Any]],
+    ) -> bool:
+        """Audit all ODL image entries and persist one catalog per document."""
+        expected_media_ids: set[str] = set()
+        manifest_paths: set[str] = set()
+        for item in items:
+            original = item.get("original_item") or item
+            if not isinstance(original, dict):
+                continue
+            media = original.get("_odl_media")
+            manifest_path = original.get("_odl_media_manifest_path")
+            if not isinstance(media, dict) and not manifest_path:
+                continue
+            media_id = media.get("media_id") if isinstance(media, dict) else None
+            if not isinstance(media_id, str) or not isinstance(manifest_path, str):
+                return await self._record_odl_image_media_incomplete(doc_id, 0, 0, 0)
+            expected_media_ids.add(media_id)
+            manifest_paths.add(manifest_path)
+
+        if not expected_media_ids:
+            return True
+
+        from raganything.services.odl_media_manifest import audit_persisted_entries
+
+        persisted_ids = await self._persisted_chunk_ids_for_completion(doc_id)
+        if persisted_ids is None:
+            # The contract requires a durable storage proof.  This backend
+            # cannot provide one, so it must not claim ODL image completion.
+            return await self._record_odl_image_media_incomplete(
+                doc_id, len(expected_media_ids), 0, 0
+            )
+        complete, counts = audit_persisted_entries(
+            manifest_paths,
+            document_id=doc_id,
+            expected_media_ids=expected_media_ids,
+            persisted_chunk_ids=persisted_ids,
+        )
+        if not complete:
+            return await self._record_odl_image_media_incomplete(
+                doc_id, counts["expected"], counts["valid"], counts["chunks"]
+            )
+        from raganything.services.odl_media_delivery import build_persisted_media_catalog
+
+        workspace = str(getattr(self.lightrag, "workspace", ""))
+        normalized_workspace = workspace.replace("\\", "/")
+        if normalized_workspace == "./rag_storage":
+            catalog_kb = "default"
+        elif normalized_workspace.startswith("./rag_storage_"):
+            catalog_kb = normalized_workspace[len("./rag_storage_"):]
+        else:
+            # A non-standard workspace cannot be safely reverse-mapped to a
+            # KB name, so do not mint a catalog that an endpoint could serve.
+            return await self._record_odl_image_media_incomplete(
+                doc_id, counts["expected"], counts["valid"], counts["chunks"]
+            )
+        catalog = build_persisted_media_catalog(
+            manifest_paths,
+            kb_name=catalog_kb,
+            document_id=doc_id,
+            workspace=workspace,
+        )
+        if catalog is None or len(catalog) != counts["expected"]:
+            return await self._record_odl_image_media_incomplete(
+                doc_id, counts["expected"], counts["valid"], counts["chunks"]
+            )
+        try:
+            status = await self.lightrag.doc_status.get_by_id(doc_id)
+            if not status:
+                return await self._record_odl_image_media_incomplete(
+                    doc_id, counts["expected"], counts["valid"], counts["chunks"]
+                )
+            metadata = status.get("metadata") or {}
+            metadata = dict(metadata) if isinstance(metadata, dict) else {}
+            metadata.update({
+                "odl_media_catalog": catalog,
+                "image_media_incomplete": False,
+                "image_media_counts": {
+                    "eligible_elements": counts["expected"],
+                    "valid_manifest_media": counts["valid"],
+                    "persisted_image_chunks": counts["chunks"],
+                    "catalog_media": len(catalog),
+                },
+            })
+            await self.lightrag.doc_status.upsert(
+                {
+                    doc_id: {
+                        **status,
+                        "metadata": metadata,
+                        "updated_at": self._current_doc_status_timestamp(),
+                    }
+                }
+            )
+            await self.lightrag.doc_status.index_done_callback()
+        except Exception:
+            return await self._record_odl_image_media_incomplete(
+                doc_id, counts["expected"], counts["valid"], counts["chunks"]
+            )
+        return True
+
+    async def _record_odl_image_media_incomplete(
+        self, doc_id: str, expected: int, valid: int, chunks: int,
+    ) -> bool:
+        """Persist the explicit failure state without leaking media paths."""
+        try:
+            status = await self.lightrag.doc_status.get_by_id(doc_id)
+            if not status:
+                return False
+            metadata = status.get("metadata") or {}
+            metadata = dict(metadata) if isinstance(metadata, dict) else {}
+            metadata.update({
+                "multimodal_processed": False,
+                "image_media_incomplete": True,
+                "image_media_counts": {
+                    "eligible_elements": expected,
+                    "valid_manifest_media": valid,
+                    "persisted_image_chunks": chunks,
+                },
+                "failure_stage": "multimodal",
+            })
+            await self.lightrag.doc_status.upsert({
+                doc_id: {
+                    **status,
+                    "metadata": metadata,
+                    "updated_at": self._current_doc_status_timestamp(),
+                }
+            })
+            await self.lightrag.doc_status.index_done_callback()
+        except Exception as exc:
+            self.logger.warning(
+                "Unable to record image_media_incomplete for %s: error_type=%s",
+                doc_id,
+                type(exc).__name__,
+            )
+        self.logger.error(
+            "ODL image media contract incomplete for %s: expected=%d valid=%d chunks=%d",
+            doc_id,
+            expected,
+            valid,
+            chunks,
+        )
+        return False
 
     async def _persisted_chunk_ids_for_completion(
         self, doc_id: str,

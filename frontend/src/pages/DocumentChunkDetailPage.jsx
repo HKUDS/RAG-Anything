@@ -4,9 +4,10 @@ import {
   AlertTriangle, ArrowLeft, FileText, ImageIcon, Loader2, Pencil,
   Save, Sigma, Table, Tag, Trash2, Video, X, Zap,
 } from 'lucide-react'
-import { api, getToken, setCurrentKB } from '../utils/api'
+import { api, setCurrentKB } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 import { UserDialogConfirmation } from '../components/UserDialog'
+import { useControlledMediaSource } from '../components/ControlledMedia'
 
 const MAX_CONTENT_LENGTH = 8000
 
@@ -32,15 +33,9 @@ function detectChunkType(chunk) {
   return ''
 }
 
-function mediaSource(chunk, token) {
-  if (chunk.media_url) return chunk.media_url
-  if (!chunk.media_path) return ''
-  return `/api/files/image?path=${encodeURIComponent(chunk.media_path)}&token=${encodeURIComponent(token)}`
-}
-
 function MediaPreview({ chunk, type }) {
   const [failed, setFailed] = useState(false)
-  const source = mediaSource(chunk, getToken())
+  const source = useControlledMediaSource(chunk)
 
   useEffect(() => setFailed(false), [chunk.chunk_id, source])
 
@@ -329,7 +324,6 @@ export default function DocumentChunkDetailPage() {
               <div><dt>类型</dt><dd>{typeMeta?.label || '多模态内容'}</dd></div>
               {chunk.modal_entity_name ? <div><dt>名称</dt><dd>{chunk.modal_entity_name}</dd></div> : null}
               {chunk.page_idx != null ? <div><dt>页码</dt><dd>第 {chunk.page_idx} 页</dd></div> : null}
-              {chunk.media_path ? <div><dt>文件</dt><dd title={chunk.media_path}>{chunk.media_path.split(/[/\\]/).pop()}</dd></div> : null}
             </dl>
           </section>
         ) : null}

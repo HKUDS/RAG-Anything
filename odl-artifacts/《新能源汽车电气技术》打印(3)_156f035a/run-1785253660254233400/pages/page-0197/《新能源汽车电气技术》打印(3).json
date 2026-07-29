@@ -1,0 +1,88 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 197,
+    "bounding box" : [ 111.0, 737.54, 505.209, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5.故障点确认及修复 通过以上的检测最终锁定故障点为 BMS BK45(B)/16 至驱动电机 B30/9 线路断路，在电"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 197,
+    "bounding box" : [ 90.0, 717.021, 252.608, 727.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "路图的位置如图 5-23 中红圈所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 197,
+    "bounding box" : [ 27.72, 344.74, 569.88, 707.86 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 6,
+    "page number" : 197,
+    "bounding box" : [ 252.959, 323.3, 342.248, 333.75 ],
+    "linked content id" : 5,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 5-23 故障点位置"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 197,
+    "bounding box" : [ 111.0, 282.38, 505.205, 313.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "6.故障机理分析 这个故障是由于 BMS 的动力网线路断路，造成 BMS 无法通信，从而导致车辆无法上高压"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 197,
+    "bounding box" : [ 90.0, 261.98, 278.887, 272.43 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电，仪表上与 BMS 相关的信息无法显示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 197,
+    "bounding box" : [ 90.0, 159.861, 505.209, 252.03 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "比亚迪秦 EV 车型的网络图如图 5-24 所示，包括动力网、舒适网 1、舒适网 2 和 ESC 网 四大主要网络，蓄电池管理器分布在动力网，其数据传输速率为 500kbps，蓄电池管理器与 通信转换模块组成蓄电池子网，通信转换模块和信息采集器组成 BIC 子网，动力蓄电池的相 关信息通过 BIC 子网发送给通信转换模块后，再通过蓄电池子网发送给蓄电池管理器，最后 通过动力网发送给仪表，并在仪表上进行显示。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 197,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "197"
+  } ]
+}

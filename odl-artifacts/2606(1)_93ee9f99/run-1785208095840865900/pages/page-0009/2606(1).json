@@ -1,0 +1,90 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 1,
+    "page number" : 9,
+    "bounding box" : [ 143.639, 534.705, 468.383, 720.0 ],
+    "alt_source" : "missing",
+    "source" : "2606(1)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 2,
+    "page number" : 9,
+    "bounding box" : [ 108.0, 488.553, 504.343, 533.285 ],
+    "linked content id" : 1,
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Figure 4: Pass rates (%) on Terminal-Bench-2.0 across MiniMax M2.5, Qwen3.5-35B-A3B, and GLM-5. For each backend, bars compare the initial harness with the final harness produced by Self-Harness on the held-in split, held-out split, and overall set; annotations above the Self-Harness bars show relative gains over the corresponding initial harness."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 9,
+    "bounding box" : [ 108.0, 401.893, 504.251, 479.711 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Splits and protocol. We fix the evaluated task set and partition it into a held-in split and a held-out split before running Self-Harness. The held-in split supplies the trajectories, verifier outcomes, and failure evidence exposed to the proposer, while the held-out split is never shown to the proposer and is used only by the automatic promotion gate. A candidate harness is promoted with the acceptance rule defined in Section 3.4. Task split assignments are fixed across harness variants, and each task starts from a fresh benchmark environment. These controls ensure that measured improvements come from harness changes."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 9,
+    "bounding box" : [ 108.0, 335.144, 504.172, 391.143 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Metrics. Our primary metric is Pass (%), the percentage of evaluated task attempts that pass the benchmark verifier, computed over two repeated attempts for each harness candidate unless otherwise specified. This measures mean single-attempt task success under a fixed harness configuration and evaluation protocol. For Terminal-Bench-2.0, the pass signal is determined by the task verifier over the final container state."
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 5,
+    "level" : "Doctitle",
+    "page number" : 9,
+    "bounding box" : [ 108.0, 310.087, 186.595, 323.048 ],
+    "heading level" : 1,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "4.2 Main Results"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 9,
+    "bounding box" : [ 107.641, 192.528, 505.65, 302.714 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Figure 4 reports Terminal-Bench-2.0 performance before and after Self-Harness promotion. Across all three model backends, the promoted harness improves or preserves Pass (%) on both the held-in split and the held-out split. We report both absolute gains in percentage points and relative gains, where the relative gain is computed as (Self-Harness − Initial)/Initial. For MiniMax M2.5, SelfHarness improves held-in Pass from 43.0 to 50.0, a gain of 16% relative improvement, and improves held-out Pass from 40.5 to 61.9, a gain of 53% relative improvement. For Qwen3.5, Self-Harness improves held-in Pass from 15.1 to 36.0, a gain of 138% relative improvement, and held-out Pass from 23.8 to 38.1, a gain of 60% relative improvement. For GLM-5, Self-Harness improves held-in Pass from 47.7 to 57.0, a gain of 20% relative improvement, and held-out Pass from 42.9 to 57.1, a gain of 33% relative improvement."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 9,
+    "bounding box" : [ 107.691, 110.685, 504.003, 188.144 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "These results show that harness-level edits can yield measurable improvements while keeping the model backend, tool set, budget, benchmark environment, and evaluator fixed. The gains are not confined to the held-in failures used to construct proposal evidence: all three backends improve on the held-out split, and no promoted harness degrades either split. This supports the central design goal of Self-Harness: proposed edits should target reusable execution mechanisms rather than case-specific failures, and the regression gate should prevent improvements on one split from being promoted at the cost of another."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 9,
+    "bounding box" : [ 303.509, 39.313, 308.49, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "9"
+  } ]
+}

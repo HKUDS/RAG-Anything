@@ -1,0 +1,123 @@
+{
+  "file name" : "2606(1).pdf",
+  "number of pages" : 19,
+  "author" : "Hangfan Zhang; Shao Zhang; Kangcong Li; Chen Zhang; Yang Chen; Yiqun Zhang; Lei Bai; Shuyue Hu",
+  "title" : "Self-Harness: Harnesses That Improve Themselves",
+  "creation date" : null,
+  "modification date" : null,
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 5,
+    "bounding box" : [ 108.0, 358.527, 504.349, 435.986 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Figure 2: Overview of one Self-Harness optimization loop. The current harness ht with fixed model is evaluated on tasks to collect execution traces, which are clustered into verifier-grounded failure patterns. The same model is then invoked under the current harness as a proposer, using the mined failure patterns to generate bounded candidate harness edits. Candidate edits are evaluated by regression tests on held-in and held-out splits. Accepted candidates are merged to update the harness to ht+1, while rejected candidates are logged without changing the active harness. Throughout the loop, the model weights and evaluator remain fixed; only the surrounding harness is modified."
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 2,
+    "level" : "Doctitle",
+    "page number" : 5,
+    "bounding box" : [ 108.0, 337.315, 473.388, 350.276 ],
+    "heading level" : 1,
+    "font" : "NimbusRomNo9L-Medi",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "3.2 Weakness Mining: Identifying Failure Patterns from Clustered Execution Traces"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 5,
+    "bounding box" : [ 107.691, 278.446, 504.003, 329.942 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "The first stage of Self-Harness converts behavioral failures into structured evidence for harness revision. At round t, we run the fixed model M under the current harness ht on a held-in split Din. For each task instance xi ∈ Din, the run produces an output yi and an execution trace τi. The evaluator E then assigns an outcome zi = E(xi,τi,yi), such as pass or fail. This yields a trace record"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 5,
+    "bounding box" : [ 267.136, 268.369, 344.865, 279.078 ],
+    "font" : "CMMI10",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "ri = (xi,τi,yi,zi),"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 5,
+    "bounding box" : [ 108.0, 233.032, 504.004, 257.369 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "and a round-level record set Rt = {ri}|iD=1in|. Since both M and E are fixed, changes in these records across rounds can be attributed to changes in the harness."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "page number" : 5,
+    "bounding box" : [ 107.641, 205.734, 504.004, 228.647 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "A central role of the evaluation system is to avoid treating failures as isolated anecdotes. We therefore focus on the subset of failed records"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 5,
+    "bounding box" : [ 250.958, 182.566, 361.046, 199.851 ],
+    "font" : "CMR10",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "Ft = {ri ∈ Rt | zi = fail}."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 5,
+    "bounding box" : [ 108.0, 101.993, 505.247, 179.452 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "and cluster them by verifier-grounded failure signatures. For each failed record ri, the evaluation system analyzes the trace as evidence for why the evaluator rejected the run. It identifies the terminal failure reason exposed by the verifier, the agent-side behavior connected to that terminal failure, and the causal status of that behavior within the trace. This attribution step prevents the clustering procedure from conflating superficial symptoms with reusable failure mechanisms: two runs may share the same verifier outcome, such as a timeout or missing artifact, while requiring different harness changes because the underlying agent behaviors differ."
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "page number" : 5,
+    "bounding box" : [ 107.532, 85.605, 289.33, 97.609 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "We write this attribution as a failure signature"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H2",
+    "id" : 10,
+    "level" : "Subtitle",
+    "page number" : 5,
+    "bounding box" : [ 265.196, 68.763, 346.804, 79.472 ],
+    "heading level" : 2,
+    "font" : "CMMI10",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "ϕ(ri) = (ci,qi,mi),"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "page number" : 5,
+    "bounding box" : [ 303.509, 39.313, 308.49, 51.317 ],
+    "font" : "NimbusRomNo9L-Regu",
+    "font size" : 9.963,
+    "text color" : "[0.0]",
+    "content" : "5"
+  } ]
+}

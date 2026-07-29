@@ -1,0 +1,170 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "level" : "1",
+    "page number" : 104,
+    "bounding box" : [ 90.0, 752.166, 152.889, 763.764 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 任务情景"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 104,
+    "bounding box" : [ 90.0, 673.221, 505.209, 744.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "汽车维修工小赵接到维修任务，自己和师傅将一起维修某顾客的比亚迪秦 EV 故障车， 这辆故障车能够正常上电与起动，但是左侧近光灯不亮，远光灯正常。小赵认为，他首先需 要将该车型近灯光的控制原理整理一下，得出完整的近灯光控制原理图后再排除该车的灯光 故障，为了能够迅速解决问题，你需要学习相关知识和实践操作，你准备好了吗？"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "level" : "1",
+    "page number" : 104,
+    "bounding box" : [ 90.0, 647.046, 152.889, 658.644 ],
+    "font" : "SimHei",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : " 知识准备"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 6,
+    "level" : "Doctitle",
+    "page number" : 104,
+    "bounding box" : [ 111.0, 624.5, 195.246, 634.95 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "一、灯光系统组成"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 7,
+    "page number" : 104,
+    "bounding box" : [ 90.0, 530.9, 505.209, 611.55 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "汽车灯光系统是车辆安全行驶的重要组成部分，主要用于照明、信号传递和警示。汽车 灯光系统从灯光所在位置分类可分为外部灯光和车内灯光。外部灯光包括前照灯、日间行车 灯、雾灯、转向灯、示宽灯（位置灯）、制动灯、倒车灯和危险警告灯（双闪）等；内部灯 光包括仪表板灯、阅读灯、氛围灯和行李舱灯等。这些灯光在车上的位置如图 3-22 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 104,
+    "bounding box" : [ 130.8, 392.74, 302.76, 524.38 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 9,
+    "page number" : 104,
+    "bounding box" : [ 303.24, 393.1, 485.04, 516.94 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 104,
+    "bounding box" : [ 256.92, 373.94, 359.168, 384.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 3-22 灯光系统位置"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 104,
+    "bounding box" : [ 111.0, 325.34, 436.439, 359.19 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1.外部灯光 外部灯光的作用主要是照明和信号表达，不同灯光的作用和特点如下："
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 13,
+    "level" : "2",
+    "page number" : 104,
+    "bounding box" : [ 111.0, 184.94, 504.719, 312.39 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 104,
+      "bounding box" : [ 111.0, 301.94, 504.719, 312.39 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（1）前照灯 最主要的照明灯光，包括近光灯和远光灯。新能源汽车的前照灯一般与",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 104,
+        "bounding box" : [ 90.0, 231.74, 505.209, 288.99 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "转向灯、位置灯等集成在车前左右两侧，称为左前组合灯和右前组合灯。近光灯用于夜间或 穿越隧道等外部光线较暗时提供基本照明，光束较短，在会车时避免眩目对向车辆。而远光 灯光线更强，照射距离远，拓广车主观察视野，需在无对向车辆时使用。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 104,
+      "bounding box" : [ 111.0, 208.34, 473.168, 218.79 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（2）日间行车灯 白天自动点亮，提高车辆辨识度，多为 LED 光源，能耗低。",
+      "kids" : [ ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 104,
+      "bounding box" : [ 111.0, 184.94, 504.604, 195.39 ],
+      "font" : "SimSun",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "（3）雾灯 分为前雾灯和后雾灯。前雾灯为黄色或白色，穿透力强，用于雨雾天气。",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 14,
+    "page number" : 104,
+    "bounding box" : [ 90.0, 91.34, 505.207, 171.99 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "后雾灯为红色，亮度高，提醒后车保持距离。在现代汽车设计中，许多车型都在取消雾灯配 置，以简化生产过程并降低成本。虽然前雾灯可以提高雨雾天气行车时的照明，但在实际驾 驶过程中，许多其他照明设备和功能已经可以满足类似的需求。例如比亚迪秦 PLUS 就没有 前雾灯，部分车型也只保留了一个后雾灯。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 104,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "104"
+  } ]
+}

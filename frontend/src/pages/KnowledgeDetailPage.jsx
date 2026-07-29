@@ -20,6 +20,12 @@ import {
 import SideDrawer from '../components/SideDrawer'
 import TagRelationsPanel from '../components/TagRelationsPanel'
 import { useAuth } from '../context/AuthContext'
+import {
+  createKnowledgeDetailState,
+  getDocumentListMode,
+  markKnowledgeDetailRefreshing,
+  mergeKnowledgeDetailSnapshot,
+} from '../utils/knowledgeDetailState'
 
 const STATUS = {
   queued: 'badge-info',
@@ -877,9 +883,11 @@ export default function KnowledgeDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { isAdmin } = useAuth()
 
-  const [docs, setDocs] = useState([])
+  const [detailState, setDetailState] = useState(() => createKnowledgeDetailState(
+    kbName,
+    api.getCachedKnowledgeDetail(kbName),
+  ))
   const [entities, setEntities] = useState([])
-  const [stats, setStats] = useState({})
   const [graph, setGraph] = useState({ nodes: [], edges: [] })
   const [filter, setFilter] = useState('')
   const [graphSearch, setGraphSearch] = useState('')
@@ -919,9 +927,23 @@ export default function KnowledgeDetailPage() {
   const prevGraphFingerprint = useRef('')
   const prevGraphSearch = useRef('')
   const genRef = useRef(0)
+  const activeKBRef = useRef(kbName)
+  activeKBRef.current = kbName
+  const loadAbortRef = useRef(null)
+  const nodeDetailAbortRef = useRef(null)
+  const visionRequestRef = useRef(0)
   const selectedNodeRef = useRef(null)
   selectedNodeRef.current = selectedNode
   const simRef = useRef(null)
+  const cachedDetailForRoute = useMemo(
+    () => api.getCachedKnowledgeDetail(kbName),
+    [kbName],
+  )
+  const displayedDetailState = detailState.kbName === kbName
+    ? detailState
+    : createKnowledgeDetailState(kbName, cachedDetailForRoute)
+  const docs = displayedDetailState.documents.data
+  const stats = displayedDetailState.stats.data
 
   useEffect(() => {
     const requested = searchParams.get('tab')
@@ -948,10 +970,10 @@ export default function KnowledgeDetailPage() {
   const handleCreateNode = async () => {
     if (!newNodeForm.name.trim()) return
     try {
-      await api.createGraphNode(newNodeForm)
+      await api.createGraphNode(newNodeForm, { kb: kbName })
       setShowCreateNodeModal(false)
       setNewNodeForm({ name: '', entity_type: '', description: '' })
-      await loadKBData()
+      await loadKBData({ force: true })
       showToast(`实体 "${newNodeForm.name}" 已创建`, 'success')
     } catch (e) { showToast('创建失败: ' + e.message, 'error') }
   }
@@ -961,18 +983,18 @@ export default function KnowledgeDetailPage() {
       setRenamingNode(null); return
     }
     try {
-      await api.renameGraphNode(oldName, renameValue.trim())
+      await api.renameGraphNode(oldName, renameValue.trim(), { kb: kbName })
       setRenamingNode(null); setSelectedNode(null); setNodeDetails(null)
-      await loadKBData()
+      await loadKBData({ force: true })
       showToast(`已重命名为 "${renameValue.trim()}"`, 'success')
     } catch (e) { showToast('重命名失败: ' + e.message, 'error') }
   }
 
   const handleDeleteNode = async (name) => {
     try {
-      await api.deleteGraphNode(name)
+      await api.deleteGraphNode(name, { kb: kbName })
       setShowDeleteNodeConfirm(null); setSelectedNode(null); setNodeDetails(null)
-      await loadKBData()
+      await loadKBData({ force: true })
       showToast(`实体 "${name}" 已删除`, 'success')
     } catch (e) { showToast('删除失败: ' + e.message, 'error') }
   }
@@ -980,29 +1002,36 @@ export default function KnowledgeDetailPage() {
   const handleCreateEdge = async () => {
     if (!newEdgeForm.source_entity.trim() || !newEdgeForm.target_entity.trim()) return
     try {
-      await api.createGraphEdge(newEdgeForm)
+      await api.createGraphEdge(newEdgeForm, { kb: kbName })
       setShowCreateEdgeModal(false)
       setNewEdgeForm({ source_entity: '', target_entity: '', relation_type: 'related_to', description: '' })
-      await loadKBData()
+      await loadKBData({ force: true })
       showToast('关系已创建', 'success')
     } catch (e) { showToast('创建关系失败: ' + e.message, 'error') }
   }
 
   const handleDeleteEdge = async (edgeId) => {
     try {
-      await api.deleteGraphEdge(edgeId)
-      await loadKBData()
+      await api.deleteGraphEdge(edgeId, { kb: kbName })
+      await loadKBData({ force: true })
       showToast('关系已删除', 'success')
     } catch (e) { showToast('删除关系失败: ' + e.message, 'error') }
   }
 
   // 从接口获取节点详细信息
-  const fetchNodeDetail = async (nodeName) => {
+  const fetchNodeDetail = useCallback(async (nodeName) => {
+    const requestKB = kbName
+    nodeDetailAbortRef.current?.abort()
+    const controller = new AbortController()
+    nodeDetailAbortRef.current = controller
     try {
-      const detail = await api.getGraphNode(nodeName)
+      const detail = await api.getGraphNodeForKB(requestKB, nodeName, { signal: controller.signal })
+      if (controller.signal.aborted || requestKB !== activeKBRef.current) return
       setGraphNodeDetail(detail)
-    } catch { setGraphNodeDetail(null) }
-  }
+    } catch (error) {
+      if (error?.name !== 'AbortError') setGraphNodeDetail(null)
+    }
+  }, [kbName])
 
   // 辅助函数：D3 forceLink 会把边的 source/target 从字符串改成节点对象。
   // 仿真后 edge.source 变为 {id, x, y, ...}，不再是裸字符串。
@@ -1014,7 +1043,34 @@ export default function KnowledgeDetailPage() {
 
   // 挂载或参数变化时设置当前知识库
   useEffect(() => {
-    if (kbName) setCurrentKB(kbName)
+    if (!kbName) return
+    loadAbortRef.current?.abort()
+    nodeDetailAbortRef.current?.abort()
+    setCurrentKB(kbName)
+    setDetailState(createKnowledgeDetailState(kbName, api.getCachedKnowledgeDetail(kbName)))
+    setEntities([])
+    setGraph({ nodes: [], edges: [] })
+    setFilter('')
+    setGraphSearch('')
+    setDetailDoc(null)
+    setDeleteConfirm(null)
+    setRetryingDocIds([])
+    setSelectedIds(new Set())
+    setSelectedNode(null)
+    setNodeDetails(null)
+    setGraphNodeDetail(null)
+    setShowCreateNodeModal(false)
+    setShowCreateEdgeModal(false)
+    setShowDeleteNodeConfirm(null)
+    setRenamingNode(null)
+    setRenameValue('')
+    setNewNodeForm({ name: '', entity_type: '', description: '' })
+    setNewEdgeForm({ source_entity: '', target_entity: '', relation_type: 'related_to', description: '' })
+    setVisionSearching(false)
+    setVisionResults(null)
+    visionRequestRef.current += 1
+    prevGraphFingerprint.current = ''
+    prevGraphSearch.current = ''
   }, [kbName])
 
   const showToast = (msg, type = 'info') => {
@@ -1036,25 +1092,67 @@ export default function KnowledgeDetailPage() {
     }).catch(() => {})
   }, [])
 
-  // 加载当前知识库数据，图谱数据加载完成后 Promise resolve
-  const loadKBData = useCallback(() => {
+  // 文档/统计与图谱并行加载；每个响应都绑定显式 KB、abort 与 generation。
+  const loadKBData = useCallback(async ({ force = false, silent = false } = {}) => {
+    if (!kbName) return
+    const requestKB = kbName
     const gen = ++genRef.current
-    api.getDocuments().then(r => { if (gen === genRef.current) setDocs(r.documents || []) }).catch(err => console.error(err))
-    api.getStats().then(r => { if (gen === genRef.current) setStats(r) }).catch(err => console.error(err))
-    api.getEntities(200).then(r => { if (gen === genRef.current) setEntities(r.entities || []) }).catch(err => console.error(err))
-    return api.getGraph().then(r => {
-      if (gen !== genRef.current) return
+    loadAbortRef.current?.abort()
+    const controller = new AbortController()
+    loadAbortRef.current = controller
+
+    setDetailState(previous => {
+      const base = previous.kbName === requestKB
+        ? previous
+        : createKnowledgeDetailState(requestKB, api.getCachedKnowledgeDetail(requestKB))
+      const hasVisibleData = base.documents.status === 'ready' || base.stats.status === 'ready'
+      return silent || hasVisibleData ? markKnowledgeDetailRefreshing(base) : base
+    })
+
+    const detailPromise = api.prefetchKnowledgeDetail(
+      requestKB,
+      { force, signal: controller.signal, timeoutMs: 6_000 },
+    )
+    const entitiesPromise = api.getEntitiesForKB(requestKB, 200, { signal: controller.signal })
+    const graphPromise = api.getGraphForKB(requestKB, { signal: controller.signal })
+    const backgroundResults = Promise.allSettled([entitiesPromise, graphPromise])
+
+    try {
+      const detail = await detailPromise
+      if (controller.signal.aborted || gen !== genRef.current || requestKB !== activeKBRef.current) return
+      setDetailState(previous => mergeKnowledgeDetailSnapshot(previous, requestKB, detail))
+    } catch (error) {
+      if (controller.signal.aborted || gen !== genRef.current || requestKB !== activeKBRef.current) return
+      if (error?.name === 'AbortError') return
+      const message = error?.message || '加载失败，请重试'
+      setDetailState(previous => mergeKnowledgeDetailSnapshot(previous, requestKB, {
+        documents: { status: 'error', error: message },
+        stats: { status: 'error', error: message },
+      }))
+    }
+
+    const [entitiesResult, graphResult] = await backgroundResults
+    if (controller.signal.aborted || gen !== genRef.current || requestKB !== activeKBRef.current) return
+
+    if (entitiesResult.status === 'fulfilled') {
+      setEntities(entitiesResult.value.entities || [])
+    }
+
+    if (graphResult.status === 'fulfilled') {
+      const response = graphResult.value
       const degree = {}
-      ;(r.edges || []).forEach(e => {
-        degree[e.source] = (degree[e.source] || 0) + 1
-        degree[e.target] = (degree[e.target] || 0) + 1
+      ;(response.edges || []).forEach(edge => {
+        degree[edge.source] = (degree[edge.source] || 0) + 1
+        degree[edge.target] = (degree[edge.target] || 0) + 1
       })
       setGraph({
-        nodes: (r.nodes || []).map(n => ({ ...n, degree: degree[n.id] || 0 })),
-        edges: r.edges || [],
+        nodes: (response.nodes || []).map(node => ({ ...node, degree: degree[node.id] || 0 })),
+        edges: response.edges || [],
       })
-    }).catch(err => console.error(err))
-  }, [])
+    }
+
+    if (loadAbortRef.current === controller) loadAbortRef.current = null
+  }, [kbName])
 
   // 合并实体名称列表，用于创建边时自动补全（对 graph.nodes 与 entities 去重）
   const allEntityNames = useMemo(() => {
@@ -1068,8 +1166,12 @@ export default function KnowledgeDetailPage() {
   useEffect(() => {
     if (!kbName) return
     loadKBData()
-    const interval = setInterval(loadKBData, 8000)
-    return () => clearInterval(interval)
+    const interval = setInterval(() => loadKBData({ force: true, silent: true }), 8000)
+    return () => {
+      clearInterval(interval)
+      loadAbortRef.current?.abort()
+      nodeDetailAbortRef.current?.abort()
+    }
   }, [kbName, loadKBData])
 
   // D3 图谱
@@ -1259,18 +1361,26 @@ export default function KnowledgeDetailPage() {
     else svg.transition().call(zoomRef.current.transform, d3.zoomIdentity)
   }
 
-  const filteredDocs = docs.filter(d => d.file?.toLowerCase().includes(filter.toLowerCase()))
+  const filteredDocs = displayedDetailState.documents.status === 'ready'
+    ? docs.filter(d => d.file?.toLowerCase().includes(filter.toLowerCase()))
+    : []
+  const documentListMode = getDocumentListMode({
+    routeKB: kbName,
+    state: displayedDetailState,
+    filteredCount: filteredDocs.length,
+    hasFilter: Boolean(filter.trim()),
+  })
 
   const handleRetryDocument = async (doc) => {
     if (!doc?.id || retryingDocIds.includes(doc.id)) return
     setRetryingDocIds(prev => [...prev, doc.id])
     try {
-      await api.retryDocument(doc.id)
+      await api.retryDocument(doc.id, { kb: kbName })
       showToast(
         getDocumentHealth(doc) === 'degraded' ? '图谱补偿已提交' : '文档重试已提交',
         'success',
       )
-      await loadKBData()
+      await loadKBData({ force: true })
     } catch (e) {
       showToast('提交重试失败: ' + e.message, 'error')
     } finally {
@@ -1283,7 +1393,13 @@ export default function KnowledgeDetailPage() {
     if (!documentToDelete) return
 
     const removeDocumentFromList = () => {
-      setDocs(prev => prev.filter(doc => doc.id !== documentToDelete.id))
+      setDetailState(previous => ({
+        ...previous,
+        documents: {
+          ...previous.documents,
+          data: previous.documents.data.filter(doc => doc.id !== documentToDelete.id),
+        },
+      }))
       setSelectedIds(prev => {
         if (!prev.has(documentToDelete.id)) return prev
         const next = new Set(prev)
@@ -1295,15 +1411,15 @@ export default function KnowledgeDetailPage() {
 
     setDeleting(true)
     try {
-      await api.deleteDocument(documentToDelete.id)
+      await api.deleteDocument(documentToDelete.id, { kb: kbName })
       removeDocumentFromList()
       showToast(`${documentToDelete.file} 已从列表移除`, 'success')
-      await loadKBData()
+      await loadKBData({ force: true })
     } catch (e) {
       if (e?.status === 404) {
         removeDocumentFromList()
         showToast(`${documentToDelete.file} 已不存在，已从列表移除`, 'info')
-        await loadKBData()
+        await loadKBData({ force: true })
         return
       }
       showToast('删除失败: ' + e.message, 'error')
@@ -1322,8 +1438,9 @@ export default function KnowledgeDetailPage() {
   const handleBatchDelete = async () => {
     setBatchDeleting(true)
     try {
-      const res = await api.deleteDocuments([...selectedIds])
-      setSelectedIds(new Set()); loadKBData()
+      const res = await api.deleteDocuments([...selectedIds], { kb: kbName })
+      setSelectedIds(new Set())
+      await loadKBData({ force: true })
       showToast(`已删除 ${res.total_deleted} 个文档`, 'success')
     } catch(e) { showToast('批量删除失败: ' + e.message, 'error') }
     setBatchDeleting(false)
@@ -1335,7 +1452,7 @@ export default function KnowledgeDetailPage() {
     try {
       const result = await api.reprocessMultimodal(kbName)
       showToast(result.message || '多模态补处理已提交', result.status === 'ok' ? 'success' : 'info')
-      loadKBData()
+      await loadKBData({ force: true })
     } catch (e) {
       showToast('多模态补处理失败: ' + e.message, 'error')
     } finally {
@@ -1346,16 +1463,20 @@ export default function KnowledgeDetailPage() {
   const handleImageSearch = async (e) => {
     const file = e.target.files?.[0]
     if (!file) return
+    const requestKB = kbName
+    const requestId = ++visionRequestRef.current
     setVisionSearching(true)
     setVisionResults(null)
     try {
-      const res = await api.imageSearch(file, 10)
+      const res = await api.imageSearchForKB(requestKB, file, 10)
+      if (requestId !== visionRequestRef.current || requestKB !== activeKBRef.current) return
       setVisionResults(res)
       showToast(`找到 ${res.count} 个相似图片`, 'success')
     } catch (err) {
+      if (requestId !== visionRequestRef.current || requestKB !== activeKBRef.current) return
       showToast('图片搜索失败: ' + err.message, 'error')
     } finally {
-      setVisionSearching(false)
+      if (requestId === visionRequestRef.current && requestKB === activeKBRef.current) setVisionSearching(false)
       if (visionInputRef.current) visionInputRef.current.value = ''
     }
   }
@@ -1380,19 +1501,46 @@ export default function KnowledgeDetailPage() {
       </div>
 
       {/* 当前知识库统计 */}
-      <div className="grid grid-cols-4 gap-5">
-        {[
-          { label: '文档总数', val: stats.documents || 0, color: 'text-sky-500' },
-          { label: '实体总数', val: stats.entities || 0, color: 'text-sage-500' },
-          { label: '关系总数', val: stats.relations || 0, color: 'text-amber-500' },
-          { label: '分块总数', val: stats.chunks || 0, color: 'text-sky-500' },
+      <div
+        className="grid grid-cols-4 gap-5"
+        aria-busy={displayedDetailState.stats.status === 'loading' || displayedDetailState.stats.refreshing}
+      >
+        {displayedDetailState.stats.status === 'ready' ? ([
+          { label: '文档总数', val: stats.documents ?? 0, color: 'text-sky-500' },
+          { label: '实体总数', val: stats.entities ?? 0, color: 'text-sage-500' },
+          { label: '关系总数', val: stats.relations ?? 0, color: 'text-amber-500' },
+          { label: '分块总数', val: stats.chunks ?? 0, color: 'text-sky-500' },
         ].map(({ label, val, color }) => (
           <div key={label} className="stat-card">
             <p className="stat-label">{label}</p>
-            <p className={`stat-value stat-value-number ${color}`}>{val.toLocaleString()}</p>
+            <p className={`stat-value stat-value-number ${color}`}>{Number(val).toLocaleString()}</p>
+          </div>
+        ))) : displayedDetailState.stats.status === 'error' ? (
+          <div className="stat-card col-span-4 flex items-center justify-between gap-4" role="alert">
+            <div>
+              <p className="stat-label">统计信息加载失败</p>
+              <p className="mt-1 text-xs text-rose-600">{displayedDetailState.stats.error}</p>
+            </div>
+            <button className="btn-secondary text-xs" onClick={() => loadKBData({ force: true })}>
+              <RotateCcw size={13} />重新加载
+            </button>
+          </div>
+        ) : Array.from({ length: 4 }, (_, index) => (
+          <div key={index} className="stat-card">
+            <div className="skeleton h-3 w-16" />
+            <div className="skeleton mt-3 h-8 w-20" />
           </div>
         ))}
       </div>
+      {displayedDetailState.stats.status === 'loading' && (
+        <span className="sr-only" role="status" aria-live="polite">正在加载知识库统计</span>
+      )}
+      {displayedDetailState.stats.refreshing && (
+        <p className="-mt-4 text-2xs text-ink-muted" role="status" aria-live="polite">正在刷新统计信息…</p>
+      )}
+      {displayedDetailState.stats.refreshError && (
+        <p className="-mt-4 text-2xs text-amber-600" role="status">{displayedDetailState.stats.refreshError}</p>
+      )}
 
       {/* 标签栏 */}
       <div className="flex items-center gap-1 p-1 rounded-xl bg-cloud-200 w-fit">
@@ -1450,8 +1598,18 @@ export default function KnowledgeDetailPage() {
         <div className="card p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <h3 className="text-sm font-semibold text-ink-body">文档列表 ({filteredDocs.length})</h3>
-              {selectedIds.size > 0 && (
+              <h3 className="text-sm font-semibold text-ink-body">
+                文档列表{displayedDetailState.documents.status === 'ready' ? ` (${filteredDocs.length})` : ''}
+              </h3>
+              {displayedDetailState.documents.refreshing && (
+                <span className="inline-flex items-center gap-1 text-2xs text-ink-muted" role="status" aria-live="polite">
+                  <Loader2 size={11} className="animate-spin" aria-hidden="true" />正在刷新…
+                </span>
+              )}
+              {displayedDetailState.documents.refreshError && (
+                <span className="text-2xs text-amber-600" role="status">{displayedDetailState.documents.refreshError}</span>
+              )}
+              {selectedIds.size > 0 && displayedDetailState.documents.status === 'ready' && (
                 <button className="btn-danger text-xs py-1.5 px-3" onClick={handleBatchDelete} disabled={batchDeleting}>
                   <Trash2 size={12} />
                   {batchDeleting ? '删除中…' : `删除选中 (${selectedIds.size})`}
@@ -1460,17 +1618,24 @@ export default function KnowledgeDetailPage() {
             </div>
             <div className="flex items-center gap-2">
               <Search size={14} className="text-ink-muted"/>
-              <input className="input-field text-xs w-48 py-1.5" placeholder="搜索文档…" value={filter}
-                onChange={e => setFilter(e.target.value)} />
+              <input className="input-field text-xs w-48 py-1.5" placeholder="搜索文档…" aria-label="搜索文档" value={filter}
+                onChange={e => setFilter(e.target.value)} disabled={displayedDetailState.documents.status !== 'ready'} />
             </div>
           </div>
-          <div className="overflow-x-auto">
+          {documentListMode === 'loading' && (
+            <span className="sr-only" role="status" aria-live="polite">正在加载文档列表</span>
+          )}
+          <div
+            className="overflow-x-auto"
+            aria-busy={documentListMode === 'loading' || displayedDetailState.documents.refreshing}
+          >
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-cloud-300/60 text-left">
                   <th className="pb-2.5 font-medium text-xs text-ink-muted w-8">
                     <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredDocs.length}
-                      onChange={toggleSelectAll} className="w-3.5 h-3.5 accent-sky-500" />
+                      onChange={toggleSelectAll} disabled={documentListMode !== 'ready' || filteredDocs.length === 0}
+                      className="w-3.5 h-3.5 accent-sky-500" />
                   </th>
                   <th className="pb-2.5 font-medium text-xs text-ink-muted">文件名</th>
                   <th className="pb-2.5 font-medium text-xs text-ink-muted">状态</th>
@@ -1495,7 +1660,7 @@ export default function KnowledgeDetailPage() {
                     <td className="py-2.5 max-w-40 text-sm" title={doc.file}>
                       <div className="min-w-0">
                         {doc.file !== '?' ? (
-                          <a href={api.downloadDocumentUrl(doc.full_id)} className="block truncate text-ink-body hover:text-sky-600 transition-colors" download>{doc.file}</a>
+                          <a href={api.downloadDocumentUrl(doc.full_id, kbName)} className="block truncate text-ink-body hover:text-sky-600 transition-colors" download>{doc.file}</a>
                         ) : (
                           <span className="block truncate text-ink-body">{doc.file}</span>
                         )}
@@ -1554,7 +1719,7 @@ export default function KnowledgeDetailPage() {
                     <td className="py-2.5 text-xs text-ink-muted">{doc.updated?.slice(0, 16) || '-'}</td>
                     <td className="py-2.5 flex gap-1">
                       {doc.file !== '?' && (
-                        <a href={api.downloadDocumentUrl(doc.full_id)} className="btn-ghost text-xs py-1 px-2 text-sky-600" title="下载" download><Download size={14}/></a>
+                        <a href={api.downloadDocumentUrl(doc.full_id, kbName)} className="btn-ghost text-xs py-1 px-2 text-sky-600" title="下载" download><Download size={14}/></a>
                       )}
                       {canRetry && (
                         <button
@@ -1573,13 +1738,37 @@ export default function KnowledgeDetailPage() {
                   </tr>
                   )
                 })}
+                {documentListMode === 'loading' && Array.from({ length: 4 }, (_, index) => (
+                  <tr key={`document-skeleton-${index}`}>
+                    <td colSpan={7} className="py-2">
+                      <div className="skeleton h-9 w-full" />
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
-            {filteredDocs.length === 0 && (
+            {documentListMode === 'error' && (
+              <div className="py-10 text-center" role="alert">
+                <AlertTriangle size={34} className="mx-auto mb-3 text-rose-500" />
+                <p className="text-sm font-medium text-ink-body">文档列表加载失败</p>
+                <p className="mx-auto mt-1 max-w-md text-xs text-ink-muted">{displayedDetailState.documents.error}</p>
+                <button className="btn-secondary mt-4 text-xs" onClick={() => loadKBData({ force: true })}>
+                  <RotateCcw size={13} />重新加载
+                </button>
+              </div>
+            )}
+            {documentListMode === 'empty' && (
               <div className="py-10 text-center">
                 <FileText size={36} className="mx-auto mb-3 text-cloud-400" />
                 <p className="text-sm text-ink-muted">暂无文档</p>
                 <p className="text-xs text-ink-muted mt-1">上传文档或导入内容以开始构建知识库</p>
+              </div>
+            )}
+            {documentListMode === 'no-match' && (
+              <div className="py-10 text-center">
+                <Search size={32} className="mx-auto mb-3 text-cloud-400" />
+                <p className="text-sm text-ink-muted">没有匹配的文档</p>
+                <p className="text-xs text-ink-muted mt-1">请调整搜索关键词后重试</p>
               </div>
             )}
           </div>
@@ -1590,7 +1779,7 @@ export default function KnowledgeDetailPage() {
       {activeTab === 'tags' && <TagRelationsPanel kbName={kbName} selectedTagId={searchParams.get('tag')} onSelectTag={selectTag} />}
 
       {/* ── 标签页：图谱与实体（合并）── */}
-      {activeTab === 'graph' && (
+      {activeTab === 'graph' && detailState.kbName === kbName && (
         <div className="flex gap-4 h-[520px]">
           {/* 图谱面板 */}
           <div className="flex-1 card p-4 flex flex-col min-w-0">
@@ -1795,7 +1984,7 @@ export default function KnowledgeDetailPage() {
 
       {/* 文档详情抽屉 */}
       <AnimatePresence>
-        {detailDoc && (
+        {detailDoc && detailState.kbName === kbName && (
           <SideDrawer isOpen onRequestClose={() => setDetailDoc(null)} ariaLabel="文档详情" size="sm" className="card p-6 overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-ink-primary">文档详情</h3>
@@ -1820,7 +2009,7 @@ export default function KnowledgeDetailPage() {
             </div>
             {detailDoc.file !== '?' && (
               <div className="mt-4 pt-3 border-t border-cloud-200">
-                <a href={api.downloadDocumentUrl(detailDoc.full_id)}
+                <a href={api.downloadDocumentUrl(detailDoc.full_id, kbName)}
                    className="btn-primary text-sm flex items-center justify-center gap-2 w-full"
                    download>
                   <Download size={16} />
@@ -1833,7 +2022,7 @@ export default function KnowledgeDetailPage() {
       </AnimatePresence>
 
       {/* 文档删除确认 */}
-      {deleteConfirm && (
+      {deleteConfirm && detailState.kbName === kbName && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDeleteConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除文档">
           <div className="absolute inset-0 bg-sky-900/20" />
           <div className="relative card p-6 w-80 text-center" onClick={e => e.stopPropagation()}>

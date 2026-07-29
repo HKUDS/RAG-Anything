@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import queue
+import re
 import time
 import uuid
 from datetime import datetime
@@ -29,11 +30,10 @@ from raganything.routers.shared import (
     INLINE_QUOTE_INSTRUCTION,
     LLM_MODEL,
     QUERY_SYSTEM_PROMPT,
-    VISION_MODEL,
     get_kb,
-    query_history,
     recall_query_images,
     record_query,
+    resolve_controlled_media_payload,
     verify_kb_access,
 )
 from raganything.utils.security import validate_query_input, decode_and_validate_query_image
@@ -60,6 +60,32 @@ from raganything.services.pg_agent_repo import (
 )
 from raganything.services.prompt_builder import PromptBuilder, ContextLayer
 from raganything.query.tag_scoped_retriever import resolve_tag_scope, retrieve_tag_scoped_context
+from raganything.services.kb_service import _load_doc_status_json
+from raganything.services.odl_media_delivery import catalog_media_payload
+
+
+_SENSITIVE_MEDIA_REFERENCE_PATTERNS = (
+    re.compile(r"(?i)data:image/[^\s,;]+;base64,[A-Za-z0-9+/=_-]+"),
+    re.compile(r"(?i)file://[^\r\n\s<>\"']+"),
+    re.compile(r"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n<>\"']+"),
+    re.compile(r"/(?:home|Users|var|tmp|etc|root|opt|mnt)/[^\r\n<>\"']+"),
+)
+
+
+def _sanitize_client_trace_step(step: dict) -> dict:
+    """Keep internal retrieval observations out of SSE and durable history."""
+    safe: dict = {}
+    for key, value in step.items():
+        if key == "observation":
+            safe[key] = ""
+        elif isinstance(value, str):
+            text = value
+            for pattern in _SENSITIVE_MEDIA_REFERENCE_PATTERNS:
+                text = pattern.sub("[redacted-media-reference]", text)
+            safe[key] = text
+        else:
+            safe[key] = value
+    return safe
 
 
 # ═══════════════════════════════════════════════════════════
@@ -128,8 +154,65 @@ def _build_image_section(image_description: str = "", similar_image_urls: list =
     return "".join(parts)
 
 
+async def _load_kb_media_catalog(kb_name: str) -> list[dict]:
+    """Load only persisted, path-free catalog records from authorised KB state."""
+    try:
+        statuses = await _load_doc_status_json(kb_name)
+    except Exception:
+        statuses = {}
+    catalog: list[dict] = []
+    for status in statuses.values():
+        metadata = status.get("metadata") if isinstance(status, dict) else None
+        entries = metadata.get("odl_media_catalog") if isinstance(metadata, dict) else None
+        if isinstance(entries, list):
+            catalog.extend(entry for entry in entries if isinstance(entry, dict))
+    return catalog
+
+
+async def _controlled_recalled_media(kb_name: str, paths: list[str]) -> list[dict]:
+    """Convert backend-only recalled paths into path-free client metadata."""
+    result: list[dict] = []
+    seen: set[str] = set()
+    for path in paths:
+        payload = await resolve_controlled_media_payload(
+            kb_name=kb_name,
+            image_path=path,
+        )
+        media_id = payload.get("media_id") if isinstance(payload, dict) else None
+        if isinstance(payload, dict) and isinstance(media_id, str) and media_id not in seen:
+            seen.add(media_id)
+            result.append(payload)
+    return result
+
+
+async def _controlled_similar_media(
+    kb_name: str,
+    results: list[dict],
+) -> list[dict]:
+    """Drop vision matches that are not bound to the KB media catalog."""
+    catalog = await _load_kb_media_catalog(kb_name)
+    controlled: list[dict] = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        payload = catalog_media_payload(
+            catalog,
+            kb_name=kb_name,
+            path=str(result.get("image_path") or ""),
+        )
+        if payload is None:
+            continue
+        controlled.append({
+            **payload,
+            "entity_name": str(result.get("entity_name") or ""),
+            "description": str(result.get("description") or ""),
+            "score": round(float(result.get("score") or 0), 3),
+        })
+    return controlled
+
+
 def _assistant_message_media(
-    images: list[str] | None = None,
+    images: list[dict] | None = None,
     similar_images: list[dict] | None = None,
     image_description: str | None = None,
 ) -> dict:
@@ -418,6 +501,7 @@ class AgentQueryRequest(BaseModel):
     vlm_enhanced: bool = False
     image: Optional[str] = None  # base64 data URI of user-uploaded query image (e.g. data:image/jpeg;base64,...)
     tag_id: Optional[int] = None
+    retrieval_only: bool = False  # 受权限保护的评测诊断：不暴露上下文正文，也不触发生成
 
 
 class MessageUpdateRequest(BaseModel):
@@ -823,6 +907,16 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     # 验证 KB 访问权限（可能自动切换到用户的个人 KB）
     actual_kb = await verify_kb_access(kb=agent.get("kb_name", ""), current_user=current_user)
 
+    from raganything.services import vision_models
+    try:
+        vlm_snapshot = await vision_models.resolve_user_vlm_selection(
+            current_user["id"]
+        )
+    except KeyError as exc:
+        raise HTTPException(503, detail={"code": "profile_unavailable", "message": "selected image-understanding profile is unavailable"}) from exc
+    if req.image and not vlm_snapshot.profile.available:
+        raise HTTPException(503, detail={"code": "profile_unavailable", "message": "selected image-understanding profile is unavailable"})
+
     instance = await get_kb(actual_kb)
     tag_scope = None
     if req.tag_id is not None:
@@ -846,9 +940,15 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     system_prompt = runtime_config["system_prompt"]
     agent_llm = _build_agent_llm(runtime_config)
 
+    if req.retrieval_only and agent_mode != "none":
+        raise HTTPException(
+            status_code=422,
+            detail="retrieval_only only supports the standard RAG query mode",
+        )
+
     # 确保对话线程存在
     thread_id = req.thread_id
-    if not thread_id:
+    if not thread_id and not req.retrieval_only:
         thread = await pg_create_conversation(agent_id, title="新对话", owner_id=current_user["id"])
         thread_id = thread["id"]
 
@@ -856,7 +956,9 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     conv_history_text = ""
     max_conv_rounds = int(os.getenv("CONVERSATION_MAX_ROUNDS", "10"))
     max_conv_tokens = int(os.getenv("CONVERSATION_MAX_TOKENS", "2000"))
-    conv_thread = await pg_get_conversation(agent_id, thread_id)
+    conv_thread = None
+    if not req.retrieval_only:
+        conv_thread = await pg_get_conversation(agent_id, thread_id)
     if conv_thread and conv_thread.get("messages"):
         max_msgs = max_conv_rounds * 2
         recent = conv_thread["messages"][-max_msgs:]
@@ -874,6 +976,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             conv_history_text = "\n".join(lines)
 
     async def event_stream():
+        vlm_context_token = vision_models.activate_vlm_selection(vlm_snapshot)
         log_queue: queue.Queue = queue.Queue()
         handler = LogCaptureHandler(log_queue)
         lightrag_logger.addHandler(handler)
@@ -985,22 +1088,11 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     _vlm_res, _vis_res = await asyncio.gather(vlm_task, vision_task, return_exceptions=True)
 
                     image_description = _vlm_res if not isinstance(_vlm_res, Exception) else None
-                    similar_images = _vis_res if not isinstance(_vis_res, Exception) else []
-
-                    # Build shareable image URLs with the current user's token
-                    _auth_token = request.headers.get("Authorization", "").removeprefix("Bearer ")
-                    _similar_image_urls: list[dict] = []
-                    if similar_images and _auth_token:
-                        from urllib.parse import quote
-                        for _si in similar_images:
-                            _raw_path = _si.get("image_path", "")
-                            if _raw_path:
-                                _url = f"/api/files/image?path={quote(_raw_path, safe='')}&token={_auth_token}"
-                                _similar_image_urls.append({
-                                    "url": _url,
-                                    "name": _si.get("entity_name", ""),
-                                    "score": _si.get("score", 0),
-                                })
+                    raw_similar_images = _vis_res if not isinstance(_vis_res, Exception) else []
+                    similar_images = await _controlled_similar_media(
+                        actual_kb, raw_similar_images
+                    )
+                    _similar_image_urls = similar_images
 
                     _status_fields = {"status": "done"}
                     if image_description:
@@ -1011,7 +1103,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     # Emit similar image URLs for frontend rendering
                     if _similar_image_urls:
                         yield f"data: {json.dumps({'type': 'image_results', 'images': _similar_image_urls}, ensure_ascii=False)}\n\n"
-            _display_similar_images = _similar_image_urls or similar_images
+            _display_similar_images = _similar_image_urls
 
             # ═══ AgenticRAG 推理路径（ReAct / CoT） ═══
             if agent_mode in ("react", "cot"):
@@ -1065,7 +1157,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                                 "elapsed_ms": event.elapsed_ms,
                             }
                             trace_steps.append(sd)
-                            yield f"data: {json.dumps({'type': 'thinking', **sd}, ensure_ascii=False)}\n\n"
+                            safe_sd = _sanitize_client_trace_step(sd)
+                            yield f"data: {json.dumps({'type': 'thinking', **safe_sd}, ensure_ascii=False)}\n\n"
                         elif event.type == "token":
                             full_answer += (event.content or "")
                             yield f"data: {json.dumps({'type': 'token', 'content': event.content or ''}, ensure_ascii=False)}\n\n"
@@ -1150,11 +1243,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                             "thought": s.thought,
                             "elapsed_ms": s.elapsed_ms,
                         })
-                        yield f"data: {json.dumps({'type': 'thinking', 'step': s.step_number, 'thought': s.thought, 'elapsed_ms': s.elapsed_ms}, ensure_ascii=False)}\n\n"
+                        safe_step = _sanitize_client_trace_step(trace_steps[-1])
+                        yield f"data: {json.dumps({'type': 'thinking', **safe_step}, ensure_ascii=False)}\n\n"
                     yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
 
                 elapsed = round(time.time() - start_time, 2)
                 lightrag_logger.info(f"[AGENT-STREAM] mode={agent_mode} steps={len(trace_steps)} elapsed={elapsed}s")
+                client_trace_steps = [_sanitize_client_trace_step(step) for step in trace_steps]
 
                 # ── 图片匹配（图谱发现 + bigram 兜底）──
                 # 从 ReAct search observation 和 CoT 检索上下文中提取图片路径
@@ -1172,33 +1267,9 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 )
                 if _backfill_text_react:
                     all_retrieved_text += "\n" + _backfill_text_react
-                if False and not agent_images:
-                    # 第二道：实体图谱图片发现
-                    agent_images, _backfill_text_react = await _discover_images_via_graph(
-                        instance, req.query, actual_kb, all_retrieved_text
-                    )
-                    if _backfill_text_react:
-                        all_retrieved_text += "\n" + _backfill_text_react
-
-                if False and not agent_images:
-                    # 第三道：bigram 全库扫描
-                    try:
-                        agent_images, _backfill_text_react = await _bigram_image_scan(
-                            kb_dir(actual_kb), req.query, all_retrieved_text, instance
-                        )
-                        if _backfill_text_react:
-                            all_retrieved_text += "\n" + _backfill_text_react
-                    except Exception as _fe:
-                        lightrag_logger.error(f"[AGENT-IMG] 全库扫描失败: {_fe}")
-
                 # ── 截断 + 文件存在性校验（安全网）──
                 agent_images = agent_images[:3]
-
-                # ── 图片相关性过滤（Agentic 路径）──
-                if False and agent_images and not image_description:
-                    agent_images = _filter_images_by_relevance(
-                        agent_images, req.query, all_retrieved_text or "", min_overlap=2
-                    )
+                agent_images = await _controlled_recalled_media(actual_kb, agent_images)
 
                 # Citation fallback for agent path: collect context from trace/COT
                 _agent_ctx = ""
@@ -1226,7 +1297,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 await pg_add_message(agent_id, thread_id, {
                     "role": "assistant", "content": full_answer,
                     "elapsed": elapsed, "mode": query_mode,
-                    "agent_mode": agent_mode, "trace": trace_steps,
+                    "agent_mode": agent_mode, "trace": client_trace_steps,
                     "time": datetime.now().isoformat(),
                     **scope_metadata,
                     **_assistant_message_media(agent_images, _display_similar_images, image_description),
@@ -1236,7 +1307,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 record = {
                     "id": query_id, "query": req.query, "mode": query_mode,
                     "agent_mode": agent_mode, "answer": full_answer,
-                    "reasoning_trace": {"steps": trace_steps, "total_steps": len(trace_steps)},
+                    "reasoning_trace": {"steps": client_trace_steps, "total_steps": len(client_trace_steps)},
                     "images": agent_images, "time": datetime.now().isoformat(),
                     "elapsed": elapsed, "kb": actual_kb,
                     "agent_id": agent_id, "thread_id": thread_id,
@@ -1313,6 +1384,16 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             # ── 快速检测：真正空的上下文（fail_response / None / 空字符串）──
             _is_truly_empty = not ctx or not ctx.strip() or "[no-context]" in ctx
 
+            if req.retrieval_only:
+                # Keep the diagnostic contract metadata-only. Retrieval text is never
+                # sent to the client, persisted to conversations, or added to history.
+                context_chars = len(ctx) if isinstance(ctx, str) else 0
+                source_count = ctx.count("[来源 ") if isinstance(ctx, str) else 0
+                elapsed = round(time.time() - start_time, 2)
+                yield f"data: {json.dumps({'type': 'retrieval', 'context_present': not _is_truly_empty, 'context_chars': context_chars, 'text_source_count': source_count, 'mode': query_mode}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done', 'id': query_id, 'elapsed': elapsed, 'phase': 'retrieval', 'fallback': _is_truly_empty}, ensure_ascii=False)}\n\n"
+                return
+
             if _is_truly_empty:
                 # ── 降级路径：无有效检索上下文 → 直接告知用户 ──
                 agent_images = []
@@ -1375,40 +1456,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             agent_images, backfill_text, _img_source = await recall_query_images(
                 instance, req.query, actual_kb, ctx
             )
+            agent_images = await _controlled_recalled_media(actual_kb, agent_images[:3])
             if backfill_text:
                 ctx = ctx + "\n\n" + backfill_text
 
-            if False and not agent_images:
-                # Africa 第二道：实体图谱图片发现（语义级别，模式无关）
-                agent_images, backfill_text = await _discover_images_via_graph(
-                    instance, req.query, actual_kb, ctx
-                )
-                if backfill_text:
-                    ctx = ctx + "\n\n" + backfill_text
-
-            if False and not agent_images:
-                # 第三道：bigram 全库扫描（字符级别兜底）
-                try:
-                    agent_images, backfill_text = await _bigram_image_scan(
-                        kb_dir(actual_kb), req.query, ctx, instance
-                    )
-                    if backfill_text:
-                        ctx = ctx + "\n\n" + backfill_text
-                except Exception as _fe:
-                    lightrag_logger.error(f"[IMG-FALLBACK] 全库扫描失败: {_fe}")
-
             # ── 截断 + 文件存在性校验（安全网）──
             agent_images = agent_images[:3]
-
-            # ── 图片相关性过滤 ──
-            # 三段式发现只管"找到图片"，不管"图片是否与查询相关"。
-            # 此过滤器用查询关键词与图片周围文本（VLM 描述/标题）做重叠匹配，
-            # 剔除明显无关的图片。min_overlap=2 可过滤掉约 60-80% 假阳性。
-            if False and agent_images and not image_description:
-                # 仅对纯文本查询启用过滤（上传图片时跳过，因为视觉搜索已提供语义锚定）
-                agent_images = _filter_images_by_relevance(
-                    agent_images, req.query, ctx or "", min_overlap=2
-                )
 
             # ── 视觉相似图片上下文注入 ──
             # 将视觉搜索找到的相似图片描述注入 LLM 上下文。
@@ -1524,7 +1577,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             if similar_images:
                 _img_section += "## 知识库中视觉相似的图片\n"
                 for _si in similar_images[:5]:
-                    _img_section += f"- {_si['entity_name'] or _si['image_path']} (相似度: {_si['score']})\n"
+                    label = _si.get("entity_name") or _si.get("caption") or "catalog image"
+                    _img_section += f"- {label} (相似度: {_si['score']})\n"
                     if _si.get('description'):
                         _img_section += f"  描述: {_si['description'][:200]}\n"
                 _img_section += "\n"
@@ -1632,6 +1686,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
         finally:
+            vision_models.reset_vlm_snapshot(vlm_context_token)
             lightrag_logger.removeHandler(handler)
 
     return StreamingResponse(

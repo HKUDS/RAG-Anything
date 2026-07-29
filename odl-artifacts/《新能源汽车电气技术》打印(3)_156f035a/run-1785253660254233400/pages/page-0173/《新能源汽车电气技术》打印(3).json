@@ -1,0 +1,57 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 2,
+    "page number" : 173,
+    "bounding box" : [ 152.88, 501.1, 442.32, 769.9 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 3,
+    "page number" : 173,
+    "bounding box" : [ 111.0, 462.198, 510.49, 499.11 ],
+    "linked content id" : 2,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 4-45 测量 T05（A）/18 与 G19/7 电阻 4） 为确定最小故障点，需分段查找线路，缩小故障范围，车辆下电，断开蓄电池负极。"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 4,
+    "page number" : 173,
+    "bounding box" : [ 90.0, 360.797, 510.49, 450.39 ],
+    "linked content id" : 5,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "通过检查线路，分别拔下 T05（A）与 TJG01 插接器，用万用表电阻档测 T05（A）/18 端子 与 TJG01/8 线路电阻，正常为小于 1Ω，实测为无穷大,异常；最终通过排查电路锁定最小故 障点为 T05（A）/18→TJG01/8 线路断路，经查找发现 T05（A）/18→TJG01/8 线路断路故障， 如图 4-46 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 5,
+    "page number" : 173,
+    "bounding box" : [ 134.16, 95.74, 460.68, 355.42 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile2.png"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 173,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "173"
+  } ]
+}

@@ -1,0 +1,138 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "page number" : 227,
+    "bounding box" : [ 90.0, 704.958, 505.209, 763.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "电动压缩机主要包括一对螺旋线缠绕的固定蜗形管和可变蜗形管、无刷电动机、油挡板 和电动机轴，如图 6-2 所示。压缩机工作受空调控制单元（ACU）控制，通过 PWM 信号调 节转速（范围通常为 1000~8000r/min）。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 227,
+    "bounding box" : [ 111.0, 681.558, 242.286, 693.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "（2）电动压缩机的工作过程"
+  }, {
+    "type" : "list",
+    "pdfua_tag" : "L",
+    "id" : 6,
+    "level" : "1",
+    "page number" : 227,
+    "bounding box" : [ 111.0, 541.158, 505.197, 669.871 ],
+    "numbering style" : "arabic numbers",
+    "number of list items" : 3,
+    "list items" : [ {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 227,
+      "bounding box" : [ 111.0, 658.158, 505.197, 669.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "1）进气行程：在固定蜗形管和可变蜗形管间产生的压缩室的容量随着可变蜗形管的旋",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 1,
+        "page number" : 227,
+        "bounding box" : [ 90.0, 636.021, 299.883, 646.471 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "转而增大，这时，气态制冷剂从进风口吸入。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 227,
+      "bounding box" : [ 111.0, 611.358, 505.197, 623.071 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "2）压缩行程：吸入步骤完成后，随着可变蜗形管继续转动，压缩室的容积逐渐减小，",
+      "kids" : [ {
+        "type" : "paragraph",
+        "pdfua_tag" : "P",
+        "id" : 2,
+        "page number" : 227,
+        "bounding box" : [ 90.0, 565.821, 505.209, 599.671 ],
+        "font" : "SimSun",
+        "font size" : 10.45,
+        "text color" : "[0.0, 0.0, 0.0]",
+        "content" : "吸入的气态制冷剂逐渐压缩并被排到固定蜗形管的中心，当可变蜗形管旋转约两周后，制冷 剂的压缩完成。"
+      } ]
+    }, {
+      "type" : "list item",
+      "pdfua_tag" : "LI",
+      "page number" : 227,
+      "bounding box" : [ 111.0, 541.158, 505.197, 552.871 ],
+      "font" : "Calibri",
+      "font size" : 10.45,
+      "text color" : "[0.0, 0.0, 0.0]",
+      "content" : "3）排放过程：气态制冷剂压缩完成而压力较高时，通过按压排放阀，气态制冷剂通过",
+      "kids" : [ ]
+    } ]
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 227,
+    "bounding box" : [ 90.0, 494.357, 308.529, 529.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "固定蜗形管中心排放口排出。 电动压缩机工作的三个过程如图 6-3 所示。"
+  }, {
+    "type" : "image",
+    "pdfua_tag" : "Figure",
+    "id" : 8,
+    "page number" : 227,
+    "bounding box" : [ 111.0, 334.9, 456.12, 487.54 ],
+    "alt_source" : "missing",
+    "source" : "《新能源汽车电气技术》打印(3)_images/imageFile1.png"
+  }, {
+    "type" : "caption",
+    "pdfua_tag" : "Caption",
+    "id" : 9,
+    "page number" : 227,
+    "bounding box" : [ 228.959, 314.957, 387.126, 326.671 ],
+    "linked content id" : 8,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "图 6-3 电动压缩机工作的三个过程"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 227,
+    "bounding box" : [ 90.0, 175.821, 509.89, 303.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2.冷凝器 冷凝器位于车辆前部（格栅后方）如图 6-4 所示，作用是将压缩机排出的高温高压气态 制冷剂冷却为中温高压液态制冷剂。新能源汽车冷凝器通常采用“风冷+电控风扇”的冷却 方式，风扇转速由 ACU 根据冷凝器温度、制冷剂高压侧压力动态调整（如压力过高时风扇 高速运转）。部分车型的冷凝器与蓄电池冷却器集成，实现“空调制冷”与“蓄电池散热” 的双重功能。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 3,
+    "page number" : 227,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "227"
+  } ]
+}

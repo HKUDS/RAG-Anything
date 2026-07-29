@@ -1,0 +1,166 @@
+{
+  "file name" : "《新能源汽车电气技术》打印(3).pdf",
+  "number of pages" : 249,
+  "author" : "84781",
+  "title" : "",
+  "creation date" : "D:20260723161500+08'00'",
+  "modification date" : "D:20260723161500+08'00'",
+  "kids" : [ {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 2,
+    "page number" : 116,
+    "bounding box" : [ 90.0, 757.94, 173.888, 768.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "性和个性化体验。"
+  }, {
+    "type" : "heading",
+    "pdfua_tag" : "H1",
+    "id" : 3,
+    "level" : "Doctitle",
+    "page number" : 116,
+    "bounding box" : [ 111.0, 737.54, 237.365, 747.99 ],
+    "heading level" : 1,
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "一、当前主流的车灯新技术"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 4,
+    "level" : "1",
+    "page number" : 116,
+    "bounding box" : [ 111.0, 655.821, 505.207, 727.471 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "1. 矩阵式 LED（Matrix LED） 原理：由多个独立控制的 LED 灯珠组成，通过摄像头和传感器实时调整照明区域。 功能：自动避开对向车辆或行人，避免眩光；精准照亮特定区域（如路牌、弯道）。 应用：矩阵式 LED 前照灯在比亚迪汉、宋 Pro、秦 Pro、宋 PLUS 及 e2 等车型中均有应"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 5,
+    "page number" : 116,
+    "bounding box" : [ 90.0, 635.3, 383.885, 645.75 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "用，主要分布在轿车和 SUV 细分市场，兼顾设计感与科技配置。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 6,
+    "level" : "1",
+    "page number" : 116,
+    "bounding box" : [ 111.0, 594.5, 505.208, 625.35 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "2. 激光前照灯（Laser Headlights） 特点：照射距离极远（可达 600 米以上），能耗低于 LED，但成本高。一般作为远光灯"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 7,
+    "page number" : 116,
+    "bounding box" : [ 90.0, 512.78, 510.49, 584.55 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "辅助（在高速或空旷路段启用）。 原理：激光二极管激发荧光粉产生白光。 限制：法规限制亮度，需与其他光源（如 LED）配合使用。 应用：比亚迪唐 L 配备分体式激光前照灯，高配车型搭载激光雷达，支持动态弯道补光、"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 8,
+    "page number" : 116,
+    "bounding box" : [ 90.0, 451.58, 505.209, 502.83 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "行人防眩目等功能，配合高阶智驾系统（如“天眼之眼”）；比亚迪仰望 U9 的激光前照灯 具备第二代 Dragon Beam 激光光源，照射距离达 600 米，支持动态弯道补光与行人防眩目功 能；比亚迪宋 Plus DM-i 配备矩阵 LED 激光灯，有效提升亮度，增强夜间行车安全性。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 9,
+    "level" : "1",
+    "page number" : 116,
+    "bounding box" : [ 111.0, 349.34, 510.49, 441.51 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "3. 自适应远光灯系统（ADB, Adaptive Driving Beam） 功能：根据路况、车流自动切换远近光，分区遮挡眩光光源。 技术支撑：摄像头、雷达、AI 算法实时分析环境。 法规：欧美已放宽限制，中国 2022 年逐步开放 ADB 认证。 代表车型：比亚迪汉 DM 配备 ADB，通过传感器自动切换远近光，提升夜间行车安全性。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 10,
+    "page number" : 116,
+    "bounding box" : [ 90.0, 288.14, 505.209, 339.39 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "比亚迪唐智能远光灯辅助系统（HMA）可自动调节远光灯，支持手动切换。仰望 U7 作为比亚 迪高端品牌仰望的首款车型，配备 DiPilot 智能驾驶辅助系统，支持环境感知自动调节前照 灯，提升会车和高速行驶安全性。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 11,
+    "level" : "1",
+    "page number" : 116,
+    "bounding box" : [ 111.0, 247.34, 505.209, 278.19 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "5. 数字投影前照灯（Digital Light） 技术：将车灯变为微型投影仪，可投射图案、导航路径或警示信息（如车道标记、行人"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 12,
+    "page number" : 116,
+    "bounding box" : [ 90.0, 226.821, 131.889, 237.271 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "提示）。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 13,
+    "page number" : 116,
+    "bounding box" : [ 90.0, 186.021, 505.207, 216.871 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "应用：奔驰 EQS：可在地面投射“斑马线”提醒行人；高合 HiPhi X：支持编程自定义 灯语。"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 14,
+    "level" : "1",
+    "page number" : 116,
+    "bounding box" : [ 111.0, 104.3, 505.208, 176.071 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "6. OLED 尾灯（Organic LED） 特点：超薄、均匀发光、可柔性设计，支持动态显示（如流水转向灯）。 优势：对比度高，造型更前卫。 应用：比亚迪唐系列（2018 款）采用贯穿式 OLED 尾灯设计，点亮后辨识度高；岚图知"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 15,
+    "page number" : 116,
+    "bounding box" : [ 90.0, 83.78, 505.206, 94.23 ],
+    "font" : "SimSun",
+    "font size" : 10.45,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "音（2025 款）采用后置贯穿式 OLED 曲面屏，支持滑动切换和 AR-HUD 功能，兼具科技感与"
+  }, {
+    "type" : "paragraph",
+    "pdfua_tag" : "P",
+    "id" : 1,
+    "page number" : 116,
+    "bounding box" : [ 290.759, 49.52, 304.432, 58.52 ],
+    "font" : "Calibri",
+    "font size" : 9.0,
+    "text color" : "[0.0, 0.0, 0.0]",
+    "content" : "116"
+  } ]
+}
