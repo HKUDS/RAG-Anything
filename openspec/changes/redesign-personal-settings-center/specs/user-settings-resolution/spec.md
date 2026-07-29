@@ -11,6 +11,13 @@ The system SHALL persist user-scoped sparse `models`, `ingestion`, `retrieval`, 
 - **WHEN** a user PATCHes a section with `values:null` and the current expected revision
 - **THEN** the stored override for that section is removed and the subsequent effective value inherits from the next precedence source
 
+### Requirement: Settings options and section schemas are secret-free and bounded
+`GET /api/users/me/settings/options` SHALL expose only permitted catalog choices and policy ranges, never provider hosts, keys, or environment names. The server SHALL validate the `models`, `ingestion`, `retrieval`, and `runtime` section schemas: models permit text LLM/VLM ids; ingestion permits parser, chunk strategy/size, image/table/equation/video toggles, entity types, and minimum relation degree; retrieval permits preset, RRF, channel Top K, graph depth, channels, BM25 tokenizer/k1/b; runtime permits LLM wait time and personal concurrency. `values:null` means remove exactly that section override.
+
+#### Scenario: Options are restricted by platform policy
+- **WHEN** a user requests personal settings options
+- **THEN** the response includes only allowed values and ranges applicable to that user and no private provider configuration
+
 ### Requirement: Settings updates use optimistic concurrency and platform constraints
 `PATCH /api/users/me/settings/{section}` SHALL require `expected_revision`, atomically update only the specified section, and return the new stored/effective/source/constraint representation. Requested values that exceed platform hard limits MUST be constrained and reported; stale revisions MUST return `409 revision_conflict`.
 
@@ -23,7 +30,7 @@ The system SHALL persist user-scoped sparse `models`, `ingestion`, `retrieval`, 
 - **THEN** the response shows the stored choice and the constrained effective limit with its source
 
 ### Requirement: Resolved settings are immutable task and request inputs
-The system SHALL resolve settings once at a request/task boundary into immutable models and SHALL NOT mutate `os.environ`, shared RAG configuration, or shared retrieval state during the request. Queued and retried tasks SHALL persist and read the complete effective settings snapshot, revision, profile ids, and fingerprint from PostgreSQL.
+The system SHALL resolve settings once at a request/task boundary into immutable models and SHALL NOT mutate `os.environ`, shared RAG configuration, shared `instance.lightrag.chunking_func`, or shared retrieval state during the request. All single, batch, folder, content, URL, retry, and reprocess enqueue paths SHALL atomically persist and associate a complete PostgreSQL snapshot with the queued task before it runs; a worker SHALL read only that snapshot by task id, never task arguments, environment, or current user settings. Missing/unreadable snapshots fail execution explicitly.
 
 #### Scenario: User changes settings after upload is queued
 - **WHEN** a user changes a model or ingestion preference after an upload task is accepted
@@ -32,6 +39,20 @@ The system SHALL resolve settings once at a request/task boundary into immutable
 #### Scenario: Requested profile becomes unavailable
 - **WHEN** the resolved profile is unavailable at execution time
 - **THEN** the affected operation returns 503 with an explicit profile/configuration error and does not silently substitute another profile
+
+### Requirement: Retrieval state and caches are scoped to immutable options
+`HybridSearchEngine.search()` SHALL accept local retrieval options and MUST NOT change shared `_enabled_channels`. BM25 index keys SHALL be `workspace + corpus_revision + tokenizer + k1 + b`; equal keys may share bounded read-only indexes, while different keys MUST remain isolated under LRU eviction. Query, LLM, and instance cache keys SHALL include workspace, permission scope, content revision, and settings fingerprint.
+
+#### Scenario: Two users use different retrieval channels concurrently
+- **WHEN** two users query the same KB with distinct resolved retrieval options
+- **THEN** each result uses only its local options and neither request changes the other's channels or cache identity
+
+### Requirement: Required settings lifecycle events are safely audited
+The system SHALL audit personal profile/settings section changes, model switches, KB vector switches, reindex queued/succeeded/failed, and platform policy changes using only actor, section, profile id, KB, revision, and result. Passwords, keys, hosts, and environment variable names MUST NOT be stored in audit details.
+
+#### Scenario: Failed reindex audit contains no secret configuration
+- **WHEN** a KB visual-profile reindex fails
+- **THEN** the audit record identifies the KB/profile and outcome without credentials or provider endpoint details
 
 ### Requirement: Account updates are verified and audited without secrets
 The system SHALL return a masked email from `GET /api/auth/me`, provide atomic username/email update at `PUT /api/auth/me/profile` after current-password verification, and normalize the current-password verification behavior of `PUT /api/auth/me/password`. Successful updates SHALL preserve the session, refresh authentication context, and audit only non-secret result metadata.
