@@ -27,6 +27,23 @@ async def test_embedding_preflight_calls_raw_provider_and_validates_vector(monke
 
 
 @pytest.mark.asyncio
+async def test_embedding_preflight_accepts_the_factory_provider_without_legacy_attribute(monkeypatch):
+    import process_worker
+
+    calls = []
+
+    async def preflight_provider(texts, *, timeout):
+        calls.append((texts, timeout))
+        return [[0.5] * process_worker.EMB_DIM]
+
+    monkeypatch.setenv("MODEL_PREFLIGHT_ENABLED", "true")
+    rag = SimpleNamespace(_raw_embedding_preflight_provider=preflight_provider)
+    await process_worker._preflight_embedding_service(rag)
+
+    assert len(calls) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "vector,error",
     [
@@ -58,6 +75,22 @@ def test_structured_worker_error_wins_over_finalize_noise():
     result = _parse_worker_error(lines, 4)
     assert result["message"] == "connection failed"
     assert result["stage"] == "model_preflight"
+    assert result["retryable"] is True
+
+
+def test_structured_quota_lease_failure_remains_retryable():
+    from raganything.services.kb_service import _parse_worker_error
+
+    lines = [
+        'WORKER_ERROR_JSON {"stage":"quota","root_type":"QuotaLeaseLost",'
+        '"failure_code":"quota_lease_lost","retryable":true,'
+        '"message":"The upload processing quota lease was reclaimed","secondary":[]}',
+    ]
+
+    result = _parse_worker_error(lines, 4)
+
+    assert result["stage"] == "quota"
+    assert result["failure_code"] == "quota_lease_lost"
     assert result["retryable"] is True
 
 
@@ -97,6 +130,10 @@ async def test_content_readiness_requires_vectors_and_non_path_text(monkeypatch)
     )
     assert invalid["ready"] is False
     assert invalid["invalid_content_ids"] == ["chunk-1"]
+
+    assert document_quality.is_path_placeholder(
+        "Image Path: C:\\output\\page-1.png\n[Image: C:\\output\\page-1.png]"
+    ) is True
 
 
 @pytest.mark.asyncio

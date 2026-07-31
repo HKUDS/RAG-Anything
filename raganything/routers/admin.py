@@ -16,6 +16,7 @@ from fastapi import (
     File,
     HTTPException,
     Request,
+    Response,
     UploadFile,
     WebSocket,
     WebSocketDisconnect,
@@ -111,142 +112,6 @@ def _serialize_settings() -> dict:
             "enabled_channels": os.getenv("RRF_ENABLED_CHANNELS", "bm25,vector,graph"),
         },
     }
-
-
-# 恢复默认值以服务启动时的配置为准，避免覆盖部署层自定义的环境变量基线。
-SETTINGS_BOOT_DEFAULTS = runtime_settings.get_boot_settings_snapshot()
-
-
-def _settings_update_from_snapshot(snapshot: dict) -> SettingsUpdate:
-    rrf = snapshot.get("rrf") or {}
-    return SettingsUpdate(
-        parser=snapshot.get("parser"),
-        llm_model=snapshot.get("llm_model"),
-        chunk_size=int(snapshot["chunk_size"]) if snapshot.get("chunk_size") is not None else None,
-        chunking_strategy=snapshot.get("chunking_strategy"),
-        entity_types=snapshot.get("entity_types"),
-        entity_extraction_min_degree=snapshot.get("entity_extraction_min_degree"),
-        max_async=int(snapshot["max_async"]) if snapshot.get("max_async") is not None else None,
-        llm_timeout=int(snapshot["llm_timeout"]) if snapshot.get("llm_timeout") is not None else None,
-        enable_image=snapshot.get("enable_image"),
-        enable_table=snapshot.get("enable_table"),
-        enable_equation=snapshot.get("enable_equation"),
-        enable_video=snapshot.get("enable_video"),
-        rrf_k=rrf.get("rrf_k"),
-        bm25_top_k=rrf.get("bm25_top_k"),
-        vector_top_k=rrf.get("vector_top_k"),
-        graph_top_k=rrf.get("graph_top_k"),
-        graph_depth=rrf.get("graph_depth"),
-        bm25_k1=rrf.get("bm25_k1"),
-        bm25_b=rrf.get("bm25_b"),
-        bm25_tokenizer=rrf.get("bm25_tokenizer"),
-        rrf_channel_timeout=rrf.get("rrf_channel_timeout"),
-        enabled_channels=rrf.get("enabled_channels"),
-    )
-
-
-def _invalidate_settings_runtime_caches(changes: dict) -> None:
-    if not changes:
-        return
-
-    for name in list(shared.kb_instances.keys()):
-        del shared.kb_instances[name]
-
-    try:
-        from raganything.query_cache import get_query_cache
-        get_query_cache().invalidate()
-    except Exception:
-        pass
-
-
-def _apply_settings_update(settings: SettingsUpdate) -> dict:
-    changes = {}
-
-    if settings.parser is not None:
-        os.environ["PARSER"] = settings.parser
-        changes["parser"] = settings.parser
-    if settings.llm_model is not None:
-        os.environ["LLM_MODEL"] = settings.llm_model
-        # 同步更新 kb_service 模块级变量（兼容仍引用它的旧代码路径）
-        import raganything.services.kb_service as _kbs
-        _kbs.LLM_MODEL = settings.llm_model
-        shared.LLM_MODEL = settings.llm_model
-        changes["llm_model"] = settings.llm_model
-    if settings.chunk_size is not None:
-        os.environ["CHUNK_SIZE"] = str(settings.chunk_size)
-        changes["chunk_size"] = settings.chunk_size
-    if settings.chunking_strategy is not None:
-        os.environ["CHUNKING_STRATEGY"] = settings.chunking_strategy
-        shared.CHUNKING_STRATEGY = settings.chunking_strategy
-        # 同时更新 kb_service 模块级变量
-        import raganything.services.kb_service as _kbs
-        _kbs.CHUNKING_STRATEGY = settings.chunking_strategy
-        changes["chunking_strategy"] = settings.chunking_strategy
-    if settings.max_async is not None:
-        # 硬上限：防止 API 预算被恶意耗尽
-        clamped = max(1, min(settings.max_async, 16))
-        os.environ["MAX_ASYNC"] = str(clamped)
-        changes["max_async"] = clamped
-    if settings.llm_timeout is not None:
-        timeout = max(30, min(settings.llm_timeout, 600))
-        os.environ["LLM_TIMEOUT"] = str(timeout)
-        changes["llm_timeout"] = timeout
-    if settings.enable_image is not None:
-        os.environ["ENABLE_IMAGE_PROCESSING"] = str(settings.enable_image).lower()
-        changes["enable_image"] = settings.enable_image
-    if settings.enable_table is not None:
-        os.environ["ENABLE_TABLE_PROCESSING"] = str(settings.enable_table).lower()
-        changes["enable_table"] = settings.enable_table
-    if settings.enable_equation is not None:
-        os.environ["ENABLE_EQUATION_PROCESSING"] = str(settings.enable_equation).lower()
-        changes["enable_equation"] = settings.enable_equation
-    if settings.enable_video is not None:
-        os.environ["ENABLE_VIDEO_PROCESSING"] = str(settings.enable_video).lower()
-        changes["enable_video"] = settings.enable_video
-    if settings.entity_types is not None:
-        os.environ["ENTITY_TYPES"] = settings.entity_types
-        changes["entity_types"] = settings.entity_types
-    if settings.entity_extraction_min_degree is not None:
-        os.environ["ENTITY_EXTRACTION_MIN_DEGREE"] = str(settings.entity_extraction_min_degree)
-        changes["entity_extraction_min_degree"] = settings.entity_extraction_min_degree
-    # RRF (Reciprocal Rank Fusion) 检索参数会被 HybridSearchEngine 初始化时读取。
-    # 保存后统一清理 KB 缓存，确保下一次查询重建检索引擎并使用新值。
-    if settings.rrf_k is not None:
-        os.environ["RRF_K"] = str(settings.rrf_k)
-        changes["rrf_k"] = settings.rrf_k
-    if settings.bm25_top_k is not None:
-        os.environ["BM25_TOP_K"] = str(settings.bm25_top_k)
-        changes["bm25_top_k"] = settings.bm25_top_k
-    if settings.vector_top_k is not None:
-        os.environ["VECTOR_TOP_K"] = str(settings.vector_top_k)
-        changes["vector_top_k"] = settings.vector_top_k
-    if settings.graph_top_k is not None:
-        os.environ["GRAPH_TOP_K"] = str(settings.graph_top_k)
-        changes["graph_top_k"] = settings.graph_top_k
-    if settings.graph_depth is not None:
-        os.environ["GRAPH_DEPTH"] = str(settings.graph_depth)
-        changes["graph_depth"] = settings.graph_depth
-    if settings.bm25_k1 is not None:
-        os.environ["BM25_K1"] = str(settings.bm25_k1)
-        changes["bm25_k1"] = settings.bm25_k1
-    if settings.bm25_b is not None:
-        os.environ["BM25_B"] = str(settings.bm25_b)
-        changes["bm25_b"] = settings.bm25_b
-    if settings.bm25_tokenizer is not None:
-        tokenizer = settings.bm25_tokenizer.strip() or "jieba"
-        os.environ["BM25_TOKENIZER"] = tokenizer
-        changes["bm25_tokenizer"] = tokenizer
-    if settings.rrf_channel_timeout is not None:
-        os.environ["RRF_CHANNEL_TIMEOUT"] = str(settings.rrf_channel_timeout)
-        changes["rrf_channel_timeout"] = settings.rrf_channel_timeout
-    if settings.enabled_channels is not None:
-        os.environ["RRF_ENABLED_CHANNELS"] = settings.enabled_channels
-        changes["enabled_channels"] = settings.enabled_channels
-
-    runtime_settings.sync_persisted_settings_from_env()
-    _invalidate_settings_runtime_caches(changes)
-
-    return changes
 
 
 class WorkflowRunRequest(BaseModel):
@@ -693,29 +558,24 @@ async def websocket_endpoint(ws: WebSocket):
 
 # ── ⚙️ 系统设置 ─────────────────────────────────────
 @router.get("/settings")
-async def get_settings(_perm: None = Depends(require_permission(Permission.SETTINGS_READ)), current_user: dict = Depends(get_current_user)):
-    """获取当前配置"""
+async def get_settings(response: Response, _perm: None = Depends(require_permission(Permission.SETTINGS_READ)), current_user: dict = Depends(get_current_user)):
+    """Legacy read-only settings compatibility endpoint."""
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "personal-platform-settings-v1"
     return _serialize_settings()
 
 
 @router.put("/settings")
 async def update_settings(settings: SettingsUpdate,
                           current_user: dict = Depends(require_permission(Permission.SETTINGS_WRITE))):
-    """更新配置(runtime) — 需要 settings:write 权限"""
-    changes = _apply_settings_update(settings)
-    return {"status": "ok", "changes": changes, "note": "配置已更新，下次访问知识库时生效"}
+    """Legacy writes are intentionally retired before the legacy read path."""
+    raise HTTPException(410, {"code": "settings_write_deprecated", "message": "use /api/users/me/settings or /api/admin/platform"})
 
 
 @router.post("/settings/reset")
 async def reset_settings(current_user: dict = Depends(require_permission(Permission.SETTINGS_WRITE))):
-    """恢复系统设置到服务启动时的默认值"""
-    changes = _apply_settings_update(_settings_update_from_snapshot(SETTINGS_BOOT_DEFAULTS))
-    return {
-        "status": "ok",
-        "changes": changes,
-        "note": "已恢复服务启动时的默认设置",
-        "settings": _serialize_settings(),
-    }
+    """Legacy resets are retired with legacy settings writes."""
+    raise HTTPException(410, {"code": "settings_reset_deprecated", "message": "use /api/admin/platform"})
 
 
 # ── 🔄 KB 缓存管理 ──────────────────────────────────

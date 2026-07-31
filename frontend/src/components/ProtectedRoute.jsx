@@ -1,6 +1,7 @@
-import { Navigate, useLocation } from 'react-router-dom'
+import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { Loader2, ShieldOff } from 'lucide-react'
+import { deniedRouteRecovery } from '../utils/settingsRouting'
 
 /**
  * 路由守卫组件。
@@ -15,6 +16,7 @@ import { Loader2, ShieldOff } from 'lucide-react'
 export default function ProtectedRoute({ children, adminOnly = false, requiredPermission = null }) {
   const { token, loading, hasPermission } = useAuth()
   const location = useLocation()
+  const navigate = useNavigate()
 
   if (loading) {
     return (
@@ -44,8 +46,8 @@ export default function ProtectedRoute({ children, adminOnly = false, requiredPe
           </p>
           <p className="text-xs text-ink-muted font-mono">需要权限: {permToCheck}</p>
         </div>
-        <button onClick={() => window.history.back()} className="btn-secondary text-xs px-4 py-2">
-          返回上一页
+        <button type="button" onClick={() => navigate(deniedRouteRecovery, { replace: true })} className="btn-secondary text-xs px-4 py-2">
+          前往个人设置
         </button>
       </div>
     )

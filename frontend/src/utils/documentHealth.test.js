@@ -5,6 +5,7 @@ import {
   getDocumentHealth,
   getUploadTaskMessages,
   getUploadTaskStatus,
+  isCancellableUploadDocument,
 } from './documentHealth.js'
 
 test('uses API health as the application-level document status', () => {
@@ -23,6 +24,21 @@ test('does not hide a hard failure without verified content', () => {
 test('presents degraded upload outcomes as degraded completed work', () => {
   assert.equal(getUploadTaskStatus({ status: 'completed', outcome: 'degraded' }), 'degraded')
   assert.equal(getUploadTaskStatus({ status: 'completed', outcome: 'success' }), 'completed')
+})
+
+test('routes only explicit active upload task provenance to cancellation', () => {
+  for (const status of ['queued', 'processing', 'retry_wait']) {
+    assert.equal(
+      isCancellableUploadDocument({ upload_task_id: 'task-1', status, can_cancel_upload: false }),
+      true,
+    )
+  }
+  assert.equal(isCancellableUploadDocument({ status: 'processing', can_cancel_upload: true }), false)
+  assert.equal(isCancellableUploadDocument({ upload_task_id: 'task-1', status: 'completed' }), false)
+  assert.equal(isCancellableUploadDocument({ upload_task_id: 'task-1', status: 'failed' }), false)
+  assert.equal(isCancellableUploadDocument({ upload_task_id: 'task-1', status: 'degraded' }), false)
+  assert.equal(isCancellableUploadDocument({ upload_task_id: 'task-1', status: 'cancelling' }), false)
+  assert.equal(isCancellableUploadDocument({ upload_task_id: 'task-1', status: 'completed', can_cancel_upload: true }), true)
 })
 
 test('normalizes upload warning fields and does not render degraded work as an error', () => {

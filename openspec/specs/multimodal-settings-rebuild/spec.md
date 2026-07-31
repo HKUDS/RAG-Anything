@@ -1,36 +1,29 @@
 # multimodal-settings-rebuild
 
-设置页切换多模态开关时，清除已缓存 KB 实例以确保新配置生效。
+## Purpose
 
-## ADDED Requirements
-
+定义多模态处理设置变更与知识库执行上下文的生命周期，确保后续任务隔离执行而不破坏现有索引或共享实例。
+## Requirements
 ### Requirement: Settings change for image processing triggers KB rebuild
-当通过 `PUT /api/settings` 变更 `enable_image` 设置时，系统 SHALL 清除所有已缓存的 KB 实例，使下次访问时以新配置重建。
+Personal image-processing settings SHALL be resolved into an immutable task snapshot at submission time rather than changing global settings or clearing all cached KB instances. KB-level visual embedding profile changes SHALL follow the guarded reindex lifecycle.
 
-#### Scenario: Toggle image processing on
-- **WHEN** 管理员调用 `PUT /api/settings` 设置 `enable_image=true`
-- **THEN** 所有 `kb_instances` 中的缓存实例被删除
-- **AND** 下次访问任意 KB 时，以 `enable_image_processing=true` 重新创建 RAGAnything 实例
-- **AND** 新实例包含 `ImageModalProcessor`
-
-#### Scenario: Toggle image processing off
-- **WHEN** 管理员调用 `PUT /api/settings` 设置 `enable_image=false`
-- **THEN** 所有 `kb_instances` 中的缓存实例被删除
-- **AND** 下次访问任意 KB 时，以 `enable_image_processing=false` 重新创建 RAGAnything 实例
+#### Scenario: Toggle image processing for a future task
+- **WHEN** a user saves a new image-processing setting
+- **THEN** only later tasks initiated by that user receive the new resolved setting and existing tasks/other users' cached execution state remain unchanged
 
 ### Requirement: Settings change for table processing triggers KB rebuild
-当通过 `PUT /api/settings` 变更 `enable_table` 设置时，系统 SHALL 清除所有已缓存的 KB 实例。
+Personal table-processing settings SHALL be resolved into immutable task snapshots and MUST NOT clear shared KB instances or mutate global configuration.
 
 #### Scenario: Toggle table processing
-- **WHEN** 管理员调用 `PUT /api/settings` 设置 `enable_table` 为任意值
-- **THEN** 所有 `kb_instances` 中的缓存实例被删除
+- **WHEN** a user saves a table-processing setting
+- **THEN** subsequent tasks for that user use the setting while persistent KB data and other execution contexts remain unchanged
 
 ### Requirement: Settings change for equation processing triggers KB rebuild
-当通过 `PUT /api/settings` 变更 `enable_equation` 设置时，系统 SHALL 清除所有已缓存的 KB 实例。
+Personal equation-processing settings SHALL be resolved into immutable task snapshots and MUST NOT clear shared KB instances or mutate global configuration.
 
 #### Scenario: Toggle equation processing
-- **WHEN** 管理员调用 `PUT /api/settings` 设置 `enable_equation` 为任意值
-- **THEN** 所有 `kb_instances` 中的缓存实例被删除
+- **WHEN** a user saves an equation-processing setting
+- **THEN** subsequent tasks for that user use the setting while persistent KB data and other execution contexts remain unchanged
 
 ### Requirement: KB rebuild preserves existing data
 清除缓存 KB 实例时 SHALL NOT 删除持久化的 LightRAG 数据（向量库、图数据库、文档状态）。

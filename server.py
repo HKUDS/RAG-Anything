@@ -272,6 +272,7 @@ from raganything.routers.agent import router as agent_router
 from raganything.routers.admin import router as admin_router
 from raganything.routers.autorepair import router as autorepair_router
 from raganything.routers.vision import router as vision_router
+from raganything.routers.user_settings import router as user_settings_router
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(knowledge_router, prefix="/api")
@@ -279,6 +280,7 @@ app.include_router(agent_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
 app.include_router(autorepair_router, prefix="/api")
 app.include_router(vision_router, prefix="/api")
+app.include_router(user_settings_router, prefix="/api")
 
 @app.on_event("startup")
 async def startup():
@@ -290,6 +292,20 @@ async def startup():
     await ensure_tag_schema()
     from raganything.embedding.image_vector_repo import _ensure_workspace_schema
     await _ensure_workspace_schema()
+    # Compatibility verification only: production schema ownership remains in
+    # the additive migrations, while this protects existing installations that
+    # upgrade before their migration job has run.
+    from raganything.services.vision_models import (
+        ensure_vision_model_schema,
+        resume_reindex_jobs,
+        resume_vision_gc_jobs,
+        vision_gc_loop,
+    )
+    from raganything.services.pg_state_repo import get_pg_pool
+    await ensure_vision_model_schema(get_pg_pool())
+    await resume_reindex_jobs()
+    await resume_vision_gc_jobs()
+    app.state.vision_gc_task = asyncio.create_task(vision_gc_loop(30))
     # 验证 P0 数据表（智能体 + KB 元数据）
     from raganything.services.pg_agent_repo import pg_ensure_agent_tables
     from raganything.services.pg_kb_meta_repo import pg_ensure_kb_tables
@@ -384,7 +400,19 @@ async def startup():
     # Recovery can inspect many persistent workspaces, so keep it out of the
     # startup critical path. The loop performs its first scan after a short
     # delay and is cancelled before storage teardown on shutdown.
-    from raganything.services.kb_service import _stuck_recovery_loop
+    from raganything.services.kb_service import (
+        _stuck_recovery_loop,
+        durable_upload_queue_loop,
+        resume_queued_upload_tasks,
+    )
+    resumed_uploads = await resume_queued_upload_tasks()
+    from raganything.services.kb_corpus_revision import reconcile_pending_corpus_mutations
+    reconciled_mutations = await reconcile_pending_corpus_mutations()
+    app.state.durable_upload_queue_task = asyncio.create_task(
+        durable_upload_queue_loop(5)
+    )
+    server_logger.info("Restored %d durable queued upload(s)", resumed_uploads)
+    server_logger.info("Reconciled %d pending corpus mutation(s)", reconciled_mutations)
     app.state.stuck_recovery_task = asyncio.create_task(_stuck_recovery_loop(300))
     from raganything.services.document_repair import repair_loop
     app.state.document_repair_task = asyncio.create_task(repair_loop(15))
@@ -401,6 +429,24 @@ async def startup():
 async def shutdown():
     from raganything.services.upload_retry import stop_upload_retry_runner
     await stop_upload_retry_runner()
+    vision_gc_task = getattr(app.state, "vision_gc_task", None)
+    if vision_gc_task is not None:
+        vision_gc_task.cancel()
+        try:
+            await vision_gc_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            server_logger.warning("Vision GC task failed during shutdown", exc_info=True)
+    durable_queue_task = getattr(app.state, "durable_upload_queue_task", None)
+    if durable_queue_task is not None:
+        durable_queue_task.cancel()
+        try:
+            await durable_queue_task
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            server_logger.warning("Durable upload queue task failed during shutdown", exc_info=True)
     recovery_task = getattr(app.state, "stuck_recovery_task", None)
     if recovery_task is not None:
         recovery_task.cancel()

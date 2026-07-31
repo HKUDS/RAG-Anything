@@ -72,6 +72,7 @@ from raganything.services.kb_service import (  # noqa: F401 — re-export
     _is_file_being_processed,
     _register_processing_file,
     _ensure_queue_draining,
+    _enqueue_upload_task,
     cleanup_kb_resources,
     API_KEY,
     BASE_URL,

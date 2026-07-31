@@ -1,94 +1,415 @@
-import { useEffect, useMemo, useState } from 'react'
-import { AlertCircle, Check, Image, Loader2, RotateCcw, Save } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AlertCircle,
+  BrainCircuit,
+  Check,
+  FileInput,
+  Gauge,
+  Laptop,
+  Loader2,
+  Moon,
+  Palette,
+  RotateCcw,
+  Save,
+  Search,
+  ShieldCheck,
+  SlidersHorizontal,
+  Sun,
+  UserRound,
+} from 'lucide-react'
 import { api } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
+import { boundedRange, findModelProfile, mergeSavedSectionDrafts, modelProfileSummary, modelSettingValueLabel, retrievalPresetValues, settingValueLabel } from './preferencesPresentation'
+
+const SETTINGS_META = {
+  models: { title: 'AI 模型', description: '为后续任务选择文本与图片理解模型。', icon: BrainCircuit },
+  ingestion: { title: '上传与解析', description: '控制新任务的解析、分块和多模态处理方式。', icon: FileInput },
+  retrieval: { title: '检索策略', description: '从常用方案开始，需要时再展开底层检索参数。', icon: Search },
+  runtime: { title: '运行控制', description: '调整个人并发和等待时间，始终受平台上限保护。', icon: Gauge },
+  appearance: { title: '外观', description: '选择适合当前设备和环境的显示模式。', icon: Palette },
+  account: { title: '账户资料', description: '维护用户名和邮箱，修改时需要验证当前密码。', icon: UserRound },
+  security: { title: '密码与安全', description: '更新登录密码，不影响其他个人设置。', icon: ShieldCheck },
+}
+
+const SECTION_META = Object.fromEntries(
+  Object.entries(SETTINGS_META).filter(([id]) => ['models', 'ingestion', 'retrieval', 'runtime'].includes(id)),
+)
+
+const SETTINGS_NAV = [
+  { label: '智能与任务', items: ['models', 'ingestion', 'retrieval', 'runtime'] },
+  { label: '账户与体验', items: ['appearance', 'account', 'security'] },
+]
+
+const SOURCE_LABELS = {
+  platform_default: '平台默认',
+  platform_limit: '平台限制',
+  user_setting: '个人设置',
+  resource_setting: '智能体或知识库设置',
+  request_selection: '本次选择',
+  index_compatibility: '索引兼容规则',
+  legacy_environment: '部署兼容值',
+  agent_setting: '智能体设置',
+  kb_setting: '知识库设置',
+  request_override: '本次选择',
+}
+
+const FIELD_LABELS = {
+  parser: '解析器',
+  chunking_strategy: '分块策略',
+  chunk_size: '分块大小',
+  entity_types: '实体类型',
+  minimum_relation_degree: '最低关系度',
+  enable_image: '图片处理',
+  enable_table: '表格处理',
+  enable_equation: '公式处理',
+  enable_video: '视频处理',
+  preset: '检索预设',
+  rrf_k: 'RRF',
+  bm25_top_k: 'BM25 Top K',
+  vector_top_k: '向量 Top K',
+  graph_top_k: '图谱 Top K',
+  graph_depth: '图谱深度',
+  channels: '检索通道',
+  bm25_tokenizer: 'BM25 分词器',
+  bm25_k1: 'BM25 k1',
+  bm25_b: 'BM25 b',
+  personal_concurrency: '个人并发额度',
+  llm_timeout: 'LLM 等待时间',
+}
+
+function FieldState({ label, stored, effective, source, constraint, valueLabel = settingValueLabel }) {
+  const sourceLabel = SOURCE_LABELS[source] || source || '平台默认'
+  return <div className="preferences-field-state-item">
+    {label && <p>{label}</p>}
+    <dl className="preferences-field-state">
+      <div><dt>已保存</dt><dd>{valueLabel(stored)}</dd></div>
+      <div><dt>实际生效</dt><dd>{valueLabel(effective)}</dd></div>
+      <div><dt>来源</dt><dd>{sourceLabel}</dd></div>
+      {constraint && <div className="is-constrained"><dt>约束</dt><dd>{constraint.maximum !== undefined ? `平台上限 ${constraint.maximum}` : `平台要求 ${settingValueLabel(constraint.required)}`}</dd></div>}
+    </dl>
+  </div>
+}
+
+function SettingsBlock({ id, title, description, icon: Icon, children, error, dirty, actions }) {
+  return <section id={id} className="preferences-section" aria-labelledby={`${id}-heading`}>
+    <div className="preferences-section-intro">
+      <span className="preferences-section-icon"><Icon size={18} aria-hidden="true" /></span>
+      <div>
+        <div className="preferences-section-title-row">
+          <h2 id={`${id}-heading`}>{title}</h2>
+          {dirty && <span className="preferences-unsaved">未保存</span>}
+        </div>
+        <p id={`${id}-hint`}>{description}</p>
+      </div>
+    </div>
+    <div className="preferences-section-body">
+      {error && <div id={`${id}-error`} role="alert" className="preferences-alert preferences-alert-error"><AlertCircle size={16} aria-hidden="true" />{error}</div>}
+      {children}
+      {actions && <div className="preferences-section-actions">{actions}</div>}
+    </div>
+  </section>
+}
+
+function Section({ id, title, description, icon, children, pending, error, onSave, onReset, dirty }) {
+  const actions = <>
+    <button type="button" className="btn-secondary text-xs" disabled={pending} onClick={onReset}><RotateCcw size={14} />恢复继承</button>
+    <button type="button" className="btn-primary text-xs" disabled={pending || !dirty} onClick={onSave}>{pending ? <Loader2 className="animate-spin" size={14} /> : <Save size={14} />}{pending ? '保存中' : '保存更改'}</button>
+  </>
+  return <SettingsBlock id={id} title={title} description={description} icon={icon} error={error} dirty={dirty} actions={actions}>{children}</SettingsBlock>
+}
 
 export default function PreferencesPage({ onToast }) {
+  const { verifyToken } = useAuth()
+  const contentRef = useRef(null)
+  const [data, setData] = useState(null)
+  const [options, setOptions] = useState(null)
   const [profiles, setProfiles] = useState([])
-  const [stored, setStored] = useState(null)
-  const [selected, setSelected] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+  const [drafts, setDrafts] = useState({})
+  const [status, setStatus] = useState({})
+  const [account, setAccount] = useState({ username: '', email: '', current_password: '' })
+  const [password, setPassword] = useState({ old_password: '', new_password: '', confirm: '' })
+  const [accountError, setAccountError] = useState('')
+  const [maskedEmail, setMaskedEmail] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [notice, setNotice] = useState('')
+  const [theme, setTheme] = useState(() => localStorage.getItem('raganything_theme_mode') || localStorage.getItem('raganything_theme') || 'system')
+  const [activeSection, setActiveSection] = useState(() => window.location.hash.slice(1) || 'models')
+
+  const applyTheme = value => {
+    const resolved = value === 'system'
+      ? (window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+      : value
+    localStorage.setItem('raganything_theme_mode', value)
+    localStorage.setItem('raganything_theme', resolved)
+    document.documentElement.classList.toggle('dark', resolved === 'dark')
+    setTheme(value)
+    window.dispatchEvent(new CustomEvent('raganything-theme-change', { detail: resolved }))
+  }
 
   useEffect(() => {
-    let cancelled = false
-    Promise.all([api.listVisionModels('vlm'), api.getModelPreferences()])
-      .then(([catalog, preference]) => {
-        if (cancelled) return
-        setProfiles(Array.isArray(catalog?.profiles) ? catalog.profiles : [])
-        setStored(preference)
-        setSelected(preference?.vision_vlm_profile_id ?? null)
-      })
-      .catch(err => !cancelled && setError(err.message || '加载个人偏好失败'))
-      .finally(() => !cancelled && setLoading(false))
-    return () => { cancelled = true }
+    let active = true
+    const loadSettings = async () => {
+      try {
+        const settings = await api.getPersonalSettings()
+        if (!active) return
+        setData(settings); setDrafts(settings.stored || {})
+      } catch (error) {
+        if (!active) return
+        // Keep account, appearance, and security controls reachable even when
+        // the settings service itself is unavailable.
+        setData({ revision: 0, stored: {}, effective: {}, sources: {}, constraints: {} })
+        setStatus(current => ({ ...current, global: error.message || '个人设置加载失败' }))
+      }
+    }
+    const loadOptions = async () => {
+      try { const value = await api.getPersonalSettingsOptions(); if (active) setOptions(value) }
+      catch (error) { if (active) setStatus(current => ({ ...current, options: error.message || '模型选项暂不可用' })) }
+    }
+    const loadCatalog = async () => {
+      try { const value = await api.listModelProfiles(); if (active) setProfiles(value?.profiles || []) }
+      catch (error) { if (active) setStatus(current => ({ ...current, models: { error: error.message || '模型目录暂不可用' } })) }
+    }
+    const loadAccount = async () => {
+      try {
+        const value = await api.getMe?.()
+        if (active && value) {
+          setAccount(current => ({ ...current, username: value?.user?.username || '', email: '' }))
+          setMaskedEmail(value?.user?.email || '')
+        }
+      } catch (error) {
+        if (active) setAccountError(error.message || '账户资料加载失败')
+      }
+    }
+    void loadSettings(); void loadOptions(); void loadCatalog(); void loadAccount()
+    return () => { active = false }
   }, [])
 
-  const displayedProfiles = useMemo(() => {
-    const current = stored?.profile
-    if (!current?.id || profiles.some(profile => profile.id === current.id)) return profiles
-    return [current, ...profiles]
-  }, [profiles, stored])
-  const currentProfile = displayedProfiles.find(profile => profile.id === selected)
-  const storedId = stored?.vision_vlm_profile_id ?? null
-  const isDirty = selected !== storedId
+  useEffect(() => {
+    if (!data || typeof IntersectionObserver === 'undefined') return undefined
+    const sections = Object.keys(SETTINGS_META)
+      .map(id => document.getElementById(id))
+      .filter(Boolean)
+    const observer = new IntersectionObserver(entries => {
+      const visible = entries
+        .filter(entry => entry.isIntersecting)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0]
+      if (visible?.target?.id) setActiveSection(visible.target.id)
+    }, { root: contentRef.current || document.querySelector('.cockpit-main'), rootMargin: '-16% 0px -68%', threshold: [0, 0.15, 0.4] })
+    sections.forEach(section => observer.observe(section))
+    return () => observer.disconnect()
+  }, [data])
 
-  const save = async () => {
-    setSaving(true)
-    setError('')
+  const effective = data?.effective || {}
+  const dirty = section => JSON.stringify(drafts[section] || {}) !== JSON.stringify(data?.stored?.[section] || {})
+  const setDraft = (section, patch) => setDrafts(current => ({ ...current, [section]: { ...(current[section] || {}), ...patch } }))
+  const saveSection = async section => {
+    setStatus(current => ({ ...current, [section]: { pending: true, error: '' } }))
     try {
-      const result = await api.updateModelPreferences({ vision_vlm_profile_id: selected })
-      setStored(result)
-      setSelected(result?.vision_vlm_profile_id ?? null)
-      onToast?.('图片理解模型偏好已保存', 'success')
-    } catch (err) {
-      setSelected(storedId)
-      setError(err.message || '保存个人偏好失败')
-      onToast?.(err.message || '保存个人偏好失败', 'error')
-    } finally {
-      setSaving(false)
+      const result = await api.patchPersonalSettings(section, { expected_revision: data.revision, values: drafts[section] || {} })
+      setData(result)
+      setDrafts(current => mergeSavedSectionDrafts(current, section, result.stored))
+      setNotice(`${SECTION_META[section].title}已保存`); onToast?.(`${SECTION_META[section].title}已保存`, 'success')
+    } catch (error) {
+      setDrafts(current => mergeSavedSectionDrafts(current, section, data?.stored || {}))
+      setStatus(current => ({ ...current, [section]: { error: error.message || '保存失败' } }))
+      onToast?.(error.message || '保存失败', 'error')
     }
+    finally { setStatus(current => ({ ...current, [section]: { ...current[section], pending: false } })) }
   }
-
-  if (loading) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="animate-spin text-sky-500" /></div>
+  const resetSection = async section => {
+    setStatus(current => ({ ...current, [section]: { pending: true, error: '' } }))
+    try {
+      const result = await api.patchPersonalSettings(section, { expected_revision: data.revision, values: null })
+      setData(result)
+      setDrafts(current => ({ ...current, [section]: {} }))
+      setNotice(`${SECTION_META[section].title}已恢复继承`)
+    }
+    catch (error) { setStatus(current => ({ ...current, [section]: { error: error.message || '恢复继承失败' } })) }
+    finally { setStatus(current => ({ ...current, [section]: { ...current[section], pending: false } })) }
   }
-
-  return (
-    <div className="w-full max-w-3xl space-y-5">
-      <div className="page-header page-header-divider">
-        <div>
-          <h2 className="page-title">个人偏好</h2>
-          <p className="page-subtitle">选择后续图片理解任务使用的模型。供应商连接信息仅由管理员维护。</p>
-        </div>
-      </div>
-      {error && <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700"><AlertCircle size={16} className="mt-0.5 shrink-0" />{error}</div>}
-      <section className="card space-y-4 p-5">
-        <div className="flex items-start gap-3">
-          <div className="rounded-lg bg-sky-50 p-2 text-sky-600"><Image size={18} /></div>
-          <div><h3 className="font-medium">图片理解模型</h3><p className="mt-1 text-xs text-ink-muted dark:text-cloud-500">用于 OCR、图片描述、视频帧理解和问图；只影响后续请求与新任务。</p></div>
-        </div>
-        <label className="flex cursor-pointer items-center gap-3 rounded-lg border border-cloud-300 p-3 hover:border-sky-400">
-          <input type="radio" name="vision-vlm" checked={selected === null} onChange={() => setSelected(null)} />
-          <span><span className="block text-sm font-medium">继承平台默认</span><span className="mt-0.5 block text-xs text-ink-muted dark:text-cloud-500">平台默认变化后自动生效</span></span>
-          {selected === null && <Check size={16} className="ml-auto text-sky-600" />}
-        </label>
-        <div className="space-y-2">
-          {currentProfile?.available === false && selected && <div className="rounded-lg bg-amber-50 p-2 text-xs text-amber-700">当前保存的模型不可用：{currentProfile.unavailable_reason || 'catalog_missing'}。请选择其他模型或恢复继承。</div>}
-          {displayedProfiles.map(profile => (
-            <label key={profile.id} className={`flex items-center gap-3 rounded-lg border p-3 ${profile.available ? 'cursor-pointer hover:border-sky-400' : 'cursor-not-allowed opacity-60'} ${selected === profile.id ? 'border-sky-500 bg-sky-50/50' : 'border-cloud-300'}`}>
-              <input type="radio" name="vision-vlm" disabled={!profile.available} checked={selected === profile.id} onChange={() => setSelected(profile.id)} />
-              <span className="min-w-0"><span className="block truncate text-sm font-medium">{profile.display_name}</span><span className="mt-0.5 block text-xs text-ink-muted dark:text-cloud-500">{profile.provider} · {profile.model}</span></span>
-              <span className={`ml-auto text-xs ${profile.available ? 'text-emerald-600' : 'text-amber-700'}`}>{profile.available ? '可用' : (profile.unavailable_reason || '不可用')}</span>
-            </label>
-          ))}
-          {!displayedProfiles.length && <p className="py-3 text-sm text-ink-muted dark:text-cloud-500">暂无可用的图片理解模型。</p>}
-        </div>
-        <div className="flex flex-wrap justify-end gap-2 pt-2">
-          <button className="btn-secondary flex items-center gap-2 text-sm" onClick={() => setSelected(storedId)} disabled={saving || !isDirty}><RotateCcw size={14} />撤销</button>
-          <button className="btn-primary flex items-center gap-2 text-sm" onClick={save} disabled={saving || !isDirty}><Save size={14} />{saving ? '保存中...' : '保存偏好'}</button>
-        </div>
-      </section>
-    </div>
+  const profileChoices = useMemo(
+    () => options?.profiles?.length ? options.profiles : profiles,
+    [options, profiles],
   )
+  const profileFor = field => findModelProfile(profileChoices, drafts.models?.[field] ?? effective.models?.[field])
+  const modelValueLabel = value => modelSettingValueLabel(profileChoices, value)
+  const runtimeConcurrencyRange = boundedRange(options?.limits, 'personal_concurrency', 64)
+  const runtimeTimeoutRange = boundedRange(options?.limits, 'llm_timeout', 600)
+  const selectedRetrievalPreset = drafts.retrieval?.preset ?? effective.retrieval?.preset ?? 'balanced'
+  const selectedPresetValues = retrievalPresetValues(selectedRetrievalPreset)
+  if (!data) return <div className="py-20 text-center" role="status"><Loader2 className="mx-auto animate-spin text-sky-500" /><p className="mt-3 text-sm text-ink-muted">正在加载个人设置…</p>{status.global && <p role="alert" className="mt-3 text-rose-600">{status.global}</p>}</div>
+
+  const navigateToSection = (event, id) => {
+    setActiveSection(id)
+    if (!window.matchMedia('(min-width: 1101px)').matches) return
+    event.preventDefault()
+    window.history.replaceState(null, '', `#${id}`)
+    const target = document.getElementById(id)
+    const scrollContainer = contentRef.current
+    if (!target || !scrollContainer) return
+    scrollContainer.scrollTo({
+      top: target.offsetTop,
+      behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+    })
+  }
+
+  const sectionProps = section => ({ id: section, ...SECTION_META[section], pending: status[section]?.pending, error: status[section]?.error, dirty: dirty(section), onSave: () => saveSection(section), onReset: () => resetSection(section) })
+  return <div className="preferences-page">
+    <nav className="preferences-mobile-nav" aria-label="个人设置分区">
+      {Object.entries(SETTINGS_META).map(([id, { title, icon: Icon }]) => <a className={activeSection === id ? 'is-active' : ''} href={`#${id}`} aria-current={activeSection === id ? 'location' : undefined} onClick={event => navigateToSection(event, id)} key={id}><Icon size={15} aria-hidden="true" /><span>{title}</span></a>)}
+    </nav>
+    <div className="preferences-shell">
+      <aside className="preferences-sidebar">
+        <div className="preferences-sidebar-heading">
+          <span><SlidersHorizontal size={18} aria-hidden="true" /></span>
+          <div><strong>设置中心</strong><small>修订 {data.revision}</small></div>
+        </div>
+        <nav aria-label="个人设置分区">
+          {SETTINGS_NAV.map(group => <div className="preferences-nav-group" key={group.label}>
+            <p>{group.label}</p>
+            {group.items.map(id => {
+              const { title, icon: Icon } = SETTINGS_META[id]
+              return <a className={activeSection === id ? 'is-active' : ''} href={`#${id}`} aria-current={activeSection === id ? 'location' : undefined} onClick={event => navigateToSection(event, id)} key={id}><Icon size={16} aria-hidden="true" /><span>{title}</span></a>
+            })}
+          </div>)}
+        </nav>
+        <p className="preferences-sidebar-note">每个分区独立保存。平台限制始终优先。</p>
+      </aside>
+      <div className="preferences-content" ref={contentRef}>
+        <div className="preferences-context">
+          <span><Check size={16} aria-hidden="true" /></span>
+          <div><strong>设置只对当前账户生效</strong><p>模型、上传和检索设置会从下一次新任务开始使用。</p></div>
+        </div>
+        <p className="sr-only" role="status" aria-live="polite">{notice}</p>
+        {(status.global || status.options) && <div role="alert" className="preferences-alert preferences-alert-warning"><AlertCircle size={16} aria-hidden="true" /><span>{status.global || status.options}；账户、主题与密码功能仍可正常使用。</span></div>}
+        <Section {...sectionProps('models')}>
+          <div className="preferences-model-grid">
+            {[['llm_profile_id', '文本模型', 'llm'], ['vlm_profile_id', '图片理解模型', 'vlm']].map(([field, label, kind]) => {
+              const profile = profileFor(field)
+              const summary = modelProfileSummary(profile)
+              return <div key={field} className="preferences-model-field">
+                <label htmlFor={`models-${field}`}>
+                  <span>{label}</span>
+                  <select
+                    id={`models-${field}`}
+                    aria-describedby={`models-hint ${field}-model-detail${status.models?.error ? ' models-error' : ''}`}
+                    aria-invalid={Boolean(status.models?.error)}
+                    className="select-field"
+                    value={drafts.models?.[field] ?? effective.models?.[field] ?? ''}
+                    onChange={event => setDraft('models', { [field]: event.target.value })}
+                  >
+                    <option value="">继承平台默认</option>
+                    {profileChoices.filter(item => item.kind === kind).map(item => <option key={item.id} value={item.id} disabled={!item.available}>{item.model || item.display_name}</option>)}
+                  </select>
+                </label>
+                <div id={`${field}-model-detail`} className="preferences-model-summary">
+                  <div><span className={profile?.available === false ? 'is-unavailable' : 'is-available'}>{summary.status}</span><code>{profile?.model || '平台默认'}</code></div>
+                  {summary.technical && <details>
+                    <summary>查看技术信息</summary>
+                    <dl>
+                      <div><dt>配置 ID</dt><dd>{summary.technical.id}</dd></div>
+                      <div><dt>适配器</dt><dd>{summary.technical.provider}</dd></div>
+                      {summary.technical.capabilities.length > 0 && <div><dt>能力</dt><dd>{summary.technical.capabilities.join('、')}</dd></div>}
+                    </dl>
+                  </details>}
+                </div>
+                <FieldState label={`${label}状态`} stored={data.stored?.models?.[field]} effective={effective.models?.[field]} source={data.sources?.models?.[field]} constraint={data.constraints?.models?.[field]} valueLabel={modelValueLabel} />
+              </div>
+            })}
+          </div>
+        </Section>
+
+        <Section {...sectionProps('ingestion')}>
+          <div className="preferences-field-grid">
+            <label htmlFor="ingestion-parser">解析器<select id="ingestion-parser" className="select-field" value={drafts.ingestion?.parser ?? effective.ingestion?.parser ?? 'docling'} onChange={event => setDraft('ingestion', { parser: event.target.value })}>{(options?.allowed?.parsers || ['docling']).map(value => <option value={value} key={value}>{value}</option>)}</select></label>
+            <label htmlFor="ingestion-strategy">分块策略<select id="ingestion-strategy" className="select-field" value={drafts.ingestion?.chunking_strategy ?? effective.ingestion?.chunking_strategy ?? 'recursive'} onChange={event => setDraft('ingestion', { chunking_strategy: event.target.value })}><option value="recursive">递归分块</option><option value="fixed">固定长度</option></select></label>
+            <label htmlFor="ingestion-size">分块大小<input id="ingestion-size" className="input-field" type="number" min="64" value={drafts.ingestion?.chunk_size ?? effective.ingestion?.chunk_size ?? 800} onChange={event => setDraft('ingestion', { chunk_size: Number(event.target.value) })} /></label>
+            <label htmlFor="ingestion-entities">实体类型<input id="ingestion-entities" className="input-field" value={(drafts.ingestion?.entity_types ?? effective.ingestion?.entity_types ?? []).join(', ')} placeholder="人物, 组织, 概念" onChange={event => setDraft('ingestion', { entity_types: event.target.value.split(',').map(value => value.trim()).filter(Boolean) })} /><small>使用逗号分隔，留空表示不额外限定。</small></label>
+            <label htmlFor="ingestion-relation-degree">最低关系度<input id="ingestion-relation-degree" className="input-field" type="number" min="0" value={drafts.ingestion?.minimum_relation_degree ?? effective.ingestion?.minimum_relation_degree ?? 0} onChange={event => setDraft('ingestion', { minimum_relation_degree: Number(event.target.value) })} /></label>
+          </div>
+          <fieldset className="preferences-toggle-list">
+            <legend>多模态内容处理</legend>
+            {[['enable_image', '图片'], ['enable_table', '表格'], ['enable_equation', '公式'], ['enable_video', '视频']].map(([field, label]) => <label key={field}><span>{label}处理</span><input type="checkbox" checked={drafts.ingestion?.[field] ?? effective.ingestion?.[field] ?? false} onChange={event => setDraft('ingestion', { [field]: event.target.checked })} /></label>)}
+          </fieldset>
+          <details className="preferences-state-details">
+            <summary>查看已保存值与生效状态</summary>
+            <div className="preferences-state-grid">
+              {['parser', 'chunking_strategy', 'chunk_size', 'entity_types', 'minimum_relation_degree', 'enable_image', 'enable_table', 'enable_equation', 'enable_video'].map(field => <FieldState key={field} label={FIELD_LABELS[field]} stored={data.stored?.ingestion?.[field]} effective={effective.ingestion?.[field]} source={data.sources?.ingestion?.[field]} constraint={data.constraints?.ingestion?.[field]} />)}
+            </div>
+          </details>
+        </Section>
+
+        <Section {...sectionProps('retrieval')}>
+          <fieldset className="preferences-segmented">
+            <legend className="sr-only">检索预设</legend>
+            {['balanced', 'precise', 'broad', 'custom'].map(preset => <label key={preset}><input type="radio" name="retrieval-preset" value={preset} checked={selectedRetrievalPreset === preset} onChange={() => setDraft('retrieval', { preset, ...(retrievalPresetValues(preset) || {}) })} /><span>{({ balanced: '均衡', precise: '精准', broad: '广泛', custom: '自定义' })[preset]}</span></label>)}
+          </fieldset>
+          {selectedPresetValues && <div className="preferences-preset-preview" role="status" aria-live="polite">
+            <strong>当前预设将保存以下检索范围</strong>
+            <span>BM25 {selectedPresetValues.bm25_top_k} · 向量 {selectedPresetValues.vector_top_k} · 图谱 {selectedPresetValues.graph_top_k} · 深度 {selectedPresetValues.graph_depth}</span>
+            <span>通道：{selectedPresetValues.channels.join(' / ')} · RRF {selectedPresetValues.rrf_k}</span>
+          </div>}
+          {selectedRetrievalPreset === 'custom' && <div className="preferences-advanced">
+            <div className="preferences-field-grid three-columns">
+              {[['rrf_k', 'RRF'], ['bm25_top_k', 'BM25 Top K'], ['vector_top_k', '向量 Top K'], ['graph_top_k', '图谱 Top K'], ['graph_depth', '图谱深度']].map(([field, label]) => <label key={field}>{label}<input className="input-field" type="number" min="0" value={drafts.retrieval?.[field] ?? effective.retrieval?.[field] ?? 0} onChange={event => setDraft('retrieval', { [field]: Number(event.target.value) })} /></label>)}
+            </div>
+            <fieldset className="preferences-subsection">
+              <legend>通道与 BM25</legend>
+              <div className="preferences-field-grid three-columns">
+                <label>分词器<select className="select-field" value={drafts.retrieval?.bm25_tokenizer ?? effective.retrieval?.bm25_tokenizer ?? 'jieba'} onChange={event => setDraft('retrieval', { bm25_tokenizer: event.target.value })}>{(options?.allowed?.bm25_tokenizers || ['jieba']).map(value => <option value={value} key={value}>{value}</option>)}</select></label>
+                {[['bm25_k1', 'BM25 k1', 0, 10, 0.1], ['bm25_b', 'BM25 b', 0, 1, 0.05]].map(([field, label, min, max, step]) => <label key={field}>{label}<input className="input-field" type="number" min={min} max={max} step={step} value={drafts.retrieval?.[field] ?? effective.retrieval?.[field] ?? 0} onChange={event => setDraft('retrieval', { [field]: Number(event.target.value) })} /></label>)}
+              </div>
+              <div className="preferences-channel-list"><span>检索通道</span>{[['bm25', 'BM25'], ['vector', '向量'], ['graph', '图谱']].map(([value, label]) => { const channels = drafts.retrieval?.channels ?? effective.retrieval?.channels ?? []; return <label key={value}><input type="checkbox" checked={channels.includes(value)} onChange={event => setDraft('retrieval', { channels: event.target.checked ? [...channels, value] : channels.filter(item => item !== value) })} />{label}</label> })}</div>
+            </fieldset>
+          </div>}
+          <details className="preferences-state-details">
+            <summary>查看已保存值与生效状态</summary>
+            <div className="preferences-state-grid">
+              {['preset', 'rrf_k', 'bm25_top_k', 'vector_top_k', 'graph_top_k', 'graph_depth', 'channels', 'bm25_tokenizer', 'bm25_k1', 'bm25_b'].map(field => <FieldState key={field} label={FIELD_LABELS[field]} stored={data.stored?.retrieval?.[field]} effective={effective.retrieval?.[field]} source={data.sources?.retrieval?.[field]} constraint={data.constraints?.retrieval?.[field]} />)}
+            </div>
+          </details>
+        </Section>
+
+        <Section {...sectionProps('runtime')}>
+          <div className="preferences-range-grid">
+            <label htmlFor="runtime-concurrency">个人并发额度<span>平台上限 {runtimeConcurrencyRange.max}</span><div><input id="runtime-concurrency" aria-describedby="runtime-hint" aria-valuetext={`${drafts.runtime?.personal_concurrency ?? effective.runtime?.personal_concurrency ?? 7} 个并发任务`} type="range" min={runtimeConcurrencyRange.min} max={runtimeConcurrencyRange.max} step="1" value={drafts.runtime?.personal_concurrency ?? effective.runtime?.personal_concurrency ?? 7} onInput={event => setDraft('runtime', { personal_concurrency: Number(event.currentTarget.value) })} onChange={event => setDraft('runtime', { personal_concurrency: Number(event.target.value) })} /><output htmlFor="runtime-concurrency">{drafts.runtime?.personal_concurrency ?? effective.runtime?.personal_concurrency ?? 7}</output></div><FieldState stored={data.stored?.runtime?.personal_concurrency} effective={effective.runtime?.personal_concurrency} source={data.sources?.runtime?.personal_concurrency} constraint={data.constraints?.runtime?.personal_concurrency} /></label>
+            <label htmlFor="runtime-timeout">LLM 等待时间<span>平台上限 {runtimeTimeoutRange.max} 秒</span><div><input id="runtime-timeout" aria-describedby="runtime-hint" aria-valuetext={`${drafts.runtime?.llm_timeout ?? effective.runtime?.llm_timeout ?? 180} 秒`} type="range" min={runtimeTimeoutRange.min} max={runtimeTimeoutRange.max} step="5" value={drafts.runtime?.llm_timeout ?? effective.runtime?.llm_timeout ?? 180} onInput={event => setDraft('runtime', { llm_timeout: Number(event.currentTarget.value) })} onChange={event => setDraft('runtime', { llm_timeout: Number(event.target.value) })} /><output htmlFor="runtime-timeout">{drafts.runtime?.llm_timeout ?? effective.runtime?.llm_timeout ?? 180}<small>秒</small></output></div><FieldState stored={data.stored?.runtime?.llm_timeout} effective={effective.runtime?.llm_timeout} source={data.sources?.runtime?.llm_timeout} constraint={data.constraints?.runtime?.llm_timeout} /></label>
+          </div>
+        </Section>
+
+        <SettingsBlock {...SETTINGS_META.appearance} id="appearance">
+          <fieldset className="preferences-theme-options">
+            <legend className="sr-only">外观模式</legend>
+            {[['system', '跟随系统', Laptop, '自动适应设备设置'], ['light', '浅色', Sun, '明亮清晰的界面'], ['dark', '深色', Moon, '减少暗处视觉刺激']].map(([value, label, Icon, helper]) => <label key={value}><input type="radio" name="theme" value={value} checked={theme === value} onChange={() => applyTheme(value)} /><span><Icon size={18} aria-hidden="true" /><strong>{label}</strong><small>{helper}</small></span></label>)}
+          </fieldset>
+          <p className="preferences-local-note">外观保存在当前浏览器，不影响其他用户。</p>
+        </SettingsBlock>
+
+        <SettingsBlock
+          {...SETTINGS_META.account}
+          id="account"
+          error={accountError}
+          actions={<button type="button" className="btn-primary text-xs" onClick={async () => { try { await api.updateMyProfile(account); await verifyToken(); setAccountError(''); setNotice('账户资料已更新'); onToast?.('资料已更新', 'success') } catch (error) { setAccountError(error.message || '资料更新失败') } }}><Save size={14} />保存资料</button>}
+        >
+          <div className="preferences-field-grid">
+            <label htmlFor="account-username">用户名<input id="account-username" name="username" autoComplete="username" className="input-field" value={account.username} onChange={event => setAccount({ ...account, username: event.target.value })} /></label>
+            <label htmlFor="account-email">新邮箱<input id="account-email" name="email" autoComplete="email" className="input-field" type="email" value={account.email} onChange={event => setAccount({ ...account, email: event.target.value })} /><small>{maskedEmail ? `当前邮箱：${maskedEmail}` : '为保护隐私，当前邮箱不会完整显示。'}</small></label>
+          </div>
+          <label className="preferences-password-field" htmlFor="account-password">当前密码<input id="account-password" name="current-password" autoComplete="current-password" aria-invalid={Boolean(accountError)} aria-describedby={accountError ? 'account-error' : 'account-hint'} className="input-field" type="password" value={account.current_password} onChange={event => setAccount({ ...account, current_password: event.target.value })} /></label>
+        </SettingsBlock>
+
+        <SettingsBlock
+          {...SETTINGS_META.security}
+          id="security"
+          error={passwordError}
+          actions={<button type="button" className="btn-primary text-xs" onClick={async () => { if (password.new_password !== password.confirm) { setPasswordError('两次新密码输入不一致'); return } try { await api.updateMyPassword({ old_password: password.old_password, new_password: password.new_password }); setPassword({ old_password: '', new_password: '', confirm: '' }); setPasswordError(''); setNotice('密码已更新'); onToast?.('密码已更新', 'success') } catch (error) { setPasswordError(error.message || '密码更新失败') } }}><ShieldCheck size={14} />更新密码</button>}
+        >
+          <div className="preferences-field-grid three-columns">
+            {[['old_password', '当前密码', 'current-password'], ['new_password', '新密码', 'new-password'], ['confirm', '确认新密码', 'new-password']].map(([field, label, autocomplete]) => <label key={field} htmlFor={`security-${field}`}>{label}<input id={`security-${field}`} name={field} autoComplete={autocomplete} aria-invalid={Boolean(passwordError)} aria-describedby={`security-hint${passwordError ? ' security-error' : ''}`} className="input-field" type="password" value={password[field]} onChange={event => setPassword({ ...password, [field]: event.target.value })} /></label>)}
+          </div>
+          <p className="preferences-local-note">密码提交成功后会立即清空。</p>
+        </SettingsBlock>
+      </div>
+    </div>
+  </div>
 }

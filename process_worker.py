@@ -68,6 +68,59 @@ class RetryableExternalServiceError(RuntimeError):
     """Raised before durable writes when a configured model endpoint is offline."""
 
 
+class QuotaLeaseLost(RuntimeError):
+    """The worker no longer owns its durable personal-concurrency lease."""
+
+    failure_code = "quota_lease_lost"
+
+
+class QuotaHeartbeatUnavailable(RuntimeError):
+    """The worker could not verify that its durable quota lease remains valid."""
+
+    failure_code = "quota_heartbeat_unavailable"
+
+
+def _quota_failure_for_cancel(
+    quota_failure: BaseException | None,
+) -> BaseException | None:
+    """Return an internal quota cancellation as a retryable worker error only."""
+    if isinstance(quota_failure, (QuotaLeaseLost, QuotaHeartbeatUnavailable)):
+        return quota_failure
+    return None
+
+
+async def _maintain_quota_lease(
+    lease_id: str,
+    owner: str,
+    processing_task: asyncio.Task | None,
+    failure_state: dict[str, BaseException | None],
+    secondary_errors: list[str],
+    heartbeat,
+    *,
+    interval_seconds: float = 15,
+) -> None:
+    """Cancel the worker only after recording a retryable quota failure."""
+    try:
+        while True:
+            await asyncio.sleep(interval_seconds)
+            if not await heartbeat(lease_id, owner):
+                failure_state["error"] = QuotaLeaseLost(
+                    "The upload's processing quota lease was reclaimed"
+                )
+                if processing_task is not None:
+                    processing_task.cancel()
+                return
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        failure_state["error"] = QuotaHeartbeatUnavailable(
+            "Unable to verify the upload processing quota lease"
+        )
+        secondary_errors.append(f"quota_heartbeat: {type(exc).__name__}: {exc}")
+        if processing_task is not None:
+            processing_task.cancel()
+
+
 def _emit_worker_error(
     *, stage: str, error: BaseException, retryable: bool, secondary: list[str] | None = None,
 ) -> None:
@@ -168,9 +221,11 @@ async def _preflight_embedding_service(rag) -> None:
         timeout = 20
     probe = f"RAGAnything upload preflight {uuid.uuid4().hex}"
     try:
-        provider = getattr(
-            rag, "_raw_embedding_preflight_provider", rag._raw_embedding_provider
-        )
+        provider = getattr(rag, "_raw_embedding_preflight_provider", None)
+        if provider is None:
+            provider = getattr(rag, "_raw_embedding_provider", None)
+        if provider is None:
+            raise RuntimeError("raw embedding provider is unavailable")
         result = await asyncio.wait_for(
             provider([probe], timeout=timeout),
             timeout=timeout,
@@ -195,37 +250,76 @@ async def _preflight_embedding_service(rag) -> None:
         raise RuntimeError(f"Embedding 服务预检失败: {exc}") from exc
 
 
+async def _preflight_llm_service(rag) -> None:
+    """Verify the entity-extraction model before parsing or persisting a document."""
+    if os.getenv("MODEL_PREFLIGHT_ENABLED", "true").strip().lower() in {
+        "0", "false", "no", "off",
+    }:
+        return
+    try:
+        timeout = max(5, min(int(os.getenv("MODEL_PREFLIGHT_TIMEOUT", "20")), 120))
+    except ValueError:
+        timeout = 20
+    probe = "Reply with OK."
+    try:
+        provider = getattr(rag, "_raw_llm_preflight_provider", None)
+        if provider is None:
+            raise RuntimeError("LLM preflight provider is unavailable")
+        result = await asyncio.wait_for(
+            provider(probe, max_tokens=1, timeout=timeout),
+            timeout=timeout,
+        )
+        if not isinstance(result, str) or not result.strip():
+            raise RuntimeError("LLM preflight returned an empty response")
+    except Exception as exc:
+        if _is_retryable_external_error(exc):
+            raise RetryableExternalServiceError(
+                "外部 LLM 服务暂时无法连接，请恢复模型网络后重试"
+            ) from exc
+        raise RuntimeError(f"文本模型预检失败: {exc}") from exc
+
+
 
 # VLM OCR 函数（内嵌，避免跨模块导入 server）
 import base64
 import pypdfium2 as pdfium
 from PIL import Image
 
-async def _vlm_ocr_document(file_path: str) -> str:
+async def _vlm_ocr_document(file_path: str) -> list[dict[str, object]]:
     """用千问 VL 模型对 PDF/图片做 OCR"""
     try:
         ext = file_path.lower().rsplit(".", 1)[-1] if "." in file_path else ""
-        images = []
+        images: list[tuple[int, str]] = []
         if ext == "pdf":
             pdf = pdfium.PdfDocument(file_path)
-            for i in range(min(len(pdf), 30)):
+            page_count = len(pdf)
+            try:
+                max_pages = int(os.getenv("VLM_OCR_MAX_PAGES", "0") or 0)
+            except ValueError:
+                max_pages = 0
+            if max_pages > 0 and page_count > max_pages:
+                raise RuntimeError(
+                    f"VLM OCR page limit {max_pages} is below PDF page count {page_count}; "
+                    "refusing partial document processing"
+                )
+            for i in range(page_count):
                 page = pdf[i]
                 bitmap = page.render(scale=2)
                 img = bitmap.to_pil()
                 buf = io.BytesIO()
                 img.save(buf, format="JPEG", quality=70)
-                images.append(base64.b64encode(buf.getvalue()).decode())
+                images.append((i, base64.b64encode(buf.getvalue()).decode()))
         elif ext in ("png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp"):
             img = Image.open(file_path).convert("RGB")
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=70)
-            images.append(base64.b64encode(buf.getvalue()).decode())
+            images.append((0, base64.b64encode(buf.getvalue()).decode()))
         else:
             return ""
 
-        all_text = []
+        text_blocks: list[dict[str, object]] = []
         VISION_MODEL = os.getenv("VISION_MODEL", "qwen-vl-plus")
-        for idx, b64 in enumerate(images):
+        for page_idx, b64 in images:
             msgs = [
                 {"role": "user", "content": [
                     {"type": "text", "text": "请对这张图片进行 OCR，提取所有文字内容。只输出提取的文字，不要添加任何解释。"},
@@ -237,11 +331,13 @@ async def _vlm_ocr_document(file_path: str) -> str:
                 messages=msgs, api_key=API_KEY, base_url=BASE_URL,
             )
             if result and isinstance(result, str):
-                all_text.append(result.strip())
-            else:
-                all_text.append("")
+                text = result.strip()
+                if text:
+                    text_blocks.append(
+                        {"type": "text", "text": text, "page_idx": page_idx}
+                    )
 
-        return "\n\n".join(all_text)
+        return text_blocks
     except Exception as e:
         print(f"[WORKER] VLM OCR 异常: {e}", flush=True)
         if _is_retryable_external_error(e):
@@ -272,7 +368,16 @@ def auto_parser(filename: str) -> str:
     return os.getenv("PARSER", "docling")
 
 
-async def create_rag(parser=None, working_dir=None, chunking_strategy=None):
+async def create_rag(
+    parser=None,
+    working_dir=None,
+    chunking_strategy=None,
+    *,
+    enable_image: bool | None = None,
+    enable_table: bool | None = None,
+    enable_equation: bool | None = None,
+    enable_video: bool | None = None,
+):
     if parser is None:
         parser = os.getenv("PARSER", "docling")
     if chunking_strategy is None:
@@ -409,13 +514,15 @@ async def create_rag(parser=None, working_dir=None, chunking_strategy=None):
     # Without an explicit workspace, ALL KBs share the same PG tables.
     lightrag_kwargs["workspace"] = wd
 
+    # Explicit worker arguments come from the durable enqueue-time snapshot.
+    # Environment values remain deployment defaults for manual worker runs only.
     config = RAGAnythingConfig(
         working_dir=wd, parser=parser,
         pdf_parser=os.getenv("PDF_PARSER", ""),
-        enable_image_processing=os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true",
-        enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
-        enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
-        enable_video_processing=os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
+        enable_image_processing=(enable_image if enable_image is not None else os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true"),
+        enable_table_processing=(enable_table if enable_table is not None else os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true"),
+        enable_equation_processing=(enable_equation if enable_equation is not None else os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true"),
+        enable_video_processing=(enable_video if enable_video is not None else os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true"),
         entity_types=os.getenv("ENTITY_TYPES", ""),
         entity_extraction_min_degree=int(os.getenv("ENTITY_EXTRACTION_MIN_DEGREE", "0")),
     )
@@ -557,37 +664,38 @@ async def _flush_background_tasks_and_finalize(rag, filename: str) -> None:
 
 async def process_file(file_path: str, kb_name: str, chunking_strategy: str = "",
                      enable_image: bool | None = None, enable_table: bool | None = None,
-                     enable_equation: bool | None = None, enable_video: bool | None = None) -> int:
+                     enable_equation: bool | None = None, enable_video: bool | None = None,
+                     task_id: str | None = None) -> int:
     """处理单个文件并写入对应 KB 目录"""
     filename = os.path.basename(file_path)
     target_dir = kb_dir(kb_name)
-    strategy = chunking_strategy or CHUNKING_STRATEGY
-
-    # ── Per-upload multimodal overrides ─────────────────
-    # If any multimodal toggle is explicitly set, override the env var
-    # so the RAGAnythingConfig picks it up.
-    if enable_image is not None:
-        os.environ["ENABLE_IMAGE_PROCESSING"] = str(enable_image).lower()
-    if enable_table is not None:
-        os.environ["ENABLE_TABLE_PROCESSING"] = str(enable_table).lower()
-    if enable_equation is not None:
-        os.environ["ENABLE_EQUATION_PROCESSING"] = str(enable_equation).lower()
-    if enable_video is not None:
-        os.environ["ENABLE_VIDEO_PROCESSING"] = str(enable_video).lower()
-    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
-    merge_failed = False  # Track merging/extraction failures
-
-    # ── PG pool init for worker subprocess ─────────────────
-    # The parent server process's PG connection pool is an in-memory
-    # Python object that does NOT survive asyncio.create_subprocess_exec().
-    # Without this init, _pg_storage_ready() returns False in the worker,
-    # causing a storage-backend mismatch: worker writes to JSON files,
-    # server reads from PG tables → documents 2..N become invisible.
+    if not task_id:
+        raise RuntimeError("settings_snapshot_missing")
+    # A subprocess never inherits the server pool. Initialise its durable
+    # state before reading the snapshot or acquiring a user quota lease.
     try:
         from raganything.services.pg_state_repo import init_pg_pool
         await init_pg_pool()
-    except Exception:
-        pass  # PG unavailable → worker falls back to JSON (backward compatible)
+    except Exception as exc:
+        raise RuntimeError("settings_snapshot_unavailable") from exc
+    from raganything.services.user_settings import get_task_settings_snapshot
+    snapshot = await get_task_settings_snapshot(task_id)
+    task_settings = snapshot.get("settings")
+    if not isinstance(task_settings, dict):
+        raise RuntimeError("settings_snapshot_invalid")
+    ingestion = task_settings.get("ingestion", {})
+    if not isinstance(ingestion, dict):
+        raise RuntimeError("settings_snapshot_invalid")
+    strategy = str(ingestion.get("chunking_strategy") or chunking_strategy or CHUNKING_STRATEGY)
+    enable_image = bool(ingestion.get("enable_image"))
+    enable_table = bool(ingestion.get("enable_table"))
+    enable_equation = bool(ingestion.get("enable_equation"))
+    enable_video = bool(ingestion.get("enable_video"))
+
+    # Per-upload multimodal values are passed directly into the isolated
+    # RAGAnythingConfig below; they never mutate this process environment.
+    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    merge_failed = False  # Track merging/extraction failures
 
     strategy_name = STRATEGY_META.get(strategy, {}).get("name", strategy)
     print(f"[WORKER] 开始处理: file={filename} kb={kb_name} dir={target_dir} strategy={strategy_name}", flush=True)
@@ -650,6 +758,53 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
         )
         return 3
 
+    from raganything.services.user_settings import (
+        acquire_quota_lease,
+        heartbeat_quota_lease,
+        release_quota_lease,
+    )
+    runtime = task_settings.get("runtime") or {}
+    personal_limit = int(runtime.get("personal_concurrency") or 1)
+    from raganything.services.user_settings import get_platform_settings
+    platform_settings = await get_platform_settings()
+    platform_limits = ((platform_settings.get("settings") or {}).get("limits") or {})
+    outer_caps = [
+        int(platform_limits[name]) for name in ("provider_concurrency", "worker_concurrency")
+        if isinstance(platform_limits.get(name), (int, float)) and platform_limits[name] > 0
+    ]
+    outer_limit = min(outer_caps) if outer_caps else None
+    lease_owner = f"worker:{os.getpid()}:{task_id}"
+    processing_task = asyncio.current_task()
+    lease_id = None
+    quota_failure_state: dict[str, BaseException | None] = {"error": None}
+    quota_failure_secondary: list[str] = []
+    # Ingestion is already represented by the durable upload queue.  A worker
+    # waits here rather than failing a correctly queued task when the user's
+    # quota is momentarily full.
+    try:
+        while lease_id is None:
+            lease_id = await acquire_quota_lease(
+                int(snapshot["user_id"]), task_id, lease_owner, personal_limit,
+                outer_limit=outer_limit,
+            )
+            if lease_id is None:
+                print(f"[PROGRESS] phase=quota status=queued file={filename}", flush=True)
+                await asyncio.sleep(1)
+    except BaseException:
+        file_lock.release()
+        raise
+
+    lease_heartbeat_task = asyncio.create_task(
+        _maintain_quota_lease(
+            lease_id,
+            lease_owner,
+            processing_task,
+            quota_failure_state,
+            quota_failure_secondary,
+            heartbeat_quota_lease,
+        )
+    )
+
     rag = None
     finalized = False
     current_stage = "initializing"
@@ -659,12 +814,34 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
     try:
         # Initialize storage handles, then prove that the external embedding
         # dependency is reachable before parsing or writing any document rows.
-        rag = await create_rag(working_dir=target_dir, chunking_strategy=strategy)
+        from raganything.services.kb_service import (
+            create_rag as create_snapshot_rag,
+            load_kb_meta,
+        )
+        kb_metadata = (await load_kb_meta()).get(kb_name, {})
+        vision_state = (kb_metadata.get("extra") or {}).get("vision_embedding") or {}
+        if vision_state.get("index_state") == "reindexing":
+            raise RuntimeError("vision_reindex_in_progress")
+        profile_id = vision_state.get("profile_id")
+        profile_fingerprint = vision_state.get("profile_fingerprint")
+        if bool(profile_id) != bool(profile_fingerprint):
+            raise RuntimeError("kb_vision_profile_invalid")
+        vision_embedding_profile = (
+            (str(profile_id), str(profile_fingerprint))
+            if profile_id and profile_fingerprint else None
+        )
+        rag = await create_snapshot_rag(
+            working_dir=target_dir,
+            chunking_strategy=strategy,
+            task_settings=task_settings,
+            vision_embedding_profile=vision_embedding_profile,
+        )
         rag.disable_atexit_cleanup()
         await rag._ensure_lightrag_initialized()
         current_stage = "model_preflight"
         print(f"[PROGRESS] phase=model-preflight status=start file={filename}", flush=True)
         await _preflight_embedding_service(rag)
+        await _preflight_llm_service(rag)
         print(f"[PROGRESS] phase=model-preflight status=done file={filename}", flush=True)
 
         safe_path = str(Path(file_path).resolve())
@@ -778,16 +955,15 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                     current_stage = "vlm_ocr"
                     print(f"[WORKER] VLM OCR 兜底: {filename}", flush=True)
                     try:
-                        ocr_text = await _vlm_ocr_document(file_path)
-                        if not ocr_text.strip():
+                        fallback_content = await _vlm_ocr_document(file_path)
+                        if not fallback_content:
                             raise RuntimeError("VLM OCR returned no usable text")
-                        fallback_content = [
-                            {"type": "text", "text": ocr_text, "page_idx": 0}
-                        ]
                         if (
                             ext == "pdf"
-                            and os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower()
-                            == "true"
+                            and (
+                                enable_image if enable_image is not None
+                                else os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true"
+                            )
                         ):
                             fallback_content.extend(
                                 extract_pdf_embedded_images(file_path, output_dir)
@@ -798,7 +974,12 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                                 file_path=filename,
                                 chunking_strategy=strategy,
                             )
-                            print(f"[WORKER] VLM OCR 完成: {len(ocr_text)} 字符", flush=True)
+                            ocr_characters = sum(
+                                len(str(item.get("text") or ""))
+                                for item in fallback_content
+                                if isinstance(item, dict) and item.get("type") == "text"
+                            )
+                            print(f"[WORKER] VLM OCR 完成: {ocr_characters} 字符", flush=True)
                     except Exception as e2:
                         print(f"[WORKER] VLM OCR 失败: {e2}", flush=True)
                         raise
@@ -847,6 +1028,15 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
 
         print(f"[WORKER] 完成: {filename}", flush=True)
 
+    except asyncio.CancelledError as exc:
+        quota_error = _quota_failure_for_cancel(quota_failure_state["error"])
+        if quota_error is None:
+            raise
+        print(f"[WORKER] quota heartbeat failed: {quota_error}", flush=True)
+        primary_error = quota_error
+        secondary_errors.extend(quota_failure_secondary)
+        current_stage = "quota"
+        exit_code = 4
     except Exception as e:
         # 兜底：任何未捕获异常都将文档标记为失败，避免永久卡在 handling
         import traceback
@@ -879,6 +1069,17 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                 print(f"[WORKER] WARNING: storage cleanup failed: {exc}", flush=True)
         if file_lock.is_locked():
             file_lock.release()
+        lease_heartbeat_task.cancel()
+        try:
+            await lease_heartbeat_task
+        except asyncio.CancelledError:
+            pass
+        except Exception as exc:
+            secondary_errors.append(f"quota_heartbeat: {type(exc).__name__}: {exc}")
+        try:
+            await release_quota_lease(lease_id, lease_owner)
+        except Exception as exc:
+            secondary_errors.append(f"quota_release: {type(exc).__name__}: {exc}")
         # Clean up PG pool created by this worker subprocess
         try:
             from raganything.services.pg_state_repo import close_pg_pool
@@ -909,6 +1110,7 @@ if __name__ == "__main__":
     parser.add_argument("--file", required=True)
     parser.add_argument("--kb", required=True)
     parser.add_argument("--strategy", default="")
+    parser.add_argument("--task-id", required=True)
     parser.add_argument("--enable-image", dest="enable_image", default=None,
                         choices=["true", "false"])
     parser.add_argument("--enable-table", dest="enable_table", default=None,
@@ -926,7 +1128,10 @@ if __name__ == "__main__":
             enable_table=args.enable_table == "true" if args.enable_table else None,
             enable_equation=args.enable_equation == "true" if args.enable_equation else None,
             enable_video=args.enable_video == "true" if args.enable_video else None,
+            task_id=args.task_id,
         ))
+    except asyncio.CancelledError:
+        raise
     except BaseException as exc:
         retryable = _is_retryable_external_error(exc)
         _emit_worker_error(

@@ -1,6 +1,7 @@
 import asyncio
 from copy import deepcopy
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -147,6 +148,7 @@ async def _wire(monkeypatch, instance, status=None):
     monkeypatch.setattr(knowledge, "get_tags_for_chunks", fake_tags)
     monkeypatch.setattr(knowledge, "move_chunk_tags", fake_move_tags)
     monkeypatch.setattr(knowledge, "delete_chunk_tags", fake_delete_tags)
+    monkeypatch.setattr(knowledge, "bump_kb_corpus_revision", AsyncMock(return_value=1))
     knowledge._chunk_document_locks.clear()
     return refreshes, audit
 

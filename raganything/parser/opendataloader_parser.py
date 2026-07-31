@@ -109,6 +109,12 @@ def _trim_path_for_log(path: str | Path, working_dir: str = "") -> str:
         return "<unavailable-file>"
 
 
+def _resolve_output_base(output_dir: str | Path | None, pdf_path: Path) -> Path:
+    """Return one absolute root for all retained parser artifacts."""
+    base = Path(output_dir) if output_dir else pdf_path.parent / "odl_output"
+    return base.resolve()
+
+
 class OpenDataLoaderError(RuntimeError):
     """Base for parser-stage failures emitted by the OpenDataLoader adapter."""
 
@@ -1112,10 +1118,7 @@ class OpenDataLoaderParser(Parser):
             raise
 
         # 2. Output directory (unique per file path)
-        if output_dir:
-            base_dir = Path(output_dir)
-        else:
-            base_dir = pdf_path.parent / "odl_output"
+        base_dir = _resolve_output_base(output_dir, pdf_path)
         unique_out = self._unique_output_dir(base_dir, pdf_path)
         unique_out.mkdir(parents=True, exist_ok=True)
         run_root = unique_out / f"run-{time.time_ns()}"

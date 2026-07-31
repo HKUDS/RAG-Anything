@@ -60,7 +60,11 @@ from raganything.services.pg_agent_repo import (
 )
 from raganything.services.prompt_builder import PromptBuilder, ContextLayer
 from raganything.query.tag_scoped_retriever import resolve_tag_scope, retrieve_tag_scoped_context
-from raganything.services.kb_service import _load_doc_status_json
+from raganything.services.kb_service import (
+    _load_doc_status_json,
+    load_kb_meta,
+    pg_get_latest_content_updates_batch,
+)
 from raganything.services.odl_media_delivery import catalog_media_payload
 
 
@@ -70,6 +74,23 @@ _SENSITIVE_MEDIA_REFERENCE_PATTERNS = (
     re.compile(r"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n<>\"']+"),
     re.compile(r"/(?:home|Users|var|tmp|etc|root|opt|mnt)/[^\r\n<>\"']+"),
 )
+
+
+def _consume_background_task_result(task: asyncio.Task) -> None:
+    """Observe a detached task after cancellation without blocking cleanup."""
+    if task.cancelled():
+        return
+    try:
+        task.exception()
+    except asyncio.CancelledError:
+        pass
+
+
+def _cancel_and_observe_task(task: asyncio.Task | None) -> None:
+    if task is None or task.done():
+        return
+    task.cancel()
+    task.add_done_callback(_consume_background_task_result)
 
 
 def _sanitize_client_trace_step(step: dict) -> dict:
@@ -587,7 +608,35 @@ def _build_effective_agent_runtime(agent: dict, req: AgentQueryRequest) -> dict:
     return runtime_config
 
 
-def _build_agent_llm(runtime_config: dict):
+async def _query_cache_scope(
+    kb: str,
+    user_id: int,
+    settings_fingerprint: str,
+    llm_profile_fingerprint: str,
+) -> dict[str, str]:
+    updates = await pg_get_latest_content_updates_batch([kb])
+    corpus_revision = updates.get(kb)
+    if not corpus_revision:
+        try:
+            metadata = (await load_kb_meta()).get(kb, {})
+            corpus_revision = str(
+                metadata.get("updated_at")
+                or metadata.get("created")
+                or metadata.get("created_at")
+                or "empty"
+            )
+        except Exception:
+            corpus_revision = "unknown"
+    return {
+        "workspace": kb,
+        "permission_scope": f"user:{user_id}",
+        "corpus_revision": str(corpus_revision),
+        "settings_fingerprint": settings_fingerprint,
+        "llm_profile_fingerprint": llm_profile_fingerprint,
+    }
+
+
+def _build_agent_llm(runtime_config: dict, selected_llm=None):
     async def _agent_llm(
         prompt: str,
         system_prompt: Optional[str] = None,
@@ -598,6 +647,16 @@ def _build_agent_llm(runtime_config: dict):
         max_tokens = call_kwargs.pop("max_tokens", runtime_config["max_response_tokens"])
         call_kwargs.pop("temperature", None)
         stream = call_kwargs.pop("stream", False)
+        if selected_llm is not None:
+            return await selected_llm(
+                prompt,
+                system_prompt=runtime_config["system_prompt"] if system_prompt is None else system_prompt,
+                history_messages=history_messages or [],
+                max_tokens=max_tokens,
+                temperature=runtime_config["temperature"],
+                stream=stream,
+                **call_kwargs,
+            )
         return await openai_complete_if_cache(
             runtime_config["llm_model"],
             prompt,
@@ -909,15 +968,41 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
 
     from raganything.services import vision_models
     try:
-        vlm_snapshot = await vision_models.resolve_user_vlm_selection(
-            current_user["id"]
+        from raganything.services.user_settings import resolve_user_settings_for_task
+        resolved_settings = await resolve_user_settings_for_task(
+            int(current_user["id"])
         )
-    except KeyError as exc:
-        raise HTTPException(503, detail={"code": "profile_unavailable", "message": "selected image-understanding profile is unavailable"}) from exc
-    if req.image and not vlm_snapshot.profile.available:
-        raise HTTPException(503, detail={"code": "profile_unavailable", "message": "selected image-understanding profile is unavailable"})
-
-    instance = await get_kb(actual_kb)
+        # Text-only questions must not depend on the optional image model.
+        # Requiring VLM here made every KB question fail with 503 when only
+        # the text model was configured or the image provider was unavailable.
+        vlm_snapshot = (
+            vision_models.require_available(
+                resolved_settings.models.vlm_profile_id, "vlm"
+            )
+            if req.image
+            else None
+        )
+        llm_snapshot = vision_models.require_available(
+            resolved_settings.models.llm_profile_id, "llm"
+        )
+        query_scope = await _query_cache_scope(
+            actual_kb,
+            int(current_user["id"]),
+            resolved_settings.fingerprint,
+            llm_snapshot.fingerprint,
+        )
+        selected_llm = vision_models.build_llm_callable(
+            resolved_settings.models.llm_profile_id,
+            cache_scope=json.dumps(
+                query_scope, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+            ),
+            timeout=resolved_settings.runtime.llm_timeout,
+        )
+        task_settings = resolved_settings.snapshot()
+        task_settings["_query_scope"] = query_scope
+        task_settings["_require_vlm"] = bool(req.image)
+    except (KeyError, RuntimeError, ValueError) as exc:
+        raise HTTPException(503, detail={"code": "profile_unavailable", "message": "selected model or personal settings are unavailable"}) from exc
     tag_scope = None
     if req.tag_id is not None:
         tag_scope = await resolve_tag_scope(actual_kb, req.tag_id)
@@ -926,8 +1011,76 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             raise HTTPException(422, "Selected tag scope is no longer available")
     scope_metadata = {"tag_scope": {"id": tag_scope.tag_id, "name": tag_scope.tag_name}} if tag_scope else {}
     runtime_config = _build_effective_agent_runtime(agent, req)
+    if req.retrieval_only and runtime_config["agent_mode"] != "none":
+        raise HTTPException(
+            status_code=422,
+            detail="retrieval_only only supports the standard RAG query mode",
+        )
+    from raganything.services.user_settings import (
+        acquire_quota_lease,
+        get_platform_settings,
+        heartbeat_quota_lease,
+        release_quota_lease,
+    )
+    try:
+        platform_settings = await get_platform_settings()
+        limits = ((platform_settings.get("settings") or {}).get("limits") or {})
+        interactive_wait = float(limits.get("interactive_wait_seconds", 0))
+        outer_caps = [
+            int(limits[name]) for name in ("provider_concurrency", "worker_concurrency")
+            if isinstance(limits.get(name), (int, float)) and limits[name] > 0
+        ]
+        outer_limit = min(outer_caps) if outer_caps else None
+    except Exception as exc:
+        raise HTTPException(
+            503,
+            detail={"code": "quota_settings_unavailable", "message": "runtime limits are unavailable"},
+        ) from exc
+    lease_owner = f"interactive:{os.getpid()}:{uuid.uuid4()}"
+    lease_id = None
+    deadline = time.monotonic() + max(0.0, interactive_wait)
+    while lease_id is None:
+        lease_id = await acquire_quota_lease(
+            int(current_user["id"]),
+            lease_owner.rsplit(":", 1)[-1],
+            lease_owner,
+            resolved_settings.runtime.personal_concurrency,
+            outer_limit=outer_limit,
+        )
+        if lease_id is None:
+            if time.monotonic() >= deadline:
+                raise HTTPException(
+                    429,
+                    detail={"code": "personal_concurrency_exceeded", "message": "personal concurrency quota is full"},
+                )
+            await asyncio.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+
+    async def _release_interactive_lease() -> None:
+        try:
+            await release_quota_lease(lease_id, lease_owner)
+        except Exception:
+            lightrag_logger.warning("Interactive quota release failed", exc_info=True)
+
+    stream_task: asyncio.Task | None = None
+
+    async def _heartbeat_interactive_lease() -> None:
+        while True:
+            await asyncio.sleep(15)
+            if not await heartbeat_quota_lease(lease_id, lease_owner):
+                if stream_task is not None:
+                    stream_task.cancel()
+                return
+
+    # Start the heartbeat only once Starlette begins consuming the stream.  A
+    # response object that is created but never sent must expire naturally,
+    # rather than retaining a background heartbeat forever.
+    lease_heartbeat_task: asyncio.Task | None = None
     # 检索模式（agentic 路径优先 rrf 轻量模式，可被请求级覆盖；普通路径沿用 agent 配置）
     query_mode = runtime_config["query_mode"]
+    # Every search mode receives immutable, user-scoped retrieval options.
+    # Hybrid is the normal default, so limiting this to RRF would silently
+    # fall back to shared defaults for most requests.
+    user_retrieval_options = resolved_settings.retrieval
     # 推理模式：请求级覆盖 > 智能体配置 > 默认 none
     agent_mode = runtime_config["agent_mode"]
     # AgenticRAG 专用检索模式：优先请求级，否则默认 rrf（更快）
@@ -938,18 +1091,18 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     enable_rerank = runtime_config["enable_rerank"]
     include_references = runtime_config["include_references"]
     system_prompt = runtime_config["system_prompt"]
-    agent_llm = _build_agent_llm(runtime_config)
-
-    if req.retrieval_only and agent_mode != "none":
-        raise HTTPException(
-            status_code=422,
-            detail="retrieval_only only supports the standard RAG query mode",
-        )
+    agent_llm = _build_agent_llm(runtime_config, selected_llm)
 
     # 确保对话线程存在
     thread_id = req.thread_id
     if not thread_id and not req.retrieval_only:
-        thread = await pg_create_conversation(agent_id, title="新对话", owner_id=current_user["id"])
+        try:
+            thread = await pg_create_conversation(
+                agent_id, title="新对话", owner_id=current_user["id"]
+            )
+        except Exception:
+            await _release_interactive_lease()
+            raise
         thread_id = thread["id"]
 
     # ── 多轮对话上下文提取 ──
@@ -958,7 +1111,11 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     max_conv_tokens = int(os.getenv("CONVERSATION_MAX_TOKENS", "2000"))
     conv_thread = None
     if not req.retrieval_only:
-        conv_thread = await pg_get_conversation(agent_id, thread_id)
+        try:
+            conv_thread = await pg_get_conversation(agent_id, thread_id)
+        except Exception:
+            await _release_interactive_lease()
+            raise
     if conv_thread and conv_thread.get("messages"):
         max_msgs = max_conv_rounds * 2
         recent = conv_thread["messages"][-max_msgs:]
@@ -975,8 +1132,18 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         if lines:
             conv_history_text = "\n".join(lines)
 
+    instance = None
+
     async def event_stream():
-        vlm_context_token = vision_models.activate_vlm_selection(vlm_snapshot)
+        nonlocal lease_heartbeat_task, instance, stream_task
+        stream_task = asyncio.current_task()
+        lease_heartbeat_task = asyncio.create_task(_heartbeat_interactive_lease())
+        ctx_task: asyncio.Task | None = None
+        vlm_context_token = (
+            vision_models.activate_vlm_selection(vlm_snapshot)
+            if vlm_snapshot is not None
+            else None
+        )
         log_queue: queue.Queue = queue.Queue()
         handler = LogCaptureHandler(log_queue)
         lightrag_logger.addHandler(handler)
@@ -984,6 +1151,10 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         full_answer = ""
 
         try:
+            # Defer the request-scoped instance until the response body is
+            # actually consumed. An abandoned StreamingResponse then owns no
+            # storage handles and its un-heartbeated lease simply expires.
+            instance = await get_kb(actual_kb, task_settings=task_settings)
             scope_payload = ({"id": tag_scope.tag_id, "name": tag_scope.tag_name} if tag_scope else None)
             yield f"data: {json.dumps({'type': 'agent_info', 'agent': agent.get('name',''), 'icon': agent.get('icon',''), 'thread_id': thread_id, 'tag_scope': scope_payload}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'🔍 开始查询: {req.query[:80]}...'}, ensure_ascii=False)}\n\n"
@@ -1185,6 +1356,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                                 top_k=retrieval_top_k, chunk_top_k=chunk_top_k,
                                 enable_rerank=enable_rerank,
                                 include_references=include_references,
+                                retrieval_options=user_retrieval_options,
                                 max_total_tokens=8000,
                             ) or ""
                     except Exception:
@@ -1364,10 +1536,22 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                                     only_need_context=True, enable_rerank=enable_rerank,
                                     chunk_top_k=chunk_top_k, top_k=retrieval_top_k,
                                     include_references=include_references,
+                                    retrieval_options=user_retrieval_options,
                                     max_entity_tokens=3000, max_relation_tokens=2000,
                                     max_total_tokens=16000)
                 )
+            retrieval_timeout = max(
+                0.1, float(os.getenv("AGENT_RETRIEVAL_TIMEOUT", "60"))
+            )
+            retrieval_deadline = asyncio.get_running_loop().time() + retrieval_timeout
             while not ctx_task.done():
+                is_disconnected = getattr(request, "is_disconnected", None)
+                if is_disconnected is not None and await is_disconnected():
+                    raise asyncio.CancelledError
+                if asyncio.get_running_loop().time() >= retrieval_deadline:
+                    timed_out_task, ctx_task = ctx_task, None
+                    _cancel_and_observe_task(timed_out_task)
+                    raise TimeoutError("知识库检索超时，请重试。")
                 while True:
                     try:
                         msg = log_queue.get_nowait()
@@ -1377,7 +1561,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                                 yield f"data: {json.dumps({'type': 'thinking', 'content': dm}, ensure_ascii=False)}\n\n"
                     except queue.Empty:
                         break
-                await asyncio.sleep(0.06)
+                remaining = retrieval_deadline - asyncio.get_running_loop().time()
+                await asyncio.sleep(min(0.06, max(0.001, remaining)))
 
             ctx = ctx_task.result()
 
@@ -1686,8 +1871,24 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         except Exception as exc:
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
         finally:
-            vision_models.reset_vlm_snapshot(vlm_context_token)
+            _cancel_and_observe_task(ctx_task)
+            if vlm_context_token is not None:
+                vision_models.reset_vlm_snapshot(vlm_context_token)
             lightrag_logger.removeHandler(handler)
+            if instance is not None:
+                try:
+                    await instance.finalize_storages()
+                except Exception:
+                    lightrag_logger.warning("Failed to finalize request-scoped KB instance", exc_info=True)
+            if lease_heartbeat_task is not None:
+                lease_heartbeat_task.cancel()
+                try:
+                    await lease_heartbeat_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    lightrag_logger.warning("Interactive quota heartbeat failed", exc_info=True)
+            await _release_interactive_lease()
 
     return StreamingResponse(
         event_stream(),

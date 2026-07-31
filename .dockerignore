@@ -11,5 +11,8 @@ rag_storage/*
 rag_storage_*/*
 !rag_storage/.gitkeep
 .env.local
+.env
+.env.*
+!.env.example
 *.log
 temp_docx

@@ -1,10 +1,132 @@
 import asyncio
 from datetime import datetime
+import inspect
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _task_settings_snapshot(monkeypatch):
+    """Workers are snapshot-only; unit tests provide the queued PG snapshot."""
+    from raganything.services import user_settings
+
+    async def snapshot(_task_id):
+        return {
+            "revision": 1,
+            "fingerprint": "test-settings-fingerprint",
+            "settings": {"ingestion": {"chunking_strategy": "recursive", "enable_image": True, "enable_table": True, "enable_equation": True, "enable_video": False}},
+        }
+
+    monkeypatch.setattr(user_settings, "get_task_settings_snapshot", snapshot)
+
+
+def test_upload_worker_accepts_queued_vision_metadata():
+    from raganything.services import kb_service
+
+    queued_task = {
+        "task_id": "task-1",
+        "file_path": "C:/uploads/report.docx",
+        "filename": "report.docx",
+        "kb_name": "demo",
+        "chunking_strategy": "recursive",
+        "user_id": 7,
+        "vision_vlm_profile_id": "vlm-a",
+        "vision_vlm_profile_fingerprint": "vlm-fingerprint",
+        "settings_snapshot_id": "task-1",
+    }
+
+    bound = inspect.signature(kb_service._process_uploaded_file).bind(**queued_task)
+
+    assert bound.arguments["vision_vlm_profile_id"] == "vlm-a"
+    assert bound.arguments["vision_vlm_profile_fingerprint"] == "vlm-fingerprint"
+    assert bound.arguments["settings_snapshot_id"] == "task-1"
+
+
+def test_upload_queue_claim_owner_has_uuid_factory():
+    from raganything.services import kb_service
+
+    assert callable(kb_service.uuid.uuid4)
+
+
+@pytest.mark.asyncio
+async def test_cancellation_keeps_task_pending_when_worker_survives_kill(monkeypatch):
+    from raganything.services import kb_service
+
+    class StuckProcess:
+        returncode = None
+
+        def __init__(self):
+            self.signals = []
+            self._never = asyncio.Event()
+
+        def terminate(self):
+            self.signals.append("terminate")
+
+        def kill(self):
+            self.signals.append("kill")
+
+        async def wait(self):
+            await self._never.wait()
+
+    proc = StuckProcess()
+    cleanup = AsyncMock()
+    monkeypatch.setattr(kb_service, "_UPLOAD_CANCELLATION_WORKER_WAIT_SECONDS", 0.001)
+    monkeypatch.setattr(kb_service, "_kb_worker_procs", {"demo": [(proc, "task-1")]})
+    monkeypatch.setattr(kb_service, "_cleanup_cancelled_upload_document", cleanup)
+    kb_service._upload_cancellation_tasks.clear()
+
+    await kb_service._finish_upload_cancellation(
+        {"task_id": "task-1", "file_hash": "hash-1"}, "demo"
+    )
+
+    assert proc.signals == ["terminate", "kill"]
+    cleanup.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_content_upload_uses_a_persisted_snapshot_and_isolated_instance(monkeypatch):
+    from raganything.routers import knowledge
+
+    snapshots = []
+    inserted = []
+    finalized = []
+
+    async def fake_snapshot(task_id, user_id, **overrides):
+        snapshots.append((task_id, user_id, overrides))
+
+    class IsolatedInstance:
+        lightrag = None
+
+        async def insert_content_list(self, content_list, **kwargs):
+            inserted.append((content_list, kwargs))
+
+        async def finalize_storages(self):
+            finalized.append(True)
+
+    async def fake_instance(task_id, kb):
+        assert snapshots and task_id == snapshots[0][0]
+        assert kb == "demo"
+        return IsolatedInstance()
+
+    monkeypatch.setattr(knowledge, "_create_upload_settings_snapshot", fake_snapshot)
+    monkeypatch.setattr(knowledge, "_get_snapshot_task_kb", fake_instance)
+
+    result = await knowledge.upload_content(
+        knowledge.PasteContentRequest(title="note", content="snapshot scoped"),
+        kb="demo",
+        current_user={"id": 9},
+        chunking_strategy="recursive",
+        enable_image="false",
+    )
+
+    assert result["status"] == "completed"
+    assert snapshots[0][1] == 9
+    assert snapshots[0][2]["enable_image"] == "false"
+    assert inserted[0][1]["chunking_strategy"] == "recursive"
+    assert finalized == [True]
 from fastapi import HTTPException
 from starlette.datastructures import UploadFile
 
@@ -536,6 +658,24 @@ async def test_deleted_upload_record_is_reused_by_new_registration(monkeypatch):
     captured = {}
 
     class FakePool:
+        def acquire(self):
+            return self
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        def transaction(self):
+            return self
+
+        async def execute(self, _sql, *_params):
+            return "SELECT 1"
+
+        async def fetchval(self, _sql, *_params):
+            return False
+
         async def fetchrow(self, sql, *params):
             captured["sql"] = sql
             captured["params"] = params
@@ -786,7 +926,7 @@ async def test_list_upload_tasks_merges_runtime_status(monkeypatch):
     assert result["tasks"][0]["progress"] == 42
     assert result["tasks"][0]["phase"] == "embedding"
     assert result["tasks"][0]["file_size"] == 2048
-    assert result["tasks"][0]["can_delete"] is False
+    assert result["tasks"][0]["can_delete"] is True
     assert result["tasks"][1]["task_id"] == "task-completed"
     assert result["tasks"][1]["status"] == "completed"
     assert result["tasks"][1]["progress"] == 100
@@ -857,7 +997,7 @@ async def test_delete_upload_task_deletes_queued_file(monkeypatch, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_delete_upload_task_rejects_non_queued(monkeypatch):
+async def test_delete_upload_task_accepts_processing_cancellation(monkeypatch):
     from raganything.routers.knowledge import delete_upload_task
 
     monkeypatch.setattr(
@@ -871,14 +1011,43 @@ async def test_delete_upload_task_rejects_non_queued(monkeypatch):
         }),
     )
 
-    with pytest.raises(HTTPException) as exc:
-        await delete_upload_task(
-            task_id="task-processing",
-            kb="demo-kb",
-            current_user={"id": 3, "is_admin": False},
-        )
+    cancel = AsyncMock(return_value={"status": "cancelling"})
+    monkeypatch.setattr("raganything.routers.knowledge.cancel_inflight_upload", cancel)
 
-    assert exc.value.status_code == 409
+    result = await delete_upload_task(
+        task_id="task-processing",
+        kb="demo-kb",
+        current_user={"id": 3, "is_admin": False},
+    )
+
+    assert result.status_code == 202
+    cancel.assert_awaited_once_with("task-processing", "demo-kb")
+
+
+@pytest.mark.asyncio
+async def test_list_upload_tasks_marks_retry_wait_cancellable_and_cancelling_locked(monkeypatch):
+    from raganything.routers.knowledge import list_upload_tasks
+
+    async def uploads(**_kwargs):
+        return ([
+            {"task_id": "retry", "filename": "retry.pdf", "status": "retry_wait", "created_at": "", "updated_at": ""},
+            {"task_id": "stopping", "filename": "stopping.pdf", "status": "cancelling", "created_at": "", "updated_at": ""},
+        ], 2)
+
+    async def tasks():
+        return [{"id": "stopping", "kb": "demo-kb", "status": "processing"}]
+
+    monkeypatch.setattr("raganything.routers.knowledge.pg_list_uploads", uploads)
+    monkeypatch.setattr("raganything.routers.knowledge.get_all_tasks", tasks)
+    monkeypatch.setattr(
+        "raganything.routers.knowledge.cancel_inflight_upload",
+        AsyncMock(return_value={"status": "cancelling"}),
+    )
+    result = await list_upload_tasks(kb="demo-kb", current_user={"id": 1, "is_admin": False})
+
+    assert [(task["status"], task["can_delete"]) for task in result["tasks"]] == [
+        ("retry_wait", True), ("cancelling", False)
+    ]
 
 
 @pytest.mark.asyncio
@@ -989,7 +1158,7 @@ async def test_pg_list_uploads_falls_back_without_error_message_column(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_pg_content_updates_batch_uses_completed_and_deleted_rows(monkeypatch):
+async def test_pg_content_updates_batch_uses_monotonic_kb_revision(monkeypatch):
     import raganything.services.kb_service as kb_service
 
     captured = {}
@@ -999,7 +1168,7 @@ async def test_pg_content_updates_batch_uses_completed_and_deleted_rows(monkeypa
             captured["sql"] = sql
             captured["params"] = params
             return [
-                {"kb_name": "kb-a", "last_content_updated_at": datetime(2026, 7, 3, 9, 15)},
+                {"kb_name": "kb-a", "corpus_revision": 12},
             ]
 
     monkeypatch.setattr(
@@ -1008,9 +1177,9 @@ async def test_pg_content_updates_batch_uses_completed_and_deleted_rows(monkeypa
 
     updates = await kb_service.pg_get_latest_content_updates_batch(["kb-a", "kb-a", "kb-b"])
 
-    assert updates == {"kb-a": "2026-07-03T09:15:00"}
-    assert "MAX(updated_at) AS last_content_updated_at" in captured["sql"]
-    assert captured["params"] == (["kb-a", "kb-b"], ["completed", "deleted"])
+    assert updates == {"kb-a": "12"}
+    assert "FROM kb_metadata" in captured["sql"]
+    assert captured["params"] == (["kb-a", "kb-b"],)
 
 
 @pytest.mark.asyncio
@@ -1332,21 +1501,21 @@ async def test_finalize_tagging_failure_preserves_document_and_marks_task(monkey
     )
 
     assert calls[0] == (
+        "upload",
+        "task-1",
+        "failed",
+        {"kb_name": "demo-kb", "error_message": "automatic tagging did not complete", "outcome": "terminal_failed", "claim_owner": None, "claim_generation": None},
+    )
+    assert calls[1] == (
         "task",
         "task-1",
         "automatic tagging did not complete",
         {"outcome": "terminal_failed", "failure_stage": "tagging", "retryable": False},
     )
-    assert calls[1][0:2] == ("event", "upload_error")
-    assert calls[1][2]["doc_id"] == "doc-1"
-    assert calls[1][2]["failure_stage"] == "tagging"
-    assert calls[2][0] == "broadcast"
-    assert calls[3] == (
-        "upload",
-        "task-1",
-        "failed",
-        {"kb_name": "demo-kb", "error_message": "automatic tagging did not complete", "outcome": "terminal_failed"},
-    )
+    assert calls[2][0:2] == ("event", "upload_error")
+    assert calls[2][2]["doc_id"] == "doc-1"
+    assert calls[2][2]["failure_stage"] == "tagging"
+    assert calls[3][0] == "broadcast"
     assert calls[4] == ("unregister", ("demo-kb", "hash-1"))
 
 
@@ -1417,7 +1586,8 @@ async def test_retry_document_creates_visible_queued_task_and_resets_upload(monk
 
     queue = asyncio.Queue()
 
-    async def fake_queue(_kb_name):
+    async def fake_queue(task_info):
+        queue.put_nowait(task_info)
         return queue, queue.qsize()
 
     state_calls = []
@@ -1434,13 +1604,19 @@ async def test_retry_document_creates_visible_queued_task_and_resets_upload(monk
     async def fake_event(*args, **kwargs):
         events.append((args, kwargs))
 
+    snapshots = []
+
+    async def fake_snapshot(task_id, user_id, **kwargs):
+        snapshots.append((task_id, user_id, kwargs))
+
     monkeypatch.setattr(knowledge, "_load_doc_status_json", fake_doc_status)
     monkeypatch.setattr(knowledge, "get_kb", fake_kb)
-    monkeypatch.setattr("raganything.routers.shared._ensure_queue_draining", fake_queue)
+    monkeypatch.setattr("raganything.routers.shared._enqueue_upload_task", fake_queue)
     monkeypatch.setattr(knowledge, "upsert_task_state", fake_state)
     monkeypatch.setattr(knowledge, "pg_update_upload_status", fake_upload_update)
     monkeypatch.setattr(knowledge, "_compute_file_hash", lambda _path: "hash-1")
     monkeypatch.setattr(knowledge, "add_event", fake_event)
+    monkeypatch.setattr(knowledge, "_create_upload_settings_snapshot", fake_snapshot)
 
     result = await knowledge.retry_document(
         "doc-failed-1", kb="demo-kb", current_user={"id": 7}
@@ -1454,6 +1630,7 @@ async def test_retry_document_creates_visible_queued_task_and_resets_upload(monk
     assert upload_updates[0][1]["task_id"] == result["task_id"]
     assert queue.get_nowait()["task_id"] == result["task_id"]
     assert events[0][0][0] == "upload_retry_queued"
+    assert snapshots == [(result["task_id"], 7, {"chunking_strategy": "recursive"})]
 
 
 @pytest.mark.asyncio
@@ -1515,6 +1692,7 @@ async def test_degraded_graph_upload_waits_for_linked_tag_job(monkeypatch):
     monkeypatch.setattr(kb_service, "_fix_stuck_doc_status", no_op)
     monkeypatch.setattr(kb_service, "_find_degraded_document", degraded)
     monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", update)
+    monkeypatch.setattr(kb_service, "bump_kb_corpus_revision", no_op)
     monkeypatch.setattr(kb_service, "_unregister_processing_file", lambda *args: calls.append(("unregister", args)))
     monkeypatch.setattr(document_tagging, "enqueue_document_tagging", enqueue)
     monkeypatch.setattr(document_tagging, "wait_for_document_tagging", wait)
@@ -1531,7 +1709,7 @@ async def test_degraded_graph_upload_waits_for_linked_tag_job(monkeypatch):
         {"filename": "manual.pdf", "user_id": 7, "task_id": "task-1"},
     )
     assert calls[1][0] == "wait"
-    assert calls[2] == (
+    assert next(call for call in calls if call[0] == "complete") == (
         "complete", "task-1", {"outcome": "degraded", "warning": "文本内容已入库，知识图谱抽取待补全"},
     )
     assert calls[-1] == ("unregister", ("demo", "hash-1"))
@@ -1754,3 +1932,250 @@ async def test_retry_cleanup_targets_marked_doc_and_accepts_enum_status(monkeypa
 
     assert cleaned == ["doc-target"]
     assert fake_lightrag.deleted == [("doc-target", True)]
+
+
+@pytest.mark.asyncio
+async def test_single_upload_persists_snapshot_before_queued_metadata(monkeypatch, tmp_path):
+    from fastapi import UploadFile
+    from raganything.routers import knowledge
+    import raganything.routers.shared as shared
+
+    monkeypatch.chdir(tmp_path)
+    calls = []
+
+    async def no_reindex(_kb):
+        return None
+
+    async def vlm_snapshot(_user_id):
+        return SimpleNamespace(
+            profile=SimpleNamespace(id="vlm-a"), fingerprint="vlm-fingerprint"
+        )
+
+    async def save_snapshot(task_id, user_id, **_overrides):
+        calls.append(("snapshot", task_id, user_id))
+
+    async def register_upload(**kwargs):
+        assert calls and calls[0][0] == "snapshot"
+        calls.append(("upload", kwargs["task_id"], kwargs["uploaded_by"]))
+        return {"id": 1}
+
+    queue = asyncio.Queue()
+
+    async def queue_for(task_info):
+        queue.put_nowait(task_info)
+        return queue, queue.qsize()
+
+    monkeypatch.setattr(knowledge, "_ensure_vision_index_mutable", no_reindex)
+    monkeypatch.setattr(knowledge, "_resolve_upload_vlm_snapshot", vlm_snapshot)
+    monkeypatch.setattr(knowledge, "_resolve_chunking_strategy", lambda _value: "recursive")
+    monkeypatch.setattr(knowledge, "_compute_file_hash", lambda _path: "hash-a")
+    monkeypatch.setattr(knowledge, "_is_file_being_processed", lambda *_args: None)
+    monkeypatch.setattr(knowledge, "_create_upload_settings_snapshot", save_snapshot)
+    monkeypatch.setattr(knowledge, "_register_upload_with_stale_recovery", register_upload)
+    monkeypatch.setattr(knowledge, "_register_processing_file", lambda *_args: None)
+    monkeypatch.setattr(shared, "_enqueue_upload_task", queue_for)
+
+    endpoint = getattr(knowledge.upload_file, "__wrapped__", knowledge.upload_file)
+    result = await endpoint(
+        request=None,
+        file=UploadFile(filename="report.txt", file=BytesIO(b"content")),
+        kb="demo",
+        current_user={"id": 7},
+    )
+
+    assert [call[0] for call in calls] == ["snapshot", "upload"]
+    assert queue.get_nowait()["task_id"] == result["task_id"]
+
+
+@pytest.mark.asyncio
+async def test_single_upload_removes_snapshot_when_metadata_registration_fails(
+    monkeypatch, tmp_path
+):
+    from fastapi import HTTPException, UploadFile
+    from raganything.routers import knowledge
+
+    monkeypatch.chdir(tmp_path)
+    deleted = []
+
+    async def no_reindex(_kb):
+        return None
+
+    async def vlm_snapshot(_user_id):
+        return SimpleNamespace(
+            profile=SimpleNamespace(id="vlm-a"), fingerprint="vlm-fingerprint"
+        )
+
+    async def save_snapshot(*_args, **_kwargs):
+        return None
+
+    async def registration_failed(**_kwargs):
+        return None
+
+    async def delete_snapshot(task_id):
+        deleted.append(task_id)
+
+    monkeypatch.setattr(knowledge, "_ensure_vision_index_mutable", no_reindex)
+    monkeypatch.setattr(knowledge, "_resolve_upload_vlm_snapshot", vlm_snapshot)
+    monkeypatch.setattr(knowledge, "_resolve_chunking_strategy", lambda _value: "recursive")
+    monkeypatch.setattr(knowledge, "_compute_file_hash", lambda _path: "hash-a")
+    monkeypatch.setattr(knowledge, "_is_file_being_processed", lambda *_args: None)
+    monkeypatch.setattr(knowledge, "_create_upload_settings_snapshot", save_snapshot)
+    monkeypatch.setattr(knowledge, "_register_upload_with_stale_recovery", registration_failed)
+    monkeypatch.setattr(knowledge, "_delete_upload_settings_snapshot", delete_snapshot)
+
+    endpoint = getattr(knowledge.upload_file, "__wrapped__", knowledge.upload_file)
+    with pytest.raises(HTTPException) as exc:
+        await endpoint(
+            request=None,
+            file=UploadFile(filename="report.txt", file=BytesIO(b"content")),
+            kb="demo",
+            current_user={"id": 7},
+        )
+
+    assert exc.value.status_code == 409
+    assert deleted and deleted[0]
+
+
+@pytest.mark.asyncio
+async def test_startup_restores_durable_queued_upload(monkeypatch, tmp_path):
+    from raganything.services import kb_service
+
+    file_path = tmp_path / "queued.pdf"
+    file_path.write_bytes(b"queued")
+    queued = []
+
+    class Connection:
+        async def fetch(self, _sql):
+            return [{
+                "task_id": "task-restored",
+                "file_path": str(file_path),
+                "filename": "queued.pdf",
+                "kb_name": "demo",
+                "uploaded_by": 7,
+                "snapshot_task_id": "task-restored",
+            }]
+
+    class Acquire:
+        async def __aenter__(self):
+            return Connection()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class Pool:
+        def acquire(self):
+            return Acquire()
+
+    async def enqueue(task_info):
+        queued.append(task_info)
+        kb_service._queued_task_ids.add(task_info["task_id"])
+        return asyncio.Queue(), 0
+
+    monkeypatch.setattr("raganything.services.pg_state_repo.get_pg_pool", lambda: Pool())
+    monkeypatch.setattr(kb_service, "_enqueue_upload_task", enqueue)
+    kb_service._queued_task_ids.clear()
+
+    assert await kb_service.resume_queued_upload_tasks() == 1
+    assert queued == [{
+        "task_id": "task-restored",
+        "file_path": str(file_path),
+        "filename": "queued.pdf",
+        "kb_name": "demo",
+        "chunking_strategy": "",
+        "user_id": 7,
+    }]
+
+
+@pytest.mark.asyncio
+async def test_startup_fails_queued_upload_without_snapshot(monkeypatch, tmp_path):
+    from raganything.services import kb_service
+
+    file_path = tmp_path / "queued.pdf"
+    file_path.write_bytes(b"queued")
+    failures = []
+
+    class Connection:
+        async def fetch(self, _sql):
+            return [{
+                "task_id": "task-orphan",
+                "file_path": str(file_path),
+                "filename": "queued.pdf",
+                "kb_name": "demo",
+                "uploaded_by": 7,
+                "snapshot_task_id": None,
+            }]
+
+    class Acquire:
+        async def __aenter__(self):
+            return Connection()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class Pool:
+        def acquire(self):
+            return Acquire()
+
+    async def update(*args, **kwargs):
+        failures.append((args, kwargs))
+        return {"status": "failed"}
+
+    monkeypatch.setattr("raganything.services.pg_state_repo.get_pg_pool", lambda: Pool())
+    monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", update)
+    kb_service._queued_task_ids.clear()
+
+    assert await kb_service.resume_queued_upload_tasks() == 0
+    assert failures[0][0][:2] == ("task-orphan", "failed")
+    assert failures[0][1]["error_message"] == "settings_snapshot_missing"
+
+
+@pytest.mark.asyncio
+async def test_processing_snapshot_is_persisted_in_document_metadata(monkeypatch):
+    from raganything.services import kb_service
+
+    saved = []
+
+    class Store:
+        async def upsert(self, payload):
+            saved.append(payload)
+
+        async def index_done_callback(self):
+            saved.append("committed")
+
+    async def statuses(_kb):
+        return {
+            "doc-1": {
+                "file_path": "abcd1234_report.pdf",
+                "track_id": "task-1",
+                "metadata": {"existing": True},
+                "updated_at": "2026-07-30T10:00:00+00:00",
+            }
+        }
+
+    async def store(_kb):
+        return Store()
+
+    monkeypatch.setattr(kb_service, "_load_doc_status_json", statuses)
+    monkeypatch.setattr(kb_service, "_get_pg_doc_status_storage", store)
+    snapshot = {
+        "revision": 4,
+        "fingerprint": "settings-fp",
+        "profile_ids": {
+            "llm": {"id": "llm-a", "fingerprint": "llm-fp"},
+            "vlm": {"id": "vlm-a", "fingerprint": "vlm-fp"},
+        },
+        "settings": {
+            "models": {"llm_profile_id": "llm-a", "vlm_profile_id": "vlm-a"},
+            "ingestion": {"chunking_strategy": "recursive"},
+            "retrieval": {"preset": "balanced"},
+            "runtime": {"llm_timeout": 180, "personal_concurrency": 2},
+        },
+    }
+
+    assert await kb_service.persist_document_processing_snapshot(
+        "demo", "report.pdf", "task-1", snapshot
+    ) == "doc-1"
+    metadata = saved[0]["doc-1"]["metadata"]
+    assert metadata["existing"] is True
+    assert metadata["processing_settings_snapshot"] == snapshot
+    assert saved[1] == "committed"

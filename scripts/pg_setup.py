@@ -54,11 +54,14 @@ def main():
     migration_files = [
         ROOT / "migrations" / "001_pg_schema.sql",
         ROOT / "migrations" / "003_p0_agent_kb_meta.sql",
+        ROOT / "migrations" / "005_image_vision_vectors_pg.sql",
         ROOT / "migrations" / "007_infra_state_pg.sql",
         ROOT / "migrations" / "009_uploaded_files_meta.sql",
         ROOT / "migrations" / "010_uploaded_files_task_queue.sql",
         ROOT / "migrations" / "012_uploaded_files_status_default_queued.sql",
         ROOT / "migrations" / "013_monitor_events.sql",
+        ROOT / "migrations" / "014_image_vision_workspace.sql",
+        ROOT / "migrations" / "015_restore_5level_rbac.sql",
         ROOT / "migrations" / "016_knowledge_chunk_tags.sql",
         ROOT / "migrations" / "017_automatic_tag_assignments.sql",
         ROOT / "migrations" / "018_agent_activity_sort_index.sql",
@@ -66,6 +69,7 @@ def main():
         ROOT / "migrations" / "020_document_tag_jobs.sql",
         ROOT / "migrations" / "021_upload_retry_jobs.sql",
         ROOT / "migrations" / "022_document_tag_upload_link.sql",
+        ROOT / "migrations" / "023_personal_settings_platform_policy.sql",
     ]
     env_file = ROOT / ".env"
 
@@ -115,6 +119,7 @@ def main():
 
     print("\n--- 3. 运行 Schema 迁移 ---")
     env["PGPASSWORD"] = db_password
+    migration_failures = 0
     for migration_file in migration_files:
         print(f"  -> 执行 {migration_file.name}")
         cmd = [
@@ -144,9 +149,15 @@ def main():
         if result2.returncode == 0:
             print(f"     [OK] {migration_file.name} 执行完成（授权后重试）")
         else:
+            migration_failures += 1
             print(f"     [失败] {result2.stderr.strip()[:300]}")
 
     print("\n--- 4. 配置 .env ---")
+    if migration_failures:
+        raise SystemExit(
+            f"{migration_failures} migration(s) failed; refusing to report success"
+        )
+
     dsn = f"postgresql://{args.db_user}:{db_password}@localhost:5432/{args.db_name}"
     env_lines = []
     if env_file.exists():
@@ -174,7 +185,7 @@ def main():
     print("  PostgreSQL 初始化完成！")
     print(f"  数据库: {args.db_name}")
     print(f"  用户:   {args.db_user}")
-    print(f"  DSN:    {dsn}")
+    print("  DSN:    written to .env (credentials redacted)")
     print("=" * 50)
     print("\n  现在启动服务器: python server.py -w 4")
 

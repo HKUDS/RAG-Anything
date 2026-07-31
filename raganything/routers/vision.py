@@ -2,10 +2,11 @@
 
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel
 
-from raganything.dependencies import get_current_user
+from raganything.dependencies import get_current_user, require_permission
+from raganything.permissions import Permission
 from raganything.services import vision_models
 
 router = APIRouter(tags=["vision-models"])
@@ -39,12 +40,43 @@ def _profile_or_missing(profile_id: str | None):
 @router.get("/vision-models")
 async def list_vision_models(
     kind: Literal["vlm", "embedding"] | None = Query(default=None),
+    response: Response = None,
     _user: dict = Depends(get_current_user),
 ):
     try:
+        if response is not None:
+            response.headers["Deprecation"] = "true"
+            response.headers["Sunset"] = "legacy-vision-models"
         return {"profiles": [profile.model_dump() for profile in vision_models.list_profiles(kind)]}
     except RuntimeError as exc:
         raise HTTPException(503, {"code": "catalog_unavailable", "message": "vision model catalog unavailable"}) from exc
+
+
+@router.get("/model-profiles")
+async def list_model_profiles(
+    kind: Literal["llm", "vlm", "embedding"] | None = Query(default=None),
+    _user: dict = Depends(get_current_user),
+):
+    try:
+        return {"profiles": [profile.model_dump() for profile in vision_models.list_model_profiles(kind)]}
+    except RuntimeError as exc:
+        raise HTTPException(503, {"code": "catalog_unavailable", "message": "model catalog unavailable"}) from exc
+
+
+@router.post("/admin/model-profiles/{profile_id}/probe")
+async def probe_model_profile(
+    profile_id: str,
+    user: dict = Depends(require_permission(Permission.SETTINGS_WRITE)),
+):
+    try:
+        result = await vision_models.probe_model_profile(profile_id)
+    except KeyError as exc:
+        raise HTTPException(422, {"code": "invalid_profile", "message": "unknown model profile"}) from exc
+    await vision_models.audit_vision_event(
+        int(user["id"]), "model.profile.probed", profile_id=profile_id,
+        result="available" if result.get("available") else "unavailable",
+    )
+    return result
 
 
 @router.get("/users/me/model-preferences")

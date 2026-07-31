@@ -200,7 +200,7 @@ class GraphRetriever:
               chunk_scores: {chunk_id: weight}
               entity_paths: {chunk_id: [(entity_name, relation, hop_depth), ...]}
         """
-        depth = depth or self._depth
+        depth = self._depth if depth is None else depth
         graph = getattr(self._lightrag, "chunk_entity_relation_graph", None)
         if graph is None or not matched_entities:
             return {}, {}
@@ -280,13 +280,14 @@ class GraphRetriever:
     # ------------------------------------------------------------------
 
     async def search(
-        self, query: str, top_k: int | None = None
+        self, query: str, top_k: int | None = None, depth: int | None = None
     ) -> List[Any]:
         """Execute full graph retrieval: match entities → traverse → rank chunks.
 
         Args:
             query: Search query
             top_k: Max results (default: GRAPH_TOP_K env var)
+            depth: Per-request neighbor traversal depth (default: configured depth)
 
         Returns:
             List of ScoredChunk with graph sources
@@ -301,7 +302,7 @@ class GraphRetriever:
         if not matched:
             return []
 
-        chunk_scores, entity_paths = await self._traverse_neighbors(matched)
+        chunk_scores, entity_paths = await self._traverse_neighbors(matched, depth)
 
         if not chunk_scores:
             return []

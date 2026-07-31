@@ -12,6 +12,9 @@ Fusion: RRF (Reciprocal Rank Fusion) — Σ 1/(k + rank_i)
 import os
 import asyncio
 import concurrent.futures
+import hashlib
+import json
+from collections import OrderedDict
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, field
 
@@ -35,6 +38,39 @@ def _get_bm25_executor() -> concurrent.futures.ThreadPoolExecutor:
             thread_name_prefix="bm25-",
         )
     return _bm25_executor
+
+
+def _consume_detached_task_result(task: asyncio.Task) -> None:
+    """Consume a late channel result so detached timeouts stay warning-free."""
+    if task.cancelled():
+        return
+    try:
+        task.exception()
+    except asyncio.CancelledError:
+        pass
+
+
+async def _run_channel_with_hard_timeout(coro, timeout: float):
+    """Return or fail at the deadline without waiting for cancellation.
+
+    ``asyncio.wait_for`` waits for a cancelled coroutine to finish cleanup.
+    Some provider worker pools do not acknowledge cancellation until their own
+    health timeout, which used to stall every RRF channel behind one embedding
+    request. The late task is cancelled and observed, but no longer blocks the
+    usable BM25 or graph results.
+    """
+    task = asyncio.create_task(coro)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=max(0.001, float(timeout)))
+    except asyncio.CancelledError:
+        task.cancel()
+        task.add_done_callback(_consume_detached_task_result)
+        raise
+    if task not in done:
+        task.cancel()
+        task.add_done_callback(_consume_detached_task_result)
+        raise TimeoutError(f"retrieval channel exceeded {timeout:g}s")
+    return task.result()
 
 
 # ═══════════════════════════════════════════════════════════
@@ -69,6 +105,84 @@ class ScoredChunk:
         )
 
 
+@dataclass(frozen=True)
+class RetrievalOptions:
+    """Immutable request-scoped overrides for hybrid retrieval.
+
+    The engine itself remains reusable, but individual requests must never
+    alter its configured channel list or ranking knobs.  ``None`` fields
+    inherit the engine defaults for backwards compatibility.
+    """
+
+    channels: tuple[str, ...] | None = None
+    bm25_top_k: int | None = None
+    vector_top_k: int | None = None
+    graph_top_k: int | None = None
+    graph_depth: int | None = None
+    channel_timeout: float | None = None
+    rrf_k: int | None = None
+    bm25_tokenizer: str | None = None
+    bm25_k1: float | None = None
+    bm25_b: float | None = None
+    # These values are deliberately inputs, never mutable engine state.  The
+    # BM25 cache uses workspace/content/configuration identity; callers can
+    # carry the additional fields into query/LLM cache scopes.
+    workspace: str | None = None
+    corpus_revision: str | None = None
+    permission_scope: str | None = None
+    settings_fingerprint: str | None = None
+
+
+@dataclass(frozen=True)
+class BM25IndexKey:
+    """Identity of a read-only derived BM25 index."""
+
+    workspace: str
+    corpus_revision: str
+    tokenizer: str
+    k1: float
+    b: float
+
+
+class BoundedBM25IndexCache:
+    """Small LRU of independent BM25 indexes.
+
+    Entries never overwrite a different workspace, corpus revision, or BM25
+    configuration.  Eviction drops only the derived index that lost the LRU
+    race; it does not mutate another request's manager.
+    """
+
+    def __init__(self, max_size: int = 32):
+        self.max_size = max(1, max_size)
+        self._store: OrderedDict[BM25IndexKey, "BM25IndexManager"] = OrderedDict()
+
+    def get(self, key: BM25IndexKey) -> "BM25IndexManager | None":
+        manager = self._store.get(key)
+        if manager is not None:
+            self._store.move_to_end(key)
+        return manager
+
+    def put(self, key: BM25IndexKey, manager: "BM25IndexManager") -> None:
+        self._store[key] = manager
+        self._store.move_to_end(key)
+        while len(self._store) > self.max_size:
+            self._store.popitem(last=False)
+
+    def resize(self, max_size: int) -> None:
+        self.max_size = max(1, int(max_size))
+        while len(self._store) > self.max_size:
+            self._store.popitem(last=False)
+
+    def __len__(self) -> int:
+        return len(self._store)
+
+
+_bm25_index_cache = BoundedBM25IndexCache(
+    int(os.getenv("BM25_INDEX_CACHE_CAPACITY", "32"))
+)
+_bm25_build_locks: dict[BM25IndexKey, asyncio.Lock] = {}
+
+
 # ═══════════════════════════════════════════════════════════
 # BM25 Keyword Index Manager
 # ═══════════════════════════════════════════════════════════
@@ -85,11 +199,19 @@ class BM25IndexManager:
         BM25_TOKENIZER: tokenizer choice — "jieba" (default) or "nltk"
     """
 
-    def __init__(self, tokenizer: Optional[Callable] = None):
-        self._k1 = float(os.getenv("BM25_K1", "1.5"))
-        self._b = float(os.getenv("BM25_B", "0.75"))
-        self._top_k = int(os.getenv("BM25_TOP_K", "50"))
-        self._tokenizer_name = os.getenv("BM25_TOKENIZER", "jieba")
+    def __init__(
+        self,
+        tokenizer: Optional[Callable] = None,
+        *,
+        tokenizer_name: str | None = None,
+        k1: float | None = None,
+        b: float | None = None,
+        top_k: int | None = None,
+    ):
+        self._k1 = float(os.getenv("BM25_K1", "1.5") if k1 is None else k1)
+        self._b = float(os.getenv("BM25_B", "0.75") if b is None else b)
+        self._top_k = int(os.getenv("BM25_TOP_K", "50") if top_k is None else top_k)
+        self._tokenizer_name = tokenizer_name or os.getenv("BM25_TOKENIZER", "jieba")
 
         self._index = None
         self._chunks: List[Dict[str, Any]] = []  # [{chunk_id, content}, ...]
@@ -217,6 +339,10 @@ class BM25IndexManager:
     def is_ready(self) -> bool:
         return self._index is not None
 
+    @property
+    def cache_parameters(self) -> tuple[str, float, float]:
+        return (self._tokenizer_name, self._k1, self._b)
+
 # ═══════════════════════════════════════════════════════════
 
 
@@ -273,6 +399,104 @@ class HybridSearchEngine:
     def graph_retriever(self) -> GraphRetriever:
         """Public accessor for the graph retrieval channel."""
         return self._graph
+
+    async def _bm25_for_options(
+        self, options: RetrievalOptions | None
+    ) -> BM25IndexManager:
+        """Resolve a read-only BM25 index without mutating shared state."""
+        if self._lightrag is None:
+            return self._bm25
+        try:
+            workspace = str(self._lightrag.working_dir)
+            from raganything.services.pg_state_repo import get_pg_pool
+
+            pool = get_pg_pool()
+            async with pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT chunks_list FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1",
+                    workspace,
+                )
+            chunk_ids: list[str] = []
+            for row in rows:
+                chunk_list = row["chunks_list"]
+                if isinstance(chunk_list, str):
+                    try:
+                        chunk_list = json.loads(chunk_list)
+                    except (TypeError, ValueError):
+                        chunk_list = []
+                if isinstance(chunk_list, list):
+                    chunk_ids.extend(str(value) for value in chunk_list)
+            corpus_revision = hashlib.sha256(
+                json.dumps(sorted(chunk_ids), separators=(",", ":")).encode()
+            ).hexdigest()[:32]
+            tokenizer = options.bm25_tokenizer if options and options.bm25_tokenizer else self._bm25._tokenizer_name
+            k1 = float(options.bm25_k1) if options and options.bm25_k1 is not None else self._bm25._k1
+            b = float(options.bm25_b) if options and options.bm25_b is not None else self._bm25._b
+            key = BM25IndexKey(
+                workspace=options.workspace if options and options.workspace else workspace,
+                corpus_revision=options.corpus_revision if options and options.corpus_revision else corpus_revision,
+                tokenizer=tokenizer,
+                k1=k1,
+                b=b,
+            )
+            try:
+                from raganything.services.user_settings import get_platform_settings
+
+                platform = await get_platform_settings()
+                capacity = ((platform.get("settings") or {}).get("limits") or {}).get(
+                    "cache_capacity"
+                )
+                if isinstance(capacity, int) and capacity > 0:
+                    _bm25_index_cache.resize(capacity)
+            except Exception:
+                pass
+
+            cached = _bm25_index_cache.get(key)
+            if cached is not None:
+                return cached
+            lock = _bm25_build_locks.setdefault(key, asyncio.Lock())
+            try:
+                async with lock:
+                    cached = _bm25_index_cache.get(key)
+                    if cached is not None:
+                        return cached
+                    manager = BM25IndexManager(
+                        tokenizer_name=tokenizer,
+                        k1=k1,
+                        b=b,
+                        top_k=self._bm25_top_k,
+                    )
+                    if not chunk_ids:
+                        _bm25_index_cache.put(key, manager)
+                        return manager
+                    raw_chunks = await self._lightrag.text_chunks.get_by_ids(chunk_ids)
+                    chunks = [
+                        {
+                            "chunk_id": chunk.get("id") or chunk.get("__id__"),
+                            "content": chunk.get("content", ""),
+                        }
+                        for chunk in raw_chunks
+                        if chunk
+                        and (chunk.get("id") or chunk.get("__id__"))
+                        and chunk.get("content")
+                    ]
+                    if chunks:
+                        await manager.rebuild_index_async(chunks)
+                    _bm25_index_cache.put(key, manager)
+                    return manager
+            finally:
+                if not lock.locked():
+                    _bm25_build_locks.pop(key, None)
+        except Exception as exc:
+            self._logger.warning("Failed to resolve scoped BM25 index: %s", exc)
+            if options is None:
+                return self._bm25
+            return BM25IndexManager(
+                tokenizer_name=options.bm25_tokenizer or self._bm25._tokenizer_name,
+                k1=options.bm25_k1 if options.bm25_k1 is not None else self._bm25._k1,
+                b=options.bm25_b if options.bm25_b is not None else self._bm25._b,
+                top_k=self._bm25_top_k,
+            )
 
     async def ensure_bm25_index(self):
         """Build BM25 index from existing LightRAG chunks if not already built.
@@ -334,19 +558,17 @@ class HybridSearchEngine:
     # Channel Searches
     # ------------------------------------------------------------------
 
-    async def _bm25_search(self, query: str, top_k: int) -> List[ScoredChunk]:
+    async def _bm25_search(
+        self, manager: BM25IndexManager, query: str, top_k: int
+    ) -> List[ScoredChunk]:
         """BM25 channel (sync, run in shared executor)."""
-        if "bm25" not in self._enabled_channels:
-            return []
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
-            _get_bm25_executor(), self._bm25.search, query, top_k
+            _get_bm25_executor(), manager.search, query, top_k
         )
 
     async def _vector_search(self, query: str, top_k: int) -> List[ScoredChunk]:
         """Vector semantic search via LightRAG's internal retrieval."""
-        if "vector" not in self._enabled_channels:
-            return []
         if self._lightrag is None:
             return []
 
@@ -376,11 +598,11 @@ class HybridSearchEngine:
             self._logger.warning(f"Vector search failed: {exc}")
             return []
 
-    async def _graph_search(self, query: str, top_k: int) -> List[ScoredChunk]:
+    async def _graph_search(
+        self, query: str, top_k: int, graph_depth: int | None = None
+    ) -> List[ScoredChunk]:
         """Knowledge graph search (async)."""
-        if "graph" not in self._enabled_channels:
-            return []
-        return await self._graph.search(query, top_k)
+        return await self._graph.search(query, top_k, depth=graph_depth)
 
     # ------------------------------------------------------------------
     # RRF Fusion
@@ -456,47 +678,59 @@ class HybridSearchEngine:
         query: str,
         top_k: int = 100,
         channels: List[str] | None = None,
+        options: RetrievalOptions | None = None,
     ) -> List[ScoredChunk]:
         """Main RRF hybrid search: parallel channels → fuse → return.
 
         Args:
             query: Search query
             top_k: Final number of results after fusion
-            channels: Override enabled channels (e.g., ["bm25", "vector"])
+            channels: Deprecated per-call channel override (e.g. ["bm25", "vector"])
+            options: Immutable request-scoped retrieval configuration.
 
         Returns:
             Fused, deduplicated, RRF-scored results
         """
-        if channels:
-            self._enabled_channels = channels
+        enabled_channels = (
+            list(options.channels)
+            if options is not None and options.channels is not None
+            else list(channels) if channels is not None else list(self._enabled_channels)
+        )
+        bm25_top_k = options.bm25_top_k if options and options.bm25_top_k is not None else self._bm25_top_k
+        vector_top_k = options.vector_top_k if options and options.vector_top_k is not None else self._vector_top_k
+        graph_top_k = options.graph_top_k if options and options.graph_top_k is not None else self._graph_top_k
+        graph_depth = options.graph_depth if options and options.graph_depth is not None else None
+        channel_timeout = options.channel_timeout if options and options.channel_timeout is not None else self._channel_timeout
+        rrf_k = options.rrf_k if options and options.rrf_k is not None else self._rrf_k
+        bm25_manager = await self._bm25_for_options(options) if "bm25" in enabled_channels else None
 
         # Launch all enabled channels in parallel with per-channel timeout
         tasks = []
         task_labels = []
 
-        if "bm25" in self._enabled_channels:
+        if "bm25" in enabled_channels:
             tasks.append(
-                asyncio.wait_for(
-                    self._bm25_search(query, self._bm25_top_k),
-                    timeout=self._channel_timeout,
+                _run_channel_with_hard_timeout(
+                    self._bm25_search(bm25_manager or self._bm25, query, bm25_top_k),
+                    channel_timeout,
                 )
             )
             task_labels.append("bm25")
 
-        if "vector" in self._enabled_channels:
+        if "vector" in enabled_channels:
             tasks.append(
-                asyncio.wait_for(
-                    self._vector_search(query, self._vector_top_k),
-                    timeout=self._channel_timeout,
+                _run_channel_with_hard_timeout(
+                    self._vector_search(query, vector_top_k),
+                    channel_timeout,
                 )
             )
             task_labels.append("vector")
 
-        if "graph" in self._enabled_channels:
+        if "graph" in enabled_channels:
             tasks.append(
-                asyncio.wait_for(
-                    self._graph_search(query, self._graph_top_k),
-                    timeout=self._channel_timeout,
+                _run_channel_with_hard_timeout(
+                    self._graph_search(query, graph_top_k, graph_depth),
+                    channel_timeout,
                 )
             )
             task_labels.append("graph")
@@ -525,7 +759,7 @@ class HybridSearchEngine:
             return []
 
         # RRF fusion
-        fused = self._rrf_fuse(channel_results, k=self._rrf_k)
+        fused = self._rrf_fuse(channel_results, k=rrf_k)
         return fused[:top_k]
 
     # ------------------------------------------------------------------

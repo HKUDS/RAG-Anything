@@ -4,6 +4,22 @@ import pytest
 
 
 @pytest.mark.asyncio
+async def test_cancelling_task_is_not_resurrected_by_terminal_writers(monkeypatch):
+    from raganything.services import state_service
+
+    monkeypatch.setattr(state_service, "_task_pg_ready", lambda: False)
+    state_service.processing_tasks.clear()
+    state_service.processing_tasks["task-cancelling"] = {"status": "cancelling", "progress": 42}
+
+    await state_service.complete_task("task-cancelling")
+    await state_service.fail_task("task-cancelling", "worker stopped")
+    await state_service.defer_task("task-cancelling", "worker stopped", failure_stage="parsing")
+    await state_service.update_task_progress("task-cancelling", 99)
+
+    assert state_service.processing_tasks["task-cancelling"] == {"status": "cancelling", "progress": 42}
+
+
+@pytest.mark.asyncio
 async def test_fail_task_preserves_last_progress_context(monkeypatch):
     from raganything.services import state_service
 
@@ -312,6 +328,7 @@ async def test_finalize_partial_upload_completes_with_degraded_outcome(monkeypat
     monkeypatch.setattr(kb_service, "_find_degraded_document", find_degraded)
     monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", update_upload)
     monkeypatch.setattr(kb_service, "_unregister_processing_file", lambda *_args: None)
+    monkeypatch.setattr(kb_service, "bump_kb_corpus_revision", no_op)
     monkeypatch.setattr(state_service, "complete_task", complete)
     monkeypatch.setattr(state_service, "fail_task", fail)
     monkeypatch.setattr(ws_service, "add_event", event)
@@ -322,16 +339,59 @@ async def test_finalize_partial_upload_completes_with_degraded_outcome(monkeypat
         "task-1", "demo", "paper.docx", 7, "request timed out", "hash-1",
     )
 
-    assert calls[0] == (
+    complete_call = next(call for call in calls if call[0] == "complete")
+    event_call = next(call for call in calls if call[0] == "event")
+    upload_call = next(call for call in calls if call[0] == "upload")
+    assert complete_call == (
         "complete",
         "task-1",
         {"outcome": "degraded", "warning": "文本内容已入库，知识图谱抽取待补全"},
     )
-    assert calls[1][0:2] == ("event", "upload_complete")
-    assert calls[1][2]["outcome"] == "degraded"
-    assert calls[2][0:3] == ("upload", "task-1", "completed")
-    assert calls[2][3]["outcome"] == "degraded"
-    assert calls[2][3]["warning_message"]
+    assert event_call[0:2] == ("event", "upload_complete")
+    assert event_call[2]["outcome"] == "degraded"
+    assert upload_call[0:3] == ("upload", "task-1", "completed")
+    assert upload_call[3]["outcome"] == "degraded"
+    assert upload_call[3]["warning_message"]
+
+
+@pytest.mark.asyncio
+async def test_finalize_partial_upload_uses_verified_document_without_filename_rematch(monkeypatch):
+    from raganything.services import document_tagging, kb_service, state_service, ws_service
+
+    completed = []
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def unexpected_rematch(*_args, **_kwargs):
+        raise AssertionError("verified partial document must not be rematched by filename")
+
+    async def complete(task_id, **kwargs):
+        completed.append((task_id, kwargs))
+
+    async def update_upload(*_args, **_kwargs):
+        return {"id": 1}
+
+    async def ready_tags(*_args, **_kwargs):
+        return {"tag_status": "ready"}
+
+    monkeypatch.setattr(kb_service, "_fix_stuck_doc_status", no_op)
+    monkeypatch.setattr(kb_service, "_find_degraded_document", unexpected_rematch)
+    monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", update_upload)
+    monkeypatch.setattr(kb_service, "_unregister_processing_file", lambda *_args: None)
+    monkeypatch.setattr(state_service, "complete_task", complete)
+    monkeypatch.setattr(ws_service, "add_event", no_op)
+    monkeypatch.setattr(document_tagging, "enqueue_document_tagging", no_op)
+    monkeypatch.setattr(document_tagging, "wait_for_document_tagging", ready_tags)
+
+    await kb_service._finalize_failed_upload(
+        "task-1", "demo", "paper.docx", 7, "graph extraction failed", "hash-1",
+        verified_degraded=("doc-verified", {"content_ready": True, "retryable": False}),
+    )
+
+    assert completed == [
+        ("task-1", {"outcome": "degraded", "warning": "文本内容已入库，知识图谱抽取待补全"})
+    ]
 
 
 @pytest.mark.asyncio

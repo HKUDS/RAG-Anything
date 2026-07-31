@@ -76,6 +76,25 @@ class RefreshRequest(BaseModel):
     refresh_token: str
 
 
+class ProfileUpdateRequest(BaseModel):
+    username: str
+    email: str
+    current_password: str
+
+
+class PasswordUpdateRequest(BaseModel):
+    old_password: str
+    new_password: str
+
+
+def _masked_email(email: str | None) -> str | None:
+    if not email or "@" not in email:
+        return None
+    local, domain = email.split("@", 1)
+    visible = local[:1]
+    return f"{visible}{'*' * max(1, len(local) - 1)}@{domain}"
+
+
 # ── Auth Routes ─────────────────────────────────────────
 
 @router.post("/auth/register")
@@ -195,10 +214,36 @@ async def me(current_user: dict = Depends(get_current_user)):
     # 检查是否需要修改密码
     user = await get_user_by_id(current_user["id"])
     must_change = user.get("must_change_password", False) if user else False
+    email = _masked_email(user.get("email") if user else None)
     return {
         "status": "ok",
-        "user": {**current_user, "must_change_password": bool(must_change)},
+        "user": {**current_user, "email": email, "must_change_password": bool(must_change)},
     }
+
+
+@router.put("/auth/me/profile")
+@limiter.limit("5/minute")
+async def update_my_profile(
+    request: Request,
+    payload: ProfileUpdateRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """Update username/email only after current-password verification."""
+    user = await get_user_by_id(current_user["id"])
+    if not user:
+        raise HTTPException(404, "用户不存在")
+    if not verify_password(payload.current_password, user["password_hash"]):
+        raise HTTPException(400, "当前密码不正确")
+    try:
+        updated = await update_user(current_user["id"], {"username": payload.username, "email": payload.email})
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    await audit_log(
+        actor_id=current_user["id"], action="user.profile.updated", target_user_id=current_user["id"],
+        details={"fields": ["username", "email"], "result": "updated"},
+        ip_address=request.client.host if request.client else None,
+    )
+    return {"status": "ok", "user": {**current_user, "username": updated["username"], "email": _masked_email(updated.get("email"))}}
 
 
 @router.post("/auth/logout")
@@ -260,15 +305,14 @@ async def logout(
 @limiter.limit("5/minute")
 async def change_password(
     request: Request,
+    payload: PasswordUpdateRequest,
     current_user: dict = Depends(get_current_user),
 ):
     """当前用户修改密码"""
     import re as _re_pw
 
-    # 从 body 解析（用原生 request 避免额外 pydantic model）
-    body = await request.json()
-    old_password = body.get("old_password", "")
-    new_password = body.get("new_password", "")
+    old_password = payload.old_password
+    new_password = payload.new_password
 
     if not old_password or not new_password:
         raise HTTPException(400, "请提供旧密码和新密码")
@@ -308,6 +352,11 @@ async def change_password(
         })
     except ValueError as e:
         raise HTTPException(400, str(e))
+
+    await audit_log(
+        actor_id=current_user["id"], action="user.password.updated", target_user_id=current_user["id"],
+        details={"result": "updated"}, ip_address=request.client.host if request.client else None,
+    )
 
     return {"status": "ok", "message": "密码修改成功"}
 

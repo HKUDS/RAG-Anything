@@ -1,18 +1,19 @@
 ﻿import { useState, useEffect, useCallback, useRef, lazy, Suspense, Component } from 'react'
-import { Routes, Route, NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, GitBranch, ScrollText, AlertTriangle, Image } from 'lucide-react'
+import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, GitBranch, ScrollText, AlertTriangle } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import { api } from './utils/api'
+import { settingsRedirectDestination } from './utils/settingsRouting'
 
 // ---- 路由级代码拆分 ----
 const KnowledgePage               = lazy(() => import('./pages/KnowledgePage'))
 const KnowledgeDetailPage        = lazy(() => import('./pages/KnowledgeDetailPage'))
 const DocumentChunksPage         = lazy(() => import('./pages/DocumentChunksPage'))
 const DocumentChunkDetailPage    = lazy(() => import('./pages/DocumentChunkDetailPage'))
-const SettingsPage                = lazy(() => import('./pages/SettingsPage'))
 const PreferencesPage             = lazy(() => import('./pages/PreferencesPage'))
+const AdminPlatformPage           = lazy(() => import('./pages/AdminPlatformPage'))
 const MonitorPage                 = lazy(() => import('./pages/MonitorPage'))
 const AgentsPage                  = lazy(() => import('./pages/AgentsPage'))
 const AgentChatPage               = lazy(() => import('./pages/AgentChatPage'))
@@ -31,6 +32,13 @@ const PageLoader = () => (
     <div className="skeleton h-6 w-32" />
   </div>
 )
+
+// One-release compatibility route: platform readers retain their management
+// destination while every other authenticated user lands in personal settings.
+function SettingsRedirect() {
+  const { hasPermission } = useAuth()
+  return <Navigate replace to={settingsRedirectDestination(hasPermission('settings:read'))} />
+}
 
 // ---- 懒加载路由错误边界 ----
 class LazyErrorBoundary extends Component {
@@ -116,38 +124,20 @@ const NAV = [
   { to: '/agents', icon: Bot, label: '智能体', requiredPermission: 'agent:read' },
   { to: '/workflow', icon: GitBranch, label: '工作流', requiredPermission: 'workflow:read' },
   { to: '/autorepair', icon: Factory, label: '汽修智能助手', requiredPermission: 'autorepair:read' },
-  { to: '/settings', icon: Settings, label: '设置', requiredPermission: 'settings:read' },
+  { to: '/preferences', icon: Settings, label: '个人设置', requiredPermission: null },
   { to: '/monitor', icon: Activity, label: '监控', requiredPermission: 'monitor:read' },
 ]
 
-const NAV_GROUPS = [
-  {
-    label: '知识核心',
-    eyebrow: '01',
-    items: [
-      { to: '/knowledge', icon: Database, label: '知识库', desc: '文档 / 实体 / 图谱', requiredPermission: null },
-      { to: '/agents', icon: Bot, label: '智能体', desc: '教学问答与推理', requiredPermission: 'agent:read' },
-      { to: '/workflow', icon: GitBranch, label: '工作流', desc: '编排知识处理链路', requiredPermission: 'workflow:read' },
-    ],
-  },
-  {
-    label: '场景实验室',
-    eyebrow: '02',
-    items: [
-      { to: '/autorepair', icon: Factory, label: '汽修智能助手', desc: '专业场景工作台', requiredPermission: 'autorepair:read' },
-    ],
-  },
-  {
-    label: '运行管理',
-    eyebrow: '03',
-    items: [
-      { to: '/monitor', icon: Activity, label: '监控', desc: '服务状态与指标', requiredPermission: 'monitor:read' },
-      { to: '/settings', icon: Settings, label: '设置', desc: '模型与系统配置', requiredPermission: 'settings:read' },
-      { to: '/preferences', icon: Image, label: '个人偏好', desc: '图片理解模型选择', requiredPermission: null },
-      { to: '/admin/users', icon: Shield, label: '用户管理', desc: '角色与权限', requiredPermission: 'users:read' },
-      { to: '/admin/audit-logs', icon: ScrollText, label: '审计日志', desc: '操作追踪', requiredPermission: 'audit:read' },
-    ],
-  },
+const NAV_ITEMS = [
+  { to: '/knowledge', icon: Database, label: '知识库', desc: '文档 / 实体 / 图谱', requiredPermission: null },
+  { to: '/agents', icon: Bot, label: '智能体', desc: '教学问答与推理', requiredPermission: 'agent:read' },
+  { to: '/workflow', icon: GitBranch, label: '工作流', desc: '编排知识处理链路', requiredPermission: 'workflow:read' },
+  { to: '/autorepair', icon: Factory, label: '汽修智能助手', desc: '专业场景工作台', requiredPermission: 'autorepair:read' },
+  { to: '/monitor', icon: Activity, label: '监控', desc: '服务状态与指标', requiredPermission: 'monitor:read' },
+  { to: '/admin/platform', icon: Settings, label: '平台管理', desc: '默认值与资源上限', requiredPermission: 'settings:read' },
+  { to: '/admin/users', icon: Shield, label: '用户管理', desc: '角色与权限', requiredPermission: 'users:read' },
+  { to: '/admin/audit-logs', icon: ScrollText, label: '审计日志', desc: '操作追踪', requiredPermission: 'audit:read' },
+  { to: '/preferences', icon: Settings, label: '个人设置', desc: '模型、检索与账户', requiredPermission: null },
 ]
 
 const ROUTE_META = [
@@ -160,8 +150,8 @@ const ROUTE_META = [
   { test: p => p.startsWith('/workflow'), kicker: '工作流引擎', title: '工作流编排', subtitle: '用节点化流程组织文档处理、检索和推理链路。' },
   { test: p => p.startsWith('/autorepair'), kicker: '场景实验室', title: '汽修智能制造工作台', subtitle: '面向专业教学与竞赛场景的知识图谱和智能问答系统。' },
   { test: p => p.startsWith('/monitor'), kicker: '运行管理', title: '运行监控', subtitle: '观察服务状态、处理吞吐和知识系统运行指标。' },
-  { test: p => p.startsWith('/settings'), kicker: '系统配置', title: '系统设置', subtitle: '管理模型、接口、检索和平台级配置。' },
-  { test: p => p.startsWith('/preferences'), kicker: '个人设置', title: '个人偏好', subtitle: '选择后续图片理解任务使用的模型。' },
+  { test: p => p.startsWith('/admin/platform'), kicker: '系统配置', title: '平台管理', subtitle: '维护默认值、允许范围和资源硬上限。' },
+  { test: p => p.startsWith('/preferences'), kicker: '账户中心', title: '个人设置', subtitle: '管理模型、检索、解析、外观与账户安全。' },
   { test: p => p.startsWith('/admin/users'), kicker: '管理后台', title: '用户与权限', subtitle: '管理账号、角色、部门和访问边界。' },
   { test: p => p.startsWith('/admin/audit-logs'), kicker: '管理后台', title: '审计日志', subtitle: '追踪关键操作与安全事件。' },
 ]
@@ -227,11 +217,19 @@ const getCockpitStats = (pathname, stats, hasPermission) => {
     ]
   }
 
-  if (pathname.startsWith('/settings')) {
+  if (pathname.startsWith('/admin/platform')) {
     return [
       { label: '模型', value: '配置', icon: Settings, tone: 'blue' },
       { label: '接口', value: '管理', icon: Cpu, tone: 'green' },
       { label: '权限', value: hasPermission('settings:read') ? '已授权' : '受限', icon: Shield, tone: 'amber' },
+    ]
+  }
+
+  if (pathname.startsWith('/preferences')) {
+    return [
+      { label: '范围', value: '仅当前账户', icon: User, tone: 'blue' },
+      { label: '分区', value: '独立保存', icon: Settings, tone: 'green' },
+      { label: '约束', value: '平台优先', icon: Shield, tone: 'amber' },
     ]
   }
 
@@ -338,8 +336,8 @@ function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-ink-body hover:bg-cloud-200 transition-colors"
               role="menuitem"
             >
-              <Image size={14} className="text-sky-500" />
-              个人偏好
+              <Settings size={14} className="text-sky-500" />
+              个人设置
             </NavLink>
 
             {/* 主题切换 */}
@@ -377,6 +375,8 @@ export default function App() {
   const [toast, setToast] = useState(null)
   const toastTimerRef = useRef(null)
   const [dark, setDark] = useState(() => {
+    const mode = localStorage.getItem('raganything_theme_mode')
+    if (mode === 'system') return window.matchMedia?.('(prefers-color-scheme: dark)').matches ?? false
     const saved = localStorage.getItem('raganything_theme')
     return saved === 'dark'
   })
@@ -393,7 +393,27 @@ export default function App() {
     localStorage.setItem('raganything_theme', dark ? 'dark' : 'light')
   }, [dark])
 
-  const toggleTheme = useCallback(() => setDark(d => !d), [])
+  const toggleTheme = useCallback(() => setDark(current => {
+    const next = !current
+    localStorage.setItem('raganything_theme_mode', next ? 'dark' : 'light')
+    return next
+  }), [])
+
+  useEffect(() => {
+    const onThemeChange = event => setDark(event.detail === 'dark')
+    window.addEventListener('raganything-theme-change', onThemeChange)
+    return () => window.removeEventListener('raganything-theme-change', onThemeChange)
+  }, [])
+
+  useEffect(() => {
+    const media = window.matchMedia?.('(prefers-color-scheme: dark)')
+    if (!media) return undefined
+    const onSystemThemeChange = event => {
+      if (localStorage.getItem('raganything_theme_mode') === 'system') setDark(event.matches)
+    }
+    media.addEventListener?.('change', onSystemThemeChange)
+    return () => media.removeEventListener?.('change', onSystemThemeChange)
+  }, [])
 
   // 加载全局统计
   const loadStats = useCallback(() => {
@@ -401,7 +421,7 @@ export default function App() {
   }, [])
   useEffect(() => { if (token) loadStats() }, [location.pathname, token])
 
-  const showToast = (msg, type = 'info') => {
+  const showToast = useCallback((msg, type = 'info') => {
     if (toastTimerRef.current) {
       clearTimeout(toastTimerRef.current)
     }
@@ -410,7 +430,7 @@ export default function App() {
       setToast(null)
       toastTimerRef.current = null
     }, 3000)
-  }
+  }, [])
 
   useEffect(() => () => {
     if (toastTimerRef.current) {
@@ -461,12 +481,8 @@ export default function App() {
     )
   }
 
-  const visibleNavGroups = NAV_GROUPS
-    .map(group => ({
-      ...group,
-      items: group.items.filter(item => !item.requiredPermission || hasPermission(item.requiredPermission)),
-    }))
-    .filter(group => group.items.length > 0)
+  const visibleNavItems = NAV_ITEMS
+    .filter(item => !item.requiredPermission || hasPermission(item.requiredPermission))
 
   const routeMeta = getRouteMeta(location.pathname)
   const cockpitStats = getCockpitStats(location.pathname, stats, hasPermission)
@@ -496,41 +512,22 @@ export default function App() {
         </div>
 
         <nav className="cockpit-nav">
-          {visibleNavGroups.map(group => (
-            <section className="cockpit-nav-group" key={group.label}>
-              <div className="cockpit-nav-heading">
-                <span>{group.eyebrow}</span>
-                <strong>{group.label}</strong>
-              </div>
-              <div className="cockpit-nav-items">
-                {group.items.map(({ to, icon: Icon, label, desc }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    end={to === '/agents'}
-                    className={({ isActive }) => `cockpit-nav-link ${isActive ? 'active' : ''}`}
-                  >
-                    <span className="cockpit-nav-icon"><Icon size={17} /></span>
-                    <span className="cockpit-nav-text">
-                      <span>{label}</span>
-                      <small>{desc}</small>
-                    </span>
-                  </NavLink>
-                ))}
-              </div>
-            </section>
+          {visibleNavItems.map(({ to, icon: Icon, label, desc }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={to === '/agents'}
+              className={({ isActive }) => `cockpit-nav-link ${isActive ? 'active' : ''}`}
+            >
+              <span className="cockpit-nav-icon"><Icon size={17} /></span>
+              <span className="cockpit-nav-text">
+                <span>{label}</span>
+                <small>{desc}</small>
+              </span>
+            </NavLink>
           ))}
         </nav>
 
-        <div className="cockpit-sidebar-footer">
-          <div className="cockpit-system-state">
-            <span className="cockpit-pulse" />
-            <div>
-              <strong>知元服务在线</strong>
-              <small>课程 / 图谱 / 智能体就绪</small>
-            </div>
-          </div>
-        </div>
       </aside>
 
       <header className="cockpit-topbar">
@@ -666,8 +663,9 @@ export default function App() {
                   <Route path="/autorepair" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairDashboardPage /></ProtectedRoute>} />
                   <Route path="/autorepair/knowledge" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairKnowledgePage /></ProtectedRoute>} />
                   <Route path="/autorepair/agent" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairAgentPage /></ProtectedRoute>} />
-                  <Route path="/settings" element={<ProtectedRoute requiredPermission="settings:read"><SettingsPage onToast={showToast} /></ProtectedRoute>} />
+                  <Route path="/settings" element={<ProtectedRoute><SettingsRedirect /></ProtectedRoute>} />
                   <Route path="/preferences" element={<ProtectedRoute><PreferencesPage onToast={showToast} /></ProtectedRoute>} />
+                  <Route path="/admin/platform" element={<ProtectedRoute requiredPermission="settings:read"><AdminPlatformPage onToast={showToast} /></ProtectedRoute>} />
                   <Route path="/monitor" element={<ProtectedRoute requiredPermission="monitor:read"><MonitorPage onToast={showToast} /></ProtectedRoute>} />
                   <Route path="/admin/users" element={<ProtectedRoute requiredPermission="users:read"><AdminUsersPage /></ProtectedRoute>} />
                   <Route path="/admin/audit-logs" element={<ProtectedRoute requiredPermission="audit:read"><AdminAuditLogsPage /></ProtectedRoute>} />

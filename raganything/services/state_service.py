@@ -115,7 +115,7 @@ async def _pg_complete_task(task_id: str, *, outcome: str = "", warning: str = "
             "outcome=COALESCE(NULLIF($2, ''), outcome), "
             "warning_message=COALESCE(NULLIF($3, ''), warning_message), "
             "completed_at=NOW(), updated_at=NOW() "
-            "WHERE task_id=$1",
+            "WHERE task_id=$1 AND status <> 'cancelling'",
             task_id, outcome, warning,
         )
 
@@ -135,7 +135,7 @@ async def _pg_fail_task(
             "failure_stage=COALESCE(NULLIF($5, ''), failure_stage), "
             "retryable=COALESCE($6, retryable), "
             "completed_at=NOW(), updated_at=NOW() "
-            "WHERE task_id=$1",
+            "WHERE task_id=$1 AND status <> 'cancelling'",
             task_id, error, outcome, warning, failure_stage, retryable,
         )
 
@@ -176,7 +176,7 @@ async def _pg_update_task_progress(task_id: str, progress: int, message: str = "
             "phase=CASE WHEN $4 <> '' THEN $4 ELSE phase END, "
             "phase_status=CASE WHEN $5 <> '' THEN $5 ELSE phase_status END, "
             "updated_at=NOW() WHERE task_id=$1 "
-            "AND status NOT IN ('completed', 'failed')",
+            "AND status NOT IN ('completed', 'failed', 'cancelling')",
             task_id, progress, message, phase, phase_status,
         )
 
@@ -208,7 +208,7 @@ async def complete_task(
     """Mark task completed — PG + local cache."""
     effective_warning = warning if warning_message is None else warning_message
     async with _get_task_lock():
-        if task_id in processing_tasks:
+        if task_id in processing_tasks and processing_tasks[task_id].get("status") != "cancelling":
             task = processing_tasks[task_id]
             task["status"] = "completed"
             task["progress"] = 100
@@ -240,6 +240,8 @@ async def fail_task(
     effective_warning = warning if warning_message is None else warning_message
     async with _get_task_lock():
         task = processing_tasks.setdefault(task_id, {"id": task_id})
+        if task.get("status") == "cancelling":
+            return
         task["status"] = "failed"
         task["error"] = error
         task["error_message"] = error
@@ -268,7 +270,7 @@ async def defer_task(task_id: str, error: str, *, failure_stage: str) -> None:
     """Keep a task recoverable while a durable downstream job is unavailable."""
     async with _get_task_lock():
         task = processing_tasks.setdefault(task_id, {"id": task_id})
-        if task.get("status") not in {"completed", "failed"}:
+        if task.get("status") not in {"completed", "failed", "cancelling"}:
             task.update({
                 "status": "retry_wait",
                 "error": error,
@@ -305,7 +307,7 @@ async def update_task_progress(task_id: str, progress: int, message: str = "",
     """
     async with _get_task_lock():
         task = processing_tasks.get(task_id)
-        if task is not None and task.get("status") not in {"completed", "failed"}:
+        if task is not None and task.get("status") not in {"completed", "failed", "cancelling"}:
             task["progress"] = progress
             if message:
                 task["message"] = message

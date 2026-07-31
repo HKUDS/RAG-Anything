@@ -2,7 +2,9 @@ version: "3.8"
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      target: default
     container_name: raganything-app
     restart: unless-stopped
     ports:
@@ -12,12 +14,20 @@ services:
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_PORT=5432
+      - PORT=8000
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-raganything}:${POSTGRES_PASSWORD:-raganything}@postgres:5432/${POSTGRES_DATABASE:-raganything}
       - REDIS_URI=redis://redis:6379
+      # The catalog is deployment-owned. It is mounted read-only below and is
+      # never supplied by an API request or browser client.
+      - MODEL_PROFILE_CATALOG_FILE=/app/config/model_profiles.json
     volumes:
       - ./rag_storage:/app/rag_storage
       - ./uploads:/app/uploads
       - ./output:/app/output
-      - ./auth.db:/app/auth.db
+      # Override MODEL_PROFILE_CATALOG_HOST_PATH at deploy time to use a
+      # dedicated unified catalog; the existing vision catalog is a safe
+      # backwards-compatible default.
+      - ${MODEL_PROFILE_CATALOG_HOST_PATH:-./config/vision_models.json}:/app/config/model_profiles.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -48,19 +58,17 @@ services:
       - redisdata:/data
 
   nginx:
-    image: nginx:alpine
+    build:
+      context: .
+      target: frontend
     container_name: raganything-nginx
     restart: unless-stopped
     ports:
       - "80:80"
       - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - frontend_dist:/usr/share/nginx/html:ro
     depends_on:
       - app
 
 volumes:
   pgdata:
   redisdata:
-  frontend_dist:

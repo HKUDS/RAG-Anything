@@ -74,6 +74,7 @@ class QueryMixin:
         cache_data = {
             "query": query.strip(),
             "mode": mode,
+            "scope": dict(getattr(self, "query_cache_scope", {}) or {}),
         }
 
         # Normalize multimodal content for stable caching
@@ -253,6 +254,14 @@ class QueryMixin:
                 query, system_prompt=system_prompt, **kwargs
             )
 
+        # ``hybrid`` is the legacy default. Once a caller supplies immutable
+        # per-user retrieval options, execute the scoped hybrid implementation
+        # instead of silently dropping those options in LightRAG.
+        if mode == "hybrid" and kwargs.get("retrieval_options") is not None:
+            return await self._aquery_rrf(
+                query, system_prompt=system_prompt, **kwargs
+            )
+
         # Graph-only mode — entity matching + neighbor traversal with path tracing
         if mode == "graph":
             return await self._aquery_graph(
@@ -394,7 +403,32 @@ class QueryMixin:
         try:
             # Stage 1: Retrieve chunks via RRF fusion
             top_k = kwargs.get("top_k", 100)
-            chunks = await hybrid_engine.search(query, top_k=top_k)
+            retrieval_options = kwargs.pop("retrieval_options", None)
+            if retrieval_options is not None:
+                # The settings service owns the public immutable shape, while
+                # the retrieval layer owns execution-only options.  Convert by
+                # value instead of mutating the shared engine or settings.
+                from raganything.hybrid_search import RetrievalOptions
+                if not isinstance(retrieval_options, RetrievalOptions):
+                    scope = dict(getattr(self, "query_cache_scope", {}) or {})
+                    retrieval_options = RetrievalOptions(
+                        channels=tuple(retrieval_options.channels),
+                        bm25_top_k=retrieval_options.bm25_top_k,
+                        vector_top_k=retrieval_options.vector_top_k,
+                        graph_top_k=retrieval_options.graph_top_k,
+                        graph_depth=retrieval_options.graph_depth,
+                        rrf_k=retrieval_options.rrf_k,
+                        bm25_tokenizer=retrieval_options.bm25_tokenizer,
+                        bm25_k1=retrieval_options.bm25_k1,
+                        bm25_b=retrieval_options.bm25_b,
+                        workspace=scope.get("workspace"),
+                        corpus_revision=scope.get("corpus_revision"),
+                        permission_scope=scope.get("permission_scope"),
+                        settings_fingerprint=scope.get("settings_fingerprint"),
+                    )
+            chunks = await hybrid_engine.search(
+                query, top_k=top_k, options=retrieval_options,
+            )
 
             if not chunks:
                 self.logger.warning("RRF search returned no chunks")

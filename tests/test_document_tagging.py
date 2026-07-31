@@ -361,6 +361,98 @@ async def test_tag_readiness_uses_authoritative_status_and_persisted_chunks(monk
 
 
 @pytest.mark.asyncio
+async def test_tag_readiness_allows_image_path_reference_alongside_text(monkeypatch):
+    from types import SimpleNamespace
+
+    from raganything.services import (
+        document_quality,
+        document_tagging,
+        kb_chunk_repo,
+        kb_service,
+    )
+
+    async def get_kb(_kb_name):
+        return SimpleNamespace(lightrag=SimpleNamespace())
+
+    async def load_status(_kb_name, _doc_id):
+        return {
+            "status": "processed",
+            "chunks_count": 2,
+            "chunks_list": ["chunk-text", "chunk-image-ref"],
+        }
+
+    async def persisted(_lightrag, _doc_id):
+        return [
+            {"id": "chunk-text", "content": "无人机系统竞赛规则"},
+            {"id": "chunk-image-ref", "content": r"C:\output\page-1.png"},
+        ]
+
+    async def quality(_kb_name, _chunk_ids, _text_chunks):
+        return {
+            "ready": False,
+            "expected_count": 2,
+            "text_count": 2,
+            "vector_count": 2,
+            "missing_text_ids": [],
+            "missing_vector_ids": [],
+            "invalid_content_ids": ["chunk-image-ref"],
+        }
+
+    monkeypatch.setattr(kb_service, "get_kb", get_kb)
+    monkeypatch.setattr(kb_service, "_load_doc_status_by_id", load_status)
+    monkeypatch.setattr(kb_chunk_repo, "query_chunks_by_document_id", persisted)
+    monkeypatch.setattr(document_quality, "evaluate_content_readiness", quality)
+
+    result = await document_tagging._validate_document_tagging_readiness(
+        "demo", "doc-1",
+    )
+
+    assert result["chunk_ids"] == ["chunk-text", "chunk-image-ref"]
+    assert result["quality"]["invalid_content_ids"] == ["chunk-image-ref"]
+
+
+@pytest.mark.asyncio
+async def test_tag_readiness_rejects_path_references_without_text(monkeypatch):
+    from types import SimpleNamespace
+
+    from raganything.services import (
+        document_quality,
+        document_tagging,
+        kb_chunk_repo,
+        kb_service,
+    )
+
+    async def get_kb(_kb_name):
+        return SimpleNamespace(lightrag=SimpleNamespace())
+
+    async def load_status(_kb_name, _doc_id):
+        return {
+            "status": "processed",
+            "chunks_count": 1,
+            "chunks_list": ["chunk-image-ref"],
+        }
+
+    async def persisted(_lightrag, _doc_id):
+        return [{"id": "chunk-image-ref", "content": r"C:\output\page-1.png"}]
+
+    async def quality(_kb_name, _chunk_ids, _text_chunks):
+        return {
+            "ready": False,
+            "missing_text_ids": [],
+            "missing_vector_ids": [],
+            "invalid_content_ids": ["chunk-image-ref"],
+        }
+
+    monkeypatch.setattr(kb_service, "get_kb", get_kb)
+    monkeypatch.setattr(kb_service, "_load_doc_status_by_id", load_status)
+    monkeypatch.setattr(kb_chunk_repo, "query_chunks_by_document_id", persisted)
+    monkeypatch.setattr(document_quality, "evaluate_content_readiness", quality)
+
+    with pytest.raises(RuntimeError, match="not eligible for automatic tagging"):
+        await document_tagging._validate_document_tagging_readiness("demo", "doc-1")
+
+
+@pytest.mark.asyncio
 async def test_tag_readiness_rejects_incomplete_multimodal_state(monkeypatch):
     from types import SimpleNamespace
 

@@ -22,9 +22,8 @@ export default function UploadPage({ onToast }) {
   const wsRef = useRef(null)
 
   useEffect(() => {
-    api.getSettings().then(s => {
-      if (s.chunking_strategies) setStrategies(s.chunking_strategies)
-      if (s.chunking_strategy) setChunkingStrategy(s.chunking_strategy)
+    api.getPersonalSettings().then(s => {
+      if (s?.effective?.ingestion?.chunking_strategy) setChunkingStrategy(s.effective.ingestion.chunking_strategy)
     }).catch(err => console.error('加载分块策略失败:', err))
   }, [])
 

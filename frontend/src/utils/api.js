@@ -316,6 +316,7 @@ export const api = {
   post: (url, data) => fetchJson(url, { method: 'POST', body: JSON.stringify(data) }),
   put: (url, data) => fetchJson(url, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (url) => fetchJson(url, { method: 'DELETE' }),
+  getMe: () => fetchJson('/auth/me'),
 
   // 知识库管理
   listKBs: ({ force = false } = {}) => {
@@ -594,8 +595,20 @@ export const api = {
 
   // 设置接口（仅管理员；使用 fetchJson 避免附加 ?kb= 参数）
   getSettings: () => fetchJson('/settings'),
-  updateSettings: (data) => fetchJson('/settings', { method: 'PUT', body: JSON.stringify(data) }),
-  resetSettings: () => fetchJson('/settings/reset', { method: 'POST' }),
+
+  // Revisioned personal/platform settings. Provider credentials are never
+  // represented in these payloads.
+  getPersonalSettings: () => fetchJson('/users/me/settings'),
+  getPersonalSettingsOptions: () => fetchJson('/users/me/settings/options'),
+  patchPersonalSettings: (section, data) => fetchJson(`/users/me/settings/${encodeURIComponent(section)}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  getPlatformSettings: () => fetchJson('/admin/platform'),
+  updatePlatformSettings: (data) => fetchJson('/admin/platform', { method: 'PUT', body: JSON.stringify(data) }),
+  listModelProfiles: (kind) => fetchJson(`/model-profiles${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),
+  probeModelProfile: (profileId) => fetchJson(`/admin/model-profiles/${encodeURIComponent(profileId)}/probe`, { method: 'POST' }),
+  getKBVisionSettings: (kbName) => fetchJson(`/kb/${encodeURIComponent(kbName)}/vision-settings`),
+  updateKBVisionSettings: (kbName, data) => fetchJson(`/kb/${encodeURIComponent(kbName)}/vision-settings`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateMyProfile: (data) => fetchJson('/auth/me/profile', { method: 'PUT', body: JSON.stringify(data) }),
+  updateMyPassword: (data) => fetchJson('/auth/me/password', { method: 'PUT', body: JSON.stringify(data) }),
 
   // 个人图片理解模型偏好（所有已登录用户）
   listVisionModels: (kind) => fetchJson(`/vision-models${kind ? `?kind=${encodeURIComponent(kind)}` : ''}`),

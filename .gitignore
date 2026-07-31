@@ -70,8 +70,8 @@ lightrag-dev/
 gui/
 tiktoken_cache/
 
-# unit-test files
-test_*
+# Ad-hoc root-level test artifacts. Tests under tests/ are source files.
+/test_*
 !tests/test_query_image_recall.py
 !tests/test_odl_media_manifest.py
 !tests/test_chunk_maintenance.py
@@ -94,7 +94,6 @@ memory-bank/
 # AI
 .claude/
 .cursor/
-CLAUDE.md
 
 # Custom additions — user data & generated files
 uploads/

@@ -1,3 +1,11 @@
+FROM node:20-alpine AS frontend-build
+
+WORKDIR /frontend
+COPY frontend/package.json ./
+RUN npm install --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
 FROM python:3.11-slim AS base
 
 LABEL org.opencontainers.image.title="RAG-Anything"
@@ -20,8 +28,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # 前端构建
-WORKDIR /app/frontend
-RUN npm install && npm run build
+COPY --from=frontend-build /frontend/dist /app/frontend/dist
 
 WORKDIR /app
 
@@ -36,6 +43,10 @@ CMD ["python", "server.py"]
 
 # Opt-in OpenDataLoader runtime. Build explicitly with:
 # docker build --target opendataloader -t raganything:opendataloader .
+FROM nginx:alpine AS frontend
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=frontend-build /frontend/dist /usr/share/nginx/html
+
 FROM base AS opendataloader
 RUN apt-get update && apt-get install -y --no-install-recommends \
     openjdk-17-jre-headless \

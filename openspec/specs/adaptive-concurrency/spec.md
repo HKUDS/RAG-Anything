@@ -1,7 +1,9 @@
 # Spec: LLM 自适应并发
 
-## ADDED Requirements
+## Purpose
 
+定义调用级自适应并发策略、服务商保护阈值，以及用户配额与平台硬上限之间的协作边界，避免单个调用者绕过全局资源保护或影响其他并发工作。
+## Requirements
 ### Requirement: 滑动窗口错误率检测
 系统 SHALL 维护最近 N 次 API 调用结果（N=10，可配置），当错误率超过阈值（30%）时自动将并发数减半。
 
@@ -19,3 +21,10 @@
 #### Scenario: 自定义阈值
 - **WHEN** 设置 `ADAPTIVE_CONCURRENCY_ERROR_RATE=0.5`
 - **THEN** 错误率超过 50% 才触发降级
+
+### Requirement: Effective concurrency combines personal quota with global limits
+The system SHALL resolve the personal concurrency choice against platform, provider, and worker hard limits and enforce the resulting effective quota through durable leases. Adaptive provider concurrency remains an outer constraint and SHALL not be mutated by a user's request.
+
+#### Scenario: Adaptive provider cap lowers available user concurrency
+- **WHEN** adaptive concurrency or a provider hard limit is lower than a user's saved quota
+- **THEN** the resolver reports the lower effective limit and its constraint source without modifying the user's stored value

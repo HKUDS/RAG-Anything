@@ -4,6 +4,7 @@ import json
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -356,20 +357,46 @@ async def test_agent_stream_done_event_uses_controlled_media_payload(tmp_path, m
         "verify_kb_access",
         lambda kb, current_user: _async_value(kb),
     )
-    monkeypatch.setattr(agent, "get_kb", lambda _kb: _async_value(Instance()))
+    monkeypatch.setattr(agent, "get_kb", lambda _kb, **_kwargs: _async_value(Instance()))
     monkeypatch.setattr(agent, "recall_query_images", controlled_recall)
     async def resolve_payload(*, kb_name, image_path):
         return catalog_media_payload(catalog, kb_name=kb_name, path=image_path)
 
     monkeypatch.setattr(agent, "resolve_controlled_media_payload", resolve_payload)
-    monkeypatch.setattr(agent, "_build_agent_llm", lambda _runtime: answer_llm)
+    monkeypatch.setattr(agent, "_build_agent_llm", lambda _runtime, _selected=None: answer_llm)
     monkeypatch.setattr(agent, "pg_add_message", noop)
     monkeypatch.setattr(agent, "record_query", noop)
     monkeypatch.setattr(agent, "pg_get_conversation", noop)
+    from raganything.services import user_settings
+    from tests.test_agent_update_runtime import _resolved_settings
+
+    monkeypatch.setattr(
+        user_settings,
+        "resolve_user_settings_for_task",
+        AsyncMock(return_value=_resolved_settings()),
+    )
+    monkeypatch.setattr(user_settings, "get_platform_settings", AsyncMock(return_value={
+        "settings": {"limits": {"interactive_wait_seconds": 0}}
+    }))
+    monkeypatch.setattr(user_settings, "acquire_quota_lease", AsyncMock(return_value="lease-1"))
+    monkeypatch.setattr(user_settings, "heartbeat_quota_lease", AsyncMock(return_value=True))
+    monkeypatch.setattr(user_settings, "release_quota_lease", AsyncMock(return_value=True))
+    monkeypatch.setattr(agent, "_query_cache_scope", AsyncMock(return_value={
+        "workspace": "kb-visible", "settings_fingerprint": "settings-fingerprint"
+    }))
 
     from raganything.services import vision_models
 
     monkeypatch.setattr(vision_models, "resolve_user_vlm_selection", selected_vlm)
+    monkeypatch.setattr(
+        vision_models,
+        "require_available",
+        lambda _profile_id, kind: SimpleNamespace(
+            profile=SimpleNamespace(kind=kind, available=True),
+            fingerprint=f"{kind}-fingerprint",
+        ),
+    )
+    monkeypatch.setattr(vision_models, "build_llm_callable", lambda *_args, **_kwargs: answer_llm)
     monkeypatch.setattr(vision_models, "activate_vlm_selection", lambda _snapshot: None)
     monkeypatch.setattr(vision_models, "reset_vlm_snapshot", lambda _token: None)
 
@@ -388,7 +415,7 @@ async def test_agent_stream_done_event_uses_controlled_media_payload(tmp_path, m
 
     assert str(image) not in body
     done_lines = [line for line in body.splitlines() if '"type": "done"' in line]
-    assert len(done_lines) == 1
+    assert len(done_lines) == 1, body
     done = json.loads(done_lines[0].removeprefix("data: "))
     assert done["images"][0]["url"].startswith("/api/knowledge/media/")
     assert done["images"][0]["kb"] == "kb-visible"
@@ -550,6 +577,12 @@ async def test_image_search_omits_non_catalog_paths(tmp_path, monkeypatch):
     monkeypatch.setenv("VISION_SEARCH_ENABLED", "true")
     monkeypatch.setattr(knowledge, "get_kb", get_kb)
     monkeypatch.setattr(knowledge, "_load_doc_status_json", doc_status)
+    monkeypatch.setattr(knowledge, "load_kb_meta", AsyncMock(return_value={
+        "kb-visible": {"extra": {"vision_embedding": {
+            "profile_id": "vision-test",
+            "profile_fingerprint": "vision-fingerprint",
+        }}}
+    }))
 
     response = await knowledge.image_search(
         Request({"type": "http", "method": "POST", "path": "/"}),

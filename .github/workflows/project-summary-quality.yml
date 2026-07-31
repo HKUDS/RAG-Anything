@@ -1,0 +1,36 @@
+name: Project Summary Quality (Advisory)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  project-summary-quality:
+    name: Project summary quality (non-blocking)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check PROJECT_SUMMARY quality
+        id: summary_check
+        continue-on-error: true
+        run: python scripts/check_project_summary.py
+
+      - name: Report advisory result
+        if: steps.summary_check.outcome == 'failure'
+        run: >-
+          echo "::warning file=PROJECT_SUMMARY.md::Project summary quality checks found issues.
+          Review the annotated findings; this advisory check does not block merging."

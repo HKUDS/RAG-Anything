@@ -32,9 +32,15 @@ _RAPIDOCR_RUNTIME_LOCK = threading.RLock()
 class PageTrackedContent(list):
     """A content list that carries the immutable source-page manifest."""
 
-    def __init__(self, values: List[Dict[str, Any]], page_coverage: Dict[str, Any]):
+    def __init__(
+        self,
+        values: List[Dict[str, Any]],
+        page_coverage: Dict[str, Any],
+        provenance_ref: Dict[str, Any] | None = None,
+    ):
         super().__init__(values)
         self.page_coverage = page_coverage
+        self.provenance_ref = provenance_ref
 
 
 class PdfPageCoverageError(RuntimeError):

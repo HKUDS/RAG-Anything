@@ -2,8 +2,8 @@
 """
 Image Vector Repository — PG-backed (Phase 2 migration).
 
-Primary: PostgreSQL ``image_vision_vectors`` table with native
-          ``double precision[]`` array vectors + ``array_cosine_similarity()``.
+Primary: PostgreSQL ``image_vision_vectors`` table with either native
+          ``double precision[]`` arrays or existing pgvector ``vector`` columns.
 Fallback: NanoVectorDB JSON file (``vdb_image_vision.json``) when PG is
           not configured or pg pool is not initialized.
 
@@ -29,6 +29,20 @@ import numpy as np
 logger = logging.getLogger(__name__)
 
 
+def profile_storage_suffix(profile_id: str, profile_fingerprint: str) -> str:
+    """Return a collision-resistant NanoVectorDB partition suffix.
+
+    A profile fingerprint identifies its adapter configuration, not its public
+    profile ID.  Include both values so two aliases cannot share a vector file.
+    """
+    if profile_id == "legacy-doubao-embedding" and profile_fingerprint == "legacy-unscoped":
+        return ""
+    digest = hashlib.sha256(
+        f"{profile_id}\0{profile_fingerprint}".encode("utf-8")
+    ).hexdigest()[:16]
+    return f".{digest}"
+
+
 def _pg_available() -> bool:
     """Check if PG pool is initialized and ready."""
     try:
@@ -39,15 +53,16 @@ def _pg_available() -> bool:
         return False
 
 
-# ── PG Query Templates (pgvector, cosine distance via <=>) ──
+# ── PG Query Templates (native arrays, matching migration 005) ──
 
 _workspace_schema_ready = False
 _workspace_schema_lock = asyncio.Lock()
+_pg_embedding_kind = "array"
 
 
 async def _ensure_workspace_schema() -> None:
     """Ensure legacy vision-vector tables are isolated by KB workspace."""
-    global _workspace_schema_ready
+    global _workspace_schema_ready, _pg_embedding_kind
     if _workspace_schema_ready:
         return
 
@@ -58,6 +73,15 @@ async def _ensure_workspace_schema() -> None:
 
         pool = get_pg_pool()
         async with pool.acquire() as conn:
+            embedding_udt = await conn.fetchval(
+                "SELECT udt_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name='image_vision_vectors' "
+                "AND column_name='embedding'"
+            )
+            if embedding_udt == "vector":
+                _pg_embedding_kind = "vector"
+            elif embedding_udt in {"_float8", "float8[]"}:
+                _pg_embedding_kind = "array"
             await conn.execute(
                 "ALTER TABLE image_vision_vectors "
                 "ADD COLUMN IF NOT EXISTS workspace TEXT NOT NULL DEFAULT ''"
@@ -66,13 +90,17 @@ async def _ensure_workspace_schema() -> None:
                 "CREATE INDEX IF NOT EXISTS idx_ivv_workspace_doc_id "
                 "ON image_vision_vectors(workspace, doc_id)"
             )
+            await conn.execute("ALTER TABLE image_vision_vectors ADD COLUMN IF NOT EXISTS profile_id TEXT NOT NULL DEFAULT 'legacy-doubao-embedding'")
+            await conn.execute("ALTER TABLE image_vision_vectors ADD COLUMN IF NOT EXISTS profile_fingerprint TEXT NOT NULL DEFAULT 'legacy-unscoped'")
+            await conn.execute("ALTER TABLE image_vision_vectors ADD COLUMN IF NOT EXISTS embedding_dim INTEGER")
+            await conn.execute("CREATE INDEX IF NOT EXISTS idx_ivv_workspace_profile ON image_vision_vectors(workspace, profile_id, profile_fingerprint)")
         _workspace_schema_ready = True
 
 _PG_UPSERT_SQL = """
 INSERT INTO image_vision_vectors
     (id, workspace, image_hash, doc_id, entity_name, entity_type, image_path,
-     file_path, description, vision_model, embedding, created_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::vector,$12)
+     file_path, description, vision_model, embedding, created_at, profile_id, profile_fingerprint, embedding_dim)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::double precision[],$12,$13,$14,$15)
 ON CONFLICT (id) DO UPDATE SET
     workspace     = EXCLUDED.workspace,
     entity_name   = EXCLUDED.entity_name,
@@ -82,6 +110,9 @@ ON CONFLICT (id) DO UPDATE SET
     description   = EXCLUDED.description,
     vision_model  = EXCLUDED.vision_model,
     embedding     = EXCLUDED.embedding,
+    profile_id    = EXCLUDED.profile_id,
+    profile_fingerprint = EXCLUDED.profile_fingerprint,
+    embedding_dim = EXCLUDED.embedding_dim,
     created_at    = EXCLUDED.created_at
 """
 
@@ -89,11 +120,25 @@ _PG_SEARCH_SQL = """
 SELECT id, image_hash, doc_id, entity_name, entity_type,
        image_path, file_path, description, vision_model,
        created_at,
+       array_cosine_similarity(embedding, $1::double precision[]) AS score
+FROM image_vision_vectors
+WHERE workspace = $2 AND profile_id = $3 AND profile_fingerprint = $4
+ORDER BY score DESC
+LIMIT $5
+"""
+
+_PG_UPSERT_VECTOR_SQL = _PG_UPSERT_SQL.replace(
+    "$11::double precision[]", "$11::vector"
+)
+_PG_SEARCH_VECTOR_SQL = """
+SELECT id, image_hash, doc_id, entity_name, entity_type,
+       image_path, file_path, description, vision_model,
+       created_at,
        1 - (embedding <=> $1::vector) AS score
 FROM image_vision_vectors
-WHERE workspace = $2
+WHERE workspace = $2 AND profile_id = $3 AND profile_fingerprint = $4
 ORDER BY embedding <=> $1::vector
-LIMIT $3
+LIMIT $5
 """
 
 
@@ -116,10 +161,13 @@ class ImageVectorRepository:
     _F_VECTOR = "__vector__"
     _METRIC = "cosine"
 
-    def __init__(self, working_dir: str):
+    def __init__(self, working_dir: str, *, profile_id: str = "legacy-doubao-embedding", profile_fingerprint: str = "legacy-unscoped"):
         self._working_dir = working_dir
         self._workspace = str(Path(working_dir).resolve())
-        self._db_path = os.path.join(working_dir, "vdb_image_vision.json")
+        self._profile_id = profile_id
+        self._profile_fingerprint = profile_fingerprint
+        suffix = profile_storage_suffix(profile_id, profile_fingerprint)
+        self._db_path = os.path.join(working_dir, f"vdb_image_vision{suffix}.json")
         self._bak_path = self._db_path + ".bak"
         self._vdb = None  # NanoVectorDB instance (fallback only)
         self._dim: int = 0
@@ -197,10 +245,13 @@ class ImageVectorRepository:
     # ── CRUD ─────────────────────────────────────────────
 
     @staticmethod
-    def _vec_to_pg(vector: np.ndarray) -> str:
-        """Convert numpy vector to pgvector string format '[x1,x2,...]'."""
-        arr = vector.astype(np.float32).ravel()
-        return "[" + ",".join(str(float(x)) for x in arr) + "]"
+    def _vec_to_pg(vector: np.ndarray) -> list[float]:
+        """Convert a numpy vector to the native PostgreSQL array value."""
+        return [float(value) for value in vector.astype(np.float64).ravel()]
+
+    @staticmethod
+    def _vec_to_pgvector(vector: np.ndarray) -> str:
+        return "[" + ",".join(str(float(value)) for value in vector.astype(np.float32).ravel()) + "]"
 
     async def upsert(
         self,
@@ -231,18 +282,26 @@ class ImageVectorRepository:
             # The historical record ID was only based on image bytes. Scope new
             # PG records by workspace so equal images in separate KBs cannot
             # overwrite one another.
-            workspace_hash = hashlib.sha256(
-                self._workspace.encode("utf-8")
+            # The profile scope is part of the record identity.  Reindexing
+            # builds the target profile beside the active one, so a matching
+            # image must not overwrite the active-profile vector.
+            scope_hash = hashlib.sha256(
+                f"{self._workspace}\0{self._profile_id}\0{self._profile_fingerprint}".encode("utf-8")
             ).hexdigest()[:16]
-            record_id = f"img-{workspace_hash}-{image_hash}"
+            record_id = f"img-{scope_hash}-{image_hash}"
             pool = get_pg_pool()
-            vec_str = self._vec_to_pg(vector)
+            if _pg_embedding_kind == "vector":
+                vec_value = self._vec_to_pgvector(vector)
+                upsert_sql = _PG_UPSERT_VECTOR_SQL
+            else:
+                vec_value = self._vec_to_pg(vector)
+                upsert_sql = _PG_UPSERT_SQL
             async with pool.acquire() as conn:
                 await conn.execute(
-                    _PG_UPSERT_SQL,
+                    upsert_sql,
                     record_id, self._workspace, image_hash, doc_id,
                     entity_name, entity_type, image_path, file_path,
-                    description, vision_model, vec_str, created_at,
+                    description, vision_model, vec_value, created_at, self._profile_id, self._profile_fingerprint, self._dim,
                 )
         else:
             if self._vdb is None:
@@ -274,10 +333,15 @@ class ImageVectorRepository:
             from raganything.services.pg_state_repo import get_pg_pool
 
             pool = get_pg_pool()
-            vec_str = self._vec_to_pg(vector)
+            if _pg_embedding_kind == "vector":
+                vec_value = self._vec_to_pgvector(vector)
+                search_sql = _PG_SEARCH_VECTOR_SQL
+            else:
+                vec_value = self._vec_to_pg(vector)
+                search_sql = _PG_SEARCH_SQL
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    _PG_SEARCH_SQL, vec_str, self._workspace, top_k
+                    search_sql, vec_value, self._workspace, self._profile_id, self._profile_fingerprint, top_k
                 )
             return [dict(r) for r in rows]
 
@@ -315,9 +379,8 @@ class ImageVectorRepository:
             async with pool.acquire() as conn:
                 result = await conn.execute(
                     "DELETE FROM image_vision_vectors "
-                    "WHERE workspace = $1 AND doc_id = $2",
-                    self._workspace,
-                    doc_id,
+                    "WHERE workspace = $1 AND doc_id = $2 AND profile_id = $3 AND profile_fingerprint = $4",
+                    self._workspace, doc_id, self._profile_id, self._profile_fingerprint,
                 )
             # asyncpg returns "DELETE N", parse N
             deleted = 0
@@ -370,8 +433,10 @@ class ImageVectorRepository:
                 pool = get_pg_pool()
                 async with pool.acquire() as conn:
                     return await conn.fetchval(
-                        "SELECT count(*) FROM image_vision_vectors WHERE workspace = $1",
-                        self._workspace,
+                        "SELECT count(*) FROM image_vision_vectors "
+                        "WHERE workspace = $1 AND profile_id = $2 "
+                        "AND profile_fingerprint = $3",
+                        self._workspace, self._profile_id, self._profile_fingerprint,
                     )
 
             future = _syncio.run_coroutine_threadsafe(_pg_count(), loop)
@@ -490,8 +555,10 @@ class ImageVectorRepository:
                 pool = get_pg_pool()
                 async with pool.acquire() as conn:
                     rows = await conn.fetch(
-                        "SELECT id FROM image_vision_vectors WHERE workspace = $1",
-                        self._workspace,
+                        "SELECT id FROM image_vision_vectors "
+                        "WHERE workspace = $1 AND profile_id = $2 "
+                        "AND profile_fingerprint = $3",
+                        self._workspace, self._profile_id, self._profile_fingerprint,
                     )
                 return [r["id"] for r in rows]
 
@@ -500,8 +567,10 @@ class ImageVectorRepository:
                 # Single scan: fetch all (id, doc_id) pairs, filter in Python.
                 # For typical KB scale (hundreds of images), this is fine.
                 rows = await conn.fetch(
-                    "SELECT id, doc_id FROM image_vision_vectors WHERE workspace = $1",
-                    self._workspace,
+                    "SELECT id, doc_id FROM image_vision_vectors "
+                    "WHERE workspace = $1 AND profile_id = $2 "
+                    "AND profile_fingerprint = $3",
+                    self._workspace, self._profile_id, self._profile_fingerprint,
                 )
             return [r["id"] for r in rows if r["doc_id"] not in valid_doc_ids]
 
@@ -527,9 +596,9 @@ class ImageVectorRepository:
             async with pool.acquire() as conn:
                 result = await conn.execute(
                     "DELETE FROM image_vision_vectors "
-                    "WHERE workspace = $1 AND id = ANY($2)",
-                    self._workspace,
-                    ids,
+                    "WHERE workspace = $1 AND profile_id = $2 "
+                    "AND profile_fingerprint = $3 AND id = ANY($4)",
+                    self._workspace, self._profile_id, self._profile_fingerprint, ids,
                 )
             deleted = 0
             if result:
@@ -557,4 +626,4 @@ class ImageVectorRepository:
         return h.hexdigest()[:16]
 
 
-__all__ = ["ImageVectorRepository"]
+__all__ = ["ImageVectorRepository", "profile_storage_suffix"]

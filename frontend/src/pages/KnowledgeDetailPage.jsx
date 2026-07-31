@@ -16,8 +16,10 @@ import {
   getDocumentHealth,
   getUploadTaskMessages,
   getUploadTaskStatus,
+  isCancellableUploadDocument,
 } from '../utils/documentHealth'
 import SideDrawer from '../components/SideDrawer'
+import { UserDialogConfirmation } from '../components/UserDialog'
 import TagRelationsPanel from '../components/TagRelationsPanel'
 import { useAuth } from '../context/AuthContext'
 import {
@@ -35,6 +37,7 @@ const STATUS = {
   completed: 'badge-success',
   failed: 'badge-error',
   retry_wait: 'badge-warning',
+  cancelling: 'badge-warning',
   degraded: 'badge-warning',
 }
 const STATUS_CN = {
@@ -45,8 +48,10 @@ const STATUS_CN = {
   completed: '已完成',
   failed: '失败',
   retry_wait: '等待自动重试',
+  cancelling: '正在停止并删除',
   degraded: '已入库，图谱待补全',
 }
+const UPLOAD_TASK_TERMINAL_STATUSES = new Set(['completed', 'processed', 'failed', 'degraded'])
 const TAG_TONE_CLASS = {
   success: 'text-sage-600',
   info: 'text-sky-600',
@@ -232,6 +237,7 @@ function UploadSection({
   const [tasksError, setTasksError] = useState('')
   const [batchUploading, setBatchUploading] = useState(false)
   const [deletingTaskIds, setDeletingTaskIds] = useState([])
+  const [taskDeleteConfirm, setTaskDeleteConfirm] = useState(null)
   const [urlInput, setUrlInput] = useState('')
   const [urlLoading, setUrlLoading] = useState(false)
   const [pasteContent, setPasteContent] = useState('')
@@ -281,6 +287,9 @@ function UploadSection({
       const result = await api.getUploadTasks()
       if (requestId !== taskRequestRef.current) return
       setServerTasks(result.tasks || [])
+      setDeletingTaskIds(previous => previous.filter(id => (
+        (result.tasks || []).some(task => task.task_id === id)
+      )))
       setTasksError('')
       setTasksLoaded(true)
     } catch (e) {
@@ -487,17 +496,33 @@ function UploadSection({
 
   const handleDeleteTask = async (task) => {
     if (!task?.can_delete || !task.task_id) return
+    const taskStatus = getUploadTaskStatus(task)
+    if (taskStatus === 'processing' || taskStatus === 'retry_wait') {
+      setTaskDeleteConfirm(task)
+      return
+    }
+    await confirmDeleteTask(task)
+  }
+
+  const confirmDeleteTask = async (task = taskDeleteConfirm) => {
+    if (!task?.can_delete || !task.task_id) return
+    const taskStatus = getUploadTaskStatus(task)
     setDeletingTaskIds(prev => [...prev, task.task_id])
     try {
-      await api.deleteUploadTask(task.task_id)
-      setServerTasks(prev => prev.filter(item => item.task_id !== task.task_id))
-      onToast?.(`${task.filename} 已从队列移除`, 'success')
+      const result = await api.deleteUploadTask(task.task_id)
+      setTaskDeleteConfirm(null)
+      if (result?.status === 'deleted') {
+        setServerTasks(prev => prev.filter(item => item.task_id !== task.task_id))
+        setDeletingTaskIds(prev => prev.filter(id => id !== task.task_id))
+        onToast?.(`${task.filename} 已删除上传任务`, 'success')
+      } else {
+        onToast?.(`${task.filename} 正在停止并删除`, 'info')
+      }
       await refreshUploadTasks({ silent: true })
     } catch (e) {
-      onToast?.(`删除上传任务失败: ${e.message}`, 'error')
+      setTaskDeleteConfirm(null)
+      onToast?.(e?.status === 409 ? '任务状态已变化，已刷新列表' : `删除上传任务失败: ${e.message}`, e?.status === 409 ? 'info' : 'error')
       await refreshUploadTasks({ silent: true })
-    } finally {
-      setDeletingTaskIds(prev => prev.filter(id => id !== task.task_id))
     }
   }
 
@@ -762,7 +787,7 @@ function UploadSection({
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 min-w-0">
-                                {['processing', 'retry_wait'].includes(taskStatus)
+                                {['processing', 'retry_wait', 'cancelling'].includes(taskStatus)
                                   ? <Loader2 size={14} className="animate-spin text-amber-500 shrink-0" />
                                   : taskStatus === 'completed'
                                     ? <CheckCircle2 size={14} className="text-sage-500 shrink-0" />
@@ -837,9 +862,10 @@ function UploadSection({
                                 className="btn-ghost text-xs py-0.5 px-2 text-rose-500 shrink-0"
                                 onClick={() => handleDeleteTask(task)}
                                 disabled={deleting}
-                                title="删除未开始的上传任务"
+                                aria-label={`${taskStatus === 'processing' ? '停止并删除' : taskStatus === 'retry_wait' ? '取消重试并删除' : '删除'} ${task.filename}`}
+                                title={taskStatus === 'processing' ? '停止并删除上传任务' : taskStatus === 'retry_wait' ? '取消重试并删除上传任务' : '删除上传任务'}
                               >
-                                {deleting ? '删除中…' : '删除'}
+                                {deleting ? (taskStatus === 'processing' ? '停止中…' : taskStatus === 'retry_wait' ? '取消中…' : '删除中…') : (taskStatus === 'processing' ? '停止并删除' : taskStatus === 'retry_wait' ? '取消重试并删除' : '删除')}
                               </button>
                             )}
                             {taskStatus === 'retry_wait' && (
@@ -847,6 +873,7 @@ function UploadSection({
                                 <button
                                   className="btn-ghost text-xs py-0.5 px-2"
                                   onClick={() => handleRetryTaskNow(task)}
+                                  disabled={deleting}
                                   title="立即重试"
                                 >
                                   <RotateCcw size={12} />
@@ -854,6 +881,7 @@ function UploadSection({
                                 <button
                                   className="btn-ghost text-xs py-0.5 px-2 text-rose-500"
                                   onClick={() => handleCancelRetry(task)}
+                                  disabled={deleting}
                                   title="取消自动重试"
                                 >
                                   <X size={12} />
@@ -872,6 +900,21 @@ function UploadSection({
           </motion.div>
         )}
       </AnimatePresence>
+      <UserDialogConfirmation
+        isOpen={Boolean(taskDeleteConfirm)}
+        title={getUploadTaskStatus(taskDeleteConfirm || {}) === 'processing' ? '停止并删除上传任务' : '取消重试并删除上传任务'}
+        description={getUploadTaskStatus(taskDeleteConfirm || {}) === 'processing'
+          ? `将停止“${taskDeleteConfirm?.filename || ''}”的后台处理，并删除已生成的内容。此操作无法恢复。`
+          : `将取消“${taskDeleteConfirm?.filename || ''}”的自动重试并删除任务。此操作无法恢复。`}
+        icon={<Trash2 size={18} />}
+        confirmLabel={getUploadTaskStatus(taskDeleteConfirm || {}) === 'processing' ? '停止并删除' : '取消重试并删除'}
+        cancelLabel="取消"
+        danger
+        confirmDisabled={Boolean(taskDeleteConfirm && deletingTaskIds.includes(taskDeleteConfirm.task_id))}
+        closeDisabled={Boolean(taskDeleteConfirm && deletingTaskIds.includes(taskDeleteConfirm.task_id))}
+        onConfirm={() => void confirmDeleteTask()}
+        onCancel={() => setTaskDeleteConfirm(null)}
+      />
     </div>
   )
 }
@@ -881,7 +924,8 @@ export default function KnowledgeDetailPage() {
   const { kbName } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { isAdmin } = useAuth()
+  const { isAdmin, hasPermission } = useAuth()
+  const canManageKB = isAdmin || hasPermission('kb:write')
 
   const [detailState, setDetailState] = useState(() => createKnowledgeDetailState(
     kbName,
@@ -894,6 +938,7 @@ export default function KnowledgeDetailPage() {
   const [detailDoc, setDetailDoc] = useState(null)
   const [deleteConfirm, setDeleteConfirm] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [cancellingUploadTaskIds, setCancellingUploadTaskIds] = useState([])
   const [retryingDocIds, setRetryingDocIds] = useState([])
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [batchDeleting, setBatchDeleting] = useState(false)
@@ -920,6 +965,10 @@ export default function KnowledgeDetailPage() {
   const [activeTab, setActiveTab] = useState('documents')
   const [visionSearching, setVisionSearching] = useState(false)
   const [visionResults, setVisionResults] = useState(null)
+  const [visionSettings, setVisionSettings] = useState(null)
+  const [visionProfiles, setVisionProfiles] = useState([])
+  const [visionProfileDraft, setVisionProfileDraft] = useState('')
+  const [visionSettingsStatus, setVisionSettingsStatus] = useState({ loading: false, saving: false, error: '', confirmReindex: false })
   const visionInputRef = useRef()
   const svgRef = useRef()
   const graphContainerRef = useRef()
@@ -949,6 +998,48 @@ export default function KnowledgeDetailPage() {
     const requested = searchParams.get('tab')
     setActiveTab(['documents', 'graph', 'tags'].includes(requested) ? requested : 'documents')
   }, [searchParams])
+
+  useEffect(() => {
+    if (!kbName || !canManageKB) return undefined
+    let active = true
+    setVisionSettingsStatus({ loading: true, saving: false, error: '', confirmReindex: false })
+    Promise.all([api.getKBVisionSettings(kbName), api.listModelProfiles('embedding')])
+      .then(([settings, catalog]) => {
+        if (!active) return
+        const state = settings?.vision_embedding || {}
+        setVisionSettings(state)
+        setVisionProfileDraft(state.index_state === 'failed' ? (state.target_profile_id || state.profile_id || '') : (state.profile_id || ''))
+        setVisionProfiles(catalog?.profiles || [])
+        setVisionSettingsStatus(current => ({ ...current, loading: false }))
+      })
+      .catch(error => {
+        if (active) setVisionSettingsStatus(current => ({ ...current, loading: false, error: error.message || '视觉向量设置加载失败' }))
+      })
+    return () => { active = false }
+  }, [kbName, canManageKB])
+
+  useEffect(() => {
+    if (!kbName || !canManageKB || visionSettings?.index_state !== 'reindexing') return undefined
+    let active = true
+    const refresh = async () => {
+      try {
+        const settings = await api.getKBVisionSettings(kbName)
+        if (!active) return
+        const state = settings?.vision_embedding || {}
+        setVisionSettings(state)
+        setVisionSettingsStatus(current => ({ ...current, error: '' }))
+        if (state.index_state !== 'reindexing') {
+          setVisionProfileDraft(state.index_state === 'failed' ? (state.target_profile_id || state.profile_id || '') : (state.profile_id || ''))
+          showToast(state.index_state === 'failed' ? '视觉向量索引重建失败，可重新选择后重试' : '视觉向量索引重建完成', state.index_state === 'failed' ? 'error' : 'success')
+        }
+      } catch (error) {
+        if (active) setVisionSettingsStatus(current => ({ ...current, error: error.message || '视觉向量重建状态刷新失败' }))
+      }
+    }
+    const timer = window.setInterval(refresh, 3000)
+    void refresh()
+    return () => { active = false; window.clearInterval(timer) }
+  }, [kbName, canManageKB, visionSettings?.index_state])
 
   const selectTab = useCallback((tab) => {
     const next = new URLSearchParams(searchParams)
@@ -1055,6 +1146,7 @@ export default function KnowledgeDetailPage() {
     setDetailDoc(null)
     setDeleteConfirm(null)
     setRetryingDocIds([])
+    setCancellingUploadTaskIds([])
     setSelectedIds(new Set())
     setSelectedNode(null)
     setNodeDetails(null)
@@ -1080,14 +1172,14 @@ export default function KnowledgeDetailPage() {
 
   // 加载设置（分块策略），仅执行一次
   useEffect(() => {
-    api.getSettings().then(r => {
-      setStrategies(r.chunking_strategies || {})
-      setChunkingStrategy(r.chunking_strategy || '')
+    api.getPersonalSettings().then(r => {
+      const ingestion = r?.effective?.ingestion || {}
+      setChunkingStrategy(ingestion.chunking_strategy || '')
       setMultimodal({
-        enable_image: r.enable_image ?? true,
-        enable_table: r.enable_table ?? true,
-        enable_equation: r.enable_equation ?? true,
-        enable_video: r.enable_video ?? false,
+        enable_image: ingestion.enable_image ?? true,
+        enable_table: ingestion.enable_table ?? true,
+        enable_equation: ingestion.enable_equation ?? true,
+        enable_video: ingestion.enable_video ?? false,
       })
     }).catch(() => {})
   }, [])
@@ -1173,6 +1265,54 @@ export default function KnowledgeDetailPage() {
       nodeDetailAbortRef.current?.abort()
     }
   }, [kbName, loadKBData])
+
+  useEffect(() => {
+    if (!kbName || cancellingUploadTaskIds.length === 0) return undefined
+    let disposed = false
+
+    const pollCancellation = async () => {
+      try {
+        const response = await api.getUploadTasks()
+        if (disposed || activeKBRef.current !== kbName) return
+        const taskById = new Map((response.tasks || []).map(task => [task.task_id, task]))
+        const unresolved = []
+        let needsRefresh = false
+        let terminalCount = 0
+
+        cancellingUploadTaskIds.forEach(taskId => {
+          const task = taskById.get(taskId)
+          if (!task) {
+            needsRefresh = true
+            return
+          }
+          if (UPLOAD_TASK_TERMINAL_STATUSES.has(getUploadTaskStatus(task))) {
+            needsRefresh = true
+            terminalCount += 1
+            return
+          }
+          unresolved.push(taskId)
+        })
+
+        setCancellingUploadTaskIds(previous => (
+          previous.length === unresolved.length
+          && previous.every((taskId, index) => taskId === unresolved[index])
+            ? previous
+            : unresolved
+        ))
+        if (terminalCount) setToast({ msg: '上传任务状态已变化，未完成删除，请刷新后重试', type: 'info' })
+        if (needsRefresh) await loadKBData({ force: true })
+      } catch (_) {
+        // Keep the row in its cancellation state and retry on the next interval.
+      }
+    }
+
+    void pollCancellation()
+    const interval = setInterval(() => void pollCancellation(), 2000)
+    return () => {
+      disposed = true
+      clearInterval(interval)
+    }
+  }, [kbName, cancellingUploadTaskIds, loadKBData])
 
   // D3 图谱
   const drawGraph = useCallback(() => {
@@ -1391,6 +1531,8 @@ export default function KnowledgeDetailPage() {
   const handleDelete = async () => {
     const documentToDelete = deleteConfirm
     if (!documentToDelete) return
+    const uploadTaskId = documentToDelete.upload_task_id
+    const deleteUploadTask = isCancellableUploadDocument(documentToDelete)
 
     const removeDocumentFromList = () => {
       setDetailState(previous => ({
@@ -1411,14 +1553,45 @@ export default function KnowledgeDetailPage() {
 
     setDeleting(true)
     try {
-      await api.deleteDocument(documentToDelete.id, { kb: kbName })
+      const result = deleteUploadTask
+        ? await api.deleteUploadTask(uploadTaskId)
+        : await api.deleteDocument(documentToDelete.id, { kb: kbName })
+      if (deleteUploadTask && result?.status === 'cancelling') {
+        setDetailState(previous => ({
+          ...previous,
+          documents: {
+            ...previous.documents,
+            data: previous.documents.data.map(doc => (
+              doc.id === documentToDelete.id
+                ? { ...doc, status: 'cancelling', raw_status: 'cancelling', health: 'cancelling' }
+                : doc
+            )),
+          },
+        }))
+        setCancellingUploadTaskIds(previous => (
+          previous.includes(uploadTaskId) ? previous : [...previous, uploadTaskId]
+        ))
+        setDeleteConfirm(null)
+        showToast(`${documentToDelete.file} 正在停止并删除`, 'info')
+        await loadKBData({ force: true })
+        return
+      }
       removeDocumentFromList()
-      showToast(`${documentToDelete.file} 已从列表移除`, 'success')
+      showToast(
+        deleteUploadTask ? `${documentToDelete.file} 已删除上传任务` : `${documentToDelete.file} 已从列表移除`,
+        'success',
+      )
       await loadKBData({ force: true })
     } catch (e) {
-      if (e?.status === 404) {
+      if (!deleteUploadTask && e?.status === 404) {
         removeDocumentFromList()
         showToast(`${documentToDelete.file} 已不存在，已从列表移除`, 'info')
+        await loadKBData({ force: true })
+        return
+      }
+      if (deleteUploadTask && (e?.status === 404 || e?.status === 409)) {
+        setDeleteConfirm(null)
+        showToast('上传任务状态已变化，已刷新列表', 'info')
         await loadKBData({ force: true })
         return
       }
@@ -1480,6 +1653,45 @@ export default function KnowledgeDetailPage() {
       if (visionInputRef.current) visionInputRef.current.value = ''
     }
   }
+
+  const retryFailedReindex = visionSettings?.index_state === 'failed'
+    && visionProfileDraft === visionSettings?.target_profile_id
+
+  const saveVisionProfile = async () => {
+    if (!visionProfileDraft || visionSettingsStatus.saving) return
+    setVisionSettingsStatus(current => ({ ...current, saving: true, error: '' }))
+    try {
+      const result = await api.updateKBVisionSettings(kbName, {
+        profile_id: visionProfileDraft,
+        reindex: visionSettingsStatus.confirmReindex || retryFailedReindex,
+      })
+      const state = result?.vision_embedding || (result?.task_id ? {
+        ...visionSettings,
+        index_state: 'reindexing',
+        target_profile_id: visionProfileDraft,
+        task: { id: result.task_id, status: result.status || 'queued', progress: 0 },
+      } : visionSettings)
+      setVisionSettings(state)
+      setVisionSettingsStatus(current => ({ ...current, saving: false, confirmReindex: false }))
+      showToast(result?.task_id ? '视觉向量索引重建已加入队列' : '视觉向量模型已更新', 'success')
+    } catch (error) {
+      const needsReindex = error.status === 409 && error.detail?.code === 'reindex_required'
+      setVisionSettingsStatus(current => ({
+        ...current,
+        saving: false,
+        confirmReindex: needsReindex,
+        error: needsReindex
+          ? '当前知识库已有视觉向量。确认后将在后台并行重建，查询期间继续使用旧索引。'
+          : (error.message || '视觉向量模型更新失败'),
+      }))
+    }
+  }
+
+  const visionIndexStatus = visionSettings?.index_state === 'reindexing'
+    ? `重建中 ${Math.round((visionSettings.task?.progress || 0) * 100)}%`
+    : visionSettings?.index_state === 'failed'
+      ? '最近一次重建失败，旧索引仍在使用'
+      : '索引可用'
 
   return (
     <div className="space-y-6">
@@ -1575,6 +1787,44 @@ export default function KnowledgeDetailPage() {
             setMultimodal={setMultimodal}
           />
         </div>
+
+        {canManageKB && (
+          <section className="card p-5" aria-labelledby="vision-profile-heading">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0 flex-1">
+                <h3 id="vision-profile-heading" className="text-sm font-semibold text-ink-body">视觉向量模型</h3>
+                <p className="mt-1 text-xs text-ink-muted">模型归属于当前知识库。重建期间查询继续使用旧索引，上传与多模态补处理会暂停。</p>
+                {visionSettingsStatus.error && <p className="mt-2 text-xs text-amber-700" role="alert">{visionSettingsStatus.error}</p>}
+              </div>
+              <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-80 sm:flex-row">
+                <label className="sr-only" htmlFor="kb-vision-profile">视觉向量模型</label>
+                <select
+                  id="kb-vision-profile"
+                  className="select-field min-w-0 flex-1"
+                  value={visionProfileDraft}
+                  disabled={visionSettingsStatus.loading || visionSettingsStatus.saving || visionSettings?.index_state === 'reindexing'}
+                  onChange={event => {
+                    setVisionProfileDraft(event.target.value)
+                    setVisionSettingsStatus(current => ({ ...current, confirmReindex: false, error: '' }))
+                  }}
+                >
+                  <option value="">选择视觉向量模型</option>
+                  {visionProfiles.map(profile => <option key={profile.id} value={profile.id} disabled={!profile.available}>{profile.display_name}{profile.available ? '' : '（不可用）'}</option>)}
+                </select>
+                <button
+                  type="button"
+                  className={visionSettingsStatus.confirmReindex ? 'btn-danger text-xs' : 'btn-secondary text-xs'}
+                  disabled={!visionProfileDraft || (visionProfileDraft === visionSettings?.profile_id && visionSettings?.index_state !== 'failed') || visionSettingsStatus.loading || visionSettingsStatus.saving || visionSettings?.index_state === 'reindexing'}
+                  onClick={saveVisionProfile}
+                >
+                  {visionSettingsStatus.saving ? <Loader2 size={14} className="animate-spin" /> : visionSettingsStatus.confirmReindex ? <RotateCcw size={14} /> : <Save size={14} />}
+                  {visionSettingsStatus.saving ? '提交中' : visionSettingsStatus.confirmReindex ? '确认并重建' : retryFailedReindex ? '重新尝试' : '应用模型'}
+                </button>
+              </div>
+            </div>
+            {visionSettings?.profile_id && <p className={`mt-3 text-2xs ${visionSettings.index_state === 'failed' ? 'text-rose-600' : 'text-ink-muted'}`} role={visionSettings.index_state === 'failed' ? 'alert' : 'status'}>当前：{visionSettings.profile_id} · {visionIndexStatus}</p>}
+          </section>
+        )}
 
         {isAdmin && (
           <div className="card p-4 flex items-start justify-between gap-4">
@@ -2021,23 +2271,29 @@ export default function KnowledgeDetailPage() {
         )}
       </AnimatePresence>
 
-      {/* 文档删除确认 */}
-      {deleteConfirm && detailState.kbName === kbName && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setDeleteConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除文档">
-          <div className="absolute inset-0 bg-sky-900/20" />
-          <div className="relative card p-6 w-80 text-center" onClick={e => e.stopPropagation()}>
-            <Trash2 size={32} className="mx-auto mb-3 text-rose-500" />
-            <p className="text-ink-primary font-medium mb-1">确认删除文档</p>
-            <p className="text-xs text-ink-muted mb-4 truncate">{deleteConfirm.file}</p>
-            <div className="flex gap-3 justify-center">
-              <button className="btn-secondary text-sm" onClick={() => setDeleteConfirm(null)}>取消</button>
-              <button className="btn-danger text-sm" onClick={handleDelete} disabled={deleting}>
-                {deleting ? '删除中…' : '确认删除'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <UserDialogConfirmation
+        isOpen={Boolean(deleteConfirm && detailState.kbName === kbName)}
+        title={isCancellableUploadDocument(deleteConfirm) && getDocumentHealth(deleteConfirm) === 'processing'
+          ? '停止并删除上传任务'
+          : (isCancellableUploadDocument(deleteConfirm) ? '删除上传任务' : '确认删除文档')}
+        description={isCancellableUploadDocument(deleteConfirm) && getDocumentHealth(deleteConfirm) === 'processing'
+          ? `将停止“${deleteConfirm?.file || ''}”的后台处理，并删除已生成的内容。此操作无法恢复。`
+          : (isCancellableUploadDocument(deleteConfirm)
+            ? `将删除“${deleteConfirm?.file || ''}”的上传任务。此操作无法恢复。`
+            : `将删除“${deleteConfirm?.file || ''}”。此操作无法恢复。`)}
+        icon={<Trash2 size={18} />}
+        confirmLabel={deleting
+          ? '删除中…'
+          : (isCancellableUploadDocument(deleteConfirm) && getDocumentHealth(deleteConfirm) === 'processing'
+            ? '停止并删除'
+            : '确认删除')}
+        cancelLabel="取消"
+        danger
+        confirmDisabled={deleting}
+        closeDisabled={deleting}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteConfirm(null)}
+      />
 
       {/* ── 创建节点弹窗 ── */}
       {showCreateNodeModal && (

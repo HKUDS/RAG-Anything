@@ -21,6 +21,7 @@ import re
 import asyncio
 import logging
 import time
+import uuid
 from contextlib import asynccontextmanager
 from collections import OrderedDict
 from collections.abc import Mapping
@@ -808,6 +809,9 @@ def _worker_resource_snapshot(proc: Any) -> dict[str, Any]:
 # Maps kb_name -> list of (asyncio.subprocess.Process, task_id) for
 # running worker subprocesses.  Used by KB deletion to kill workers.
 _kb_worker_procs: dict[str, list] = {}
+_active_upload_execution: dict[str, asyncio.Task] = {}
+_upload_cancellation_tasks: dict[str, asyncio.Task] = {}
+_UPLOAD_CANCELLATION_WORKER_WAIT_SECONDS = 10.0
 
 _WORKER_NUMERIC_THREAD_ENV = (
     "OPENBLAS_NUM_THREADS",
@@ -983,16 +987,28 @@ async def pg_register_upload(
             "WHERE uploaded_files.status = 'deleted' "
             f"RETURNING {_uploaded_files_projection(include_error_message)}"
         )
-        try:
-            row = await pool.fetchrow(
-                sql,
-                filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status,
-            )
-        except Exception as exc:
-            if not include_error_message or not _uploaded_files_mark_missing_error_message(exc):
-                raise
-            row = await pool.fetchrow(
-                (
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock(hashtext($1))", f"kb-mutation:{kb_name}"
+                )
+                reindexing = await conn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM vision_reindex_jobs WHERE kb=$1 "
+                    "AND state IN ('queued','running'))",
+                    kb_name,
+                )
+                if reindexing:
+                    raise RuntimeError("reindex_in_progress")
+                try:
+                    row = await conn.fetchrow(
+                        sql,
+                        filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status,
+                    )
+                except Exception as exc:
+                    if not include_error_message or not _uploaded_files_mark_missing_error_message(exc):
+                        raise
+                    row = await conn.fetchrow(
+                        (
                     "INSERT INTO uploaded_files "
                     "(filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status) "
                     "VALUES ($1, $2, $3, $4, $5, $6, $7, $8) "
@@ -1003,9 +1019,9 @@ async def pg_register_upload(
                     "updated_at = NOW() "
                     "WHERE uploaded_files.status = 'deleted' "
                     f"RETURNING {_uploaded_files_projection(False)}"
-                ),
-                filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status,
-            )
+                        ),
+                        filename, file_path, file_hash, file_size, kb_name, uploaded_by, task_id, status,
+                    )
         return _serialize_upload_row(row) if row else None
     except Exception:
         kb_logger.warning("PG uploaded_files insert failed", exc_info=True)
@@ -1059,7 +1075,10 @@ async def pg_release_upload_for_deleted_document(kb_name: str, file_path: str) -
             filename,
             ["queued", "processing", "completed", "failed", "deleted", "uploaded"],
         )
-        return int(str(result).split()[-1]) > 0
+        changed = int(str(result).split()[-1]) > 0
+        if changed:
+            await bump_kb_corpus_revision(kb_name)
+        return changed
     except Exception:
         kb_logger.warning(
             "PG uploaded_files document release failed: kb=%s file=%s",
@@ -1158,6 +1177,8 @@ async def pg_update_upload_status_by_task_id(
     error_message: str | None = None,
     outcome: str | None = None,
     warning_message: str | None = None,
+    claim_owner: str | None = None,
+    claim_generation: int | None = None,
 ) -> dict[str, Any] | None:
     """Update uploaded_files row by task_id and return the updated row."""
     try:
@@ -1188,6 +1209,13 @@ async def pg_update_upload_status_by_task_id(
             if expected_current_status is not None:
                 params.append(expected_current_status)
                 where += f" AND status = ${len(params)}"
+            if claim_owner is not None or claim_generation is not None:
+                if claim_owner is None or claim_generation is None:
+                    raise ValueError("claim owner and generation must be provided together")
+                params.append(claim_owner)
+                where += f" AND processing_owner = ${len(params)}"
+                params.append(int(claim_generation))
+                where += f" AND processing_generation = ${len(params)}"
             sql = (
                 "UPDATE uploaded_files "
                 f"SET {', '.join(assignments)}, updated_at = NOW() "
@@ -1267,16 +1295,224 @@ async def pg_get_upload_by_task_id(
         return None
 
 
-async def pg_claim_upload_task(task_id: str, kb_name: str) -> bool:
+async def pg_claim_upload_task(task_id: str, kb_name: str, owner: str) -> int | None:
     """Atomically claim a queued upload task for processing."""
-    row = await pg_update_upload_status_by_task_id(
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    row = await get_pg_pool().fetchrow(
+        "UPDATE uploaded_files SET status='processing',processing_owner=$3,"
+        "processing_generation=processing_generation+1,processing_heartbeat_at=NOW(),"
+        "error_message='',updated_at=NOW() WHERE task_id=$1 AND kb_name=$2 "
+        "AND status='queued' RETURNING processing_generation",
         task_id,
-        "processing",
-        kb_name=kb_name,
-        expected_current_status="queued",
-        error_message="",
+        kb_name,
+        owner,
     )
-    return bool(row and row.get("kb_name") == kb_name)
+    return int(row["processing_generation"]) if row else None
+
+
+async def pg_heartbeat_upload_claim(
+    task_id: str, kb_name: str, owner: str, generation: int
+) -> bool:
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    result = await get_pg_pool().execute(
+        "UPDATE uploaded_files SET processing_heartbeat_at=NOW(),updated_at=NOW() "
+        "WHERE task_id=$1 AND kb_name=$2 AND processing_owner=$3 "
+        "AND processing_generation=$4 AND status='processing'",
+        task_id,
+        kb_name,
+        owner,
+        generation,
+    )
+    return result == "UPDATE 1"
+
+
+async def pg_begin_upload_cancellation(task_id: str, kb_name: str) -> dict[str, Any] | None:
+    """Atomically fence a processing/retry upload before cancellation cleanup."""
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            upload = await conn.fetchrow(
+                "SELECT * FROM uploaded_files WHERE task_id=$1 AND kb_name=$2 FOR UPDATE",
+                task_id, kb_name,
+            )
+            if not upload:
+                return None
+            current = str(upload["status"] or "")
+            if current == "cancelling":
+                return {**dict(upload), "cancellation_started": False}
+            if current not in {"processing", "retry_wait"}:
+                return {**dict(upload), "cancellation_started": False}
+            row = await conn.fetchrow(
+                "UPDATE uploaded_files SET status='cancelling',processing_owner=NULL,"
+                "processing_generation=processing_generation+1,processing_heartbeat_at=NULL,"
+                "updated_at=NOW() WHERE id=$1 AND status=$2 RETURNING *",
+                upload["id"], current,
+            )
+            if not row:
+                return None
+            await conn.execute(
+                "UPDATE upload_retry_jobs SET status='cancelled',lease_token=NULL,lease_until=NULL,"
+                "updated_at=NOW() WHERE upload_id=$1 AND status IN ('queued','retry_wait','running')",
+                upload["id"],
+            )
+            await conn.execute(
+                "UPDATE processing_tasks SET status='cancelling',retryable=FALSE,next_retry_at=NULL,"
+                "message='Stopping and deleting upload',updated_at=NOW() WHERE task_id=$1",
+                task_id,
+            )
+            from raganything.services.state_service import processing_tasks
+            if task_id in processing_tasks:
+                processing_tasks[task_id].update({
+                    "status": "cancelling",
+                    "retryable": False,
+                    "next_retry_at": None,
+                    "message": "Stopping and deleting upload",
+                })
+            return {**dict(row), "cancellation_started": True}
+
+
+async def _upload_is_cancelling(task_id: str, kb_name: str) -> bool:
+    upload = await pg_get_upload_by_task_id(task_id, kb_name=kb_name, is_admin=True)
+    return bool(upload and upload.get("status") in {"cancelling", "deleted"})
+
+
+async def _cleanup_cancelled_upload_document(upload: dict[str, Any], kb_name: str) -> None:
+    """Remove only document records durably attributed to a cancelled upload."""
+    task_id = str(upload.get("task_id") or "")
+    file_hash = str(upload.get("file_hash") or "")
+    if not task_id:
+        return
+    statuses = await _load_doc_status_json(kb_name) or {}
+    doc_ids: list[str] = []
+    for doc_id, info in statuses.items():
+        if not isinstance(info, dict):
+            continue
+        metadata = info.get("metadata") if isinstance(info.get("metadata"), dict) else {}
+        markers = {str(value) for value in (info.get("track_id"), metadata.get("task_id")) if value}
+        stored_hash = str(metadata.get("file_hash") or "")
+        if task_id in markers or (file_hash and stored_hash == file_hash):
+            doc_ids.append(str(doc_id))
+    if not doc_ids:
+        return
+    instance = kb_instances.get(kb_name) or await get_kb(kb_name)
+    lightrag = getattr(instance, "lightrag", None)
+    if lightrag is None:
+        raise RuntimeError("cancellation_cleanup_kb_unavailable")
+    for doc_id in doc_ids:
+        result = await lightrag.adelete_by_doc_id(doc_id, delete_llm_cache=True)
+        if getattr(result, "status", "success") not in {"success", "not_found"}:
+            raise RuntimeError(f"cancellation_cleanup_failed:{doc_id}")
+    vision_repo = getattr(lightrag, "image_vision_repo", None)
+    if vision_repo is not None:
+        for doc_id in doc_ids:
+            await vision_repo.delete_by_doc_id(doc_id)
+        if hasattr(vision_repo, "index_done_callback"):
+            await vision_repo.index_done_callback()
+    from raganything.services.document_repair import cancel_repair_jobs
+    from raganything.services.document_tagging import cancel_document_tagging
+    from raganything.services.kb_tag_repo import delete_document_tags
+    await cancel_repair_jobs(kb_name, doc_ids)
+    await cancel_document_tagging(kb_name, doc_ids)
+    for doc_id in doc_ids:
+        await delete_document_tags(kb_name, doc_id)
+    if getattr(instance, "multimodal_status_cache", None) is not None:
+        await instance.multimodal_status_cache.delete(doc_ids)
+        await instance.multimodal_status_cache.index_done_callback()
+    from raganything.query_cache import get_query_cache
+    get_query_cache().invalidate()
+
+
+async def _stop_cancelled_upload_worker(proc: Any, task_id: str) -> bool:
+    """Stop one worker with bounded waits before task-owned cleanup begins."""
+    try:
+        proc.terminate()
+    except (AttributeError, ProcessLookupError):
+        try:
+            proc.kill()
+        except (AttributeError, ProcessLookupError):
+            return getattr(proc, "returncode", None) is not None
+
+    try:
+        await asyncio.wait_for(
+            proc.wait(), timeout=_UPLOAD_CANCELLATION_WORKER_WAIT_SECONDS
+        )
+        return True
+    except asyncio.TimeoutError:
+        kb_logger.warning(
+            "[UPLOAD-CANCEL] worker did not exit after terminate: task=%s", task_id
+        )
+
+    try:
+        proc.kill()
+    except (AttributeError, ProcessLookupError):
+        return getattr(proc, "returncode", None) is not None
+
+    try:
+        await asyncio.wait_for(
+            proc.wait(), timeout=_UPLOAD_CANCELLATION_WORKER_WAIT_SECONDS
+        )
+        return True
+    except asyncio.TimeoutError:
+        kb_logger.warning(
+            "[UPLOAD-CANCEL] worker remains alive after kill: task=%s", task_id
+        )
+        return False
+
+
+async def _finish_upload_cancellation(upload: dict[str, Any], kb_name: str) -> None:
+    """Wait for the exact upload execution, then make its deletion durable."""
+    task_id = str(upload["task_id"])
+    try:
+        for proc, running_task_id in list(_kb_worker_procs.get(kb_name, [])):
+            if str(running_task_id) != task_id or getattr(proc, "returncode", None) is not None:
+                continue
+            if not await _stop_cancelled_upload_worker(proc, task_id):
+                # Keep durable cancellation and dedup ownership until a later
+                # polling request or recovery pass can complete cleanup.
+                return
+        execution = _active_upload_execution.get(task_id)
+        if execution is not None and execution is not asyncio.current_task():
+            execution.cancel()
+            await asyncio.gather(execution, return_exceptions=True)
+        await _cleanup_cancelled_upload_document(upload, kb_name)
+        staged_file = Path(str(upload.get("file_path") or ""))
+        if staged_file.exists() and staged_file.is_file():
+            staged_file.unlink()
+        from raganything.services.state_service import delete_task, processing_tasks
+        processing_tasks.pop(task_id, None)
+        await delete_task(task_id)
+        from raganything.services.user_settings import delete_task_settings_snapshot
+        await delete_task_settings_snapshot(task_id)
+        _unregister_processing_file(kb_name, str(upload.get("file_hash") or ""))
+        deleted = await pg_update_upload_status_by_task_id(
+            task_id, "deleted", kb_name=kb_name, expected_current_status="cancelling", error_message="",
+        )
+        if deleted is not None:
+            await bump_kb_corpus_revision(kb_name)
+            from raganything.services.ws_service import add_event
+            await add_event("upload_cancelled", task_id=task_id, file=upload.get("filename", ""), kb=kb_name)
+    except Exception:
+        kb_logger.warning("[UPLOAD-CANCEL] cleanup remains pending: task=%s", task_id, exc_info=True)
+    finally:
+        _upload_cancellation_tasks.pop(task_id, None)
+
+
+async def cancel_inflight_upload(task_id: str, kb_name: str) -> dict[str, Any] | None:
+    """Start idempotent cancellation for a processing or retry-wait upload."""
+    upload = await pg_begin_upload_cancellation(task_id, kb_name)
+    if upload is None:
+        return None
+    if upload.get("status") != "cancelling":
+        return upload
+    if task_id not in _upload_cancellation_tasks:
+        _upload_cancellation_tasks[task_id] = asyncio.create_task(
+            _finish_upload_cancellation(upload, kb_name), name=f"upload-cancel:{task_id}"
+        )
+    return upload
 
 
 async def pg_list_uploads(
@@ -1378,15 +1614,9 @@ async def pg_get_latest_content_updates_batch(kb_names: list[str]) -> dict[str, 
         from raganything.services.pg_state_repo import get_pg_pool
 
         rows = await get_pg_pool().fetch(
-            """
-            SELECT kb_name, MAX(updated_at) AS last_content_updated_at
-            FROM uploaded_files
-            WHERE kb_name = ANY($1::text[])
-              AND status = ANY($2::text[])
-            GROUP BY kb_name
-            """,
+            "SELECT name AS kb_name, corpus_revision FROM kb_metadata "
+            "WHERE name = ANY($1::text[])",
             names,
-            ["completed", "deleted"],
         )
     except Exception:
         kb_logger.warning("PG uploaded_files content-update lookup failed", exc_info=True)
@@ -1394,13 +1624,22 @@ async def pg_get_latest_content_updates_batch(kb_names: list[str]) -> dict[str, 
 
     updates: dict[str, str] = {}
     for row in rows:
-        timestamp = row["last_content_updated_at"]
-        if timestamp is None:
-            continue
-        updates[str(row["kb_name"])] = (
-            timestamp.isoformat() if hasattr(timestamp, "isoformat") else str(timestamp)
-        )
+        updates[str(row["kb_name"])] = str(int(row["corpus_revision"] or 0))
     return updates
+
+
+async def bump_kb_corpus_revision(kb_name: str) -> int:
+    """Advance the durable cache identity after any visible corpus mutation."""
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    row = await get_pg_pool().fetchrow(
+        "UPDATE kb_metadata SET corpus_revision=corpus_revision+1,updated_at=NOW() "
+        "WHERE name=$1 RETURNING corpus_revision",
+        kb_name,
+    )
+    if row is None:
+        raise RuntimeError("knowledge base metadata is unavailable")
+    return int(row["corpus_revision"])
 
 
 # ── KB Metadata Persistence ────────────────────────────────
@@ -1866,6 +2105,111 @@ async def _load_doc_status_json(kb_name: str) -> dict[str, Any]:
     return {}
 
 
+def _upload_filename_key(value: str) -> str:
+    name = os.path.basename(str(value or ""))
+    return re.sub(r"^[0-9a-fA-F]{8}_", "", name)
+
+
+async def _load_fresh_pg_doc_status_records(kb_name: str) -> dict[str, dict[str, Any]]:
+    """Read authoritative document records without relying on a cached KB instance."""
+    if not _pg_storage_ready():
+        return {}
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    rows = await get_pg_pool().fetch(
+        "SELECT id,file_path,status,content_summary,content_length,chunks_count,"
+        "chunks_list,metadata,error_msg,created_at,updated_at,track_id "
+        "FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1",
+        kb_dir(kb_name),
+    )
+    return {
+        str(row["id"]): {
+            "file_path": row["file_path"] or "",
+            "status": getattr(row["status"], "value", row["status"]),
+            "content_summary": row["content_summary"] or "",
+            "content_length": row["content_length"] or 0,
+            "chunks_count": row["chunks_count"] or 0,
+            "chunks_list": list(row["chunks_list"] or []),
+            "metadata": row["metadata"] or {},
+            "error_msg": row["error_msg"],
+            "created_at": row["created_at"],
+            "updated_at": row["updated_at"],
+            "track_id": row["track_id"],
+        }
+        for row in rows
+    }
+
+
+def _matching_uploaded_document_statuses(
+    statuses: dict[str, Any], filename: str, task_id: str,
+) -> list[tuple[str, dict[str, Any]]]:
+    filename_key = _upload_filename_key(filename)
+    matches: list[tuple[str, dict[str, Any]]] = []
+    for doc_id, status in (statuses or {}).items():
+        if not isinstance(status, dict):
+            continue
+        if _upload_filename_key(str(status.get("file_path") or "")) != filename_key:
+            continue
+        metadata = status.get("metadata")
+        metadata = metadata if isinstance(metadata, dict) else {}
+        markers = {
+            str(value) for value in (
+                status.get("task_id"),
+                metadata.get("task_id"),
+            ) if value
+        }
+        if not markers or task_id in markers:
+            matches.append((str(doc_id), status))
+    return matches
+
+
+async def persist_document_processing_snapshot(
+    kb_name: str,
+    filename: str,
+    task_id: str,
+    snapshot: dict[str, Any],
+) -> str:
+    """Attach the immutable, secret-free enqueue snapshot to document metadata."""
+    statuses = await _load_doc_status_json(kb_name)
+    matches = _matching_uploaded_document_statuses(statuses, filename, task_id)
+    if not matches:
+        # The isolated worker can finish and commit before this process's
+        # cached LightRAG status store observes its write. Query the durable
+        # workspace directly before declaring a completed document missing.
+        fresh_statuses = await _load_fresh_pg_doc_status_records(kb_name)
+        matches = _matching_uploaded_document_statuses(
+            fresh_statuses, filename, task_id
+        )
+    if not matches:
+        raise RuntimeError("processed_document_status_missing")
+    matches.sort(key=lambda item: str(item[1].get("updated_at") or ""), reverse=True)
+    doc_id, status = matches[0]
+    metadata = status.get("metadata")
+    metadata = dict(metadata) if isinstance(metadata, dict) else {}
+    settings = snapshot.get("settings")
+    profile_ids = snapshot.get("profile_ids")
+    if not isinstance(settings, dict) or not isinstance(profile_ids, dict):
+        raise RuntimeError("settings_snapshot_invalid")
+    metadata["processing_settings_snapshot"] = {
+        "revision": int(snapshot.get("revision") or 0),
+        "fingerprint": str(snapshot.get("fingerprint") or ""),
+        "profile_ids": json.loads(json.dumps(profile_ids)),
+        "settings": json.loads(json.dumps(settings)),
+    }
+    updated = {**status, "metadata": metadata}
+    store = await _get_pg_doc_status_storage(kb_name)
+    if store is None:
+        rag = kb_instances.get(kb_name) or await get_kb(kb_name)
+        store = getattr(getattr(rag, "lightrag", None), "doc_status", None)
+    if store is None:
+        raise RuntimeError("document_status_storage_unavailable")
+    await store.upsert({doc_id: updated})
+    callback = getattr(store, "index_done_callback", None)
+    if callback is not None:
+        await callback()
+    return doc_id
+
+
 async def _save_doc_status_json(kb_name: str, data: dict[str, Any]) -> None:
     """Save doc_status data for a KB via LightRAG's PGDocStatusStorage (PG only)."""
     rag = kb_instances.get(kb_name)
@@ -2003,7 +2347,11 @@ async def _load_full_docs_json(kb_name: str) -> dict[str, Any]:
 
 # ── KB Instance Management ─────────────────────────────────
 
-async def get_kb(name: str = None) -> RAGAnything:
+async def get_kb(
+    name: str = None,
+    *,
+    task_settings: dict[str, Any] | None = None,
+) -> RAGAnything:
     """Get or create a KB instance.
 
     Automatically detects when disk data is newer than the cached instance
@@ -2018,6 +2366,26 @@ async def get_kb(name: str = None) -> RAGAnything:
     """
     import time as _time
     name = name or active_kb
+    if task_settings is not None:
+        # A task-bound configuration must not mutate or reuse the shared KB
+        # instance.  It is intentionally uncached and is finalized by the
+        # caller once the task has completed.
+        from lightrag.kg.shared_storage import set_default_workspace
+
+        target = kb_dir(name)
+        set_default_workspace(target)
+        metadata = (await load_kb_meta()).get(name, {})
+        vision_state = (metadata.get("extra") or {}).get("vision_embedding") or {}
+        profile_scope = None
+        if vision_state.get("profile_id") and vision_state.get("profile_fingerprint"):
+            profile_scope = (vision_state["profile_id"], vision_state["profile_fingerprint"])
+        instance = await create_rag(
+            working_dir=target,
+            vision_embedding_profile=profile_scope,
+            task_settings=task_settings,
+        )
+        await instance._ensure_lightrag_initialized()
+        return instance
     # Serialize initialization per KB to prevent concurrent creation race
     if name not in _kb_locks:
         _kb_locks[name] = asyncio.Lock()
@@ -2048,7 +2416,18 @@ async def get_kb(name: str = None) -> RAGAnything:
             from lightrag.kg.shared_storage import set_default_workspace
             target = kb_dir(name)
             set_default_workspace(target)
-            instance = await create_rag(working_dir=target)
+            metadata = (await load_kb_meta()).get(name, {})
+            vision_state = (metadata.get("extra") or {}).get("vision_embedding") or {}
+            profile_scope = None
+            if vision_state.get("profile_id") and vision_state.get("profile_fingerprint"):
+                profile_scope = (
+                    vision_state["profile_id"],
+                    vision_state["profile_fingerprint"],
+                )
+            instance = await create_rag(
+                working_dir=target,
+                vision_embedding_profile=profile_scope,
+            )
             await instance._ensure_lightrag_initialized()
             # Lower vector retrieval cosine threshold for broader semantic recall
             if instance.lightrag and hasattr(instance.lightrag, 'chunks_vdb'):
@@ -2314,6 +2693,8 @@ async def create_rag(
     parser: str = None,
     working_dir: str = None,
     chunking_strategy: str = None,
+    vision_embedding_profile: tuple[str, str] | None = None,
+    task_settings: dict[str, Any] | None = None,
 ) -> RAGAnything:
     """Create a RAGAnything instance with configured LLM/embedding functions.
 
@@ -2325,11 +2706,41 @@ async def create_rag(
     Returns:
         Configured RAGAnything instance
     """
+    task_ingestion = (task_settings or {}).get("ingestion", {})
+    if not isinstance(task_ingestion, dict):
+        raise ValueError("task ingestion settings must be an object")
+    if parser is None:
+        parser = task_ingestion.get("parser")
     if parser is None:
         parser = os.getenv("PARSER", "docling")
     if chunking_strategy is None:
+        chunking_strategy = task_ingestion.get("chunking_strategy")
+    if chunking_strategy is None:
         chunking_strategy = os.getenv("CHUNKING_STRATEGY", "recursive")
     wd = working_dir or WORKING_DIR
+    raw_query_scope = (task_settings or {}).get("_query_scope", {})
+    if raw_query_scope and not isinstance(raw_query_scope, dict):
+        raise ValueError("query cache scope must be an object")
+    query_cache_scope = {
+        "workspace": str((raw_query_scope or {}).get("workspace") or wd),
+        "permission_scope": str(
+            (raw_query_scope or {}).get("permission_scope") or "background"
+        ),
+        "corpus_revision": str(
+            (raw_query_scope or {}).get("corpus_revision") or "unknown"
+        ),
+        "settings_fingerprint": str(
+            (raw_query_scope or {}).get("settings_fingerprint")
+            or (task_settings or {}).get("fingerprint")
+            or "legacy"
+        ),
+        "llm_profile_fingerprint": str(
+            (raw_query_scope or {}).get("llm_profile_fingerprint") or "legacy"
+        ),
+    }
+    cache_scope = json.dumps(
+        query_cache_scope, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+    )
 
     # ── 从 os.environ 读取运行时可变配置 ──────────────────
     # 不依赖模块级全局变量！PUT /api/settings 修改 os.environ 后，
@@ -2386,6 +2797,16 @@ async def create_rag(
     )
     _raw_embed_func.embedding_dim = _emb_dim
 
+    async def _preflight_embed_func(texts, *, timeout: int):
+        raw_call = getattr(openai_embed.func, "__wrapped__", openai_embed.func)
+        return await raw_call(
+            texts,
+            model=_emb_model,
+            api_key=_api_key,
+            base_url=_base_url,
+            client_configs={"timeout": timeout, "max_retries": 0},
+        )
+
     # Wrap with local persistent cache to avoid redundant API calls.
     # Same entity/relation names across chunks → instant cache hits.
     _cached_embed_func = make_cached_embed_func(_raw_embed_func, wd, _emb_model)
@@ -2404,7 +2825,12 @@ async def create_rag(
             return default
 
     # ── Chunking strategy mapping ──────────────────────────
-    chunk_token_size = _env_int("CHUNK_SIZE", 800, max_val=4096)
+    requested_chunk_size = task_ingestion.get("chunk_size")
+    chunk_token_size = (
+        max(64, min(int(requested_chunk_size), 4096))
+        if isinstance(requested_chunk_size, int)
+        else _env_int("CHUNK_SIZE", 800, max_val=4096)
+    )
     embedding_batch_size = _env_int("EMBEDDING_BATCH_SIZE", 10, max_val=10)
 
     def _get_embedding_func_for_chunk(texts: list[str]) -> list[list[float]]:
@@ -2444,21 +2870,76 @@ async def create_rag(
     config = RAGAnythingConfig(
         working_dir=wd,
         parser=parser,
-        enable_image_processing=os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true",
-        enable_table_processing=os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true",
-        enable_equation_processing=os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true",
-        enable_video_processing=os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true",
-        entity_types=os.getenv("ENTITY_TYPES", ""),
-        entity_extraction_min_degree=int(os.getenv("ENTITY_EXTRACTION_MIN_DEGREE", "0")),
+        enable_image_processing=task_ingestion.get("enable_image", os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true"),
+        enable_table_processing=task_ingestion.get("enable_table", os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true"),
+        enable_equation_processing=task_ingestion.get("enable_equation", os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true"),
+        enable_video_processing=task_ingestion.get("enable_video", os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true"),
+        entity_types=task_ingestion.get("entity_types", os.getenv("ENTITY_TYPES", "")),
+        entity_extraction_min_degree=task_ingestion.get("minimum_relation_degree", int(os.getenv("ENTITY_EXTRACTION_MIN_DEGREE", "0"))),
     )
 
     # ── Vision embedding (doubao-embedding-vision) ──────────
     # Feature-gated: returns None when VISION_SEARCH_ENABLED is False
     # or VISION_EMBEDDING_MODEL is not set.
-    if os.getenv("VISION_SEARCH_ENABLED", "false").lower() == "true":
+    if vision_embedding_profile is not None:
+        from raganything.services.vision_models import build_embedding_provider, require_available
+
+        profile_id, profile_fingerprint = vision_embedding_profile
+        entry = require_available(profile_id, "embedding")
+        if entry.fingerprint != profile_fingerprint:
+            raise RuntimeError("vision embedding profile fingerprint is no longer available")
+        vision_embed_func = build_embedding_provider(profile_id, working_dir=wd)
+    elif os.getenv("VISION_SEARCH_ENABLED", "false").lower() == "true":
         vision_embed_func = create_vision_embed_func(working_dir=wd)
     else:
         vision_embed_func = None
+
+    task_models = (task_settings or {}).get("models", {})
+    task_runtime = (task_settings or {}).get("runtime", {})
+    if task_models:
+        if not isinstance(task_models, dict):
+            raise ValueError("task model settings must be an object")
+        from raganything.services.vision_models import (
+            build_llm_callable,
+            build_vlm_callable,
+            get_entry,
+            require_available,
+        )
+
+        llm_profile_id = task_models.get("llm_profile_id")
+        vlm_profile_id = task_models.get("vlm_profile_id")
+        if not isinstance(llm_profile_id, str) or not llm_profile_id:
+            raise RuntimeError("settings snapshot is missing an LLM profile")
+        if not isinstance(vlm_profile_id, str) or not vlm_profile_id:
+            raise RuntimeError("settings snapshot is missing a VLM profile")
+        profile_fingerprints = (task_settings or {}).get("profile_fingerprints") or {}
+        if not isinstance(profile_fingerprints, dict):
+            raise RuntimeError("settings snapshot profile fingerprints are invalid")
+        require_vlm = (task_settings or {}).get("_require_vlm", True) is not False
+        for profile_id, kind in ((llm_profile_id, "llm"), (vlm_profile_id, "vlm")):
+            expected = profile_fingerprints.get(kind)
+            if not isinstance(expected, str) or not expected:
+                raise RuntimeError("settings snapshot is missing a model profile fingerprint")
+            entry = (
+                require_available(profile_id, kind)
+                if kind == "llm" or require_vlm
+                else get_entry(profile_id, kind)
+            )
+            if entry.fingerprint != expected:
+                raise RuntimeError("profile_changed")
+        # Credentials remain server-only; the durable snapshot freezes only
+        # the public profile identity and non-secret configuration hash.
+        llm_func = build_llm_callable(
+            llm_profile_id,
+            cache_scope=cache_scope,
+            timeout=task_runtime.get("llm_timeout") if isinstance(task_runtime, dict) else None,
+        )
+        # Text-only queries do not invoke the vision function and therefore do
+        # not construct a VLM adapter. Image-query and ingestion boundaries
+        # retain strict VLM availability and adapter checks.
+        vision_func = (
+            build_vlm_callable(vlm_profile_id) if require_vlm else llm_func
+        )
 
     # ── PG Storage Backends (P1 + P2) ────────────────────────
     # When PostgreSQL is available, switch LightRAG from file-based
@@ -2542,10 +3023,18 @@ async def create_rag(
     # own isolated PG data partition.
     lightrag_kwargs["workspace"] = wd
 
-    return RAGAnything(config=config, llm_model_func=llm_func,
-                       vision_model_func=vision_func, embedding_func=embedding_func,
-                       vision_embed_func=vision_embed_func,
-                       lightrag_kwargs=lightrag_kwargs)
+    rag = RAGAnything(config=config, llm_model_func=llm_func,
+                      vision_model_func=vision_func, embedding_func=embedding_func,
+                      vision_embed_func=vision_embed_func,
+                      vision_profile_id=vision_embedding_profile[0] if vision_embedding_profile else "legacy-doubao-embedding",
+                      vision_profile_fingerprint=vision_embedding_profile[1] if vision_embedding_profile else "legacy-unscoped",
+                      query_cache_scope=query_cache_scope,
+                      lightrag_kwargs=lightrag_kwargs)
+    # The worker preflight bypasses the local embedding cache intentionally.
+    rag._raw_embedding_provider = _raw_embed_func
+    rag._raw_embedding_preflight_provider = _preflight_embed_func
+    rag._raw_llm_preflight_provider = llm_func
+    return rag
 
 
 # ── Recovery Lock (PG advisory + file fallback) ──────────────
@@ -3261,6 +3750,10 @@ async def _finalize_failed_upload(
     error_message: str,
     file_hash: str | None,
     chunking_strategy: str = "",
+    claim_owner: str | None = None,
+    claim_generation: int | None = None,
+    *,
+    verified_degraded: tuple[str, dict[str, Any]] | None = None,
 ) -> None:
     """Persist document failure before making its task terminal.
 
@@ -3281,13 +3774,15 @@ async def _finalize_failed_upload(
         file_hash or "",
     )
 
-    degraded = await _find_degraded_document(
-        kb_name,
-        filename,
-        error_message,
-        task_id=task_id,
-        file_hash=file_hash or "",
-    )
+    degraded = verified_degraded
+    if degraded is None:
+        degraded = await _find_degraded_document(
+            kb_name,
+            filename,
+            error_message,
+            task_id=task_id,
+            file_hash=file_hash or "",
+        )
     if degraded is not None:
         doc_id, metadata = degraded
         warning = "文本内容已入库，知识图谱抽取待补全"
@@ -3346,35 +3841,45 @@ async def _finalize_failed_upload(
                 file_hash,
             )
             return
-        await complete_task(task_id, outcome="degraded", warning=warning)
-        await add_event(
-            "upload_complete", file=filename, task_id=task_id, kb=kb_name,
-            outcome="degraded", warning=warning, doc_id=doc_id, user_id=user_id,
-        )
-        await pg_update_upload_status_by_task_id(
+        upload_row = await pg_update_upload_status_by_task_id(
             task_id,
             "completed",
             kb_name=kb_name,
             error_message=warning,
             outcome="degraded",
             warning_message=warning,
+            claim_owner=claim_owner,
+            claim_generation=claim_generation,
+        )
+        if claim_owner is not None and upload_row is None:
+            kb_logger.info("Ignoring stale degraded completion: task=%s", task_id)
+            return
+        await complete_task(task_id, outcome="degraded", warning=warning)
+        await add_event(
+            "upload_complete", file=filename, task_id=task_id, kb=kb_name,
+            outcome="degraded", warning=warning, doc_id=doc_id, user_id=user_id,
         )
         if file_hash is not None:
             _unregister_processing_file(kb_name, file_hash)
         return
 
+    upload_row = await pg_update_upload_status_by_task_id(
+        task_id,
+        "failed",
+        kb_name=kb_name,
+        error_message=error_message,
+        claim_owner=claim_owner,
+        claim_generation=claim_generation,
+    )
+    if claim_owner is not None and upload_row is None:
+        kb_logger.info("Ignoring stale upload failure: task=%s", task_id)
+        return
     await fail_task(task_id, error_message)
     await add_event(
         "upload_error", file=filename, task_id=task_id,
         error=error_message, user_id=user_id,
     )
     if file_hash is not None:
-        await pg_update_upload_status_by_task_id(
-            task_id,
-            "failed",
-            kb_name=kb_name,
-            error_message=error_message,
-        )
         _unregister_processing_file(kb_name, file_hash)
 
 
@@ -3421,11 +3926,26 @@ async def _finalize_tagging_failure(
     doc_id: str,
     error_message: str,
     file_hash: str | None,
+    *,
+    claim_owner: str | None = None,
+    claim_generation: int | None = None,
 ) -> None:
     """Fail only the upload/tag barrier while preserving the processed document."""
     from raganything.services.state_service import fail_task
     from raganything.services.ws_service import add_event, ws_broadcast
 
+    upload_row = await pg_update_upload_status_by_task_id(
+        task_id,
+        "failed",
+        kb_name=kb_name,
+        error_message=error_message,
+        outcome="terminal_failed",
+        claim_owner=claim_owner,
+        claim_generation=claim_generation,
+    )
+    if claim_owner is not None and upload_row is None:
+        kb_logger.info("Ignoring stale tagging failure: task=%s", task_id)
+        return
     await fail_task(
         task_id,
         error_message,
@@ -3452,13 +3972,6 @@ async def _finalize_tagging_failure(
         "error": error_message,
         "failure_stage": "tagging",
     })
-    await pg_update_upload_status_by_task_id(
-        task_id,
-        "failed",
-        kb_name=kb_name,
-        error_message=error_message,
-        outcome="terminal_failed",
-    )
     if file_hash is not None:
         _unregister_processing_file(kb_name, file_hash)
 
@@ -3470,18 +3983,26 @@ async def _defer_tagging_schedule(
     doc_id: str,
     error_message: str,
     file_hash: str | None,
+    *,
+    claim_owner: str | None = None,
+    claim_generation: int | None = None,
 ) -> None:
     """Leave upload and document non-terminal until reconciliation creates the job."""
     from raganything.services.state_service import defer_task
     from raganything.services.ws_service import ws_broadcast
 
-    await defer_task(task_id, error_message, failure_stage="tagging")
-    await pg_update_upload_status_by_task_id(
+    upload_row = await pg_update_upload_status_by_task_id(
         task_id,
         "retry_wait",
         kb_name=kb_name,
         error_message=error_message,
+        claim_owner=claim_owner,
+        claim_generation=claim_generation,
     )
+    if claim_owner is not None and upload_row is None:
+        kb_logger.info("Ignoring stale tagging deferral: task=%s", task_id)
+        return
+    await defer_task(task_id, error_message, failure_stage="tagging")
     await ws_broadcast({
         "type": "upload_retry_wait",
         "task_id": task_id,
@@ -4098,8 +4619,13 @@ async def _process_uploaded_file(
     enable_table: bool | None = None,
     enable_equation: bool | None = None,
     enable_video: bool | None = None,
+    vision_vlm_profile_id: str | None = None,
+    vision_vlm_profile_fingerprint: str | None = None,
+    settings_snapshot_id: str | None = None,
     retry_job_id: int | None = None,
     retry_lease_token: str | None = None,
+    claim_owner: str | None = None,
+    claim_generation: int | None = None,
 ):
     """Background upload processing via isolated subprocess.
 
@@ -4119,7 +4645,26 @@ async def _process_uploaded_file(
         processing_tasks, upsert_task_state, update_task_progress, complete_task,
     )
 
-    actual_strategy = chunking_strategy or CHUNKING_STRATEGY
+    if await _upload_is_cancelling(task_id, kb_name):
+        return
+
+    # The worker is deliberately driven by the enqueue-time PG snapshot.  A
+    # missing snapshot is a deterministic failure, not permission to use
+    # process environment or changed user preferences.
+    from raganything.services.user_settings import get_task_settings_snapshot
+    snapshot = await get_task_settings_snapshot(task_id)
+    ingestion = (snapshot.get("settings") or {}).get("ingestion") or {}
+    actual_strategy = ingestion.get("chunking_strategy")
+    if not isinstance(actual_strategy, str) or not actual_strategy:
+        raise RuntimeError("settings_snapshot_invalid")
+    # Queue fields are transport metadata only. The durable snapshot is the
+    # sole configuration authority for the queued task and every retry.
+    # Keep the profile and snapshot identifiers in the callable contract so
+    # queue task dictionaries can be expanded without altering that authority.
+    enable_image = ingestion.get("enable_image")
+    enable_table = ingestion.get("enable_table")
+    enable_equation = ingestion.get("enable_equation")
+    enable_video = ingestion.get("enable_video")
     task_data = {
         "id": task_id, "file": filename, "status": "processing",
         "started_at": datetime.now().isoformat(), "progress": 0,
@@ -4128,6 +4673,8 @@ async def _process_uploaded_file(
         "phase_status": "start",
         "message": "初始化处理环境",
         "chunking_strategy": actual_strategy,
+        "settings_revision": snapshot.get("revision"),
+        "settings_fingerprint": snapshot.get("fingerprint"),
     }
     await upsert_task_state(task_id, task_data)
     await add_event("upload_start", file=filename, task_id=task_id, user_id=user_id)
@@ -4142,12 +4689,16 @@ async def _process_uploaded_file(
         _register_processing_file(kb_name, file_hash, task_id)
 
         # Update PG uploaded_files status → processing
-        await pg_update_upload_status_by_task_id(
+        processing_row = await pg_update_upload_status_by_task_id(
             task_id,
             "processing",
             kb_name=kb_name,
             error_message="",
+            claim_owner=claim_owner,
+            claim_generation=claim_generation,
         )
+        if claim_owner is not None and processing_row is None:
+            raise RuntimeError("upload_claim_lost")
         await _cleanup_retry_document_residue(
             kb_name,
             filename,
@@ -4163,6 +4714,7 @@ async def _process_uploaded_file(
             "--file", str(Path(file_path).resolve()),
             "--kb", kb_name,
             "--strategy", actual_strategy,
+            "--task-id", task_id,
         ]
         # ── Per-upload multimodal flags ─────────────────
         if enable_image is not None:
@@ -4396,17 +4948,33 @@ async def _process_uploaded_file(
             raise RuntimeError(
                 f"无法确认文档 ID，不能确认自动标签是否完成: {filename}"
             )
+        if retry_job_id is not None and not retry_lease_token:
+            kb_logger.warning("Ignoring retry without lease: job=%s", retry_job_id)
+            return
+        await persist_document_processing_snapshot(
+            kb_name, persisted_filename, task_id, snapshot
+        )
+        upload_row = await pg_update_upload_status_by_task_id(
+            task_id,
+            "completed",
+            kb_name=kb_name,
+            error_message="",
+            outcome="",
+            warning_message="",
+            claim_owner=claim_owner,
+            claim_generation=claim_generation,
+        )
+        if claim_owner is not None and upload_row is None:
+            kb_logger.info("Ignoring stale upload completion: task=%s", task_id)
+            return
         if retry_job_id is not None:
             from raganything.services.upload_retry import complete_upload_retry
 
-            if not retry_lease_token or not await complete_upload_retry(
-                retry_job_id, retry_lease_token
-            ):
+            if not await complete_upload_retry(retry_job_id, retry_lease_token):
                 kb_logger.warning(
-                    "Ignoring stale retry completion: job=%s task=%s",
+                    "Retry lease lost after upload completion: job=%s task=%s",
                     retry_job_id, task_id,
                 )
-                return
         await emit_progress(task_id, 100, "处理完成（含标签）")
         await complete_task(task_id)
         if task_id in processing_tasks:
@@ -4416,15 +4984,6 @@ async def _process_uploaded_file(
             user_id=user_id, outcome="", warning="",
         )
         await ws_broadcast({"type": "upload_done", "task_id": task_id, "filename": filename, "kb": kb_name})
-        # Update PG uploaded_files status → completed
-        await pg_update_upload_status_by_task_id(
-            task_id,
-            "completed",
-            kb_name=kb_name,
-            error_message="",
-            outcome="",
-            warning_message="",
-        )
         _unregister_processing_file(kb_name, file_hash)
 
     except Exception as e:
@@ -4437,7 +4996,7 @@ async def _process_uploaded_file(
         # If the KB is being deleted (cleanup_kb_resources), skip all
         # state writes to avoid zombie processing_tasks entries and
         # writes to deleted storage directories.
-        if kb_name in _kbs_being_deleted:
+        if kb_name in _kbs_being_deleted or await _upload_is_cancelling(task_id, kb_name):
             kb_logger.warning(
                 f"[UPLOAD] KB '{kb_name}' 已被删除，跳过失败状态写入: "
                 f"file={filename} task={task_id}"
@@ -4463,6 +5022,8 @@ async def _process_uploaded_file(
                 e.doc_id,
                 str(e),
                 file_hash,
+                claim_owner=claim_owner,
+                claim_generation=claim_generation,
             )
             return
 
@@ -4486,6 +5047,23 @@ async def _process_uploaded_file(
                 e.doc_id,
                 str(e),
                 file_hash,
+                claim_owner=claim_owner,
+                claim_generation=claim_generation,
+            )
+            return
+
+        if isinstance(e, DocumentPartiallyProcessedError):
+            await _finalize_failed_upload(
+                task_id,
+                kb_name,
+                filename,
+                user_id,
+                str(e),
+                file_hash,
+                actual_strategy,
+                claim_owner,
+                claim_generation,
+                verified_degraded=(e.doc_id, e.metadata),
             )
             return
 
@@ -4553,6 +5131,8 @@ async def _process_uploaded_file(
                 enable_video=enable_video,
                 retry_job_id=retry_job_id,
                 lease_token=retry_lease_token,
+                claim_owner=claim_owner,
+                claim_generation=claim_generation,
             )
             if retry_job is not None:
                 retry_count = int(retry_job.get("attempt_count") or 0)
@@ -4590,19 +5170,25 @@ async def _process_uploaded_file(
         }:
             from raganything.services.state_service import fail_task
 
-            await fail_task(
+            upload_row = await pg_update_upload_status_by_task_id(
                 task_id,
-                str(e),
-                failure_stage=e.stage,
-                retryable=False if e.stage == "ocr" else e.retryable,
+                "failed",
+                kb_name=kb_name,
+                error_message=str(e),
+                claim_owner=claim_owner,
+                claim_generation=claim_generation,
             )
-            await add_event(
-                "upload_error", file=filename, task_id=task_id,
-                error=str(e), failure_stage=e.stage, user_id=user_id,
-            )
-            await pg_update_upload_status_by_task_id(
-                task_id, "failed", kb_name=kb_name, error_message=str(e),
-            )
+            if claim_owner is None or upload_row is not None:
+                await fail_task(
+                    task_id,
+                    str(e),
+                    failure_stage=e.stage,
+                    retryable=False if e.stage == "ocr" else e.retryable,
+                )
+                await add_event(
+                    "upload_error", file=filename, task_id=task_id,
+                    error=str(e), failure_stage=e.stage, user_id=user_id,
+                )
             if file_hash is not None:
                 _unregister_processing_file(kb_name, file_hash)
             return
@@ -4615,6 +5201,8 @@ async def _process_uploaded_file(
             str(e),
             file_hash,
             actual_strategy,
+            claim_owner,
+            claim_generation,
         )
     finally:
         if worker_slot_acquired and worker_slot is not None:
@@ -4669,21 +5257,35 @@ async def _drain_kb_queue(kb_name: str) -> None:
 
             task_id = task_info.get("task_id", "")
             upload_record = None
+            claim_owner = ""
+            claim_generation: int | None = None
             if task_id:
                 upload_record = await pg_get_upload_by_task_id(
                     task_id,
                     kb_name=kb_name,
                     is_admin=True,
                 )
-                if upload_record and upload_record.get("status") == "deleted":
+                if upload_record is None:
+                    _queued_task_ids.discard(task_id)
+                    kb_logger.error(
+                        "[QUEUE] Rejecting task without durable upload record: task=%s kb=%s",
+                        task_id,
+                        kb_name,
+                    )
+                    continue
+                if upload_record and upload_record.get("status") in {"deleted", "cancelling"}:
+                    _queued_task_ids.discard(task_id)
                     _unregister_processing_file(kb_name, upload_record.get("file_hash", ""))
                     kb_logger.info(
                         f"[QUEUE] 璺宠繃宸插垹闄ょ殑浠诲姟: task={task_id} kb={kb_name}"
                     )
                     continue
                 if upload_record and upload_record.get("status") == "queued":
-                    claimed = await pg_claim_upload_task(task_id, kb_name)
-                    if not claimed:
+                    claim_owner = f"upload:{os.getpid()}:{uuid.uuid4()}"
+                    claim_generation = await pg_claim_upload_task(
+                        task_id, kb_name, claim_owner
+                    )
+                    if claim_generation is None:
                         refreshed = await pg_get_upload_by_task_id(
                             task_id,
                             kb_name=kb_name,
@@ -4694,13 +5296,24 @@ async def _drain_kb_queue(kb_name: str) -> None:
                             kb_logger.info(
                                 f"[QUEUE] 浠诲姟鍦ㄨ皟搴﹀墠宸茶鍒犻櫎: task={task_id} kb={kb_name}"
                             )
-                            continue
-                        if refreshed and refreshed.get("status") != "processing":
-                            kb_logger.warning(
-                                f"[QUEUE] 浠诲姟鐘舵€佸紓甯革紝璺宠繃: task={task_id} "
-                                f"status={refreshed.get('status')} kb={kb_name}"
-                            )
-                            continue
+                        _queued_task_ids.discard(task_id)
+                        kb_logger.info(
+                            "[QUEUE] Claim lost task=%s status=%s kb=%s",
+                            task_id,
+                            refreshed.get("status") if refreshed else "missing",
+                            kb_name,
+                        )
+                        continue
+                    _queued_task_ids.discard(task_id)
+                elif upload_record and upload_record.get("status") != "queued":
+                    _queued_task_ids.discard(task_id)
+                    kb_logger.info(
+                        "[QUEUE] Skipping already claimed task=%s status=%s kb=%s",
+                        task_id,
+                        upload_record.get("status"),
+                        kb_name,
+                    )
+                    continue
 
             # Notify frontend that queue position has changed
             try:
@@ -4715,7 +5328,62 @@ async def _drain_kb_queue(kb_name: str) -> None:
                 pass  # WebSocket failure shouldn't block processing
 
             try:
-                await _process_uploaded_file(**task_info)
+                if task_id:
+                    _queued_task_ids.discard(task_id)
+                from raganything.services.kb_mutation import run_kb_mutation_with_lease
+                from raganything.services.kb_corpus_revision import run_corpus_mutation
+
+                async def process_claimed_upload() -> None:
+                    await _process_uploaded_file(
+                        **task_info,
+                        claim_owner=claim_owner or None,
+                        claim_generation=claim_generation,
+                    )
+
+                processing_task = asyncio.create_task(
+                    run_kb_mutation_with_lease(
+                        kb_name,
+                        task_id,
+                        lambda: run_corpus_mutation(
+                            kb_name, task_id, "upload", process_claimed_upload
+                        ),
+                        mutation_kind="upload",
+                    )
+                )
+                if task_id:
+                    _active_upload_execution[task_id] = processing_task
+                claim_lost = asyncio.Event()
+
+                async def heartbeat_claim() -> None:
+                    if not task_id or claim_generation is None:
+                        return
+                    try:
+                        while True:
+                            await asyncio.sleep(15)
+                            if not await pg_heartbeat_upload_claim(
+                                task_id, kb_name, claim_owner, claim_generation
+                            ):
+                                claim_lost.set()
+                                processing_task.cancel()
+                                return
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        claim_lost.set()
+                        processing_task.cancel()
+
+                claim_heartbeat = asyncio.create_task(heartbeat_claim())
+                try:
+                    await processing_task
+                except asyncio.CancelledError as exc:
+                    if claim_lost.is_set():
+                        raise RuntimeError("upload_claim_lost") from exc
+                    raise
+                finally:
+                    if task_id:
+                        _active_upload_execution.pop(task_id, None)
+                    claim_heartbeat.cancel()
+                    await asyncio.gather(claim_heartbeat, return_exceptions=True)
             except Exception as exc:
                 # Single file failure must not kill the drain loop.
                 kb_logger.error(
@@ -4737,6 +5405,7 @@ async def _drain_kb_queue(kb_name: str) -> None:
 
 # Per-KB locks to prevent duplicate drain coroutines from racing
 _drain_start_locks: dict[str, asyncio.Lock] = {}
+_queued_task_ids: set[str] = set()
 
 
 async def _ensure_queue_draining(kb_name: str) -> tuple:
@@ -4755,14 +5424,91 @@ async def _ensure_queue_draining(kb_name: str) -> tuple:
 
         if not _rshared._kb_draining.get(kb_name):
             task = asyncio.create_task(_drain_kb_queue(kb_name))
-            task.add_done_callback(
-                lambda t: kb_logger.error(
-                    f"[QUEUE] Drain 异常崩溃: {kb_name}",
-                    exc_info=t.exception(),
-                ) if t.exception() else None
-            )
+            def _log_drain_failure(completed: asyncio.Task) -> None:
+                if completed.cancelled():
+                    return
+                error = completed.exception()
+                if error is not None:
+                    kb_logger.error(
+                        "[QUEUE] Drain failed: %s",
+                        kb_name,
+                        exc_info=(type(error), error, error.__traceback__),
+                    )
+
+            task.add_done_callback(_log_drain_failure)
 
     return queue, qsize
+
+
+async def _enqueue_upload_task(task_info: dict[str, Any]) -> tuple[asyncio.Queue, int]:
+    """Add one durable upload task to the process-local wakeup queue once."""
+    kb_name = str(task_info.get("kb_name") or "")
+    task_id = str(task_info.get("task_id") or "")
+    queue, qsize = await _ensure_queue_draining(kb_name)
+    if not task_id or task_id not in _queued_task_ids:
+        if task_id:
+            _queued_task_ids.add(task_id)
+        queue.put_nowait(task_info)
+    return queue, qsize
+
+
+async def resume_queued_upload_tasks() -> int:
+    """Rebuild process-local wakeups from the durable PostgreSQL queue."""
+    from raganything.services.pg_state_repo import get_pg_pool
+
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        if hasattr(conn, "execute"):
+            await conn.execute(
+                "UPDATE uploaded_files SET status='queued',processing_owner=NULL,"
+                "processing_heartbeat_at=NULL,updated_at=NOW() WHERE status='processing' "
+                "AND (processing_heartbeat_at IS NULL OR processing_heartbeat_at < NOW()-INTERVAL '5 minutes')"
+            )
+        rows = await conn.fetch(
+            "SELECT u.task_id,u.file_path,u.filename,u.kb_name,u.uploaded_by,"
+            "s.task_id AS snapshot_task_id "
+            "FROM uploaded_files u LEFT JOIN task_settings_snapshots s ON s.task_id=u.task_id "
+            "WHERE u.status='queued' AND u.task_id IS NOT NULL "
+            "ORDER BY u.created_at,u.id"
+        )
+    resumed = 0
+    for row in rows:
+        task_id = str(row["task_id"])
+        kb_name = str(row["kb_name"])
+        file_path = str(row["file_path"])
+        if row["snapshot_task_id"] is None or not Path(file_path).is_file():
+            error_code = "settings_snapshot_missing" if row["snapshot_task_id"] is None else "upload_file_missing"
+            await pg_update_upload_status_by_task_id(
+                task_id,
+                "failed",
+                kb_name=kb_name,
+                expected_current_status="queued",
+                error_message=error_code,
+            )
+            continue
+        if task_id in _queued_task_ids:
+            continue
+        await _enqueue_upload_task({
+            "task_id": task_id,
+            "file_path": file_path,
+            "filename": str(row["filename"]),
+            "kb_name": kb_name,
+            "chunking_strategy": "",
+            "user_id": int(row["uploaded_by"] or 0),
+        })
+        resumed += 1
+    return resumed
+
+
+async def durable_upload_queue_loop(interval_seconds: float = 5.0) -> None:
+    while True:
+        try:
+            await resume_queued_upload_tasks()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            kb_logger.warning("Durable upload queue scan failed", exc_info=True)
+        await asyncio.sleep(interval_seconds)
 
 
 WORKFLOW_DIR = Path("./workflows")
@@ -4894,7 +5640,11 @@ def infer_entity_type(name: str) -> str:
 
 # ── Multimodal Retroactive Processing ──────────────────────
 
-async def _reprocess_multimodal_for_kb(kb_name: str, user_id: int = 1):
+async def _reprocess_multimodal_for_kb_unbounded(
+    kb_name: str,
+    user_id: int = 1,
+    task_id: str | None = None,
+):
     """Reprocess multimodal content for documents that missed it.
 
     Scans doc_status in a KB for documents where ``multimodal_processed``
@@ -4912,7 +5662,15 @@ async def _reprocess_multimodal_for_kb(kb_name: str, user_id: int = 1):
     from raganything.utils._content import separate_content
     from raganything.services.ws_service import ws_broadcast, add_event
 
-    instance = await get_kb(kb_name)
+    if not task_id:
+        raise RuntimeError("settings_snapshot_missing")
+    from raganything.services.user_settings import get_task_settings_snapshot
+
+    snapshot = await get_task_settings_snapshot(task_id)
+    settings = snapshot.get("settings")
+    if not isinstance(settings, dict):
+        raise RuntimeError("settings_snapshot_invalid")
+    instance = await get_kb(kb_name, task_settings=settings)
     if instance is None or instance.lightrag is None:
         raise ValueError(f"KB '{kb_name}' 未初始化")
 
@@ -5088,7 +5846,39 @@ async def _reprocess_multimodal_for_kb(kb_name: str, user_id: int = 1):
     await ws_broadcast({
         "type": "reprocess_done", "kb": kb_name, **result,
     })
+    await instance.finalize_storages()
     return result
+
+
+async def _reprocess_multimodal_for_kb(
+    kb_name: str,
+    user_id: int = 1,
+    task_id: str | None = None,
+):
+    if not task_id:
+        raise RuntimeError("settings_snapshot_missing")
+    from raganything.services.user_settings import run_ingestion_with_quota
+    from raganything.services.kb_mutation import run_kb_mutation_with_lease
+    from raganything.services.kb_corpus_revision import run_corpus_mutation
+
+    return await run_ingestion_with_quota(
+        task_id,
+        lambda: run_kb_mutation_with_lease(
+            kb_name,
+            task_id,
+            lambda: run_corpus_mutation(
+                kb_name,
+                task_id,
+                "reprocess",
+                lambda: _reprocess_multimodal_for_kb_unbounded(
+                    kb_name,
+                    user_id=user_id,
+                    task_id=task_id,
+                ),
+            ),
+            mutation_kind="reprocess",
+        ),
+    )
 
 
 __all__ = [

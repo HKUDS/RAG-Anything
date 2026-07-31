@@ -8,12 +8,16 @@ import os
 import pytest
 import asyncio
 from dataclasses import dataclass
+from types import SimpleNamespace
 
 from raganything.hybrid_search import (
     ScoredChunk,
     BM25IndexManager,
     GraphRetriever,
     HybridSearchEngine,
+    RetrievalOptions,
+    BM25IndexKey,
+    BoundedBM25IndexCache,
 )
 
 
@@ -157,6 +161,120 @@ class TestBM25IndexManager:
 # ═══════════════════════════════════════════════════════════
 # RRF Fusion Algorithm Tests
 # ═══════════════════════════════════════════════════════════
+
+
+def test_scoped_index_cache_keeps_configs_isolated_and_evicts_lru():
+    cache = BoundedBM25IndexCache(max_size=2)
+    first = BM25IndexKey("workspace-a", "rev-1", "jieba", 1.5, 0.75)
+    same = BM25IndexKey("workspace-a", "rev-1", "jieba", 1.5, 0.75)
+    other_config = BM25IndexKey("workspace-a", "rev-1", "jieba", 2.0, 0.75)
+    other_workspace = BM25IndexKey("workspace-b", "rev-1", "jieba", 1.5, 0.75)
+    first_manager = BM25IndexManager()
+
+    cache.put(first, first_manager)
+    assert cache.get(same) is first_manager
+    assert cache.get(other_config) is None
+    cache.put(other_config, BM25IndexManager(k1=2.0))
+    cache.put(other_workspace, BM25IndexManager())
+
+    assert cache.get(first) is None
+    assert cache.get(other_config) is not None
+    assert cache.get(other_workspace) is not None
+
+
+def test_scoped_index_cache_resize_applies_platform_capacity():
+    cache = BoundedBM25IndexCache(max_size=3)
+    keys = [BM25IndexKey("workspace", f"rev-{index}", "jieba", 1.5, 0.75) for index in range(3)]
+    for key in keys:
+        cache.put(key, BM25IndexManager())
+
+    cache.resize(1)
+
+    assert len(cache) == 1
+    assert cache.get(keys[-1]) is not None
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_passes_graph_depth_as_a_local_option():
+    class Graph:
+        def __init__(self):
+            self.received = None
+
+        async def search(self, _query, _top_k, *, depth=None):
+            self.received = depth
+            return []
+
+    graph = Graph()
+    engine = HybridSearchEngine(graph_retriever=graph)
+
+    await engine.search(
+        "test", options=RetrievalOptions(channels=("graph",), graph_depth=0)
+    )
+
+    assert graph.received == 0
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_does_not_wait_for_cancellation_resistant_channel(
+    sample_chunks,
+):
+    bm25 = BM25IndexManager()
+    bm25.build_index(sample_chunks)
+    engine = HybridSearchEngine(bm25_manager=bm25)
+    release_stuck_channel = asyncio.Event()
+
+    async def cancellation_resistant_vector(*_args, **_kwargs):
+        try:
+            await release_stuck_channel.wait()
+        except asyncio.CancelledError:
+            await release_stuck_channel.wait()
+        return []
+
+    engine._vector_search = cancellation_resistant_vector
+    started = asyncio.get_running_loop().time()
+    results = await engine.search(
+        "年假政策",
+        options=RetrievalOptions(
+            channels=("bm25", "vector"),
+            channel_timeout=0.02,
+        ),
+    )
+    elapsed = asyncio.get_running_loop().time() - started
+    release_stuck_channel.set()
+    await asyncio.sleep(0)
+
+    assert results
+    assert elapsed < 0.2
+    assert all("bm25" in result.sources for result in results)
+
+
+@pytest.mark.asyncio
+async def test_hybrid_search_cancels_channel_when_outer_search_is_cancelled():
+    engine = HybridSearchEngine()
+    channel_started = asyncio.Event()
+    channel_cancelled = asyncio.Event()
+
+    async def pending_vector(*_args, **_kwargs):
+        channel_started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            channel_cancelled.set()
+
+    engine._vector_search = pending_vector
+    search_task = asyncio.create_task(
+        engine.search(
+            "cancelled request",
+            options=RetrievalOptions(channels=("vector",), channel_timeout=60),
+        )
+    )
+    await asyncio.wait_for(channel_started.wait(), timeout=0.1)
+
+    search_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await search_task
+
+    await asyncio.wait_for(channel_cancelled.wait(), timeout=0.1)
 
 
 class TestRRFFusion:
@@ -361,6 +479,52 @@ class TestHybridSearchEngine:
 
         results = await engine.search("年假", top_k=3)
         assert len(results) <= 3
+
+    @pytest.mark.asyncio
+    async def test_request_options_do_not_mutate_shared_channels(self, sample_chunks):
+        bm25 = BM25IndexManager()
+        bm25.build_index(sample_chunks)
+        engine = HybridSearchEngine(bm25_manager=bm25, graph_retriever=GraphRetriever())
+        engine._enabled_channels = ["vector"]
+
+        results = await engine.search(
+            "年假政策", options=RetrievalOptions(channels=("bm25",))
+        )
+
+        assert results
+        assert all("bm25" in result.sources for result in results)
+        assert engine._enabled_channels == ["vector"]
+
+    @pytest.mark.asyncio
+    async def test_scoped_bm25_failure_does_not_reuse_shared_index(self, monkeypatch, sample_chunks):
+        from raganything.services import pg_state_repo
+
+        shared = BM25IndexManager()
+        shared.build_index(sample_chunks)
+        engine = HybridSearchEngine(
+            lightrag_instance=SimpleNamespace(working_dir="workspace-a"),
+            bm25_manager=shared,
+        )
+        monkeypatch.setattr(
+            pg_state_repo,
+            "get_pg_pool",
+            lambda: (_ for _ in ()).throw(RuntimeError("pg unavailable")),
+        )
+
+        manager = await engine._bm25_for_options(
+            RetrievalOptions(
+                channels=("bm25",),
+                workspace="workspace-a",
+                corpus_revision="rev-1",
+                permission_scope="user:7",
+                settings_fingerprint="settings-a",
+                bm25_k1=2.0,
+            )
+        )
+
+        assert manager is not shared
+        assert manager._k1 == 2.0
+        assert manager.chunk_count == 0
 
     @pytest.mark.asyncio
     async def test_async_build_index(self, sample_chunks):

@@ -22,9 +22,13 @@ This template helps contributors provide a clear and concise description of thei
 
 ## Checklist
 
+- [ ] `PROJECT_SUMMARY.md` was read before implementation
 - [ ] Changes tested locally
 - [ ] Code reviewed
-- [ ] Documentation updated (if necessary)
+- [ ] Final integration PR: `PROJECT_SUMMARY.md` is updated; subtask PR: a summary delta is included in the handoff
+- [ ] Final integration only: the single summary owner merged all applicable subtask deltas
+- [ ] Stable, in-progress, planned, and deprecated states are labeled accurately
+- [ ] The summary remains concise and contains no secrets, user data, logs, or generated output
 - [ ] Unit tests added (if applicable)
 
 ## Additional Notes

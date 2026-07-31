@@ -12,12 +12,12 @@ import time
 import inspect
 from contextlib import asynccontextmanager
 from functools import wraps
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Request, BackgroundTasks, Query as QueryParam
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 from typing import Any, Optional
 
@@ -54,6 +54,8 @@ from raganything.services.kb_service import (
     pg_get_upload_by_task_id,
     pg_list_uploads,
     pg_get_latest_content_updates_batch,
+    cancel_inflight_upload,
+    bump_kb_corpus_revision,
     _unregister_processing_file,
     _load_doc_status_json,
     _load_doc_status_summaries,
@@ -113,6 +115,34 @@ def _lease_kb_cache_for_operation(handler):
                 kb_instances.unpin(kb_name)
 
     return wrapped
+
+
+def _lease_kb_mutation_for_operation(mutation_kind: str):
+    """Hold the durable KB mutation lease across a request-level mutation."""
+    def decorate(handler):
+        @wraps(handler)
+        async def wrapped(*args, **kwargs):
+            bound = inspect.signature(handler).bind_partial(*args, **kwargs)
+            kb = bound.arguments.get("kb") or bound.arguments.get("kb_name")
+            if not kb:
+                return await handler(*args, **kwargs)
+            from raganything.services.kb_mutation import run_kb_mutation_with_lease
+            try:
+                return await run_kb_mutation_with_lease(
+                    str(kb),
+                    f"request:{uuid.uuid4()}",
+                    lambda: handler(*args, **kwargs),
+                    mutation_kind=mutation_kind,
+                )
+            except RuntimeError as exc:
+                if str(exc) == "reindex_in_progress":
+                    raise HTTPException(
+                        409,
+                        {"code": "reindex_in_progress", "message": "knowledge base is reindexing"},
+                    ) from exc
+                raise
+        return wrapped
+    return decorate
 
 
 # ── PG Graph Helpers: read knowledge graph data from LightRAG PG tables ──
@@ -364,6 +394,11 @@ class KBStatsBatchRequest(BaseModel):
     kb_names: list[str]
 
 
+class VisionSettingsUpdate(BaseModel):
+    profile_id: str
+    reindex: bool = False
+
+
 KB_STATS_BATCH_TIMEOUT_SECONDS = 6.0
 
 
@@ -382,6 +417,92 @@ async def _resolve_upload_vlm_snapshot(user_id: int):
         ) from exc
 
 
+def _optional_upload_boolean(value: str) -> bool | None:
+    return value.lower() == "true" if value else None
+
+
+async def _create_upload_settings_snapshot(
+    task_id: str,
+    user_id: int,
+    *,
+    chunking_strategy: str = "",
+    enable_image: str = "",
+    enable_table: str = "",
+    enable_equation: str = "",
+    enable_video: str = "",
+) -> None:
+    """Persist the complete effective upload configuration before enqueueing."""
+    from raganything.services.user_settings import (
+        create_task_settings_snapshot,
+        resolve_user_settings_for_task,
+    )
+
+    ingestion_overrides = {
+        field: value
+        for field, value in {
+            "chunking_strategy": chunking_strategy or None,
+            "enable_image": _optional_upload_boolean(enable_image),
+            "enable_table": _optional_upload_boolean(enable_table),
+            "enable_equation": _optional_upload_boolean(enable_equation),
+            "enable_video": _optional_upload_boolean(enable_video),
+        }.items()
+        if value is not None
+    }
+    resolved = await resolve_user_settings_for_task(
+        user_id,
+        request_overrides={"ingestion": ingestion_overrides},
+    )
+    await create_task_settings_snapshot(task_id, user_id, resolved)
+
+
+async def _delete_upload_settings_snapshot(task_id: str) -> None:
+    from raganything.services.user_settings import delete_task_settings_snapshot
+
+    try:
+        await delete_task_settings_snapshot(task_id)
+    except Exception:
+        lightrag_logger.warning(
+            "Could not remove unqueued settings snapshot: task=%s",
+            task_id,
+            exc_info=True,
+        )
+
+
+async def _get_snapshot_task_kb(task_id: str, kb: str):
+    """Create an uncached KB instance from a persisted task snapshot."""
+    from raganything.services.user_settings import get_task_settings_snapshot
+
+    snapshot = await get_task_settings_snapshot(task_id)
+    settings = snapshot.get("settings")
+    if not isinstance(settings, dict):
+        raise RuntimeError("settings_snapshot_invalid")
+    settings = dict(settings)
+    profile_ids = snapshot.get("profile_ids") or {}
+    llm_profile = profile_ids.get("llm") if isinstance(profile_ids, dict) else None
+    if isinstance(llm_profile, dict):
+        llm_profile_id = llm_profile.get("id")
+        llm_fingerprint = str(llm_profile.get("fingerprint") or "unknown")
+    else:
+        llm_profile_id = llm_profile
+        llm_fingerprint = "unknown"
+    if isinstance(llm_profile_id, str) and llm_profile_id:
+        from raganything.services.vision_models import require_available
+
+        entry = require_available(llm_profile_id, "llm")
+        if llm_fingerprint != "unknown" and entry.fingerprint != llm_fingerprint:
+            raise RuntimeError("profile_changed")
+        llm_fingerprint = entry.fingerprint
+    updates = await pg_get_latest_content_updates_batch([kb])
+    settings["_query_scope"] = {
+        "workspace": kb,
+        "permission_scope": f"user:{int(snapshot['user_id'])}",
+        "corpus_revision": updates.get(kb) or f"task:{task_id}",
+        "settings_fingerprint": str(snapshot.get("fingerprint") or "unknown"),
+        "llm_profile_fingerprint": llm_fingerprint,
+    }
+    return await get_kb(kb, task_settings=settings)
+
+
 async def _ensure_vision_index_mutable(kb: str) -> None:
     from raganything.services import vision_models
     if await vision_models._pg_pool() is None:
@@ -397,6 +518,137 @@ async def _ensure_vision_index_mutable(kb: str) -> None:
                 "task_id": (state.get("task") or {}).get("id"),
             },
         )
+
+
+async def _verify_kb_path_access(
+    kb: str,
+    current_user: dict = Depends(get_current_user),
+) -> str:
+    """Bind KB authorization to a path parameter, not Query("default")."""
+    return await verify_kb_access(kb, current_user)
+
+
+async def _verify_kb_vision_write_access(
+    kb: str,
+    current_user: dict = Depends(get_current_user),
+) -> str:
+    """Allow a KB owner *or* a role with KB write permission to switch vectors."""
+    actual_kb = await verify_kb_access(kb, current_user)
+    metadata = (await load_kb_meta()).get(actual_kb, {})
+    if current_user.get("is_admin") or metadata.get("owner_id") == current_user.get("id"):
+        return actual_kb
+    if await _auth_has_permission(int(current_user["id"]), Permission.KB_WRITE):
+        return actual_kb
+    raise HTTPException(403, "权限不足，需要知识库所有权或 kb:write")
+
+
+@router.get("/kb/{kb}/vision-settings")
+async def get_kb_vision_settings(
+    kb: str,
+    _access: str = Depends(_verify_kb_vision_write_access),
+    _user: dict = Depends(get_current_user),
+):
+    meta = (await load_kb_meta()).get(kb)
+    if not meta:
+        raise HTTPException(404, "知识库不存在")
+    state = (meta.get("extra") or {}).get("vision_embedding") or {}
+    return {"kb": kb, "vision_embedding": state}
+
+
+@router.put("/kb/{kb}/vision-settings")
+async def update_kb_vision_settings(
+    kb: str,
+    payload: VisionSettingsUpdate,
+    _access: str = Depends(_verify_kb_vision_write_access),
+    current_user: dict = Depends(get_current_user),
+):
+    """Switch a KB-owned visual vector space, guarding populated indexes."""
+    from raganything.services import vision_models
+
+    meta = await load_kb_meta()
+    kb_meta = meta.get(kb)
+    if not kb_meta:
+        raise HTTPException(404, "知识库不存在")
+    try:
+        target = vision_models.require_available(payload.profile_id, "embedding")
+    except ValueError as exc:
+        raise HTTPException(422, {"code": "invalid_profile", "message": "invalid vision embedding profile"}) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503, {"code": "profile_unavailable", "message": "vision embedding profile is unavailable"}) from exc
+    extra = kb_meta.setdefault("extra", {})
+    current = extra.get("vision_embedding") or {}
+    if current.get("index_state") == "reindexing":
+        raise HTTPException(409, {"code": "reindex_in_progress", "task_id": (current.get("task") or {}).get("id")})
+    if current.get("profile_id") == target.profile.id and current.get("profile_fingerprint") == target.fingerprint:
+        return {"kb": kb, "vision_embedding": current}
+
+    pool = await vision_models._pg_pool()
+    if pool is None:
+        raise HTTPException(503, {"code": "vision_storage_unavailable", "message": "PostgreSQL is required for visual vector settings"})
+    workspace = str(Path(kb_dir(kb)).resolve())
+    source_id = current.get("profile_id")
+    source_fingerprint = current.get("profile_fingerprint")
+    async with pool.acquire() as conn:
+        if source_id and source_fingerprint:
+            total = await conn.fetchval(
+                "SELECT COUNT(*) FROM image_vision_vectors WHERE workspace=$1 "
+                "AND profile_id=$2 AND profile_fingerprint=$3",
+                workspace,
+                source_id,
+                source_fingerprint,
+            )
+        else:
+            total = await conn.fetchval(
+                "SELECT COUNT(*) FROM image_vision_vectors WHERE workspace=$1",
+                workspace,
+            )
+    total = int(total or 0)
+    # NanoVectorDB is an explicitly supported profile-scoped store. Its
+    # active partition must count as populated even when the PG table is empty.
+    if total == 0 and source_id and source_fingerprint:
+        nano_rows, _ = vision_models._load_nano_reindex_rows(
+            workspace, source_id, source_fingerprint
+        )
+        total = len(nano_rows)
+    if total == 0 or not source_id:
+        try:
+            next_state = await vision_models.activate_empty_vision_profile(
+                kb=kb, workspace=workspace, target=target,
+            )
+        except RuntimeError as exc:
+            code = str(exc)
+            if code in {"reindex_in_progress", "vision_mutation_in_progress"}:
+                raise HTTPException(409, {"code": code, "message": "cannot switch visual profile during KB mutation"}) from exc
+            if code == "vision_index_populated":
+                raise HTTPException(409, {"code": "reindex_required", "message": "visual vectors were added; refresh and confirm reindex"}) from exc
+            raise HTTPException(503, {"code": "vision_storage_unavailable", "message": "visual vector storage is unavailable"}) from exc
+        await vision_models.audit_vision_event(
+            int(current_user["id"]),
+            "vision.kb_profile.updated",
+            profile_id=target.profile.id,
+            previous_profile_id=source_id,
+            kb=kb,
+        )
+        return {"kb": kb, "vision_embedding": next_state}
+    if not payload.reindex:
+        raise HTTPException(409, {"code": "reindex_required", "message": "visual vectors already exist; confirm reindex"})
+    try:
+        # A reindex reads raw document media and only needs the target adapter.
+        # Preserve an old active partition even after its profile is retired.
+        source = vision_models.get_entry(source_id, "embedding")
+        task_id = str(uuid.uuid4())
+        await vision_models.create_reindex_job(task_id=task_id, kb=kb, actor_id=int(current_user["id"]), source=source, target=target, total=total)
+        vision_models.schedule_reindex_job(task_id)
+    except RuntimeError as exc:
+        code = str(exc)
+        if code in {"reindex_in_progress", "vision_mutation_in_progress"}:
+            raise HTTPException(409, {"code": code, "message": "cannot start visual reindex"}) from exc
+        raise HTTPException(503, {"code": "profile_unavailable", "message": "vision reindex source is unavailable"}) from exc
+    await vision_models.audit_vision_event(int(current_user["id"]), "vision.kb_reindex.queued", profile_id=target.profile.id, kb=kb, result="queued")
+    return JSONResponse(
+        status_code=202,
+        content={"task_id": task_id, "status": "queued"},
+    )
 
 
 # ── Upload handlers ────────────────────────────────────
@@ -451,6 +703,19 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
             f"文件正在处理中 (task_id={existing_task})",
         )
 
+    try:
+        await _create_upload_settings_snapshot(
+            task_id, int(current_user["id"]), chunking_strategy=actual_strategy,
+            enable_image=enable_image, enable_table=enable_table,
+            enable_equation=enable_equation, enable_video=enable_video,
+        )
+    except RuntimeError as exc:
+        file_path.unlink(missing_ok=True)
+        raise HTTPException(
+            503,
+            {"code": "settings_snapshot_unavailable", "message": "无法创建任务设置快照"},
+        ) from exc
+
     # Register file metadata in PG (dedup enforced by UNIQUE on file_hash + kb_name)
     pg_id = await _register_upload_with_stale_recovery(
         filename=safe_name,
@@ -468,6 +733,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
             file_path.unlink(missing_ok=True)
         except OSError:
             pass
+        await _delete_upload_settings_snapshot(task_id)
         raise HTTPException(
             409,
             f"文件内容重复或上传注册失败: {file.filename}",
@@ -479,7 +745,7 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
     _register_processing_file(kb, file_hash, task_id)
 
     # 推入 per-KB 处理队列（统一排队，防止并发竞争 LightRAG 存储）
-    from .shared import _ensure_queue_draining
+    from .shared import _enqueue_upload_task
     task_info = {
         "task_id": task_id,
         "file_path": str(file_path.absolute()),
@@ -489,13 +755,13 @@ async def upload_file(request: Request, file: UploadFile = File(...), background
         "user_id": current_user["id"],
         "vision_vlm_profile_id": vlm_snapshot.profile.id,
         "vision_vlm_profile_fingerprint": vlm_snapshot.fingerprint,
-        "enable_image": enable_image.lower() == "true" if enable_image else None,
-        "enable_table": enable_table.lower() == "true" if enable_table else None,
-        "enable_equation": enable_equation.lower() == "true" if enable_equation else None,
-        "enable_video": enable_video.lower() == "true" if enable_video else None,
+        "enable_image": _optional_upload_boolean(enable_image),
+        "enable_table": _optional_upload_boolean(enable_table),
+        "enable_equation": _optional_upload_boolean(enable_equation),
+        "enable_video": _optional_upload_boolean(enable_video),
+        "settings_snapshot_id": task_id,
     }
-    queue, qsize = await _ensure_queue_draining(kb)
-    queue.put_nowait(task_info)
+    queue, qsize = await _enqueue_upload_task(task_info)
     strategy_name = CHUNKING_STRATEGY_META.get(actual_strategy, {}).get('name', '默认')
     return {"task_id": task_id, "filename": file.filename, "status": "queued", "kb": kb,
             "chunking_strategy": actual_strategy,
@@ -526,7 +792,7 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
     tasks = []
     skipped: list[str] = []
     queue_size = 0
-    from .shared import _ensure_queue_draining
+    from .shared import _enqueue_upload_task
 
     for file in files:
         task_id = str(uuid.uuid4())
@@ -557,6 +823,19 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
             skipped.append(file.filename)
             continue
 
+        try:
+            await _create_upload_settings_snapshot(
+                task_id, int(current_user["id"]), chunking_strategy=actual_strategy,
+                enable_image=enable_image, enable_table=enable_table,
+                enable_equation=enable_equation, enable_video=enable_video,
+            )
+        except RuntimeError as exc:
+            file_path.unlink(missing_ok=True)
+            raise HTTPException(
+                503,
+                {"code": "settings_snapshot_unavailable", "message": "无法创建任务设置快照"},
+            ) from exc
+
         # Register file metadata in PG (dedup enforced by UNIQUE on file_hash + kb_name)
         pg_id = await _register_upload_with_stale_recovery(
             filename=file.filename,
@@ -576,6 +855,7 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
                 file_path.unlink(missing_ok=True)
             except OSError:
                 pass
+            await _delete_upload_settings_snapshot(task_id)
             skipped.append(file.filename)
             continue
         _register_processing_file(kb, file_hash, task_id)
@@ -590,13 +870,13 @@ async def upload_files(request: Request, files: list[UploadFile] = File(...), ba
             "user_id": current_user["id"],
             "vision_vlm_profile_id": vlm_snapshot.profile.id,
             "vision_vlm_profile_fingerprint": vlm_snapshot.fingerprint,
-            "enable_image": enable_image.lower() == "true" if enable_image else None,
-            "enable_table": enable_table.lower() == "true" if enable_table else None,
-            "enable_equation": enable_equation.lower() == "true" if enable_equation else None,
-            "enable_video": enable_video.lower() == "true" if enable_video else None,
+            "enable_image": _optional_upload_boolean(enable_image),
+            "enable_table": _optional_upload_boolean(enable_table),
+            "enable_equation": _optional_upload_boolean(enable_equation),
+            "enable_video": _optional_upload_boolean(enable_video),
+            "settings_snapshot_id": task_id,
         }
-        queue, pre_qsize = await _ensure_queue_draining(kb)
-        queue.put_nowait(task_info)
+        queue, pre_qsize = await _enqueue_upload_task(task_info)
         queue_size = queue.qsize()
         tasks.append({
             "task_id": task_id, "filename": file.filename,
@@ -656,7 +936,13 @@ async def list_upload_tasks(
 
         runtime_task = active_tasks.get(task_id, {})
         retry = retry_by_task.get(str(task_id), {})
-        status = runtime_task.get("status") or upload.get("status") or "queued"
+        durable_status = upload.get("status") or "queued"
+        if durable_status == "cancelling":
+            # Restart cleanup after a process restart; the coordinator is idempotent.
+            await cancel_inflight_upload(str(task_id), kb)
+        status = durable_status if durable_status in {"cancelling", "deleted"} else (
+            runtime_task.get("status") or durable_status
+        )
         progress = runtime_task.get("progress")
         if progress is None:
             progress = 100 if status == "completed" else 0
@@ -698,7 +984,7 @@ async def list_upload_tasks(
             ),
             "created_at": upload.get("created_at", ""),
             "updated_at": runtime_task.get("updated_at") or upload.get("updated_at", ""),
-            "can_delete": status == "queued",
+            "can_delete": status in {"queued", "processing", "retry_wait"},
         })
 
     return {"tasks": tasks, "total": len(tasks)}
@@ -757,7 +1043,7 @@ async def delete_upload_task(
     _perm: None = Depends(require_permission(Permission.KB_WRITE)),
     current_user: dict = Depends(get_current_user),
 ):
-    """Delete a queued upload task before processing starts."""
+    """Delete a queued task or start durable cancellation for unfinished work."""
     upload = await pg_get_upload_by_task_id(
         task_id,
         kb_name=kb,
@@ -766,8 +1052,22 @@ async def delete_upload_task(
     )
     if not upload:
         raise HTTPException(404, "上传任务不存在")
-    if upload.get("status") != "queued":
-        raise HTTPException(409, "仅排队中的上传任务可删除")
+    upload_status = upload.get("status")
+    if upload_status in {"processing", "retry_wait", "cancelling"}:
+        cancellation = await cancel_inflight_upload(task_id, kb)
+        if cancellation is None:
+            raise HTTPException(409, "上传任务状态已变化，请刷新后重试")
+        if cancellation.get("status") != "cancelling":
+            raise HTTPException(409, "仅未完成的上传任务可删除")
+        return JSONResponse(status_code=202, content={
+            "task_id": task_id,
+            "filename": upload.get("filename", ""),
+            "status": "cancelling",
+            "cancelled": True,
+            "message": "正在停止处理，完成后将删除",
+        })
+    if upload_status != "queued":
+        raise HTTPException(409, "仅未完成的上传任务可删除")
 
     deleted = await pg_update_upload_status_by_task_id(
         task_id,
@@ -788,6 +1088,7 @@ async def delete_upload_task(
 
     _unregister_processing_file(kb, upload.get("file_hash", ""))
     await delete_task(task_id)
+    await _delete_upload_settings_snapshot(task_id)
     await add_event(
         "upload_delete",
         task_id=task_id,
@@ -810,26 +1111,20 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
                          enable_image: str = "", enable_table: str = "",
                          enable_equation: str = "", enable_video: str = ""):
     """批量处理文件夹"""
+    await _ensure_vision_index_mutable(kb)
     if not os.path.isdir(folder_path):
         raise HTTPException(400, "文件夹不存在")
 
     actual_strategy = _resolve_chunking_strategy(chunking_strategy)
 
-    import os as _os
-    _prev_env = {}
-    for key, val in [
-        ("ENABLE_IMAGE_PROCESSING", enable_image),
-        ("ENABLE_TABLE_PROCESSING", enable_table),
-        ("ENABLE_EQUATION_PROCESSING", enable_equation),
-        ("ENABLE_VIDEO_PROCESSING", enable_video),
-    ]:
-        if val:
-            _prev_env[key] = _os.environ.get(key)
-            _os.environ[key] = val.lower()
-
+    task_id = str(uuid.uuid4())
     try:
-        task_id = str(uuid.uuid4())
-        instance = await get_kb(kb)
+        await _create_upload_settings_snapshot(
+            task_id, int(current_user["id"]), chunking_strategy=actual_strategy,
+            enable_image=enable_image, enable_table=enable_table,
+            enable_equation=enable_equation, enable_video=enable_video,
+        )
+        instance = await _get_snapshot_task_kb(task_id, kb)
         supported_extensions = {
             str(ext).lower()
             for ext in getattr(getattr(instance, "config", None), "supported_file_extensions", [])
@@ -848,16 +1143,27 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
         # 临时切换分块策略
         original_func = None
         try:
-            if actual_strategy and instance.lightrag:
-                new_func = build_chunking_func(actual_strategy, instance.lightrag)
-                if new_func is not None:
-                    original_func = instance.lightrag.chunking_func
-                    instance.lightrag.chunking_func = new_func
-            await instance.process_folder_complete(
-                folder_path,
-                output_dir="./output",
-                recursive=True,
-                chunking_strategy=actual_strategy,
+            from raganything.services.user_settings import run_ingestion_with_quota
+            from raganything.services.kb_mutation import run_kb_mutation_with_lease
+            from raganything.services.kb_corpus_revision import run_corpus_mutation
+            await run_ingestion_with_quota(
+                task_id,
+                lambda: run_kb_mutation_with_lease(
+                    kb,
+                    task_id,
+                    lambda: run_corpus_mutation(
+                        kb,
+                        task_id,
+                        "folder",
+                        lambda: instance.process_folder_complete(
+                            folder_path,
+                            output_dir="./output",
+                            recursive=True,
+                            chunking_strategy=actual_strategy,
+                        ),
+                    ),
+                    mutation_kind="folder",
+                ),
             )
             tag_warnings = await _settle_in_process_upload(
                 kb, folder_files, current_user["id"],
@@ -871,9 +1177,6 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
                 "kb": kb, "file": folder_path, "user_id": current_user["id"],
             })
             raise HTTPException(500, str(e))
-        finally:
-            if original_func and instance.lightrag:
-                instance.lightrag.chunking_func = original_func
         return {
             "task_id": task_id,
             "folder": folder_path,
@@ -882,11 +1185,8 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
             "chunking_strategy": actual_strategy,
         }
     finally:
-        for key, val in _prev_env.items():
-            if val is None:
-                _os.environ.pop(key, None)
-            else:
-                _os.environ[key] = val
+        if 'instance' in locals():
+            await instance.finalize_storages()
 
 
 @router.post("/upload/content")
@@ -897,50 +1197,47 @@ async def upload_content(req: PasteContentRequest, kb: str = Depends(verify_kb_a
                           enable_image: str = "", enable_table: str = "",
                           enable_equation: str = "", enable_video: str = ""):
     """直接粘贴内容入库"""
-    import os as _os
+    await _ensure_vision_index_mutable(kb)
     actual_strategy = _resolve_chunking_strategy(chunking_strategy)
-
-    # ── Per-upload multimodal overrides ─────────────
-    _prev_env = {}
-    for key, val in [
-        ("ENABLE_IMAGE_PROCESSING", enable_image),
-        ("ENABLE_TABLE_PROCESSING", enable_table),
-        ("ENABLE_EQUATION_PROCESSING", enable_equation),
-        ("ENABLE_VIDEO_PROCESSING", enable_video),
-    ]:
-        if val:
-            _prev_env[key] = _os.environ.get(key)
-            _os.environ[key] = val.lower()
-
+    task_id = str(uuid.uuid4())
     try:
-        instance = await get_kb(kb)
+        await _create_upload_settings_snapshot(
+            task_id, int(current_user["id"]), chunking_strategy=actual_strategy,
+            enable_image=enable_image, enable_table=enable_table,
+            enable_equation=enable_equation, enable_video=enable_video,
+        )
+        instance = await _get_snapshot_task_kb(task_id, kb)
         content_list = [{"type": "text", "text": req.content, "page_idx": 0}]
         original_func = None
         try:
-            if actual_strategy and instance.lightrag:
-                new_func = build_chunking_func(actual_strategy, instance.lightrag)
-                if new_func is not None:
-                    original_func = instance.lightrag.chunking_func
-                    instance.lightrag.chunking_func = new_func
-            await instance.insert_content_list(
-                content_list,
-                file_path=req.title or "pasted_content",
-                chunking_strategy=actual_strategy,
+            from raganything.services.user_settings import run_ingestion_with_quota
+            from raganything.services.kb_mutation import run_kb_mutation_with_lease
+            from raganything.services.kb_corpus_revision import run_corpus_mutation
+            await run_ingestion_with_quota(
+                task_id,
+                lambda: run_kb_mutation_with_lease(
+                    kb,
+                    task_id,
+                    lambda: run_corpus_mutation(
+                        kb,
+                        task_id,
+                        "content",
+                        lambda: instance.insert_content_list(
+                            content_list,
+                            file_path=req.title or "pasted_content",
+                            chunking_strategy=actual_strategy,
+                        ),
+                    ),
+                    mutation_kind="content",
+                ),
             )
             return {"status": "completed", "title": req.title or "pasted_content",
                     "chunking_strategy": actual_strategy}
         except Exception as e:
             raise HTTPException(500, str(e))
-        finally:
-            if original_func and instance.lightrag:
-                instance.lightrag.chunking_func = original_func
     finally:
-        # Restore env vars
-        for key, val in _prev_env.items():
-            if val is None:
-                _os.environ.pop(key, None)
-            else:
-                _os.environ[key] = val
+        if 'instance' in locals():
+            await instance.finalize_storages()
 
 
 @router.post("/upload/url")
@@ -951,25 +1248,19 @@ async def upload_from_url(url: str = QueryParam(...), kb: str = Depends(verify_k
                          enable_image: str = "", enable_table: str = "",
                          enable_equation: str = "", enable_video: str = ""):
     """从 URL 下载文档并入库"""
+    await _ensure_vision_index_mutable(kb)
     if not url.startswith("http"):
         raise HTTPException(400, "无效 URL")
 
     actual_strategy = _resolve_chunking_strategy(chunking_strategy)
 
-    import os as _os
-    _prev_env = {}
-    for key, val in [
-        ("ENABLE_IMAGE_PROCESSING", enable_image),
-        ("ENABLE_TABLE_PROCESSING", enable_table),
-        ("ENABLE_EQUATION_PROCESSING", enable_equation),
-        ("ENABLE_VIDEO_PROCESSING", enable_video),
-    ]:
-        if val:
-            _prev_env[key] = _os.environ.get(key)
-            _os.environ[key] = val.lower()
-
+    task_id = str(uuid.uuid4())
     try:
-        task_id = str(uuid.uuid4())
+        await _create_upload_settings_snapshot(
+            task_id, int(current_user["id"]), chunking_strategy=actual_strategy,
+            enable_image=enable_image, enable_table=enable_table,
+            enable_equation=enable_equation, enable_video=enable_video,
+        )
         await add_event("url_download_start", url=url, task_id=task_id, user_id=current_user.get("id", 0))
         async with httpx.AsyncClient(timeout=120, follow_redirects=True) as client:
             resp = await client.get(url)
@@ -1012,26 +1303,36 @@ async def upload_from_url(url: str = QueryParam(...), kb: str = Depends(verify_k
         fp.write_bytes(content)
         await add_event("url_download_complete", file=fname, task_id=task_id, size=len(content), user_id=current_user.get("id", 0))
 
-        instance = await get_kb(kb)
+        instance = await _get_snapshot_task_kb(task_id, kb)
         original_func = None
         try:
-            if instance.lightrag:
-                new_func = build_chunking_func(actual_strategy, instance.lightrag)
-                if new_func is not None:
-                    original_func = instance.lightrag.chunking_func
-                    instance.lightrag.chunking_func = new_func
-            await instance.process_document_complete(
-                str(fp.absolute()),
-                output_dir="./output",
-                chunking_strategy=actual_strategy,
-                odl_owner_kb=kb,
+            from raganything.services.user_settings import run_ingestion_with_quota
+            from raganything.services.kb_mutation import run_kb_mutation_with_lease
+            from raganything.services.kb_corpus_revision import run_corpus_mutation
+            await run_ingestion_with_quota(
+                task_id,
+                lambda: run_kb_mutation_with_lease(
+                    kb,
+                    task_id,
+                    lambda: run_corpus_mutation(
+                        kb,
+                        task_id,
+                        "url",
+                        lambda: instance.process_document_complete(
+                            str(fp.absolute()),
+                            output_dir="./output",
+                            chunking_strategy=actual_strategy,
+                            odl_owner_kb=kb,
+                        ),
+                    ),
+                    mutation_kind="url",
+                ),
             )
             tag_warnings = await _settle_in_process_upload(
                 kb, [fname], current_user.get("id", 0),
             )
         finally:
-            if original_func and instance.lightrag:
-                instance.lightrag.chunking_func = original_func
+            pass
         await add_event("url_process_complete", file=fname, task_id=task_id, user_id=current_user.get("id", 0))
         return {
             "status": "degraded" if tag_warnings else "completed",
@@ -1046,12 +1347,8 @@ async def upload_from_url(url: str = QueryParam(...), kb: str = Depends(verify_k
         await add_event("url_error", url=url, error=str(e), user_id=current_user.get("id", 0))
         raise HTTPException(500, str(e))
     finally:
-        # Restore env vars
-        for key, val in _prev_env.items():
-            if val is None:
-                _os.environ.pop(key, None)
-            else:
-                _os.environ[key] = val
+        if 'instance' in locals():
+            await instance.finalize_storages()
 
 
 # ── Knowledge / Document handlers ──────────────────────
@@ -1307,12 +1604,56 @@ async def _get_tags_for_chunks_best_effort(
         return {chunk_id: [] for chunk_id in chunk_ids}
 
 
+def _document_timestamp(value: Any) -> str:
+    """Return a stable, JSON-safe timestamp for document summaries."""
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value if isinstance(value, str) else ""
+
+
+def _document_upload_task_id(info: dict[str, Any]) -> str | None:
+    """Return durable upload provenance without falling back to filenames."""
+    metadata = info.get("metadata") or {}
+    metadata_task_id = metadata.get("task_id") if isinstance(metadata, dict) else None
+    for task_id in (info.get("track_id"), info.get("task_id"), metadata_task_id):
+        if task_id:
+            return str(task_id)
+    return None
+
+
 @router.get("/knowledge/documents")
 async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict = Depends(get_current_user)):
     """列出所有文档及其状态（含处理中的任务）"""
     try:
         # Clean up completed/failed tasks before building the response
         await cleanup_completed_tasks()
+
+        uploads, _total = await pg_list_uploads(
+            kb_name=kb,
+            uploaded_by=current_user.get("id"),
+            is_admin=current_user.get("is_admin", False),
+            limit=200,
+            offset=0,
+            exclude_statuses=["deleted"],
+        )
+        active_tasks = {
+            str(task.get("id") or task.get("task_id")): task
+            for task in await get_all_tasks()
+            if task.get("kb", task.get("kb_name", "")) == kb
+            and (task.get("id") or task.get("task_id"))
+        }
+        upload_task_statuses: dict[str, str] = {}
+        for upload in uploads:
+            task_id = str(upload.get("task_id") or "")
+            if not task_id:
+                continue
+            durable_status = str(upload.get("status") or "queued")
+            runtime_task = active_tasks.get(task_id, {})
+            upload_task_statuses[task_id] = (
+                durable_status
+                if durable_status in {"cancelling", "deleted"}
+                else str(runtime_task.get("status") or durable_status)
+            )
 
         data = await _load_doc_status_summaries(kb)
 
@@ -1327,7 +1668,9 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
             # describe the same document.  Preserve every such row by its ID;
             # valid filenames retain the existing retry/re-upload dedupe rule.
             dedupe_key = orig or f"__missing_doc__:{doc_id}"
-            if dedupe_key not in best_doc or (info.get("updated_at") or "") > (best_doc[dedupe_key][1].get("updated_at") or ""):
+            if dedupe_key not in best_doc or _document_timestamp(
+                info.get("updated_at")
+            ) > _document_timestamp(best_doc[dedupe_key][1].get("updated_at")):
                 best_doc[dedupe_key] = (doc_id, info)
 
         tag_health_by_doc = await _document_tag_health_contract(
@@ -1348,6 +1691,8 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                     doc_phase = task.get("phase", "") or ""
                     break
             metadata = info.get("metadata") or {}
+            upload_task_id = _document_upload_task_id(info)
+            upload_task_status = upload_task_statuses.get(upload_task_id or "")
             stored_strategy = (
                 metadata.get("chunking_strategy")
                 if isinstance(metadata, dict)
@@ -1370,6 +1715,13 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                 **health_fields,
                 **tag_health,
             })
+            if upload_task_status == "cancelling":
+                completion_fields = {
+                    **completion_fields,
+                    "status": "cancelling",
+                    "raw_status": "cancelling",
+                    "health": "cancelling",
+                }
             docs.append({
                 "id": (doc_id or "")[:16],
                 "full_id": doc_id or "",
@@ -1377,9 +1729,12 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                 **completion_fields,
                 "chunks": info.get("chunks_count") or 0,
                 "length": info.get("content_length") or 0,
-                "created": info.get("created_at") or "",
-                "updated": info.get("updated_at") or "",
+                "created": _document_timestamp(info.get("created_at")),
+                "updated": _document_timestamp(info.get("updated_at")),
                 "phase": doc_phase,
+                "upload_task_id": upload_task_id,
+                "upload_task_status": upload_task_status,
+                "can_cancel_upload": upload_task_status in {"queued", "processing", "retry_wait"},
                 "chunking_strategy": stored_strategy if isinstance(stored_strategy, str) else None,
             })
             if orig_name:
@@ -1393,13 +1748,15 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                 continue
             fn = task.get("file") or ""
             if fn and _strip_hash_prefix(fn) not in seen_files:
+                task_id = str(tid)
+                upload_task_status = upload_task_statuses.get(task_id)
                 docs.append({
                     "id": tid or "",
                     "full_id": tid or "",
                     "file": fn,
-                    "status": task.get("status") or "processing",
-                    "raw_status": task.get("status") or "processing",
-                    "health": task.get("status") or "processing",
+                    "status": upload_task_status or task.get("status") or "processing",
+                    "raw_status": upload_task_status or task.get("status") or "processing",
+                    "health": upload_task_status or task.get("status") or "processing",
                     "content_ready": False,
                     "graph_status": "",
                     "failure_stage": "",
@@ -1419,9 +1776,12 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                     "tag_retryable": False,
                     "chunks": 0,
                     "length": 0,
-                    "created": task.get("started_at") or "",
-                    "updated": task.get("started_at") or "",
+                    "created": _document_timestamp(task.get("started_at")),
+                    "updated": _document_timestamp(task.get("started_at")),
                     "phase": task.get("phase") or "",
+                    "upload_task_id": task_id,
+                    "upload_task_status": upload_task_status,
+                    "can_cancel_upload": upload_task_status in {"queued", "processing", "retry_wait"},
                     "chunking_strategy": (
                         task.get("chunking_strategy")
                         if isinstance(task.get("chunking_strategy"), str)
@@ -2247,6 +2607,7 @@ async def update_document_chunk(
                 updated_records = [new_chunk if _stored_chunk_id(value) == chunk_id else value for value in records]
                 await _refresh_chunk_search(instance, kb)
                 await move_chunk_tags(kb, full_id, chunk_id, new_id)
+                await bump_kb_corpus_revision(kb)
             except Exception as exc:
                 await _restore_chunk_mutation(lg, full_id, old_status, chunk_id, old_chunk, new_id)
                 try:
@@ -2349,6 +2710,7 @@ async def delete_document_chunk(
                 await _flush_chunk_mutation_stores(lg)
                 await _refresh_chunk_search(instance, kb)
                 await delete_chunk_tags(kb, full_id, chunk_id)
+                await bump_kb_corpus_revision(kb)
             except Exception as exc:
                 await _restore_chunk_mutation(lg, full_id, old_status, chunk_id, old_chunk, None)
                 try:
@@ -2449,7 +2811,9 @@ async def _compute_kb_stats(kb: str) -> dict[str, int]:
             if not isinstance(info, dict):
                 continue
             orig = _strip_hash_prefix(info.get("file_path", "") or "")
-            if orig not in best_doc or (info.get("updated_at") or "") > (best_doc[orig][1].get("updated_at") or ""):
+            if orig not in best_doc or _document_timestamp(
+                info.get("updated_at")
+            ) > _document_timestamp(best_doc[orig][1].get("updated_at")):
                 best_doc[orig] = (doc_id, info)
 
         stats["documents"] = len(best_doc)
@@ -4056,7 +4420,8 @@ async def delete_document(doc_id: str, kb: str = Depends(verify_kb_access), _per
             from raganything.services.document_tagging import cancel_document_tagging
             await cancel_document_tagging(kb, [full_id])
             _delete_response = {
-                "status": "deleted",
+        "status": "deleted",
+        "cancelled": False,
                 "doc_id": full_id,
                 "file": file_name,
                 "message": "文档记录已清理（部分数据不完整）",
@@ -4209,6 +4574,7 @@ async def batch_delete_documents(req: BatchDeleteRequest, kb: str = Depends(veri
 
 
 @router.post("/knowledge/documents/{doc_id}/retry")
+@_lease_kb_mutation_for_operation("retry")
 async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm: None = Depends(require_permission(Permission.KB_WRITE)), current_user: dict = Depends(get_current_user), background_tasks: BackgroundTasks = None):
     """重试处理失败的文档 — PG-backed"""
     await _ensure_vision_index_mutable(kb)
@@ -4322,6 +4688,20 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
                 ) from exc
 
     # 删除旧的失败记录 via LightRAG PG (trigger reprocessing)
+    # Create the retry's immutable snapshot before changing the failed
+    # document state. A missing PostgreSQL snapshot must not leave the old
+    # record deleted with no runnable replacement task.
+    task_id = str(uuid.uuid4())
+    try:
+        await _create_upload_settings_snapshot(
+            task_id, int(current_user["id"]), chunking_strategy=actual_strategy,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(
+            503,
+            {"code": "settings_snapshot_unavailable", "message": "unable to create task settings snapshot"},
+        ) from exc
+
     try:
         kb_instance = await get_kb(kb)
         if kb_instance and kb_instance.lightrag:
@@ -4332,8 +4712,7 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
     del data[full_id]
 
     # 推入 per-KB 处理队列（统一排队）
-    task_id = str(uuid.uuid4())
-    from .shared import _ensure_queue_draining
+    from .shared import _enqueue_upload_task
     task_info = {
         "task_id": task_id,
         "file_path": str(file_path.absolute()),
@@ -4343,6 +4722,7 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
         "user_id": current_user["id"],
         "vision_vlm_profile_id": vlm_snapshot.profile.id,
         "vision_vlm_profile_fingerprint": vlm_snapshot.fingerprint,
+        "settings_snapshot_id": task_id,
     }
     await upsert_task_state(
         task_id,
@@ -4376,8 +4756,7 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
             kb,
             exc_info=True,
         )
-    queue, qsize = await _ensure_queue_draining(kb)
-    queue.put_nowait(task_info)
+    queue, qsize = await _enqueue_upload_task(task_info)
     await add_event(
         "upload_retry_queued",
         file=file_name,
@@ -4395,7 +4774,8 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
 async def reprocess_multimodal(
     kb_name: str,
     background_tasks: BackgroundTasks,
-    current_user: dict = Depends(require_permission(Permission.KB_WRITE)),
+    _perm: None = Depends(require_permission(Permission.KB_WRITE)),
+    current_user: dict = Depends(get_current_user),
 ):
     """回溯处理知识库中文档的多模态内容（图片/表格/公式）。
 
@@ -4419,12 +4799,23 @@ async def reprocess_multimodal(
                 "message": "所有文档已完成多模态处理",
             }
 
-        # Schedule background processing
+        task_id = str(uuid.uuid4())
+        try:
+            await _create_upload_settings_snapshot(task_id, int(current_user["id"]))
+        except RuntimeError as exc:
+            raise HTTPException(
+                503,
+                {"code": "settings_snapshot_unavailable", "message": "unable to create task settings snapshot"},
+            ) from exc
+        # Schedule background processing from the immutable task snapshot.
         background_tasks.add_task(
-            _reprocess_multimodal_for_kb, kb_name, user_id=current_user.get("id", 1)
+            _reprocess_multimodal_for_kb,
+            kb_name,
+            user_id=current_user.get("id", 1),
+            task_id=task_id,
         )
         return {
-            "status": "queued", "total": total,
+            "status": "queued", "task_id": task_id, "total": total,
             "message": f"已排队 {total} 个文档，后台处理中。通过 WebSocket 获取进度更新。",
         }
     except ValueError as e:
@@ -4604,8 +4995,9 @@ async def image_search(
     需要配置 ``VISION_EMBEDDING_MODEL`` 环境变量且 ``VISION_SEARCH_ENABLED=true``。
     如果未启用，返回 501。
     """
-    import os as _os
-    if _os.getenv("VISION_SEARCH_ENABLED", "false").lower() != "true":
+    kb_metadata = (await load_kb_meta()).get(kb, {})
+    vision_state = (kb_metadata.get("extra") or {}).get("vision_embedding") or {}
+    if not vision_state.get("profile_id") or not vision_state.get("profile_fingerprint"):
         raise HTTPException(
             501,
             "视觉搜索功能未启用。请设置环境变量 VISION_SEARCH_ENABLED=true 并配置 VISION_EMBEDDING_MODEL。",

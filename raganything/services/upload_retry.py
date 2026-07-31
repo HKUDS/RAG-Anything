@@ -79,6 +79,7 @@ async def schedule_upload_retry(
     enable_table: bool | None = None, enable_equation: bool | None = None,
     enable_video: bool | None = None, retry_job_id: int | None = None,
     lease_token: str | None = None,
+    claim_owner: str | None = None, claim_generation: int | None = None,
 ) -> dict[str, Any] | None:
     """Create or reschedule a retry and atomically expose retry_wait state."""
     pool = get_pg_pool()
@@ -88,8 +89,18 @@ async def schedule_upload_retry(
                 "SELECT id, status FROM uploaded_files WHERE task_id=$1 AND kb_name=$2 FOR UPDATE",
                 task_id, kb_name,
             )
-            if not upload or upload["status"] == "deleted":
+            if not upload or upload["status"] != "processing":
                 return None
+            if claim_owner is not None:
+                if claim_generation is None:
+                    return None
+                owned = await conn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM uploaded_files WHERE id=$1 "
+                    "AND processing_owner=$2 AND processing_generation=$3)",
+                    upload["id"], claim_owner, int(claim_generation),
+                )
+                if not owned:
+                    return None
             existing = None
             if retry_job_id is not None:
                 existing = await conn.fetchrow(
@@ -179,7 +190,7 @@ async def claim_due_retry() -> dict[str, Any] | None:
             if not row:
                 return None
             alive = await conn.fetchval(
-                "SELECT status <> 'deleted' FROM uploaded_files WHERE id=$1", row["upload_id"]
+                "SELECT status NOT IN ('deleted', 'cancelling') FROM uploaded_files WHERE id=$1", row["upload_id"]
             )
             if not alive:
                 await conn.execute(
@@ -188,7 +199,8 @@ async def claim_due_retry() -> dict[str, Any] | None:
                 )
                 return None
             await conn.execute(
-                "UPDATE uploaded_files SET status='processing',updated_at=NOW() WHERE id=$1 AND status<>'deleted'",
+                "UPDATE uploaded_files SET status='queued',processing_owner=NULL,"
+                "processing_heartbeat_at=NULL,updated_at=NOW() WHERE id=$1 AND status<>'deleted'",
                 row["upload_id"],
             )
             await conn.execute(
@@ -215,10 +227,6 @@ async def complete_upload_retry(job_id: int, lease_token: str) -> bool:
             )
             if not row:
                 return False
-            await conn.execute(
-                "UPDATE uploaded_files SET status='completed',error_message='',updated_at=NOW() "
-                "WHERE id=$1 AND status<>'deleted'", row["upload_id"],
-            )
             return True
 
 
@@ -236,7 +244,7 @@ async def retry_now(task_id: str, *, reset_budget: bool = False) -> bool:
             if not row:
                 return False
             await conn.execute(
-                "UPDATE uploaded_files SET status='retry_wait',updated_at=NOW() WHERE id=$1 AND status<>'deleted'",
+                "UPDATE uploaded_files SET status='retry_wait',updated_at=NOW() WHERE id=$1 AND status NOT IN ('deleted', 'cancelling')",
                 row["upload_id"],
             )
             await conn.execute(

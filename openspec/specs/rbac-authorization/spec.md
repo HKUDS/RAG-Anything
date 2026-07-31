@@ -1,9 +1,9 @@
 # RBAC Authorization
 
-基于角色的访问控制（RBAC），替代现有的 `is_admin` 二值模型，支持可扩展的角色与权限定义。
+## Purpose
 
-## ADDED Requirements
-
+定义可扩展的角色权限控制、端点级授权边界与兼容字段，确保管理能力不再依赖已废弃的二值管理员判断，并让权限审计能够准确表达授权来源。
+## Requirements
 ### Requirement: System defines built-in roles with permissions
 系统 SHALL 定义三个内置角色：admin（全部权限）、editor（读写内容）、viewer（只读）。每个角色 MUST 包含 permissions 数组。角色定义 SHALL 存储在 `roles` 表中。
 
@@ -59,3 +59,14 @@
 #### Scenario: Knowledge base management requires kb permissions
 - **WHEN** 访问知识库管理端点
 - **THEN** 系统要求调用者具有对应的 `kb:read` / `kb:write` / `kb:delete` 权限
+
+### Requirement: Platform and knowledge-base vision settings use scoped permissions
+The system SHALL require `settings:read`/`settings:write` for platform policy view/edit and model probes, and SHALL require knowledge-base ownership or `kb:write` for KB visual-vector settings. It MUST NOT substitute the deprecated `is_admin` check for these authorization decisions.
+
+#### Scenario: Authorized platform reader views policy
+- **WHEN** a user with `settings:read` opens platform configuration
+- **THEN** the request succeeds subject to read-only state
+
+#### Scenario: KB writer changes vector profile
+- **WHEN** a user with `kb:write` requests a valid KB visual-profile change
+- **THEN** the authorization layer permits the request before lifecycle validation

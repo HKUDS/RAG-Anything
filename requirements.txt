@@ -5,6 +5,8 @@ bcrypt<4.1.0
 lightrag-hku
 # MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
 mineru[core]
+# Default DOCX and office-document parser used by the ingestion worker.
+docling>=2.0,<3.0
 # PDF embedded-image fallback used when the primary parser cannot start
 pypdf>=3.9.0
 # Observability: Prometheus metrics endpoint (pinned <8 for starlette 0.x compat)

@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
-import { api } from '../utils/api'
+import { api, getToken } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 import { ControlledMediaImage } from '../components/ControlledMedia'
 
@@ -122,6 +122,10 @@ async function readStreamErrorMessage(res) {
   try {
     const parsed = JSON.parse(text)
     if (typeof parsed?.detail === 'string') return parsed.detail
+    if (parsed?.detail && typeof parsed.detail === 'object') {
+      return parsed.detail.message || parsed.detail.error || parsed.detail.code || fallback
+    }
+    if (typeof parsed?.message === 'string') return parsed.message
   } catch {
     return text
   }
@@ -467,9 +471,12 @@ export default function AgentChatPage({ onToast }) {
       case 'error':
         if (isVisibleThread) {
           setMessages(prev => prev.map(m =>
-            m.id === msgId ? { ...m, content: content, done: true, error: true } : m
+            m.id === msgId
+              ? { ...m, content: content || '问答生成失败，请稍后重试。', done: true, thinkingDone: true, error: true }
+              : m
           ))
         }
+        onToast?.(content || '问答生成失败，请稍后重试。', 'error')
         setLoading(false)
         abortRef.current = null
         break
@@ -532,6 +539,22 @@ export default function AgentChatPage({ onToast }) {
       const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+      let terminalEventReceived = false
+      const consumeSSELine = line => {
+        const normalized = line.trimEnd()
+        if (!normalized.startsWith('data:')) return
+        const payload = normalized.slice(5).trimStart()
+        if (!payload) return
+        try {
+          const event = JSON.parse(payload)
+          if (event?.type === 'done' || event?.type === 'error') {
+            terminalEventReceived = true
+          }
+          handleSSEEvent(msgId, event, threadId)
+        } catch (parseErr) {
+          console.warn('[AgentChat] SSE parse error:', parseErr.message, 'line:', payload.slice(0, 100))
+        }
+      }
 
       while (true) {
         const { done, value } = await reader.read()
@@ -540,23 +563,32 @@ export default function AgentChatPage({ onToast }) {
         const lines = buffer.split('\n')
         buffer = lines.pop() || ''
         for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try { handleSSEEvent(msgId, JSON.parse(line.slice(6)), threadId) } catch (parseErr) {
-            console.warn('[AgentChat] SSE parse error:', parseErr.message, 'line:', line.slice(0, 100))
-          }
+          consumeSSELine(line)
+          if (terminalEventReceived) break
         }
+        if (terminalEventReceived) {
+          reader.releaseLock()
+          break
+        }
+      }
+      if (!terminalEventReceived) {
+        buffer += decoder.decode()
+        if (buffer.trim()) consumeSSELine(buffer)
+      }
+      if (!terminalEventReceived) {
+        throw new Error('问答连接意外中断，请重试。')
       }
     } catch (e) {
       if (e.name === 'AbortError') {
         if (activeThreadIdRef.current === threadId) {
           setMessages(prev => prev.map(m =>
-            m.id === msgId ? { ...m, content: m.content || '已取消', done: true, cancelled: true } : m
+            m.id === msgId ? { ...m, content: m.content || '已取消', done: true, thinkingDone: true, cancelled: true } : m
           ))
         }
       } else {
         if (activeThreadIdRef.current === threadId) {
           setMessages(prev => prev.map(m =>
-            m.id === msgId ? { ...m, content: `请求失败: ${e.message}`, done: true, error: true } : m
+            m.id === msgId ? { ...m, content: `请求失败: ${e.message}`, done: true, thinkingDone: true, error: true } : m
           ))
         }
         onToast?.(e.message || '发送请求失败', 'error')

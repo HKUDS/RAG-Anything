@@ -78,6 +78,8 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
     """Embedding function for text vectorization."""
 
     vision_embed_func: Optional[Callable] = field(default=None)
+    vision_profile_id: str = "legacy-doubao-embedding"
+    vision_profile_fingerprint: str = "legacy-unscoped"
     """Vision embedding function for image-to-vector conversion.
     When None (default), vision embedding is disabled.
     Set to a :class:`DoubaoEmbeddingAdapter` instance to enable
@@ -100,6 +102,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
     - rerank_model_func, vector_db_storage_cls_kwargs, enable_llm_cache
     - max_parallel_insert, max_graph_nodes, addon_params, etc.
     """
+
+    query_cache_scope: Dict[str, str] = field(default_factory=dict)
+    """Immutable workspace/permission/content/settings identity for caches."""
 
     # Internal State
     # ---
@@ -631,7 +636,11 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 )
                 return
 
-            repo = ImageVectorRepository(working_dir=self.working_dir)
+            repo = ImageVectorRepository(
+                working_dir=self.working_dir,
+                profile_id=self.vision_profile_id,
+                profile_fingerprint=self.vision_profile_fingerprint,
+            )
             await repo.initialize(embedding_dim=dim)
             self.lightrag.image_vision_repo = repo
             self.logger.info(

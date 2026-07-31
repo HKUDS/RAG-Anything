@@ -161,7 +161,12 @@ async def _validate_document_tagging_readiness(
     kb_name: str, doc_id: str,
 ) -> dict[str, Any]:
     """Validate one durable document without relying on paginated status data."""
-    from raganything.services.document_quality import evaluate_content_readiness
+    from raganything.services.auto_tagging import build_automatic_tag_plan
+    from raganything.services.document_quality import (
+        chunk_content,
+        evaluate_content_readiness,
+        is_path_placeholder,
+    )
     from raganything.services.kb_chunk_repo import query_chunks_by_document_id
     from raganything.services.kb_service import get_kb, _load_doc_status_by_id
 
@@ -231,12 +236,36 @@ async def _validate_document_tagging_readiness(
 
     chunk_ids = declared_ids or list(persisted_by_id)
     quality = await evaluate_content_readiness(
-        kb_name, chunk_ids, persisted_by_id,
+        kb_name,
+        chunk_ids,
+        persisted_by_id,
     )
     if not quality["ready"]:
-        raise AutomaticTaggingIntegrityError(
-            f"document is not eligible for automatic tagging: {quality}"
+        invalid_ids = {
+            str(chunk_id) for chunk_id in quality.get("invalid_content_ids", [])
+        }
+        path_reference_ids = {
+            chunk_id
+            for chunk_id in invalid_ids
+            if is_path_placeholder(chunk_content(persisted_by_id.get(chunk_id)))
+        }
+        plan = await asyncio.to_thread(
+            build_automatic_tag_plan,
+            persisted_by_id.values(),
         )
+        has_missing_coverage = bool(
+            quality.get("missing_text_ids") or quality.get("missing_vector_ids")
+        )
+        path_reference_only = (
+            bool(invalid_ids)
+            and invalid_ids == path_reference_ids
+            and bool(plan.eligible_chunk_ids)
+            and not has_missing_coverage
+        )
+        if not path_reference_only:
+            raise AutomaticTaggingIntegrityError(
+                f"document is not eligible for automatic tagging: {quality}"
+            )
     return {
         "status": status,
         "chunk_ids": chunk_ids,

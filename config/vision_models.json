@@ -3,7 +3,7 @@
     {
       "id": "legacy-vlm",
       "kind": "vlm",
-      "display_name": "Legacy VLM",
+      "display_name": "默认图片理解模型 (${VISION_MODEL})",
       "provider": "openai_compatible",
       "model": "${VISION_MODEL}",
       "capabilities": ["ocr", "image_description", "video_frame", "question_answering"],

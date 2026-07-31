@@ -1,4 +1,5 @@
 const GRAPH_READY_STATES = new Set(['ready', 'completed', 'processed', 'complete'])
+const ACTIVE_UPLOAD_TASK_STATUSES = new Set(['queued', 'processing', 'retry_wait'])
 
 export function getDocumentHealth(doc) {
   if (!doc || typeof doc !== 'object') return 'unknown'
@@ -15,6 +16,11 @@ export function getDocumentHealth(doc) {
   }
 
   return doc.raw_status || doc.status || 'unknown'
+}
+
+export function isCancellableUploadDocument(doc) {
+  if (!doc?.upload_task_id) return false
+  return doc.can_cancel_upload === true || ACTIVE_UPLOAD_TASK_STATUSES.has(getDocumentHealth(doc))
 }
 
 export function getUploadTaskStatus(task) {

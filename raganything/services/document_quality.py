@@ -18,6 +18,10 @@ _PLACEHOLDER_LINE = re.compile(
     r"\[(?:图片路径|image path)\s*[:：].+\])$",
     re.IGNORECASE,
 )
+_MEDIA_REFERENCE_LINE = re.compile(
+    r"^\[?\s*(?:image\s+path|image)\s*[:：]\s*.+?\]?$",
+    re.IGNORECASE,
+)
 
 
 def is_path_placeholder(content: object) -> bool:
@@ -25,7 +29,10 @@ def is_path_placeholder(content: object) -> bool:
     if not text:
         return False
     lines = [line.strip() for line in text.splitlines() if line.strip()]
-    if lines and all(_PLACEHOLDER_LINE.match(line) for line in lines):
+    if lines and all(
+        _PLACEHOLDER_LINE.match(line) or _MEDIA_REFERENCE_LINE.match(line)
+        for line in lines
+    ):
         return True
     if "\n" in text or "\r" in text:
         return False
