@@ -315,7 +315,7 @@ def extract_image_paths(text: str) -> list[str]:
 
 
 async def resolve_controlled_media_payload(
-    *, kb_name: str, image_path: str
+    *, kb_name: str, image_path: str, text_chunk_reader=None
 ) -> dict | None:
     """Resolve one backend-only path through the KB's persisted media catalog.
 
@@ -355,8 +355,10 @@ async def resolve_controlled_media_payload(
     if validated is None:
         return None
     try:
-        instance = await get_kb(kb_name)
-        storage = getattr(getattr(instance, "lightrag", None), "text_chunks", None)
+        storage = text_chunk_reader
+        if storage is None:
+            instance = await get_kb(kb_name)
+            storage = getattr(getattr(instance, "lightrag", None), "text_chunks", None)
         if storage is None:
             return None
         for document_id, status in statuses.items():

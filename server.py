@@ -480,17 +480,7 @@ async def shutdown():
     from raganything.services.kb_service import _cancel_deferred_auto_tag_tasks
     await _cancel_deferred_auto_tag_tasks()
 
-    for name, kb in list(kb_instances.items()):
-        try:
-            await kb.finalize_storages()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            server_logger.warning(
-                "Failed to finalize KB storage during shutdown: %s",
-                name,
-                exc_info=True,
-            )
+    await kb_instances.clear()
     # 关闭 PostgreSQL 连接池
     try:
         from raganything.services.pg_state_repo import close_pg_pool

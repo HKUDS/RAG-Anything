@@ -592,11 +592,7 @@ async def reload_kb(kb_name: str,
     权限: settings:write
     """
     if kb_name in shared.kb_instances:
-        try:
-            await shared.kb_instances[kb_name].finalize_storages()
-        except Exception:
-            pass
-        del shared.kb_instances[kb_name]
+        await shared.kb_instances.retire(kb_name)
         await shared.add_event("kb_cache_reload", kb=kb_name, user_id=current_user.get("id", 0))
         return {"status": "ok", "message": f"知识库“{kb_name}”缓存已清除，下次查询将重新加载"}
     return {"status": "skipped", "message": f"知识库“{kb_name}”当前不在缓存中"}

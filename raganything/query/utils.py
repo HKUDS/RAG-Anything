@@ -139,11 +139,11 @@ async def rewrite_query(
 改写后的查询:"""
 
     try:
-        from lightrag.llm.openai import openai_complete_if_cache
-
-        response = await openai_complete_if_cache(
-            "qwen-plus", prompt, system_prompt="你是查询优化助手。",
-            api_key=api_key, base_url=base_url, max_tokens=200, temperature=0.3,
+        response = await llm_model_func(
+            prompt,
+            system_prompt="你是查询优化助手。",
+            max_tokens=200,
+            temperature=0.3,
         )
         if response and isinstance(response, str) and len(response.strip()) > 2:
             return response.strip()

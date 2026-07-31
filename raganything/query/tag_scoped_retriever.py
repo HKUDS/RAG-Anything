@@ -12,6 +12,7 @@ from typing import Any
 import jieba
 
 from raganything.services.kb_tag_repo import get_tag_assignments
+from raganything.services.query_execution import await_before_deadline
 
 _SEMANTIC_CANDIDATE_LIMIT = int(os.getenv("TAG_SCOPE_SEMANTIC_CANDIDATES", "48"))
 
@@ -36,6 +37,31 @@ async def resolve_tag_scope(kb_name: str, tag_id: int) -> TagScope | None:
 
 
 async def retrieve_tag_scoped_context(
+    instance: Any,
+    scope: TagScope,
+    query: str,
+    *,
+    top_k: int = 20,
+    max_total_tokens: int = 8000,
+    deadline_monotonic: float | None = None,
+) -> str:
+    """Retrieve tagged context without exceeding the request-wide deadline."""
+    try:
+        return await await_before_deadline(
+            _retrieve_tag_scoped_context_unbounded(
+                instance,
+                scope,
+                query,
+                top_k=top_k,
+                max_total_tokens=max_total_tokens,
+            ),
+            deadline_monotonic,
+        )
+    except TimeoutError:
+        return ""
+
+
+async def _retrieve_tag_scoped_context_unbounded(
     instance: Any,
     scope: TagScope,
     query: str,

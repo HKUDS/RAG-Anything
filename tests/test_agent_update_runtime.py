@@ -60,7 +60,13 @@ def _stub_runtime_services(monkeypatch, vision_models, *, llm_func=None, vlm_ava
         return True
 
     async def query_scope(*_args, **_kwargs):
-        return {"workspace": "kb-alpha", "settings_fingerprint": "settings-fingerprint"}
+        return {
+            "workspace": "kb-alpha",
+            "corpus_revision": "revision-1",
+            "permission_scope": "user:7",
+            "settings_fingerprint": "settings-fingerprint",
+            "llm_profile_fingerprint": "llm-fingerprint",
+        }
 
     monkeypatch.setattr(user_settings, "resolve_user_settings_for_task", resolve_settings)
     monkeypatch.setattr(user_settings, "get_platform_settings", platform_settings)
@@ -85,6 +91,15 @@ def _stub_runtime_services(monkeypatch, vision_models, *, llm_func=None, vlm_ava
         "build_llm_callable",
         lambda *_args, **_kwargs: llm_func,
     )
+    monkeypatch.setattr(vision_models, "activate_llm_selection", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(vision_models, "reset_llm_snapshot", lambda _token: None)
+
+
+def _query_lease(instance):
+    async def release():
+        return None
+
+    return SimpleNamespace(instance=instance, release=release)
 
 
 def _make_agent(**overrides):
@@ -254,6 +269,7 @@ async def test_agent_query_stream_uses_latest_agent_runtime_config_in_all_modes(
 
     openai_calls = []
     kb_calls = []
+    query_core_acquisitions = []
     search_tool_calls = []
     agentic_init = {}
 
@@ -276,7 +292,7 @@ async def test_agent_query_stream_uses_latest_agent_runtime_config_in_all_modes(
             return None
 
     class FakeSearchTool:
-        def __init__(self, instance, query_mode, top_k, chunk_top_k, enable_rerank, include_references, tag_scope=None):
+        def __init__(self, instance, query_mode, top_k, chunk_top_k, enable_rerank, include_references, tag_scope=None, **kwargs):
             search_tool_calls.append(
                 {
                     "instance": instance,
@@ -286,6 +302,7 @@ async def test_agent_query_stream_uses_latest_agent_runtime_config_in_all_modes(
                     "enable_rerank": enable_rerank,
                     "include_references": include_references,
                     "tag_scope": tag_scope,
+                    **kwargs,
                 }
             )
 
@@ -335,8 +352,9 @@ async def test_agent_query_stream_uses_latest_agent_runtime_config_in_all_modes(
         assert current_user["id"] == 7
         return kb
 
-    async def fake_get_kb(_kb_name, **_kwargs):
-        return FakeKB()
+    async def fake_acquire_query_kb(_kb_name, **_kwargs):
+        query_core_acquisitions.append((_kb_name, _kwargs))
+        return _query_lease(FakeKB())
 
     async def fake_pg_get_agent(_agent_id):
         return dict(runtime_agent)
@@ -365,7 +383,7 @@ async def test_agent_query_stream_uses_latest_agent_runtime_config_in_all_modes(
 
     monkeypatch.setattr(agent_router, "openai_complete_if_cache", fake_openai_complete)
     monkeypatch.setattr(agent_router, "verify_kb_access", fake_verify_kb_access)
-    monkeypatch.setattr(agent_router, "get_kb", fake_get_kb)
+    monkeypatch.setattr(agent_router, "acquire_query_kb", fake_acquire_query_kb)
     monkeypatch.setattr(agent_router, "pg_get_agent", fake_pg_get_agent)
     monkeypatch.setattr(agent_router, "pg_get_conversation", fake_pg_get_conversation)
     monkeypatch.setattr(agent_router, "pg_add_message", fake_pg_add_message)
@@ -401,6 +419,9 @@ async def test_agent_query_stream_uses_latest_agent_runtime_config_in_all_modes(
     assert llm_call["temperature"] == pytest.approx(0.8)
     assert llm_call["max_tokens"] == 2222
     assert '"type": "done"' in body or '"type":"done"' in body
+    assert query_core_acquisitions == [
+        ("kb-alpha", {"corpus_revision": "revision-1"})
+    ]
 
     if agent_mode == "none":
         assert kb_calls
@@ -438,8 +459,8 @@ async def test_retrieval_only_query_emits_metadata_without_history_or_generation
     async def fake_verify_kb_access(kb, current_user):
         return kb
 
-    async def fake_get_kb(_kb_name, **_kwargs):
-        return FakeKB()
+    async def fake_acquire_query_kb(_kb_name, **_kwargs):
+        return _query_lease(FakeKB())
 
     def unexpected(*_args, **_kwargs):
         raise AssertionError("retrieval_only must not create history, write history, or call generation")
@@ -448,7 +469,7 @@ async def test_retrieval_only_query_emits_metadata_without_history_or_generation
 
     monkeypatch.setattr(agent_router, "pg_get_agent", fake_get_agent)
     monkeypatch.setattr(agent_router, "verify_kb_access", fake_verify_kb_access)
-    monkeypatch.setattr(agent_router, "get_kb", fake_get_kb)
+    monkeypatch.setattr(agent_router, "acquire_query_kb", fake_acquire_query_kb)
     monkeypatch.setattr(agent_router, "pg_create_conversation", unexpected)
     monkeypatch.setattr(agent_router, "pg_get_conversation", unexpected)
     monkeypatch.setattr(agent_router, "record_query", unexpected)

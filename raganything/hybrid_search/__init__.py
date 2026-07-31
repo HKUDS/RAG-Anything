@@ -14,6 +14,7 @@ import asyncio
 import concurrent.futures
 import hashlib
 import json
+import time
 from collections import OrderedDict
 from typing import Dict, List, Any, Optional, Callable
 from dataclasses import dataclass, field
@@ -26,7 +27,9 @@ from raganything.graph_rag import GraphRetriever  # extracted module
 # ThreadPoolExecutor on every BM25 search call.  Under concurrent
 # load this prevents thread-leak storms.
 _MAX_BM25_WORKERS = int(os.getenv("BM25_THREAD_WORKERS", "4"))
+_RRF_DEADLINE_SETTLE_SECONDS = 0.05
 _bm25_executor: concurrent.futures.ThreadPoolExecutor | None = None
+_bm25_build_tasks: dict["BM25IndexKey", asyncio.Task["BM25IndexManager"]] = {}
 
 
 def _get_bm25_executor() -> concurrent.futures.ThreadPoolExecutor:
@@ -59,9 +62,12 @@ async def _run_channel_with_hard_timeout(coro, timeout: float):
     request. The late task is cancelled and observed, but no longer blocks the
     usable BM25 or graph results.
     """
+    if timeout <= 0:
+        coro.close()
+        raise TimeoutError("retrieval channel deadline expired")
     task = asyncio.create_task(coro)
     try:
-        done, _ = await asyncio.wait({task}, timeout=max(0.001, float(timeout)))
+        done, _ = await asyncio.wait({task}, timeout=float(timeout))
     except asyncio.CancelledError:
         task.cancel()
         task.add_done_callback(_consume_detached_task_result)
@@ -131,6 +137,10 @@ class RetrievalOptions:
     corpus_revision: str | None = None
     permission_scope: str | None = None
     settings_fingerprint: str | None = None
+    # Internal execution deadline; never populated from the settings API.
+    deadline_monotonic: float | None = None
+    # Trace IDs are log fields only. They are never promoted to metric labels.
+    trace_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -180,7 +190,6 @@ class BoundedBM25IndexCache:
 _bm25_index_cache = BoundedBM25IndexCache(
     int(os.getenv("BM25_INDEX_CACHE_CAPACITY", "32"))
 )
-_bm25_build_locks: dict[BM25IndexKey, asyncio.Lock] = {}
 
 
 # ═══════════════════════════════════════════════════════════
@@ -406,16 +415,126 @@ class HybridSearchEngine:
         """Resolve a read-only BM25 index without mutating shared state."""
         if self._lightrag is None:
             return self._bm25
+
+        timing = None
+        if options and options.trace_id:
+            from raganything.services.query_timing import QueryTiming
+
+            timing = QueryTiming(options.trace_id)
+
+        async def _observe_bm25_phase(phase: str, cache_status: str, operation):
+            """Record PG/index work without carrying query or provider data."""
+            started = time.perf_counter()
+            outcome = "ok"
+            try:
+                return await operation()
+            except asyncio.CancelledError:
+                outcome = "cancelled"
+                raise
+            except Exception:
+                outcome = "error"
+                raise
+            finally:
+                if timing is not None:
+                    timing.record(
+                        phase,
+                        time.perf_counter() - started,
+                        outcome=outcome,
+                        cache_status=cache_status,
+                        channel="bm25",
+                    )
+
+        async def _fetch_rows(workspace: str, cache_status: str):
+            async def _fetch():
+                from raganything.services.pg_state_repo import get_pg_pool
+
+                pool = get_pg_pool()
+                async with pool.acquire() as conn:
+                    return await conn.fetch(
+                        "SELECT chunks_list FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1",
+                        workspace,
+                    )
+
+            return await _observe_bm25_phase("bm25_pg_read", cache_status, _fetch)
+
         try:
             workspace = str(self._lightrag.working_dir)
-            from raganything.services.pg_state_repo import get_pg_pool
-
-            pool = get_pg_pool()
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT chunks_list FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1",
-                    workspace,
+            tokenizer = options.bm25_tokenizer if options and options.bm25_tokenizer else self._bm25._tokenizer_name
+            k1 = float(options.bm25_k1) if options and options.bm25_k1 is not None else self._bm25._k1
+            b = float(options.bm25_b) if options and options.bm25_b is not None else self._bm25._b
+            requested_revision = options.corpus_revision if options and options.corpus_revision else None
+            if requested_revision:
+                requested_key = BM25IndexKey(
+                    workspace=options.workspace if options and options.workspace else workspace,
+                    corpus_revision=requested_revision,
+                    tokenizer=tokenizer,
+                    k1=k1,
+                    b=b,
                 )
+                cached = _bm25_index_cache.get(requested_key)
+                if cached is not None:
+                    return cached
+                build_task = _bm25_build_tasks.get(requested_key)
+                if build_task is None:
+                    async def _build_requested_index() -> BM25IndexManager:
+                        rows = await _fetch_rows(workspace, "miss")
+                        chunk_ids: list[str] = []
+                        for row in rows:
+                            chunk_list = row["chunks_list"]
+                            if isinstance(chunk_list, str):
+                                try:
+                                    chunk_list = json.loads(chunk_list)
+                                except (TypeError, ValueError):
+                                    chunk_list = []
+                            if isinstance(chunk_list, list):
+                                chunk_ids.extend(str(value) for value in chunk_list)
+                        async def _build():
+                            manager = BM25IndexManager(
+                                tokenizer_name=tokenizer,
+                                k1=k1,
+                                b=b,
+                                top_k=self._bm25_top_k,
+                            )
+                            if chunk_ids:
+                                raw_chunks = await self._lightrag.text_chunks.get_by_ids(chunk_ids)
+                                chunks = [
+                                    {
+                                        "chunk_id": chunk.get("id") or chunk.get("__id__"),
+                                        "content": chunk.get("content", ""),
+                                    }
+                                    for chunk in raw_chunks
+                                    if chunk
+                                    and (chunk.get("id") or chunk.get("__id__"))
+                                    and chunk.get("content")
+                                ]
+                                if chunks:
+                                    await manager.rebuild_index_async(chunks)
+                            _bm25_index_cache.put(requested_key, manager)
+                            return manager
+
+                        return await _observe_bm25_phase("bm25_build", "miss", _build)
+
+                    build_task = asyncio.create_task(_build_requested_index())
+                    _bm25_build_tasks[requested_key] = build_task
+
+                    def _release_requested_build(done: asyncio.Task) -> None:
+                        if _bm25_build_tasks.get(requested_key) is done:
+                            _bm25_build_tasks.pop(requested_key, None)
+                        if not done.cancelled():
+                            try:
+                                done.exception()
+                            except Exception:
+                                self._logger.warning("Scoped BM25 build failed", exc_info=True)
+
+                    build_task.add_done_callback(_release_requested_build)
+                from raganything.services.query_execution import await_before_deadline
+
+                return await await_before_deadline(
+                    asyncio.shield(build_task),
+                    options.deadline_monotonic if options else None,
+                    cancel_on_timeout=False,
+                )
+            rows = await _fetch_rows(workspace, "miss")
             chunk_ids: list[str] = []
             for row in rows:
                 chunk_list = row["chunks_list"]
@@ -429,9 +548,6 @@ class HybridSearchEngine:
             corpus_revision = hashlib.sha256(
                 json.dumps(sorted(chunk_ids), separators=(",", ":")).encode()
             ).hexdigest()[:32]
-            tokenizer = options.bm25_tokenizer if options and options.bm25_tokenizer else self._bm25._tokenizer_name
-            k1 = float(options.bm25_k1) if options and options.bm25_k1 is not None else self._bm25._k1
-            b = float(options.bm25_b) if options and options.bm25_b is not None else self._bm25._b
             key = BM25IndexKey(
                 workspace=options.workspace if options and options.workspace else workspace,
                 corpus_revision=options.corpus_revision if options and options.corpus_revision else corpus_revision,
@@ -454,39 +570,52 @@ class HybridSearchEngine:
             cached = _bm25_index_cache.get(key)
             if cached is not None:
                 return cached
-            lock = _bm25_build_locks.setdefault(key, asyncio.Lock())
-            try:
-                async with lock:
-                    cached = _bm25_index_cache.get(key)
-                    if cached is not None:
-                        return cached
-                    manager = BM25IndexManager(
-                        tokenizer_name=tokenizer,
-                        k1=k1,
-                        b=b,
-                        top_k=self._bm25_top_k,
-                    )
-                    if not chunk_ids:
+            build_task = _bm25_build_tasks.get(key)
+            if build_task is None:
+                async def _build_index() -> BM25IndexManager:
+                    async def _build():
+                        manager = BM25IndexManager(
+                            tokenizer_name=tokenizer,
+                            k1=k1,
+                            b=b,
+                            top_k=self._bm25_top_k,
+                        )
+                        if not chunk_ids:
+                            _bm25_index_cache.put(key, manager)
+                            return manager
+                        raw_chunks = await self._lightrag.text_chunks.get_by_ids(chunk_ids)
+                        chunks = [
+                            {
+                                "chunk_id": chunk.get("id") or chunk.get("__id__"),
+                                "content": chunk.get("content", ""),
+                            }
+                            for chunk in raw_chunks
+                            if chunk
+                            and (chunk.get("id") or chunk.get("__id__"))
+                            and chunk.get("content")
+                        ]
+                        if chunks:
+                            await manager.rebuild_index_async(chunks)
                         _bm25_index_cache.put(key, manager)
                         return manager
-                    raw_chunks = await self._lightrag.text_chunks.get_by_ids(chunk_ids)
-                    chunks = [
-                        {
-                            "chunk_id": chunk.get("id") or chunk.get("__id__"),
-                            "content": chunk.get("content", ""),
-                        }
-                        for chunk in raw_chunks
-                        if chunk
-                        and (chunk.get("id") or chunk.get("__id__"))
-                        and chunk.get("content")
-                    ]
-                    if chunks:
-                        await manager.rebuild_index_async(chunks)
-                    _bm25_index_cache.put(key, manager)
-                    return manager
+
+                    return await _observe_bm25_phase("bm25_build", "miss", _build)
+
+                build_task = asyncio.create_task(_build_index())
+                _bm25_build_tasks[key] = build_task
+            try:
+                # Shield ensures one impatient request cannot cancel the
+                # single-flight build still needed by another caller.
+                from raganything.services.query_execution import await_before_deadline
+
+                return await await_before_deadline(
+                    asyncio.shield(build_task),
+                    options.deadline_monotonic if options else None,
+                    cancel_on_timeout=False,
+                )
             finally:
-                if not lock.locked():
-                    _bm25_build_locks.pop(key, None)
+                if build_task.done():
+                    _bm25_build_tasks.pop(key, None)
         except Exception as exc:
             self._logger.warning("Failed to resolve scoped BM25 index: %s", exc)
             if options is None:
@@ -702,36 +831,83 @@ class HybridSearchEngine:
         graph_depth = options.graph_depth if options and options.graph_depth is not None else None
         channel_timeout = options.channel_timeout if options and options.channel_timeout is not None else self._channel_timeout
         rrf_k = options.rrf_k if options and options.rrf_k is not None else self._rrf_k
-        bm25_manager = await self._bm25_for_options(options) if "bm25" in enabled_channels else None
+        deadline = options.deadline_monotonic if options else None
+        timing = None
+        if options and options.trace_id:
+            from raganything.services.query_timing import QueryTiming
+            timing = QueryTiming(options.trace_id)
+
+        def effective_timeout() -> float | None:
+            if deadline is None:
+                return channel_timeout
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return None
+            # Leave a bounded scheduling window for channel cancellation,
+            # gather(), and fusion to return before the request-wide deadline.
+            # Without this, a channel that times out exactly at the deadline can
+            # race the router's watchdog and turn a recoverable RRF fallback
+            # into an SSE error.
+            settle_window = min(_RRF_DEADLINE_SETTLE_SECONDS, max(0.0, remaining / 2))
+            return min(channel_timeout, remaining - settle_window)
+
+        async def timed_channel(label: str, coro) -> List[ScoredChunk]:
+            started = asyncio.get_running_loop().time()
+            try:
+                timeout = effective_timeout()
+                if timeout is None:
+                    coro.close()
+                    raise TimeoutError("retrieval channel deadline expired")
+                result = await _run_channel_with_hard_timeout(coro, timeout)
+            except TimeoutError:
+                if timing is not None:
+                    timing.record(
+                        "retrieval",
+                        asyncio.get_running_loop().time() - started,
+                        outcome="timeout",
+                        channel=label,
+                    )
+                raise
+            except Exception:
+                if timing is not None:
+                    timing.record(
+                        "retrieval",
+                        asyncio.get_running_loop().time() - started,
+                        outcome="error",
+                        channel=label,
+                    )
+                raise
+            if timing is not None:
+                timing.record(
+                    "retrieval",
+                    asyncio.get_running_loop().time() - started,
+                    channel=label,
+                )
+            return result
 
         # Launch all enabled channels in parallel with per-channel timeout
         tasks = []
         task_labels = []
 
         if "bm25" in enabled_channels:
+            async def _bm25_channel():
+                manager = await self._bm25_for_options(options)
+                return await self._bm25_search(manager or self._bm25, query, bm25_top_k)
+
             tasks.append(
-                _run_channel_with_hard_timeout(
-                    self._bm25_search(bm25_manager or self._bm25, query, bm25_top_k),
-                    channel_timeout,
-                )
+                timed_channel("bm25", _bm25_channel())
             )
             task_labels.append("bm25")
 
         if "vector" in enabled_channels:
             tasks.append(
-                _run_channel_with_hard_timeout(
-                    self._vector_search(query, vector_top_k),
-                    channel_timeout,
-                )
+                timed_channel("vector", self._vector_search(query, vector_top_k))
             )
             task_labels.append("vector")
 
         if "graph" in enabled_channels:
             tasks.append(
-                _run_channel_with_hard_timeout(
-                    self._graph_search(query, graph_top_k, graph_depth),
-                    channel_timeout,
-                )
+                timed_channel("graph", self._graph_search(query, graph_top_k, graph_depth))
             )
             task_labels.append("graph")
 

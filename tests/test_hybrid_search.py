@@ -7,6 +7,7 @@ Covers: BM25IndexManager, GraphRetriever, HybridSearchEngine, RRF fusion.
 import os
 import pytest
 import asyncio
+import raganything.hybrid_search as hybrid_module
 from dataclasses import dataclass
 from types import SimpleNamespace
 
@@ -192,6 +193,129 @@ def test_scoped_index_cache_resize_applies_platform_capacity():
 
     assert len(cache) == 1
     assert cache.get(keys[-1]) is not None
+
+
+@pytest.mark.asyncio
+async def test_revision_bm25_hit_skips_postgres_preparation(monkeypatch):
+    cache = BoundedBM25IndexCache(max_size=2)
+    manager = BM25IndexManager()
+    key = BM25IndexKey("workspace-a", "revision-1", "jieba", 1.5, 0.75)
+    cache.put(key, manager)
+    monkeypatch.setattr(hybrid_module, "_bm25_index_cache", cache)
+    monkeypatch.setattr(
+        "raganything.services.pg_state_repo.get_pg_pool",
+        lambda: (_ for _ in ()).throw(AssertionError("PG must not be read on hit")),
+    )
+    engine = HybridSearchEngine(
+        lightrag_instance=SimpleNamespace(working_dir="workspace-a"),
+    )
+
+    resolved = await engine._bm25_for_options(
+        RetrievalOptions(
+            channels=("bm25",), workspace="workspace-a", corpus_revision="revision-1"
+        )
+    )
+
+    assert resolved is manager
+
+
+@pytest.mark.asyncio
+async def test_revision_bm25_build_is_single_flight_when_a_waiter_is_cancelled(monkeypatch):
+    started = asyncio.Event()
+    release = asyncio.Event()
+    calls = {"fetch": 0}
+
+    class Connection:
+        async def fetch(self, *_args):
+            calls["fetch"] += 1
+            started.set()
+            await release.wait()
+            return []
+
+    class Acquire:
+        async def __aenter__(self):
+            return Connection()
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class Pool:
+        def acquire(self):
+            return Acquire()
+
+    monkeypatch.setattr(hybrid_module, "_bm25_index_cache", BoundedBM25IndexCache(2))
+    monkeypatch.setattr(hybrid_module, "_bm25_build_tasks", {})
+    monkeypatch.setattr("raganything.services.pg_state_repo.get_pg_pool", lambda: Pool())
+    engine = HybridSearchEngine(
+        lightrag_instance=SimpleNamespace(working_dir="workspace-a", text_chunks=None),
+    )
+    options = RetrievalOptions(
+        channels=("bm25",), workspace="workspace-a", corpus_revision="revision-2"
+    )
+
+    cancelled_waiter = asyncio.create_task(engine._bm25_for_options(options))
+    await started.wait()
+    surviving_waiter = asyncio.create_task(engine._bm25_for_options(options))
+    cancelled_waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await cancelled_waiter
+    release.set()
+
+    assert isinstance(await surviving_waiter, BM25IndexManager)
+    assert calls["fetch"] == 1
+
+
+@pytest.mark.asyncio
+async def test_revision_bm25_build_records_pg_and_index_phases(monkeypatch):
+    events = []
+
+    class RecordingTiming:
+        def __init__(self, trace_id):
+            assert trace_id == "trace-private"
+
+        def record(self, phase, _elapsed, **labels):
+            events.append((phase, labels["outcome"], labels["cache_status"], labels["channel"]))
+
+    class Connection:
+        async def fetch(self, *_args):
+            return [{"chunks_list": ["chunk-1"]}]
+
+    class Acquire:
+        async def __aenter__(self):
+            return Connection()
+
+        async def __aexit__(self, *_args):
+            return False
+
+    class Pool:
+        def acquire(self):
+            return Acquire()
+
+    class Chunks:
+        async def get_by_ids(self, _ids):
+            return [{"id": "chunk-1", "content": "content"}]
+
+    import raganything.services.query_timing as query_timing
+
+    monkeypatch.setattr(query_timing, "QueryTiming", RecordingTiming)
+    monkeypatch.setattr(hybrid_module, "_bm25_index_cache", BoundedBM25IndexCache(2))
+    monkeypatch.setattr(hybrid_module, "_bm25_build_tasks", {})
+    monkeypatch.setattr("raganything.services.pg_state_repo.get_pg_pool", lambda: Pool())
+    engine = HybridSearchEngine(
+        lightrag_instance=SimpleNamespace(working_dir="workspace-a", text_chunks=Chunks()),
+    )
+
+    await engine._bm25_for_options(
+        RetrievalOptions(
+            channels=("bm25",),
+            workspace="workspace-a",
+            corpus_revision="revision-3",
+            trace_id="trace-private",
+        )
+    )
+
+    assert ("bm25_pg_read", "ok", "miss", "bm25") in events
+    assert ("bm25_build", "ok", "miss", "bm25") in events
 
 
 @pytest.mark.asyncio
@@ -562,6 +686,66 @@ class TestDegradationScenarios:
         mgr = BM25IndexManager()
         results = mgr.search("test")
         assert results == []
+
+    @pytest.mark.asyncio
+    async def test_deadline_bounded_channel_returns_before_router_watchdog(self, monkeypatch):
+        """A late RRF channel cannot race the router's 60ms deadline poll."""
+        engine = HybridSearchEngine()
+        engine._enabled_channels = ["vector", "graph"]
+        cancelled = asyncio.Event()
+
+        async def vector_search(_query, _top_k):
+            return [ScoredChunk("vector-id", "usable", 1.0, ["vector"])]
+
+        async def late_graph_search(_query, _top_k, _depth):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+        monkeypatch.setattr(engine, "_vector_search", vector_search)
+        monkeypatch.setattr(engine, "_graph_search", late_graph_search)
+        deadline = asyncio.get_running_loop().time() + 0.2
+        search_task = asyncio.create_task(engine.search(
+            "deadline-test",
+            options=RetrievalOptions(
+                channels=("vector", "graph"),
+                channel_timeout=1.0,
+                deadline_monotonic=deadline,
+            ),
+        ))
+
+        while not search_task.done():
+            assert asyncio.get_running_loop().time() < deadline
+            remaining = deadline - asyncio.get_running_loop().time()
+            await asyncio.sleep(min(0.06, remaining))
+
+        results = await search_task
+        assert [result.chunk_id for result in results] == ["vector-id"]
+        await asyncio.wait_for(cancelled.wait(), timeout=0.2)
+
+    @pytest.mark.asyncio
+    async def test_expired_deadline_does_not_start_a_channel(self, monkeypatch):
+        engine = HybridSearchEngine()
+        engine._enabled_channels = ["vector"]
+        started = False
+
+        async def vector_search(_query, _top_k):
+            nonlocal started
+            started = True
+            return []
+
+        monkeypatch.setattr(engine, "_vector_search", vector_search)
+
+        await engine.search(
+            "deadline-test",
+            options=RetrievalOptions(
+                channels=("vector",),
+                deadline_monotonic=asyncio.get_running_loop().time() - 0.01,
+            ),
+        )
+
+        assert started is False
 
     @pytest.mark.asyncio
     async def test_graph_retriever_handles_none_lightrag_gracefully(self):

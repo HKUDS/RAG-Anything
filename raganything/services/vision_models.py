@@ -170,10 +170,14 @@ _PLATFORM_DEFAULTS: dict[str, str | None] = {
 _USER_PREFS: dict[int, str | None] = {}
 _USER_PREF_TABLE_READY = False
 _UNSET = object()
-_ACTIVE_VLM_SNAPSHOT: ContextVar[tuple[str, str] | None] = ContextVar(
+_ACTIVE_VLM_SNAPSHOT: ContextVar[tuple[str, str, str] | None] = ContextVar(
     "active_vision_vlm_snapshot", default=None
 )
 _VLM_CALLABLES: dict[tuple[str, str, int], Any] = {}
+_ACTIVE_LLM_SNAPSHOT: ContextVar[tuple[str, str, str, float | None] | None] = ContextVar(
+    "active_text_llm_snapshot", default=None
+)
+_LLM_CALLABLES: dict[tuple[str, str, str, float | None, int], Any] = {}
 
 
 class _NamespacedCache:
@@ -578,19 +582,74 @@ def build_llm_callable(
     return llm_func
 
 
-def activate_vlm_snapshot(profile_id: str, fingerprint: str | None = None) -> Token:
+def activate_llm_selection(
+    entry: _CatalogEntry,
+    *,
+    cache_scope: str,
+    timeout: float | None,
+    profile_id: str | None = None,
+) -> Token:
+    """Bind a validated text-model selection to the current async request."""
+    if entry.profile.kind != "llm":
+        raise ValueError("LLM context requires an llm profile")
+    selected_profile_id = profile_id or getattr(entry.profile, "id", None)
+    if not selected_profile_id:
+        raise RuntimeError("LLM context is missing a profile id")
+    return _ACTIVE_LLM_SNAPSHOT.set((selected_profile_id, entry.fingerprint, cache_scope, timeout))
+
+
+def reset_llm_snapshot(token: Token) -> None:
+    _ACTIVE_LLM_SNAPSHOT.reset(token)
+
+
+def build_contextual_llm_callable(default_profile_id: str, *, completion_func=None):
+    """Return a shared-instance-safe LLM proxy resolved from request context."""
+    default_entry = get_entry(default_profile_id, "llm")
+
+    async def contextual_llm(*args, **kwargs):
+        active = _ACTIVE_LLM_SNAPSHOT.get()
+        if active is None:
+            profile_id = default_profile_id
+            fingerprint = default_entry.fingerprint
+            cache_scope = ""
+            timeout = None
+        else:
+            profile_id, fingerprint, cache_scope, timeout = active
+        entry = require_available(profile_id, "llm")
+        if entry.fingerprint != fingerprint:
+            raise RuntimeError("selected LLM profile configuration changed")
+        key = (profile_id, fingerprint, cache_scope, timeout, id(completion_func))
+        provider = _LLM_CALLABLES.get(key)
+        if provider is None:
+            provider = build_llm_callable(
+                profile_id,
+                completion_func=completion_func,
+                cache_scope=cache_scope,
+                timeout=timeout,
+            )
+            _LLM_CALLABLES[key] = provider
+        return await provider(*args, **kwargs)
+
+    contextual_llm.model_profile_id = default_profile_id
+    contextual_llm.model_profile_fingerprint = default_entry.fingerprint
+    return contextual_llm
+
+
+def activate_vlm_snapshot(
+    profile_id: str, fingerprint: str | None = None, *, cache_scope: str = ""
+) -> Token:
     """Activate an immutable VLM snapshot in the current async context."""
     entry = require_available(profile_id, "vlm")
     if fingerprint is not None and fingerprint != entry.fingerprint:
         raise RuntimeError("selected VLM profile configuration changed")
-    return _ACTIVE_VLM_SNAPSHOT.set((profile_id, entry.fingerprint))
+    return _ACTIVE_VLM_SNAPSHOT.set((profile_id, entry.fingerprint, cache_scope))
 
 
-def activate_vlm_selection(entry: _CatalogEntry) -> Token:
+def activate_vlm_selection(entry: _CatalogEntry, *, cache_scope: str = "") -> Token:
     """Activate a resolved selection; availability is checked on invocation."""
     if entry.profile.kind != "vlm":
         raise ValueError("VLM context requires a vlm profile")
-    return _ACTIVE_VLM_SNAPSHOT.set((entry.profile.id, entry.fingerprint))
+    return _ACTIVE_VLM_SNAPSHOT.set((entry.profile.id, entry.fingerprint, cache_scope))
 
 
 def reset_vlm_snapshot(token: Token) -> None:
@@ -606,7 +665,7 @@ async def activate_user_vlm_snapshot(user_id: int) -> Token:
         fingerprint = get_entry(profile_id, "vlm").fingerprint
     except KeyError:
         fingerprint = "catalog-missing"
-    return _ACTIVE_VLM_SNAPSHOT.set((profile_id, fingerprint))
+    return _ACTIVE_VLM_SNAPSHOT.set((profile_id, fingerprint, ""))
 
 
 def build_contextual_vlm_callable(default_profile_id: str, *, completion_func=None):
@@ -614,14 +673,15 @@ def build_contextual_vlm_callable(default_profile_id: str, *, completion_func=No
     default_entry = get_entry(default_profile_id, "vlm")
 
     async def contextual_vlm(*args, **kwargs):
-        profile_id, fingerprint = _ACTIVE_VLM_SNAPSHOT.get() or (
+        profile_id, fingerprint, cache_scope = _ACTIVE_VLM_SNAPSHOT.get() or (
             default_profile_id,
             default_entry.fingerprint,
+            "",
         )
         entry = get_entry(profile_id, "vlm")
         if entry.fingerprint != fingerprint:
             raise RuntimeError("selected VLM profile configuration changed")
-        key = (profile_id, fingerprint, id(completion_func))
+        key = (profile_id, fingerprint, cache_scope, id(completion_func))
         provider = _VLM_CALLABLES.get(key)
         if provider is None:
             provider = build_vlm_callable(
@@ -632,14 +692,15 @@ def build_contextual_vlm_callable(default_profile_id: str, *, completion_func=No
             _VLM_CALLABLES[key] = provider
         hashing_kv = kwargs.get("hashing_kv")
         if hashing_kv is not None and not isinstance(hashing_kv, _NamespacedCache):
-            kwargs["hashing_kv"] = _NamespacedCache(hashing_kv, fingerprint)
+            kwargs["hashing_kv"] = _NamespacedCache(
+                hashing_kv, f"vision:{fingerprint}:{cache_scope}"
+            )
         return await provider(*args, **kwargs)
 
     contextual_vlm.vision_profile_id = default_profile_id
     contextual_vlm.vision_profile_fingerprint = default_entry.fingerprint
     contextual_vlm.get_vision_profile_snapshot = lambda: (
-        _ACTIVE_VLM_SNAPSHOT.get()
-        or (default_profile_id, default_entry.fingerprint)
+        (_ACTIVE_VLM_SNAPSHOT.get() or (default_profile_id, default_entry.fingerprint, ""))[:2]
     )
     return contextual_vlm
 
@@ -1487,7 +1548,7 @@ async def run_reindex_job(task_id: str) -> None:
                 )
         activated = True
         if kb in kb_instances:
-            del kb_instances[kb]
+            await kb_instances.retire(kb)
         schedule_vision_gc_job(gc_id)
         await audit_vision_event(actor_id, "vision.kb_reindex.succeeded", profile_id=target_id, kb=kb)
     except _ReindexLeaseLost:
@@ -1591,6 +1652,7 @@ __all__ = [
     "VisionModelProfile", "ModelProfile", "VisionLanguageProvider", "VisionEmbeddingProvider",
     "load_catalog", "reset_catalog_cache", "list_profiles", "list_model_profiles", "get_entry",
     "require_available", "register_provider", "get_platform_defaults", "build_llm_callable",
+    "build_contextual_llm_callable", "activate_llm_selection", "reset_llm_snapshot",
     "build_vlm_callable", "build_contextual_vlm_callable",
     "activate_vlm_snapshot", "activate_vlm_selection", "activate_user_vlm_snapshot",
     "reset_vlm_snapshot", "build_embedding_provider",

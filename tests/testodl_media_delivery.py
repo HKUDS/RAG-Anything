@@ -280,13 +280,17 @@ async def test_agent_sse_media_payloads_contain_no_filesystem_path(tmp_path, mon
     from raganything.routers import agent
 
     image, _entry, catalog = _persisted_catalog(tmp_path, monkeypatch)
+    active_reader = object()
 
-    async def resolve_payload(*, kb_name, image_path):
+    async def resolve_payload(*, kb_name, image_path, text_chunk_reader=None):
         assert kb_name == "kb-visible"
+        assert text_chunk_reader is active_reader
         return catalog_media_payload(catalog, kb_name=kb_name, path=image_path)
 
     monkeypatch.setattr(agent, "resolve_controlled_media_payload", resolve_payload)
-    payloads = await agent._controlled_recalled_media("kb-visible", [str(image)])
+    payloads = await agent._controlled_recalled_media(
+        "kb-visible", [str(image)], text_chunk_reader=active_reader
+    )
     assert len(payloads) == 1
     assert str(image) not in json.dumps(payloads)
     assert payloads[0]["url"].startswith("/api/knowledge/media/")
@@ -329,6 +333,7 @@ async def test_agent_stream_done_event_uses_controlled_media_payload(tmp_path, m
 
     class Instance:
         config = SimpleNamespace(enforce_citation=False)
+        lightrag = SimpleNamespace(text_chunks=object())
 
         async def aquery(self, *_args, **_kwargs):
             return "[来源 test]\nretrieval context"
@@ -357,9 +362,23 @@ async def test_agent_stream_done_event_uses_controlled_media_payload(tmp_path, m
         "verify_kb_access",
         lambda kb, current_user: _async_value(kb),
     )
-    monkeypatch.setattr(agent, "get_kb", lambda _kb, **_kwargs: _async_value(Instance()))
+    released = 0
+
+    class QueryLease:
+        instance = Instance()
+
+        async def release(self):
+            nonlocal released
+            released += 1
+
+    monkeypatch.setattr(
+        agent,
+        "acquire_query_kb",
+        lambda _kb, **_kwargs: _async_value(QueryLease()),
+    )
     monkeypatch.setattr(agent, "recall_query_images", controlled_recall)
-    async def resolve_payload(*, kb_name, image_path):
+    async def resolve_payload(*, kb_name, image_path, text_chunk_reader=None):
+        assert text_chunk_reader is QueryLease.instance.lightrag.text_chunks
         return catalog_media_payload(catalog, kb_name=kb_name, path=image_path)
 
     monkeypatch.setattr(agent, "resolve_controlled_media_payload", resolve_payload)
@@ -397,6 +416,8 @@ async def test_agent_stream_done_event_uses_controlled_media_payload(tmp_path, m
         ),
     )
     monkeypatch.setattr(vision_models, "build_llm_callable", lambda *_args, **_kwargs: answer_llm)
+    monkeypatch.setattr(vision_models, "activate_llm_selection", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(vision_models, "reset_llm_snapshot", lambda _token: None)
     monkeypatch.setattr(vision_models, "activate_vlm_selection", lambda _snapshot: None)
     monkeypatch.setattr(vision_models, "reset_vlm_snapshot", lambda _token: None)
 
@@ -407,6 +428,7 @@ async def test_agent_stream_done_event_uses_controlled_media_payload(tmp_path, m
         request,
         current_user={"id": 7, "username": "tester", "is_admin": False},
     )
+    handlers_before = list(agent.lightrag_logger.handlers)
     parts = [part async for part in response.body_iterator]
     body = "".join(
         part.decode("utf-8") if isinstance(part, bytes) else part
@@ -420,6 +442,8 @@ async def test_agent_stream_done_event_uses_controlled_media_payload(tmp_path, m
     assert done["images"][0]["url"].startswith("/api/knowledge/media/")
     assert done["images"][0]["kb"] == "kb-visible"
     assert done["images"][0]["media_id"] == catalog[0]["media_id"]
+    assert released == 1
+    assert agent.lightrag_logger.handlers == handlers_before
 
 
 async def _async_value(value):

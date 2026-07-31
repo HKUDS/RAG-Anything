@@ -491,8 +491,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                             lightrag_instance=self.lightrag,
                         )
                         self.logger.info("Hybrid search engine initialized for RRF fusion retrieval")
-                        # Build BM25 index from existing LightRAG chunks
-                        await self.hybrid_search_engine.ensure_bm25_index()
+                        # Scoped BM25 preparation is query-channel work.  Deferring it
+                        # keeps query-core acquisition bounded and lets RRF fuse other
+                        # channels when a cold derived index is late.
 
                     # ── Vision embedding repository ──────────
                     await self._init_vision_repo()
@@ -584,8 +585,8 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                         lightrag_instance=self.lightrag,
                     )
                     self.logger.info("Hybrid search engine initialized for RRF fusion retrieval")
-                    # Build BM25 index from existing LightRAG chunks
-                    await self.hybrid_search_engine.ensure_bm25_index()
+                    # Scoped BM25 preparation runs inside the RRF channel rather than
+                    # extending query-core initialization.
 
                 # ── Vision embedding repository ──────────
                 await self._init_vision_repo()

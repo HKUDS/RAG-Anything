@@ -84,13 +84,14 @@ async def test_retrieval_only_emits_metadata_without_generation_or_history(monke
             "use_default_prompt": True,
         }
 
-    async def get_kb(_kb, **kwargs):
-        assert kwargs["task_settings"]["profile_fingerprints"] == {
-            "llm": "llm-fingerprint",
-            "vlm": "vlm-fingerprint",
-        }
-        assert kwargs["task_settings"]["_require_vlm"] is False
-        return _KB()
+    class QueryLease:
+        instance = _KB()
+
+        async def release(self):
+            return None
+
+    async def acquire_query_kb(_kb, **_kwargs):
+        return QueryLease()
 
     async def no_history(*_args, **_kwargs):
         calls["history"] += 1
@@ -115,7 +116,7 @@ async def test_retrieval_only_emits_metadata_without_generation_or_history(monke
         return {"workspace": "kb", "settings_fingerprint": "settings-fingerprint"}
 
     monkeypatch.setattr(agent_router, "pg_get_agent", get_agent)
-    monkeypatch.setattr(agent_router, "get_kb", get_kb)
+    monkeypatch.setattr(agent_router, "acquire_query_kb", acquire_query_kb)
     monkeypatch.setattr(agent_router, "verify_kb_access", lambda kb, current_user: _async_value(kb))
     monkeypatch.setattr(agent_router, "pg_get_conversation", empty_conversation)
     monkeypatch.setattr(agent_router, "pg_add_message", no_history)
@@ -136,6 +137,8 @@ async def test_retrieval_only_emits_metadata_without_generation_or_history(monke
         ),
     )
     monkeypatch.setattr(vision_models, "build_llm_callable", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(vision_models, "activate_llm_selection", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(vision_models, "reset_llm_snapshot", lambda _token: None)
     monkeypatch.setattr(vision_models, "activate_vlm_selection", lambda _snapshot: None)
     monkeypatch.setattr(vision_models, "reset_vlm_snapshot", lambda _token: None)
 

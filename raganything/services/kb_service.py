@@ -25,6 +25,7 @@ import uuid
 from contextlib import asynccontextmanager
 from collections import OrderedDict
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import datetime
 from functools import partial
 from pathlib import Path
@@ -62,10 +63,14 @@ EMB_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
 WORKING_DIR = os.getenv("WORKING_DIR", "./rag_storage")
 CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
 MAX_CACHED_KBS = int(os.getenv("MAX_CACHED_KBS", "16"))
+DELETE_KB_QUERY_DRAIN_SECONDS = max(
+    0.1, float(os.getenv("DELETE_KB_QUERY_DRAIN_SECONDS", "5"))
+)
 _VLM_IMAGE_MIME_TYPES = {"image/gif", "image/jpeg", "image/png", "image/webp"}
 
 # ── KB State ──────────────────────────────────────────────
 _kb_locks: dict[str, asyncio.Lock] = {}
+_kb_init_tasks: dict[tuple[str, str, str], asyncio.Task] = {}
 _recovery_local_lock = asyncio.Lock()
 _RECOVERY_LOCK_NOT_ACQUIRED = object()
 _retry_cleanup_locks: dict[tuple[str, str], asyncio.Lock] = {}
@@ -79,6 +84,54 @@ except ValueError:
 _auto_tag_planning_semaphore = asyncio.Semaphore(
     max(1, min(_AUTO_TAG_PLANNING_CONCURRENCY, 2))
 )
+
+
+@dataclass(frozen=True)
+class KBInstanceKey:
+    """Identity of a reusable, user-neutral interactive query core."""
+
+    name: str
+    workspace: str
+    corpus_revision: str
+    compatibility_fingerprint: str
+
+
+class _LeaseIdentity:
+    """Hashable identity wrapper that keeps the underlying object alive."""
+
+    __slots__ = ("instance",)
+
+    def __init__(self, instance: object) -> None:
+        self.instance = instance
+
+    def __hash__(self) -> int:
+        return id(self.instance)
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _LeaseIdentity) and self.instance is other.instance
+
+
+def _query_core_compatibility_fingerprint(
+    vision_state: Mapping[str, Any] | None = None,
+) -> str:
+    """Return the non-secret identity of indexes owned by a query core."""
+    vision_state = vision_state or {}
+    payload = {
+        "layout": os.getenv("LIGHTRAG_STORAGE_LAYOUT_VERSION", "default"),
+        "embedding_model": EMB_MODEL,
+        "embedding_dimension": EMB_DIM,
+        "vector_backend": os.getenv("LIGHTRAG_VECTOR_STORAGE", "default"),
+        "graph_backend": os.getenv("LIGHTRAG_GRAPH_STORAGE", "default"),
+        "doc_status_backend": os.getenv("LIGHTRAG_DOC_STATUS_STORAGE", "default"),
+        "vision_enabled": bool(vision_state.get("enabled", False)),
+        "vision_profile_id": str(vision_state.get("profile_id") or ""),
+        "vision_profile_fingerprint": str(
+            vision_state.get("profile_fingerprint") or ""
+        ),
+        "vision_dimension": vision_state.get("dimension"),
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:24]
 
 
 class KBCache:
@@ -96,7 +149,12 @@ class KBCache:
         self._max_size = 0 if max_size < 0 else max_size
         self._store: OrderedDict[str, RAGAnything] = OrderedDict()
         self._cache_time: dict[str, float] = {}
+        self._instance_keys: dict[str, KBInstanceKey] = {}
         self._pinned: set[str] = set()
+        self._query_leases: dict[_LeaseIdentity, int] = {}
+        self._retiring: dict[_LeaseIdentity, tuple[str, RAGAnything]] = {}
+        self._query_tasks: dict[str, set[asyncio.Task[Any]]] = {}
+        self._deleting: set[str] = set()
         self._eviction_lock = asyncio.Lock()
         # -- stats --
         self.hits: int = 0
@@ -123,6 +181,7 @@ class KBCache:
         """
         self._store.pop(name, None)
         self._cache_time.pop(name, None)
+        self._instance_keys.pop(name, None)
 
     def __len__(self) -> int:
         return len(self._store)
@@ -156,17 +215,44 @@ class KBCache:
     def remove_cache_time(self, name: str) -> None:
         self._cache_time.pop(name, None)
 
+    def get_instance_key(self, name: str) -> KBInstanceKey | None:
+        return self._instance_keys.get(name)
+
+    def matches_query_key(self, name: str, key: KBInstanceKey) -> bool:
+        return self._instance_keys.get(name) == key
+
+    def _lease_identity(self, instance: object) -> _LeaseIdentity:
+        for identity in (*self._query_leases.keys(), *self._retiring.keys()):
+            if identity.instance is instance:
+                return identity
+        return _LeaseIdentity(instance)
+
     # ── Async store + evict ─────────────────────────────────
 
-    async def put_and_evict(self, name: str, instance: RAGAnything,
-                            cache_time: float) -> None:
+    async def put_and_evict(
+        self,
+        name: str,
+        instance: RAGAnything,
+        cache_time: float,
+        *,
+        key: KBInstanceKey | None = None,
+    ) -> None:
         """Store a KB instance and evict LRU entries if over capacity.
 
         When ``max_size`` is 0 (unlimited), eviction is skipped entirely
         (backward-compatible with the old plain-dict behaviour).
         """
+        previous = self._store.get(name)
+        if previous is not None and previous is not instance:
+            await self.retire(name, previous)
         self._store[name] = instance
         self._cache_time[name] = cache_time
+        self._instance_keys[name] = key or KBInstanceKey(
+            name=name,
+            workspace=kb_dir(name),
+            corpus_revision="unknown",
+            compatibility_fingerprint="legacy",
+        )
         self._store.move_to_end(name)
         self._total_loads += 1
         await self._evict_if_needed()
@@ -178,22 +264,34 @@ class KBCache:
         """
         if name not in self._store:
             return False
-        if name in self._pinned:
+        if name in self._pinned or self._query_leases.get(self._lease_identity(self._store[name]), 0):
             kb_logger.info(f"[KB-CACHE] 跳过淘汰（已固定）: {name}")
             return False
         await self._evict_one(name)
+        return True
+
+    async def retire(self, name: str, instance: RAGAnything | None = None) -> bool:
+        """Remove a core from new acquisition and finalize it after its lease."""
+        active = self._store.get(name)
+        target = instance or active
+        if target is None:
+            return False
+        if active is target:
+            self._store.pop(name, None)
+            self._cache_time.pop(name, None)
+            self._instance_keys.pop(name, None)
+        identity = self._lease_identity(target)
+        if self._query_leases.get(identity, 0):
+            self._retiring[identity] = (name, target)
+            return True
+        await self._finalize_once(name, target)
         return True
 
     async def clear(self) -> None:
         """Clear all entries (persist each first, then clear)."""
         async with self._eviction_lock:
             for name in list(self._store.keys()):
-                try:
-                    await self._store[name].finalize_storages()
-                except Exception:
-                    pass
-            self._store.clear()
-            self._cache_time.clear()
+                await self.retire(name)
 
     # ── Pin management ──────────────────────────────────────
 
@@ -205,6 +303,47 @@ class KBCache:
 
     def is_pinned(self, name: str) -> bool:
         return name in self._pinned
+
+    def acquire_query_lease(self, name: str, instance: RAGAnything) -> None:
+        """Prevent LRU finalization while an interactive stream uses ``instance``."""
+        if self._store.get(name) is not instance:
+            raise RuntimeError("query_core_not_cached")
+        if name in self._deleting:
+            raise RuntimeError("kb_query_deleting")
+        identity = self._lease_identity(instance)
+        self._query_leases[identity] = self._query_leases.get(identity, 0) + 1
+        task = asyncio.current_task()
+        if task is not None:
+            self._query_tasks.setdefault(name, set()).add(task)
+
+    async def acquire_query_lease_async(
+        self, name: str, instance: RAGAnything
+    ) -> None:
+        """Register a lease atomically with cache replacement/eviction."""
+        async with self._eviction_lock:
+            if self._store.get(name) is not instance:
+                raise RuntimeError("query_core_not_cached")
+            self.acquire_query_lease(name, instance)
+
+    async def release_query_lease(self, name: str, instance: RAGAnything) -> None:
+        identity = self._lease_identity(instance)
+        count = self._query_leases.get(identity, 0)
+        if count <= 1:
+            self._query_leases.pop(identity, None)
+            retiring = self._retiring.pop(identity, None)
+            if retiring is not None:
+                await self._finalize_once(*retiring)
+        else:
+            self._query_leases[identity] = count - 1
+        task = asyncio.current_task()
+        if task is not None:
+            tasks = self._query_tasks.get(name)
+            if tasks is not None:
+                tasks.discard(task)
+                if not tasks:
+                    self._query_tasks.pop(name, None)
+        # A lease can temporarily keep the cache above capacity.
+        await self._evict_if_needed()
 
     # ── Dirty check ─────────────────────────────────────────
 
@@ -234,6 +373,8 @@ class KBCache:
             "max_size": self._max_size,
             "pinned": sorted(self._pinned),
             "pinned_count": len(self._pinned),
+            "active_query_leases": sum(self._query_leases.values()),
+            "retiring_query_cores": len(self._retiring),
             "hits": self.hits,
             "misses": self.misses,
             "evictions": self.evictions,
@@ -249,7 +390,7 @@ class KBCache:
     def _find_eviction_victim(self) -> str | None:
         """Find oldest entry that is not pinned and not dirty."""
         for name in self._store:
-            if name in self._pinned:
+            if name in self._pinned or self._query_leases.get(self._lease_identity(self._store[name]), 0):
                 continue
             if self.is_dirty(name):
                 continue
@@ -262,14 +403,27 @@ class KBCache:
             f"(缓存={len(self._store)}/{self._max_size})"
         )
         try:
-            await self._store[name].finalize_storages()
+            await self.retire(name, self._store[name])
         except Exception as exc:
             kb_logger.warning(
                 f"[KB-CACHE] finalize_storages 失败（淘汰）: {name}: {exc}"
             )
-        del self._store[name]
+        self._store.pop(name, None)
         self._cache_time.pop(name, None)
         self.evictions += 1
+
+    async def _finalize_once(self, name: str, instance: RAGAnything) -> None:
+        if getattr(instance, "_query_core_finalized", False):
+            return
+        setattr(instance, "_query_core_finalized", True)
+        try:
+            await instance.finalize_storages()
+        except Exception as exc:
+            kb_logger.warning(
+                "[KB-CACHE] finalize_storages failed for retired core %s: %s",
+                name,
+                exc,
+            )
 
     async def _evict_if_needed(self) -> None:
         """Evict LRU entries until we are within max_size.
@@ -292,12 +446,62 @@ class KBCache:
                     break
                 await self._evict_one(victim)
 
+    def begin_deletion(self, name: str) -> list[asyncio.Task[Any]]:
+        """Prevent new leases and return active streams that must be drained."""
+        self._deleting.add(name)
+        return list(self._query_tasks.get(name, set()))
+
+    def cancel_deletion(self, name: str) -> None:
+        self._deleting.discard(name)
+
+    async def wait_for_no_query_leases(self, name: str, timeout: float) -> bool:
+        """Wait for query streams to release without deleting live resources."""
+        deadline = time.monotonic() + timeout
+        while self._query_leases.get(self._lease_identity(self._store.get(name)), 0) or any(
+            self._query_leases.get(self._lease_identity(instance), 0)
+            for retired_name, instance in list(self._retiring.values())
+            if retired_name == name
+        ):
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(0.02)
+        return True
+
 
 # ── KB Instances ──────────────────────────────────────────
 kb_instances = KBCache(max_size=MAX_CACHED_KBS)
 kb_instances.pin("default")
 active_kb: str = "default"
 KB_META_FILE = None  # Deprecated: KB metadata is now PG-backed
+
+
+class QueryKBLease:
+    """A lease for a cached query core; releases once per stream."""
+
+    def __init__(
+        self,
+        name: str,
+        instance: RAGAnything,
+        key: KBInstanceKey | None = None,
+        cache_status: str = "na",
+    ) -> None:
+        self.name = name
+        self.instance = instance
+        self.key = key
+        self.cache_status = cache_status
+        self._released = False
+
+    async def release(self) -> None:
+        if self._released:
+            return
+        self._released = True
+        await kb_instances.release_query_lease(self.name, self.instance)
+
+    async def __aenter__(self) -> RAGAnything:
+        return self.instance
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.release()
 
 kb_logger = logging.getLogger("rag_server.kb")
 
@@ -1879,7 +2083,7 @@ async def _get_pg_doc_status_storage(kb_name: str) -> Any | None:
 
     # finalize_storages() can leave a released PG store in the instance cache.
     if kb_instances.get(kb_name) is rag:
-        del kb_instances[kb_name]
+        await kb_instances.retire(kb_name)
     try:
         rag = await get_kb(kb_name)
         ds = rag.lightrag.doc_status
@@ -2347,10 +2551,43 @@ async def _load_full_docs_json(kb_name: str) -> dict[str, Any]:
 
 # ── KB Instance Management ─────────────────────────────────
 
+async def _create_initialized_query_core(
+    name: str,
+    target: str,
+    profile_scope: tuple[str, str] | None,
+) -> RAGAnything:
+    """Create a core once; callers may detach without cancelling this work."""
+    instance = await create_rag(
+        working_dir=target,
+        vision_embedding_profile=profile_scope,
+    )
+    init_result = await instance._ensure_lightrag_initialized()
+    if not init_result or not init_result.get("success"):
+        await instance.finalize_storages()
+        raise RuntimeError(
+            (init_result or {}).get("error", "storage initialization failed")
+        )
+    if instance.lightrag and hasattr(instance.lightrag, "chunks_vdb"):
+        instance.lightrag.chunks_vdb.cosine_better_than_threshold = 0.0
+    return instance
+
+
+def _discard_init_task(
+    key: tuple[str, str, str], task: asyncio.Task[RAGAnything]
+) -> None:
+    if _kb_init_tasks.get(key) is task:
+        _kb_init_tasks.pop(key, None)
+    try:
+        task.exception()
+    except asyncio.CancelledError:
+        pass
+
 async def get_kb(
     name: str = None,
     *,
     task_settings: dict[str, Any] | None = None,
+    corpus_revision: str | None = None,
+    acquire_query_lease: bool = False,
 ) -> RAGAnything:
     """Get or create a KB instance.
 
@@ -2370,10 +2607,7 @@ async def get_kb(
         # A task-bound configuration must not mutate or reuse the shared KB
         # instance.  It is intentionally uncached and is finalized by the
         # caller once the task has completed.
-        from lightrag.kg.shared_storage import set_default_workspace
-
         target = kb_dir(name)
-        set_default_workspace(target)
         metadata = (await load_kb_meta()).get(name, {})
         vision_state = (metadata.get("extra") or {}).get("vision_embedding") or {}
         profile_scope = None
@@ -2384,12 +2618,21 @@ async def get_kb(
             vision_embedding_profile=profile_scope,
             task_settings=task_settings,
         )
-        await instance._ensure_lightrag_initialized()
+        init_result = await instance._ensure_lightrag_initialized()
+        if not init_result or not init_result.get("success"):
+            await instance.finalize_storages()
+            raise RuntimeError((init_result or {}).get("error", "storage initialization failed"))
         return instance
     # Serialize initialization per KB to prevent concurrent creation race
     if name not in _kb_locks:
         _kb_locks[name] = asyncio.Lock()
     async with _kb_locks[name]:
+        if acquire_query_lease and name in kb_instances._deleting:
+            raise RuntimeError("kb_query_deleting")
+        if corpus_revision and name in kb_instances:
+            active_key = kb_instances.get_instance_key(name)
+            if active_key is None or active_key.corpus_revision != corpus_revision:
+                await kb_instances.retire(name)
         if name in kb_instances:
             # ── Cache freshness check ──
             # When PG storage is active, skip mtime check (JSON file is stale).
@@ -2405,18 +2648,12 @@ async def get_kb(
                                 f"[KB] 缓存过期重建: {name} "
                                 f"(disk={disk_mtime:.0f} > cache={cache_time:.0f})"
                             )
-                            try:
-                                await kb_instances[name].finalize_storages()
-                            except Exception:
-                                pass
-                            del kb_instances[name]
+                            await kb_instances.retire(name)
                     except OSError:
                         pass  # stat() failed, trust cache
         if name not in kb_instances:
-            from lightrag.kg.shared_storage import set_default_workspace
             target = kb_dir(name)
-            set_default_workspace(target)
-            metadata = (await load_kb_meta()).get(name, {})
+            metadata = (await load_kb_meta()).get(name, {}) if _pg_storage_ready() else {}
             vision_state = (metadata.get("extra") or {}).get("vision_embedding") or {}
             profile_scope = None
             if vision_state.get("profile_id") and vision_state.get("profile_fingerprint"):
@@ -2424,17 +2661,74 @@ async def get_kb(
                     vision_state["profile_id"],
                     vision_state["profile_fingerprint"],
                 )
-            instance = await create_rag(
-                working_dir=target,
-                vision_embedding_profile=profile_scope,
+            metadata_revision = str(
+                metadata.get("corpus_revision")
+                or metadata.get("updated_at")
+                or metadata.get("created_at")
+                or metadata.get("created")
+                or "unknown"
             )
-            await instance._ensure_lightrag_initialized()
-            # Lower vector retrieval cosine threshold for broader semantic recall
-            if instance.lightrag and hasattr(instance.lightrag, 'chunks_vdb'):
-                instance.lightrag.chunks_vdb.cosine_better_than_threshold = 0.0
-            await kb_instances.put_and_evict(name, instance, _time.time())
+            compatibility = _query_core_compatibility_fingerprint(vision_state)
+            init_key = (name, corpus_revision or metadata_revision, compatibility)
+            init_task = _kb_init_tasks.get(init_key)
+            if init_task is None:
+                init_task = asyncio.create_task(
+                    _create_initialized_query_core(name, target, profile_scope)
+                )
+                _kb_init_tasks[init_key] = init_task
+                init_task.add_done_callback(
+                    lambda completed, key=init_key: _discard_init_task(key, completed)
+                )
+            # Shielded task ownership makes one timed-out/cancelled caller
+            # detach while the initialized core remains reusable for others.
+            instance = await asyncio.shield(init_task)
+            if name in kb_instances._deleting:
+                await kb_instances._finalize_once(name, instance)
+                raise RuntimeError("kb_query_deleting")
+            await kb_instances.put_and_evict(
+                name,
+                instance,
+                _time.time(),
+                key=KBInstanceKey(
+                    name=name,
+                    workspace=target,
+                    corpus_revision=corpus_revision or metadata_revision,
+                    compatibility_fingerprint=compatibility,
+                ),
+            )
             kb_logger.info(f"[KB] 初始化知识库实例: {name} workspace={target}")
-    return kb_instances[name]
+        instance = kb_instances[name]
+        if acquire_query_lease:
+            # The cache entry is chosen and leased while the per-KB lock is
+            # held, so a revision replacement cannot finalize it in between.
+            kb_instances.acquire_query_lease(name, instance)
+        return instance
+
+
+async def acquire_query_kb(
+    name: str | None = None,
+    *,
+    corpus_revision: str | None = None,
+) -> QueryKBLease:
+    """Acquire the cached, user-neutral KB core for one interactive query.
+
+    Task-bound ingestion keeps using ``get_kb(..., task_settings=...)`` and is
+    deliberately not eligible for this lease.
+    """
+    resolved_name = name or active_kb
+    cached_key_before = kb_instances.get_instance_key(resolved_name)
+    instance = await get_kb(
+        resolved_name,
+        corpus_revision=corpus_revision,
+        acquire_query_lease=True,
+    )
+    acquired_key = kb_instances.get_instance_key(resolved_name)
+    return QueryKBLease(
+        resolved_name,
+        instance,
+        acquired_key,
+        cache_status="hit" if cached_key_before == acquired_key else "miss",
+    )
 
 
 async def cleanup_kb_resources(name: str) -> None:
@@ -2450,7 +2744,22 @@ async def cleanup_kb_resources(name: str) -> None:
     import raganything.routers.shared as _rshared
 
     kb_logger.info(f"[cleanup] 开始清理 KB 资源: {name}")
-    _kbs_being_deleted.add(name)  # set BEFORE any async yield
+    # Serialize the deletion gate with query-core selection and lease
+    # registration.  No cleanup begins until active streams have drained.
+    lock = _kb_locks.setdefault(name, asyncio.Lock())
+    async with lock:
+        _kbs_being_deleted.add(name)
+        query_tasks = kb_instances.begin_deletion(name)
+    current_task = asyncio.current_task()
+    for task in query_tasks:
+        if task is not current_task and not task.done():
+            task.cancel()
+    if not await kb_instances.wait_for_no_query_leases(
+        name, DELETE_KB_QUERY_DRAIN_SECONDS
+    ):
+        kb_instances.cancel_deletion(name)
+        _kbs_being_deleted.discard(name)
+        raise RuntimeError("kb_query_drain_timeout")
 
     # A compensation task must not recreate storage or write tags after the
     # knowledge base has entered deletion.
@@ -2501,10 +2810,9 @@ async def cleanup_kb_resources(name: str) -> None:
     # ── 5. Clean cached KB instance ──────────────────────
     if name in kb_instances:
         try:
-            await kb_instances[name].finalize_storages()
+            await kb_instances.retire(name)
         except Exception as exc:
             kb_logger.warning(f"[cleanup] finalize_storages 失败 ({name}): {exc}")
-        del kb_instances[name]
 
     # ── 6. Collect upload files BEFORE deleting dir ──────
     _found_files: set = set()
@@ -2631,6 +2939,7 @@ async def cleanup_kb_resources(name: str) -> None:
         pass
 
     kb_logger.info(f"[cleanup] KB 资源清理完成: {name}")
+    kb_instances.cancel_deletion(name)
     _kbs_being_deleted.discard(name)
 
 
@@ -2940,6 +3249,21 @@ async def create_rag(
         vision_func = (
             build_vlm_callable(vlm_profile_id) if require_vlm else llm_func
         )
+    else:
+        # Cached query cores are user-neutral.  Resolve the actual model from
+        # request ContextVars rather than binding an environment model forever.
+        try:
+            from raganything.services.vision_models import (
+                build_contextual_llm_callable,
+                build_contextual_vlm_callable,
+            )
+
+            llm_func = build_contextual_llm_callable("legacy-llm")
+            vision_func = build_contextual_vlm_callable("legacy-vlm")
+        except (KeyError, RuntimeError, ValueError):
+            # Background and legacy deployments without a model catalog retain
+            # the pre-existing environment-bound callables.
+            pass
 
     # ── PG Storage Backends (P1 + P2) ────────────────────────
     # When PostgreSQL is available, switch LightRAG from file-based
@@ -2952,7 +3276,7 @@ async def create_rag(
     #   P2 — graph_storage      : PGGraphStorage (needs Apache AGE)
     #
     # LightRAG auto-creates required tables on first use. Each KB is
-    # isolated via the workspace (set by set_default_workspace() above).
+    # isolated via the explicitly supplied workspace below.
     #
     # ⚠️  Data-aware dispatch: if the worker wrote data to JSON files
     # (pre-PG-migration) but PG tables are empty, stay on JSON so
@@ -3459,7 +3783,7 @@ async def _recover_json_status_file(kb_name: str, json_path: Path) -> None:
         )
         temporary_path.replace(json_path)
         if kb_name in kb_instances:
-            del kb_instances[kb_name]
+            await kb_instances.retire(kb_name)
     except OSError:
         kb_logger.warning("[Recovery] JSON doc-status save failed for KB %s", kb_name)
 
@@ -4120,7 +4444,7 @@ async def _resolve_uploaded_document_id(
     # The subprocess owns the durable write. The cached server instance may
     # still hold finalized PG storage, so invalidate it once before reloading.
     if kb_name in kb_instances:
-        del kb_instances[kb_name]
+        await kb_instances.retire(kb_name)
         kb_logger.info(
             "[KB] 清除 Worker 前缓存实例: %s（重新读取文档状态）", kb_name,
         )
@@ -5889,6 +6213,7 @@ __all__ = [
     "save_kb_meta",
     "kb_dir",
     "get_kb",
+    "acquire_query_kb",
     "delete_kb",
     "list_kbs",
     "list_kbs_by_domain",

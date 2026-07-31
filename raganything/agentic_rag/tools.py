@@ -13,12 +13,15 @@ async execute(input) -> str.
 
 from __future__ import annotations
 
+import asyncio
 import math as _math
 import time
 from typing import Any
 
 from raganything.agentic_rag.tool_base import Tool
 from raganything.query.tag_scoped_retriever import TagScope, retrieve_tag_scoped_context
+from raganything.services.query_execution import await_before_deadline
+from raganything.services.query_timing import QueryTiming
 
 
 class SearchTool(Tool):
@@ -46,6 +49,8 @@ class SearchTool(Tool):
         enable_rerank: bool = False,
         include_references: bool = True,
         tag_scope: TagScope | None = None,
+        retrieval_options: Any = None,
+        query_execution_scope: Any = None,
     ):
         """
         Args:
@@ -68,6 +73,16 @@ class SearchTool(Tool):
         self.enable_rerank = bool(enable_rerank)
         self.include_references = bool(include_references)
         self.tag_scope = tag_scope
+        self.retrieval_options = retrieval_options
+        self.query_execution_scope = query_execution_scope
+
+    def _deadline(self) -> float | None:
+        scope = self.query_execution_scope
+        if hasattr(scope, "deadline_monotonic"):
+            return scope.deadline_monotonic
+        if isinstance(scope, dict):
+            return scope.get("deadline_monotonic")
+        return None
 
     async def execute(self, input: dict) -> str:
         query = input.get("query", "")
@@ -77,6 +92,12 @@ class SearchTool(Tool):
         if self.rag is None:
             return "搜索失败：知识库未初始化"
 
+        trace_id = getattr(self.query_execution_scope, "trace_id", None)
+        if trace_id is None and isinstance(self.query_execution_scope, dict):
+            trace_id = self.query_execution_scope.get("trace_id")
+        timing = QueryTiming(trace_id) if isinstance(trace_id, str) else None
+        started = time.perf_counter()
+        outcome = "ok"
         try:
             if self.tag_scope is not None:
                 result = await retrieve_tag_scoped_context(
@@ -85,29 +106,49 @@ class SearchTool(Tool):
                     query,
                     top_k=self.chunk_top_k,
                     max_total_tokens=8000,
+                    deadline_monotonic=self._deadline(),
                 )
                 if not result:
                     return f"标签“{self.tag_scope.tag_name}”范围内没有与问题相关的内容"
                 return result[:8000] if len(result) > 8000 else result
-            result = await self.rag.aquery(
-                query,
-                mode=self.query_mode,
-                only_need_context=True,
-                enable_rerank=self.enable_rerank,
-                chunk_top_k=self.chunk_top_k,
-                top_k=self.top_k,
-                include_references=self.include_references,
-                max_entity_tokens=2000,
-                max_relation_tokens=1000,
-                max_total_tokens=8000,
+            result = await await_before_deadline(
+                self.rag.aquery(
+                    query,
+                    mode=self.query_mode,
+                    only_need_context=True,
+                    enable_rerank=self.enable_rerank,
+                    chunk_top_k=self.chunk_top_k,
+                    top_k=self.top_k,
+                    include_references=self.include_references,
+                    max_entity_tokens=2000,
+                    max_relation_tokens=1000,
+                    max_total_tokens=8000,
+                    retrieval_options=self.retrieval_options,
+                    query_execution_scope=self.query_execution_scope,
+                ),
+                self._deadline(),
             )
             if not result or not result.strip():
                 return "知识库中未找到相关信息"
             if len(result) > 8000:
                 result = result[:8000] + "\n...(内容过长，已截断)"
             return result
+        except TimeoutError:
+            outcome = "timeout"
+            return "Search timed out; continuing with available results."
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
         except Exception as e:
+            outcome = "error"
             return f"搜索出错: {str(e)}"
+        finally:
+            if timing is not None:
+                timing.record(
+                    "retrieval",
+                    time.perf_counter() - started,
+                    outcome=outcome,
+                )
 
 
 class CalculatorTool(Tool):

@@ -61,11 +61,14 @@ from raganything.services.pg_agent_repo import (
 from raganything.services.prompt_builder import PromptBuilder, ContextLayer
 from raganything.query.tag_scoped_retriever import resolve_tag_scope, retrieve_tag_scoped_context
 from raganything.services.kb_service import (
+    acquire_query_kb,
     _load_doc_status_json,
     load_kb_meta,
     pg_get_latest_content_updates_batch,
 )
 from raganything.services.odl_media_delivery import catalog_media_payload
+from raganything.services.query_timing import QueryTiming
+from raganything.services.query_execution import QueryExecutionScope, await_before_deadline
 
 
 _SENSITIVE_MEDIA_REFERENCE_PATTERNS = (
@@ -190,15 +193,17 @@ async def _load_kb_media_catalog(kb_name: str) -> list[dict]:
     return catalog
 
 
-async def _controlled_recalled_media(kb_name: str, paths: list[str]) -> list[dict]:
+async def _controlled_recalled_media(
+    kb_name: str, paths: list[str], *, text_chunk_reader=None
+) -> list[dict]:
     """Convert backend-only recalled paths into path-free client metadata."""
     result: list[dict] = []
     seen: set[str] = set()
     for path in paths:
-        payload = await resolve_controlled_media_payload(
-            kb_name=kb_name,
-            image_path=path,
-        )
+        kwargs = {"kb_name": kb_name, "image_path": path}
+        if text_chunk_reader is not None:
+            kwargs["text_chunk_reader"] = text_chunk_reader
+        payload = await resolve_controlled_media_payload(**kwargs)
         media_id = payload.get("media_id") if isinstance(payload, dict) else None
         if isinstance(payload, dict) and isinstance(media_id, str) and media_id not in seen:
             seen.add(media_id)
@@ -948,13 +953,18 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     _perm: None = Depends(require_permission(Permission.AGENT_READ)),
 ):
     """智能体流式查询：使用智能体配置执行查询"""
+    query_id = str(uuid.uuid4())[:8]
+    timing = QueryTiming(query_id)
+    timing.start("settings_quota")
     agent = await pg_get_agent(agent_id)
     if not agent:
+        timing.total(outcome="error")
         raise HTTPException(404, "智能体不存在")
 
     # 验证 Agent 所有权（非所有者/管理员不可用）
     is_admin = current_user.get("is_admin", False)
     if agent.get("owner_id", 0) != 0 and agent.get("owner_id") != current_user["id"] and not is_admin:
+        timing.total(outcome="error")
         raise HTTPException(403, "无权使用该智能体")
     # 输入校验 — Prompt Injection 防护
     # 当用户仅发送图片而无文字时，自动补全安全占位查询文本，
@@ -962,9 +972,22 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
     # SSE / VLM / 历史记录等 20+ 处 req.query 引用获得一致的默认值。
     if (not req.query or not req.query.strip()) and req.image:
         req.query = "请分析这张图片"
-    validate_query_input(req.query, user_id=str(current_user.get("id", "anonymous")))
+    try:
+        validate_query_input(req.query, user_id=str(current_user.get("id", "anonymous")))
+    except Exception:
+        timing.total(outcome="error")
+        raise
     # 验证 KB 访问权限（可能自动切换到用户的个人 KB）
-    actual_kb = await verify_kb_access(kb=agent.get("kb_name", ""), current_user=current_user)
+    try:
+        actual_kb = await verify_kb_access(
+            kb=agent.get("kb_name", ""), current_user=current_user
+        )
+    except asyncio.CancelledError:
+        timing.total(outcome="cancelled")
+        raise
+    except Exception:
+        timing.total(outcome="error")
+        raise
 
     from raganything.services import vision_models
     try:
@@ -998,20 +1021,20 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             ),
             timeout=resolved_settings.runtime.llm_timeout,
         )
-        task_settings = resolved_settings.snapshot()
-        task_settings["_query_scope"] = query_scope
-        task_settings["_require_vlm"] = bool(req.image)
     except (KeyError, RuntimeError, ValueError) as exc:
+        timing.total(outcome="error")
         raise HTTPException(503, detail={"code": "profile_unavailable", "message": "selected model or personal settings are unavailable"}) from exc
     tag_scope = None
     if req.tag_id is not None:
         tag_scope = await resolve_tag_scope(actual_kb, req.tag_id)
         if tag_scope is None:
             # Do not reveal whether a tag exists in a different knowledge base.
+            timing.total(outcome="error")
             raise HTTPException(422, "Selected tag scope is no longer available")
     scope_metadata = {"tag_scope": {"id": tag_scope.tag_id, "name": tag_scope.tag_name}} if tag_scope else {}
     runtime_config = _build_effective_agent_runtime(agent, req)
     if req.retrieval_only and runtime_config["agent_mode"] != "none":
+        timing.total(outcome="error")
         raise HTTPException(
             status_code=422,
             detail="retrieval_only only supports the standard RAG query mode",
@@ -1032,10 +1055,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         ]
         outer_limit = min(outer_caps) if outer_caps else None
     except Exception as exc:
+        timing.total(outcome="error")
         raise HTTPException(
             503,
             detail={"code": "quota_settings_unavailable", "message": "runtime limits are unavailable"},
         ) from exc
+    retrieval_timeout = max(0.1, float(os.getenv("AGENT_RETRIEVAL_TIMEOUT", "8")))
+    retrieval_deadline = time.monotonic() + retrieval_timeout
     lease_owner = f"interactive:{os.getpid()}:{uuid.uuid4()}"
     lease_id = None
     deadline = time.monotonic() + max(0.0, interactive_wait)
@@ -1049,11 +1075,37 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         )
         if lease_id is None:
             if time.monotonic() >= deadline:
+                timing.total(outcome="timeout")
                 raise HTTPException(
                     429,
                     detail={"code": "personal_concurrency_exceeded", "message": "personal concurrency quota is full"},
                 )
             await asyncio.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+
+    timing.finish("settings_quota")
+    # The request may have waited for a quota lease while the corpus changed.
+    # Refresh the authoritative revision before selecting a query core or cache key.
+    try:
+        query_scope = await _query_cache_scope(
+            actual_kb,
+            int(current_user["id"]),
+            resolved_settings.fingerprint,
+            llm_snapshot.fingerprint,
+        )
+        selected_llm = vision_models.build_llm_callable(
+            resolved_settings.models.llm_profile_id,
+            cache_scope=json.dumps(
+                query_scope, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+            ),
+            timeout=resolved_settings.runtime.llm_timeout,
+        )
+    except (KeyError, RuntimeError, ValueError) as exc:
+        await release_quota_lease(lease_id, lease_owner)
+        timing.total(outcome="error")
+        raise HTTPException(
+            503,
+            detail={"code": "profile_unavailable", "message": "selected model or personal settings are unavailable"},
+        ) from exc
 
     async def _release_interactive_lease() -> None:
         try:
@@ -1102,6 +1154,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             )
         except Exception:
             await _release_interactive_lease()
+            timing.total(outcome="error")
             raise
         thread_id = thread["id"]
 
@@ -1115,6 +1168,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             conv_thread = await pg_get_conversation(agent_id, thread_id)
         except Exception:
             await _release_interactive_lease()
+            timing.total(outcome="error")
             raise
     if conv_thread and conv_thread.get("messages"):
         max_msgs = max_conv_rounds * 2
@@ -1140,21 +1194,54 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         lease_heartbeat_task = asyncio.create_task(_heartbeat_interactive_lease())
         ctx_task: asyncio.Task | None = None
         vlm_context_token = (
-            vision_models.activate_vlm_selection(vlm_snapshot)
+            vision_models.activate_vlm_selection(
+                vlm_snapshot,
+                cache_scope=json.dumps(query_scope, sort_keys=True, separators=(",", ":"), ensure_ascii=True),
+            )
             if vlm_snapshot is not None
             else None
+        )
+        llm_context_token = vision_models.activate_llm_selection(
+            llm_snapshot,
+            cache_scope=json.dumps(query_scope, sort_keys=True, separators=(",", ":"), ensure_ascii=True),
+            timeout=resolved_settings.runtime.llm_timeout,
+            profile_id=resolved_settings.models.llm_profile_id,
         )
         log_queue: queue.Queue = queue.Queue()
         handler = LogCaptureHandler(log_queue)
         lightrag_logger.addHandler(handler)
-        query_id = str(uuid.uuid4())[:8]
+        query_kb_lease = None
         full_answer = ""
+        timing_outcome = "ok"
 
         try:
-            # Defer the request-scoped instance until the response body is
-            # actually consumed. An abandoned StreamingResponse then owns no
-            # storage handles and its un-heartbeated lease simply expires.
-            instance = await get_kb(actual_kb, task_settings=task_settings)
+            timing.start("query_core_acquire")
+            query_kb_lease = await await_before_deadline(
+                acquire_query_kb(
+                    actual_kb,
+                    corpus_revision=query_scope.get("corpus_revision"),
+                ),
+                retrieval_deadline,
+                cancel_on_timeout=False,
+            )
+            instance = query_kb_lease.instance
+            timing.finish(
+                "query_core_acquire",
+                cache_status=getattr(query_kb_lease, "cache_status", "na"),
+            )
+            execution_scope = QueryExecutionScope(
+                trace_id=query_id,
+                workspace=query_scope.get("workspace", actual_kb),
+                corpus_revision=(
+                    lease_key.corpus_revision
+                    if (lease_key := getattr(query_kb_lease, "key", None)) is not None
+                    else query_scope.get("corpus_revision", "unknown")
+                ),
+                permission_scope=query_scope.get("permission_scope", "unknown"),
+                settings_fingerprint=query_scope.get("settings_fingerprint", "unknown"),
+                llm_profile_fingerprint=query_scope.get("llm_profile_fingerprint", "unknown"),
+                deadline_monotonic=retrieval_deadline,
+            )
             scope_payload = ({"id": tag_scope.tag_id, "name": tag_scope.tag_name} if tag_scope else None)
             yield f"data: {json.dumps({'type': 'agent_info', 'agent': agent.get('name',''), 'icon': agent.get('icon',''), 'thread_id': thread_id, 'tag_scope': scope_payload}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'thinking', 'content': f'🔍 开始查询: {req.query[:80]}...'}, ensure_ascii=False)}\n\n"
@@ -1168,21 +1255,28 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         {"role": m.get("role"), "content": m.get("content", "")}
                         for m in (conv_thread["messages"][-6:] if conv_thread and conv_thread.get("messages") else [])
                     ]
-                    rewritten = await rewrite_query(
-                        req.query,
-                        openai_complete_if_cache,
-                        history=_history,
-                        api_key=API_KEY,
-                        base_url=BASE_URL,
+                    rewritten = await await_before_deadline(
+                        rewrite_query(
+                            req.query,
+                            selected_llm,
+                            history=_history,
+                        ),
+                        retrieval_deadline,
                     )
                     if rewritten and rewritten != req.query and len(rewritten.strip()) > 2:
-                        lightrag_logger.info(
-                            f"[QUERY-REWRITE] '{req.query[:60]}' -> '{rewritten[:80]}'"
-                        )
+                        lightrag_logger.info("[QUERY-REWRITE] trace_id=%s outcome=rewritten", query_id)
                         rewritten_query = rewritten
                         yield f"data: {json.dumps({'type': 'thinking', 'content': f'📝 查询已结合对话历史改写: {rewritten[:100]}'}, ensure_ascii=False)}\n\n"
-                except Exception as _rewrite_err:
-                    lightrag_logger.warning(f"[QUERY-REWRITE] rewrite failed, using original query: {_rewrite_err}")
+                except TimeoutError:
+                    lightrag_logger.warning(
+                        "[QUERY-REWRITE] trace_id=%s phase=rewrite outcome=timeout",
+                        query_id,
+                    )
+                except Exception:
+                    lightrag_logger.warning(
+                        "[QUERY-REWRITE] trace_id=%s phase=rewrite outcome=error",
+                        query_id,
+                    )
 
             # ═══ Image Processing (user-uploaded query image) ═══
             image_description = None
@@ -1256,7 +1350,15 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
 
                     vlm_task = asyncio.create_task(_run_vlm_desc())
                     vision_task = asyncio.create_task(_run_vision_search())
-                    _vlm_res, _vis_res = await asyncio.gather(vlm_task, vision_task, return_exceptions=True)
+                    try:
+                        _vlm_res, _vis_res = await await_before_deadline(
+                            asyncio.gather(vlm_task, vision_task, return_exceptions=True),
+                            retrieval_deadline,
+                        )
+                    except TimeoutError:
+                        _cancel_and_observe_task(vlm_task)
+                        _cancel_and_observe_task(vision_task)
+                        _vlm_res, _vis_res = None, []
 
                     image_description = _vlm_res if not isinstance(_vlm_res, Exception) else None
                     raw_similar_images = _vis_res if not isinstance(_vis_res, Exception) else []
@@ -1281,8 +1383,34 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 start_time = time.time()
                 from raganything.agentic_rag import AgenticRAG, SearchTool
 
+                async def _timed_agent_llm(*args, **kwargs):
+                    """Observe agentic model calls without retaining their content."""
+                    started = time.perf_counter()
+                    outcome = "ok"
+                    try:
+                        response = await agent_llm(*args, **kwargs)
+                        if response is None:
+                            outcome = "error"
+                        else:
+                            elapsed = time.perf_counter() - started
+                            # AgenticRAG uses non-streaming model calls, so the
+                            # response arrival is both the first and last token.
+                            timing.record("llm_first_token", elapsed)
+                            timing.record("llm_last_token", elapsed)
+                        return response
+                    except asyncio.CancelledError:
+                        outcome = "cancelled"
+                        raise
+                    except Exception:
+                        outcome = "error"
+                        raise
+                    finally:
+                        timing.record(
+                            "llm", time.perf_counter() - started, outcome=outcome
+                        )
+
                 agentic = AgenticRAG(
-                    llm_func=agent_llm,
+                    llm_func=_timed_agent_llm,
                     max_steps=int(os.getenv("AGENT_MAX_STEPS", "5")),
                     mode=agent_mode,
                     max_response_tokens=max_response_tokens,
@@ -1296,6 +1424,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     enable_rerank=enable_rerank,
                     include_references=include_references,
                     tag_scope=tag_scope,
+                    retrieval_options=user_retrieval_options,
+                    query_execution_scope=execution_scope,
                 ))
 
                 full_answer = ""
@@ -1310,10 +1440,27 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         similar_image_urls=_similar_image_urls,
                     )
                     if tag_scope is not None:
-                        scoped_context = await retrieve_tag_scoped_context(
-                            instance, tag_scope, rewritten_query,
-                            top_k=chunk_top_k, max_total_tokens=8000,
-                        )
+                        react_retrieval_outcome = "ok"
+                        timing.start("retrieval")
+                        try:
+                            scoped_context = await retrieve_tag_scoped_context(
+                                instance, tag_scope, rewritten_query,
+                                top_k=chunk_top_k, max_total_tokens=8000,
+                                deadline_monotonic=retrieval_deadline,
+                            )
+                        except TimeoutError:
+                            react_retrieval_outcome = "timeout"
+                            scoped_context = ""
+                        except asyncio.CancelledError:
+                            react_retrieval_outcome = "cancelled"
+                            raise
+                        except Exception:
+                            react_retrieval_outcome = "error"
+                            raise
+                        finally:
+                            timing.finish(
+                                "retrieval", outcome=react_retrieval_outcome
+                            )
                         react_query += (
                             f"\n\n## 硬性检索范围\n仅可依据标签“{tag_scope.tag_name}”下的内容回答。"
                             f"\n{scoped_context or '该标签范围内没有可用内容。请明确说明无法在此范围内作答。'}"
@@ -1344,23 +1491,38 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     if image_description:
                         _cot_search_query = f"{rewritten_query}\n\n[图片描述]\n{image_description[:500]}"
                     cot_context = ""
+                    retrieval_outcome = "ok"
+                    timing.start("retrieval")
                     try:
                         if tag_scope is not None:
                             cot_context = await retrieve_tag_scoped_context(
                                 instance, tag_scope, _cot_search_query,
                                 top_k=chunk_top_k, max_total_tokens=8000,
+                                deadline_monotonic=retrieval_deadline,
                             )
                         else:
-                            cot_context = await instance.aquery(
-                                _cot_search_query, mode=agentic_query_mode, only_need_context=True,
-                                top_k=retrieval_top_k, chunk_top_k=chunk_top_k,
-                                enable_rerank=enable_rerank,
-                                include_references=include_references,
-                                retrieval_options=user_retrieval_options,
-                                max_total_tokens=8000,
+                            cot_context = await await_before_deadline(
+                                instance.aquery(
+                                    _cot_search_query, mode=agentic_query_mode, only_need_context=True,
+                                    top_k=retrieval_top_k, chunk_top_k=chunk_top_k,
+                                    enable_rerank=enable_rerank,
+                                    include_references=include_references,
+                                    retrieval_options=user_retrieval_options,
+                                    query_execution_scope=execution_scope,
+                                    max_total_tokens=8000,
+                                ),
+                                retrieval_deadline,
                             ) or ""
+                    except TimeoutError:
+                        retrieval_outcome = "timeout"
+                    except asyncio.CancelledError:
+                        retrieval_outcome = "cancelled"
+                        raise
                     except Exception:
+                        retrieval_outcome = "error"
                         pass
+                    finally:
+                        timing.finish("retrieval", outcome=retrieval_outcome)
                     # Build image + history context via unified helpers
                     _img_cot_ctx = _build_image_section(image_description, _similar_image_urls)
                     if conv_history_text:
@@ -1373,6 +1535,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         yield f"data: {json.dumps({'type': 'thinking', 'content': '⚠️ 知识库中暂无相关数据'}, ensure_ascii=False)}\n\n"
                         yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
                         elapsed = round(time.time() - start_time, 2)
+                        timing.start("persistence")
                         await pg_add_message(agent_id, thread_id, {
                             "role": "user", "content": req.query,
                             "time": datetime.now().isoformat(),
@@ -1398,13 +1561,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                             "fallback": True,
                         }
                         await record_query(record, max_history=100)
+                        timing.finish("persistence")
                         _done_cot_empty = {'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': [], 'fallback': True}
                         if image_description:
                             _done_cot_empty['image_description'] = image_description
                         if _display_similar_images:
                             _done_cot_empty['similar_images'] = _display_similar_images
                         yield f"data: {json.dumps(_done_cot_empty, ensure_ascii=False)}\n\n"
-                        lightrag_logger.removeHandler(handler)
                         return
                     # 对话历史已在 line 527-530 注入到 _img_cot_ctx，此处不重复注入
                     agent_result = await agentic.run_with_context(rewritten_query, cot_context)
@@ -1434,14 +1597,41 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 all_retrieved_text += " " + rewritten_query
                 all_retrieved_text += " " + full_answer
 
-                agent_images, _backfill_text_react, _img_source = await recall_query_images(
-                    instance, req.query, actual_kb, all_retrieved_text
-                )
+                timing.start("media")
+                try:
+                    async def _recall_agentic_media():
+                        recalled, backfill, source = await recall_query_images(
+                            instance, req.query, actual_kb, all_retrieved_text
+                        )
+                        controlled = await _controlled_recalled_media(
+                            actual_kb,
+                            recalled[:3],
+                            text_chunk_reader=getattr(
+                                getattr(instance, "lightrag", None),
+                                "text_chunks",
+                                None,
+                            ),
+                        )
+                        return controlled, backfill, source
+
+                    agent_images, _backfill_text_react, _img_source = (
+                        await await_before_deadline(
+                            _recall_agentic_media(), retrieval_deadline
+                        )
+                    )
+                except TimeoutError:
+                    agent_images, _backfill_text_react, _img_source = [], "", None
+                    timing.finish("media", outcome="timeout")
+                except asyncio.CancelledError:
+                    timing.finish("media", outcome="cancelled")
+                    raise
+                except Exception:
+                    timing.finish("media", outcome="error")
+                    raise
+                else:
+                    timing.finish("media")
                 if _backfill_text_react:
                     all_retrieved_text += "\n" + _backfill_text_react
-                # ── 截断 + 文件存在性校验（安全网）──
-                agent_images = agent_images[:3]
-                agent_images = await _controlled_recalled_media(actual_kb, agent_images)
 
                 # Citation fallback for agent path: collect context from trace/COT
                 _agent_ctx = ""
@@ -1461,6 +1651,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         yield f"data: {json.dumps({'type': 'token', 'content': _cit_block}, ensure_ascii=False)}\n\n"
 
                 # 保存到对话线程
+                timing.start("persistence")
                 await pg_add_message(agent_id, thread_id, {
                     "role": "user", "content": req.query,
                     "time": datetime.now().isoformat(),
@@ -1486,6 +1677,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "user_id": current_user["id"], "username": current_user["username"],
                 }
                 await record_query(record, max_history=100)
+                timing.finish("persistence")
 
                 # Trigger summary generation (fire-and-forget)
                 try:
@@ -1523,11 +1715,13 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     _vis_context_parts.append(f"[相似图片描述]\n{' | '.join(_vis_descs[:3])}")
             if _vis_context_parts:
                 _search_query = f"{rewritten_query}\n\n" + "\n".join(_vis_context_parts)
+            timing.start("retrieval")
             if tag_scope is not None:
                 ctx_task = asyncio.ensure_future(
                     retrieve_tag_scoped_context(
                         instance, tag_scope, _search_query,
                         top_k=chunk_top_k, max_total_tokens=16000,
+                        deadline_monotonic=retrieval_deadline,
                     )
                 )
             else:
@@ -1537,17 +1731,20 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                                     chunk_top_k=chunk_top_k, top_k=retrieval_top_k,
                                     include_references=include_references,
                                     retrieval_options=user_retrieval_options,
+                                    query_execution_scope=execution_scope,
                                     max_entity_tokens=3000, max_relation_tokens=2000,
                                     max_total_tokens=16000)
                 )
-            retrieval_timeout = max(
-                0.1, float(os.getenv("AGENT_RETRIEVAL_TIMEOUT", "60"))
-            )
-            retrieval_deadline = asyncio.get_running_loop().time() + retrieval_timeout
             while not ctx_task.done():
                 is_disconnected = getattr(request, "is_disconnected", None)
-                if is_disconnected is not None and await is_disconnected():
-                    raise asyncio.CancelledError
+                if is_disconnected is not None:
+                    try:
+                        if await is_disconnected():
+                            raise asyncio.CancelledError
+                    except RuntimeError:
+                        # Unit-test and internal Request scopes may not expose
+                        # an ASGI receive channel; they are not disconnects.
+                        pass
                 if asyncio.get_running_loop().time() >= retrieval_deadline:
                     timed_out_task, ctx_task = ctx_task, None
                     _cancel_and_observe_task(timed_out_task)
@@ -1565,6 +1762,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 await asyncio.sleep(min(0.06, max(0.001, remaining)))
 
             ctx = ctx_task.result()
+            timing.finish("retrieval")
 
             # ── 快速检测：真正空的上下文（fail_response / None / 空字符串）──
             _is_truly_empty = not ctx or not ctx.strip() or "[no-context]" in ctx
@@ -1586,6 +1784,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 full_answer = "抱歉，知识库中暂无与您问题相关的数据，无法回答此问题。请尝试上传相关文档或换个问题。"
 
                 # 保存到对话线程
+                timing.start("persistence")
                 await pg_add_message(agent_id, thread_id, {
                     "role": "user",
                     "content": req.query,
@@ -1620,6 +1819,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "fallback": True,
                 }
                 await record_query(record, max_history=100)
+                timing.finish("persistence")
 
                 yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
                 _done_data = {
@@ -1634,14 +1834,29 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     _done_data['similar_images'] = _display_similar_images
                 yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
                 # 提前返回，不走到下方的通用 LLM 调用路径
-                lightrag_logger.removeHandler(handler)
                 return
 
             # ── 图片提取（所有查询模式统一，三段式）──
-            agent_images, backfill_text, _img_source = await recall_query_images(
-                instance, req.query, actual_kb, ctx
-            )
-            agent_images = await _controlled_recalled_media(actual_kb, agent_images[:3])
+            timing.start("media")
+            async def _recall_controlled_media():
+                recalled, backfill, source = await recall_query_images(
+                    instance, req.query, actual_kb, ctx
+                )
+                controlled = await _controlled_recalled_media(
+                    actual_kb, recalled[:3],
+                    text_chunk_reader=getattr(getattr(instance, "lightrag", None), "text_chunks", None),
+                )
+                return controlled, backfill, source
+
+            try:
+                agent_images, backfill_text, _img_source = await await_before_deadline(
+                    _recall_controlled_media(), retrieval_deadline
+                )
+            except TimeoutError:
+                agent_images, backfill_text, _img_source = [], "", None
+                timing.finish("media", outcome="timeout")
+            else:
+                timing.finish("media")
             if backfill_text:
                 ctx = ctx + "\n\n" + backfill_text
 
@@ -1679,6 +1894,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 full_answer = "抱歉，知识库中暂无与您问题相关的数据，无法回答此问题。请尝试上传相关文档或换个问题。"
 
                 # 保存到对话线程
+                timing.start("persistence")
                 await pg_add_message(agent_id, thread_id, {
                     "role": "user",
                     "content": req.query,
@@ -1713,6 +1929,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     "fallback": True,
                 }
                 await record_query(record, max_history=100)
+                timing.finish("persistence")
 
                 yield f"data: {json.dumps({'type': 'token', 'content': full_answer}, ensure_ascii=False)}\n\n"
                 _done_data = {
@@ -1726,7 +1943,6 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 if _display_similar_images:
                     _done_data['similar_images'] = _display_similar_images
                 yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
-                lightrag_logger.removeHandler(handler)
                 return
 
             # ── 正常路径：使用富化后的上下文 ──
@@ -1781,6 +1997,8 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             _pb.degraded_hint("" if _has_chunks else _DEGRADED_HINT)
             _pb.user_query(req.query, _cit_inst)
             final_prompt, _final_sp = _pb.build()
+            timing.start("llm")
+            llm_started = time.perf_counter()
             llm_response = await agent_llm(
                 prompt=final_prompt,
                 system_prompt=sp,
@@ -1790,15 +2008,20 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             )
 
             if llm_response is None:
+                timing.finish("llm", outcome="error")
+                timing_outcome = "error"
                 yield f"data: {json.dumps({'type': 'error', 'content': '模型返回空'}, ensure_ascii=False)}\n\n"
                 return
             if isinstance(llm_response, str):
                 full_answer = llm_response
+                timing.record("llm_first_token", time.perf_counter() - llm_started)
                 yield f"data: {json.dumps({'type': 'token', 'content': llm_response}, ensure_ascii=False)}\n\n"
             else:
                 _stream_tokens = []
                 try:
                     async for token in llm_response:
+                        if not _stream_tokens:
+                            timing.record("llm_first_token", time.perf_counter() - llm_started)
                         _stream_tokens.append(token)
                         full_answer += token
                         yield f"data: {json.dumps({'type': 'token', 'content': token}, ensure_ascii=False)}\n\n"
@@ -1810,9 +2033,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         raise
                     yield f"data: {json.dumps({'type': 'warning', 'content': '⚠️ 模型响应被截断，以下回答可能不完整'}, ensure_ascii=False)}\n\n"
 
+            timing.finish("llm")
+            timing.record("llm_last_token", time.perf_counter() - llm_started)
             elapsed = round(time.time() - start_time, 2)
 
             # 保存到对话线程
+            timing.start("persistence")
             await pg_add_message(agent_id, thread_id, {
                 "role": "user",
                 "content": req.query,
@@ -1847,6 +2073,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 "fallback": is_fallback,
             }
             await record_query(record, max_history=100)
+            timing.finish("persistence")
 
             # Trigger summary generation if threshold met (fire-and-forget)
             # Load full thread for message count check
@@ -1868,18 +2095,23 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 _done_data['similar_images'] = _display_similar_images
             yield f"data: {json.dumps(_done_data, ensure_ascii=False)}\n\n"
 
+        except asyncio.CancelledError:
+            timing_outcome = "cancelled"
+            raise
+        except TimeoutError as exc:
+            timing_outcome = "timeout"
+            yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
         except Exception as exc:
+            timing_outcome = "error"
             yield f"data: {json.dumps({'type': 'error', 'content': str(exc)}, ensure_ascii=False)}\n\n"
         finally:
             _cancel_and_observe_task(ctx_task)
             if vlm_context_token is not None:
                 vision_models.reset_vlm_snapshot(vlm_context_token)
+            vision_models.reset_llm_snapshot(llm_context_token)
             lightrag_logger.removeHandler(handler)
-            if instance is not None:
-                try:
-                    await instance.finalize_storages()
-                except Exception:
-                    lightrag_logger.warning("Failed to finalize request-scoped KB instance", exc_info=True)
+            if query_kb_lease is not None:
+                await query_kb_lease.release()
             if lease_heartbeat_task is not None:
                 lease_heartbeat_task.cancel()
                 try:
@@ -1889,6 +2121,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 except Exception:
                     lightrag_logger.warning("Interactive quota heartbeat failed", exc_info=True)
             await _release_interactive_lease()
+            timing.total(outcome=timing_outcome)
 
     return StreamingResponse(
         event_stream(),

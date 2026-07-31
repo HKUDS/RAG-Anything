@@ -1,5 +1,7 @@
 import pytest
+from types import SimpleNamespace
 
+import raganything.raganything as rag_module
 from raganything.services import kb_service
 
 
@@ -35,3 +37,39 @@ async def test_get_kb_does_not_cache_a_partially_initialized_instance(monkeypatc
 
     assert "broken" not in cache
     assert instance.finalized is True
+
+
+@pytest.mark.asyncio
+async def test_query_core_initialization_defers_bm25_preparation(monkeypatch):
+    class Engine:
+        def __init__(self, **_kwargs):
+            pass
+
+        async def ensure_bm25_index(self):
+            raise AssertionError("query-core initialization must not build BM25")
+
+    async def init_vision_repo():
+        return None
+
+    rag = object.__new__(rag_module.RAGAnything)
+    rag._parser_installation_checked = True
+    rag.lightrag = SimpleNamespace(
+        _storages_status=SimpleNamespace(name="INITIALIZED"),
+        llm_model_func=object(),
+        embedding_func=object(),
+    )
+    rag.llm_model_func = object()
+    rag.embedding_func = object()
+    rag.parse_cache = object()
+    rag.multimodal_status_cache = object()
+    rag.modal_processors = [object()]
+    rag.hybrid_search_engine = None
+    rag.vision_embed_func = None
+    rag.logger = SimpleNamespace(info=lambda *_args, **_kwargs: None)
+    rag._init_vision_repo = init_vision_repo
+    monkeypatch.setattr(rag_module, "HybridSearchEngine", Engine)
+
+    result = await rag._ensure_lightrag_initialized()
+
+    assert result == {"success": True}
+    assert isinstance(rag.hybrid_search_engine, Engine)

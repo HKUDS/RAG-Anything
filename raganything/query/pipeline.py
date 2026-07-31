@@ -49,8 +49,28 @@ from raganything.utils import (
     encode_image_to_base64,
     validate_image_file,
 )
+from raganything.services.query_execution import await_before_deadline
 
 logger = logging.getLogger(__name__)
+_RRF_PIPELINE_SETTLE_SECONDS = 0.05
+
+
+def _scope_deadline(scope: object | None) -> float | None:
+    if isinstance(scope, dict):
+        return scope.get("deadline_monotonic")
+    return getattr(scope, "deadline_monotonic", None)
+
+
+def _settling_deadline(deadline_monotonic: float | None) -> float | None:
+    """Reserve time for context formatting and return to the SSE watchdog."""
+    if deadline_monotonic is None:
+        return None
+    remaining = deadline_monotonic - time.monotonic()
+    if remaining <= 0:
+        return deadline_monotonic
+    return deadline_monotonic - min(
+        _RRF_PIPELINE_SETTLE_SECONDS, remaining / 2
+    )
 
 class QueryMixin:
     """QueryMixin class containing query functionality for RAGAnything"""
@@ -74,7 +94,11 @@ class QueryMixin:
         cache_data = {
             "query": query.strip(),
             "mode": mode,
-            "scope": dict(getattr(self, "query_cache_scope", {}) or {}),
+            "scope": dict(
+                kwargs.get("query_execution_scope")
+                or getattr(self, "query_cache_scope", {})
+                or {}
+            ),
         }
 
         # Normalize multimodal content for stable caching
@@ -315,16 +339,21 @@ class QueryMixin:
 
         # Create query parameters
         # Enable include_references by default so LightRAG returns source refs
+        query_execution_scope = kwargs.pop("query_execution_scope", None)
+        deadline_monotonic = _scope_deadline(query_execution_scope)
         kwargs.setdefault("include_references", True)
         query_param = QueryParam(mode=mode, **kwargs)
 
-        self.logger.info(f"Executing text query: {query[:100]}...")
-        self.logger.info(f"Query mode: {mode}")
+        # Query text is request content and must not enter server logs.
+        self.logger.info("Executing text query mode=%s", mode)
 
         try:
             # Call LightRAG's query method
-            result = await self.lightrag.aquery(
-                query, param=query_param, system_prompt=system_prompt
+            result = await await_before_deadline(
+                self.lightrag.aquery(
+                    query, param=query_param, system_prompt=system_prompt
+                ),
+                deadline_monotonic,
             )
 
             # For streaming, return the async generator directly
@@ -382,14 +411,19 @@ class QueryMixin:
         """
         hybrid_engine = getattr(self, "hybrid_search_engine", None)
         only_need_context = kwargs.pop("only_need_context", False)
+        query_execution_scope = kwargs.pop("query_execution_scope", None)
+        deadline_monotonic = _scope_deadline(query_execution_scope)
 
         if hybrid_engine is None:
             self.logger.warning(
                 "HybridSearchEngine not initialized — falling back to LightRAG hybrid mode"
             )
             query_param = QueryParam(mode="hybrid", only_need_context=only_need_context, **kwargs)
-            return await self.lightrag.aquery(
-                query, param=query_param, system_prompt=system_prompt
+            return await await_before_deadline(
+                self.lightrag.aquery(
+                    query, param=query_param, system_prompt=system_prompt
+                ),
+                deadline_monotonic,
             )
 
         callback_manager = getattr(self, "callback_manager", None)
@@ -398,19 +432,20 @@ class QueryMixin:
         if callback_manager is not None:
             callback_manager.dispatch("on_query_start", query=query, mode="rrf")
 
-        self.logger.info(f"Executing RRF hybrid query: {query[:100]}...")
+        self.logger.info("Executing RRF hybrid query")
 
         try:
             # Stage 1: Retrieve chunks via RRF fusion
             top_k = kwargs.get("top_k", 100)
             retrieval_options = kwargs.pop("retrieval_options", None)
+            query_execution_scope = query_execution_scope or {}
             if retrieval_options is not None:
                 # The settings service owns the public immutable shape, while
                 # the retrieval layer owns execution-only options.  Convert by
                 # value instead of mutating the shared engine or settings.
                 from raganything.hybrid_search import RetrievalOptions
                 if not isinstance(retrieval_options, RetrievalOptions):
-                    scope = dict(getattr(self, "query_cache_scope", {}) or {})
+                    scope = dict(query_execution_scope)
                     retrieval_options = RetrievalOptions(
                         channels=tuple(retrieval_options.channels),
                         bm25_top_k=retrieval_options.bm25_top_k,
@@ -425,10 +460,14 @@ class QueryMixin:
                         corpus_revision=scope.get("corpus_revision"),
                         permission_scope=scope.get("permission_scope"),
                         settings_fingerprint=scope.get("settings_fingerprint"),
+                        deadline_monotonic=scope.get("deadline_monotonic"),
+                        trace_id=scope.get("trace_id"),
                     )
-            chunks = await hybrid_engine.search(
-                query, top_k=top_k, options=retrieval_options,
+            chunks = await await_before_deadline(
+                hybrid_engine.search(query, top_k=top_k, options=retrieval_options),
+                deadline_monotonic,
             )
+            post_retrieval_deadline = _settling_deadline(deadline_monotonic)
 
             if not chunks:
                 self.logger.warning("RRF search returned no chunks")
@@ -466,20 +505,64 @@ class QueryMixin:
                 )
                 if rerank_api_key:
                     chunk_texts = [c.content for c in chunks]
-                    ranked = await rerank_chunks(
-                        query, chunk_texts,
-                        api_key=rerank_api_key,
-                        model=rerank_model,
-                        top_n=rerank_top_n,
-                    )
-                    # Reorder chunks by rerank results
-                    idx_map = {idx: chunks[idx] for idx, _ in ranked}
-                    chunks = [idx_map[i] for i in range(len(ranked)) if i in idx_map]
-                    self.logger.info(
-                        f"Reranked {len(chunks)} chunks -> top {rerank_top_n}"
-                    )
+                    try:
+                        ranked = await await_before_deadline(
+                            rerank_chunks(
+                                query, chunk_texts,
+                                api_key=rerank_api_key,
+                                model=rerank_model,
+                                top_n=rerank_top_n,
+                            ),
+                            post_retrieval_deadline,
+                        )
+                    except TimeoutError:
+                        self.logger.info("RRF rerank deadline reached; using fused order")
+                    else:
+                        # Reorder chunks by rerank results.
+                        idx_map = {idx: chunks[idx] for idx, _ in ranked}
+                        chunks = [idx_map[i] for i in range(len(ranked)) if i in idx_map]
+                        self.logger.info(
+                            f"Reranked {len(chunks)} chunks -> top {rerank_top_n}"
+                        )
                 else:
                     self.logger.warning("Rerank enabled but no API key found")
+
+            # Agent retrieval first requests context-only data for its own
+            # request-scoped generation step. It does not use entity annotations,
+            # so avoid the full graph scan and debug-only tokenization below.
+            # Source lookup remains bounded because it supplies citation labels.
+            if only_need_context:
+                chunk_ids = [c.chunk_id for c in chunks[:15]]
+                try:
+                    source_infos = await await_before_deadline(
+                        self.batch_get_doc_source_info_async(chunk_ids),
+                        post_retrieval_deadline,
+                    )
+                except Exception:
+                    source_infos = {}
+                context_parts = []
+                doc_name_counts: dict[str, int] = {}
+                for chunk in chunks[:15]:
+                    info = source_infos.get(chunk.chunk_id, {})
+                    document_name = chunk.document_name or info.get("document_name")
+                    source_name = document_name or f"未知文档-{chunk.chunk_id[:8]}"
+                    count = doc_name_counts.get(source_name, 0)
+                    doc_name_counts[source_name] = count + 1
+                    source_label = (
+                        source_name if count == 0 else f"{source_name} (片段{count + 1})"
+                    )
+                    context_parts.append(f"[来源 {source_label}]\n{chunk.content}")
+                context = "\n\n".join(context_parts)
+                self.logger.info("RRF query completed (context-only mode)")
+                if callback_manager is not None:
+                    callback_manager.dispatch(
+                        "on_query_complete",
+                        query=query,
+                        mode="rrf",
+                        duration_seconds=time.time() - query_start_time,
+                        result_length=len(context),
+                    )
+                return context
 
             # Stage 2: Build context from retrieved chunks with entity annotation
             # Collect entity names + types from the knowledge graph, filtered
@@ -492,7 +575,9 @@ class QueryMixin:
             try:
                 graph = getattr(hybrid_engine._lightrag, "chunk_entity_relation_graph", None)
                 if graph:
-                    all_nodes = await graph.get_all_nodes()
+                    all_nodes = await await_before_deadline(
+                        graph.get_all_nodes(), post_retrieval_deadline
+                    )
                     for node in (all_nodes or []):
                         name = node.get("entity_name") or node.get("id", "")
                         etype = (node.get("entity_type") or node.get("type", "")).strip()
@@ -503,12 +588,17 @@ class QueryMixin:
 
             # Build entity name set for matching: include ALL entity types first,
             # then prioritize RELEVANT_ENTITY_TYPES when displaying
+            if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+                entity_data.clear()
             all_entity_names = set(entity_data.keys())
 
             # Enrich chunks with source document info for citation tracing
             chunk_ids = [c.chunk_id for c in chunks[:15]]
             try:
-                source_infos = await self.batch_get_doc_source_info_async(chunk_ids)
+                source_infos = await await_before_deadline(
+                    self.batch_get_doc_source_info_async(chunk_ids),
+                    post_retrieval_deadline,
+                )
             except Exception:
                 source_infos = {}
             for chunk in chunks[:15]:
@@ -553,9 +643,20 @@ class QueryMixin:
             context = "\n\n".join(context_parts)
 
             # Debug: show entity names related to query keywords
-            query_keywords = set(jieba.lcut(query))
-            related_entities = [e for e in all_entity_names
-                               if any(kw in e for kw in query_keywords if len(kw) >= 2)]
+            deadline_reached = False
+            if deadline_monotonic is not None:
+                try:
+                    # Reuse the await boundary used above so this post-processing
+                    # guard follows the same monotonic clock and timeout semantics.
+                    await await_before_deadline(asyncio.sleep(0), deadline_monotonic)
+                except TimeoutError:
+                    deadline_reached = True
+            if deadline_reached:
+                related_entities = []
+            else:
+                query_keywords = set(jieba.lcut(query))
+                related_entities = [e for e in all_entity_names
+                                   if any(kw in e for kw in query_keywords if len(kw) >= 2)]
             self.logger.info(f"RRF related-entities ({len(related_entities)}): {related_entities[:15]}")
 
             # Debug: log top-3 retrieved chunks for context traceability
@@ -577,20 +678,6 @@ class QueryMixin:
                     )
             if not any("[关联实体" in p for p in context_parts):
                 self.logger.info("RRF entity-annotation: NONE in top-15 context")
-
-            # If only_need_context, return raw context without LLM generation
-            if only_need_context:
-                self.logger.info("RRF query completed (context-only mode)")
-                if callback_manager is not None:
-                    duration = time.time() - query_start_time
-                    callback_manager.dispatch(
-                        "on_query_complete",
-                        query=query,
-                        mode="rrf",
-                        duration_seconds=duration,
-                        result_length=len(context),
-                    )
-                return context
 
             # Stage 3: Generate answer via LLM
             citation_instruction = (
@@ -647,7 +734,7 @@ class QueryMixin:
             return answer
 
         except Exception as exc:
-            self.logger.error(f"RRF query failed: {exc}")
+            self.logger.error("RRF query failed")
             if callback_manager is not None:
                 callback_manager.dispatch(
                     "on_query_error", query=query, mode="rrf", error=exc
@@ -655,8 +742,11 @@ class QueryMixin:
             # Fallback to LightRAG hybrid mode
             self.logger.warning("Falling back to LightRAG hybrid mode")
             query_param = QueryParam(mode="hybrid", only_need_context=only_need_context, **kwargs)
-            return await self.lightrag.aquery(
-                query, param=query_param, system_prompt=system_prompt
+            return await await_before_deadline(
+                self.lightrag.aquery(
+                    query, param=query_param, system_prompt=system_prompt
+                ),
+                deadline_monotonic,
             )
 
     async def _aquery_graph(
@@ -672,6 +762,9 @@ class QueryMixin:
         """
         hybrid_engine = getattr(self, "hybrid_search_engine", None)
         only_need_context = kwargs.pop("only_need_context", False)
+        deadline_monotonic = _scope_deadline(
+            kwargs.pop("query_execution_scope", None)
+        )
 
         if hybrid_engine is None:
             return "Graph query unavailable — no knowledge graph initialized."
@@ -682,7 +775,10 @@ class QueryMixin:
             return "Graph query unavailable — knowledge graph is empty."
 
         top_k = kwargs.get("top_k", None)
-        result = await graph_retriever.search_with_paths(query, top_k=top_k)
+        result = await await_before_deadline(
+            graph_retriever.search_with_paths(query, top_k=top_k),
+            deadline_monotonic,
+        )
 
         matched = result.get("matched_entities", [])
         results = result.get("results", [])
@@ -697,7 +793,9 @@ class QueryMixin:
                     graph_retriever._lightrag, "chunk_entity_relation_graph", None
                 )
                 if graph:
-                    all_nodes = await graph.get_all_nodes()
+                    all_nodes = await await_before_deadline(
+                        graph.get_all_nodes(), deadline_monotonic
+                    )
                     if all_nodes:
                         entity_samples = []
                         for nd in all_nodes[:50]:
@@ -748,7 +846,9 @@ class QueryMixin:
         # Enrich chunks with source document info for citation tracing
         chunk_ids = [item["chunk"].chunk_id for item in results[:15]]
         try:
-            source_infos = await self.batch_get_doc_source_info_async(chunk_ids)
+            source_infos = await await_before_deadline(
+                self.batch_get_doc_source_info_async(chunk_ids), deadline_monotonic
+            )
         except Exception:
             source_infos = {}
 
@@ -822,8 +922,9 @@ class QueryMixin:
                 "LLM answer quality may be degraded."
             )
 
-        answer = await self.llm_model_func(
-            prompt, system_prompt=system_prompt
+        answer = await await_before_deadline(
+            self.llm_model_func(prompt, system_prompt=system_prompt),
+            deadline_monotonic,
         )
 
         if answer is None:
@@ -832,7 +933,10 @@ class QueryMixin:
             answer = str(answer)
 
         # Post-process: ensure citations are present (if enforce_citation enabled)
-        answer = await self._ensure_citations(answer, query, context, system_prompt)
+        answer = await await_before_deadline(
+            self._ensure_citations(answer, query, context, system_prompt),
+            deadline_monotonic,
+        )
 
         return answer
 
@@ -888,8 +992,7 @@ class QueryMixin:
                 f"LightRAG initialization failed: {(init_result or {}).get('error', 'unknown error')}"
             )
 
-        self.logger.info(f"Executing multimodal query: {query[:100]}...")
-        self.logger.info(f"Query mode: {mode}")
+        self.logger.info("Executing multimodal query mode=%s", mode)
 
         # If no multimodal content, fallback to pure text query
         if not multimodal_content:
@@ -1011,6 +1114,10 @@ class QueryMixin:
         Returns:
             str: VLM query result
         """
+        deadline_monotonic = _scope_deadline(
+            kwargs.pop("query_execution_scope", None)
+        )
+
         # Ensure VLM is available
         if not hasattr(self, "vision_model_func") or not self.vision_model_func:
             raise ValueError(
@@ -1025,7 +1132,7 @@ class QueryMixin:
                 f"LightRAG initialization failed: {(init_result or {}).get('error', 'unknown error')}"
             )
 
-        self.logger.info(f"Executing VLM enhanced query: {query[:100]}...")
+        self.logger.info("Executing VLM enhanced query mode=%s", mode)
 
         # Clear previous image cache
         if hasattr(self, "_current_images_base64"):
@@ -1033,7 +1140,9 @@ class QueryMixin:
 
         # 1. Get original retrieval prompt (without generating final answer)
         query_param = QueryParam(mode=mode, only_need_prompt=True, **kwargs)
-        raw_prompt = await self.lightrag.aquery(query, param=query_param)
+        raw_prompt = await await_before_deadline(
+            self.lightrag.aquery(query, param=query_param), deadline_monotonic
+        )
 
         self.logger.debug("Retrieved raw prompt from LightRAG")
 
@@ -1046,8 +1155,11 @@ class QueryMixin:
             self.logger.info("No valid images found, falling back to normal query")
             # Fallback to normal query
             query_param = QueryParam(mode=mode, **kwargs)
-            return await self.lightrag.aquery(
-                query, param=query_param, system_prompt=system_prompt
+            return await await_before_deadline(
+                self.lightrag.aquery(
+                    query, param=query_param, system_prompt=system_prompt
+                ),
+                deadline_monotonic,
             )
 
         self.logger.info(f"Processed {images_found} images for VLM")
@@ -1058,7 +1170,9 @@ class QueryMixin:
         )
 
         # 4. Call VLM for question answering
-        result = await self._call_vlm_with_multimodal_content(messages)
+        result = await await_before_deadline(
+            self._call_vlm_with_multimodal_content(messages), deadline_monotonic
+        )
 
         self.logger.info("VLM enhanced query completed")
         return result
@@ -1257,17 +1371,17 @@ class QueryMixin:
 
         # First, let's see what matches we find
         matches = re.findall(image_path_pattern, prompt)
-        self.logger.info(f"Found {len(matches)} image path matches in prompt")
+        self.logger.info("Image path scan completed: matches=%d", len(matches))
 
         def replace_image_path(match):
             nonlocal images_processed
 
             image_path = match.group(1).strip()
-            self.logger.debug(f"Processing image path: '{image_path}'")
+            self.logger.debug("Processing controlled image reference")
 
             # Validate path format (basic check)
             if not image_path or len(image_path) < 3:
-                self.logger.warning(f"Invalid image path format: {image_path}")
+                self.logger.warning("Invalid image path format")
                 return match.group(0)  # Keep original
 
             # Use utility function to validate image file
@@ -1308,20 +1422,16 @@ class QueryMixin:
                             continue
 
                 if not is_in_safe_dir:
-                    self.logger.warning(
-                        f"Blocking image path outside safe directories: {image_path}"
-                    )
+                    self.logger.warning("Blocking image outside approved directories")
                     is_valid = False
 
             if not is_valid:
-                self.logger.warning(
-                    f"Image validation failed or path unsafe for: {image_path}"
-                )
+                self.logger.warning("Image validation failed or path unsafe")
                 return match.group(0)  # Keep original if validation fails
 
             try:
                 # Encode image to base64 using utility function
-                self.logger.debug(f"Attempting to encode image: {image_path}")
+                self.logger.debug("Encoding controlled image reference")
                 image_base64 = encode_image_to_base64(image_path)
                 if image_base64:
                     images_processed += 1
@@ -1331,15 +1441,16 @@ class QueryMixin:
                     # Keep original path info and add VLM marker
                     result = f"Image Path: {image_path}\n[VLM_IMAGE_{images_processed}]"
                     self.logger.debug(
-                        f"Successfully processed image {images_processed}: {image_path}"
+                        "Controlled image reference processed: count=%d",
+                        images_processed,
                     )
                     return result
                 else:
-                    self.logger.error(f"Failed to encode image: {image_path}")
+                    self.logger.error("Controlled image encoding failed")
                     return match.group(0)  # Keep original if encoding failed
 
-            except Exception as e:
-                self.logger.error(f"Failed to process image {image_path}: {e}")
+            except Exception:
+                self.logger.error("Controlled image processing failed")
                 return match.group(0)  # Keep original
 
         # Execute replacement

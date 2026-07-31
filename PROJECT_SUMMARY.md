@@ -234,10 +234,10 @@ uv run python scripts/check_project_summary.py
 
 | 日期 | 任务/change | 类型 | 结果 | 影响范围 | 验证 | 经验/风险 |
 |---|---|---|---|---|---|---|
+| 2026-07-31 | `restore-agent-query-latency` | 性能修复/进行中 | 已补齐无内容阶段计时、改写/VLM 路径隐私日志、revision 感知的 query-core 获取、标准/tag/CoT/ReAct/媒体路径共用 deadline 与租约感知 SSE 清理；确定性基准覆盖 acquire、检索、媒体和 SSE 边界。 | Agent SSE、KB cache、query pipeline、RRF/BM25、受控媒体 | 定向 pytest 96 通过、1 个依赖弃用警告；OpenSpec strict、`py_compile`、`git diff --check`、总结检查通过；受控重启后新 PID 的健康端点 200。全量 pytest 仍在约 60% 后复现 pytest 捕获临时文件关闭级联错误。 | 5.2 未勾选：真实 SSE 会向外部 provider 发送检索上下文和派生 prompt，尚无此数据外发授权；确定性基准不得作为生产 provider 测量。 |
 | 2026-07-31 | 智能体问答 192 秒延迟诊断 | 性能排查 | 确认 192.31 秒为服务端记录而非前端误计时，约 161.5 秒发生在最终生成前的 RRF/图片召回区段；请求级设置使 KB 每问创建未缓存实例、默认 `hybrid` 改走 RRF 并产生新的 Embedding worker，远程向量调用或其取消传播是最高概率长尾来源；旧媒体校验另触发约 2 秒共享实例初始化 | 智能体 SSE、KB 实例、混合检索、模型 profile | 带时间戳日志、工作区差异、PostgreSQL 元数据与运行配置只读核验；502 块 BM25 约 1.2 秒、最长 15 块实体标注约 4.5 秒、RRF 超时测试 44/44 通过；无业务行为变化 | 当前日志不能把 161.5 秒精确拆到单个内部调用；先补 KB/RRF 通道/Embedding/媒体/首 token 分段指标，再按配置指纹复用重型检索核心并验证真实调用可抢占总 deadline；Embedding 缓存关闭和 worker 冷启会放大长尾，`LLM_TIMEOUT=180` 与 rerank 告警均非本次主因 |
 | 2026-07-30 | 上传恢复租约列迁移 | 数据库修复 | 已为现有 PostgreSQL 补齐 `processing_owner`、generation 和 heartbeat 列及索引，解除启动恢复阻断 | `uploaded_files`、迁移 `023` | 列查询、恢复函数成功恢复 2 个任务、定向测试 2/2 | 所有部署须在应用重启前执行迁移 `023` |
 | 2026-07-30 | 启动恢复迁移与租约 TTL 修复 | 数据库/队列修复 | 完整执行迁移 `023`；租约 TTL 以整数 interval 绑定，修复 asyncpg 参数类型错误 | 启动恢复、KB 队列、`kb_mutation.py` | 服务启动、健康端点 200、65 项定向测试 | `023` 必须先于重启；旧 processing 任务按 5 分钟心跳回收 |
-| 2026-07-30 | 文档列表日期兼容 | Bug 修复 | 文档摘要日期统一为 ISO 字符串，避免与旧时间字符串比较失败 | 文档列表与 KB 统计 | 18 项定向测试、真实列表端点 200 | 摘要读取须规范化时间字段 |
 | 2026-07-30 | Embedding 预检工厂契约修复 | Bug 修复 | worker 使用统一 KB 工厂时显式保留绕过缓存的 Embedding 预检 provider；预检仅在 provider 缺失时回退 | DOCX 等上传任务的模型预检 | `tests/test_upload_retry_resilience.py`、`tests/test_process_worker_lifecycle.py` 定向回归 | `getattr` 的默认参数会被提前求值，不能用于可能不存在的旧属性回退 |
 | 2026-07-30 | 上传任务 LLM 模型回退修复 | Bug 修复 | legacy LLM 档案优先读取 `LLM_BINDING_MODEL`，模型目录以实际 `qwen-plus`/`qwen-vl-plus` 显示；上传在文本持久化前预检 LLM 与 Embedding，避免实体抽取才暴露模型 404 | `vision_models.py`、`kb_service.py`、`process_worker.py`、设置页和知识库上传任务 | 模型目录/worker 14 项、上传回归 81 项、后端健康端点 200、`git diff --check` | 已重启后端；已有 degraded 文档应点击“补偿图谱”，无需重新上传 |
 | 2026-07-30 | `cancel-inflight-upload-tasks` | 功能/生命周期 | 未完成上传任务可由授权用户删除；处理中和重试等待使用可轮询取消并清理任务来源残留；上传抽屉和文档列表均以服务端任务溯源调用取消接口，确认框以 Portal 下的视口坐标固定居中；有明确任务 ID 的活动列表行在能力标记滞后时仍走任务取消，服务端保留上传者、KB 和状态校验 | 上传 API、worker、重试、任务状态、上传抽屉、文档列表和迁移 `024` | 104 项既有定向后端测试、本次文档列表契约 10 项、67 项前端单测、Vite build、OpenSpec 严格校验、`git diff --check` | 生产启用前必须执行 `024`；确认框不得受抽屉、滚动或动画容器影响；无明确任务 ID 或无上传者权限的活动行不可取消；真实 PostgreSQL 多进程 worker 取消需部署环境补验 |
@@ -250,6 +250,10 @@ uv run python scripts/check_project_summary.py
 
 | 2026-07-31 | 文本与图片理解模型名称显示 | UI 优化 | 个人设置与平台默认模型下拉优先显示 profile 的纯 model 名称，移除默认类型前缀和不可用后缀；保留后端 display_name 兼容契约 | frontend/src/pages/PreferencesPage.jsx、frontend/src/pages/AdminPlatformPage.jsx | 前端单元测试 67 项通过；Vite production build 通过；git diff --check 通过 | 不修改模型目录 API 字段，禁用状态仍由 disabled 与详情区域表达 |
 | 2026-07-31 | 知识库问答失败、提示闪退与推理卡死修复 | Bug 修复/运行操作 | 请求级设置快照补齐模型 profile 指纹，修复 `get_kb` 初始化失败；纯文本问答解除对 VLM 可用性的错误依赖；补齐流式请求 `getToken` 导入；稳定 toast 回调并持久展示 HTTP/SSE 错误；RRF 子通道到期后隔离不响应取消的任务并使用可用通道降级返回，外层取消同步回收通道任务；智能体检索增加总时限和断连回收；前端收到 `done/error` 即停止读流，异常 EOF、错误和取消均结束推理状态；随后按用户要求停止本地后端 | `user_settings.py`、`kb_service.py`、`agent.py`、`hybrid_search/__init__.py`、`App.jsx`、`AgentChatPage.jsx`、本地端口 `8001` | 后端定向 pytest 64 项及终止链路复验 55 项、前端单测 67 项、Vite production build、`py_compile`、`git diff --check` 通过；停止后 `8001` 无监听且健康端点不可达，`5173` 仍返回 200 | 图片问答仍严格要求 VLM；真实模型回答质量仍取决于模型服务状态；检索通道超时不得等待协程取消完成，SSE 终止事件或异常 EOF 均不得保留无限加载状态；持久上传重试会暂停到后端恢复 |
+### 2026-07-31 验证更新
+
+`restore-agent-query-latency` 的 5.2 已完成受控验收：最终新 listener 健康 200 后，使用已授权、已处理、标准模式智能体执行 1 cold 和 20 次顺序 warm 常规 SSE；21/21 为 HTTP 200、`done` 且有 token，端到端 P95 为 23.120 秒。query-core 为 1 miss/20 hit，21 次 LLM 首末 token、持久化和 total=ok 均恰好记录一次，检索三通道及媒体均成功；日志和汇总未记录查询、SSE 内容、标识符、凭据或主机。此前 RRF 通道完成后仍枚举全图导致约 71 秒尾延迟，现使 context-only 路径在保留收敛余量的来源富化后返回，并覆盖慢来源取消及来源标签回归。
+
 ## 11. 历史里程碑
 
 - **2026-07**：完成智能体会话上下文升级、视频/多模态处理、文档质量/标签/修复/上传重试、评估流水线和 OpenDataLoader 集成；个人设置与视觉能力继续迭代。
