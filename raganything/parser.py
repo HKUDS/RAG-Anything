@@ -54,15 +54,62 @@ from raganything.asset_urls import attach_public_media_urls
 _IS_WINDOWS: bool = platform.system() == "Windows"
 
 
+# Known MinerU failure signatures mapped to actionable remediation advice.
+#
+# MinerU runs as a subprocess, so a broken dependency inside its own environment
+# surfaces here only as an opaque traceback line. Each entry maps a substring of
+# MinerU's stderr to a hint explaining what the user actually has to fix.
+_MINERU_KNOWN_FAILURES: Tuple[Tuple[str, str], ...] = (
+    (
+        "'PageChars' object is not iterable",
+        "This is a MinerU/pdftext version incompatibility, not a problem with your document.\n"
+        "pdftext 0.7 changed its character-extraction API, and MinerU only handles the new\n"
+        "'PageChars' return type from version 3.4.1 onward. Fix it by upgrading MinerU:\n"
+        '    pip install -U "mineru[core]>=3.4.1"\n'
+        "or, if you must stay on an older MinerU, pin the previous pdftext release:\n"
+        '    pip install "pdftext==0.6.3"\n'
+        "Office documents (.xls, .xlsx, .doc, .docx, .ppt, .pptx) trigger this most often\n"
+        "because they are converted to text-based PDFs, which always take MinerU's pdftext\n"
+        "path. As an immediate workaround for those formats, the Docling parser reads them\n"
+        'natively without going through MinerU: RAGAnythingConfig(parser="docling").',
+    ),
+)
+
+
+def _diagnose_mineru_failure(error_msg: Any) -> Optional[str]:
+    """
+    Match MinerU's captured error output against known failure signatures.
+
+    Args:
+        error_msg: The error output collected from MinerU (a list of lines or a string)
+
+    Returns:
+        Optional[str]: Remediation advice, or None if the failure is not recognized
+    """
+    if isinstance(error_msg, (list, tuple)):
+        haystack = "\n".join(str(line) for line in error_msg)
+    else:
+        haystack = str(error_msg)
+
+    for signature, hint in _MINERU_KNOWN_FAILURES:
+        if signature in haystack:
+            return hint
+    return None
+
+
 class MineruExecutionError(Exception):
     """catch mineru error"""
 
-    def __init__(self, return_code, error_msg):
+    def __init__(self, return_code, error_msg, hint: Optional[str] = None):
         self.return_code = return_code
         self.error_msg = error_msg
-        super().__init__(
-            f"Mineru command failed with return code {return_code}: {error_msg}"
-        )
+        # Recognize known dependency/environment failures so that users get an
+        # actionable message instead of a raw MinerU traceback line.
+        self.hint = hint if hint is not None else _diagnose_mineru_failure(error_msg)
+        message = f"Mineru command failed with return code {return_code}: {error_msg}"
+        if self.hint:
+            message = f"{message}\n\n{self.hint}"
+        super().__init__(message)
 
 
 class Parser:
@@ -1054,7 +1101,10 @@ class MineruParser(Parser):
 
             if return_code != 0 or error_lines:
                 cls.logger.info("[MinerU] Command executed failed")
-                raise MineruExecutionError(return_code, error_lines)
+                hint = _diagnose_mineru_failure(error_lines)
+                if hint:
+                    cls.logger.error(f"[MinerU] {hint}")
+                raise MineruExecutionError(return_code, error_lines, hint=hint)
             else:
                 cls.logger.info("[MinerU] Command executed successfully")
 
