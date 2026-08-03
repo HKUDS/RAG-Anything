@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import math
 import os
 import queue
 import re
@@ -193,22 +194,99 @@ async def _load_kb_media_catalog(kb_name: str) -> list[dict]:
     return catalog
 
 
-async def _controlled_recalled_media(
-    kb_name: str, paths: list[str], *, text_chunk_reader=None
-) -> list[dict]:
-    """Convert backend-only recalled paths into path-free client metadata."""
+def _agent_media_recall_timeout() -> float:
+    """Return a finite, bounded timeout for the independent media phase."""
+    raw_value = os.getenv("AGENT_MEDIA_RECALL_TIMEOUT", "8.0")
+    try:
+        value = float(raw_value.strip())
+    except (AttributeError, TypeError, ValueError):
+        return 8.0
+    if not math.isfinite(value):
+        return 8.0
+    return max(0.1, value)
+
+
+async def _controlled_recalled_media_until_deadline(
+    kb_name: str,
+    paths: list[str],
+    *,
+    text_chunk_reader=None,
+    deadline_monotonic: float | None = None,
+) -> tuple[list[dict], bool]:
+    """Convert paths one at a time and retain only completed safe payloads."""
     result: list[dict] = []
     seen: set[str] = set()
-    for path in paths:
+    for path in paths[:3]:
         kwargs = {"kb_name": kb_name, "image_path": path}
         if text_chunk_reader is not None:
             kwargs["text_chunk_reader"] = text_chunk_reader
-        payload = await resolve_controlled_media_payload(**kwargs)
+        if deadline_monotonic is not None and time.monotonic() >= deadline_monotonic:
+            return result, True
+        try:
+            payload = await await_before_deadline(
+                resolve_controlled_media_payload(**kwargs),
+                deadline_monotonic,
+            )
+        except TimeoutError:
+            return result, True
+        except asyncio.CancelledError:
+            raise
         media_id = payload.get("media_id") if isinstance(payload, dict) else None
         if isinstance(payload, dict) and isinstance(media_id, str) and media_id not in seen:
             seen.add(media_id)
             result.append(payload)
+    return result, False
+
+
+async def _controlled_recalled_media(
+    kb_name: str, paths: list[str], *, text_chunk_reader=None
+) -> list[dict]:
+    """Convert backend-only recalled paths into path-free client metadata."""
+    result, _timed_out = await _controlled_recalled_media_until_deadline(
+        kb_name,
+        paths,
+        text_chunk_reader=text_chunk_reader,
+    )
     return result
+
+
+async def _recall_controlled_media_with_budget(
+    instance,
+    query: str,
+    kb_name: str,
+    ctx: str,
+) -> tuple[list[dict], str, str, bool]:
+    """Run image discovery and delivery under a fresh, independent budget."""
+    deadline_monotonic = time.monotonic() + _agent_media_recall_timeout()
+    try:
+        recalled, backfill, source = await await_before_deadline(
+            recall_query_images(instance, query, kb_name, ctx),
+            deadline_monotonic,
+        )
+    except TimeoutError:
+        lightrag_logger.warning(
+            "[IMG-RECALL] KB=%s outcome=timeout-empty validated=0 stage=discovery",
+            kb_name,
+        )
+        return [], "", "none", True
+    except asyncio.CancelledError:
+        raise
+
+    controlled, timed_out = await _controlled_recalled_media_until_deadline(
+        kb_name,
+        recalled[:3],
+        text_chunk_reader=getattr(getattr(instance, "lightrag", None), "text_chunks", None),
+        deadline_monotonic=deadline_monotonic,
+    )
+    if timed_out:
+        outcome = "timeout-partial" if controlled else "timeout-empty"
+        lightrag_logger.warning(
+            "[IMG-RECALL] KB=%s outcome=%s validated=%d stage=delivery",
+            kb_name,
+            outcome,
+            len(controlled),
+        )
+    return controlled, backfill, source, timed_out
 
 
 async def _controlled_similar_media(
@@ -1599,29 +1677,17 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
 
                 timing.start("media")
                 try:
-                    async def _recall_agentic_media():
-                        recalled, backfill, source = await recall_query_images(
-                            instance, req.query, actual_kb, all_retrieved_text
-                        )
-                        controlled = await _controlled_recalled_media(
-                            actual_kb,
-                            recalled[:3],
-                            text_chunk_reader=getattr(
-                                getattr(instance, "lightrag", None),
-                                "text_chunks",
-                                None,
-                            ),
-                        )
-                        return controlled, backfill, source
-
-                    agent_images, _backfill_text_react, _img_source = (
-                        await await_before_deadline(
-                            _recall_agentic_media(), retrieval_deadline
-                        )
+                    (
+                        agent_images,
+                        _backfill_text_react,
+                        _img_source,
+                        media_timed_out,
+                    ) = await _recall_controlled_media_with_budget(
+                        instance,
+                        req.query,
+                        actual_kb,
+                        all_retrieved_text,
                     )
-                except TimeoutError:
-                    agent_images, _backfill_text_react, _img_source = [], "", None
-                    timing.finish("media", outcome="timeout")
                 except asyncio.CancelledError:
                     timing.finish("media", outcome="cancelled")
                     raise
@@ -1629,7 +1695,10 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     timing.finish("media", outcome="error")
                     raise
                 else:
-                    timing.finish("media")
+                    timing.finish(
+                        "media",
+                        outcome="timeout" if media_timed_out else "ok",
+                    )
                 if _backfill_text_react:
                     all_retrieved_text += "\n" + _backfill_text_react
 
@@ -1838,25 +1907,28 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
 
             # ── 图片提取（所有查询模式统一，三段式）──
             timing.start("media")
-            async def _recall_controlled_media():
-                recalled, backfill, source = await recall_query_images(
-                    instance, req.query, actual_kb, ctx
-                )
-                controlled = await _controlled_recalled_media(
-                    actual_kb, recalled[:3],
-                    text_chunk_reader=getattr(getattr(instance, "lightrag", None), "text_chunks", None),
-                )
-                return controlled, backfill, source
-
             try:
-                agent_images, backfill_text, _img_source = await await_before_deadline(
-                    _recall_controlled_media(), retrieval_deadline
+                (
+                    agent_images,
+                    backfill_text,
+                    _img_source,
+                    media_timed_out,
+                ) = await _recall_controlled_media_with_budget(
+                    instance,
+                    req.query,
+                    actual_kb,
+                    ctx,
                 )
-            except TimeoutError:
-                agent_images, backfill_text, _img_source = [], "", None
-                timing.finish("media", outcome="timeout")
-            else:
-                timing.finish("media")
+                timing.finish(
+                    "media",
+                    outcome="timeout" if media_timed_out else "ok",
+                )
+            except asyncio.CancelledError:
+                timing.finish("media", outcome="cancelled")
+                raise
+            except Exception:
+                timing.finish("media", outcome="error")
+                raise
             if backfill_text:
                 ctx = ctx + "\n\n" + backfill_text
 

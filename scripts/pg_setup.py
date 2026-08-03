@@ -70,6 +70,10 @@ def main():
         ROOT / "migrations" / "021_upload_retry_jobs.sql",
         ROOT / "migrations" / "022_document_tag_upload_link.sql",
         ROOT / "migrations" / "023_personal_settings_platform_policy.sql",
+        ROOT / "migrations" / "024_upload_task_cancellation.sql",
+        ROOT / "migrations" / "025_remove_user_email.sql",
+        ROOT / "migrations" / "026_kb_updated_at_semantics.sql",
+        ROOT / "migrations" / "027_agent_conversation_summary_columns.sql",
     ]
     env_file = ROOT / ".env"
 

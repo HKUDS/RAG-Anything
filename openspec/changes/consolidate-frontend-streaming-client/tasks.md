@@ -11,5 +11,5 @@
 
 ## 3. Verification and documentation
 
-- [ ] 3.1 Run frontend unit tests and production build.
+- [x] 3.1 Run frontend unit tests and production build.
 - [x] 3.2 Update PROJECT_SUMMARY.md with the completed behavior and validation result.

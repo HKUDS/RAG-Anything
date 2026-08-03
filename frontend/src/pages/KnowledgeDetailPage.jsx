@@ -5,10 +5,10 @@ import {
   Loader2, CheckCircle2, XCircle, AlertTriangle, Scissors, ChevronDown, ChevronUp, Zap, Image,
   ArrowLeft, Download, Pencil, Link2, Save, Table, Sigma, Video, ImageIcon, Tag
 } from 'lucide-react'
-import * as d3 from 'd3'
+import { loadD3 } from '../utils/lazyD3'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { api, setCurrentKB } from '../utils/api'
+import { api } from '../utils/api'
 import ChunkingStrategySelector from '../components/ChunkingStrategySelector'
 import { getChunkingStrategyPresentation } from '../utils/chunkingStrategyPresentation'
 import { getDocumentTagPresentation } from '../utils/documentTagHealth'
@@ -29,6 +29,21 @@ import {
   markKnowledgeDetailRefreshing,
   mergeKnowledgeDetailSnapshot,
 } from '../utils/knowledgeDetailState'
+import {
+  GRAPH_DATA_STATUS,
+  createGraphDataState,
+  graphDataFailed,
+  graphDataFromResponses,
+  graphDataLoading,
+  graphDataSuccess,
+} from '../utils/knowledgeDetailGraphState'
+import {
+  hasActiveUploadTasks,
+  shouldPollCoreData,
+  tasksTransitionedToTerminal,
+} from '../utils/knowledgeDetailPolling'
+import { useConfirmedKnowledgeBase } from '../hooks/useConfirmedKnowledgeBase'
+import { neutralObjectError } from '../utils/permissionUiPolicy'
 
 const STATUS = {
   queued: 'badge-info',
@@ -228,7 +243,7 @@ function UploadSection({
   onUploaded,
   multimodal,
   setMultimodal,
-  canWrite = true,
+  canWrite = false,
 }) {
   const [dragOver, setDragOver] = useState(false)
   const [localFiles, setLocalFiles] = useState([])
@@ -928,17 +943,19 @@ export default function KnowledgeDetailPage() {
   const { kbName } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { isAdmin, hasPermission } = useAuth()
-  const canManageKB = isAdmin || hasPermission('kb:write')
-  const canViewVisionSettings = isAdmin || hasPermission('kb:read')
-  const canManageGraph = isAdmin || hasPermission('graph:write')
+  const { hasPermission } = useAuth()
+  const canManageKB = hasPermission('kb:write')
+  const canViewVisionSettings = hasPermission('kb:read')
+  const canManageGraph = hasPermission('graph:write')
+  const kbAccess = useConfirmedKnowledgeBase(kbName)
 
   const [detailState, setDetailState] = useState(() => createKnowledgeDetailState(
     kbName,
-    api.getCachedKnowledgeDetail(kbName),
+    null,
   ))
   const [entities, setEntities] = useState([])
   const [graph, setGraph] = useState({ nodes: [], edges: [] })
+  const [graphDataState, setGraphDataState] = useState(createGraphDataState)
   const [filter, setFilter] = useState('')
   const [graphSearch, setGraphSearch] = useState('')
   const [detailDoc, setDetailDoc] = useState(null)
@@ -969,6 +986,8 @@ export default function KnowledgeDetailPage() {
     enable_image: true, enable_table: true, enable_equation: true, enable_video: true
   })
   const [activeTab, setActiveTab] = useState('documents')
+  const activeTabRef = useRef(activeTab)
+  activeTabRef.current = activeTab
   const [visionSearching, setVisionSearching] = useState(false)
   const [visionResults, setVisionResults] = useState(null)
   const [visionSettings, setVisionSettings] = useState(null)
@@ -982,17 +1001,19 @@ export default function KnowledgeDetailPage() {
   const prevGraphFingerprint = useRef('')
   const prevGraphSearch = useRef('')
   const genRef = useRef(0)
+  const graphGenRef = useRef(0)
   const activeKBRef = useRef(kbName)
   activeKBRef.current = kbName
   const loadAbortRef = useRef(null)
+  const graphLoadAbortRef = useRef(null)
   const nodeDetailAbortRef = useRef(null)
   const visionRequestRef = useRef(0)
   const selectedNodeRef = useRef(null)
   selectedNodeRef.current = selectedNode
   const simRef = useRef(null)
   const cachedDetailForRoute = useMemo(
-    () => api.getCachedKnowledgeDetail(kbName),
-    [kbName],
+    () => kbAccess.confirmed ? api.getCachedKnowledgeDetail(kbName) : null,
+    [kbAccess.confirmed, kbName],
   )
   const displayedDetailState = detailState.kbName === kbName
     ? detailState
@@ -1006,7 +1027,7 @@ export default function KnowledgeDetailPage() {
   }, [searchParams])
 
   useEffect(() => {
-    if (!kbName || !canViewVisionSettings) return undefined
+    if (!kbAccess.confirmed || !canViewVisionSettings) return undefined
     let active = true
     setVisionSettingsStatus({ loading: true, saving: false, error: '', confirmReindex: false })
     Promise.all([api.getKBVisionSettings(kbName), api.listModelProfiles('embedding')])
@@ -1022,10 +1043,10 @@ export default function KnowledgeDetailPage() {
         if (active) setVisionSettingsStatus(current => ({ ...current, loading: false, error: error.message || '视觉向量设置加载失败' }))
       })
     return () => { active = false }
-  }, [kbName, canViewVisionSettings])
+  }, [kbAccess.confirmed, kbName, canViewVisionSettings])
 
   useEffect(() => {
-    if (!kbName || !canViewVisionSettings || visionSettings?.index_state !== 'reindexing') return undefined
+    if (!kbAccess.confirmed || !canViewVisionSettings || visionSettings?.index_state !== 'reindexing') return undefined
     let active = true
     const refresh = async () => {
       try {
@@ -1045,7 +1066,7 @@ export default function KnowledgeDetailPage() {
     const timer = window.setInterval(refresh, 3000)
     void refresh()
     return () => { active = false; window.clearInterval(timer) }
-  }, [kbName, canViewVisionSettings, visionSettings?.index_state])
+  }, [kbAccess.confirmed, kbName, canViewVisionSettings, visionSettings?.index_state])
 
   const selectTab = useCallback((tab) => {
     const next = new URLSearchParams(searchParams)
@@ -1065,17 +1086,20 @@ export default function KnowledgeDetailPage() {
   // ── 图谱编辑处理 ──
 
   const handleCreateNode = async () => {
+    if (!canManageGraph) return
     if (!newNodeForm.name.trim()) return
     try {
       await api.createGraphNode(newNodeForm, { kb: kbName })
       setShowCreateNodeModal(false)
       setNewNodeForm({ name: '', entity_type: '', description: '' })
       await loadKBData({ force: true })
+      await loadGraphData({ silent: true })
       showToast(`实体 "${newNodeForm.name}" 已创建`, 'success')
     } catch (e) { showToast('创建失败: ' + e.message, 'error') }
   }
 
   const handleRenameNode = async (oldName) => {
+    if (!canManageGraph) return
     if (!renameValue.trim() || renameValue.trim() === oldName) {
       setRenamingNode(null); return
     }
@@ -1083,34 +1107,41 @@ export default function KnowledgeDetailPage() {
       await api.renameGraphNode(oldName, renameValue.trim(), { kb: kbName })
       setRenamingNode(null); setSelectedNode(null); setNodeDetails(null)
       await loadKBData({ force: true })
+      await loadGraphData({ silent: true })
       showToast(`已重命名为 "${renameValue.trim()}"`, 'success')
     } catch (e) { showToast('重命名失败: ' + e.message, 'error') }
   }
 
   const handleDeleteNode = async (name) => {
+    if (!canManageGraph) return
     try {
       await api.deleteGraphNode(name, { kb: kbName })
       setShowDeleteNodeConfirm(null); setSelectedNode(null); setNodeDetails(null)
       await loadKBData({ force: true })
+      await loadGraphData({ silent: true })
       showToast(`实体 "${name}" 已删除`, 'success')
     } catch (e) { showToast('删除失败: ' + e.message, 'error') }
   }
 
   const handleCreateEdge = async () => {
+    if (!canManageGraph) return
     if (!newEdgeForm.source_entity.trim() || !newEdgeForm.target_entity.trim()) return
     try {
       await api.createGraphEdge(newEdgeForm, { kb: kbName })
       setShowCreateEdgeModal(false)
       setNewEdgeForm({ source_entity: '', target_entity: '', relation_type: 'related_to', description: '' })
       await loadKBData({ force: true })
+      await loadGraphData({ silent: true })
       showToast('关系已创建', 'success')
     } catch (e) { showToast('创建关系失败: ' + e.message, 'error') }
   }
 
   const handleDeleteEdge = async (edgeId) => {
+    if (!canManageGraph) return
     try {
       await api.deleteGraphEdge(edgeId, { kb: kbName })
       await loadKBData({ force: true })
+      await loadGraphData({ silent: true })
       showToast('关系已删除', 'success')
     } catch (e) { showToast('删除关系失败: ' + e.message, 'error') }
   }
@@ -1140,13 +1171,15 @@ export default function KnowledgeDetailPage() {
 
   // 挂载或参数变化时设置当前知识库
   useEffect(() => {
-    if (!kbName) return
+    if (!kbAccess.confirmed) return
     loadAbortRef.current?.abort()
     nodeDetailAbortRef.current?.abort()
-    setCurrentKB(kbName)
+    graphLoadAbortRef.current?.abort()
+    graphGenRef.current += 1
     setDetailState(createKnowledgeDetailState(kbName, api.getCachedKnowledgeDetail(kbName)))
     setEntities([])
     setGraph({ nodes: [], edges: [] })
+    setGraphDataState(createGraphDataState())
     setFilter('')
     setGraphSearch('')
     setDetailDoc(null)
@@ -1169,7 +1202,7 @@ export default function KnowledgeDetailPage() {
     visionRequestRef.current += 1
     prevGraphFingerprint.current = ''
     prevGraphSearch.current = ''
-  }, [kbName])
+  }, [kbAccess.confirmed, kbName])
 
   const showToast = (msg, type = 'info') => {
     setToast({ msg, type })
@@ -1190,9 +1223,10 @@ export default function KnowledgeDetailPage() {
     }).catch(() => {})
   }, [])
 
-  // 文档/统计与图谱并行加载；每个响应都绑定显式 KB、abort 与 generation。
+  // 文档/统计核心数据加载；每个响应都绑定显式 KB、abort 与 generation。
+  // 图谱/实体数据由 loadGraphData 在图谱 tab 激活时按需加载。
   const loadKBData = useCallback(async ({ force = false, silent = false } = {}) => {
-    if (!kbName) return
+    if (!kbAccess.confirmed) return
     const requestKB = kbName
     const gen = ++genRef.current
     loadAbortRef.current?.abort()
@@ -1207,50 +1241,32 @@ export default function KnowledgeDetailPage() {
       return silent || hasVisibleData ? markKnowledgeDetailRefreshing(base) : base
     })
 
-    const detailPromise = api.prefetchKnowledgeDetail(
-      requestKB,
-      { force, signal: controller.signal, timeoutMs: 6_000 },
-    )
-    const entitiesPromise = api.getEntitiesForKB(requestKB, 200, { signal: controller.signal })
-    const graphPromise = api.getGraphForKB(requestKB, { signal: controller.signal })
-    const backgroundResults = Promise.allSettled([entitiesPromise, graphPromise])
-
     try {
-      const detail = await detailPromise
+      const detail = await api.prefetchKnowledgeDetail(
+        requestKB,
+        { force, signal: controller.signal, timeoutMs: 6_000 },
+      )
       if (controller.signal.aborted || gen !== genRef.current || requestKB !== activeKBRef.current) return
-      setDetailState(previous => mergeKnowledgeDetailSnapshot(previous, requestKB, detail))
+      const normalizeResource = resource => resource?.status === 'error'
+        ? { ...resource, error: neutralObjectError(resource.httpStatus === 403, resource.httpStatus === 404, resource.error) }
+        : resource
+      setDetailState(previous => mergeKnowledgeDetailSnapshot(previous, requestKB, {
+        ...detail,
+        documents: normalizeResource(detail.documents),
+        stats: normalizeResource(detail.stats),
+      }))
     } catch (error) {
       if (controller.signal.aborted || gen !== genRef.current || requestKB !== activeKBRef.current) return
       if (error?.name === 'AbortError') return
-      const message = error?.message || '加载失败，请重试'
+      const message = neutralObjectError(error?.status === 403, error?.status === 404, error?.message || '加载失败，请重试')
       setDetailState(previous => mergeKnowledgeDetailSnapshot(previous, requestKB, {
         documents: { status: 'error', error: message },
         stats: { status: 'error', error: message },
       }))
+    } finally {
+      if (loadAbortRef.current === controller) loadAbortRef.current = null
     }
-
-    const [entitiesResult, graphResult] = await backgroundResults
-    if (controller.signal.aborted || gen !== genRef.current || requestKB !== activeKBRef.current) return
-
-    if (entitiesResult.status === 'fulfilled') {
-      setEntities(entitiesResult.value.entities || [])
-    }
-
-    if (graphResult.status === 'fulfilled') {
-      const response = graphResult.value
-      const degree = {}
-      ;(response.edges || []).forEach(edge => {
-        degree[edge.source] = (degree[edge.source] || 0) + 1
-        degree[edge.target] = (degree[edge.target] || 0) + 1
-      })
-      setGraph({
-        nodes: (response.nodes || []).map(node => ({ ...node, degree: degree[node.id] || 0 })),
-        edges: response.edges || [],
-      })
-    }
-
-    if (loadAbortRef.current === controller) loadAbortRef.current = null
-  }, [kbName])
+  }, [kbAccess.confirmed, kbName])
 
   // 合并实体名称列表，用于创建边时自动补全（对 graph.nodes 与 entities 去重）
   const allEntityNames = useMemo(() => {
@@ -1260,20 +1276,115 @@ export default function KnowledgeDetailPage() {
     return [...nameSet].sort()
   }, [entities, graph.nodes])
 
-  // 挂载时加载数据并轮询
+  // 图谱/实体数据按需加载：仅在图谱 tab 激活时请求，切走不重置，失败可重试。
+  const loadGraphData = useCallback(async ({ silent = false } = {}) => {
+    if (!kbAccess.confirmed) return
+    const requestKB = kbName
+    const gen = ++graphGenRef.current
+    graphLoadAbortRef.current?.abort()
+    const controller = new AbortController()
+    graphLoadAbortRef.current = controller
+
+    if (!silent) {
+      setGraphDataState(previous => graphDataLoading(previous))
+    }
+
+    try {
+      const [entitiesResult, graphResult] = await Promise.allSettled([
+        api.getEntitiesForKB(requestKB, 200, { signal: controller.signal }),
+        api.getGraphForKB(requestKB, { signal: controller.signal }),
+      ])
+      if (controller.signal.aborted || gen !== graphGenRef.current || requestKB !== activeKBRef.current) return
+
+      if (entitiesResult.status === 'rejected' || graphResult.status === 'rejected') {
+        const error = entitiesResult.reason?.message || graphResult.reason?.message || '图谱数据加载失败'
+        setGraphDataState(previous => graphDataFailed(previous, error, { preserveReady: silent }))
+        return
+      }
+      const data = graphDataFromResponses(entitiesResult.value, graphResult.value)
+      setEntities(data.entities)
+      setGraph(data.graph)
+      setGraphDataState(graphDataSuccess())
+    } catch (error) {
+      if (controller.signal.aborted || gen !== graphGenRef.current || requestKB !== activeKBRef.current) return
+      if (error?.name === 'AbortError') return
+      setGraphDataState(previous => graphDataFailed(previous, error?.message || '图谱数据加载失败', { preserveReady: silent }))
+    } finally {
+      if (graphLoadAbortRef.current === controller) graphLoadAbortRef.current = null
+    }
+  }, [kbAccess.confirmed, kbName])
+
+  // 图谱 tab 首次激活时触发一次加载（切走不重置，之后由轮询/编辑操作负责刷新）
   useEffect(() => {
-    if (!kbName) return
+    if (activeTab !== 'graph' || graphDataState.status !== GRAPH_DATA_STATUS.IDLE) return
+    void loadGraphData()
+  }, [activeTab, graphDataState.status, loadGraphData])
+
+  // 挂载时加载核心数据（文档/统计，走 prefetch 缓存）
+  useEffect(() => {
+    if (!kbAccess.confirmed) return
     loadKBData()
-    const interval = setInterval(() => loadKBData({ force: true, silent: true }), 8000)
     return () => {
-      clearInterval(interval)
       loadAbortRef.current?.abort()
       nodeDetailAbortRef.current?.abort()
+      graphLoadAbortRef.current?.abort()
     }
-  }, [kbName, loadKBData])
+  }, [kbAccess.confirmed, kbName, loadKBData])
+
+  // 任务感知轮询：15s 一次。每个 tick 先刷新上传任务快照作为门控（不复用面板冻结的
+  // serverTasks）：存在非终态任务才刷新核心数据；图谱 tab 激活时顺带刷新实体/图谱；
+  // 任务从非终态转为全部终态时执行最后一次 loadKBData 同步文档列表；页面隐藏时暂停，
+  // 恢复可见立即检查一次。interval 保持运行以感知后续新上传任务。
+  useEffect(() => {
+    if (!kbAccess.confirmed) return
+    let disposed = false
+    let running = false
+    let prevTasks = []
+    let interval = null
+
+    const runTick = async () => {
+      if (disposed || running || document.visibilityState === 'hidden') return
+      running = true
+      try {
+        const response = await api.getUploadTasks()
+        if (disposed || activeKBRef.current !== kbName) return
+        const tasks = response?.tasks || []
+        const hasActive = hasActiveUploadTasks(tasks)
+        const transitionedToTerminal = tasksTransitionedToTerminal(prevTasks, tasks)
+        prevTasks = tasks
+
+        if (!shouldPollCoreData({ visible: true, hasActiveUploads: hasActive, activeTab: activeTabRef.current })) {
+          if (transitionedToTerminal) {
+            await loadKBData({ force: true, silent: true })
+          }
+          return
+        }
+        await loadKBData({ force: true, silent: true })
+        if (activeTabRef.current === 'graph') {
+          await loadGraphData({ silent: true })
+        }
+      } catch (_) {
+        // 单个 tick 失败不中断轮询，等待下一周期重试。
+      } finally {
+        running = false
+      }
+    }
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void runTick()
+    }
+
+    interval = window.setInterval(() => void runTick(), 15_000)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      disposed = true
+      if (interval) window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
+  }, [kbAccess.confirmed, kbName, loadKBData, loadGraphData])
 
   useEffect(() => {
-    if (!kbName || cancellingUploadTaskIds.length === 0) return undefined
+    if (!kbAccess.confirmed || cancellingUploadTaskIds.length === 0) return undefined
     let disposed = false
 
     const pollCancellation = async () => {
@@ -1318,19 +1429,21 @@ export default function KnowledgeDetailPage() {
       disposed = true
       clearInterval(interval)
     }
-  }, [kbName, cancellingUploadTaskIds, loadKBData])
+  }, [kbAccess.confirmed, kbName, cancellingUploadTaskIds, loadKBData])
 
   // D3 图谱
-  const drawGraph = useCallback(() => {
+  const drawGraph = useCallback(async () => {
     if (!svgRef.current) return
     if (!graph.nodes.length) {
-      d3.select(svgRef.current).selectAll('*').remove()
+      svgRef.current.innerHTML = ''
       if (simRef.current) { simRef.current.stop(); simRef.current = null }
       zoomRef.current = null
       return
     }
 
     try {
+      const d3 = await loadD3()
+      if (!svgRef.current) return
       if (simRef.current) { simRef.current.stop(); simRef.current = null }
 
       const svg = d3.select(svgRef.current)
@@ -1453,7 +1566,7 @@ export default function KnowledgeDetailPage() {
   useEffect(() => {
     if (activeTab !== 'graph') {
       const svg = svgRef.current
-      if (svg) d3.select(svg).selectAll('*').remove()
+      if (svg) svg.innerHTML = ''
       if (simRef.current) { simRef.current.stop(); simRef.current = null }
       zoomRef.current = null
       prevGraphFingerprint.current = ''
@@ -1463,7 +1576,7 @@ export default function KnowledgeDetailPage() {
     if (prevGraphFingerprint.current === '') {
       prevGraphFingerprint.current = JSON.stringify(graph)
       prevGraphSearch.current = graphSearch
-      drawGraph()
+      void drawGraph()
       return
     }
     const fp = prevGraphFingerprint.current + '|' + prevGraphSearch.current
@@ -1471,7 +1584,7 @@ export default function KnowledgeDetailPage() {
     if (fp !== newFp) {
       prevGraphFingerprint.current = JSON.stringify(graph)
       prevGraphSearch.current = graphSearch
-      drawGraph()
+      void drawGraph()
     }
   }, [graph, graphSearch, drawGraph, activeTab])
 
@@ -1481,30 +1594,39 @@ export default function KnowledgeDetailPage() {
 
   useEffect(() => {
     if (!selectedNode || activeTab !== 'entities') return
-    try {
-      const svg = d3.select(svgRef.current)
-      if (svg.empty()) return
-      svg.selectAll('circle').attr('opacity', function () {
-        const pg = this.parentNode
-        if (!pg) return 0.85
-        const parentData = d3.select(pg).datum()
-        return parentData?.id === selectedNode.id ? 1 : 0.3
-      })
-      svg.selectAll('line').attr('stroke-opacity', function (d) {
-        if (!d) return 0.6
-        const sourceId = d.source?.id ?? d.source
-        const targetId = d.target?.id ?? d.target
-        return sourceId === selectedNode.id || targetId === selectedNode.id ? 0.9 : 0.15
-      })
-    } catch (_) { /* SVG 尚未渲染 */ }
+    let cancelled = false
+    void loadD3().then(d3 => {
+      if (cancelled || !svgRef.current) return
+      try {
+        const svg = d3.select(svgRef.current)
+        if (svg.empty()) return
+        svg.selectAll('circle').attr('opacity', function () {
+          const pg = this.parentNode
+          if (!pg) return 0.85
+          const parentData = d3.select(pg).datum()
+          return parentData?.id === selectedNode.id ? 1 : 0.3
+        })
+        svg.selectAll('line').attr('stroke-opacity', function (d) {
+          if (!d) return 0.6
+          const sourceId = d.source?.id ?? d.source
+          const targetId = d.target?.id ?? d.target
+          return sourceId === selectedNode.id || targetId === selectedNode.id ? 0.9 : 0.15
+        })
+      } catch (_) { /* SVG 尚未渲染 */ }
+    }).catch(() => {})
+    return () => { cancelled = true }
   }, [selectedNode, activeTab])
 
-  const handleZoom = (dir) => {
+  const handleZoom = async (dir) => {
     if (!svgRef.current) return
-    const svg = d3.select(svgRef.current)
-    if (dir === 'in') svg.transition().call(zoomRef.current.scaleBy, 1.5)
-    else if (dir === 'out') svg.transition().call(zoomRef.current.scaleBy, 0.7)
-    else svg.transition().call(zoomRef.current.transform, d3.zoomIdentity)
+    try {
+      const d3 = await loadD3()
+      if (!svgRef.current || !zoomRef.current) return
+      const svg = d3.select(svgRef.current)
+      if (dir === 'in') svg.transition().call(zoomRef.current.scaleBy, 1.5)
+      else if (dir === 'out') svg.transition().call(zoomRef.current.scaleBy, 0.7)
+      else svg.transition().call(zoomRef.current.transform, d3.zoomIdentity)
+    } catch { /* zoom controls unavailable until graph chunk loads */ }
   }
 
   const filteredDocs = displayedDetailState.documents.status === 'ready'
@@ -1518,6 +1640,7 @@ export default function KnowledgeDetailPage() {
   })
 
   const handleRetryDocument = async (doc) => {
+    if (!canManageKB) return
     if (!doc?.id || retryingDocIds.includes(doc.id)) return
     setRetryingDocIds(prev => [...prev, doc.id])
     try {
@@ -1535,6 +1658,7 @@ export default function KnowledgeDetailPage() {
   }
 
   const handleDelete = async () => {
+    if (!canManageKB) return
     const documentToDelete = deleteConfirm
     if (!documentToDelete) return
     const uploadTaskId = documentToDelete.upload_task_id
@@ -1608,13 +1732,16 @@ export default function KnowledgeDetailPage() {
   }
 
   const toggleSelect = (id) => {
+    if (!canManageKB) return
     setSelectedIds(prev => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
   }
   const toggleSelectAll = () => {
+    if (!canManageKB) return
     setSelectedIds(prev => prev.size === filteredDocs.length ? new Set() : new Set(filteredDocs.map(d => d.id)))
   }
 
   const handleBatchDelete = async () => {
+    if (!canManageKB) return
     setBatchDeleting(true)
     try {
       const res = await api.deleteDocuments([...selectedIds], { kb: kbName })
@@ -1626,7 +1753,7 @@ export default function KnowledgeDetailPage() {
   }
 
   const handleReprocessMultimodal = async () => {
-    if (!kbName) return
+    if (!canManageKB || !kbName) return
     setReprocessingMultimodal(true)
     try {
       const result = await api.reprocessMultimodal(kbName)
@@ -1664,7 +1791,7 @@ export default function KnowledgeDetailPage() {
     && visionProfileDraft === visionSettings?.target_profile_id
 
   const saveVisionProfile = async () => {
-    if (!visionProfileDraft || visionSettingsStatus.saving) return
+    if (!canManageKB || !visionProfileDraft || visionSettingsStatus.saving) return
     setVisionSettingsStatus(current => ({ ...current, saving: true, error: '' }))
     try {
       const result = await api.updateKBVisionSettings(kbName, {
@@ -1699,6 +1826,16 @@ export default function KnowledgeDetailPage() {
       ? '最近一次重建失败，旧索引仍在使用'
       : '索引可用'
 
+  if (kbAccess.loading) {
+    return <div className="py-24 text-center" role="status"><Loader2 size={28} className="mx-auto animate-spin text-sky-500" /><p className="mt-3 text-sm text-ink-muted">正在加载知识库...</p></div>
+  }
+  if (kbAccess.unavailable) {
+    return <div className="py-24 text-center"><AlertTriangle size={30} className="mx-auto text-amber-500" /><h2 className="mt-3 text-base font-semibold text-ink-primary">内容暂不可用</h2><p className="mt-1 text-sm text-ink-muted">链接可能已失效。</p><button className="btn-secondary mt-4" onClick={() => navigate('/knowledge')}><ArrowLeft size={15} />返回知识库</button></div>
+  }
+  if (kbAccess.error) {
+    return <div className="py-24 text-center" role="alert"><AlertTriangle size={30} className="mx-auto text-rose-500" /><h2 className="mt-3 text-base font-semibold text-ink-primary">知识库加载失败</h2><p className="mt-1 text-sm text-ink-muted">{kbAccess.error.message || '网络连接异常，请稍后重试。'}</p><button className="btn-secondary mt-4" onClick={kbAccess.retry}><RotateCcw size={15} />重新加载</button></div>
+  }
+
   return (
     <div className="space-y-6">
       {/* 页面头部 */}
@@ -1717,12 +1854,6 @@ export default function KnowledgeDetailPage() {
           </div>
         </div>
       </div>
-
-      {!canManageKB && (
-        <div className="rounded-xl border border-cloud-200 bg-cloud-100 px-3 py-2 text-xs text-ink-muted" role="status">
-          当前为只读模式：上传、删除、重试、图谱编辑与视觉向量设置已禁用。
-        </div>
-      )}
 
       {/* 当前知识库统计 */}
       <div
@@ -1787,7 +1918,7 @@ export default function KnowledgeDetailPage() {
       {/* ── 标签页：文档 ── */}
       {activeTab === 'documents' && (
       <>
-        <div className="card p-5">
+        {canManageKB && <div className="card p-5">
           <UploadSection
             kbName={kbName}
             onToast={showToast}
@@ -1799,7 +1930,7 @@ export default function KnowledgeDetailPage() {
             setMultimodal={setMultimodal}
             canWrite={canManageKB}
           />
-        </div>
+        </div>}
 
         <section className="card p-5" aria-labelledby="vision-profile-heading">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -1808,13 +1939,13 @@ export default function KnowledgeDetailPage() {
                 <p className="mt-1 text-xs text-ink-muted">模型归属于当前知识库。重建期间查询继续使用旧索引，上传与多模态补处理会暂停。</p>
                 {visionSettingsStatus.error && <p className="mt-2 text-xs text-amber-700" role="alert">{visionSettingsStatus.error}</p>}
               </div>
-              <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-80 sm:flex-row">
+              {canManageKB ? <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-80 sm:flex-row">
                 <label className="sr-only" htmlFor="kb-vision-profile">视觉向量模型</label>
                 <select
                   id="kb-vision-profile"
                   className="select-field min-w-0 flex-1"
                   value={visionProfileDraft}
-                  disabled={!canManageKB || visionSettingsStatus.loading || visionSettingsStatus.saving || visionSettings?.index_state === 'reindexing'}
+                  disabled={visionSettingsStatus.loading || visionSettingsStatus.saving || visionSettings?.index_state === 'reindexing'}
                   onChange={event => {
                     setVisionProfileDraft(event.target.value)
                     setVisionSettingsStatus(current => ({ ...current, confirmReindex: false, error: '' }))
@@ -1826,21 +1957,18 @@ export default function KnowledgeDetailPage() {
                 <button
                   type="button"
                   className={visionSettingsStatus.confirmReindex ? 'btn-danger text-xs' : 'btn-secondary text-xs'}
-                  disabled={!canManageKB || !visionProfileDraft || (visionProfileDraft === visionSettings?.profile_id && visionSettings?.index_state !== 'failed') || visionSettingsStatus.loading || visionSettingsStatus.saving || visionSettings?.index_state === 'reindexing'}
+                  disabled={!visionProfileDraft || (visionProfileDraft === visionSettings?.profile_id && visionSettings?.index_state !== 'failed') || visionSettingsStatus.loading || visionSettingsStatus.saving || visionSettings?.index_state === 'reindexing'}
                   onClick={saveVisionProfile}
                 >
                   {visionSettingsStatus.saving ? <Loader2 size={14} className="animate-spin" /> : visionSettingsStatus.confirmReindex ? <RotateCcw size={14} /> : <Save size={14} />}
                   {visionSettingsStatus.saving ? '提交中' : visionSettingsStatus.confirmReindex ? '确认并重建' : retryFailedReindex ? '重新尝试' : '应用模型'}
                 </button>
-              </div>
+              </div> : <output className="text-sm text-ink-body">{visionSettings?.profile_id || '未配置'}</output>}
             </div>
             {visionSettings?.profile_id && <p className={`mt-3 text-2xs ${visionSettings.index_state === 'failed' ? 'text-rose-600' : 'text-ink-muted'}`} role={visionSettings.index_state === 'failed' ? 'alert' : 'status'}>当前：{visionSettings.profile_id} · {visionIndexStatus}</p>}
-            {!canManageKB && (
-              <p className="mt-2 text-2xs text-amber-600" role="status">当前为只读模式，无法修改视觉向量模型。</p>
-            )}
           </section>
 
-        {isAdmin && (
+        {canManageKB && (
           <div className="card p-4 flex items-start justify-between gap-4">
             <div>
               <h3 className="text-sm font-semibold text-ink-body">知识库处理维护</h3>
@@ -1896,11 +2024,11 @@ export default function KnowledgeDetailPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-cloud-300/60 text-left">
-                  <th className="pb-2.5 font-medium text-xs text-ink-muted w-8">
+                  {canManageKB && <th className="pb-2.5 font-medium text-xs text-ink-muted w-8">
                     <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredDocs.length}
-                      onChange={toggleSelectAll} disabled={!canManageKB || documentListMode !== 'ready' || filteredDocs.length === 0}
+                      onChange={toggleSelectAll} disabled={documentListMode !== 'ready' || filteredDocs.length === 0}
                       className="w-3.5 h-3.5 accent-sky-500" />
-                  </th>
+                  </th>}
                   <th className="pb-2.5 font-medium text-xs text-ink-muted">文件名</th>
                   <th className="pb-2.5 font-medium text-xs text-ink-muted">状态</th>
                   <th className="pb-2.5 font-medium text-xs text-ink-muted">分块</th>
@@ -1917,10 +2045,10 @@ export default function KnowledgeDetailPage() {
                   const retrying = retryingDocIds.includes(doc.id)
                   return (
                   <tr key={doc.id} className="border-b border-cloud-200 hover:bg-cloud-200/50 transition-colors">
-                    <td className="py-2.5">
+                    {canManageKB && <td className="py-2.5">
                       <input type="checkbox" checked={selectedIds.has(doc.id)}
-                        onChange={() => toggleSelect(doc.id)} disabled={!canManageKB} className="w-3.5 h-3.5 accent-sky-500" />
-                    </td>
+                        onChange={() => toggleSelect(doc.id)} className="w-3.5 h-3.5 accent-sky-500" />
+                    </td>}
                     <td className="py-2.5 max-w-40 text-sm" title={doc.file}>
                       <div className="min-w-0">
                         {doc.file !== '?' ? (
@@ -2006,7 +2134,7 @@ export default function KnowledgeDetailPage() {
                 })}
                 {documentListMode === 'loading' && Array.from({ length: 4 }, (_, index) => (
                   <tr key={`document-skeleton-${index}`}>
-                    <td colSpan={7} className="py-2">
+                    <td colSpan={canManageKB ? 7 : 6} className="py-2">
                       <div className="skeleton h-9 w-full" />
                     </td>
                   </tr>
@@ -2100,6 +2228,28 @@ export default function KnowledgeDetailPage() {
             )}
             <div ref={graphContainerRef} className="relative flex-1 min-h-0">
               <svg ref={svgRef} />
+              {graphDataState.status === GRAPH_DATA_STATUS.LOADING && (
+                <div className="absolute inset-0 p-4" role="status" aria-busy="true">
+                  <div className="skeleton h-full w-full" />
+                </div>
+              )}
+              {graphDataState.status === GRAPH_DATA_STATUS.ERROR && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 p-4 text-center" role="alert">
+                  <AlertTriangle size={34} className="text-rose-500" />
+                  <p className="text-sm font-medium text-ink-body">图谱数据加载失败</p>
+                  <p className="max-w-sm text-xs text-ink-muted">{graphDataState.error}</p>
+                  <button className="btn-secondary mt-2 text-xs" onClick={() => void loadGraphData()}>
+                    <RotateCcw size={13} />重试
+                  </button>
+                </div>
+              )}
+              {graphDataState.status === GRAPH_DATA_STATUS.READY && graph.nodes.length === 0 && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 p-4 text-center">
+                  <Link2 size={34} className="mx-auto mb-1 text-cloud-400" />
+                  <p className="text-sm text-ink-muted">暂无图谱数据</p>
+                  <p className="text-2xs text-ink-muted">{canManageKB ? '上传文档后将自动构建知识图谱' : '当前暂无可查看的图谱内容'}</p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -2213,7 +2363,7 @@ export default function KnowledgeDetailPage() {
             ) : (
               <>
                 <h3 className="text-sm font-semibold text-ink-body mb-3">
-                  全部实体 ({entities.length})
+                  全部实体 ({graphDataState.status === GRAPH_DATA_STATUS.READY ? entities.length : '—'})
                 </h3>
                 <div className="space-y-1 flex-1 overflow-y-auto">
                   {entities.slice(0, 200).map((e, i) => (
@@ -2239,7 +2389,24 @@ export default function KnowledgeDetailPage() {
                       {e.type && <span className="text-2xs text-ink-muted ml-1.5 shrink-0">{e.type}</span>}
                     </div>
                   ))}
-                  {entities.length === 0 && (
+                  {graphDataState.status === GRAPH_DATA_STATUS.LOADING && (
+                    <div className="space-y-1" role="status" aria-busy="true">
+                      {Array.from({ length: 6 }, (_, index) => (
+                        <div key={`entity-skeleton-${index}`} className="skeleton h-9 w-full rounded-lg" />
+                      ))}
+                    </div>
+                  )}
+                  {graphDataState.status === GRAPH_DATA_STATUS.ERROR && (
+                    <div className="py-12 text-center" role="alert">
+                      <AlertTriangle size={30} className="mx-auto mb-2 text-rose-500" />
+                      <p className="text-xs font-medium text-ink-body">实体列表加载失败</p>
+                      <p className="mt-1 text-2xs text-ink-muted">{graphDataState.error}</p>
+                      <button className="btn-secondary mt-3 text-xs" onClick={() => void loadGraphData()}>
+                        <RotateCcw size={13} />重试
+                      </button>
+                    </div>
+                  )}
+                  {graphDataState.status === GRAPH_DATA_STATUS.READY && entities.length === 0 && (
                     <div className="py-12 text-center">
                       <p className="text-xs text-ink-muted">暂无实体数据</p>
                       <p className="text-2xs text-ink-muted mt-1">上传文档后将自动抽取实体</p>

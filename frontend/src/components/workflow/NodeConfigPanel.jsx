@@ -40,7 +40,7 @@ function ModelSelect({ value, onChange, modelType = 'llm' }) {
   )
 }
 
-function FilePicker({ value, onChange, filterType }) {
+function FilePicker({ value, onChange, filterType, canEdit = false }) {
   const [files, setFiles] = useState([])
   const [loading, setLoading] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -63,6 +63,7 @@ function FilePicker({ value, onChange, filterType }) {
   useEffect(() => { fetchFiles() }, [filterType])
 
   const handleUpload = async (e) => {
+    if (!canEdit) return
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
@@ -99,7 +100,7 @@ function FilePicker({ value, onChange, filterType }) {
             <option key={f.name} value={f.name}>{f.name} ({formatSize(f.size)})</option>
           ))}
         </select>
-        <button
+        {canEdit && <button
           onClick={() => fileInputRef.current?.click()}
           disabled={uploading}
           className="flex items-center justify-center w-8 h-9 rounded-lg border border-cloud-300
@@ -107,9 +108,9 @@ function FilePicker({ value, onChange, filterType }) {
           title="上传文件"
         >
           {uploading ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
-        </button>
-        <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload}
-               accept={filterType === '全部' ? '*' : filterType} />
+        </button>}
+        {canEdit && <input ref={fileInputRef} type="file" className="hidden" onChange={handleUpload}
+               accept={filterType === '全部' ? '*' : filterType} />}
       </div>
       {loading && <p className="text-2xs text-ink-muted">加载文件列表...</p>}
       {value && <p className="text-2xs text-emerald-600">已选择: {value}</p>}
@@ -117,8 +118,8 @@ function FilePicker({ value, onChange, filterType }) {
   )
 }
 
-export default function NodeConfigPanel({ node, onClose, onUpdate }) {
-  if (!node) return null
+export default function NodeConfigPanel({ node, onClose, onUpdate, canEdit = false }) {
+  if (!node || !canEdit) return null
 
   const def = getNodeType(node.data?.nodeType)
   if (!def) return null
@@ -154,6 +155,7 @@ export default function NodeConfigPanel({ node, onClose, onUpdate }) {
                 value={node.data[field.key] ?? ''}
                 onChange={(v) => handleChange(field.key, v)}
                 filterType={field.filterKey ? node.data[field.filterKey] : '.pdf'}
+                canEdit={canEdit}
               />
             ) : field.type === 'model_select' ? (
               <ModelSelect

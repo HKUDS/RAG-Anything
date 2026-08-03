@@ -146,6 +146,7 @@ export default function AgentChatPage({ onToast }) {
   // ── 状态 ────────────────────────────────────────────────────
   const [agent, setAgent] = useState(null)
   const [threads, setThreads] = useState([])
+  const [threadsLoaded, setThreadsLoaded] = useState(false)
   const [activeThreadId, setActiveThreadId] = useState('')
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -227,7 +228,7 @@ export default function AgentChatPage({ onToast }) {
       const nextAgent = (response.agents || []).find(item => item.id === agentId)
       if (!nextAgent) {
         if (!silent) {
-          onToast?.('未找到该智能体，或当前账号已无访问权限。', 'error')
+          onToast?.('内容暂不可用，链接可能已失效。', 'error')
           navigate('/agents')
         }
         return null
@@ -291,6 +292,8 @@ export default function AgentChatPage({ onToast }) {
       }
     } catch (e) {
       console.warn('[AgentChat] Failed to load conversations:', e.message)
+    } finally {
+      setThreadsLoaded(true)
     }
   }
 
@@ -369,6 +372,7 @@ export default function AgentChatPage({ onToast }) {
 
   // ── 消息编辑处理 ──────────────────────────────────
   const startEdit = (msg) => {
+    if (!canEditMessages) return
     setEditingMsgId(msg.msg_id)
     setEditContent(msg.content)
   }
@@ -379,6 +383,7 @@ export default function AgentChatPage({ onToast }) {
   }
 
   const saveEdit = async (msg) => {
+    if (!canEditMessages) return
     if (!editContent.trim() || editContent.trim() === (msg.content || '').trim()) {
       setEditingMsgId(null)
       setEditContent('')
@@ -804,7 +809,14 @@ export default function AgentChatPage({ onToast }) {
                   )}
                 </div>
               ))}
-              {threads.length === 0 && (
+              {!threadsLoaded && (
+                <div className="space-y-1.5 px-2.5 py-2" aria-label="正在加载会话线程" aria-busy="true">
+                  <div className="skeleton h-4 w-full" />
+                  <div className="skeleton h-4 w-4/5" />
+                  <div className="skeleton h-4 w-3/5" />
+                </div>
+              )}
+              {threadsLoaded && threads.length === 0 && (
                 <div className="text-center py-8">
                   <p className="text-xs text-ink-muted dark:text-cloud-500">暂无对话</p>
                 </div>

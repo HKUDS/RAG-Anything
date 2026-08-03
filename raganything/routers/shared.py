@@ -1034,12 +1034,29 @@ async def recall_query_images(
 
 # ── Thinking/Progress Translation ──────────────────────────
 
+# Only these messages are suitable for the end-user progress panel.  Library
+# initialisation, cache configuration, model settings, and storage warnings
+# remain available in server logs but must never be forwarded through SSE.
 THINKING_PATTERNS = [
-    "executing", "query mode", "keywords", "query nodes", "local query",
-    "query edges", "global query", "raw search", "after truncation",
-    "entity-related chunks", "relations-related chunks", "merged chunks",
-    "final context", "final chunks", "text query completed", "cache",
-    "retrying request", "embedding",
+    "initializing lightrag",
+    "lightrag, parse cache, multimodal status cache, and multimodal processors initialized",
+    "executing text query",
+    "executing rrf hybrid query",
+    "query mode",
+    "keywords",
+    "query nodes",
+    "local query",
+    "query edges",
+    "global query",
+    "raw search results",
+    "after truncation",
+    "entity-related chunks",
+    "relations-related chunks",
+    "merged chunks",
+    "final context",
+    "final chunks",
+    "retrying request",
+    "embedding func:",
 ]
 
 QUERY_SYSTEM_PROMPT = "基于检索内容回答。对话历史可用作理解用户上下文和指代关系，但事实性回答必须引用检索内容中的具体信息。检索内容没有的信息不要编造。"
@@ -1047,59 +1064,64 @@ QUERY_SYSTEM_PROMPT = "基于检索内容回答。对话历史可用作理解用
 
 def _is_thinking_msg(msg: str) -> bool:
     """Check if a log message should be shown as thinking process."""
-    msg_lower = msg.lower()
-    return any(p in msg_lower for p in THINKING_PATTERNS)
+    return bool(_translate_thinking_msg(msg))
 
 
 def _translate_thinking_msg(msg: str) -> str:
-    """Translate English log messages to Chinese thinking process display."""
+    """Convert allow-listed retrieval logs into concise user-facing progress."""
+    if not isinstance(msg, str):
+        return ""
+
     msg_lower = msg.lower()
 
+    if "initializing lightrag" in msg_lower:
+        return "正在准备知识库检索..."
+    if "lightrag, parse cache, multimodal status cache" in msg_lower:
+        return "知识库检索已准备就绪"
+    if "executing rrf hybrid query" in msg_lower:
+        return "正在综合检索相关资料..."
     if "executing text query" in msg_lower:
-        return "📝 正在解析查询意图..."
+        return "正在理解您的问题..."
     if "query mode" in msg_lower:
-        mode = msg.split(":")[-1].strip() if ":" in msg else ""
+        mode = msg.split(":")[-1].strip().lower() if ":" in msg else ""
         mode_cn = {"hybrid": "混合检索", "local": "本地检索", "global": "全局检索",
                     "naive": "朴素检索", "mix": "混合模式"}
-        return f"📋 查询策略: {mode_cn.get(mode, mode)}"
+        return f"正在使用{mode_cn.get(mode, '知识库')}查找资料..."
     if "keywords" in msg_lower and "cache" in msg_lower:
-        return "🔑 提取关键词完成"
+        return "已识别问题要点"
     if "keywords" in msg_lower:
-        return "🔑 正在提取查询关键词..."
+        return "正在提取问题要点..."
     if "query nodes" in msg_lower:
-        return "🔗 检索知识图谱实体节点..."
+        return "正在查找相关概念..."
     if "local query" in msg_lower:
-        match = msg.split(":")[-1].strip() if ":" in msg else msg
-        return f"📊 本地子图检索: {match}"
+        return "正在检索相关资料..."
     if "query edges" in msg_lower:
-        return "🔗 检索知识图谱关系边..."
+        return "正在梳理资料之间的关联..."
     if "global query" in msg_lower:
-        match = msg.split(":")[-1].strip() if ":" in msg else msg
-        return f"🌐 全局社区检索: {match}"
+        return "正在扩展查找相关资料..."
     if "raw search results" in msg_lower:
-        return f"📦 原始检索结果: {msg.split(':')[-1].strip() if ':' in msg else msg}"
+        return "已找到候选资料，正在筛选..."
     if "after truncation" in msg_lower:
-        return f"✂️ 结果优化截断: {msg.split(':')[-1].strip() if ':' in msg else msg}"
+        return "正在筛选最相关的资料..."
     if "entity-related chunks" in msg_lower:
-        return "📄 选取相关文本块..."
+        return "正在整理相关内容..."
     if "relations-related chunks" in msg_lower:
-        return "📄 选取关系文本块..."
+        return "正在整理关联内容..."
     if "merged chunks" in msg_lower:
-        return f"🔄 合并排序文本块: {msg.split(':')[-1].strip() if ':' in msg else msg}"
+        return "正在合并并排序资料..."
     if "final context" in msg_lower:
-        return f"📋 构建最终上下文: {msg.split(':')[-1].strip() if ':' in msg else msg}"
+        chunk_match = _re.search(r"(\d+)\s+chunks?", msg_lower)
+        if chunk_match:
+            return f"已整理 {chunk_match.group(1)} 条相关资料"
+        return "相关资料整理完成"
     if "final chunks" in msg_lower:
-        return "✅ 上下文整理完成"
+        return "相关资料整理完成"
     if "retrying request" in msg_lower:
-        return "⏳ API 请求重试中..."
-    if "cache" in msg_lower and "saving" in msg_lower:
-        return ""
-    if "text query completed" in msg_lower:
-        return ""
+        return "服务响应较慢，正在重试..."
+    if "embedding func:" in msg_lower and "workers initialized" in msg_lower:
+        return "正在进行语义匹配..."
 
-    if len(msg) > 120:
-        msg = msg[:120] + "..."
-    return f"ℹ️ {msg}"
+    return ""
 
 
 __all__ = [

@@ -8,7 +8,7 @@ import { Plus, Loader2, AlertCircle } from 'lucide-react'
  * to create a new sub-domain KB, and an inline creation form.
  *
  * Props:
- *   mfgKb       - currently selected KB name
+ *   arKb        - currently selected confirmed KB name
  *   kbList      - array of available KB names
  *   loading     - whether the KB list is loading
  *   creating    - whether a create operation is in progress
@@ -17,13 +17,13 @@ import { Plus, Loader2, AlertCircle } from 'lucide-react'
  *                 should return { success: bool, error?: string }
  */
 export default function AutoRepairKBSelector({
-  mfgKb,
+  arKb,
   kbList,
   loading,
   creating,
   onChange,
   onCreate,
-  canCreate = true,
+  canCreate = false,
 }) {
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState('')
@@ -35,6 +35,7 @@ export default function AutoRepairKBSelector({
   }, [showCreate])
 
   const handleCreate = async () => {
+    if (!canCreate) return
     const name = newName.trim()
     if (!name) return
     setCreateError(null)
@@ -48,7 +49,7 @@ export default function AutoRepairKBSelector({
   }
 
   const handleKeyDown = (e) => {
-    if (e.key === 'Enter') handleCreate()
+    if (e.key === 'Enter' && canCreate) handleCreate()
     if (e.key === 'Escape') {
       setShowCreate(false)
       setNewName('')
@@ -58,12 +59,12 @@ export default function AutoRepairKBSelector({
   return (
     <div className="relative flex items-center gap-2">
       <select
-        value={mfgKb}
-        disabled={loading}
+        value={arKb || ''}
+        disabled={loading || kbList.length === 0}
         onChange={e => onChange(e.target.value)}
         className="px-3 py-1.5 rounded-lg border border-cloud-300 text-sm bg-white text-ink-body cursor-pointer disabled:opacity-50"
       >
-        {kbList.length === 0 && <option value="manufacturing">汽修知识库</option>}
+        {kbList.length === 0 && <option value="">暂无可用知识库</option>}
         {kbList.map(k => <option key={k.name} value={k.name}>{k.label || k.name}</option>)}
       </select>
 
@@ -80,7 +81,7 @@ export default function AutoRepairKBSelector({
       )}
 
       {/* 行内创建表单 */}
-      {showCreate && (
+      {canCreate && showCreate && (
         <div className="absolute top-full right-0 mt-2 w-64 bg-white border border-cloud-300 rounded-xl shadow-lg p-4 z-50">
           <p className="text-sm font-medium text-ink-primary mb-3">新建汽修知识库</p>
           <div className="space-y-2">

@@ -1,11 +1,11 @@
 ﻿import { useState, useEffect, useCallback, useRef, lazy, Suspense, Component } from 'react'
 import { Routes, Route, NavLink, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { Database, Settings, Activity, Zap, Cpu, Hash, Bot, Shield, LogOut, User, Sun, Moon, BookOpen, ChevronDown, Factory, GitBranch, ScrollText, AlertTriangle } from 'lucide-react'
-import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from './context/AuthContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import { api } from './utils/api'
 import { settingsRedirectDestination } from './utils/settingsRouting'
+import { createPermissionUiPolicy } from './utils/permissionUiPolicy'
 
 // ---- 路由级代码拆分 ----
 const KnowledgePage               = lazy(() => import('./pages/KnowledgePage'))
@@ -25,6 +25,20 @@ const AutoRepairDashboardPage  = lazy(() => import('./pages/AutoRepairDashboardP
 const AutoRepairKnowledgePage  = lazy(() => import('./pages/AutoRepairKnowledgePage'))
 const AutoRepairAgentPage      = lazy(() => import('./pages/AutoRepairAgentPage'))
 const WorkflowPage                = lazy(() => import('./pages/WorkflowPage'))
+
+// 导航 hover 预取：与 lazy() 使用相同的动态 import（模块缓存去重），
+// 仅在可见且有权限的导航项上触发，并遵守 saveData 节能约定。
+const ROUTE_PREFETCH = {
+  '/knowledge': () => import('./pages/KnowledgePage'),
+  '/agents': () => import('./pages/AgentsPage'),
+  '/workflow': () => import('./pages/WorkflowPage'),
+  '/autorepair': () => import('./pages/AutoRepairDashboardPage'),
+  '/monitor': () => import('./pages/MonitorPage'),
+  '/admin/platform': () => import('./pages/AdminPlatformPage'),
+  '/preferences': () => import('./pages/PreferencesPage'),
+  '/admin/users': () => import('./pages/AdminUsersPage'),
+  '/admin/audit-logs': () => import('./pages/AdminAuditLogsPage'),
+}
 
 // ---- 路由级加载骨架 ----
 const PageLoader = () => (
@@ -120,7 +134,7 @@ function SuspenseWithTimeout({ children, fallback, timeout = SUSPENSE_TIMEOUT_MS
 }
 
 const NAV = [
-  { to: '/knowledge', icon: Database, label: '知识库', requiredPermission: null },
+  { to: '/knowledge', icon: Database, label: '知识库', requiredPermission: 'kb:read' },
   { to: '/agents', icon: Bot, label: '智能体', requiredPermission: 'agent:read' },
   { to: '/workflow', icon: GitBranch, label: '工作流', requiredPermission: 'workflow:read' },
   { to: '/autorepair', icon: Factory, label: '汽修智能助手', requiredPermission: 'autorepair:read' },
@@ -129,10 +143,10 @@ const NAV = [
 ]
 
 const NAV_ITEMS = [
-  { to: '/knowledge', icon: Database, label: '知识库', desc: '文档 / 实体 / 图谱', requiredPermission: null },
-  { to: '/agents', icon: Bot, label: '智能体', desc: '教学问答与推理', requiredPermission: 'agent:read' },
-  { to: '/workflow', icon: GitBranch, label: '工作流', desc: '编排知识处理链路', requiredPermission: 'workflow:read' },
-  { to: '/autorepair', icon: Factory, label: '汽修智能助手', desc: '专业场景工作台', requiredPermission: 'autorepair:read' },
+  { to: '/knowledge', icon: Database, label: '知识库', desc: '浏览文档 / 实体 / 图谱', requiredPermission: 'kb:read' },
+  { to: '/agents', icon: Bot, label: '智能体', desc: '使用教学问答与推理', requiredPermission: 'agent:read' },
+  { to: '/workflow', icon: GitBranch, label: '工作流', desc: '查看知识处理链路', requiredPermission: 'workflow:read' },
+  { to: '/autorepair', icon: Factory, label: '汽修智能助手', desc: '查看专业场景工作台', requiredPermission: 'autorepair:read' },
   { to: '/monitor', icon: Activity, label: '监控', desc: '服务状态与指标', requiredPermission: 'monitor:read' },
   { to: '/admin/platform', icon: Settings, label: '平台管理', desc: '默认值与资源上限', requiredPermission: 'settings:read' },
   { to: '/admin/users', icon: Shield, label: '用户管理', desc: '角色与权限', requiredPermission: 'users:read' },
@@ -156,19 +170,41 @@ const ROUTE_META = [
   { test: p => p.startsWith('/admin/audit-logs'), kicker: '管理后台', title: '审计日志', subtitle: '追踪关键操作与安全事件。' },
 ]
 
-const getRouteMeta = (pathname) =>
-  ROUTE_META.find(item => item.test(pathname)) || {
+const getRouteMeta = (pathname, policy = {}) => {
+  const route = ROUTE_META.find(item => item.test(pathname))
+  if (route) {
+    if (pathname.startsWith('/agents') && !pathname.startsWith('/agents/')) {
+      return { ...route, subtitle: policy.canWriteAgents ? '配置模型、检索模式和专业提示词，构建任务型助手。' : '浏览可用智能体并进入授权的教学问答。' }
+    }
+    if (pathname.startsWith('/knowledge')) {
+      if (policy.canWriteKnowledge) return route
+      const isChunkRoute = pathname.includes('/chunks')
+      return { ...route, subtitle: isChunkRoute ? '查看文档的检索切块与内容。' : '查看文档、实体关系与知识图谱结构。' }
+    }
+    if (pathname.startsWith('/workflow')) {
+      return { ...route, subtitle: policy.canWriteWorkflow ? '用节点化流程组织文档处理、检索和推理链路。' : '查看已授权的节点化流程和处理链路。' }
+    }
+    if (pathname.startsWith('/autorepair')) {
+      return { ...route, subtitle: policy.canWriteAutoRepair ? '面向专业教学与竞赛场景的知识图谱和智能问答系统。' : '查看专业教学场景的知识图谱和可用内容。' }
+    }
+    if (pathname.startsWith('/admin/platform')) {
+      return { ...route, subtitle: policy.canWriteSettings ? '维护默认值、允许范围和资源硬上限。' : '查看平台默认值、允许范围和资源上限。' }
+    }
+    return route
+  }
+  return {
     kicker: '知元平台',
     title: '多模态教学知识服务平台',
     subtitle: '以课程资源、知识库、智能体和工作流连接教学内容与学习服务。',
   }
+}
 
 const formatStatValue = (value) => {
   const n = Number(value || 0)
   return Number.isFinite(n) ? n.toLocaleString('zh-CN') : '0'
 }
 
-const getCockpitStats = (pathname, stats, hasPermission) => {
+const getCockpitStats = (pathname, stats, hasPermission, policy = {}) => {
   if (pathname === '/' || pathname.startsWith('/knowledge')) {
     return [
       { label: '文档', value: formatStatValue(stats.documents), icon: Zap, tone: 'blue' },
@@ -187,17 +223,17 @@ const getCockpitStats = (pathname, stats, hasPermission) => {
 
   if (pathname.startsWith('/agents')) {
     return [
-      { label: '助手', value: '可配置', icon: Bot, tone: 'blue' },
-      { label: '知识库', value: '可绑定', icon: Database, tone: 'green' },
-      { label: '模板', value: '可复用', icon: BookOpen, tone: 'amber' },
+      { label: '助手', value: policy.canWriteAgents ? '可配置' : '可使用', icon: Bot, tone: 'blue' },
+      { label: '知识库', value: policy.canWriteAgents ? '可绑定' : '可查看', icon: Database, tone: 'green' },
+      { label: '模板', value: policy.canWriteAgents ? '可复用' : '可浏览', icon: BookOpen, tone: 'amber' },
     ]
   }
 
   if (pathname.startsWith('/workflow')) {
     return [
-      { label: '编排', value: '可用', icon: GitBranch, tone: 'blue' },
+      { label: '视图', value: policy.canWriteWorkflow ? '可编排' : '可查看', icon: GitBranch, tone: 'blue' },
       { label: '链路', value: '节点化', icon: Cpu, tone: 'green' },
-      { label: '权限', value: hasPermission('workflow:read') ? '已授权' : '受限', icon: Shield, tone: 'amber' },
+      { label: '状态', value: '可用', icon: Shield, tone: 'amber' },
     ]
   }
 
@@ -205,7 +241,7 @@ const getCockpitStats = (pathname, stats, hasPermission) => {
     return [
       { label: '场景', value: '汽修', icon: Factory, tone: 'blue' },
       { label: '图谱', value: '教学', icon: Database, tone: 'green' },
-      { label: '问答', value: '在线', icon: Bot, tone: 'amber' },
+      { label: '内容', value: policy.canWriteAutoRepair ? '可交互' : '可查看', icon: Bot, tone: 'amber' },
     ]
   }
 
@@ -219,9 +255,9 @@ const getCockpitStats = (pathname, stats, hasPermission) => {
 
   if (pathname.startsWith('/admin/platform')) {
     return [
-      { label: '模型', value: '配置', icon: Settings, tone: 'blue' },
-      { label: '接口', value: '管理', icon: Cpu, tone: 'green' },
-      { label: '权限', value: hasPermission('settings:read') ? '已授权' : '受限', icon: Shield, tone: 'amber' },
+      { label: '模型', value: policy.canWriteSettings ? '可配置' : '可查看', icon: Settings, tone: 'blue' },
+      { label: '接口', value: policy.canWriteSettings ? '可管理' : '可浏览', icon: Cpu, tone: 'green' },
+      { label: '状态', value: '可用', icon: Shield, tone: 'amber' },
     ]
   }
 
@@ -279,7 +315,7 @@ function RoleBadge({ roleName, isAdmin }) {
 }
 
 // ---- 用户菜单下拉框 ----
-function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
+function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout, onPrefetch }) {
   const [open, setOpen] = useState(false)
   const ref = useRef()
 
@@ -312,14 +348,9 @@ function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
         <ChevronDown size={12} className={`text-ink-muted transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
-      <AnimatePresence>
         {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.95 }}
-            transition={{ duration: 0.15 }}
-            className="absolute right-0 top-full mt-1 w-52 card p-1.5 shadow-cloud-md z-50 origin-top-right"
+          <div
+            className="absolute right-0 top-full mt-1 w-52 card p-1.5 shadow-cloud-md z-50 origin-top-right menu-pop"
             role="menu"
           >
             {/* 用户信息 */}
@@ -333,6 +364,7 @@ function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
             <NavLink
               to="/preferences"
               onClick={() => setOpen(false)}
+              onMouseEnter={() => onPrefetch?.('/preferences')}
               className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs text-ink-body hover:bg-cloud-200 transition-colors"
               role="menuitem"
             >
@@ -359,9 +391,8 @@ function UserMenu({ user, isAdmin, roleName, dark, toggleTheme, onLogout }) {
               <LogOut size={14} />
               退出登录
             </button>
-          </motion.div>
+          </div>
         )}
-      </AnimatePresence>
     </div>
   )
 }
@@ -415,11 +446,16 @@ export default function App() {
     return () => media.removeEventListener?.('change', onSystemThemeChange)
   }, [])
 
-  // 加载全局统计
+  // 全局统计（顶栏状态条）：30s TTL 缓存、仅知识库路由、页面隐藏时跳过
+  const isStatsRoute = location.pathname === '/' || location.pathname.startsWith('/knowledge')
   const loadStats = useCallback(() => {
-    api.getStats().then(setStats).catch(err => console.error(err))
+    if (document.hidden) return
+    api.getGlobalStatsCached().then(setStats).catch(() => {})
   }, [])
-  useEffect(() => { if (token) loadStats() }, [location.pathname, token])
+  useEffect(() => {
+    if (!token || !isStatsRoute) return
+    loadStats()
+  }, [token, isStatsRoute, loadStats, location.pathname])
 
   const showToast = useCallback((msg, type = 'info') => {
     if (toastTimerRef.current) {
@@ -439,6 +475,11 @@ export default function App() {
     }
   }, [])
 
+  const prefetchRouteChunk = useCallback((to) => {
+    if (!to || globalThis.navigator?.connection?.saveData) return
+    ROUTE_PREFETCH[to]?.().catch(() => {})
+  }, [])
+
   const handleLogout = async () => {
     await logout()
     navigate('/login')
@@ -456,10 +497,10 @@ export default function App() {
   if (authLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-cloud-100">
-        <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center space-y-4">
+        <div className="text-center space-y-4 loader-pop">
           <BookOpen size={36} className="mx-auto text-sky-300 animate-float" />
           <p className="text-ink-muted text-sm font-medium">正在准备知元教学空间...</p>
-        </motion.div>
+        </div>
       </div>
     )
   }
@@ -484,8 +525,9 @@ export default function App() {
   const visibleNavItems = NAV_ITEMS
     .filter(item => !item.requiredPermission || hasPermission(item.requiredPermission))
 
-  const routeMeta = getRouteMeta(location.pathname)
-  const cockpitStats = getCockpitStats(location.pathname, stats, hasPermission)
+  const uiPolicy = createPermissionUiPolicy(hasPermission)
+  const routeMeta = getRouteMeta(location.pathname, uiPolicy)
+  const cockpitStats = getCockpitStats(location.pathname, stats, hasPermission, uiPolicy)
 
   // ---- 主布局 ----
   return (
@@ -517,6 +559,7 @@ export default function App() {
               key={to}
               to={to}
               end={to === '/agents'}
+              onMouseEnter={() => prefetchRouteChunk(to)}
               className={({ isActive }) => `cockpit-nav-link ${isActive ? 'active' : ''}`}
             >
               <span className="cockpit-nav-icon"><Icon size={17} /></span>
@@ -555,6 +598,7 @@ export default function App() {
             dark={dark}
             toggleTheme={toggleTheme}
             onLogout={handleLogout}
+            onPrefetch={prefetchRouteChunk}
           />
         </div>
       </header>
@@ -583,6 +627,7 @@ export default function App() {
                 key={to}
                 to={to}
                 end={to === '/agents'}
+                onMouseEnter={() => prefetchRouteChunk(to)}
                 className={({ isActive }) =>
                   `topnav-link ${isActive ? 'active' : ''}`
                 }
@@ -594,6 +639,7 @@ export default function App() {
             {hasPermission('users:read') && (
               <NavLink
                 to="/admin/users"
+                onMouseEnter={() => prefetchRouteChunk('/admin/users')}
                 className={({ isActive }) =>
                   `topnav-link ${isActive ? 'active' : ''}`
                 }
@@ -605,6 +651,7 @@ export default function App() {
             {hasPermission('audit:read') && (
               <NavLink
                 to="/admin/audit-logs"
+                onMouseEnter={() => prefetchRouteChunk('/admin/audit-logs')}
                 className={({ isActive }) =>
                   `topnav-link ${isActive ? 'active' : ''}`
                 }
@@ -652,17 +699,17 @@ export default function App() {
                 className="route-surface"
               >
                 <Routes>
-                  <Route path="/" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
+                  <Route path="/" element={<ProtectedRoute requiredPermission="kb:read"><KnowledgePage /></ProtectedRoute>} />
                   <Route path="/agents" element={<ProtectedRoute requiredPermission="agent:read"><AgentsPage onToast={showToast} /></ProtectedRoute>} />
                   <Route path="/agents/:id" element={<ProtectedRoute requiredPermission="agent:read"><AgentChatPage onToast={showToast} /></ProtectedRoute>} />
-                  <Route path="/knowledge" element={<ProtectedRoute><KnowledgePage /></ProtectedRoute>} />
-                  <Route path="/knowledge/:kbName" element={<ProtectedRoute><KnowledgeDetailPage /></ProtectedRoute>} />
-                  <Route path="/knowledge/:kbName/documents/:docId/chunks" element={<ProtectedRoute><DocumentChunksPage /></ProtectedRoute>} />
-                  <Route path="/knowledge/:kbName/documents/:docId/chunks/:chunkId" element={<ProtectedRoute><DocumentChunkDetailPage /></ProtectedRoute>} />
+                  <Route path="/knowledge" element={<ProtectedRoute requiredPermission="kb:read"><KnowledgePage /></ProtectedRoute>} />
+                  <Route path="/knowledge/:kbName" element={<ProtectedRoute requiredPermission="kb:read"><KnowledgeDetailPage /></ProtectedRoute>} />
+                  <Route path="/knowledge/:kbName/documents/:docId/chunks" element={<ProtectedRoute requiredPermission="kb:read"><DocumentChunksPage /></ProtectedRoute>} />
+                  <Route path="/knowledge/:kbName/documents/:docId/chunks/:chunkId" element={<ProtectedRoute requiredPermission="kb:read"><DocumentChunkDetailPage /></ProtectedRoute>} />
                   <Route path="/workflow" element={<ProtectedRoute requiredPermission="workflow:read"><WorkflowPage /></ProtectedRoute>} />
                   <Route path="/autorepair" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairDashboardPage /></ProtectedRoute>} />
                   <Route path="/autorepair/knowledge" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairKnowledgePage /></ProtectedRoute>} />
-                  <Route path="/autorepair/agent" element={<ProtectedRoute requiredPermission="autorepair:read"><AutoRepairAgentPage /></ProtectedRoute>} />
+                  <Route path="/autorepair/agent" element={<ProtectedRoute requiredPermission="autorepair:write"><AutoRepairAgentPage /></ProtectedRoute>} />
                   <Route path="/settings" element={<ProtectedRoute><SettingsRedirect /></ProtectedRoute>} />
                   <Route path="/preferences" element={<ProtectedRoute><PreferencesPage onToast={showToast} /></ProtectedRoute>} />
                   <Route path="/admin/platform" element={<ProtectedRoute requiredPermission="settings:read"><AdminPlatformPage onToast={showToast} /></ProtectedRoute>} />
@@ -677,23 +724,18 @@ export default function App() {
       </main>
 
       {/* ========== 提示消息 ========== */}
-      <AnimatePresence>
-        {toast && (
-          <motion.div
-            initial={{ opacity: 0, y: 24, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 24, scale: 0.95 }}
-            role="status"
-            aria-live="polite"
-            className={`fixed bottom-6 right-4 sm:right-6 px-4 py-3 rounded-xl text-sm font-medium z-50 shadow-cloud backdrop-blur-sm ${
-              toast.type === 'error' ? 'toast-error' :
-              toast.type === 'success' ? 'toast-success' :
-              'toast-info'
-            }`}>
-            {toast.msg}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className={`toast-pop fixed bottom-6 right-4 sm:right-6 px-4 py-3 rounded-xl text-sm font-medium z-50 shadow-cloud backdrop-blur-sm ${
+            toast.type === 'error' ? 'toast-error' :
+            toast.type === 'success' ? 'toast-success' :
+            'toast-info'
+          }`}>
+          {toast.msg}
+        </div>
+      )}
     </div>
   )
 }

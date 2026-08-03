@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Send, User, Bot, Code2, MessageSquare, Wrench,
   AlertTriangle, ChevronDown, Play, Copy, Check, Trash2, Loader2,
-  Brain, Search, ChevronRight
+  Brain, Search, ChevronRight, Database
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -13,6 +13,7 @@ import { useAuth } from '../context/AuthContext'
 import AutoRepairKBSelector from '../components/AutoRepairKBSelector'
 import { ControlledMediaImage } from '../components/ControlledMedia'
 import GCodeEditor from '../components/GCodeEditor'
+import AutoRepairKBState from '../components/AutoRepairKBState'
 
 const TABS = [
   { key: 'qa', icon: MessageSquare, label: '维修问答' },
@@ -137,8 +138,8 @@ function ThinkingStep({ step, isLast }) {
 export default function AutoRepairAgentPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAdmin, hasPermission } = useAuth()
-  const canInteract = isAdmin || hasPermission('autorepair:write')
+  const { hasPermission } = useAuth()
+  const canInteract = hasPermission('autorepair:write')
   const [activeTab, setActiveTab] = useState('qa')
   const [loading, setLoading] = useState(false)
 
@@ -159,7 +160,7 @@ export default function AutoRepairAgentPage() {
   }, [])
 
   // 知识库选择器（共享 hook）
-  const { arKb, setArKb, kbList, kbLoading, creating, canCreateArKb, createArKb } = useAutoRepairKB()
+  const { arKb, setArKb, kbList, kbLoading, kbError, creating, canCreateArKb, createArKb, refreshKbList } = useAutoRepairKB()
 
   // 代码解析状态
   const [codeResult, setCodeResult] = useState(null)
@@ -191,6 +192,7 @@ export default function AutoRepairAgentPage() {
   }
 
   const handleQASend = async (presetQuery) => {
+    if (!canInteract || !arKb) return
     const query = (presetQuery || qaInput).trim()
     if (!query || loading) return
     setQaInput('')
@@ -264,6 +266,7 @@ export default function AutoRepairAgentPage() {
 
   // === 故障诊断 ===
   const startDiagnosis = async (presetDesc) => {
+    if (!canInteract || !arKb) return
     const desc = (presetDesc || diagInput).trim()
     if (!desc || loading) return
     setDiagInput('')
@@ -285,7 +288,7 @@ export default function AutoRepairAgentPage() {
   }
 
   const continueDiagnosis = async (answer) => {
-    if (!diagSession || loading) return
+    if (!canInteract || !arKb || !diagSession || loading) return
     setDiagMessages(prev => [...prev, { role: 'user', content: answer }])
     setLoading(true)
     try {
@@ -324,6 +327,8 @@ export default function AutoRepairAgentPage() {
   // 诊断快捷回复
   const quickReply = (text) => continueDiagnosis(text)
 
+  if (!canInteract) return null
+
   return (
     <ManufacturingAgentErrorBoundary>
     <div className="space-y-4 h-[calc(100vh-140px)] flex flex-col">
@@ -358,11 +363,7 @@ export default function AutoRepairAgentPage() {
         />
       </div>
 
-      {!canInteract && (
-        <div className="rounded-xl border border-cloud-200 bg-cloud-100 px-3 py-2 text-xs text-ink-muted" role="status">
-          当前为只读模式：无 autorepair:write 权限，问答与故障诊断输入已禁用。
-        </div>
-      )}
+      {!kbLoading && !arKb && <AutoRepairKBState error={kbError} onRetry={refreshKbList} />}
 
       {/* 标签页 */}
       <div className="flex gap-1 p-1 bg-cloud-100 rounded-xl w-fit shrink-0">
@@ -387,7 +388,7 @@ export default function AutoRepairAgentPage() {
                 <div className="text-center py-16 text-ink-muted">
                   <MessageSquare size={40} className="mx-auto mb-3 opacity-30" />
                   <p className="text-sm">输入汽车维修问题，智能助手将基于知识库回答</p>
-                  {canInteract && (
+                  {canInteract && arKb && (
                     <div className="flex flex-wrap justify-center gap-2 mt-4">
                       {['发动机怠速抖动如何诊断？', '自动变速箱故障码 P0730 解析', '如何检测氧传感器信号异常？'].map(q => (
                         <button key={q} onClick={() => handleQASend(q)}
@@ -477,7 +478,7 @@ export default function AutoRepairAgentPage() {
             <div className="shrink-0 flex gap-2">
               <input value={qaInput} onChange={e => setQaInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleQASend()}
-                disabled={!canInteract}
+                disabled={!arKb}
                 placeholder="输入制造领域问题…"
                 className="flex-1 px-4 py-3 rounded-xl border border-cloud-300 text-sm bg-white
                   focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-50 transition-all" />
@@ -487,7 +488,7 @@ export default function AutoRepairAgentPage() {
                   取消
                 </button>
               ) : (
-                <button onClick={() => handleQASend()} disabled={!canInteract || !qaInput.trim()}
+                <button onClick={() => handleQASend()} disabled={!arKb || !qaInput.trim()}
                   className="btn-primary px-5 py-3 rounded-xl disabled:opacity-50">
                   <Send size={16} />
                 </button>
@@ -507,7 +508,7 @@ export default function AutoRepairAgentPage() {
                 <p className="text-xs text-ink-muted mt-1">支持 OBD 故障码 (DTC)语法高亮、指令解释与风险检测</p>
               </div>
             )}
-            <GCodeEditor onParseResult={(data) => setCodeResult(data)} />
+            <GCodeEditor canParse={canInteract && Boolean(arKb)} kbName={arKb} onParseResult={(data) => setCodeResult(data)} />
             {/* 输入输出信号（PLC） */}
             {codeResult?.io_signals && (
               <div className="grid grid-cols-2 gap-3 mt-4">
@@ -543,7 +544,7 @@ export default function AutoRepairAgentPage() {
                   <Wrench size={40} className="mx-auto mb-3 opacity-30" />
                   <p className="text-sm">描述设备故障现象，智能体将进行交互式诊断</p>
                   <div className="flex flex-wrap justify-center gap-2 mt-4">
-                    {['发动机故障灯亮，怠速不稳', '刹车时有异响，制动距离变长', '空调压缩机不工作'].map(q => (
+                    {arKb && ['发动机故障灯亮，怠速不稳', '刹车时有异响，制动距离变长', '空调压缩机不工作'].map(q => (
                       <button key={q} onClick={() => startDiagnosis(q)}
                         className="px-3 py-1.5 rounded-full text-xs bg-cloud-100 text-ink-body hover:bg-sky-50 hover:text-sky-600 transition-colors">
                         {q}
@@ -636,12 +637,12 @@ export default function AutoRepairAgentPage() {
                   }
                 }}
                 placeholder={diagSession ? '回答诊断问题或输入补充信息…' : '描述车辆故障现象…'}
-                disabled={!canInteract}
+                disabled={!arKb}
                 rows={2}
                 className="flex-1 px-4 py-3 rounded-xl border border-cloud-300 text-sm bg-white resize-none
                   focus:outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50 transition-all" />
               <button onClick={() => diagSession ? continueDiagnosis(diagInput) : startDiagnosis()}
-                disabled={!canInteract || loading || !diagInput.trim()}
+                disabled={!arKb || loading || !diagInput.trim()}
                 className="btn-primary px-5 py-3 rounded-xl disabled:opacity-50 bg-amber-500 hover:bg-amber-600">
                 <Send size={16} />
               </button>

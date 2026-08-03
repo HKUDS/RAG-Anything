@@ -38,7 +38,7 @@ function highlightLine(line) {
   return parts.map((p, i) => p.cls ? <span key={i} className={p.cls}>{p.text}</span> : <span key={i}>{p.text}</span>)
 }
 
-export default function GCodeEditor({ onParseResult }) {
+export default function GCodeEditor({ onParseResult, canParse = false }) {
   const [code, setCode] = useState('')
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -48,7 +48,7 @@ export default function GCodeEditor({ onParseResult }) {
   const preRef = useRef()
 
   const handleParse = useCallback(async () => {
-    if (!code.trim() || loading) return
+    if (!canParse || !code.trim() || loading) return
     setLoading(true)
     try {
       const res = await api.post('/autorepair/code/parse', { query: code, language: lang })
@@ -58,9 +58,11 @@ export default function GCodeEditor({ onParseResult }) {
     } catch (e) {
       setResult({ error: '解析请求失败' })
     } finally { setLoading(false) }
-  }, [code, lang, loading])
+  }, [canParse, code, lang, loading, onParseResult])
 
   const lines = code.split('\n')
+
+  if (!canParse) return null
 
   return (
     <div className="space-y-3">

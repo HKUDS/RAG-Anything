@@ -8,6 +8,8 @@ import { motion } from 'framer-motion'
 import { api } from '../utils/api'
 import { useAutoRepairKB } from '../hooks/useAutoRepairKB'
 import AutoRepairKBSelector from '../components/AutoRepairKBSelector'
+import { useAuth } from '../context/AuthContext'
+import AutoRepairKBState from '../components/AutoRepairKBState'
 
 const CARD_VARIANTS = {
   hidden: { opacity: 0, y: 12 },
@@ -23,23 +25,37 @@ export default function AutoRepairDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
-  const { arKb, setArKb, kbList, kbLoading, creating, canCreateArKb, createArKb } = useAutoRepairKB()
+  const { hasPermission } = useAuth()
+  const canInteract = hasPermission('autorepair:write')
+  const { arKb, setArKb, kbList, kbLoading, kbError, creating, canCreateArKb, createArKb, refreshKbList } = useAutoRepairKB()
   const genRef = useRef(0)  // generation counter: discard stale API responses on KB switch
 
   const loadAll = useCallback(async (showLoading = true) => {
+    if (!arKb) {
+      setDashboard(null)
+      setKgSummary(null)
+      setCaseStats(null)
+      setLoading(false)
+      return
+    }
     const gen = ++genRef.current
     if (showLoading) setLoading(true)
     setError(null)
     try {
-      const [dashRes, kgRes, caseRes] = await Promise.all([
-        api.get(`/autorepair/dashboard?kb=${arKb}`).catch(() => null),
-        api.get(`/autorepair/knowledge-graph/summary?kb=${arKb}`).catch(() => null),
-        api.get(`/autorepair/cases/stats?kb=${arKb}`).catch(() => null),
+      const [dashResult, kgResult, caseResult] = await Promise.allSettled([
+        api.get(`/autorepair/dashboard?kb=${arKb}`),
+        api.get(`/autorepair/knowledge-graph/summary?kb=${arKb}`),
+        api.get(`/autorepair/cases/stats?kb=${arKb}`),
       ])
       if (gen !== genRef.current) return  // stale — newer request in flight
+      const dashRes = dashResult.status === 'fulfilled' ? dashResult.value : null
+      const kgRes = kgResult.status === 'fulfilled' ? kgResult.value : null
+      const caseRes = caseResult.status === 'fulfilled' ? caseResult.value : null
       setDashboard(dashRes?.data || dashRes)
       setKgSummary(kgRes?.data || kgRes)
       setCaseStats(caseRes?.data || caseRes)
+      const failed = [dashResult, kgResult, caseResult].find(result => result.status === 'rejected')
+      if (failed) setError(failed.reason?.message || '部分数据加载失败，请稍后重试')
     } catch (e) {
       if (gen !== genRef.current) return
       setError('数据加载失败，请确认后端服务已启动')
@@ -50,17 +66,21 @@ export default function AutoRepairDashboardPage() {
 
   // 切换知识库时清理旧数据
   useEffect(() => {
+    genRef.current += 1
     setDashboard(null)
     setKgSummary(null)
     setCaseStats(null)
   }, [arKb])
 
   // 初始数据加载（挂载或知识库变化时执行一次）
-  useEffect(() => { loadAll(true) }, [arKb])
+  useEffect(() => {
+    if (kbLoading) return
+    loadAll(true)
+  }, [arKb, kbLoading, loadAll])
 
   // 智能自动刷新：活跃 5 秒，空闲 15 秒，页面隐藏时停止
   useEffect(() => {
-    if (!autoRefresh) return
+    if (!autoRefresh || !arKb) return
     let interval
     const getDelay = () => (document.visibilityState === 'visible' ? 5000 : 15000)
     const schedule = () => {
@@ -75,9 +95,9 @@ export default function AutoRepairDashboardPage() {
     const onVisibility = () => { if (document.visibilityState === 'visible') schedule() }
     document.addEventListener('visibilitychange', onVisibility)
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisibility) }
-  }, [autoRefresh, arKb])
+  }, [autoRefresh, arKb, loadAll])
 
-  if (loading) {
+  if (kbLoading || loading) {
     return (
       <div className="flex items-center justify-center py-24">
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="text-center space-y-3">
@@ -117,8 +137,8 @@ export default function AutoRepairDashboardPage() {
             {[
               { to: '/autorepair', label: '诊断看板' },
               { to: '/autorepair/knowledge', label: '知识库' },
-              { to: '/autorepair/agent', label: '智能体' },
-            ].map(item => (
+              canInteract ? { to: '/autorepair/agent', label: '智能体' } : null,
+            ].filter(Boolean).map(item => (
               <button key={item.to} onClick={() => navigate(item.to)}
                 className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                   location.pathname === item.to
@@ -141,13 +161,13 @@ export default function AutoRepairDashboardPage() {
             }`}>
             {autoRefresh ? '自动刷新 5s' : '手动刷新'}
           </button>
-          <button onClick={() => loadAll(false)} className="px-3 py-1.5 rounded-lg text-xs border border-cloud-300 text-ink-body hover:bg-cloud-200">
+          <button onClick={() => loadAll(false)} disabled={!arKb} className="px-3 py-1.5 rounded-lg text-xs border border-cloud-300 text-ink-body hover:bg-cloud-200 disabled:opacity-50">
             刷新
           </button>
-          <button onClick={() => navigate('/autorepair/agent')}
+          {canInteract && <button onClick={() => navigate('/autorepair/agent')}
             className="btn-primary flex items-center gap-2 px-4 py-2 text-sm">
             <Play size={15} /> 启动智能体
-          </button>
+          </button>}
         </div>
       </div>
 
@@ -161,8 +181,12 @@ export default function AutoRepairDashboardPage() {
         </div>
       )}
 
+      {!kbLoading && !arKb && (
+        <AutoRepairKBState error={kbError} onRetry={refreshKbList} />
+      )}
+
       {/* 引导区：完全无数据时显示 */}
-      {!loading && !error && !hasData && (
+      {!loading && !error && arKb && !hasData && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
           className="card p-8 text-center space-y-6">
           <div className="w-14 h-14 rounded-2xl bg-sky-50 flex items-center justify-center mx-auto">
@@ -171,7 +195,7 @@ export default function AutoRepairDashboardPage() {
           <div>
             <h3 className="text-lg font-semibold text-ink-body">欢迎使用汽修智能助手</h3>
             <p className="text-sm text-ink-muted mt-1 max-w-md mx-auto">
-              知识库尚未导入数据，请按照以下步骤开始使用
+              {canInteract ? '知识库尚未导入数据，请按照以下步骤开始使用' : '当前知识库暂无可查看的数据。'}
             </p>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-2xl mx-auto">
@@ -179,7 +203,7 @@ export default function AutoRepairDashboardPage() {
               { step: 1, icon: Database, label: '导入知识库数据', desc: '导入赛项知识、故障案例、工艺文档等', to: '/autorepair/knowledge', btn: '浏览知识库' },
               { step: 2, icon: BarChart3, label: '构建知识图谱', desc: '系统自动构建知识节点与关系', to: '/autorepair/knowledge', btn: '查看图谱' },
               { step: 3, icon: MessageSquare, label: '开始智能问答', desc: '基于知识库进行检索增强问答', to: '/autorepair/agent', btn: '启动智能体' },
-            ].map(item => (
+            ].filter(item => canInteract || item.step === 2).map(item => (
               <div key={item.step} className="p-5 rounded-xl bg-cloud-200 border border-cloud-200 text-left space-y-3">
                 <div className="flex items-center gap-3">
                   <div className="w-7 h-7 rounded-full bg-coral-100 flex items-center justify-center text-xs font-bold text-sky-500">
@@ -198,9 +222,9 @@ export default function AutoRepairDashboardPage() {
               </div>
             ))}
           </div>
-          <p className="text-xs text-ink-muted">
+          {canInteract && <p className="text-xs text-ink-muted">
             你也可以使用脚本批量导入：<code className="px-1.5 py-0.5 rounded bg-cloud-100 font-mono text-ink-muted">python scripts/import_exams.py</code>
-          </p>
+          </p>}
         </motion.div>
       )}
 
@@ -243,8 +267,8 @@ export default function AutoRepairDashboardPage() {
           <div className="space-y-1.5">
             {[
               { to: '/autorepair/knowledge', icon: BookOpen, label: '知识图谱 & 案例库', desc: '浏览赛项知识结构、工艺文档与故障案例' },
-              { to: '/autorepair/agent', icon: MessageSquare, label: '智能问答', desc: '文本问答、代码解析、故障诊断、全局搜索' },
-            ].map(item => (
+              canInteract ? { to: '/autorepair/agent', icon: MessageSquare, label: '智能问答', desc: '文本问答、代码解析、故障诊断、全局搜索' } : null,
+            ].filter(Boolean).map(item => (
               <button key={item.to} onClick={() => navigate(item.to)}
                 className="w-full flex items-center gap-3 p-3 rounded-xl hover:bg-cloud-200 transition-colors text-left group">
                 <div className="w-8 h-8 rounded-lg bg-cloud-100 flex items-center justify-center group-hover:bg-sky-50 transition-colors">

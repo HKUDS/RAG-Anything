@@ -260,3 +260,89 @@ test('a forbidden detail refresh evicts cached rows and returns fail-closed reso
   assert.equal(denied.stats.failClosed, true)
   assert.equal(api.getCachedKnowledgeDetail('manuals'), null)
 })
+
+test('getGlobalStatsCached caches per current KB and deduplicates concurrent requests', async t => {
+  const originalFetch = globalThis.fetch
+  const originalLocalStorage = globalThis.localStorage
+  const calls = []
+  globalThis.localStorage = { getItem: () => null }
+  globalThis.fetch = async url => {
+    calls.push(String(url))
+    return jsonResponse({ documents: calls.length * 10 })
+  }
+  t.after(() => {
+    globalThis.fetch = originalFetch
+    globalThis.localStorage = originalLocalStorage
+    advanceKnowledgeDetailAuthGeneration()
+  })
+
+  advanceKnowledgeDetailAuthGeneration()
+  setCurrentKB('demo')
+  const [first, second] = await Promise.all([
+    api.getGlobalStatsCached(),
+    api.getGlobalStatsCached(),
+  ])
+  assert.equal(calls.length, 1)
+  assert.deepEqual(first, { documents: 10 })
+  assert.deepEqual(second, { documents: 10 })
+
+  const cached = await api.getGlobalStatsCached()
+  assert.equal(calls.length, 1)
+  assert.match(calls[0], /kb=demo/)
+  assert.deepEqual(cached, { documents: 10 })
+})
+
+test('getGlobalStatsCached skips empty early return and refetches after auth generation advance', async t => {
+  const originalFetch = globalThis.fetch
+  const originalLocalStorage = globalThis.localStorage
+  const calls = []
+  globalThis.localStorage = { getItem: () => null }
+  globalThis.fetch = async url => {
+    calls.push(String(url))
+    return jsonResponse({ documents: calls.length * 10 })
+  }
+  t.after(() => {
+    globalThis.fetch = originalFetch
+    globalThis.localStorage = originalLocalStorage
+    advanceKnowledgeDetailAuthGeneration()
+  })
+
+  advanceKnowledgeDetailAuthGeneration()
+  const empty = await api.getGlobalStatsCached()
+  assert.deepEqual(empty, {})
+  assert.equal(calls.length, 0)
+
+  setCurrentKB('demo')
+  const first = await api.getGlobalStatsCached()
+  assert.equal(calls.length, 1)
+  assert.deepEqual(first, { documents: 10 })
+
+  advanceKnowledgeDetailAuthGeneration()
+  setCurrentKB('demo')
+  const second = await api.getGlobalStatsCached()
+  assert.equal(calls.length, 2)
+  assert.deepEqual(second, { documents: 20 })
+})
+
+test('getGlobalStatsCached force refreshes past the cached value', async t => {
+  const originalFetch = globalThis.fetch
+  const originalLocalStorage = globalThis.localStorage
+  const calls = []
+  globalThis.localStorage = { getItem: () => null }
+  globalThis.fetch = async url => {
+    calls.push(String(url))
+    return jsonResponse({ documents: calls.length * 10 })
+  }
+  t.after(() => {
+    globalThis.fetch = originalFetch
+    globalThis.localStorage = originalLocalStorage
+    advanceKnowledgeDetailAuthGeneration()
+  })
+
+  advanceKnowledgeDetailAuthGeneration()
+  setCurrentKB('demo')
+  await api.getGlobalStatsCached()
+  const forced = await api.getGlobalStatsCached({ force: true })
+  assert.equal(calls.length, 2)
+  assert.deepEqual(forced, { documents: 20 })
+})

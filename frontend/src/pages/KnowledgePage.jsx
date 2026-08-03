@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Plus, Layers, Trash2, Clock, Database, FileText, CircleDot, X, Search, UserRound, Loader2 } from 'lucide-react'
+import { Plus, Layers, Trash2, Clock, Database, FileText, CircleDot, X, Search, UserRound } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { api, setCurrentKB, getCurrentKB } from '../utils/api'
@@ -8,7 +8,6 @@ import Pagination from '../components/Pagination'
 import ResourceSortControl from '../components/ResourceSortControl'
 import { sortKnowledgeBases } from '../utils/kbSorting'
 import { clampPage, getStoredPageSize, getTotalPages, storePageSize } from '../utils/pagination'
-import { createLatestRequestGate } from '../utils/knowledgeDetailState'
 import { formatDate } from '../utils/dateFormat'
 
 const PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:knowledge-bases'
@@ -36,7 +35,7 @@ function shouldReplaceStats(currentStats, incomingStats) {
 }
 
 // ====================== 知识库选择器（卡片网格） ======================
-function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, deletingKB, gridRef, reserveRows = false, canDelete = true }) {
+function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, onDelete, deletingKB, gridRef, reserveRows = false, canDelete = false }) {
   const [showDelete, setShowDelete] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const gridClassName = reserveRows
@@ -48,7 +47,6 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, d
 
   const handleDeleteClick = (e, kb) => {
     e.stopPropagation()
-    if (openingKB === kb.name) return
     setDeleteTarget(kb)
     setShowDelete(true)
   }
@@ -66,7 +64,6 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, d
         const entityCount = Number(stats?.entities || 0)
         const hasStats = stats !== undefined
         const isUnavailable = stats?.unavailable === true
-        const isOpening = openingKB === kb.name
 
         return (
           <article
@@ -78,12 +75,9 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, d
           >
             <button
               type="button"
-              className={`resource-card-kb-hitarea ${isOpening ? 'cursor-progress' : ''}`}
-              style={isOpening ? { cursor: 'progress' } : undefined}
+              className="resource-card-kb-hitarea"
               onClick={() => onSwitch(kb.name)}
               onFocus={() => onPrefetch(kb.name)}
-              disabled={isOpening}
-              aria-busy={isOpening}
               aria-label={`打开知识库 ${kb.label || kb.name}`}
             />
 
@@ -95,12 +89,7 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, d
                 <h3 className="resource-card-kb-title text-ink-primary">
                   {kb.label || kb.name}
                 </h3>
-                {isOpening && (
-                  <span className="mt-1 inline-flex items-center gap-1 text-2xs text-sky-600" role="status" aria-live="polite">
-                    <Loader2 size={11} className="animate-spin" aria-hidden="true" />
-                    正在打开…
-                  </span>
-                )}
+
               </div>
             </div>
 
@@ -143,7 +132,7 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, d
                 type="button"
                 onClick={(e) => handleDeleteClick(e, kb)}
                 onKeyDown={e => e.stopPropagation()}
-                disabled={isOpening || deletingKB}
+                disabled={deletingKB}
                 className="resource-card-kb-delete absolute opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity rounded-lg text-ink-muted hover:text-rose-500 hover:bg-rose-50"
                 title="删除知识库"
                 aria-label={`删除 ${kb.label || kb.name}`}
@@ -219,11 +208,6 @@ export default function KnowledgePage() {
   const pendingStatsRef = useRef(new Set())
   const statsGenRef = useRef(0)
   const [statsReloadKey, setStatsReloadKey] = useState(0)
-  const [openingKB, setOpeningKB] = useState('')
-  const openRequestGateRef = useRef(null)
-  if (!openRequestGateRef.current) openRequestGateRef.current = createLatestRequestGate()
-
-  useEffect(() => () => openRequestGateRef.current?.invalidate(), [])
 
   const loadStatsForKBs = useCallback(async (kbNames) => {
     const names = [...new Set((kbNames || []).filter(Boolean))]
@@ -372,21 +356,15 @@ export default function KnowledgePage() {
   }, [])
 
   // 跳转到知识库详情页：等待目标 KB 的文档与统计预取，避免详情首帧误报为空。
-  const switchKB = useCallback(async (name) => {
-    const requestId = openRequestGateRef.current.begin()
-    setOpeningKB(name)
-    try {
-      await api.prefetchKnowledgeDetail(name, { timeoutMs: 6_000 })
-    } catch {
-      // 失败也进入详情页，由详情页展示对应错误与重试状态。
-    }
-    if (!openRequestGateRef.current.isLatest(requestId)) return
+  const switchKB = useCallback((name) => {
+    api.prefetchKnowledgeDetail(name).catch(() => {})
     setCurrentKB(name)
     navigate(`/knowledge/${encodeURIComponent(name)}`)
   }, [navigate])
 
   // 创建知识库
   const createKB = useCallback(async (name) => {
+    if (!canCreateKB) return
     try {
       await api.createKB(name, name)
       showToast(`知识库 "${name}" 创建成功`, 'success')
@@ -396,11 +374,12 @@ export default function KnowledgePage() {
     } catch (e) {
       showToast('创建失败: ' + e.message, 'error')
     }
-  }, [loadKBs])
+  }, [canCreateKB, loadKBs])
 
   const openCreateModal = useCallback(() => {
+    if (!canCreateKB) return
     setShowCreate(true)
-  }, [])
+  }, [canCreateKB])
 
   const closeCreateModal = useCallback(() => {
     setShowCreate(false)
@@ -408,15 +387,15 @@ export default function KnowledgePage() {
   }, [])
 
   const handleCreateKB = useCallback(() => {
+    if (!canCreateKB) return
     const name = newKBName.trim()
     if (!name) return
     createKB(name)
-  }, [createKB, newKBName])
+  }, [canCreateKB, createKB, newKBName])
 
   // 删除知识库
   const deleteKB = useCallback(async (name, onDone) => {
-    openRequestGateRef.current.invalidate()
-    setOpeningKB('')
+    if (!canDeleteKB) return
     setDeletingKB(true)
     try {
       await api.deleteKB(name)
@@ -427,7 +406,7 @@ export default function KnowledgePage() {
       showToast('删除失败: ' + e.message, 'error')
     }
     setDeletingKB(false)
-  }, [loadKBs])
+  }, [canDeleteKB, loadKBs])
 
   const normalizedSearch = search.trim().toLowerCase()
   const filteredKBs = useMemo(() => kbs.filter(kb => {
@@ -486,12 +465,6 @@ export default function KnowledgePage() {
         )}
       </div>
 
-      {!canCreateKB && (
-        <div className="rounded-xl border border-cloud-200 bg-cloud-100 px-3 py-2 text-xs text-ink-muted" role="status">
-          当前为只读模式：仅可浏览知识库，创建与删除需具备 kb:write / kb:delete 权限。
-        </div>
-      )}
-
       <section className="resource-panel">
         <div className="resource-toolbar">
           <div className="relative w-full lg:max-w-md">
@@ -530,18 +503,42 @@ export default function KnowledgePage() {
           </div>
         </div>
 
+        {!kbsLoaded ? (
+          <div className="resource-grid resource-grid-kbs" aria-busy="true">
+            {[1, 2, 3, 4].map(item => (
+              <div key={item} className="directory-card resource-card resource-card-kb" aria-hidden="true">
+                <div className="flex items-center gap-3">
+                  <div className="directory-icon resource-card-kb-icon">
+                    <div className="skeleton h-[18px] w-[18px]" />
+                  </div>
+                  <div className="min-w-0 flex-1 space-y-2">
+                    <div className="skeleton h-4 w-2/3" />
+                    <div className="skeleton h-3 w-1/3" />
+                  </div>
+                </div>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <div className="skeleton h-5 w-16" />
+                  <div className="skeleton h-5 w-16" />
+                </div>
+                <div className="mt-4">
+                  <div className="skeleton h-3 w-1/3" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
         <KBSelector
           kbs={paginatedKBs}
           kbStats={kbStats}
           onSwitch={switchKB}
           onPrefetch={prefetchKB}
-          openingKB={openingKB}
           onDelete={deleteKB}
           deletingKB={deletingKB}
           canDelete={canDeleteKB}
           gridRef={gridRef}
           reserveRows={paginatedKBs.length > 0}
         />
+        )}
 
         {sortedKBs.length > 0 && (
           <Pagination

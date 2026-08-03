@@ -11,6 +11,7 @@ import { useAutoRepairKB } from '../hooks/useAutoRepairKB'
 import { useAuth } from '../context/AuthContext'
 import AutoRepairKBSelector from '../components/AutoRepairKBSelector'
 import KnowledgeGraphD3 from '../components/KnowledgeGraphD3'
+import AutoRepairKBState from '../components/AutoRepairKBState'
 
 // 轻量错误边界，避免单点崩溃导致整页空白
 class KnowledgeErrorBoundary extends React.Component {
@@ -68,8 +69,9 @@ const SEVERITY_OPTIONS = [
 export default function AutoRepairKnowledgePage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const { isAdmin, hasPermission } = useAuth()
-  const canManageCases = isAdmin || hasPermission('autorepair:write')
+  const { hasPermission } = useAuth()
+  const canManageCases = hasPermission('autorepair:write')
+  const canWriteKnowledge = hasPermission('kb:write')
   const [activeTab, setActiveTab] = useState('graph')
   const [kgNodes, setKgNodes] = useState([])
   const [kgEdges, setKgEdges] = useState([])
@@ -91,13 +93,17 @@ export default function AutoRepairKnowledgePage() {
   const [caseSaving, setCaseSaving] = useState(false)
   // 详情视图状态
   const [viewingCase, setViewingCase] = useState(null)
-  const { arKb, setArKb, kbList, kbLoading, creating, canCreateArKb, createArKb } = useAutoRepairKB()
+  const { arKb, setArKb, kbList, kbLoading, kbError, creating, canCreateArKb, createArKb, refreshKbList } = useAutoRepairKB()
 
   // 生成计数器，用于取消过期的进行中请求
   const genRef = useRef(0)
 
   // ---- 知识图谱数据加载（统一）----
   const loadGraph = useCallback(async () => {
+    if (!arKb) {
+      setKgNodes([]); setKgEdges([]); setKgSummary(null); setKgLoading(false)
+      return
+    }
     const gen = ++genRef.current
     setKgLoading(true)
     setKgError(null)
@@ -122,6 +128,10 @@ export default function AutoRepairKnowledgePage() {
 
   // 统一案例加载器
   const loadCases = useCallback(async () => {
+    if (!arKb) {
+      setCaseResults([]); setCaseStats(null); setLoading(false)
+      return
+    }
     const gen = ++genRef.current
     setLoading(true)
     try {
@@ -142,24 +152,27 @@ export default function AutoRepairKnowledgePage() {
 
   // 切换知识库时清理旧数据
   useEffect(() => {
+    genRef.current += 1
     setKgNodes([]); setKgEdges([]); setKgSummary(null)
     setCaseResults([]); setCaseStats(null)
     // 下一轮 effect 会触发加载
   }, [arKb])
 
   useEffect(() => {
+    if (kbLoading || !arKb) return
     if (activeTab === 'graph' || activeTab === 'nodes') loadGraph()
     else if (activeTab === 'cases') loadCases()
-  }, [activeTab, arKb])
+  }, [activeTab, arKb, kbLoading, loadCases, loadGraph])
 
   // 搜索
   const handleSearch = () => {
-    if (activeTab === 'cases') loadCases()
+    if (arKb && activeTab === 'cases') loadCases()
   }
 
   // ── 统一案例增删改查 ─────────────────────────────
 
   const openCaseCreate = (caseType = 'fault') => {
+    if (!canManageCases || !arKb) return
     setEditingCase(null)
     if (caseType === 'fault') {
       setCaseForm({ case_type: 'fault', title: '', equipment_type: '', fault_category: '',
@@ -172,6 +185,7 @@ export default function AutoRepairKnowledgePage() {
   }
 
   const openCaseEdit = (c) => {
+    if (!canManageCases || !arKb) return
     setEditingCase(c)
     if (c.case_type === 'fault') {
       setCaseForm({
@@ -193,7 +207,7 @@ export default function AutoRepairKnowledgePage() {
   }
 
   const handleSaveCase = async () => {
-    if (!canManageCases) return
+    if (!canManageCases || !arKb) return
     setCaseSaving(true)
     try {
       const body = { case_type: caseForm.case_type, title: caseForm.title }
@@ -231,7 +245,7 @@ export default function AutoRepairKnowledgePage() {
   }
 
   const handleDeleteCase = async (caseId, title) => {
-    if (!canManageCases) return
+    if (!canManageCases || !arKb) return
     if (!window.confirm(`确定要删除案例「${title}」吗？此操作不可撤销。`)) return
     try {
       await api.delete(`/autorepair/cases/${caseId}`)
@@ -250,6 +264,7 @@ export default function AutoRepairKnowledgePage() {
 
   // 节点详情与谱系
   const viewNodeDetail = async (nodeId) => {
+    if (!arKb) return
     try {
       const [detailRes, lineageRes] = await Promise.all([
         api.get(`/autorepair/knowledge-graph/nodes/${nodeId}?kb=${arKb}`),
@@ -264,6 +279,7 @@ export default function AutoRepairKnowledgePage() {
 
   // 处理 D3 图谱中的节点点击
   const handleGraphNodeClick = useCallback(async (node) => {
+    if (!arKb) return
     setSelectedNode(node)
     if (node?.id) {
       try {
@@ -306,8 +322,8 @@ export default function AutoRepairKnowledgePage() {
             {[
               { to: '/autorepair', label: '仪表板' },
               { to: '/autorepair/knowledge', label: '知识库' },
-              { to: '/autorepair/agent', label: '智能体' },
-            ].map(item => (
+              canManageCases ? { to: '/autorepair/agent', label: '智能体' } : null,
+            ].filter(Boolean).map(item => (
               <button key={item.to} onClick={() => navigate(item.to)}
                 className={`px-3 py-1 rounded-lg text-xs font-medium transition-colors ${
                   location.pathname === item.to
@@ -324,21 +340,17 @@ export default function AutoRepairKnowledgePage() {
             arKb={arKb} kbList={kbList} loading={kbLoading} creating={creating}
             onChange={setArKb} onCreate={createArKb} canCreate={canCreateArKb}
           />
-          <button
+          {canWriteKnowledge && <button
             onClick={() => navigate(`/knowledge`)}
             className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs border border-sky-200 dark:border-sky-800/30 text-sky-600 hover:bg-sky-50 transition-colors"
             title="跳转到通用知识库管理页面上传文档"
           >
             <BookOpen size={13} /> 上传文档
-          </button>
+          </button>}
         </div>
       </div>
 
-      {!canManageCases && (
-        <div className="rounded-xl border border-cloud-200 bg-cloud-100 px-3 py-2 text-xs text-ink-muted" role="status">
-          当前为只读模式：无 autorepair:write 权限，案例新增、编辑与删除已隐藏。
-        </div>
-      )}
+      {!kbLoading && !arKb && <AutoRepairKBState error={kbError} onRetry={refreshKbList} />}
 
       {/* 标签页 */}
       <div className="flex gap-1 p-1 bg-cloud-100 rounded-xl w-fit">

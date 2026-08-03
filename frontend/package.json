@@ -10,6 +10,8 @@
     "test:unit": "node --test src/utils/*.test.js"
   },
   "dependencies": {
+    "@fontsource/inter": "^5.2.5",
+    "@fontsource/jetbrains-mono": "^5.2.5",
     "@xyflow/react": "^12.11.0",
     "d3": "^7.9.0",
     "framer-motion": "^11.5.0",

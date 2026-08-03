@@ -47,6 +47,9 @@ export default defineConfig({
           if (id.includes('node_modules/recharts')) {
             return 'charts-vendor'
           }
+          if (id.includes('node_modules/d3') || id.includes('node_modules/internmap') || id.includes('node_modules/delaunator') || id.includes('node_modules/robust-predicates')) {
+            return 'd3-vendor'
+          }
           if (id.includes('node_modules/lodash')) {
             return 'lodash-vendor'
           }

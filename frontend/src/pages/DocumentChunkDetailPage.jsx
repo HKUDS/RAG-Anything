@@ -4,10 +4,11 @@ import {
   AlertTriangle, ArrowLeft, FileText, ImageIcon, Loader2, Pencil,
   Save, Sigma, Table, Tag, Trash2, Video, X, Zap,
 } from 'lucide-react'
-import { api, setCurrentKB } from '../utils/api'
+import { api } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 import { UserDialogConfirmation } from '../components/UserDialog'
 import { useControlledMediaSource } from '../components/ControlledMedia'
+import { useConfirmedKnowledgeBase } from '../hooks/useConfirmedKnowledgeBase'
 
 const MAX_CONTENT_LENGTH = 8000
 
@@ -80,11 +81,11 @@ function detailPath(kbName, docId, chunkId, tagId) {
 function DetailErrorState({ error, onRetry, backPath }) {
   const missing = error?.status === 404
   const forbidden = error?.status === 403
-  const title = missing ? '切块不存在' : forbidden ? '无权查看此切块' : '切块详情加载失败'
+  const title = missing || forbidden ? '内容暂不可用' : '切块详情加载失败'
   const description = missing
     ? '该切块可能已被删除或在编辑后更新了地址。'
     : forbidden
-      ? '当前账号没有访问该知识库的权限。'
+      ? '内容暂不可用，链接可能已失效。'
       : (error?.message || '网络连接异常，请稍后重试。')
 
   return (
@@ -107,6 +108,7 @@ export default function DocumentChunkDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { hasPermission } = useAuth()
   const canWrite = hasPermission('kb:write')
+  const kbAccess = useConfirmedKnowledgeBase(kbName)
   const selectedTagId = searchParams.get('tag')
   const isEditing = canWrite && searchParams.get('mode') === 'edit'
   const backPath = listPath(kbName, docId, selectedTagId)
@@ -127,10 +129,7 @@ export default function DocumentChunkDetailPage() {
   const toastTimerRef = useRef(null)
 
   useEffect(() => {
-    setCurrentKB(kbName)
-  }, [kbName])
-
-  useEffect(() => {
+    if (!kbAccess.confirmed) return undefined
     const controller = new AbortController()
     let active = true
     setLoading(true)
@@ -151,15 +150,16 @@ export default function DocumentChunkDetailPage() {
       active = false
       controller.abort()
     }
-  }, [chunkId, docId, kbName, reloadKey])
+  }, [chunkId, docId, kbAccess.confirmed, kbName, reloadKey])
 
   useEffect(() => {
+    if (!kbAccess.confirmed) return undefined
     const controller = new AbortController()
     api.listAllKnowledgeTags({ kb: kbName, signal: controller.signal })
       .then(result => setKnownTags(Array.isArray(result.tags) ? result.tags : []))
       .catch(() => {})
     return () => controller.abort()
-  }, [kbName])
+  }, [kbAccess.confirmed, kbName])
 
   useEffect(() => () => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current)
@@ -183,14 +183,15 @@ export default function DocumentChunkDetailPage() {
   }, [chunk?.chunk_id, isEditing])
 
   const setEditMode = useCallback((enabled) => {
+    if (enabled && (!canWrite || !kbAccess.confirmed)) return
     const next = new URLSearchParams(searchParams)
     if (enabled) next.set('mode', 'edit')
     else next.delete('mode')
     setSearchParams(next)
-  }, [searchParams, setSearchParams])
+  }, [canWrite, kbAccess.confirmed, searchParams, setSearchParams])
 
   const updateTags = useCallback(async (names) => {
-    if (!chunk) return
+    if (!canWrite || !kbAccess.confirmed || !chunk) return
     setSavingTags(true)
     try {
       const result = await api.updateDocumentChunkTags(docId, chunk.chunk_id, names, { kb: kbName })
@@ -211,10 +212,10 @@ export default function DocumentChunkDetailPage() {
     } finally {
       setSavingTags(false)
     }
-  }, [chunk, docId, kbName, showToast])
+  }, [canWrite, chunk, docId, kbAccess.confirmed, kbName, showToast])
 
   const saveChunk = useCallback(async () => {
-    if (!chunk || !editValue.trim() || editValue.length > MAX_CONTENT_LENGTH) return
+    if (!canWrite || !kbAccess.confirmed || !chunk || !editValue.trim() || editValue.length > MAX_CONTENT_LENGTH) return
     setSaving(true)
     try {
       const result = await api.updateDocumentChunk(docId, chunk.chunk_id, editValue, { kb: kbName })
@@ -231,10 +232,10 @@ export default function DocumentChunkDetailPage() {
     } finally {
       setSaving(false)
     }
-  }, [chunk, docId, editValue, kbName, navigate, selectedTagId, showToast])
+  }, [canWrite, chunk, docId, editValue, kbAccess.confirmed, kbName, navigate, selectedTagId, showToast])
 
   const deleteChunk = useCallback(async () => {
-    if (!chunk || deleting) return
+    if (!canWrite || !kbAccess.confirmed || !chunk || deleting) return
     setDeleting(true)
     try {
       await api.deleteDocumentChunk(docId, chunk.chunk_id, { kb: kbName })
@@ -245,7 +246,11 @@ export default function DocumentChunkDetailPage() {
     } finally {
       setDeleting(false)
     }
-  }, [backPath, chunk, deleting, docId, kbName, navigate, showToast])
+  }, [backPath, canWrite, chunk, deleting, docId, kbAccess.confirmed, kbName, navigate, showToast])
+
+  if (kbAccess.loading) return <div className="chunk-page-skeleton" aria-label="Loading knowledge base" aria-busy="true"><div className="skeleton h-16 w-full" /><div className="skeleton h-96 w-full" /></div>
+  if (kbAccess.unavailable) return <DetailErrorState error={{ status: 404 }} onRetry={kbAccess.retry} backPath="/knowledge" />
+  if (kbAccess.error) return <DetailErrorState error={kbAccess.error} onRetry={kbAccess.retry} backPath="/knowledge" />
 
   if (loading) return <div className="chunk-page-skeleton" aria-label="正在加载切块详情" aria-busy="true"><div className="skeleton h-16 w-full" /><div className="skeleton h-96 w-full" /></div>
   if (error || !chunk) return <DetailErrorState error={error || { status: 404 }} onRetry={() => setReloadKey(value => value + 1)} backPath={backPath} />

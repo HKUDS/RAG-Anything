@@ -85,6 +85,7 @@ export default function AgentsPage({ onToast }) {
   const navigate = useNavigate()
   const { hasPermission } = useAuth()
   const [agents, setAgents] = useState([])
+  const [agentsLoading, setAgentsLoading] = useState(true)
   const [templates, setTemplates] = useState([])
   const [kbs, setKBs] = useState([])
   const [showModal, setShowModal] = useState(false)
@@ -105,15 +106,20 @@ export default function AgentsPage({ onToast }) {
   const canDelete = hasPermission('agent:delete')
 
   const loadData = useCallback(async () => {
-    const [agentsResponse, templatesResponse, kbResponse] = await Promise.all([
-      api.listAgents(),
-      api.getAgentTemplates(),
-      api.listKBs(),
-    ])
-    setAgents(agentsResponse.agents || [])
-    setTemplates(templatesResponse.templates || [])
-    setKBs(kbResponse.knowledge_bases || [])
-    return [agentsResponse, templatesResponse, kbResponse]
+    setAgentsLoading(true)
+    try {
+      const [agentsResponse, templatesResponse, kbResponse] = await Promise.all([
+        api.listAgents(),
+        api.getAgentTemplates(),
+        api.listKBs(),
+      ])
+      setAgents(agentsResponse.agents || [])
+      setTemplates(templatesResponse.templates || [])
+      setKBs(kbResponse.knowledge_bases || [])
+      return [agentsResponse, templatesResponse, kbResponse]
+    } finally {
+      setAgentsLoading(false)
+    }
   }, [])
 
   useEffect(() => {
@@ -199,19 +205,13 @@ export default function AgentsPage({ onToast }) {
   }
 
   const openCreate = () => {
-    if (!canWrite) {
-      onToast?.('当前账号只能查看智能体，不能创建或编辑。', 'info')
-      return
-    }
+    if (!canWrite) return
     resetModalState()
     setShowModal(true)
   }
 
   const openEdit = (agent) => {
-    if (!canWrite) {
-      onToast?.('当前账号只能查看智能体，不能创建或编辑。', 'info')
-      return
-    }
+    if (!canWrite) return
     setEditingAgent(agent.id)
     setFormError('')
     setNameTouched(false)
@@ -266,12 +266,7 @@ export default function AgentsPage({ onToast }) {
   }
 
   const saveAgent = async () => {
-    if (!canWrite) {
-      const message = '当前账号只能查看智能体，不能保存修改。'
-      setFormError(message)
-      onToast?.(message, 'error')
-      return
-    }
+    if (!canWrite) return
     setNameTouched(true)
     if (!form.name.trim()) {
       const message = '请输入智能体名称'
@@ -307,10 +302,7 @@ export default function AgentsPage({ onToast }) {
   }
 
   const deleteAgent = async (id) => {
-    if (!canDelete) {
-      onToast?.('当前账号没有删除智能体的权限。', 'error')
-      return
-    }
+    if (!canDelete) return
     try {
       await api.deleteAgent(id)
       setAgents(prev => prev.filter(agent => agent.id !== id))
@@ -383,21 +375,12 @@ export default function AgentsPage({ onToast }) {
           <h2 className="page-title">智能体</h2>
           <p className="page-subtitle">每个智能体拥有独立的知识库、模型和对话配置</p>
         </div>
-        <button
-          onClick={openCreate}
-          className="btn-primary disabled:opacity-50 disabled:cursor-not-allowed"
-          disabled={!canWrite}
-        >
+        {canWrite && <button onClick={openCreate} className="btn-primary">
           <Plus size={16} /> 新建智能体
-        </button>
+        </button>}
       </div>
 
       <section className="resource-panel">
-        {!canWrite && (
-          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
-            当前账号可查看智能体，但没有编辑权限。创建、编辑和删除操作已禁用。
-          </div>
-        )}
         <div className="resource-toolbar">
           <div className="relative w-full lg:max-w-md">
             <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted pointer-events-none" />
@@ -433,8 +416,33 @@ export default function AgentsPage({ onToast }) {
         </div>
 
         {/* 智能体卡片 */}
-        <div ref={gridRef} className={agentGridClassName} style={agentGridStyle}>
-          {paginatedAgents.map(agent => (
+        <div ref={gridRef} className={agentGridClassName} style={agentGridStyle} aria-busy={agentsLoading || undefined}>
+          {agentsLoading
+            ? [1, 2, 3, 4].map(item => (
+                <div key={item} className="directory-card resource-card resource-card-agent" aria-hidden="true">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="directory-icon resource-card-agent-icon">
+                        <div className="skeleton h-6 w-6" />
+                      </div>
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="skeleton h-4 w-2/3" />
+                        <div className="skeleton h-3 w-1/3" />
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    <div className="skeleton h-3 w-full" />
+                    <div className="skeleton h-3 w-4/5" />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-1.5">
+                    <div className="skeleton h-5 w-16" />
+                    <div className="skeleton h-5 w-20" />
+                    <div className="skeleton h-5 w-16" />
+                  </div>
+                </div>
+              ))
+            : paginatedAgents.map(agent => (
             <div
               key={agent.id}
               className="directory-card resource-card resource-card-agent group cursor-pointer"
@@ -451,22 +459,20 @@ export default function AgentsPage({ onToast }) {
                   </div>
                 </div>
                 <div className="resource-card-agent-actions flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
-                  <button
-                    className={`p-1.5 rounded-lg transition-colors ${canWrite ? 'text-ink-muted hover:text-sky-500 hover:bg-sky-50' : 'text-ink-muted/50 cursor-not-allowed'}`}
+                  {canWrite && <button
+                    className="p-1.5 rounded-lg text-ink-muted hover:text-sky-500 hover:bg-sky-50 transition-colors"
                     onClick={() => openEdit(agent)}
                     aria-label={`编辑 ${agent.name}`}
-                    disabled={!canWrite}
                   >
                     <Edit3 size={14} aria-hidden="true" />
-                  </button>
-                  <button
-                    className={`p-1.5 rounded-lg transition-colors ${canDelete ? 'text-ink-muted hover:text-rose-500 hover:bg-rose-50' : 'text-ink-muted/50 cursor-not-allowed'}`}
+                  </button>}
+                  {canDelete && <button
+                    className="p-1.5 rounded-lg text-ink-muted hover:text-rose-500 hover:bg-rose-50 transition-colors"
                     onClick={() => setDeleteConfirm(agent.id)}
                     aria-label={`删除 ${agent.name}`}
-                    disabled={!canDelete}
                   >
                     <Trash2 size={14} aria-hidden="true" />
-                  </button>
+                  </button>}
                 </div>
               </div>
 
@@ -509,18 +515,12 @@ export default function AgentsPage({ onToast }) {
           />
         )}
 
-        {agents.length === 0 && (
+        {!agentsLoading && agents.length === 0 && (
           <div className="empty-state resource-empty-state">
             <div className="empty-state-icon"><Bot size={48} className="text-cloud-400" /></div>
             <p className="empty-state-title">这里还没有智能体</p>
-            <p className="empty-state-desc">创建智能体以开始使用知识库问答和检索功能</p>
-            <button
-              onClick={openCreate}
-              className="btn-primary mt-6 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={!canWrite}
-            >
-              创建第一个智能体
-            </button>
+            <p className="empty-state-desc">当前暂无可用智能体。</p>
+            {canWrite && <button onClick={openCreate} className="btn-primary mt-6">创建第一个智能体</button>}
           </div>
         )}
 

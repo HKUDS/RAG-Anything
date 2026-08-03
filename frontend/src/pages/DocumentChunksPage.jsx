@@ -4,7 +4,7 @@ import {
   AlertTriangle, ArrowLeft, Check, Download, FileText, ImageIcon, Loader2,
   Pencil, RotateCcw, Search, Sigma, Table, Tag, Trash2, Video, X, Zap,
 } from 'lucide-react'
-import { api, setCurrentKB } from '../utils/api'
+import { api } from '../utils/api'
 import { getChunkingStrategyPresentation } from '../utils/chunkingStrategyPresentation'
 import { getChunkPresentation } from '../utils/chunkPresentation'
 import { getDocumentTagPresentation } from '../utils/documentTagHealth'
@@ -13,6 +13,8 @@ import { UserDialogConfirmation } from '../components/UserDialog'
 import Pagination from '../components/Pagination'
 import { useControlledMediaSource } from '../components/ControlledMedia'
 import { clampPage, getStoredPageSize, getTotalPages, storePageSize } from '../utils/pagination'
+import { neutralObjectError } from '../utils/permissionUiPolicy'
+import { useConfirmedKnowledgeBase } from '../hooks/useConfirmedKnowledgeBase'
 
 const PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:document-chunks'
 
@@ -136,8 +138,8 @@ function PageSkeleton() {
 function ErrorState({ error, onRetry, backPath }) {
   const isForbidden = error?.status === 403
   const isMissing = error?.status === 404
-  const title = isForbidden ? '无权访问此文档' : isMissing ? '文档不存在' : '切块详情加载失败'
-  const description = isForbidden ? '你的角色没有访问该知识库文档的权限。' : isMissing ? '文档可能已被删除，或当前链接已经失效。' : (error?.message || '网络连接异常，请稍后重试。')
+  const title = isForbidden || isMissing ? '内容暂不可用' : '切块详情加载失败'
+  const description = neutralObjectError(isForbidden, isMissing, error?.message || '网络连接异常，请稍后重试。')
   return (
     <div className="chunk-page-state" role="alert">
       <AlertTriangle size={30} aria-hidden="true" />
@@ -158,6 +160,7 @@ export default function DocumentChunksPage() {
   const [searchParams] = useSearchParams()
   const { hasPermission } = useAuth()
   const canWrite = hasPermission('kb:write')
+  const kbAccess = useConfirmedKnowledgeBase(kbName)
   const navigationDoc = location.state?.doc || null
   const selectedTagId = searchParams.get('tag')
   const legacyChunkId = searchParams.get('chunk')
@@ -179,16 +182,12 @@ export default function DocumentChunksPage() {
   const backgroundRefreshRef = useRef(false)
 
   useEffect(() => {
-    setCurrentKB(kbName)
-  }, [kbName])
-
-  useEffect(() => {
     if (!legacyChunkId) return
     navigate(detailPath(kbName, docId, legacyChunkId, selectedTagId), { replace: true })
   }, [docId, kbName, legacyChunkId, navigate, selectedTagId])
 
   useEffect(() => {
-    if (legacyChunkId) return undefined
+    if (legacyChunkId || !kbAccess.confirmed) return undefined
     const controller = new AbortController()
     let active = true
     if (!backgroundRefreshRef.current) setLoading(true)
@@ -210,7 +209,7 @@ export default function DocumentChunksPage() {
       active = false
       controller.abort()
     }
-  }, [docId, kbName, legacyChunkId, reloadKey])
+  }, [docId, kbAccess.confirmed, kbName, legacyChunkId, reloadKey])
 
   const tagStatus = data?.document?.tag_status
   useEffect(() => {
@@ -266,8 +265,9 @@ export default function DocumentChunksPage() {
   }, [docId, kbName, navigate, selectedTagId])
 
   const startEdit = useCallback(chunk => {
+    if (!canWrite || !kbAccess.confirmed) return
     navigate(detailPath(kbName, docId, chunk.chunk_id, selectedTagId, 'edit'))
-  }, [docId, kbName, navigate, selectedTagId])
+  }, [canWrite, docId, kbAccess.confirmed, kbName, navigate, selectedTagId])
 
   const clearListFilter = useCallback(() => {
     if (query) {
@@ -290,7 +290,7 @@ export default function DocumentChunksPage() {
   }
 
   const deleteChunk = useCallback(async () => {
-    if (!deleteCandidate || deletingId) return
+    if (!canWrite || !kbAccess.confirmed || !deleteCandidate || deletingId) return
     setDeletingId(deleteCandidate.chunk_id)
     try {
       const result = await api.deleteDocumentChunk(docId, deleteCandidate.chunk_id, { kb: kbName })
@@ -309,10 +309,10 @@ export default function DocumentChunksPage() {
     } finally {
       setDeletingId('')
     }
-  }, [deleteCandidate, deletingId, docId, kbName, showToast])
+  }, [canWrite, deleteCandidate, deletingId, docId, kbAccess.confirmed, kbName, showToast])
 
   const regenerateTags = useCallback(async () => {
-    if (retagging) return
+    if (!canWrite || !kbAccess.confirmed || retagging) return
     setRetagging(true)
     try {
       await api.regenerateDocumentTags(docId, { kb: kbName })
@@ -324,8 +324,11 @@ export default function DocumentChunksPage() {
     } finally {
       setRetagging(false)
     }
-  }, [docId, kbName, retagging, showToast])
+  }, [canWrite, docId, kbAccess.confirmed, kbName, retagging, showToast])
 
+  if (kbAccess.loading) return <PageSkeleton />
+  if (kbAccess.unavailable) return <ErrorState error={{ status: 404 }} onRetry={kbAccess.retry} backPath="/knowledge" />
+  if (kbAccess.error) return <ErrorState error={kbAccess.error} onRetry={kbAccess.retry} backPath="/knowledge" />
   if (loading) return <PageSkeleton />
   if (error) return <ErrorState error={error} onRetry={() => setReloadKey(value => value + 1)} backPath={backPath} />
 
@@ -357,7 +360,6 @@ export default function DocumentChunksPage() {
       {tagPresentation.isPending ? <div className={`chunk-tag-notice ${tagPresentation.tone}`} role="status" aria-live="polite"><Loader2 size={18} className="animate-spin" aria-hidden="true" /><div><strong>{tagPresentation.label}</strong><p>{tagPresentation.detail}{tagPresentation.coverageLabel ? ` 当前覆盖 ${tagPresentation.coverageLabel}。` : ''}</p></div></div> : null}
       {tagPresentation.status === 'failed' ? <div className="chunk-tag-notice error" role="alert"><AlertTriangle size={18} aria-hidden="true" /><div><strong>关键词标签尚未生成</strong><p>{document.tag_error_message || tagPresentation.detail}</p></div>{canWrite ? <button type="button" className="btn-secondary" onClick={regenerateTags} disabled={retagging}>{retagging ? <Loader2 size={15} className="animate-spin" aria-hidden="true" /> : <RotateCcw size={15} aria-hidden="true" />}{retagging ? '生成中' : '重新生成'}</button> : null}</div> : null}
       {tagPresentation.status === 'disabled' ? <div className="chunk-tag-notice warning" role="status"><AlertTriangle size={18} aria-hidden="true" /><div><strong>{tagPresentation.label}</strong><p>{tagPresentation.detail}</p></div></div> : null}
-      {!canWrite ? <div className="chunk-readonly-notice" role="status">当前账号拥有只读权限。你可以搜索和查看切块，但不能编辑或删除。</div> : null}
 
       <section className="chunk-list-section" aria-labelledby="chunk-list-heading">
         <div className="chunk-toolbar">

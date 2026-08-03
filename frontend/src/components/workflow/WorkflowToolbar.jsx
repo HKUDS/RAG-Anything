@@ -4,22 +4,21 @@ export default function WorkflowToolbar({
   workflowName, onNameChange, onNew, onSave, onLoad,
   onAutoLayout, onFitView, onZoomIn, onZoomOut,
   onUndo, onRedo, onRun, saving, running, isDirty, zoomLevel, hasNodes,
-  queryText, onQueryTextChange, canEdit = true,
+  queryText, onQueryTextChange, canEdit = false,
 }) {
   return (
     <div className="flex items-center gap-3 px-4 py-2.5 bg-white border-b border-cloud-300 flex-shrink-0">
       {/* 工作流名称 */}
       <div className="flex items-center gap-1.5">
-        <input
+        {canEdit ? <input
           type="text"
           value={workflowName}
           onChange={(e) => onNameChange(e.target.value)}
-          disabled={!canEdit}
           placeholder="未命名工作流"
           className="text-sm font-medium text-ink-primary bg-transparent border-none outline-none
                      focus:bg-cloud-200 rounded-lg px-2 py-1 w-48 placeholder:text-ink-muted"
-        />
-        {isDirty && (
+        /> : <output className="text-sm font-medium text-ink-primary px-2 py-1 w-48 truncate">{workflowName}</output>}
+        {canEdit && isDirty && (
           <span className="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0" title="有未保存的修改" />
         )}
       </div>
@@ -27,12 +26,8 @@ export default function WorkflowToolbar({
       <div className="w-px h-5 bg-cloud-300" />
 
       {/* 操作 */}
-      <button onClick={onNew} disabled={!canEdit} title="新建 (未保存时弹出确认)" className="toolbar-btn">
-        <FilePlus size={16} />
-      </button>
-      <button onClick={onSave} disabled={!canEdit || saving} title="保存 (Ctrl+S)" className="toolbar-btn">
-        <Save size={16} />
-      </button>
+      {canEdit && <button onClick={onNew} title="新建 (未保存时弹出确认)" className="toolbar-btn"><FilePlus size={16} /></button>}
+      {canEdit && <button onClick={onSave} disabled={saving} title="保存 (Ctrl+S)" className="toolbar-btn"><Save size={16} /></button>}
       <button onClick={onLoad} title="加载" className="toolbar-btn">
         <FolderOpen size={16} />
       </button>
@@ -40,19 +35,15 @@ export default function WorkflowToolbar({
       <div className="w-px h-5 bg-cloud-300" />
 
       {/* 撤销/重做 */}
-      <button onClick={onUndo} disabled={!canEdit} title="撤销 (Ctrl+Z)" className="toolbar-btn">
-        <Undo2 size={15} />
-      </button>
-      <button onClick={onRedo} disabled={!canEdit} title="重做 (Ctrl+Y)" className="toolbar-btn">
-        <Redo2 size={15} />
-      </button>
+      {canEdit && <button onClick={onUndo} title="撤销 (Ctrl+Z)" className="toolbar-btn"><Undo2 size={15} /></button>}
+      {canEdit && <button onClick={onRedo} title="重做 (Ctrl+Y)" className="toolbar-btn"><Redo2 size={15} /></button>}
 
       <div className="w-px h-5 bg-cloud-300" />
 
       <div className="flex-1" />
 
       {/* 运行时问题输入 */}
-      {hasNodes && (
+      {canEdit && hasNodes && (
         <div className="flex items-center gap-1.5 flex-1 max-w-md">
           <MessageCircle size={14} className="text-ink-muted flex-shrink-0" />
           <input
@@ -61,7 +52,7 @@ export default function WorkflowToolbar({
             onChange={(e) => onQueryTextChange?.(e.target.value)}
             placeholder="输入问题后运行..."
             onKeyDown={(e) => { if (e.key === 'Enter' && !running) onRun?.() }}
-            disabled={!canEdit || running}
+            disabled={running}
             className="flex-1 text-xs px-3 py-1.5 rounded-lg border border-cloud-300 bg-white
                        focus:outline-none focus:ring-2 focus:ring-sky-200 focus:border-sky-400
                        text-ink-body placeholder:text-cloud-400 disabled:opacity-50"
@@ -70,10 +61,10 @@ export default function WorkflowToolbar({
       )}
 
       {/* 运行 */}
-      {hasNodes && (
+      {canEdit && hasNodes && (
         <button
           onClick={onRun}
-          disabled={!canEdit || running}
+          disabled={running}
           title="运行工作流 (Enter 快捷运行)"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold
                      bg-emerald-500 text-white hover:bg-emerald-600
@@ -85,9 +76,7 @@ export default function WorkflowToolbar({
       )}
 
       {/* 布局与视图 */}
-      <button onClick={onAutoLayout} disabled={!canEdit} title="自动布局" className="toolbar-btn">
-        <LayoutGrid size={16} />
-      </button>
+      {canEdit && <button onClick={onAutoLayout} title="自动布局" className="toolbar-btn"><LayoutGrid size={16} /></button>}
       <button onClick={onFitView} title="适应画布" className="toolbar-btn">
         <Maximize2 size={16} />
       </button>

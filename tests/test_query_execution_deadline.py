@@ -7,6 +7,7 @@ import pytest
 
 import raganything.agentic_rag.tools as agent_tools
 import raganything.query.pipeline as query_pipeline
+import raganything.services.query_timing as query_timing
 from raganything.agentic_rag.tools import SearchTool
 from raganything.hybrid_search import ScoredChunk
 from raganything.query.pipeline import QueryMixin
@@ -263,6 +264,192 @@ def test_query_timing_closes_cancelled_phase_and_total_once(caplog):
     messages = [record.getMessage() for record in caplog.records]
     assert sum("phase=media outcome=cancelled" in message for message in messages) == 1
     assert sum("phase=total outcome=cancelled" in message for message in messages) == 1
+
+
+def _journey_messages(caplog, trace_id):
+    return [
+        record.getMessage()
+        for record in caplog.records
+        if "QUERY_JOURNEY" in record.getMessage() and f"trace_id={trace_id}" in record.getMessage()
+    ]
+
+
+def _journey_stage_names(message):
+    stages = message.split(" stages=", 1)[1]
+    if stages == "none":
+        return []
+    return [stage.split("{", 1)[0] for stage in stages.split(";")]
+
+
+def test_query_journey_summarizes_stages_in_stable_lifecycle_order(caplog):
+    with caplog.at_level("INFO"):
+        timing = QueryTiming("trace-journey")
+        timing.record("retrieval", 0.547, channel="vector")
+        timing.record("retrieval", 0.25, channel="bm25")
+        timing.record("retrieval", 7.219, outcome="timeout", channel="graph")
+        timing.record("retrieval", 7.242)
+        timing.record("media", 0.015, outcome="timeout")
+        timing.record("llm_first_token", 1.288)
+        timing.record("llm", 18.148)
+        timing.record("persistence", 0.012)
+        timing.total()
+
+    journey = _journey_messages(caplog, "trace-journey")
+
+    assert len(journey) == 1
+    assert "outcome=ok" in journey[0]
+    assert "total_elapsed_ms=" in journey[0]
+    assert _journey_stage_names(journey[0]) == [
+        "retrieval/bm25",
+        "retrieval/vector",
+        "retrieval/graph",
+        "retrieval",
+        "media",
+        "llm_first_token",
+        "llm",
+        "persistence",
+    ]
+    assert "outcome=timeout" in journey[0]
+    assert "cache_status=na" in journey[0]
+    assert "elapsed_ms=" in journey[0]
+
+
+def test_query_journey_collects_stages_from_same_trace_instances(caplog):
+    with caplog.at_level("INFO"):
+        request_timing = QueryTiming("trace-shared")
+        QueryTiming("trace-shared").record("retrieval", 0.25, channel="bm25")
+        QueryTiming("trace-shared").record("retrieval", 0.5, channel="vector")
+        request_timing.record("media", 0.1)
+        request_timing.total()
+
+    journey = _journey_messages(caplog, "trace-shared")
+    assert len(journey) == 1
+    assert _journey_stage_names(journey[0]) == [
+        "retrieval/bm25",
+        "retrieval/vector",
+        "media",
+    ]
+
+
+def test_query_journey_closes_started_stage_from_same_trace_instance(caplog):
+    with caplog.at_level("INFO"):
+        request_timing = QueryTiming("trace-shared-start")
+        component_timing = QueryTiming("trace-shared-start")
+        component_timing.start("media")
+        request_timing.total(outcome="timeout")
+
+    journey = _journey_messages(caplog, "trace-shared-start")
+    assert len(journey) == 1
+    assert "media{outcome=timeout" in journey[0]
+
+
+def test_query_journey_drops_late_same_trace_component_after_close(caplog):
+    with caplog.at_level("INFO"):
+        request_timing = QueryTiming("trace-late")
+        request_timing.total()
+        late_component = QueryTiming("trace-late")
+        assert late_component.record("retrieval", 0.1, channel="bm25") == 0.0
+        assert late_component.total(outcome="timeout") > 0.0
+
+    assert len(_journey_messages(caplog, "trace-late")) == 1
+
+
+def test_query_timing_replaces_unsafe_trace_identifier(caplog):
+    unsafe_trace_id = "secret-query-text\nprivate-document.pdf"
+    with caplog.at_level("INFO"):
+        request_timing = QueryTiming(unsafe_trace_id)
+        component_timing = QueryTiming(unsafe_trace_id)
+        component_timing.record("retrieval", 0.1)
+        request_timing.total()
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert all(unsafe_trace_id not in message for message in messages)
+    journey = [message for message in messages if "QUERY_JOURNEY" in message]
+    assert len(journey) == 1
+    assert "trace_id=invalid-" in journey[0]
+    assert "retrieval" in journey[0]
+
+
+@pytest.mark.parametrize("outcome", ("error", "timeout", "cancelled"))
+def test_query_journey_terminal_close_is_idempotent(caplog, outcome):
+    trace_id = f"trace-terminal-{outcome}"
+    with caplog.at_level("INFO"):
+        timing = QueryTiming(trace_id)
+        timing.start("media")
+        first_elapsed = timing.total(outcome=outcome)
+        second_elapsed = timing.total(outcome="ok")
+
+    messages = [record.getMessage() for record in caplog.records]
+    journey = _journey_messages(caplog, trace_id)
+    assert first_elapsed == second_elapsed
+    assert len(journey) == 1
+    assert f"outcome={outcome}" in journey[0]
+    assert sum("phase=total" in message for message in messages) == 1
+    assert f"media{{outcome={outcome}" in journey[0]
+
+
+def test_query_journeys_are_content_free_and_trace_isolated(caplog):
+    sensitive_values = (
+        "secret-query-text",
+        "rewritten-secret-text",
+        "prompt-secret-text",
+        "answer-secret-text",
+        "private-document.pdf",
+        r"C:\\private\\source.png",
+        "user-identifier-secret",
+        "credential-secret",
+        "exception-secret-text",
+    )
+    with caplog.at_level("INFO"):
+        first = QueryTiming("trace-one")
+        second = QueryTiming("trace-two")
+        first.record("retrieval", 0.1, channel="bm25")
+        for sensitive_value in sensitive_values:
+            first.record(
+                sensitive_value,
+                0.1,
+                outcome=sensitive_value,
+                cache_status=sensitive_value,
+                channel=sensitive_value,
+            )
+        second.record("media", 0.2)
+        first.total()
+        second.total(outcome="timeout")
+
+    first_journey = _journey_messages(caplog, "trace-one")
+    second_journey = _journey_messages(caplog, "trace-two")
+    assert len(first_journey) == len(second_journey) == 1
+    assert "media" not in first_journey[0]
+    assert "retrieval/bm25" not in second_journey[0]
+    assert "other" in first_journey[0]
+    for value in sensitive_values:
+        assert value not in first_journey[0]
+        assert value not in second_journey[0]
+
+
+def test_query_journey_keeps_existing_metric_observations(monkeypatch, caplog):
+    observed = []
+
+    class RecordingMetric:
+        def labels(self, *labels):
+            self.labels_value = labels
+            return self
+
+        def observe(self, value):
+            observed.append((self.labels_value, value))
+
+    monkeypatch.setattr(query_timing, "_PHASE_DURATION", RecordingMetric())
+
+    with caplog.at_level("INFO"):
+        timing = QueryTiming("trace-metric")
+        timing.record("retrieval", 0.25, channel="bm25")
+        timing.total()
+
+    assert (("retrieval", "ok", "na", "bm25"), 0.25) in observed
+    assert any(labels == ("total", "ok", "na", "na") for labels, _ in observed)
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("QUERY_TIMING trace_id=trace-metric phase=retrieval" in message for message in messages)
+    assert any("QUERY_TIMING trace_id=trace-metric phase=total" in message for message in messages)
 
 
 @pytest.mark.asyncio

@@ -125,8 +125,10 @@ function WorkflowPageInner() {
     const handler = (e) => {
       // Ctrl+S → 保存
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault()
-        handleSave()
+        if (canEdit) {
+          e.preventDefault()
+          handleSave()
+        }
       }
       // Escape → 关闭面板
       if (e.key === 'Escape') {
@@ -136,35 +138,38 @@ function WorkflowPageInner() {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [selectedNode, confirm, nodes, edges, workflowName, workflowId])
+  }, [canEdit, selectedNode, confirm, nodes, edges, workflowName, workflowId])
 
   // 通过 ReactFlow 变更追踪撤销/重做
   const wrappedOnNodesChange = useCallback((changes) => {
+    if (!canEdit) return
     onNodesChange(changes)
     markDirty()
-  }, [onNodesChange, markDirty])
+  }, [canEdit, onNodesChange, markDirty])
 
   const wrappedOnEdgesChange = useCallback((changes) => {
+    if (!canEdit) return
     onEdgesChange(changes)
     markDirty()
-  }, [onEdgesChange, markDirty])
+  }, [canEdit, onEdgesChange, markDirty])
 
   const onConnect = useCallback(
     (connection) => {
+      if (!canEdit) return
       setEdges((eds) => addEdge({ ...connection, ...defaultEdgeOptions }, eds))
       markDirty()
     },
-    [setEdges, markDirty]
+    [canEdit, setEdges, markDirty]
   )
 
   const onDropNode = useCallback(
-    (newNode) => { setNodes((nds) => [...nds, newNode]); markDirty() },
-    [setNodes, markDirty]
+    (newNode) => { if (!canEdit) return; setNodes((nds) => [...nds, newNode]); markDirty() },
+    [canEdit, setNodes, markDirty]
   )
 
   // 保存
   const handleSave = async () => {
-    if (!canEdit) { showToast('当前为只读模式，无法保存', 'error'); return }
+    if (!canEdit) return
     if (!token) { showToast('请先登录', 'error'); return }
     if (nodes.length === 0) { showToast('工作流为空，请先添加节点', 'error'); return }
     setSaving(true)
@@ -187,7 +192,7 @@ function WorkflowPageInner() {
 
   // 新建（带确认）
   const handleNew = () => {
-    if (!canEdit) { showToast('当前为只读模式，无法新建', 'error'); return }
+    if (!canEdit) return
     if (isDirty.current && nodes.length > 0) {
       setConfirm({
         title: '新建工作流',
@@ -243,7 +248,7 @@ function WorkflowPageInner() {
   }
 
   const handleDelete = async (id, name) => {
-    if (!canEdit) { showToast('当前为只读模式，无法删除', 'error'); return }
+    if (!canEdit) return
     setConfirm({
       title: '删除工作流',
       message: `确定删除 "${name || '未命名'}" 吗？此操作不可撤销。`,
@@ -264,7 +269,7 @@ function WorkflowPageInner() {
 
   // ── 运行工作流 ──────────────────────────────
   const handleRun = async () => {
-    if (!canEdit) { showToast('当前为只读模式，无法运行', 'error'); return }
+    if (!canEdit) return
     if (!workflowId) { showToast('请先保存工作流再运行', 'error'); return }
     setRunning(true)
     setCurrentRun(null)
@@ -311,16 +316,18 @@ function WorkflowPageInner() {
   }
 
   // 节点点击
-  const handleNodeClick = useCallback((node) => setSelectedNode(node), [])
+  const handleNodeClick = useCallback((node) => { if (canEdit) setSelectedNode(node) }, [canEdit])
 
   const handleNodeUpdate = useCallback((nodeId, newData) => {
+    if (!canEdit) return
     setNodes((nds) => nds.map((n) => (n.id === nodeId ? { ...n, data: newData } : n)))
     setSelectedNode((prev) => (prev?.id === nodeId ? { ...prev, data: newData } : prev))
     markDirty()
-  }, [setNodes, markDirty])
+  }, [canEdit, setNodes, markDirty])
 
   // 自动布局
   const handleAutoLayout = () => {
+    if (!canEdit) return
     if (nodes.length === 0) { showToast('没有节点可布局', 'error'); return }
     const GAP_X = 250, GAP_Y = 120
     const inDegree = {}, adj = {}
@@ -358,15 +365,10 @@ function WorkflowPageInner() {
 
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col">
-      {!canEdit && (
-        <div className="flex items-center gap-2 px-4 py-1.5 text-2xs text-ink-muted bg-cloud-100 border-b border-cloud-300" role="status">
-          当前为只读模式：无 workflow:write 权限，新建、保存、运行与删除已禁用。
-        </div>
-      )}
       <WorkflowToolbar
         workflowName={workflowName}
         canEdit={canEdit}
-        onNameChange={(v) => { setWorkflowName(v); markDirty() }}
+        onNameChange={(v) => { if (!canEdit) return; setWorkflowName(v); markDirty() }}
         onNew={handleNew}
         onSave={handleSave}
         onLoad={handleOpenLoad}
@@ -387,7 +389,7 @@ function WorkflowPageInner() {
       />
 
       <div className="flex-1 flex overflow-hidden">
-        <NodePalette />
+        {canEdit && <NodePalette />}
         <WorkflowCanvas
           nodes={nodes}
           edges={edges}
@@ -397,9 +399,10 @@ function WorkflowPageInner() {
           onNodeClick={handleNodeClick}
           onDropNode={onDropNode}
           onPaneClick={() => setSelectedNode(null)}
+          editable={canEdit}
         />
         <AnimatePresence>
-          {selectedNode && (
+          {canEdit && selectedNode && (
             <motion.div
               initial={{ x: 260, opacity: 0 }}
               animate={{ x: 0, opacity: 1 }}
@@ -411,6 +414,7 @@ function WorkflowPageInner() {
                 node={selectedNode}
                 onClose={() => setSelectedNode(null)}
                 onUpdate={handleNodeUpdate}
+                canEdit={canEdit}
               />
             </motion.div>
           )}

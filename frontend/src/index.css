@@ -7110,3 +7110,31 @@ body.user-dialog-scroll-locked {
     transition: none !important;
   }
 }
+
+
+/* ── 首屏/菜单/提示轻量入场动画（替代 framer-motion 入口动画）── */
+@media (prefers-reduced-motion: reduce) {
+  .loader-pop,
+  .menu-pop,
+  .toast-pop {
+    animation: none !important;
+  }
+}
+
+@keyframes loaderPop {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: scale(1); }
+}
+.loader-pop { animation: loaderPop 0.18s ease-out both; }
+
+@keyframes menuPop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.menu-pop { animation: menuPop 0.15s ease-out both; transform-origin: top right; }
+
+@keyframes toastPop {
+  from { opacity: 0; transform: translateY(24px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.toast-pop { animation: toastPop 0.15s ease-out both; }

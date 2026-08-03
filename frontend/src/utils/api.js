@@ -1,5 +1,6 @@
 ﻿const API_BASE = '/api'
 import { knowledgeDetailCache } from './knowledgeDetailCache.js'
+import { createGlobalStatsCache, GLOBAL_STATS_CACHE_TTL_MS } from './globalStatsCache.js'
 
 const UPLOAD_TIMEOUT_MS = 600_000 // 600s — aligned with nginx proxy_read_timeout
 const KB_STATS_TIMEOUT_MS = 8_000
@@ -12,6 +13,7 @@ let kbListInFlight = null
 let kbListCache = null
 let kbListCacheAt = 0
 let kbListEpoch = 0
+const globalStatsCache = createGlobalStatsCache({ ttlMs: GLOBAL_STATS_CACHE_TTL_MS })
 export function setCurrentKB(name) { currentKB = name }
 export function getCurrentKB() { return currentKB }
 
@@ -39,6 +41,7 @@ export function advanceKnowledgeDetailAuthGeneration() {
   knowledgeDetailCache.setAuthGeneration(current + 1)
   currentKB = ''
   clearKBListCache()
+  clearGlobalStatsCache()
 }
 
 // 从 localStorage 读取 token
@@ -79,6 +82,10 @@ function clearKBListCache() {
   kbListInFlight = null
   kbListCache = null
   kbListCacheAt = 0
+}
+
+function clearGlobalStatsCache() {
+  globalStatsCache.invalidate()
 }
 
 async function readResponseBody(res, emptyValue = {}) {
@@ -149,7 +156,6 @@ async function request(url, options = {}) {
     return {}
   }
   const res = await fetch(`${API_BASE}${kbUrl(url)}`, {
-    headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
     ...options,
     headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
   })
@@ -193,7 +199,6 @@ async function fetchJson(url, options = {}) {
   let res
   try {
     res = await fetch(`${API_BASE}${url}`, {
-      headers: authHeaders({ 'Content-Type': 'application/json', ...(restOptions.headers || {}) }),
       ...restOptions,
       signal: activeSignal,
       headers: authHeaders({ 'Content-Type': 'application/json', ...(restOptions.headers || {}) }),
@@ -545,12 +550,21 @@ export const api = {
   getCachedKnowledgeDetail: (kbName) => getCachedKnowledgeDetail(kbName),
   invalidateKnowledgeDetail: (kbName) => invalidateKnowledgeDetail(kbName),
   clearKnowledgeDetailCache: () => clearKnowledgeDetailCache(),
+  clearGlobalStatsCache: () => clearGlobalStatsCache(),
   getDocuments: () => request('/knowledge/documents'),
   getDocumentsForKB: (kbName, { signal, timeoutMs = 0 } = {}) => fetchJson(
     `/knowledge/documents?kb=${encodeURIComponent(kbName)}`,
     { signal, timeoutMs },
   ),
   getStats: () => request('/knowledge/stats'),
+  getGlobalStatsCached: ({ force = false } = {}) => {
+    const key = currentKB
+    if (!key) {
+      return Promise.resolve({})
+    }
+    if (force) globalStatsCache.invalidate(key)
+    return globalStatsCache.getOrLoad(key, () => request('/knowledge/stats'))
+  },
   getStatsForKB: (kbName, { signal, timeoutMs = 0 } = {}) => fetchJson(
     `/knowledge/stats?kb=${encodeURIComponent(kbName)}`,
     { signal, timeoutMs },

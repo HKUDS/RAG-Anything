@@ -22,13 +22,13 @@ const defaultEdgeOptions = {
   markerEnd: { type: MarkerType.ArrowClosed, color: '#bcd3e8', width: 16, height: 16 },
 }
 
-function EmptyState() {
+function EmptyState({ editable }) {
   return (
     <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
       <div className="text-center space-y-3">
         <GitBranch size={40} className="mx-auto text-cloud-300" />
-        <p className="text-sm text-ink-muted font-medium">从左侧拖入节点开始编排</p>
-        <p className="text-xs text-cloud-300">支持拖拽连线、缩放平移、自动布局</p>
+        <p className="text-sm text-ink-muted font-medium">{editable ? '从左侧拖入节点开始编排' : '当前工作流暂无节点'}</p>
+        <p className="text-xs text-cloud-300">{editable ? '支持拖拽连线、缩放平移、自动布局' : '可加载已有工作流进行查看'}</p>
       </div>
     </div>
   )
@@ -36,23 +36,25 @@ function EmptyState() {
 
 export default function WorkflowCanvas({
   nodes, edges, onNodesChange, onEdgesChange, onConnect,
-  onNodeClick, onDropNode, onPaneClick,
+  onNodeClick, onDropNode, onPaneClick, editable = false,
 }) {
   const reactFlowWrapper = useRef(null)
   const hasNodes = nodes.length > 0
 
   const handleConnect = useCallback(
-    (connection) => onConnect(connection),
-    [onConnect]
+    (connection) => { if (editable) onConnect(connection) },
+    [editable, onConnect]
   )
 
   const onDragOver = useCallback((e) => {
+    if (!editable) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
-  }, [])
+  }, [editable])
 
   const onDrop = useCallback(
     (e) => {
+      if (!editable) return
       e.preventDefault()
       const typeId = e.dataTransfer.getData('application/workflow-node')
       if (!typeId || !reactFlowWrapper.current) return
@@ -61,12 +63,12 @@ export default function WorkflowCanvas({
       const newNode = createDefaultNode(typeId, position)
       if (newNode) onDropNode(newNode)
     },
-    [onDropNode]
+    [editable, onDropNode]
   )
 
   return (
     <div ref={reactFlowWrapper} className="flex-1 h-full relative" onDrop={onDrop} onDragOver={onDragOver}>
-      {!hasNodes && <EmptyState />}
+      {!hasNodes && <EmptyState editable={editable} />}
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -75,9 +77,13 @@ export default function WorkflowCanvas({
         onConnect={handleConnect}
         onNodeClick={(_, node) => onNodeClick?.(node)}
         onPaneClick={onPaneClick}
+        nodesDraggable={editable}
+        nodesConnectable={editable}
+        elementsSelectable={editable}
+        edgesReconnectable={editable}
         nodeTypes={nodeTypes}
         defaultEdgeOptions={defaultEdgeOptions}
-        deleteKeyCode={['Delete', 'Backspace']}
+        deleteKeyCode={editable ? ['Delete', 'Backspace'] : null}
         connectionLineStyle={{ stroke: '#bcd3e8', strokeWidth: 2, strokeDasharray: '6 4' }}
         fitView
         className="bg-cloud-200"

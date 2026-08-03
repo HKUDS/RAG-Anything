@@ -106,6 +106,7 @@ export default function MonitorPage({ onToast }) {
   const [logs, setLogs] = useState([])
   const [health, setHealth] = useState(null)
   const [cacheStats, setCacheStats] = useState(null)
+  const [cacheStatsLoaded, setCacheStatsLoaded] = useState(false)
   const [maintaining, setMaintaining] = useState('')
 
   const loadMonitorData = async () => {
@@ -121,6 +122,7 @@ export default function MonitorPage({ onToast }) {
     setLogs(log.events || [])
     setHealth(h)
     setCacheStats(cache)
+    setCacheStatsLoaded(true)
   }
 
   useEffect(() => {
@@ -130,10 +132,7 @@ export default function MonitorPage({ onToast }) {
   }, [])
 
   const runMaintenance = async (action, kbName) => {
-    if (!canMaintain) {
-      onToast?.('你的角色没有维护权限，需要“设置写入”权限（settings:write）', 'error')
-      return
-    }
+    if (!canMaintain) return
     const key = `${action}:${kbName}`
     setMaintaining(key)
     try {
@@ -166,7 +165,7 @@ export default function MonitorPage({ onToast }) {
       <div className="page-header page-header-divider">
         <div>
           <h2 className="page-title">监控面板</h2>
-          <p className="page-subtitle">实时系统状态、缓存维护和使用统计</p>
+          <p className="page-subtitle">实时系统状态、缓存信息和使用统计</p>
         </div>
       </div>
 
@@ -216,10 +215,10 @@ export default function MonitorPage({ onToast }) {
         <section className="card p-4 space-y-4 dark:bg-sky-900/20 dark:border-sky-800/30">
           <div>
             <h3 className="flex items-center gap-2 text-sm font-medium text-ink-body dark:text-cloud-300">
-              <HardDrive size={14}/> 知识库缓存维护
+              <HardDrive size={14}/> 知识库缓存
             </h3>
             <p className="text-xs text-ink-muted dark:text-cloud-500 mt-1">
-              缓存维护会影响下次查询加载速度；固定缓存可避免高频知识库被自动淘汰。
+              {canMaintain ? '缓存维护会影响下次查询加载速度；固定缓存可避免高频知识库被自动淘汰。' : '查看当前缓存容量、命中率与实例状态。'}
             </p>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
@@ -228,11 +227,6 @@ export default function MonitorPage({ onToast }) {
             <HealthPill label="固定知识库" value={cacheStats?.pinned_count ?? 0} />
             <HealthPill label="淘汰次数" value={cacheStats?.evictions ?? 0} />
           </div>
-          {!canMaintain && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-              当前角色可查看监控，但维护操作需要“设置写入”权限（settings:write）。
-            </div>
-          )}
           <div className="space-y-2 max-h-52 overflow-y-auto">
             {cachedKbs.map(kb => {
               const isPinned = pinned.has(kb)
@@ -242,10 +236,10 @@ export default function MonitorPage({ onToast }) {
                     <p className="text-sm font-medium text-ink-body dark:text-cloud-300 truncate">{kb}</p>
                     <p className="text-2xs text-ink-muted dark:text-cloud-500">{isPinned ? '已固定到缓存' : '可自动淘汰'}</p>
                   </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  {canMaintain && <div className="flex items-center gap-1.5 shrink-0">
                     <button
                       className="btn-secondary text-xs py-1 px-2"
-                      disabled={!canMaintain || maintaining === `reload:${kb}`}
+                      disabled={maintaining === `reload:${kb}`}
                       onClick={() => runMaintenance('reload', kb)}
                       title="清除实例缓存，下次重新加载"
                     >
@@ -253,7 +247,7 @@ export default function MonitorPage({ onToast }) {
                     </button>
                     <button
                       className="btn-secondary text-xs py-1 px-2"
-                      disabled={!canMaintain || maintaining === `${isPinned ? 'unpin' : 'pin'}:${kb}`}
+                      disabled={maintaining === `${isPinned ? 'unpin' : 'pin'}:${kb}`}
                       onClick={() => runMaintenance(isPinned ? 'unpin' : 'pin', kb)}
                       title={isPinned ? '取消固定' : '固定缓存'}
                     >
@@ -261,17 +255,22 @@ export default function MonitorPage({ onToast }) {
                     </button>
                     <button
                       className="btn-secondary text-xs py-1 px-2 text-rose-600 border-rose-200"
-                      disabled={!canMaintain || isPinned || maintaining === `evict:${kb}`}
+                      disabled={isPinned || maintaining === `evict:${kb}`}
                       onClick={() => runMaintenance('evict', kb)}
                       title={isPinned ? '已固定的知识库不能淘汰' : '淘汰缓存'}
                     >
                       {maintaining === `evict:${kb}` ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
                     </button>
-                  </div>
+                  </div>}
                 </div>
               )
             })}
-            {cachedKbs.length === 0 && (
+            {!cacheStatsLoaded && (
+              <div className="flex items-center justify-center gap-2 py-6 text-sm text-ink-muted dark:text-cloud-500" role="status" aria-label="正在加载缓存实例">
+                <Loader2 size={14} className="animate-spin" aria-hidden="true" /> 正在加载缓存实例…
+              </div>
+            )}
+            {cacheStatsLoaded && cachedKbs.length === 0 && (
               <div className="text-center py-6 text-sm text-ink-muted dark:text-cloud-500">
                 暂无已缓存的知识库实例
               </div>
