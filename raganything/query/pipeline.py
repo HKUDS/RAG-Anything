@@ -292,6 +292,10 @@ class QueryMixin:
                 query, system_prompt=system_prompt, **kwargs
             )
 
+        # Retrieval options configure the project RRF engine. LightRAG's
+        # QueryParam does not accept them for its local/global/naive paths.
+        kwargs.pop("retrieval_options", None)
+
         # Check if VLM enhanced query should be used
         vlm_enhanced = kwargs.pop("vlm_enhanced", None)
         stream = kwargs.pop("stream", False)
@@ -412,6 +416,10 @@ class QueryMixin:
         hybrid_engine = getattr(self, "hybrid_search_engine", None)
         only_need_context = kwargs.pop("only_need_context", False)
         query_execution_scope = kwargs.pop("query_execution_scope", None)
+        retrieval_options = kwargs.pop("retrieval_options", None)
+        # RRF is text-only. Keep this pipeline control flag out of the
+        # LightRAG QueryParam used when RRF falls back to native hybrid.
+        kwargs.pop("vlm_enhanced", None)
         deadline_monotonic = _scope_deadline(query_execution_scope)
 
         if hybrid_engine is None:
@@ -437,7 +445,6 @@ class QueryMixin:
         try:
             # Stage 1: Retrieve chunks via RRF fusion
             top_k = kwargs.get("top_k", 100)
-            retrieval_options = kwargs.pop("retrieval_options", None)
             query_execution_scope = query_execution_scope or {}
             if retrieval_options is not None:
                 # The settings service owns the public immutable shape, while

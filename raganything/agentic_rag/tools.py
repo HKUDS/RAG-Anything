@@ -111,21 +111,23 @@ class SearchTool(Tool):
                 if not result:
                     return f"标签“{self.tag_scope.tag_name}”范围内没有与问题相关的内容"
                 return result[:8000] if len(result) > 8000 else result
+            query_kwargs = {
+                "only_need_context": True,
+                "enable_rerank": self.enable_rerank,
+                "chunk_top_k": self.chunk_top_k,
+                "top_k": self.top_k,
+                "include_references": self.include_references,
+                "max_entity_tokens": 2000,
+                "max_relation_tokens": 1000,
+                "max_total_tokens": 8000,
+            }
+            if self.retrieval_options is not None:
+                query_kwargs["retrieval_options"] = self.retrieval_options
+            if self.query_execution_scope is not None:
+                query_kwargs["query_execution_scope"] = self.query_execution_scope
+
             result = await await_before_deadline(
-                self.rag.aquery(
-                    query,
-                    mode=self.query_mode,
-                    only_need_context=True,
-                    enable_rerank=self.enable_rerank,
-                    chunk_top_k=self.chunk_top_k,
-                    top_k=self.top_k,
-                    include_references=self.include_references,
-                    max_entity_tokens=2000,
-                    max_relation_tokens=1000,
-                    max_total_tokens=8000,
-                    retrieval_options=self.retrieval_options,
-                    query_execution_scope=self.query_execution_scope,
-                ),
+                self.rag.aquery(query, mode=self.query_mode, **query_kwargs),
                 self._deadline(),
             )
             if not result or not result.strip():
