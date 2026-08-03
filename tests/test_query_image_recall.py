@@ -5,6 +5,19 @@ from types import SimpleNamespace
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _reset_controlled_roots_cache(tmp_path, monkeypatch):
+    """Clear the process-level controlled-roots TTL cache per test and pin
+    the project root to a temp dir so real repo `output*` dirs stay inert."""
+    from raganything.services.odl_media_delivery import _reset_controlled_roots_cache
+
+    _reset_controlled_roots_cache()
+    monkeypatch.setattr(
+        "raganything.services.odl_media_delivery._project_root",
+        lambda: Path(tmp_path),
+    )
+
+
 def _write_png(path: Path, size: int = 16) -> None:
     path.write_bytes(b"\x89PNG\r\n\x1a\n" + (b"0" * size))
 

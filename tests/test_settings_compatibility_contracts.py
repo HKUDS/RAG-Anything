@@ -25,10 +25,10 @@ async def test_profile_update_audit_never_records_current_password(monkeypatch):
     events = []
 
     async def current_user(_user_id):
-        return {"id": 7, "password_hash": "hash", "email": "old@example.com"}
+        return {"id": 7, "password_hash": "hash"}
 
     async def update_user(_user_id, values):
-        return {"username": values["username"], "email": values["email"]}
+        return {"username": values["username"]}
 
     async def audit(**kwargs):
         events.append(kwargs)
@@ -41,15 +41,15 @@ async def test_profile_update_audit_never_records_current_password(monkeypatch):
     result = await auth.update_my_profile(
         request=Request({"type": "http", "method": "PUT", "path": "/api/auth/me/profile", "client": ("127.0.0.1", 0), "headers": []}),
         payload=auth.ProfileUpdateRequest(
-            username="new-name", email="new@example.com", current_password="current-password",
+            username="new-name", current_password="current-password",
         ),
         current_user={"id": 7, "username": "old-name"},
     )
 
-    assert result["user"]["email"] == "n**@example.com"
+    assert "email" not in result["user"]
     assert events == [{
         "actor_id": 7, "action": "user.profile.updated", "target_user_id": 7,
-        "details": {"fields": ["username", "email"], "result": "updated"},
+        "details": {"fields": ["username"], "result": "updated"},
         "ip_address": "127.0.0.1",
     }]
     assert "current-password" not in repr(events)

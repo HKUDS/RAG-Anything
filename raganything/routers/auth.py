@@ -47,7 +47,6 @@ router = APIRouter(tags=["auth"])
 
 class AuthRegisterRequest(BaseModel):
     username: str
-    email: str
     password: str
 
 
@@ -58,14 +57,12 @@ class AuthLoginRequest(BaseModel):
 
 class AdminCreateUserRequest(BaseModel):
     username: str
-    email: str
     password: str
     role_id: int = None  # 默认由 create_user 分配 student 角色
 
 
 class AdminUpdateUserRequest(BaseModel):
     username: Optional[str] = None
-    email: Optional[str] = None
     password: Optional[str] = None
     is_admin: Optional[int] = None   # no-op: 已废弃，使用 role_id 代替，前端兼容保留
     is_active: Optional[int] = None
@@ -78,21 +75,12 @@ class RefreshRequest(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     username: str
-    email: str
     current_password: str
 
 
 class PasswordUpdateRequest(BaseModel):
     old_password: str
     new_password: str
-
-
-def _masked_email(email: str | None) -> str | None:
-    if not email or "@" not in email:
-        return None
-    local, domain = email.split("@", 1)
-    visible = local[:1]
-    return f"{visible}{'*' * max(1, len(local) - 1)}@{domain}"
 
 
 # ── Auth Routes ─────────────────────────────────────────
@@ -102,7 +90,7 @@ def _masked_email(email: str | None) -> str | None:
 async def register(request: Request, req: AuthRegisterRequest):
     """用户注册"""
     try:
-        user = await create_user(req.username, req.email, req.password)
+        user = await create_user(req.username, req.password)
         return {"status": "ok", "user": user}
     except ValueError as e:
         raise HTTPException(400, str(e))
@@ -214,10 +202,9 @@ async def me(current_user: dict = Depends(get_current_user)):
     # 检查是否需要修改密码
     user = await get_user_by_id(current_user["id"])
     must_change = user.get("must_change_password", False) if user else False
-    email = _masked_email(user.get("email") if user else None)
     return {
         "status": "ok",
-        "user": {**current_user, "email": email, "must_change_password": bool(must_change)},
+        "user": {**current_user, "must_change_password": bool(must_change)},
     }
 
 
@@ -228,22 +215,22 @@ async def update_my_profile(
     payload: ProfileUpdateRequest,
     current_user: dict = Depends(get_current_user),
 ):
-    """Update username/email only after current-password verification."""
+    """Update username only after current-password verification."""
     user = await get_user_by_id(current_user["id"])
     if not user:
         raise HTTPException(404, "用户不存在")
     if not verify_password(payload.current_password, user["password_hash"]):
         raise HTTPException(400, "当前密码不正确")
     try:
-        updated = await update_user(current_user["id"], {"username": payload.username, "email": payload.email})
+        updated = await update_user(current_user["id"], {"username": payload.username})
     except ValueError as exc:
         raise HTTPException(422, str(exc)) from exc
     await audit_log(
         actor_id=current_user["id"], action="user.profile.updated", target_user_id=current_user["id"],
-        details={"fields": ["username", "email"], "result": "updated"},
+        details={"fields": ["username"], "result": "updated"},
         ip_address=request.client.host if request.client else None,
     )
-    return {"status": "ok", "user": {**current_user, "username": updated["username"], "email": _masked_email(updated.get("email"))}}
+    return {"status": "ok", "user": {**current_user, "username": updated["username"]}}
 
 
 @router.post("/auth/logout")
@@ -393,7 +380,7 @@ async def admin_list_users(
     user: dict = Depends(require_permission(Permission.USERS_READ)),
     page: int = QueryParam(1, ge=1, description="页码"),
     page_size: int = QueryParam(20, ge=1, le=100, description="每页数量"),
-    search: str = QueryParam("", description="搜索用户名或邮箱"),
+    search: str = QueryParam("", description="搜索用户名"),
     role: str = QueryParam("", description="按角色名筛选"),
     status: str = QueryParam("", description="按状态筛选: active/inactive"),
 ):
@@ -417,7 +404,6 @@ async def admin_list_users(
         filtered = [
             u for u in filtered
             if search_lower in (u.get("username", "") or "").lower()
-            or search_lower in (u.get("email", "") or "").lower()
         ]
     if role:
         filtered = [u for u in filtered if u.get("role_name") == role]
@@ -457,14 +443,18 @@ async def admin_create_user(
     user: dict = Depends(require_permission(Permission.USERS_WRITE)),
 ):
     """管理员创建新用户"""
+    actor_role_name = (user.get("role") or {}).get("name")
     try:
         new_user = await create_user(
-            req.username, req.email, req.password,
+            req.username, req.password,
             role_id=req.role_id, must_change_password=True,
+            actor_role_name=actor_role_name,
         )
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
     except ValueError as e:
         msg = str(e)
-        if "用户名已被占用" in msg or "邮箱已被占用" in msg:
+        if "用户名已被占用" in msg:
             raise HTTPException(409, msg)
         elif "角色" in msg:
             raise HTTPException(400, msg)
@@ -488,7 +478,6 @@ async def admin_create_user(
         target_user_id=new_id,
         details={
             "username": req.username,
-            "email": req.email,
             "role_id": req.role_id,
             "role_name": role_name,
             "actor_role": user.get("role", {}).get("name", "unknown"),
@@ -547,8 +536,11 @@ async def admin_update_user(
     before_user = await get_user_by_id(user_id)
     before_role = await _auth_get_user_role(user_id) if before_user else None
 
+    actor_role_name = (user.get("role") or {}).get("name")
     try:
-        updated = await update_user(user_id, update_data)
+        updated = await update_user(user_id, update_data, actor_role_name=actor_role_name)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -616,7 +608,6 @@ async def admin_delete_user(
         target_user_id=user_id,
         details={
             "username": deleted_user.get("username") if deleted_user else "unknown",
-            "email": deleted_user.get("email") if deleted_user else "unknown",
             "role_id": deleted_user.get("role_id") if deleted_user else None,
             "actor_role": user.get("role", {}).get("name", "unknown"),
         },

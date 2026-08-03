@@ -37,6 +37,7 @@ from raganything.services.auth import (
     check_account_locked,
     has_permission as _auth_has_permission,
     is_token_revoked as _auth_is_token_revoked,
+    user_is_admin as _auth_user_is_admin,
 )
 import raganything.services.runtime_settings as runtime_settings
 
@@ -180,6 +181,7 @@ async def upload_workflow(file: UploadFile = File(...), _perm: None = Depends(re
 
 @router.get("/workflows/models")
 async def get_workflow_models(
+    _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
     current_user: dict = Depends(get_current_user),
     type: str = "",
 ):
@@ -417,6 +419,26 @@ async def websocket_workflow_run(ws: WebSocket, run_id: str):
     if user is None:
         return  # 认证失败，连接已关闭
 
+    # 属主隔离：非管理员只能订阅自己的运行记录
+    try:
+        is_admin = await _auth_user_is_admin(user["id"])
+    except Exception:
+        is_admin = False
+    pool = await _wf_pg_pool()
+    async with pool.acquire() as conn:
+        if is_admin:
+            run_row = await conn.fetchrow(
+                "SELECT 1 FROM workflow_runs WHERE run_id = $1", run_id,
+            )
+        else:
+            run_row = await conn.fetchrow(
+                "SELECT 1 FROM workflow_runs WHERE run_id = $1 AND user_id = $2",
+                run_id, user["id"],
+            )
+    if run_row is None:
+        await ws.close(code=4001, reason="Run not found or not owned")
+        return
+
     await ws.accept()
     if run_id not in shared.active_ws_connections:
         shared.active_ws_connections[run_id] = []
@@ -493,15 +515,24 @@ async def list_workflow_runs(
     _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
     current_user: dict = Depends(get_current_user),
 ):
-    """列出工作流的所有运行记录 — PG-backed"""
+    """列出工作流的所有运行记录 — PG-backed（非管理员仅见自己的运行）"""
+    is_admin = current_user.get("is_admin", False)
     pool = await _wf_pg_pool()
     async with pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT run_id, status, started_at, completed_at, workflow_name "
-            "FROM workflow_runs WHERE workflow_id = $1 "
-            "ORDER BY started_at DESC LIMIT 100",
-            workflow_id,
-        )
+        if is_admin:
+            rows = await conn.fetch(
+                "SELECT run_id, status, started_at, completed_at, workflow_name "
+                "FROM workflow_runs WHERE workflow_id = $1 "
+                "ORDER BY started_at DESC LIMIT 100",
+                workflow_id,
+            )
+        else:
+            rows = await conn.fetch(
+                "SELECT run_id, status, started_at, completed_at, workflow_name "
+                "FROM workflow_runs WHERE workflow_id = $1 AND user_id = $2 "
+                "ORDER BY started_at DESC LIMIT 100",
+                workflow_id, current_user.get("id", 0),
+            )
     def _fmt(t):
         return t.isoformat() if hasattr(t, 'isoformat') else str(t) if t else None
     return {
@@ -521,12 +552,19 @@ async def get_workflow_run(
     _perm: None = Depends(require_permission(Permission.WORKFLOW_READ)),
     current_user: dict = Depends(get_current_user),
 ):
-    """获取单次运行详情 — PG-backed"""
+    """获取单次运行详情 — PG-backed（非管理员仅可读取自己的运行）"""
+    is_admin = current_user.get("is_admin", False)
     pool = await _wf_pg_pool()
     async with pool.acquire() as conn:
-        row = await conn.fetchrow(
-            "SELECT * FROM workflow_runs WHERE run_id = $1", run_id,
-        )
+        if is_admin:
+            row = await conn.fetchrow(
+                "SELECT * FROM workflow_runs WHERE run_id = $1", run_id,
+            )
+        else:
+            row = await conn.fetchrow(
+                "SELECT * FROM workflow_runs WHERE run_id = $1 AND user_id = $2",
+                run_id, current_user.get("id", 0),
+            )
     if row:
         r = dict(row)
         def _fmt(t):

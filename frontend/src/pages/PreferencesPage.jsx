@@ -27,7 +27,7 @@ const SETTINGS_META = {
   retrieval: { title: '检索策略', description: '从常用方案开始，需要时再展开底层检索参数。', icon: Search },
   runtime: { title: '运行控制', description: '调整个人并发和等待时间，始终受平台上限保护。', icon: Gauge },
   appearance: { title: '外观', description: '选择适合当前设备和环境的显示模式。', icon: Palette },
-  account: { title: '账户资料', description: '维护用户名和邮箱，修改时需要验证当前密码。', icon: UserRound },
+  account: { title: '账户资料', description: '维护用户名，修改时需要验证当前密码。', icon: UserRound },
   security: { title: '密码与安全', description: '更新登录密码，不影响其他个人设置。', icon: ShieldCheck },
 }
 
@@ -126,10 +126,9 @@ export default function PreferencesPage({ onToast }) {
   const [profiles, setProfiles] = useState([])
   const [drafts, setDrafts] = useState({})
   const [status, setStatus] = useState({})
-  const [account, setAccount] = useState({ username: '', email: '', current_password: '' })
+  const [account, setAccount] = useState({ username: '', current_password: '' })
   const [password, setPassword] = useState({ old_password: '', new_password: '', confirm: '' })
   const [accountError, setAccountError] = useState('')
-  const [maskedEmail, setMaskedEmail] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [notice, setNotice] = useState('')
   const [theme, setTheme] = useState(() => localStorage.getItem('raganything_theme_mode') || localStorage.getItem('raganything_theme') || 'system')
@@ -173,8 +172,7 @@ export default function PreferencesPage({ onToast }) {
       try {
         const value = await api.getMe?.()
         if (active && value) {
-          setAccount(current => ({ ...current, username: value?.user?.username || '', email: '' }))
-          setMaskedEmail(value?.user?.email || '')
+          setAccount(current => ({ ...current, username: value?.user?.username || '' }))
         }
       } catch (error) {
         if (active) setAccountError(error.message || '账户资料加载失败')
@@ -393,7 +391,6 @@ export default function PreferencesPage({ onToast }) {
         >
           <div className="preferences-field-grid">
             <label htmlFor="account-username">用户名<input id="account-username" name="username" autoComplete="username" className="input-field" value={account.username} onChange={event => setAccount({ ...account, username: event.target.value })} /></label>
-            <label htmlFor="account-email">新邮箱<input id="account-email" name="email" autoComplete="email" className="input-field" type="email" value={account.email} onChange={event => setAccount({ ...account, email: event.target.value })} /><small>{maskedEmail ? `当前邮箱：${maskedEmail}` : '为保护隐私，当前邮箱不会完整显示。'}</small></label>
           </div>
           <label className="preferences-password-field" htmlFor="account-password">当前密码<input id="account-password" name="current-password" autoComplete="current-password" aria-invalid={Boolean(accountError)} aria-describedby={accountError ? 'account-error' : 'account-hint'} className="input-field" type="password" value={account.current_password} onChange={event => setAccount({ ...account, current_password: event.target.value })} /></label>
         </SettingsBlock>

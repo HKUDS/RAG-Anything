@@ -50,6 +50,8 @@ config/runtime_settings.json
 # Data & Storage
 inputs/
 rag_storage*/
+odl-artifacts/
+temp_docx/
 examples/input/
 examples/output/
 output*/
@@ -72,6 +74,10 @@ tiktoken_cache/
 
 # Ad-hoc root-level test artifacts. Tests under tests/ are source files.
 /test_*
+/worker_output.txt
+/.tmp-redesign-full-suite.xml
+/38692
+/cd
 !tests/test_query_image_recall.py
 !tests/test_odl_media_manifest.py
 !tests/test_chunk_maintenance.py

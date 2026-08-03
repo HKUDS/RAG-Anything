@@ -3,6 +3,7 @@ import { AlertTriangle, Check, Circle, Edit3, Loader2, Shield } from 'lucide-rea
 import { useAuth } from '../context/AuthContext'
 import { UserDialog, UserDialogConfirmation } from './UserDialog'
 import UserRoleSelect from './UserRoleSelect'
+import { canAssignRole } from '../utils/roleOrdering'
 
 function checkPasswordStrength(password) {
   return {
@@ -22,9 +23,6 @@ function validateEditForm(form) {
   if (!form.username || form.username.trim().length < 2) {
     errors.username = '用户名至少需要 2 个字符'
   }
-  if (form.email && !form.email.includes('@')) {
-    errors.email = '请输入有效的邮箱地址'
-  }
   if (form.password) {
     const strength = checkPasswordStrength(form.password)
     if (strength.score() < 3) {
@@ -36,15 +34,13 @@ function validateEditForm(form) {
 
 const FIELD_IDS = {
   username: 'edit-username',
-  email: 'edit-email',
   password: 'edit-password',
 }
 
-export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated }) {
+export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated, actorRole }) {
   const { user: me } = useAuth()
   const [editForm, setEditForm] = useState({
     username: '',
-    email: '',
     role_id: null,
     is_active: true,
     password: '',
@@ -73,7 +69,6 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
       ?? null
     const form = {
       username: user.username || '',
-      email: user.email || '',
       role_id: selectedRoleId,
       is_active: user.is_active !== false,
       password: '',
@@ -95,7 +90,6 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
   const hasChanges = useCallback(() => {
     if (!initialForm) return false
     return editForm.username !== initialForm.username
-      || editForm.email !== initialForm.email
       || editForm.role_id !== initialForm.role_id
       || editForm.is_active !== initialForm.is_active
       || (editForm.password || '') !== (initialForm.password || '')
@@ -131,6 +125,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
   const userRoleId = user.role_id
     ?? user.role?.id
     ?? roles?.find((role) => role.name === userRoleName)?.id
+  const roleLocked = Boolean(actorRole) && !canAssignRole(actorRole, userRoleName)
   const isAdminSelf = isEditingSelf && userRoleName === 'super_admin'
   const superAdminRoleId = userRoleId ?? roles?.find((role) => role.name === 'super_admin')?.id
   const isSelfDemotion = isAdminSelf && editForm.role_id !== superAdminRoleId
@@ -146,6 +141,8 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
       const body = { ...editForm }
       if (!body.password) delete body.password
       body.is_active = body.is_active ? 1 : 0
+      // 目标用户角色高于操作者等级时，不提交角色变更字段
+      if (roleLocked) delete body.role_id
 
       const response = await fetch(`/api/admin/users/${user.id}`, {
         method: 'PUT',
@@ -276,33 +273,18 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated 
             {fieldErrors.username && <p id="edit-username-error" className="text-2xs text-rose-500 mt-1">{fieldErrors.username}</p>}
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="edit-email">邮箱</label>
-            <input
-              id="edit-email"
-              className={`input-field text-sm py-2 w-full ${fieldErrors.email ? 'border-rose-300 bg-rose-50/30' : ''}`}
-              type="email"
-              value={editForm.email}
-              onChange={(event) => {
-                setEditForm((form) => ({ ...form, email: event.target.value }))
-                clearFieldError('email')
-              }}
-              placeholder="user@example.com"
-              autoComplete="email"
-              aria-invalid={Boolean(fieldErrors.email)}
-              aria-describedby={fieldErrors.email ? 'edit-email-error' : undefined}
-            />
-            {fieldErrors.email && <p id="edit-email-error" className="text-2xs text-rose-500 mt-1">{fieldErrors.email}</p>}
-          </div>
-
           <UserRoleSelect
             id="edit-role"
             roles={roles}
             value={editForm.role_id}
             onChange={(roleId) => setEditForm((form) => ({ ...form, role_id: roleId }))}
-            disabled={loading}
+            disabled={loading || roleLocked}
+            actorRole={actorRole}
             cautionLabel={isAdminSelf ? '谨慎修改' : undefined}
           />
+          {roleLocked && (
+            <p className="mt-1 text-2xs text-amber-600" role="status">目标用户角色高于您的等级，当前无法修改其角色。</p>
+          )}
 
           <div>
             <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="edit-status">状态</label>

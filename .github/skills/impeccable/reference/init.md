@@ -16,7 +16,7 @@ Decision tree:
 - **Neither file exists (empty project or no context yet)**: do Steps 2-4 (write PRODUCT.md), then decide on DESIGN.md based on whether there's code to analyze.
 - **PRODUCT.md exists, DESIGN.md missing**: skip to Step 5 and offer to run `/impeccable document` for DESIGN.md.
 - **PRODUCT.md exists but has no `## Register` section (legacy)**: add it. Infer a hypothesis from the codebase (see Step 2), confirm with the user, write the field.
-- **Both exist**: ask the user directly to clarify what you cannot infer. Ask which file to refresh. Skip the one the user doesn't want changed.
+- **Both exist**: STOP and call the AskUserQuestion tool to clarify. Ask which file to refresh. Skip the one the user doesn't want changed.
 - **Just DESIGN.md exists (unusual)**: do Steps 2-4 to produce PRODUCT.md.
 
 Never silently overwrite an existing file. Always confirm first.
@@ -45,7 +45,7 @@ Note what you've learned and what remains unclear. Also note any rough edges wor
 
 ## Step 3: Ask strategic questions (for PRODUCT.md)
 
-ask the user directly to clarify what you cannot infer. Ask only about what you couldn't infer from the codebase.
+STOP and call the AskUserQuestion tool to clarify. Ask only about what you couldn't infer from the codebase.
 
 ### Interview mode, not confirmation mode
 
@@ -68,7 +68,7 @@ Every design task is either **brand** (marketing, landing, campaign, long-form c
 
 If Step 2 produced a clear hypothesis, lead with it: *"From the codebase, this looks like a [brand / product] surface. Does that match your intent, or should we treat it differently?"*
 
-If the signal is genuinely split (e.g. a product with a big marketing landing), ask the user directly to clarify what you cannot infer. Ask which register describes the **primary** surface. The register can be overridden per task later, but PRODUCT.md carries one default.
+If the signal is genuinely split (e.g. a product with a big marketing landing), STOP and call the AskUserQuestion tool to clarify. Ask which register describes the **primary** surface. The register can be overridden per task later, but PRODUCT.md carries one default.
 
 ### Users & Purpose
 - Who uses this? What's their context when using it?
@@ -146,7 +146,7 @@ If the project has code with HTML entries and a dev server (the same "code exist
 Otherwise:
 
 1. Write `.impeccable/live/config.json`. Choose `files` (the HTML entries the browser actually loads), `insertBefore`, and `commentSyntax` from the framework table in [live.md](live.md)'s **First-time setup** section, using the framework you found in Step 2. That table is canonical; do not restate it here. For multi-page static sites, prefer a glob (`["public/**/*.html"]`) over a literal list.
-2. Run `node .github/skills/impeccable/scripts/detect-csp.mjs`. If it reports a patchable shape (`append-arrays` / `append-string`), use the **consent prompt template** from live.md before editing any source file. On decline, skip the patch. For `middleware` / `meta-tag` shapes, surface the detected files and ask the user to add `http://localhost:8400` to `script-src` and `connect-src` manually. For `null`, there's nothing to do.
+2. Run `node .claude/skills/impeccable/scripts/detect-csp.mjs`. If it reports a patchable shape (`append-arrays` / `append-string`), use the **consent prompt template** from live.md before editing any source file. On decline, skip the patch. For `middleware` / `meta-tag` shapes, surface the detected files and ask the user to add `http://localhost:8400` to `script-src` and `connect-src` manually. For `null`, there's nothing to do.
 3. Set `cspChecked: true` in the config once CSP is handled (patched, declined, manual, or not needed). The schema and per-shape patch details live in live.md's First-time setup; follow it rather than duplicating.
 
 Writing the config file is harmless and needs no consent; only the CSP **source-file patch** requires a yes.
@@ -169,4 +169,4 @@ The full command menu is one bare `/impeccable` away; keep this list short and p
 
 If init was invoked as a blocker by another impeccable command (e.g. the user ran `/impeccable polish` with no PRODUCT.md), resume that original task now. Your own writes are the freshest source; no reload needed.
 
-Optionally ask the user directly to clarify what you cannot infer. Ask whether they'd like a brief summary of PRODUCT.md appended to .github/copilot-instructions.md for easier agent reference. If yes, append a short **Design Context** pointer section there.
+Optionally STOP and call the AskUserQuestion tool to clarify. Ask whether they'd like a brief summary of PRODUCT.md appended to CLAUDE.md for easier agent reference. If yes, append a short **Design Context** pointer section there.

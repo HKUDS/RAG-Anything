@@ -26,6 +26,19 @@ from raganything.services.odl_media_manifest import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _reset_controlled_roots_cache(tmp_path, monkeypatch):
+    """Clear the process-level controlled-roots TTL cache per test and pin
+    the project root to a temp dir so real repo `output*` dirs stay inert."""
+    from raganything.services.odl_media_delivery import _reset_controlled_roots_cache
+
+    _reset_controlled_roots_cache()
+    monkeypatch.setattr(
+        "raganything.services.odl_media_delivery._project_root",
+        lambda: Path(tmp_path),
+    )
+
+
 def _persisted_catalog(tmp_path: Path, monkeypatch, *, kb_name: str = "kb-visible"):
     monkeypatch.setenv("ODL_ARTIFACT_ROOT", str(tmp_path))
     image = tmp_path / "figure.png"

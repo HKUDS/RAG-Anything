@@ -46,6 +46,7 @@ from .shared import (
     cleanup_kb_resources,
 )
 from raganything.services.kb_service import (
+    WORKING_DIR,
     pg_register_upload,
     pg_mark_upload_reusable,
     pg_release_upload_for_deleted_document,
@@ -528,6 +529,17 @@ async def _verify_kb_path_access(
     return await verify_kb_access(kb, current_user)
 
 
+async def _verify_kb_vision_read_access(
+    kb: str,
+    current_user: dict = Depends(get_current_user),
+) -> str:
+    """Read guard for vision settings: KB visibility + kb:read."""
+    actual_kb = await verify_kb_access(kb, current_user)
+    if not await _auth_has_permission(int(current_user["id"]), Permission.KB_READ):
+        raise HTTPException(403, "权限不足，需要 kb:read")
+    return actual_kb
+
+
 async def _verify_kb_vision_write_access(
     kb: str,
     current_user: dict = Depends(get_current_user),
@@ -545,7 +557,7 @@ async def _verify_kb_vision_write_access(
 @router.get("/kb/{kb}/vision-settings")
 async def get_kb_vision_settings(
     kb: str,
-    _access: str = Depends(_verify_kb_vision_write_access),
+    _access: str = Depends(_verify_kb_vision_read_access),
     _user: dict = Depends(get_current_user),
 ):
     meta = (await load_kb_meta()).get(kb)
@@ -1104,14 +1116,47 @@ async def delete_upload_task(
     }
 
 
+def _folder_upload_roots() -> list[str]:
+    """Resolve allowed roots for POST /upload/folder.
+
+    FOLDER_UPLOAD_ROOTS overrides the default whitelist (comma-separated).
+    Defaults: the absolute path of ./uploads and WORKING_DIR.
+    """
+    raw = os.getenv("FOLDER_UPLOAD_ROOTS", "").strip()
+    if raw:
+        candidates = [part.strip() for part in raw.split(",") if part.strip()]
+    else:
+        candidates = [
+            os.path.join(os.getcwd(), "uploads"),
+            os.path.abspath(WORKING_DIR),
+        ]
+    roots: list[str] = []
+    for candidate in candidates:
+        real = os.path.realpath(candidate)
+        if real and real not in roots:
+            roots.append(real)
+    return roots
+
+
+def _is_path_within(path: str, root: str) -> bool:
+    """True if realpath-normalized ``path`` equals or lies under ``root``."""
+    try:
+        return os.path.commonpath([os.path.realpath(path), os.path.realpath(root)]) == os.path.realpath(root)
+    except ValueError:
+        return False
+
+
 @router.post("/upload/folder")
 async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(verify_kb_access),
                          chunking_strategy: str = "", current_user: dict = Depends(get_current_user),
                          _perm: None = Depends(require_permission(Permission.KB_WRITE)),
                          enable_image: str = "", enable_table: str = "",
                          enable_equation: str = "", enable_video: str = ""):
-    """批量处理文件夹"""
+    """批量处理文件夹（folder_path 必须位于白名单根目录内）"""
     await _ensure_vision_index_mutable(kb)
+    # 目录白名单：realpath 归一化后必须位于 FOLDER_UPLOAD_ROOTS 任一根内
+    if not any(_is_path_within(folder_path, root) for root in _folder_upload_roots()):
+        raise HTTPException(403, "文件夹路径不在允许的上传根目录内")
     if not os.path.isdir(folder_path):
         raise HTTPException(400, "文件夹不存在")
 
@@ -1137,7 +1182,7 @@ async def upload_folder(folder_path: str = QueryParam(...), kb: str = Depends(ve
         ]
         task_data = {
             "id": task_id, "file": folder_path, "status": "processing",
-            "started_at": datetime.now().isoformat(), "kb": kb, "user_id": current_user["id"],
+            "started_at": datetime.now(timezone.utc).isoformat(), "kb": kb, "user_id": current_user["id"],
         }
         await upsert_task_state(task_id, task_data)
         # 临时切换分块策略
@@ -4730,7 +4775,7 @@ async def retry_document(doc_id: str, kb: str = Depends(verify_kb_access), _perm
             "id": task_id,
             "file": file_name,
             "status": "queued",
-            "started_at": datetime.now().isoformat(),
+            "started_at": datetime.now(timezone.utc).isoformat(),
             "progress": 0,
             "kb": kb,
             "user_id": current_user["id"],
@@ -4841,6 +4886,7 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
             "name": name,
             "label": info.get("name", name),
             "created": info.get("created", ""),
+            "updated_at": info.get("updated_at", ""),
             "owner_id": owner_id,
             "owner_username": info.get("owner_username", ""),
             "active": name == _shared.active_kb,
@@ -4850,7 +4896,7 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
         personal_kb = current_user["username"]
         label = f"{current_user['username']}的知识库"
         meta[personal_kb] = {
-            "name": label, "created": datetime.now().isoformat(),
+            "name": label, "created": datetime.now(timezone.utc).isoformat(),
             "owner_id": current_user["id"],
             "owner_username": current_user["username"],
         }
@@ -4862,6 +4908,7 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
             "name": personal_kb,
             "label": label,
             "created": meta[personal_kb]["created"],
+            "updated_at": meta[personal_kb]["created"],
             "owner_id": current_user["id"],
             "owner_username": current_user["username"],
             "active": True,
@@ -4869,29 +4916,17 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
 
     visible_names = [kb["name"] for kb in kbs]
     stats_by_name: dict[str, dict[str, int]] = {}
-    content_updates_by_name: dict[str, str] = {}
     if visible_names:
-        stats_result, content_updates_result = await asyncio.gather(
-            asyncio.wait_for(
-                _compute_kb_stats_batch_fast(visible_names),
-                timeout=KB_STATS_BATCH_TIMEOUT_SECONDS,
-            ),
-            asyncio.wait_for(
-                pg_get_latest_content_updates_batch(visible_names),
-                timeout=KB_STATS_BATCH_TIMEOUT_SECONDS,
-            ),
-            return_exceptions=True,
+        stats_result = await asyncio.wait_for(
+            _compute_kb_stats_batch_fast(visible_names),
+            timeout=KB_STATS_BATCH_TIMEOUT_SECONDS,
         )
         if isinstance(stats_result, dict):
             stats_by_name = stats_result
-        if isinstance(content_updates_result, dict):
-            content_updates_by_name = content_updates_result
 
     for kb in kbs:
         kb["stats"] = stats_by_name.get(kb["name"], _stats_unavailable_payload())
-        kb["last_content_updated_at"] = (
-            content_updates_by_name.get(kb["name"]) or kb["created"]
-        )
+        kb["last_content_updated_at"] = kb["updated_at"] or kb["created"] or ""
 
     elapsed_ms = (time.perf_counter() - started_at) * 1000
     lightrag_logger.info(
@@ -4921,7 +4956,7 @@ async def create_kb(kb_name: str = QueryParam(...), _perm: None = Depends(requir
     except KeyError as exc:
         raise HTTPException(503, "平台默认视觉向量模型不可用") from exc
     meta[kb_name] = {
-        "name": label, "created": datetime.now().isoformat(),
+        "name": label, "created": datetime.now(timezone.utc).isoformat(),
         "owner_id": current_user["id"],
         "owner_username": current_user["username"],
         "domain": domain,

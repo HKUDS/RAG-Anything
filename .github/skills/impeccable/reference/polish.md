@@ -37,8 +37,8 @@ Understand the current state and goals before touching anything:
 
 4. **Pull in any prior critique** (optional signal): If `/impeccable critique` has been run on the same target, its priority issues are a useful prior for what to address first. Resolve the target to a file path or URL, then:
    ```bash
-   slug=$(node .github/skills/impeccable/scripts/critique-storage.mjs slug "<resolved>")
-   node .github/skills/impeccable/scripts/critique-storage.mjs latest "$slug"
+   slug=$(node .claude/skills/impeccable/scripts/critique-storage.mjs slug "<resolved>")
+   node .claude/skills/impeccable/scripts/critique-storage.mjs latest "$slug"
    ```
    Exit 0 with body = found; fold the P0/P1 items into your polish list and mention the snapshot path so the user sees what you read. Exit 2 = no snapshot, continue without it. The critique is one input among many. Do your own pass either way.
 

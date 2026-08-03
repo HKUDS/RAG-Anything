@@ -5,7 +5,42 @@ import {
   api,
   getCurrentKB,
   setCurrentKB,
+  streamSSE,
 } from './api.js'
+
+test('streams authenticated terminal SSE events without reading past done', async t => {
+  const originalFetch = globalThis.fetch
+  const originalLocalStorage = globalThis.localStorage
+  const encoder = new TextEncoder()
+  let reads = 0
+  let cancelled = false
+  globalThis.localStorage = { getItem: () => JSON.stringify({ token: 'token-1' }) }
+  let requestHeaders
+  globalThis.fetch = async (_url, options) => {
+    requestHeaders = options.headers
+    return ({
+    ok: true,
+    status: 200,
+    body: { getReader: () => ({
+      read: async () => {
+        reads += 1
+        return reads === 1
+          ? { done: false, value: encoder.encode('data: {"type":"done"}\r\n') }
+          : { done: true }
+      },
+      cancel: async () => { cancelled = true },
+      releaseLock: () => {},
+    }) },
+    })
+  }
+  t.after(() => { globalThis.fetch = originalFetch; globalThis.localStorage = originalLocalStorage })
+  const events = []
+  await streamSSE('/api/agents/a/query/stream', { body: '{}', onEvent: event => events.push(event) })
+  assert.equal(events[0].type, 'done')
+  assert.equal(reads, 1)
+  assert.equal(cancelled, true)
+  assert.equal(requestHeaders.Authorization, 'Bearer token-1')
+})
 
 function jsonResponse(value) {
   return {

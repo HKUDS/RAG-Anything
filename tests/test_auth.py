@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # 测试密码复杂度（同步版本，不依赖数据库）
-from auth import verify_password, create_token, decode_token, pwd_context
+from raganything.services.auth import verify_password, create_token, decode_token, pwd_context
 
 
 class TestPasswordComplexity:
@@ -17,8 +17,8 @@ class TestPasswordComplexity:
         with pytest.raises(Exception):
             import asyncio
             async def _test():
-                from auth import create_user
-                await create_user("test", "t@t.com", "Ab1!")
+                from raganything.services.auth import create_user
+                await create_user("test", "Ab1!")
             asyncio.run(_test())
 
     def test_strong_password_accepted(self):
@@ -44,7 +44,7 @@ class TestJWT:
         assert payload["user_id"] == 42
         assert payload["username"] == "alice"
         # is_admin is no longer in token payload — derived server-side from RBAC role
-        assert payload["role"] == "viewer"
+        assert payload["role"] == "student"
 
     def test_invalid_token(self):
         assert decode_token("not.a.valid.token") is None
@@ -54,10 +54,10 @@ class TestJWT:
         token = create_token(1, "admin", True)
         payload = decode_token(token)
         # is_admin is no longer in token payload — derived server-side from RBAC role
-        assert payload["role"] == "admin"
+        assert payload["role"] == "super_admin"
 
     def test_refresh_token(self):
-        from auth import create_refresh_token, decode_refresh_token
+        from raganything.services.auth import create_refresh_token, decode_refresh_token
         rtk = create_refresh_token(42, "alice", False)
         payload = decode_refresh_token(rtk)
         assert payload is not None
@@ -65,7 +65,7 @@ class TestJWT:
         assert payload["user_id"] == 42
 
     def test_refresh_token_rejected_as_access(self):
-        from auth import create_refresh_token
+        from raganything.services.auth import create_refresh_token
         rtk = create_refresh_token(1, "admin", True)
         # Refresh token 不应被 access token 解码器接受
         assert decode_token(rtk) is None
@@ -75,7 +75,7 @@ class TestBruteForce:
     """暴力破解防护 — 仅测试函数存在性（DB 依赖需要完整环境）"""
 
     def test_brute_force_functions_exist(self):
-        from auth import check_account_locked, record_failed_login, reset_failed_logins
+        from raganything.services.auth import check_account_locked, record_failed_login, reset_failed_logins
         assert callable(check_account_locked)
         assert callable(record_failed_login)
         assert callable(reset_failed_logins)
@@ -93,7 +93,7 @@ class TestJWTWithJTI:
         assert payload["type"] == "access"
 
     def test_refresh_token_contains_jti_and_rfam(self):
-        from auth import create_refresh_token, decode_refresh_token
+        from raganything.services.auth import create_refresh_token, decode_refresh_token
         rtk = create_refresh_token(42, "alice", False)
         payload = decode_refresh_token(rtk)
         assert payload is not None
@@ -117,7 +117,7 @@ class TestRBACIntegration:
     def test_permission_module_loads(self):
         from raganything.permissions import Permission, DEFAULT_ROLES
         assert hasattr(Permission, 'USERS_READ')
-        assert 'admin' in DEFAULT_ROLES
+        assert 'super_admin' in DEFAULT_ROLES
 
     def test_pg_token_blacklist_functions_exist(self):
         """Token 黑名单已迁移至 PG (pg_auth_repo)。"""

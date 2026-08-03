@@ -30,7 +30,7 @@ Chat is overhead. No recap, no tutorial output, no pasting PRODUCT / DESIGN bodi
 ## Start
 
 ```bash
-node .github/skills/impeccable/scripts/live.mjs
+node .claude/skills/impeccable/scripts/live.mjs
 ```
 
 Output JSON: `{ ok, serverPort, serverToken, pageFiles, hasProduct, product, productPath, hasDesign, design, designPath }`. `pageFiles` is the list of HTML entries the live script was injected into. Keep PRODUCT.md and DESIGN.md in mind for variant generation; **DESIGN.md wins on visual decisions; PRODUCT.md wins on strategic/voice decisions.** When DESIGN.md is missing, identity is **not** absent; extract it from CSS variables, computed styles, and sibling components on the page (see Step 4 Phase A). Identity preservation is the default; departure from existing identity requires an explicit trigger from PRODUCT.md anti-references or the user's freeform prompt.
@@ -45,7 +45,7 @@ If output is `{ ok: false, error: "config_missing" | "config_invalid", path }`, 
 
 ```
 LOOP:
-  node .github/skills/impeccable/scripts/live-poll.mjs   # default long timeout; no --timeout=
+  node .claude/skills/impeccable/scripts/live-poll.mjs   # default long timeout; no --timeout=
   Read JSON; dispatch on "type"
 
   "generate"  → Handle Generate; reply done; LOOP
@@ -61,7 +61,7 @@ LOOP:
 **Stream mode (experimental, not for Cursor):**
 
 ```
-node .github/skills/impeccable/scripts/live-poll.mjs --stream   # stays running; one JSON line per event
+node .claude/skills/impeccable/scripts/live-poll.mjs --stream   # stays running; one JSON line per event
   Handle event; run --reply in a separate command
   Repeat until "exit" line → Cleanup
 ```
@@ -75,9 +75,9 @@ The live helper persists an append-only journal under `.impeccable/live/sessions
 Use these commands when the chat was interrupted, polling was missed, the helper restarted, or the browser reloaded:
 
 ```bash
-node .github/skills/impeccable/scripts/live-status.mjs
-node .github/skills/impeccable/scripts/live-resume.mjs --id SESSION_ID
-node .github/skills/impeccable/scripts/live-complete.mjs --id SESSION_ID
+node .claude/skills/impeccable/scripts/live-status.mjs
+node .claude/skills/impeccable/scripts/live-resume.mjs --id SESSION_ID
+node .claude/skills/impeccable/scripts/live-complete.mjs --id SESSION_ID
 ```
 
 - `live-status.mjs` prints connected helper state, active durable sessions, and queued pending events. It works even when the helper is down by reading the journal directly.
@@ -102,7 +102,7 @@ When `event.mode === "insert"`:
 2. Run the insert helper instead of wrap:
 
 ```bash
-node .github/skills/impeccable/scripts/live-insert.mjs --id EVENT_ID --count EVENT_COUNT --position after \
+node .claude/skills/impeccable/scripts/live-insert.mjs --id EVENT_ID --count EVENT_COUNT --position after \
   --element-id "ANCHOR_ID" --classes "class1,class2" --tag "section" --text "ANCHOR_TEXT"
 ```
 
@@ -135,7 +135,7 @@ Reading annotations precisely:
 ### 2. Wrap the element
 
 ```bash
-node .github/skills/impeccable/scripts/live-wrap.mjs --id EVENT_ID --count EVENT_COUNT --element-id "ELEMENT_ID" --classes "class1,class2" --tag "div" --text "TEXT_SNIPPET"
+node .claude/skills/impeccable/scripts/live-wrap.mjs --id EVENT_ID --count EVENT_COUNT --element-id "ELEMENT_ID" --classes "class1,class2" --tag "div" --text "TEXT_SNIPPET"
 ```
 
 Flag mapping. Keep them separate, don't collapse into `--query`:
@@ -398,7 +398,7 @@ The carbonize cleanup step (see below) reads that comment and bakes the chosen v
 ### 8. Signal done
 
 ```bash
-node .github/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID done --file RELATIVE_PATH
+node .claude/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID done --file RELATIVE_PATH
 ```
 
 `RELATIVE_PATH` is relative to project root (`public/index.html`, `src/App.tsx`, etc.); the browser fetches source directly if the dev server lacks HMR.
@@ -410,7 +410,7 @@ Then run `live-poll.mjs` again immediately.
 If wrap or generation fails after the browser has flipped to GENERATING (e.g. wrap landed on the wrong source branch and you've already reverted it, or generation hit an unrecoverable error), tell the **browser** so its bar resets to PICKING:
 
 ```bash
-node .github/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID error "Short reason"
+node .claude/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID error "Short reason"
 ```
 
 Don't run `live-accept --discard` for this; that's a pure file mutator, the browser doesn't see it, and the bar gets stuck on the GENERATING dots forever (the user has to refresh). `--discard` is only correct when the **browser** initiated the discard (user clicked ✕ during CYCLING) and the agent is just running source-side cleanup the browser already triggered.
@@ -497,13 +497,13 @@ This is lighter than `generate`: no screenshot, no element context, no variant c
 When finished:
 
 ```bash
-node .github/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID steer_done ["Optional short note for a browser toast"]
+node .claude/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID steer_done ["Optional short note for a browser toast"]
 ```
 
 On failure:
 
 ```bash
-node .github/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID error "Short reason"
+node .claude/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID error "Short reason"
 ```
 
 Then poll again immediately. Do not send a separate "picked up" reply. The Steer bar stays locked until `steer_done` or `error` arrives over SSE.
@@ -531,7 +531,7 @@ When native subagents are available, delegate source edits to `impeccable_manual
 
 If `repair` is present, the previous Apply changed source but final validation failed. Fix the current source and return the same canonical JSON result; do not roll files back yourself. The browser will ask the user before any rollback.
 
-After source edits finish, reply exactly once with `node .github/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID done --data '{"status":"done","appliedEntryIds":["8hexid"],"failed":[],"files":["src/page.html"],"notes":[]}'`. Use `status:"partial"` or `status:"error"` with `failed[]` when not every entry applied. Then poll again. Never reply without the event id; `--reply done --file ...` is invalid for manual Apply.
+After source edits finish, reply exactly once with `node .claude/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID done --data '{"status":"done","appliedEntryIds":["8hexid"],"failed":[],"files":["src/page.html"],"notes":[]}'`. Use `status:"partial"` or `status:"error"` with `failed[]` when not every entry applied. Then poll again. Never reply without the event id; `--reply done --file ...` is invalid for manual Apply.
 
 ## Exit
 
@@ -545,7 +545,7 @@ When the poll returns `exit`, proceed to cleanup. If the poll is still running a
 ## Cleanup
 
 ```bash
-node .github/skills/impeccable/scripts/live-server.mjs stop
+node .claude/skills/impeccable/scripts/live-server.mjs stop
 ```
 
 Stops the HTTP server and runs `live-inject.mjs --remove` to strip `localhost:…/live.js` from the HTML entry. To stop the server but keep the inject tag (for a quick restart), use `stop --keep-inject`. `.impeccable/live/config.json` persists as project config for future sessions.
@@ -631,7 +631,7 @@ If `config.cspChecked === true`, skip this entire section. You already asked thi
 Otherwise, run the detection helper:
 
 ```bash
-node .github/skills/impeccable/scripts/detect-csp.mjs
+node .claude/skills/impeccable/scripts/detect-csp.mjs
 ```
 
 Output: `{ shape, signals }` where `shape` is one of `append-arrays`, `append-string`, `middleware`, `meta-tag`, or `null`. The shape is named by *patch mechanism*, so one template covers many frameworks.

@@ -138,7 +138,12 @@ async def test_uploaded_document_id_resolution_refreshes_stale_cache_for_all_for
 ):
     import raganything.services.kb_service as kb_service
 
-    cache = {"demo": object()}
+    class RetirableCache(dict):
+        async def retire(self, name):
+            self.pop(name, None)
+            return True
+
+    cache = RetirableCache(demo=object())
     calls = 0
     sleeps = []
 
@@ -424,7 +429,10 @@ async def test_successful_upload_stays_completed_when_document_id_is_deferred(
         async def wait(self):
             return 0
 
-    async def fake_subprocess(*_args, **_kwargs):
+    subprocess_args = []
+
+    async def fake_subprocess(*args, **_kwargs):
+        subprocess_args.extend(args)
         return SuccessfulWorker()
 
     async def fake_pg_status(_task_id, status, **_kwargs):
@@ -469,6 +477,8 @@ async def test_successful_upload_stays_completed_when_document_id_is_deferred(
     assert completed == []
     assert pg_statuses == ["processing"]
     assert "不能确认自动标签是否完成" in finalized[0][0][4]
+    assert "--task-id" in subprocess_args
+    assert not {"--strategy", "--enable-image", "--enable-table", "--enable-equation", "--enable-video"} & set(subprocess_args)
 
 
 @pytest.mark.asyncio

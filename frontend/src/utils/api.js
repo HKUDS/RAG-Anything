@@ -234,6 +234,87 @@ async function fetchJson(url, options = {}) {
   return data
 }
 
+function streamErrorMessage(payload, fallback) {
+  if (typeof payload === 'string') return payload || fallback
+  if (typeof payload?.detail === 'string') return payload.detail
+  if (payload?.detail && typeof payload.detail === 'object') {
+    return payload.detail.message || payload.detail.error || payload.detail.code || fallback
+  }
+  if (typeof payload?.message === 'string') return payload.message
+  return fallback
+}
+
+export async function streamSSE(url, {
+  method = 'POST', body, headers = {}, signal, onEvent, onParseError,
+} = {}) {
+  let response
+  try {
+    response = await fetch(url, {
+      method,
+      body,
+      signal,
+      headers: authHeaders({ 'Content-Type': 'application/json', ...headers }),
+    })
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error
+    if (error?.message === 'Failed to fetch') throw new Error('网络错误：请检查前后端服务是否正常')
+    throw error
+  }
+
+  if (response.status === 401) {
+    handleAuthError()
+  }
+  if (!response.ok) {
+    const payload = await readResponseBody(response, response.statusText || `HTTP ${response.status}`)
+    const error = new Error(streamErrorMessage(payload, response.statusText || `HTTP ${response.status}`))
+    error.status = response.status
+    throw error
+  }
+  if (!response.body) throw new Error('问答连接意外中断，请重试。')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let terminal = false
+  const consumeLine = line => {
+    const normalized = line.replace(/\r$/, '')
+    if (!normalized.startsWith('data:')) return
+    const raw = normalized.slice(5).trimStart()
+    if (!raw) return
+    let event
+    try {
+      event = JSON.parse(raw)
+    } catch (error) {
+      onParseError?.(error, raw)
+      return
+    }
+    onEvent?.(event)
+    if (event?.type === 'done' || event?.type === 'error') terminal = true
+  }
+
+  try {
+    while (!terminal) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+      for (const line of lines) {
+        consumeLine(line)
+        if (terminal) break
+      }
+    }
+    if (!terminal) {
+      buffer += decoder.decode()
+      if (buffer.trim()) consumeLine(buffer)
+    }
+    if (!terminal) throw new Error('问答连接意外中断，请重试。')
+  } finally {
+    if (terminal) await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+}
+
 function detailResource(result, selectData) {
   if (result.status === 'fulfilled') {
     return { status: 'ready', data: selectData(result.value), error: '' }

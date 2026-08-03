@@ -6,6 +6,7 @@ import Pagination from '../components/Pagination'
 import CreateUserModal from '../components/CreateUserModal'
 import EditUserModal from '../components/EditUserModal'
 import { clampPage, getStoredPageSize, storePageSize } from '../utils/pagination'
+import { formatDate } from '../utils/dateFormat'
 
 const PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:admin-users'
 
@@ -229,7 +230,7 @@ function RolePermissionPopover({ role, anchorRect, pinned, onClose, onMouseEnter
 }
 
 export default function AdminUsersPage() {
-  const { user: me } = useAuth()
+  const { user: me, hasPermission, roleName } = useAuth()
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -247,6 +248,8 @@ export default function AdminUsersPage() {
   // 弹窗
   const [showCreate, setShowCreate] = useState(false)
   const [editUser, setEditUser] = useState(null)
+  const canManageUsers = hasPermission('users:write')
+  const canDeleteUsers = hasPermission('users:delete')
 
   const lastRoleTriggerRef = useRef(null)
   const anchorElementRef = useRef(null)
@@ -461,9 +464,11 @@ export default function AdminUsersPage() {
             <p className="page-subtitle">共 {total} 个用户</p>
           </div>
         </div>
-        <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-1.5 px-4 py-2 text-sm">
-          <UserPlus size={15} /> 创建用户
-        </button>
+        {canManageUsers && (
+          <button onClick={() => setShowCreate(true)} className="btn-primary flex items-center gap-1.5 px-4 py-2 text-sm">
+            <UserPlus size={15} /> 创建用户
+          </button>
+        )}
       </div>
 
       {error && (
@@ -476,7 +481,7 @@ export default function AdminUsersPage() {
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-muted" />
           <input
             className="input-field w-full py-2 pl-9 text-sm"
-            placeholder="搜索用户名或邮箱..."
+            placeholder="搜索用户名..."
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
           />
@@ -515,7 +520,6 @@ export default function AdminUsersPage() {
               <tr className="border-b border-cloud-300/60 text-left">
                 <th className="px-3 py-2.5 text-xs font-medium text-ink-muted">ID</th>
                 <th className="px-3 py-2.5 text-xs font-medium text-ink-muted">用户名</th>
-                <th className="px-3 py-2.5 text-xs font-medium text-ink-muted">邮箱</th>
                 <th className="px-3 py-2.5 text-xs font-medium text-ink-muted">角色</th>
                 <th className="px-3 py-2.5 text-xs font-medium text-ink-muted">状态</th>
                 <th className="px-3 py-2.5 text-xs font-medium text-ink-muted">最后登录</th>
@@ -540,7 +544,6 @@ export default function AdminUsersPage() {
                       {u.username}
                       {u.id === me?.id && <span className="ml-1 text-2xs text-sky-500">(我)</span>}
                     </td>
-                    <td className="px-3 py-2 text-xs text-ink-muted">{u.email}</td>
                     <td className="relative overflow-visible px-3 py-2">
                       <div className="relative inline-flex overflow-visible">
                         <button
@@ -576,13 +579,15 @@ export default function AdminUsersPage() {
                       </span>
                     </td>
                     <td className="px-3 py-2 text-xs text-ink-muted">
-                      {u.last_login_at ? u.last_login_at.replace('T', ' ').substring(0, 16) : '从未登录'}
+                      {u.last_login_at ? formatDate(u.last_login_at) || '从未登录' : '从未登录'}
                     </td>
                     <td className="flex gap-1 px-3 py-2">
-                      <button className="text-ink-muted transition-colors hover:text-amber-500" onClick={() => setEditUser(u)} title="编辑" aria-label={`编辑用户 ${u.username}`}>
-                        <Edit3 size={13} aria-hidden="true" />
-                      </button>
-                      {u.id !== me?.id && (
+                      {canManageUsers && (
+                        <button className="text-ink-muted transition-colors hover:text-amber-500" onClick={() => setEditUser(u)} title="编辑" aria-label={`编辑用户 ${u.username}`}>
+                          <Edit3 size={13} aria-hidden="true" />
+                        </button>
+                      )}
+                      {canDeleteUsers && u.id !== me?.id && (
                         <button className="text-ink-muted transition-colors hover:text-rose-500" onClick={() => handleDelete(u.id)} disabled={deletingId === u.id} title="删除" aria-label={`删除用户 ${u.username}`}>
                           {deletingId === u.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Trash2 size={13} aria-hidden="true" />}
                         </button>
@@ -592,7 +597,7 @@ export default function AdminUsersPage() {
                 )
               })}
               {users.length === 0 && (
-                <tr><td colSpan={7} className="py-8 text-center text-sm text-ink-muted">暂无用户</td></tr>
+                <tr><td colSpan={6} className="py-8 text-center text-sm text-ink-muted">暂无用户</td></tr>
               )}
             </tbody>
           </table>
@@ -610,8 +615,8 @@ export default function AdminUsersPage() {
       </div>
 
       {/* 弹窗 */}
-      <CreateUserModal isOpen={showCreate} onClose={() => setShowCreate(false)} onCreated={loadUsers} roles={roles} />
-      <EditUserModal user={editUser} roles={roles} isOpen={!!editUser} onClose={() => setEditUser(null)} onUpdated={loadUsers} />
+      <CreateUserModal isOpen={showCreate} onClose={() => setShowCreate(false)} onCreated={loadUsers} roles={roles} actorRole={roleName} />
+      <EditUserModal user={editUser} roles={roles} isOpen={!!editUser} onClose={() => setEditUser(null)} onUpdated={loadUsers} actorRole={roleName} />
       {activeRole && (
         <RolePermissionPopover
           role={activeRole}

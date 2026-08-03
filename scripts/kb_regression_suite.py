@@ -467,8 +467,8 @@ class ApiClient:
         _, data = self.req("GET", "/admin/roles")
         return data
 
-    def create_user(self, username: str, email: str, password: str, role_id: int) -> dict[str, Any]:
-        payload = {"username": username, "email": email, "password": password, "role_id": role_id}
+    def create_user(self, username: str, password: str, role_id: int) -> dict[str, Any]:
+        payload = {"username": username, "password": password, "role_id": role_id}
         _, data = self.req("POST", "/admin/users", expected=(201,), json=payload)
         return data
 
@@ -1220,7 +1220,7 @@ def run_rbac_probe(
     matrix: dict[str, Any] = {}
 
     student_username = allocator.next() + "_student"
-    student_resp = admin_api.create_user(student_username, f"{student_username}@example.com", password, int(student_role["id"]))
+    student_resp = admin_api.create_user(student_username, password, int(student_role["id"]))
     student_user = student_resp.get("user", {})
     track_user(tracker, student_user, result["name"])
     matrix["student"] = {
@@ -1272,7 +1272,7 @@ def run_rbac_probe(
         student_api.close()
 
     teacher_username = allocator.next() + "_teacher"
-    teacher_resp = admin_api.create_user(teacher_username, f"{teacher_username}@example.com", password, int(teacher_role["id"]))
+    teacher_resp = admin_api.create_user(teacher_username, password, int(teacher_role["id"]))
     teacher_user = teacher_resp.get("user", {})
     track_user(tracker, teacher_user, result["name"])
     matrix["teacher"] = {

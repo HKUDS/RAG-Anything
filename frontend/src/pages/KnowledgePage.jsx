@@ -3,11 +3,13 @@ import { Plus, Layers, Trash2, Clock, Database, FileText, CircleDot, X, Search, 
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { api, setCurrentKB, getCurrentKB } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
 import Pagination from '../components/Pagination'
 import ResourceSortControl from '../components/ResourceSortControl'
 import { sortKnowledgeBases } from '../utils/kbSorting'
 import { clampPage, getStoredPageSize, getTotalPages, storePageSize } from '../utils/pagination'
 import { createLatestRequestGate } from '../utils/knowledgeDetailState'
+import { formatDate } from '../utils/dateFormat'
 
 const PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:knowledge-bases'
 const KB_GRID_ROWS = 3
@@ -34,7 +36,7 @@ function shouldReplaceStats(currentStats, incomingStats) {
 }
 
 // ====================== 知识库选择器（卡片网格） ======================
-function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, deletingKB, gridRef, reserveRows = false }) {
+function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, deletingKB, gridRef, reserveRows = false, canDelete = true }) {
   const [showDelete, setShowDelete] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const gridClassName = reserveRows
@@ -49,17 +51,6 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, d
     if (openingKB === kb.name) return
     setDeleteTarget(kb)
     setShowDelete(true)
-  }
-
-  const formatDate = (iso) => {
-    if (!iso) return ''
-    try {
-      const d = new Date(iso)
-      if (Number.isNaN(d.getTime())) return iso.slice(0, 10)
-      return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' })
-    } catch {
-      return iso.slice(0, 10)
-    }
   }
 
   const formatCount = (value) => {
@@ -147,7 +138,7 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, d
               )}
             </div>
 
-            {kb.name !== 'default' && (
+            {canDelete && kb.name !== 'default' && (
               <button
                 type="button"
                 onClick={(e) => handleDeleteClick(e, kb)}
@@ -205,6 +196,9 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, openingKB, onDelete, d
 // ====================== 主页面 ======================
 export default function KnowledgePage() {
   const navigate = useNavigate()
+  const { hasPermission } = useAuth()
+  const canCreateKB = hasPermission('kb:write')
+  const canDeleteKB = hasPermission('kb:delete')
   const [kbs, setKBs] = useState([])
   const [kbsLoaded, setKbsLoaded] = useState(false)
   const [deletingKB, setDeletingKB] = useState(false)
@@ -485,10 +479,18 @@ export default function KnowledgePage() {
           <h2 className="page-title">知识库</h2>
           <p className="page-subtitle">选择一个知识库查看文档、图谱和实体</p>
         </div>
-        <button onClick={openCreateModal} className="btn-primary">
-          <Plus size={16} /> 新建知识库
-        </button>
+        {canCreateKB && (
+          <button onClick={openCreateModal} className="btn-primary">
+            <Plus size={16} /> 新建知识库
+          </button>
+        )}
       </div>
+
+      {!canCreateKB && (
+        <div className="rounded-xl border border-cloud-200 bg-cloud-100 px-3 py-2 text-xs text-ink-muted" role="status">
+          当前为只读模式：仅可浏览知识库，创建与删除需具备 kb:write / kb:delete 权限。
+        </div>
+      )}
 
       <section className="resource-panel">
         <div className="resource-toolbar">
@@ -536,6 +538,7 @@ export default function KnowledgePage() {
           openingKB={openingKB}
           onDelete={deleteKB}
           deletingKB={deletingKB}
+          canDelete={canDeleteKB}
           gridRef={gridRef}
           reserveRows={paginatedKBs.length > 0}
         />
@@ -565,9 +568,11 @@ export default function KnowledgePage() {
           <div className="empty-state resource-empty-state">
             <Layers size={48} className="mx-auto mb-4 text-cloud-400" />
             <p className="text-ink-muted text-sm mb-2">还没有知识库</p>
-            <button onClick={openCreateModal} className="btn-primary text-sm">
-              <Plus size={16} /> 新建知识库
-            </button>
+            {canCreateKB && (
+              <button onClick={openCreateModal} className="btn-primary text-sm">
+                <Plus size={16} /> 新建知识库
+              </button>
+            )}
           </div>
         )}
 

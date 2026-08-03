@@ -1,4 +1,4 @@
-﻿import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback } from 'react'
 
 import { synchronizeSystemDataEpoch } from '../utils/systemDataEpoch'
 import { advanceKnowledgeDetailAuthGeneration } from '../utils/api'
@@ -124,11 +124,11 @@ export function AuthProvider({ children }) {
     return { ...data, user: fullUser }
   }, [saveAuth])
 
-  const register = useCallback(async (username, email, password) => {
+  const register = useCallback(async (username, password) => {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, email, password }),
+      body: JSON.stringify({ username, password }),
     })
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: '注册失败' }))

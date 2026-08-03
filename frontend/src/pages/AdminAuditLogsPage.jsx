@@ -3,6 +3,7 @@ import { Activity, Database, Loader2, ScrollText, ShieldOff, UserPlus, UserCog, 
 import Pagination from '../components/Pagination'
 import { api } from '../utils/api'
 import { clampPage, getStoredPageSize, storePageSize } from '../utils/pagination'
+import { formatDate } from '../utils/dateFormat'
 
 const PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:audit-logs'
 
@@ -48,7 +49,7 @@ function formatDetails(action, details) {
     }
     case 'user.update': {
       const fields = details.changed_fields?.map(f => {
-        const FIELD_MAP = { username: '用户名', email: '邮箱', is_active: '状态', password_hash: '密码', role_id: '角色' }
+        const FIELD_MAP = { username: '用户名', is_active: '状态', password_hash: '密码', role_id: '角色' }
         return FIELD_MAP[f] || f
       }).join('、') || '未知字段'
       return `修改了：${fields}`
@@ -200,7 +201,7 @@ export default function AdminAuditLogsPage() {
                     {formatDetails(l.action, l.details)}
                   </td>
                   <td className="py-2 px-3 text-xs text-ink-muted font-mono">{l.ip_address || '—'}</td>
-                  <td className="py-2 px-3 text-xs text-ink-muted whitespace-nowrap">{l.created_at?.replace('T', ' ').substring(0, 16)}</td>
+                  <td className="py-2 px-3 text-xs text-ink-muted whitespace-nowrap">{formatDate(l.created_at)}</td>
                 </tr>
                 )
               })}

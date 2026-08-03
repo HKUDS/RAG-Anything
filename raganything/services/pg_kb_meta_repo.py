@@ -76,6 +76,13 @@ def _get_pool():
     return get_pg_pool()
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Return a timezone-aware UTC datetime; naive values are treated as UTC."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
+
+
 # ═══════════════════════════════════════════════════════════════
 # KB Metadata CRUD
 # ═══════════════════════════════════════════════════════════════
@@ -197,12 +204,13 @@ async def pg_save_kb_meta(name: str, meta: dict[str, Any]) -> None:
     else:
         extra = "{}"
 
-    # Parse created_at from ISO string to datetime, or use now
+    # Parse created_at from ISO string to datetime, or use now.
+    # Naive strings are treated as UTC so TIMESTAMPTZ storage is unambiguous.
     created_str = meta.get("created", "")
     created_at = now
     if created_str:
         try:
-            created_at = datetime.fromisoformat(created_str)
+            created_at = _as_utc(datetime.fromisoformat(created_str))
         except (ValueError, TypeError):
             created_at = now
 
@@ -225,7 +233,7 @@ async def pg_save_kb_meta(name: str, meta: dict[str, Any]) -> None:
                 status = EXCLUDED.status,
                 document_count = EXCLUDED.document_count,
                 extra = EXCLUDED.extra,
-                updated_at = EXCLUDED.updated_at
+                updated_at = $12
             """,
             name,
             meta.get("name", name),
@@ -236,6 +244,7 @@ async def pg_save_kb_meta(name: str, meta: dict[str, Any]) -> None:
             meta.get("status", "ready"),
             meta.get("document_count", 0),
             extra,
+            created_at,
             created_at,
             now,
         )
@@ -266,12 +275,13 @@ async def pg_save_all_kb_meta(meta: dict[str, Any]) -> None:
                 else:
                     extra = "{}"
 
-                # Parse created_at from ISO string to datetime, or use now
+                # Parse created_at from ISO string to datetime, or use now.
+                # Naive strings are treated as UTC so TIMESTAMPTZ storage is unambiguous.
                 created_str = kb_info.get("created", "")
                 created_at = now
                 if created_str:
                     try:
-                        created_at = datetime.fromisoformat(created_str)
+                        created_at = _as_utc(datetime.fromisoformat(created_str))
                     except (ValueError, TypeError):
                         created_at = now
 
@@ -292,8 +302,7 @@ async def pg_save_all_kb_meta(meta: dict[str, Any]) -> None:
                         owner_username = EXCLUDED.owner_username,
                         status = EXCLUDED.status,
                         document_count = EXCLUDED.document_count,
-                        extra = EXCLUDED.extra,
-                        updated_at = EXCLUDED.updated_at
+                        extra = EXCLUDED.extra
                     """,
                     kb_name,
                     kb_info.get("name", kb_name),
@@ -305,7 +314,7 @@ async def pg_save_all_kb_meta(meta: dict[str, Any]) -> None:
                     kb_info.get("document_count", 0),
                     extra,
                     created_at,
-                    now,
+                    created_at,
                 )
 
 

@@ -63,7 +63,8 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
 }
 
 function WorkflowPageInner() {
-  const { token } = useAuth()
+  const { token, hasPermission } = useAuth()
+  const canEdit = hasPermission('workflow:write')
   const [nodes, setNodes, onNodesChange] = useNodesState([])
   const [edges, setEdges, onEdgesChange] = useEdgesState([])
   const { fitView, zoomIn, zoomOut, getZoom, undo, redo } = useReactFlow()
@@ -163,6 +164,7 @@ function WorkflowPageInner() {
 
   // 保存
   const handleSave = async () => {
+    if (!canEdit) { showToast('当前为只读模式，无法保存', 'error'); return }
     if (!token) { showToast('请先登录', 'error'); return }
     if (nodes.length === 0) { showToast('工作流为空，请先添加节点', 'error'); return }
     setSaving(true)
@@ -185,6 +187,7 @@ function WorkflowPageInner() {
 
   // 新建（带确认）
   const handleNew = () => {
+    if (!canEdit) { showToast('当前为只读模式，无法新建', 'error'); return }
     if (isDirty.current && nodes.length > 0) {
       setConfirm({
         title: '新建工作流',
@@ -240,6 +243,7 @@ function WorkflowPageInner() {
   }
 
   const handleDelete = async (id, name) => {
+    if (!canEdit) { showToast('当前为只读模式，无法删除', 'error'); return }
     setConfirm({
       title: '删除工作流',
       message: `确定删除 "${name || '未命名'}" 吗？此操作不可撤销。`,
@@ -260,6 +264,7 @@ function WorkflowPageInner() {
 
   // ── 运行工作流 ──────────────────────────────
   const handleRun = async () => {
+    if (!canEdit) { showToast('当前为只读模式，无法运行', 'error'); return }
     if (!workflowId) { showToast('请先保存工作流再运行', 'error'); return }
     setRunning(true)
     setCurrentRun(null)
@@ -353,8 +358,14 @@ function WorkflowPageInner() {
 
   return (
     <div className="h-[calc(100vh-3.5rem)] flex flex-col">
+      {!canEdit && (
+        <div className="flex items-center gap-2 px-4 py-1.5 text-2xs text-ink-muted bg-cloud-100 border-b border-cloud-300" role="status">
+          当前为只读模式：无 workflow:write 权限，新建、保存、运行与删除已禁用。
+        </div>
+      )}
       <WorkflowToolbar
         workflowName={workflowName}
+        canEdit={canEdit}
         onNameChange={(v) => { setWorkflowName(v); markDirty() }}
         onNew={handleNew}
         onSave={handleSave}
@@ -442,7 +453,9 @@ function WorkflowPageInner() {
                       </div>
                       <div className="flex gap-1.5 ml-3">
                         <button onClick={() => handleLoad(w.id)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-sky-50 text-sky-600 hover:bg-coral-100 transition-colors">加载</button>
-                        <button onClick={() => handleDelete(w.id, w.name)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors">删除</button>
+                        {canEdit && (
+                          <button onClick={() => handleDelete(w.id, w.name)} className="px-3 py-1.5 text-xs font-medium rounded-lg bg-rose-50 text-rose-500 hover:bg-rose-100 transition-colors">删除</button>
+                        )}
                       </div>
                     </div>
                   ))}

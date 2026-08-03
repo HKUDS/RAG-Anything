@@ -230,9 +230,7 @@ async def test_vlm_ocr_processes_every_pdf_page_without_silent_cap(monkeypatch):
 
     monkeypatch.delenv("VLM_OCR_MAX_PAGES", raising=False)
     monkeypatch.setattr(worker.pdfium, "PdfDocument", FakePdf)
-    monkeypatch.setattr(worker, "openai_complete_if_cache", complete)
-
-    blocks = await worker._vlm_ocr_document("long.pdf")
+    blocks = await worker._vlm_ocr_document("long.pdf", complete)
 
     assert len(calls) == 31
     assert [block["page_idx"] for block in blocks] == list(range(31))
@@ -253,44 +251,13 @@ async def test_vlm_ocr_rejects_configured_partial_page_limit(monkeypatch):
     monkeypatch.setattr(worker.pdfium, "PdfDocument", FakePdf)
 
     with pytest.raises(RuntimeError, match="refusing partial document processing"):
-        await worker._vlm_ocr_document("long.pdf")
-
-
-@pytest.mark.asyncio
-async def test_worker_vision_callback_uses_supplied_image_mime(monkeypatch, tmp_path):
-    from raganything.services import kb_service
-
-    worker = _load_process_worker()
-    captured = {}
-
-    class CapturingRAG:
-        def __init__(self, **kwargs):
-            self.kwargs = kwargs
-
-    async def fake_completion(*_args, **kwargs):
-        captured["messages"] = kwargs["messages"]
-        return "caption"
-
-    monkeypatch.setattr(kb_service, "_pg_storage_ready", lambda: False)
-    monkeypatch.setattr(worker, "RAGAnything", CapturingRAG)
-    monkeypatch.setattr(worker, "openai_complete_if_cache", fake_completion)
-    monkeypatch.setattr(worker, "make_cached_embed_func", lambda func, *_args: func)
-
-    rag = await worker.create_rag(working_dir=str(tmp_path))
-    response = await rag.kwargs["vision_model_func"](
-        "describe",
-        image_data="AA==",
-        image_mime_type="image/png",
-    )
-
-    assert response == "caption"
-    image_url = captured["messages"][-1]["content"][1]["image_url"]["url"]
-    assert image_url == "data:image/png;base64,AA=="
+        await worker._vlm_ocr_document("long.pdf", None)
 
 
 @pytest.mark.asyncio
 async def test_kb_service_vision_callback_uses_supplied_image_mime(monkeypatch, tmp_path):
     from raganything.services import kb_service
+    from raganything.services import vision_models
 
     captured = {}
 
@@ -298,14 +265,19 @@ async def test_kb_service_vision_callback_uses_supplied_image_mime(monkeypatch, 
         def __init__(self, **kwargs):
             self.kwargs = kwargs
 
-    async def fake_completion(*_args, **kwargs):
-        captured["messages"] = kwargs["messages"]
+    async def fake_vision(prompt, **kwargs):
+        captured["prompt"] = prompt
+        captured.update(kwargs)
         return "caption"
 
     monkeypatch.setattr(kb_service, "_pg_storage_ready", lambda: False)
     monkeypatch.setattr(kb_service, "RAGAnything", CapturingRAG)
-    monkeypatch.setattr(kb_service, "openai_complete_if_cache", fake_completion)
     monkeypatch.setattr(kb_service, "make_cached_embed_func", lambda func, *_args: func)
+    monkeypatch.setattr(
+        vision_models,
+        "build_contextual_vlm_callable",
+        lambda _profile_id: fake_vision,
+    )
 
     rag = await kb_service.create_rag(working_dir=str(tmp_path))
     assert callable(rag._raw_embedding_provider)
@@ -317,5 +289,5 @@ async def test_kb_service_vision_callback_uses_supplied_image_mime(monkeypatch, 
     )
 
     assert response == "caption"
-    image_url = captured["messages"][-1]["content"][1]["image_url"]["url"]
-    assert image_url == "data:image/webp;base64,AA=="
+    assert captured["image_data"] == "AA=="
+    assert captured["image_mime_type"] == "image/webp"

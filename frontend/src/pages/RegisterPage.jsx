@@ -21,7 +21,6 @@ export default function RegisterPage() {
   const { register } = useAuth()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [confirmPw, setConfirmPw] = useState('')
   const [error, setError] = useState('')
@@ -34,16 +33,12 @@ export default function RegisterPage() {
     setError('')
     setSuccess('')
 
-    if (!username.trim() || !email.trim() || !password) {
+    if (!username.trim() || !password) {
       setError('请填写所有字段')
       return
     }
     if (username.trim().length < 2) {
       setError('用户名至少 2 个字符')
-      return
-    }
-    if (!email.includes('@')) {
-      setError('请输入有效的邮箱地址')
       return
     }
 
@@ -59,7 +54,7 @@ export default function RegisterPage() {
 
     setLoading(true)
     try {
-      await register(username.trim(), email.trim(), password)
+      await register(username.trim(), password)
       setSuccess('注册成功！即将跳转到登录页…')
       setTimeout(() => navigate('/login'), 1500)
     } catch (err) {
@@ -123,18 +118,6 @@ export default function RegisterPage() {
                 maxLength={64}
                 required
                 autoFocus
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-ink-body dark:text-cloud-300 mb-1.5">邮箱</label>
-              <input
-                type="email"
-                className="input-field text-sm py-2.5 w-full"
-                placeholder="your@email.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                maxLength={128}
               />
             </div>
 

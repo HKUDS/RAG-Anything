@@ -8,6 +8,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion'
 import { api } from '../utils/api'
 import { useAutoRepairKB } from '../hooks/useAutoRepairKB'
+import { useAuth } from '../context/AuthContext'
 import AutoRepairKBSelector from '../components/AutoRepairKBSelector'
 import KnowledgeGraphD3 from '../components/KnowledgeGraphD3'
 
@@ -67,6 +68,8 @@ const SEVERITY_OPTIONS = [
 export default function AutoRepairKnowledgePage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { isAdmin, hasPermission } = useAuth()
+  const canManageCases = isAdmin || hasPermission('autorepair:write')
   const [activeTab, setActiveTab] = useState('graph')
   const [kgNodes, setKgNodes] = useState([])
   const [kgEdges, setKgEdges] = useState([])
@@ -88,7 +91,7 @@ export default function AutoRepairKnowledgePage() {
   const [caseSaving, setCaseSaving] = useState(false)
   // 详情视图状态
   const [viewingCase, setViewingCase] = useState(null)
-  const { arKb, setArKb, kbList, kbLoading, creating, createArKb } = useAutoRepairKB()
+  const { arKb, setArKb, kbList, kbLoading, creating, canCreateArKb, createArKb } = useAutoRepairKB()
 
   // 生成计数器，用于取消过期的进行中请求
   const genRef = useRef(0)
@@ -190,6 +193,7 @@ export default function AutoRepairKnowledgePage() {
   }
 
   const handleSaveCase = async () => {
+    if (!canManageCases) return
     setCaseSaving(true)
     try {
       const body = { case_type: caseForm.case_type, title: caseForm.title }
@@ -227,6 +231,7 @@ export default function AutoRepairKnowledgePage() {
   }
 
   const handleDeleteCase = async (caseId, title) => {
+    if (!canManageCases) return
     if (!window.confirm(`确定要删除案例「${title}」吗？此操作不可撤销。`)) return
     try {
       await api.delete(`/autorepair/cases/${caseId}`)
@@ -317,7 +322,7 @@ export default function AutoRepairKnowledgePage() {
         <div className="flex items-center gap-2">
           <AutoRepairKBSelector
             arKb={arKb} kbList={kbList} loading={kbLoading} creating={creating}
-            onChange={setArKb} onCreate={createArKb}
+            onChange={setArKb} onCreate={createArKb} canCreate={canCreateArKb}
           />
           <button
             onClick={() => navigate(`/knowledge`)}
@@ -328,6 +333,12 @@ export default function AutoRepairKnowledgePage() {
           </button>
         </div>
       </div>
+
+      {!canManageCases && (
+        <div className="rounded-xl border border-cloud-200 bg-cloud-100 px-3 py-2 text-xs text-ink-muted" role="status">
+          当前为只读模式：无 autorepair:write 权限，案例新增、编辑与删除已隐藏。
+        </div>
+      )}
 
       {/* 标签页 */}
       <div className="flex gap-1 p-1 bg-cloud-100 rounded-xl w-fit">
@@ -565,14 +576,18 @@ export default function AutoRepairKnowledgePage() {
                 {caseStats && ` (故障 ${caseStats.fault_total || 0} · 工艺 ${caseStats.process_total || 0})`}
               </p>
               <div className="flex items-center gap-2">
-                <button onClick={() => openCaseCreate('fault')}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500 text-white hover:bg-amber-600 transition-colors">
-                  <AlertTriangle size={13} /> 新建故障案例
-                </button>
-                <button onClick={() => openCaseCreate('process')}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500 text-white hover:bg-sky-600 transition-colors">
-                  <Wrench size={13} /> 新建工艺案例
-                </button>
+                {canManageCases && (
+                  <>
+                    <button onClick={() => openCaseCreate('fault')}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-500 text-white hover:bg-amber-600 transition-colors">
+                      <AlertTriangle size={13} /> 新建故障案例
+                    </button>
+                    <button onClick={() => openCaseCreate('process')}
+                      className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium bg-sky-500 text-white hover:bg-sky-600 transition-colors">
+                      <Wrench size={13} /> 新建工艺案例
+                    </button>
+                  </>
+                )}
               </div>
             </div>
 
@@ -625,16 +640,20 @@ export default function AutoRepairKnowledgePage() {
                   <div className="flex items-start justify-between mb-2">
                     <h4 className="text-sm font-semibold text-ink-primary hover:text-sky-600 transition-colors">{c.title}</h4>
                     <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                      <button onClick={() => openCaseEdit(c)}
-                        className="p-1 rounded text-ink-muted hover:text-sage-600 hover:bg-sage-50 transition-colors"
-                        title="编辑案例">
-                        <Edit3 size={12} />
-                      </button>
-                      <button onClick={() => handleDeleteCase(c.id, c.title)}
-                        className="p-1 rounded text-ink-muted hover:text-rose-600 hover:bg-rose-50 transition-colors"
-                        title="删除案例">
-                        <Trash2 size={12} />
-                      </button>
+                      {canManageCases && (
+                        <>
+                          <button onClick={() => openCaseEdit(c)}
+                            className="p-1 rounded text-ink-muted hover:text-sage-600 hover:bg-sage-50 transition-colors"
+                            title="编辑案例">
+                            <Edit3 size={12} />
+                          </button>
+                          <button onClick={() => handleDeleteCase(c.id, c.title)}
+                            className="p-1 rounded text-ink-muted hover:text-rose-600 hover:bg-rose-50 transition-colors"
+                            title="删除案例">
+                            <Trash2 size={12} />
+                          </button>
+                        </>
+                      )}
                       <span className={`badge text-2xs ${c.case_type === 'fault' ? 'badge-warning' : 'badge-info'}`}>
                         {c.case_type === 'fault' ? '故障' : '工艺'}
                       </span>
@@ -958,14 +977,18 @@ export default function AutoRepairKnowledgePage() {
 
             {/* 操作 */}
             <div className="flex gap-2 pt-4 border-t border-cloud-200">
-              <button onClick={() => { const c = viewingCase; setViewingCase(null); openCaseEdit(c); }}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-sage-200 text-sage-600 hover:bg-sage-50 transition-colors">
-                <Edit3 size={14} /> 编辑
-              </button>
-              <button onClick={() => { const c = viewingCase; setViewingCase(null); handleDeleteCase(c.id, c.title); }}
-                className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors">
-                <Trash2 size={14} /> 删除
-              </button>
+              {canManageCases && (
+                <>
+                  <button onClick={() => { const c = viewingCase; setViewingCase(null); openCaseEdit(c); }}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-sage-200 text-sage-600 hover:bg-sage-50 transition-colors">
+                    <Edit3 size={14} /> 编辑
+                  </button>
+                  <button onClick={() => { const c = viewingCase; setViewingCase(null); handleDeleteCase(c.id, c.title); }}
+                    className="flex-1 flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border border-rose-200 text-rose-600 hover:bg-rose-50 transition-colors">
+                    <Trash2 size={14} /> 删除
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>

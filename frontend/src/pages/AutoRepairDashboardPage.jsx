@@ -23,7 +23,7 @@ export default function AutoRepairDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
-  const { arKb, setArKb, kbList, kbLoading, creating, createArKb } = useAutoRepairKB()
+  const { arKb, setArKb, kbList, kbLoading, creating, canCreateArKb, createArKb } = useAutoRepairKB()
   const genRef = useRef(0)  // generation counter: discard stale API responses on KB switch
 
   const loadAll = useCallback(async (showLoading = true) => {
@@ -133,7 +133,7 @@ export default function AutoRepairDashboardPage() {
         <div className="flex gap-2 items-center">
           <AutoRepairKBSelector
             arKb={arKb} kbList={kbList} loading={kbLoading} creating={creating}
-            onChange={setArKb} onCreate={createArKb}
+            onChange={setArKb} onCreate={createArKb} canCreate={canCreateArKb}
           />
           <button onClick={() => setAutoRefresh(!autoRefresh)}
             className={`px-3 py-1.5 rounded-lg text-xs border transition-colors ${

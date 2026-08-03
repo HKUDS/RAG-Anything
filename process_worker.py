@@ -2,7 +2,7 @@
 独立文件处理 Worker — 每个上传在独立子进程中运行
 彻底隔离 LightRAG 实例，避免多 KB 共享 pipeline 状态
 
-用法: python process_worker.py --file=<path> --kb=<name> [--strategy=<name>]
+用法: python process_worker.py --file=<path> --kb=<name> --task-id=<id>
 """
 import argparse
 import asyncio
@@ -13,7 +13,6 @@ import io
 import math
 import uuid
 from pathlib import Path
-from functools import partial
 
 _RESET_MARKER = Path(__file__).resolve().parent / ".system-reset-in-progress"
 if _RESET_MARKER.exists():
@@ -43,25 +42,12 @@ if __name__ == "__main__" and hasattr(sys.stdout, "buffer"):
 # 重要：不再调用 load_dotenv() 或从 .env 文件强制覆盖！
 # 这确保 Admin API 的运行时设置变更能真正传播到 Worker。
 
-from lightrag.llm.openai import openai_complete_if_cache, openai_embed
-from lightrag.utils import EmbeddingFunc
-from raganything import RAGAnything, RAGAnythingConfig
-from raganything.embedding import create_vision_embed_func, make_cached_embed_func
 from raganything.chunking import STRATEGY_META
 from raganything.processor import get_pending_background_tasks
 from raganything.utils.pdf_fallback import extract_pdf_embedded_images
 from raganything.utils.process_lock import FileLock, get_file_lock_path
 
 # 所有配置从 os.environ 读取（继承自父进程，反映 Admin API 最新设置）
-API_KEY = os.getenv("LLM_BINDING_API_KEY")
-BASE_URL = os.getenv("LLM_BINDING_HOST")
-EMB_API_KEY = os.getenv("EMBEDDING_BINDING_API_KEY") or API_KEY
-EMB_BASE_URL = os.getenv("EMBEDDING_BINDING_HOST") or BASE_URL
-LLM_MODEL = os.getenv("LLM_MODEL", "qwen-plus")
-EMB_MODEL = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
-EMB_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
-CHUNKING_STRATEGY = os.getenv("CHUNKING_STRATEGY", "recursive")
-_VLM_IMAGE_MIME_TYPES = {"image/gif", "image/jpeg", "image/png", "image/webp"}
 
 
 class RetryableExternalServiceError(RuntimeError):
@@ -285,8 +271,8 @@ import base64
 import pypdfium2 as pdfium
 from PIL import Image
 
-async def _vlm_ocr_document(file_path: str) -> list[dict[str, object]]:
-    """用千问 VL 模型对 PDF/图片做 OCR"""
+async def _vlm_ocr_document(file_path: str, vision_func) -> list[dict[str, object]]:
+    """Use the task-snapshot vision callback to OCR every source page."""
     try:
         ext = file_path.lower().rsplit(".", 1)[-1] if "." in file_path else ""
         images: list[tuple[int, str]] = []
@@ -318,7 +304,6 @@ async def _vlm_ocr_document(file_path: str) -> list[dict[str, object]]:
             return ""
 
         text_blocks: list[dict[str, object]] = []
-        VISION_MODEL = os.getenv("VISION_MODEL", "qwen-vl-plus")
         for page_idx, b64 in images:
             msgs = [
                 {"role": "user", "content": [
@@ -326,10 +311,9 @@ async def _vlm_ocr_document(file_path: str) -> list[dict[str, object]]:
                     {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
                 ]},
             ]
-            result = await openai_complete_if_cache(
-                VISION_MODEL, "", system_prompt=None, history_messages=[],
-                messages=msgs, api_key=API_KEY, base_url=BASE_URL,
-            )
+            result = await vision_func(
+                    "", system_prompt=None, history_messages=[], messages=msgs,
+                )
             if result and isinstance(result, str):
                 text = result.strip()
                 if text:
@@ -353,192 +337,6 @@ PLAIN_TEXT_EXTS = {"txt", "md", "csv", "json", "xml", "yaml", "yml",
 
 def kb_dir(name: str) -> str:
     return "./rag_storage" if name == "default" else f"./rag_storage_{name}"
-
-
-def auto_parser(filename: str) -> str:
-    ext = filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
-    if ext in ("epub",):
-        return "marker"
-    if ext in ("pdf", "docx", "pptx", "xlsx", "doc", "ppt", "xls", "txt", "md"):
-        return "docling"
-    if ext in ("png", "jpg", "jpeg", "bmp", "tiff", "tif", "gif", "webp"):
-        return "mineru"
-    if ext in ("mp4", "avi", "mov", "mkv", "webm"):
-        return "video"
-    return os.getenv("PARSER", "docling")
-
-
-async def create_rag(
-    parser=None,
-    working_dir=None,
-    chunking_strategy=None,
-    *,
-    enable_image: bool | None = None,
-    enable_table: bool | None = None,
-    enable_equation: bool | None = None,
-    enable_video: bool | None = None,
-):
-    if parser is None:
-        parser = os.getenv("PARSER", "docling")
-    if chunking_strategy is None:
-        chunking_strategy = CHUNKING_STRATEGY
-    wd = working_dir or os.getenv("WORKING_DIR", "./rag_storage")
-
-    def llm_func(prompt, system_prompt=None, history_messages=None, **kw):
-        if "max_tokens" not in kw:
-            kw["max_tokens"] = int(os.getenv("MAX_TOKENS", "4096"))
-        kw.setdefault("timeout", int(os.getenv("LLM_TIMEOUT", "180")))
-        return openai_complete_if_cache(
-            LLM_MODEL, prompt, system_prompt=system_prompt,
-            history_messages=history_messages or [], api_key=API_KEY, base_url=BASE_URL, **kw,
-        )
-
-    VISION_MODEL = os.getenv("VISION_MODEL", "qwen-vl-plus")
-
-    async def vision_func(prompt, system_prompt=None, history_messages=None,
-                          image_data=None, image_mime_type=None, messages=None, **kw):
-        """VLM 视觉模型函数（async）"""
-        if messages is not None:
-            return await openai_complete_if_cache(
-                VISION_MODEL, "", system_prompt=None, history_messages=[],
-                messages=messages, api_key=API_KEY, base_url=BASE_URL, **kw,
-            )
-        elif image_data is not None:
-            mime_type = (
-                image_mime_type
-                if image_mime_type in _VLM_IMAGE_MIME_TYPES
-                else "image/jpeg"
-            )
-            msgs = [
-                {"role": "user", "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_data}"}},
-                ]},
-            ]
-            if system_prompt:
-                msgs.insert(0, {"role": "system", "content": system_prompt})
-            return await openai_complete_if_cache(
-                VISION_MODEL, "", system_prompt=None, history_messages=[],
-                messages=msgs, api_key=API_KEY, base_url=BASE_URL, **kw,
-            )
-        else:
-            return await llm_func(
-                prompt, system_prompt, history_messages or [], **kw
-            )
-
-    _raw_embed_func = partial(
-        openai_embed.func,
-        model=EMB_MODEL,
-        api_key=EMB_API_KEY,
-        base_url=EMB_BASE_URL,
-        client_configs={
-            "timeout": int(os.getenv("LLM_TIMEOUT", "180")),
-            "max_retries": 0,
-        },
-    )
-    _raw_embed_func.embedding_dim = EMB_DIM
-
-    async def _preflight_embed_func(texts, *, timeout: int):
-        raw_call = getattr(openai_embed.func, "__wrapped__", openai_embed.func)
-        return await raw_call(
-            texts,
-            model=EMB_MODEL,
-            api_key=EMB_API_KEY,
-            base_url=EMB_BASE_URL,
-            client_configs={"timeout": timeout, "max_retries": 0},
-        )
-
-    _cached_embed_func = make_cached_embed_func(_raw_embed_func, wd, EMB_MODEL)
-
-    embedding_func = EmbeddingFunc(
-        embedding_dim=EMB_DIM, max_token_size=8192,
-        func=_cached_embed_func,
-    )
-
-    async def _embed_wrapper(texts):
-        return await embedding_func.func(texts, model=EMB_MODEL)
-
-    async def _llm_wrapper(prompt, system_prompt="", history_messages=None, **kw):
-        return await llm_func(prompt, system_prompt=system_prompt,
-                              history_messages=history_messages or [], **kw)
-
-    chunking_map = {
-        "fixed_size": None,
-        "recursive": __import__("raganything.chunking", fromlist=["recursive_chunking"]).recursive_chunking,
-        "sentence": __import__("raganything.chunking", fromlist=["sentence_chunking"]).sentence_chunking,
-        "structure": __import__("raganything.chunking", fromlist=["structure_chunking"]).structure_chunking,
-        "semantic": __import__("raganything.chunking", fromlist=["make_semantic_chunking"]).make_semantic_chunking(_embed_wrapper),
-        "agentic": __import__("raganything.chunking", fromlist=["make_agentic_chunking"]).make_agentic_chunking(_llm_wrapper, LLM_MODEL),
-    }
-    chosen = chunking_map.get(chunking_strategy)
-
-    def _env_int(key: str, default: int, min_val: int = 1, max_val: int = 100) -> int:
-        """安全读取整数环境变量，防止 typo 导致启动崩溃或恶意超限值"""
-        try:
-            val = int(os.getenv(key, str(default)))
-            return max(min_val, min(val, max_val))
-        except ValueError:
-            return default
-
-    lightrag_kwargs = {
-        "chunk_token_size": _env_int("CHUNK_SIZE", 800, max_val=4096),
-        "chunk_overlap_token_size": _env_int("CHUNK_OVERLAP", 100, max_val=500),
-        "embedding_batch_num": _env_int("EMBEDDING_BATCH_SIZE", 10, max_val=10),
-        "embedding_func_max_async": _env_int("ENTITY_EXTRACT_CONCURRENCY", 3, max_val=16),
-        # 显式传入 LightRAG 参数，消除 import-order 依赖
-        "llm_model_max_async": _env_int("MAX_ASYNC", 4, max_val=16),
-        "entity_extract_max_gleaning": _env_int("MAX_GLEANING", 1, max_val=2),
-    }
-    if chosen is not None:
-        lightrag_kwargs["chunking_func"] = chosen
-
-    # ── PG Storage Backends (align with kb_service.py create_rag) ──
-    # When PostgreSQL is available, switch LightRAG from file-based
-    # JSON storage to PG-backed storage. This is the P0 fix that ensures
-    # the worker writes to the same PG tables that the server reads from.
-    from raganything.services.kb_service import _pg_storage_ready as _srv_pg_ready
-    from raganything.services.kb_service import _pg_vector_ready, _pg_age_ready
-
-    if _srv_pg_ready():
-        lightrag_kwargs["kv_storage"] = "PGKVStorage"
-        lightrag_kwargs["doc_status_storage"] = "PGDocStatusStorage"
-
-        if await _pg_vector_ready():
-            lightrag_kwargs["vector_storage"] = "PGVectorStorage"
-
-        if await _pg_age_ready():
-            lightrag_kwargs["graph_storage"] = "PGGraphStorage"
-
-    # ── PG workspace isolation ──────────────────────────────
-    # LightRAG defaults workspace=os.getenv("WORKSPACE","") which is "".
-    # Without an explicit workspace, ALL KBs share the same PG tables.
-    lightrag_kwargs["workspace"] = wd
-
-    # Explicit worker arguments come from the durable enqueue-time snapshot.
-    # Environment values remain deployment defaults for manual worker runs only.
-    config = RAGAnythingConfig(
-        working_dir=wd, parser=parser,
-        pdf_parser=os.getenv("PDF_PARSER", ""),
-        enable_image_processing=(enable_image if enable_image is not None else os.getenv("ENABLE_IMAGE_PROCESSING", "true").lower() == "true"),
-        enable_table_processing=(enable_table if enable_table is not None else os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true"),
-        enable_equation_processing=(enable_equation if enable_equation is not None else os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true"),
-        enable_video_processing=(enable_video if enable_video is not None else os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true"),
-        entity_types=os.getenv("ENTITY_TYPES", ""),
-        entity_extraction_min_degree=int(os.getenv("ENTITY_EXTRACTION_MIN_DEGREE", "0")),
-    )
-    # Feature gate: only create vision_embed_func if VISION_SEARCH_ENABLED
-    _vision_embed_func = None
-    if os.getenv("VISION_SEARCH_ENABLED", "false").lower() == "true":
-        _vision_embed_func = create_vision_embed_func(working_dir=wd)
-    rag = RAGAnything(config=config, llm_model_func=llm_func,
-                      vision_model_func=vision_func,
-                      embedding_func=embedding_func,
-                      vision_embed_func=_vision_embed_func,
-                      lightrag_kwargs=lightrag_kwargs)
-    # The availability probe must never hit the application's embedding cache.
-    rag._raw_embedding_provider = _raw_embed_func
-    rag._raw_embedding_preflight_provider = _preflight_embed_func
-    return rag
 
 
 def _fix_stuck_doc(filename: str, target_dir: str, error_msg: str) -> bool:
@@ -662,10 +460,9 @@ async def _flush_background_tasks_and_finalize(rag, filename: str) -> None:
     print(f"[PROGRESS] phase=graph-building status=done file={filename}", flush=True)
 
 
-async def process_file(file_path: str, kb_name: str, chunking_strategy: str = "",
-                     enable_image: bool | None = None, enable_table: bool | None = None,
-                     enable_equation: bool | None = None, enable_video: bool | None = None,
-                     task_id: str | None = None) -> int:
+async def process_file(
+    file_path: str, kb_name: str, *, task_id: str | None = None
+) -> int:
     """处理单个文件并写入对应 KB 目录"""
     filename = os.path.basename(file_path)
     target_dir = kb_dir(kb_name)
@@ -686,7 +483,9 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
     ingestion = task_settings.get("ingestion", {})
     if not isinstance(ingestion, dict):
         raise RuntimeError("settings_snapshot_invalid")
-    strategy = str(ingestion.get("chunking_strategy") or chunking_strategy or CHUNKING_STRATEGY)
+    strategy = ingestion.get("chunking_strategy")
+    if not isinstance(strategy, str) or not strategy:
+        raise RuntimeError("settings_snapshot_invalid")
     enable_image = bool(ingestion.get("enable_image"))
     enable_table = bool(ingestion.get("enable_table"))
     enable_equation = bool(ingestion.get("enable_equation"))
@@ -955,7 +754,9 @@ async def process_file(file_path: str, kb_name: str, chunking_strategy: str = ""
                     current_stage = "vlm_ocr"
                     print(f"[WORKER] VLM OCR 兜底: {filename}", flush=True)
                     try:
-                        fallback_content = await _vlm_ocr_document(file_path)
+                        fallback_content = await _vlm_ocr_document(
+                            file_path, rag.vision_model_func
+                        )
                         if not fallback_content:
                             raise RuntimeError("VLM OCR returned no usable text")
                         if (
@@ -1109,25 +910,12 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", required=True)
     parser.add_argument("--kb", required=True)
-    parser.add_argument("--strategy", default="")
     parser.add_argument("--task-id", required=True)
-    parser.add_argument("--enable-image", dest="enable_image", default=None,
-                        choices=["true", "false"])
-    parser.add_argument("--enable-table", dest="enable_table", default=None,
-                        choices=["true", "false"])
-    parser.add_argument("--enable-equation", dest="enable_equation", default=None,
-                        choices=["true", "false"])
-    parser.add_argument("--enable-video", dest="enable_video", default=None,
-                        choices=["true", "false"])
     args = parser.parse_args()
 
     try:
         worker_exit_code = asyncio.run(process_file(
-            args.file, args.kb, args.strategy,
-            enable_image=args.enable_image == "true" if args.enable_image else None,
-            enable_table=args.enable_table == "true" if args.enable_table else None,
-            enable_equation=args.enable_equation == "true" if args.enable_equation else None,
-            enable_video=args.enable_video == "true" if args.enable_video else None,
+            args.file, args.kb,
             task_id=args.task_id,
         ))
     except asyncio.CancelledError:

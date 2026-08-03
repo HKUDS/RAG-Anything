@@ -6,7 +6,7 @@
 
 | 项目 | 当前值 |
 |---|---|
-| 最后核验日期 | 2026-07-31（Asia/Shanghai） |
+| 最后核验日期 | 2026-08-03（Asia/Shanghai） |
 | 核验分支 | `feature/custom-enhancements` |
 | 基准提交 | `52e0482714de` |
 | 工作区状态 | **有未提交改动**；“进行中”内容不得视为已交付 |
@@ -65,6 +65,9 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 - 智能体问答的请求级设置快照必须携带 LLM/VLM 的公开 profile 指纹；知识库实例严格校验 LLM 可用性和两类指纹一致性。纯文本问答不依赖 VLM 可用性，只有图片问答和多模态处理要求可用 VLM；SSE 失败会保留错误消息，不再被会话初始化覆盖。
 - 个人设置桌面工作区采用独立详情滚动：左侧分区菜单保持静止，点击项目仅滚动右侧详情；1100px 以下保留页面滚动与横向分区导航。
 - 主侧栏末尾顺序固定为“用户管理、审计日志、个人设置”；权限不足时仅隐藏相应管理入口，个人设置始终位于可见列表末尾。
+- 认证仅使用用户名+密码：`users.email` 列已随迁移 `025` 移除（历史数据不可恢复），注册、管理端用户管理、个人设置与审计详情均不再出现邮箱；`DEFAULT_ADMIN_EMAIL` 环境变量不再支持。
+
+- Repository redundancy governance: upload workers use durable task snapshots; retired CLI/client paths are removed. Shared authenticated SSE now serves agent and autorepair Q&A. Impeccable has one canonical source; root auth/agent wrappers are deprecated. New ODL/DOCX output is ignored, but 4,898 tracked artifacts await archive/reference proof. No HTTP API, migration, or RBAC behavior changed.
 
 ### 进行中
 
@@ -89,6 +92,7 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 
 - 三角色 `admin/editor/viewer` 仅作迁移映射；当前为五级角色。
 - `auth.db`/SQLite 不再是认证权威存储；当前要求 PostgreSQL。
+- `users.email` 字段与 `DEFAULT_ADMIN_EMAIL` 环境变量：2026-08-03 全链路移除（迁移 `025` 删除列），历史邮箱数据不可恢复；历史说明书仍含旧示例，仅作背景材料。
 - 旧 `/upload`、`/query`、单一 `SettingsPage` 和 `manufacturing:*` 描述已过时，以当前路由和 `autorepair:*` 为准。
 
 ## 3. 架构与关键数据流
@@ -143,6 +147,10 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 - `is_admin` 仅由 `super_admin` 派生；前端展示权限不能替代服务端校验。
 - 用户、角色、审计、JWT 撤销和登录保护由 PostgreSQL auth service 管理。
 - 旧三角色用户通过 [`015_restore_5level_rbac.sql`](migrations/015_restore_5level_rbac.sql) 映射到五级角色。
+- 角色分配等级约束：`can_assign_role()`（`ROLE_ORDER/ROLE_RANK`）限定操作者只能分配不高于自身等级的角色；`create_user/update_user` 强制校验，bootstrap 以 super_admin 豁免。
+- 会话属“使用”资源：创建/重命名/删除按 `agent:read`（保留所有权校验），消息编辑按 `agent:write`。
+- `GET /kb/{kb}/vision-settings` 按 `kb:read`+可见性读取，写入保持属主/`kb:write`；`GET /workflows/models` 需 `workflow:read`。
+- `POST /upload/folder` 受 `FOLDER_UPLOAD_ROOTS` 白名单约束（默认 `uploads/` 与 `WORKING_DIR`），越界 403；运行时角色种子由 `DEFAULT_ROLES` 派生（`build_default_role_rows`），PG 模式删除 KB 已修复。
 
 ### 知识库与任务
 
@@ -234,28 +242,22 @@ uv run python scripts/check_project_summary.py
 
 | 日期 | 任务/change | 类型 | 结果 | 影响范围 | 验证 | 经验/风险 |
 |---|---|---|---|---|---|---|
-| 2026-07-31 | `restore-agent-query-latency` | 性能修复/进行中 | 已补齐无内容阶段计时、改写/VLM 路径隐私日志、revision 感知的 query-core 获取、标准/tag/CoT/ReAct/媒体路径共用 deadline 与租约感知 SSE 清理；确定性基准覆盖 acquire、检索、媒体和 SSE 边界。 | Agent SSE、KB cache、query pipeline、RRF/BM25、受控媒体 | 定向 pytest 96 通过、1 个依赖弃用警告；OpenSpec strict、`py_compile`、`git diff --check`、总结检查通过；受控重启后新 PID 的健康端点 200。全量 pytest 仍在约 60% 后复现 pytest 捕获临时文件关闭级联错误。 | 5.2 未勾选：真实 SSE 会向外部 provider 发送检索上下文和派生 prompt，尚无此数据外发授权；确定性基准不得作为生产 provider 测量。 |
-| 2026-07-31 | 智能体问答 192 秒延迟诊断 | 性能排查 | 确认 192.31 秒为服务端记录而非前端误计时，约 161.5 秒发生在最终生成前的 RRF/图片召回区段；请求级设置使 KB 每问创建未缓存实例、默认 `hybrid` 改走 RRF 并产生新的 Embedding worker，远程向量调用或其取消传播是最高概率长尾来源；旧媒体校验另触发约 2 秒共享实例初始化 | 智能体 SSE、KB 实例、混合检索、模型 profile | 带时间戳日志、工作区差异、PostgreSQL 元数据与运行配置只读核验；502 块 BM25 约 1.2 秒、最长 15 块实体标注约 4.5 秒、RRF 超时测试 44/44 通过；无业务行为变化 | 当前日志不能把 161.5 秒精确拆到单个内部调用；先补 KB/RRF 通道/Embedding/媒体/首 token 分段指标，再按配置指纹复用重型检索核心并验证真实调用可抢占总 deadline；Embedding 缓存关闭和 worker 冷启会放大长尾，`LLM_TIMEOUT=180` 与 rerank 告警均非本次主因 |
-| 2026-07-30 | 上传恢复租约列迁移 | 数据库修复 | 已为现有 PostgreSQL 补齐 `processing_owner`、generation 和 heartbeat 列及索引，解除启动恢复阻断 | `uploaded_files`、迁移 `023` | 列查询、恢复函数成功恢复 2 个任务、定向测试 2/2 | 所有部署须在应用重启前执行迁移 `023` |
-| 2026-07-30 | 启动恢复迁移与租约 TTL 修复 | 数据库/队列修复 | 完整执行迁移 `023`；租约 TTL 以整数 interval 绑定，修复 asyncpg 参数类型错误 | 启动恢复、KB 队列、`kb_mutation.py` | 服务启动、健康端点 200、65 项定向测试 | `023` 必须先于重启；旧 processing 任务按 5 分钟心跳回收 |
-| 2026-07-30 | Embedding 预检工厂契约修复 | Bug 修复 | worker 使用统一 KB 工厂时显式保留绕过缓存的 Embedding 预检 provider；预检仅在 provider 缺失时回退 | DOCX 等上传任务的模型预检 | `tests/test_upload_retry_resilience.py`、`tests/test_process_worker_lifecycle.py` 定向回归 | `getattr` 的默认参数会被提前求值，不能用于可能不存在的旧属性回退 |
-| 2026-07-30 | 上传任务 LLM 模型回退修复 | Bug 修复 | legacy LLM 档案优先读取 `LLM_BINDING_MODEL`，模型目录以实际 `qwen-plus`/`qwen-vl-plus` 显示；上传在文本持久化前预检 LLM 与 Embedding，避免实体抽取才暴露模型 404 | `vision_models.py`、`kb_service.py`、`process_worker.py`、设置页和知识库上传任务 | 模型目录/worker 14 项、上传回归 81 项、后端健康端点 200、`git diff --check` | 已重启后端；已有 degraded 文档应点击“补偿图谱”，无需重新上传 |
-| 2026-07-30 | `cancel-inflight-upload-tasks` | 功能/生命周期 | 未完成上传任务可由授权用户删除；处理中和重试等待使用可轮询取消并清理任务来源残留；上传抽屉和文档列表均以服务端任务溯源调用取消接口，确认框以 Portal 下的视口坐标固定居中；有明确任务 ID 的活动列表行在能力标记滞后时仍走任务取消，服务端保留上传者、KB 和状态校验 | 上传 API、worker、重试、任务状态、上传抽屉、文档列表和迁移 `024` | 104 项既有定向后端测试、本次文档列表契约 10 项、67 项前端单测、Vite build、OpenSpec 严格校验、`git diff --check` | 生产启用前必须执行 `024`；确认框不得受抽屉、滚动或动画容器影响；无明确任务 ID 或无上传者权限的活动行不可取消；真实 PostgreSQL 多进程 worker 取消需部署环境补验 |
-| 2026-07-30 | 图片理解模型名称展示 | Bug 修复/UI | 将兼容 profile `legacy-vlm` 的用户可见名称和“实际生效”值解析为实际模型 `qwen-vl-plus`，技术详情仍保留配置 ID | 模型目录、个人设置 | 前端单测 66 项、Vite build、模型目录 pytest 10 项、运行时健康端点与目录核验 | 配置 ID 用于兼容，不应作为模型名称展示 |
-| 2026-07-30 | PDF OCR 页覆盖与自动关键词完整性 | Bug 修复/数据质量 | 移除 VLM OCR 的 30 页静默截断，按页持久化 OCR 文本；媒体路径引用在有语义块时不再阻断自动关键词，空块、缺文本/向量与纯路径文档仍拒绝 | PDF 上传兜底、文本分块、自动关键词 | 61 项定向 pytest、39 页源文件与旧索引覆盖差异核验、关键词任务完成、后端健康端点 200 | 旧版已入库的截断文档需完整重处理，不能在原索引上补写 |
-| 2026-07-30 | 截断 PDF 重处理运行事件 | 运行/数据恢复 | 已移除指定文档的不完整索引；删除接口同步清理上传暂存源，未能继续重入库，已取消指向缺失源文件的队列记录并恢复后端 | 单个文档索引、上传元数据与队列 | 端口监听、健康端点 200、队列记录取消核验 | 重处理前必须先保存独立副本或由用户重新选择源文件；不得假设删除文档会保留 `uploads/` 暂存文件 |
+
+| 2026-08-03 | 五级 RBAC 分级隔离验证与修复（harden-rbac-isolation） | 安全审计+修复 | 双专家静态审计确认 2 高 6 中 3 低；8 类修复落地：角色分配等级约束（dept_admin 创建/提升 super_admin=403）、upload/folder 目录白名单（越界 403）、会话端点降 agent:read、workflows/models 守卫+run 属主过滤+WS 属主校验、vision-settings 读写分离、KB 删除 PG 模式修复（500→200）、删除死代码角色矩阵+种子一致性测试、前端 5 类页面权限门控 | permissions.py、pg_auth_repo.py、routers/{auth,agent,admin,knowledge}.py、kb_service.py、前端组件/页面、2 个新测试、roleOrdering.js、.env.example | 运行时五角色 API 矩阵 24/24 通过（证据 JSON 在 Codex 可视化目录）；新增测试 39、后端定向 70、前端单测 81 通过；受影响既有 83 通过（4 项任务前既有失败）；py_compile、git diff --check、OpenSpec validate 通过；Vite build 受环境权限阻塞 | 残留：通用 /ws 广播未按用户过滤（中）、最后一名 super_admin 保护缺失（低）、student 汽修问答保持 autorepair:write（产品决策，前端已门控）、AuthContext 权限快照可能陈旧；报告见 docs/rbac-verification-report-2026-08-03.md |
+| 2026-08-03 | 时间显示与上传时区修复 | Bug 修复 | 知识库列表 2000-01-01 根因：`list_kbs` 把 `corpus_revision` 版本号当时间戳，前端 `new Date("0")` 解析为 2000-01-01；改取 `kb_metadata.updated_at`（回退 `created`）、创建 KB 统一 UTC aware、迁移 `026` 移除表触发器。文档上传/用户最后登录 ±8 小时根因：前端多处直接 `slice/replace` 截取 ISO 字符串不转时区，且时间源时区不统一（PG timestamptz→UTC、doc_status→+08:00、内存任务 naive）；统一走 `formatDate`（Date 解析 + zh-CN 本地化），内存任务时间改 UTC aware | `knowledge.py`、`pg_kb_meta_repo.py`、`vision_models.py`、`KnowledgePage.jsx`、`KnowledgeDetailPage.jsx`、`MonitorPage.jsx`、`AdminAuditLogsPage.jsx`、`AdminUsersPage.jsx`、`dateFormat.js`、迁移 `026` | KB 定向 68+3 项、前端单测 73 项、JSX 解析、`git diff --check` 通过；Vite build 受环境权限阻塞 | `agent.py` 缓存键仍用版本号；迁移 `026` 部署前执行 |
+| 2026-07-31 | `restore-agent-query-latency` | 性能修复/进行中 | 已补齐无内容阶段计时、改写/VLM 路径隐私日志、revision 感知 query-core 获取、标准/tag/CoT/ReAct/媒体路径共用 deadline 与租约感知 SSE 清理；确定性基准覆盖 acquire、检索、媒体、SSE 边界 | Agent SSE、KB cache、query pipeline、RRF/BM25、受控媒体 | 定向 pytest 96 通过、1 个弃用警告；OpenSpec strict、`py_compile`、`git diff --check`、总结检查通过；受控重启后健康 200；5.2 受控验收 21/21 HTTP 200 且 done+token、P95 23.12s、query-core 1 miss/20 hit，日志无查询/SSE 内容/标识符/凭据/主机；RRF 后枚举全图致约 71s 尾延迟已改 context-only 返回并覆盖慢来源取消与来源标签回归 | 5.2 真实 SSE 会向外部 provider 发送检索上下文与派生 prompt，尚无外发授权；确定性基准不得作为生产 provider 测量 |
+| 2026-07-31 | 智能体问答 192 秒延迟诊断 | 性能排查 | 192.31 秒为服务端记录而非前端误计时；约 161.5 秒在最终生成前的 RRF/图片召回区段；请求级设置使 KB 每问创建未缓存实例、默认 hybrid 走 RRF 并产生新 Embedding worker，远程向量调用或其取消传播是最高概率长尾来源；旧媒体校验另触发约 2 秒共享实例初始化 | 智能体 SSE、KB 实例、混合检索、模型 profile | 带时间戳日志、工作区差异、PostgreSQL 元数据与运行配置只读核验；BM25 502 块约 1.2 秒、实体标注约 4.5 秒、RRF 超时测试 44/44 通过；无业务行为变化 | 日志暂不能把 161.5 秒拆到单个内部调用；先补分段指标，再按配置指纹复用重型检索核心；Embedding 缓存关闭和 worker 冷启放大长尾 |
+| 2026-07-30 | 上传/租约/模型预检多项修复（7 项合并） | 数据库/队列/Bug 修复 | 迁移 ``023`` 补齐上传恢复租约列并绑定 TTL；worker 预检与 LLM 模型回退按统一 KB 工厂契约修复；``cancel-inflight-upload-tasks`` 增加可取消队列；图片理解模型名称显示实际模型；PDF OCR 兜底按页持久化；详见 ``openspec/changes/archive/`` 与 Git 历史 | 上传 API、worker、``uploaded_files``、迁移 ``023``/``024``、模型目录、PDF OCR | 各单项定向测试当时通过；合并记录以 Git/OpenSpec 归档为准 | 生产启用前必须执行迁移 ``023``/``024`` |
 | 2026-07-31 | 上传租约与完成状态加固 | Bug 修复/运行验证 | 配额租约允许原 owner 在未被接管时续期；Worker 将真实租约丢失或心跳异常标为可重试 `quota` 错误；完成回写按显式任务元数据匹配并在缓存未同步时直读 PG，避免 `processed_document_status_missing` 误失败 | `user_settings.py`、`process_worker.py`、`kb_service.py`、上传状态和自动标签 | 定向 pytest 38 通过、静态检查/OpenSpec 严格校验通过；后端重启健康；保留的 39 页 PDF 受控重试后完成，37 块、页 32-39 文本逐页命中、标签任务完成（36/36 可标注块） | 不把内部 `track_id` 当作队列任务 ID；延迟心跳必须由 ID+owner 围栏判断，跨进程完成状态以 PG 为准 |
 | 2026-07-31 | 上传外网恢复与 ODL 结果契约修复 | Bug 修复/运行恢复 | Embedding 瞬时连接失败按持久作业重试；后端在具备模型网络权限的环境恢复后自动完成原任务。ODL 输出根目录先绝对化，`PageTrackedContent` 接收并保存 `provenance_ref`，消除转换成功后的路径与构造异常 | 上传预检/自动重试、`opendataloader_parser.py`、`office_parser.py` | DashScope 最小 Embedding 返回 1024 维；ODL 真实 3 页解析 3/3 成功；目标 39 页 PDF 完成，37/37 文本与向量、0 空向量、标签 36/36，末页 32-38 与源文 99.4%-99.8% 相似，第 39 页 122/124 字连续命中；后端健康 200 | 外部服务故障不得绕过预检；持久重试依赖存活的后端调度器，部署须由服务管理器自动拉起；文本 Embedding 尚未进入不可变任务快照，后续需单独消除重试期间配置漂移风险 |
-| 2026-07-30 | 上传取消 worker 有界终止 | Bug 修复 | worker 终止后两次限时等待，强杀后仍存活则保留 `cancelling`，不清理内容或解除去重 | `kb_service.py`、上传生命周期测试 | 104 项上传生命周期定向 pytest、`py_compile` | 取消 coordinator 不能无界等待；未收敛状态必须保持可轮询 |
-
 | 2026-07-31 | 文本与图片理解模型名称显示 | UI 优化 | 个人设置与平台默认模型下拉优先显示 profile 的纯 model 名称，移除默认类型前缀和不可用后缀；保留后端 display_name 兼容契约 | frontend/src/pages/PreferencesPage.jsx、frontend/src/pages/AdminPlatformPage.jsx | 前端单元测试 67 项通过；Vite production build 通过；git diff --check 通过 | 不修改模型目录 API 字段，禁用状态仍由 disabled 与详情区域表达 |
-| 2026-07-31 | 知识库问答失败、提示闪退与推理卡死修复 | Bug 修复/运行操作 | 请求级设置快照补齐模型 profile 指纹，修复 `get_kb` 初始化失败；纯文本问答解除对 VLM 可用性的错误依赖；补齐流式请求 `getToken` 导入；稳定 toast 回调并持久展示 HTTP/SSE 错误；RRF 子通道到期后隔离不响应取消的任务并使用可用通道降级返回，外层取消同步回收通道任务；智能体检索增加总时限和断连回收；前端收到 `done/error` 即停止读流，异常 EOF、错误和取消均结束推理状态；随后按用户要求停止本地后端 | `user_settings.py`、`kb_service.py`、`agent.py`、`hybrid_search/__init__.py`、`App.jsx`、`AgentChatPage.jsx`、本地端口 `8001` | 后端定向 pytest 64 项及终止链路复验 55 项、前端单测 67 项、Vite production build、`py_compile`、`git diff --check` 通过；停止后 `8001` 无监听且健康端点不可达，`5173` 仍返回 200 | 图片问答仍严格要求 VLM；真实模型回答质量仍取决于模型服务状态；检索通道超时不得等待协程取消完成，SSE 终止事件或异常 EOF 均不得保留无限加载状态；持久上传重试会暂停到后端恢复 |
-### 2026-07-31 验证更新
-
-`restore-agent-query-latency` 的 5.2 已完成受控验收：最终新 listener 健康 200 后，使用已授权、已处理、标准模式智能体执行 1 cold 和 20 次顺序 warm 常规 SSE；21/21 为 HTTP 200、`done` 且有 token，端到端 P95 为 23.120 秒。query-core 为 1 miss/20 hit，21 次 LLM 首末 token、持久化和 total=ok 均恰好记录一次，检索三通道及媒体均成功；日志和汇总未记录查询、SSE 内容、标识符、凭据或主机。此前 RRF 通道完成后仍枚举全图导致约 71 秒尾延迟，现使 context-only 路径在保留收敛余量的来源富化后返回，并覆盖慢来源取消及来源标签回归。
-
+| 2026-07-31 | 知识库问答失败、提示闪退与推理卡死修复 | Bug 修复/运行操作 | 请求级设置快照补齐模型 profile 指纹，修复 `get_kb` 初始化失败；纯文本问答解除对 VLM 可用性的错误依赖；补齐流式请求 `getToken` 导入；稳定 toast 回调并持久展示 HTTP/SSE 错误；RRF 子通道到期隔离不响应取消的任务并降级返回，外层取消同步回收通道任务；检索增加总时限与断连回收；前端收到 done/error 即停止读流；随后按用户要求停止本地后端 | `user_settings.py`、`kb_service.py`、`agent.py`、`hybrid_search/__init__.py`、`App.jsx`、`AgentChatPage.jsx`、本地端口 8001 | 后端定向 64 项及终止链路复验 55 项、前端单测 67 项、Vite build、`py_compile`、`git diff --check` 通过；停止后 8001 无监听，5173 仍返回 200 | 图片问答仍严格要求 VLM；检索通道超时不得等待协程取消完成，SSE 终止事件或异常 EOF 均不得保留无限加载状态；持久上传重试会暂停到后端恢复 |
+| 2026-08-01 | `consolidate-frontend-streaming-client` | 冗余治理/进行中 | Agent/AutoRepair SSE 统一共享认证传输；删除未发现且含硬编码凭据的 `test_autorepair_api.py`；API、RBAC、数据库模式不变 | 前端 API 工具、两个问答页 | 单测 69 项通过；Vite 构建受环境权限阻塞，任务保持未完成 | 需在可读工作区复验构建；凭据如仍有效需外部撤销/轮换 |
+| 2026-08-01 | `isolate-root-legacy-entrypoints` | 冗余治理/安全 | 删除 4 个绕过 Router/Service/RBAC 的根入口与 4 个无引用根输出；新增根锚定 ignore、回归契约和 CLI 退休说明；API、RBAC、数据库模式不变 | 根脚本、`.gitignore`、CHANGELOG、仓库契约测试 | 根入口契约 3 项、兼容导出 2 项通过；严格 OpenSpec、总结检查、`git diff --check` 待收尾 | `rag_storage_kb_meta.json` 与 `sse_stress_summary.json` 保留；历史凭据撤销/轮换仍需外部证据，删除源码不等于消除 Git 历史泄露 |
 ## 11. 历史里程碑
 
+- **2026-07-31 repository redundancy governance**: `remove-legacy-upload-runtime-paths`, `remove-legacy-client-paths`, and `harden-repository-hygiene` are complete in the uncommitted worktree. Focused backend validation: 130 passed, 2 skipped; compatibility: 17 passed, 6 skipped; frontend: 68 passed and production build passed. Mirror check, strict OpenSpec validation, and `git diff --check` passed.
+- **2026-07-31 audit/plan**: Read-only; no behavior change. Isolate credentials/legacy entries, unify HTTP, then archive evidence-backed artifacts.
 - **2026-07**：完成智能体会话上下文升级、视频/多模态处理、文档质量/标签/修复/上传重试、评估流水线和 OpenDataLoader 集成；个人设置与视觉能力继续迭代。
 - **详细历史**：优先查看 Git 提交与 [`openspec/changes/archive/`](openspec/changes/archive/)；[`CHANGELOG.md`](CHANGELOG.md) 仅覆盖较早阶段。
 

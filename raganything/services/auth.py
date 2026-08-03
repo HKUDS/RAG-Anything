@@ -36,7 +36,6 @@ LOCKOUT_DURATION_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
 
 # ── Default Admin ──────────────────────────────────────────
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
-DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@raganything.local")
 _raw_admin_pw = os.getenv("DEFAULT_ADMIN_PASSWORD")
 if not _raw_admin_pw:
     _raw_admin_pw = secrets.token_urlsafe(16)
@@ -85,7 +84,6 @@ from raganything.services.pg_auth_repo import (  # noqa: E402 — intentional la
     REFRESH_SECRET_KEY as _PG_REFRESH_SECRET_KEY,
     SERVER_START_ID as _PG_SERVER_START_ID,
     DEFAULT_ADMIN_USERNAME as _PG_DEFAULT_ADMIN_USERNAME,
-    DEFAULT_ADMIN_EMAIL as _PG_DEFAULT_ADMIN_EMAIL,
     DEFAULT_ADMIN_PASSWORD as _PG_DEFAULT_ADMIN_PASSWORD,
     # Password hashing (delegated — pg_auth_repo also uses passlib/bcrypt)
     verify_password as _pg_verify_password,
@@ -98,7 +96,6 @@ SECRET_KEY = _PG_SECRET_KEY
 REFRESH_SECRET_KEY = _PG_REFRESH_SECRET_KEY
 SERVER_START_ID = _PG_SERVER_START_ID
 DEFAULT_ADMIN_USERNAME = _PG_DEFAULT_ADMIN_USERNAME
-DEFAULT_ADMIN_EMAIL = _PG_DEFAULT_ADMIN_EMAIL
 DEFAULT_ADMIN_PASSWORD = _PG_DEFAULT_ADMIN_PASSWORD
 
 

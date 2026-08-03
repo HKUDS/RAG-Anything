@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   Send, User, Clock, Plus, Trash2, Edit3, X, ChevronLeft,
@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
-import { api, getToken } from '../utils/api'
+import { api, streamSSE } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 import { ControlledMediaImage } from '../components/ControlledMedia'
 
@@ -137,6 +137,7 @@ export default function AgentChatPage({ onToast }) {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const { hasPermission } = useAuth()
+  const canEditMessages = hasPermission('agent:write')
   const chatRef = useRef()
   const abortRef = useRef(null)
   const inputRef = useRef(null)
@@ -505,11 +506,6 @@ export default function AgentChatPage({ onToast }) {
     setExpandedThinking(prev => ({ ...prev, [msgId]: true }))
 
     try {
-      let headers = { 'Content-Type': 'application/json' }
-      const token = getToken()
-      if (token) {
-        headers['Authorization'] = `Bearer ${token}`
-      }
       const body = { query, thread_id: threadId }
       if (selectedTag) body.tag_id = selectedTag.id
       if (modeOverride !== null) {
@@ -526,58 +522,15 @@ export default function AgentChatPage({ onToast }) {
           reader.readAsDataURL(imageFile)
         })
       }
-      const res = await fetch(`/api/agents/${agentId}/query/stream`, {
-        method: 'POST', headers,
+      await streamSSE(`/api/agents/${agentId}/query/stream`, {
+        method: 'POST',
         body: JSON.stringify(body),
         signal: controller.signal,
-      })
-
-      if (!res.ok || !res.body) {
-        throw new Error(await readStreamErrorMessage(res))
-      }
-
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      let terminalEventReceived = false
-      const consumeSSELine = line => {
-        const normalized = line.trimEnd()
-        if (!normalized.startsWith('data:')) return
-        const payload = normalized.slice(5).trimStart()
-        if (!payload) return
-        try {
-          const event = JSON.parse(payload)
-          if (event?.type === 'done' || event?.type === 'error') {
-            terminalEventReceived = true
-          }
-          handleSSEEvent(msgId, event, threadId)
-        } catch (parseErr) {
+        onEvent: event => handleSSEEvent(msgId, event, threadId),
+        onParseError: (parseErr, payload) => {
           console.warn('[AgentChat] SSE parse error:', parseErr.message, 'line:', payload.slice(0, 100))
-        }
-      }
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          consumeSSELine(line)
-          if (terminalEventReceived) break
-        }
-        if (terminalEventReceived) {
-          reader.releaseLock()
-          break
-        }
-      }
-      if (!terminalEventReceived) {
-        buffer += decoder.decode()
-        if (buffer.trim()) consumeSSELine(buffer)
-      }
-      if (!terminalEventReceived) {
-        throw new Error('问答连接意外中断，请重试。')
-      }
+        },
+      })
     } catch (e) {
       if (e.name === 'AbortError') {
         if (activeThreadIdRef.current === threadId) {
@@ -1215,7 +1168,7 @@ export default function AgentChatPage({ onToast }) {
                       ) : (
                         <>
                           {/* 编辑按钮：悬停显示，仅用于带有效数据库 ID 的已完成助手消息 */}
-                          {m.done && !m.error && !m.cancelled && m.msg_id != null && (
+                          {canEditMessages && m.done && !m.error && !m.cancelled && m.msg_id != null && (
                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
                                 className="p-1 rounded-lg text-ink-muted dark:text-cloud-500 hover:text-sky-500 dark:hover:text-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/30 transition-colors"

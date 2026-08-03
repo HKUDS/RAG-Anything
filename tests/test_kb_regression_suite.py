@@ -352,7 +352,7 @@ def test_run_rbac_probe_uses_five_level_role_catalog(monkeypatch):
         def roles(self):
             return {'roles': roles}
 
-        def create_user(self, username, email, password, role_id):
+        def create_user(self, username, password, role_id):
             created_users.append((username, role_id))
             return {'user': {'id': len(created_users), 'username': username}}
 

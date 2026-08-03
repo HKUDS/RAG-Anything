@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Circle, Loader2, UserPlus } from 'lucide-react'
 import { UserDialog } from './UserDialog'
 import UserRoleSelect from './UserRoleSelect'
+import { filterAssignableRoles } from '../utils/roleOrdering'
 
 function checkPasswordStrength(password) {
   return {
@@ -16,20 +17,20 @@ function checkPasswordStrength(password) {
   }
 }
 
-export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
+export default function CreateUserModal({ isOpen, onClose, onCreated, roles, actorRole }) {
   const [username, setUsername] = useState('')
-  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [roleId, setRoleId] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const usernameRef = useRef(null)
+  const assignableRoles = useMemo(() => filterAssignableRoles(roles, actorRole), [actorRole, roles])
 
   useEffect(() => {
     if (!roles?.length) return
-    const studentRole = roles.find((role) => role.name === 'student')
-    setRoleId((currentRoleId) => currentRoleId ?? studentRole?.id ?? null)
-  }, [roles])
+    const studentRole = assignableRoles.find((role) => role.name === 'student')
+    setRoleId((currentRoleId) => currentRoleId ?? studentRole?.id ?? assignableRoles[0]?.id ?? null)
+  }, [assignableRoles, roles])
 
   const handleRequestClose = useCallback(() => {
     if (!loading) onClose()
@@ -39,7 +40,6 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
 
   const strength = password ? checkPasswordStrength(password) : null
   const canSubmit = username.trim().length >= 2
-    && email.includes('@')
     && Boolean(roleId)
     && strength?.score() >= 3
 
@@ -56,7 +56,6 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({
           username: username.trim(),
-          email: email.trim(),
           password,
           role_id: roleId,
         }),
@@ -65,9 +64,8 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
       if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`)
 
       onCreated?.(data.user)
-      const studentRole = (roles || []).find((role) => role.name === 'student')
+      const studentRole = assignableRoles.find((role) => role.name === 'student')
       setUsername('')
-      setEmail('')
       setPassword('')
       setRoleId(studentRole?.id ?? null)
       setError('')
@@ -127,19 +125,6 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="create-email">邮箱 *</label>
-          <input
-            id="create-email"
-            className="input-field text-sm py-2 w-full"
-            type="email"
-            placeholder="user@example.com"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            autoComplete="email"
-            required
-          />
-        </div>
-        <div>
           <label className="block text-xs font-medium text-ink-body mb-1" htmlFor="create-password">密码 *</label>
           <input
             id="create-password"
@@ -174,7 +159,7 @@ export default function CreateUserModal({ isOpen, onClose, onCreated, roles }) {
             </div>
           )}
         </div>
-        <UserRoleSelect id="create-role" roles={roles} value={roleId} onChange={setRoleId} disabled={loading} />
+        <UserRoleSelect id="create-role" roles={roles} value={roleId} onChange={setRoleId} disabled={loading} actorRole={actorRole} />
       </form>
     </UserDialog>
   )

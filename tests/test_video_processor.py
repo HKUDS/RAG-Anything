@@ -207,19 +207,10 @@ class TestVideoModalProcessorIntegration:
     """Integration tests for VideoModalProcessor."""
 
     @pytest.mark.asyncio
-    async def test_worker_vision_callback_awaits_text_synthesis(self, monkeypatch, tmp_path):
+    async def test_service_vision_callback_awaits_text_synthesis(self, monkeypatch, tmp_path):
         """Video synthesis must receive text, not the LLM coroutine itself."""
-        import importlib
         from raganything.services import kb_service
-
-        # The worker configures stdout for subprocess use during module import.
-        # Keep pytest's capture stream out of that one-time setup.
-        original_stdout = sys.stdout
-        sys.stdout = io.TextIOWrapper(io.BytesIO(), encoding="utf-8")
-        try:
-            process_worker = importlib.import_module("process_worker")
-        finally:
-            sys.stdout = original_stdout
+        from raganything.services import vision_models
 
         class CapturingRAG:
             def __init__(self, **kwargs):
@@ -229,15 +220,15 @@ class TestVideoModalProcessorIntegration:
             return "video synthesis"
 
         monkeypatch.setattr(kb_service, "_pg_storage_ready", lambda: False)
-        monkeypatch.setattr(process_worker, "RAGAnything", CapturingRAG)
+        monkeypatch.setattr(kb_service, "RAGAnything", CapturingRAG)
+        monkeypatch.setattr(kb_service, "make_cached_embed_func", lambda func, *_args: func)
         monkeypatch.setattr(
-            process_worker, "openai_complete_if_cache", fake_completion
-        )
-        monkeypatch.setattr(
-            process_worker, "make_cached_embed_func", lambda func, *_args: func
+            vision_models,
+            "build_contextual_vlm_callable",
+            lambda _profile_id: fake_completion,
         )
 
-        rag = await process_worker.create_rag(working_dir=str(tmp_path))
+        rag = await kb_service.create_rag(working_dir=str(tmp_path))
         response = await rag.kwargs["vision_model_func"]("summarize video")
 
         assert response == "video synthesis"

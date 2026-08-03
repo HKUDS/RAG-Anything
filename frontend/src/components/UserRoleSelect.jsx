@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import { AlertTriangle, ShieldCheck } from 'lucide-react'
+import { ROLE_ORDER, canAssignRole, filterAssignableRoles, orderRoles } from '../utils/roleOrdering'
 
-export const ROLE_ORDER = ['super_admin', 'dept_admin', 'teacher', 'assistant', 'student']
+export { ROLE_ORDER, canAssignRole, orderRoles }
 
 const ROLE_PRESENTATION = {
   super_admin: {
@@ -35,16 +36,10 @@ export function getRolePresentation(roleName) {
   }
 }
 
-export function orderRoles(roles) {
-  const order = new Map(ROLE_ORDER.map((name, index) => [name, index]))
-  return (roles || [])
-    .filter((role) => order.has(role.name))
-    .sort((a, b) => order.get(a.name) - order.get(b.name))
-}
-
-export default function UserRoleSelect({ id, roles, value, onChange, disabled = false, cautionLabel }) {
-  const orderedRoles = useMemo(() => orderRoles(roles), [roles])
-  const selectedRole = orderedRoles.find((role) => role.id === Number(value))
+export default function UserRoleSelect({ id, roles, value, onChange, disabled = false, cautionLabel, actorRole }) {
+  const assignableRoles = useMemo(() => filterAssignableRoles(roles, actorRole), [actorRole, roles])
+  const noAssignableRoles = assignableRoles.length === 0
+  const selectedRole = assignableRoles.find((role) => role.id === Number(value))
   const presentation = getRolePresentation(selectedRole?.name)
 
   return (
@@ -58,15 +53,22 @@ export default function UserRoleSelect({ id, roles, value, onChange, disabled = 
         className="input-field user-role-select"
         value={value || ''}
         onChange={(event) => onChange(Number(event.target.value))}
-        disabled={disabled}
+        disabled={disabled || noAssignableRoles}
         aria-describedby={`${id}-summary`}
       >
-        {orderedRoles.map((role) => (
-          <option key={role.id} value={role.id}>
-            {getRolePresentation(role.name).label}
-          </option>
-        ))}
+        {noAssignableRoles ? (
+          <option value="">无可分配角色</option>
+        ) : (
+          assignableRoles.map((role) => (
+            <option key={role.id} value={role.id}>
+              {getRolePresentation(role.name).label}
+            </option>
+          ))
+        )}
       </select>
+      {noAssignableRoles && (
+        <p className="mt-1 text-2xs text-amber-600" role="status">当前账号无可分配的角色，请由更高等级管理员操作。</p>
+      )}
       <div id={`${id}-summary`} className={`user-role-summary${presentation.caution ? ' user-role-summary--caution' : ''}`}>
         {presentation.caution ? <AlertTriangle size={15} aria-hidden="true" /> : <ShieldCheck size={15} aria-hidden="true" />}
         <div>

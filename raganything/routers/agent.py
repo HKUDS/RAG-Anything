@@ -844,7 +844,7 @@ async def get_conversation(
 
 @router.post("/agents/{agent_id}/conversations")
 async def create_conversation(agent_id: str, title: str = "新对话", current_user: dict = Depends(get_current_user),
-    _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
+    _perm: None = Depends(require_permission(Permission.AGENT_READ)),
 ):
     """创建新对话线程（注入所有权，需校验 Agent 所有权）"""
     agent = await pg_get_agent(agent_id)
@@ -859,7 +859,7 @@ async def create_conversation(agent_id: str, title: str = "新对话", current_u
 
 @router.put("/agents/{agent_id}/conversations/{thread_id}")
 async def update_conversation(agent_id: str, thread_id: str, title: str = None, current_user: dict = Depends(get_current_user),
-    _perm: None = Depends(require_permission(Permission.AGENT_WRITE)),
+    _perm: None = Depends(require_permission(Permission.AGENT_READ)),
 ):
     """更新对话线程（需校验 Agent 所有权 + 对话所有权）"""
     agent = await pg_get_agent(agent_id)
@@ -879,7 +879,7 @@ async def update_conversation(agent_id: str, thread_id: str, title: str = None, 
 
 @router.delete("/agents/{agent_id}/conversations/{thread_id}")
 async def delete_conversation(agent_id: str, thread_id: str, current_user: dict = Depends(get_current_user),
-    _perm: None = Depends(require_permission(Permission.AGENT_DELETE)),
+    _perm: None = Depends(require_permission(Permission.AGENT_READ)),
 ):
     """删除对话线程（需校验 Agent 所有权 + 对话所有权）"""
     agent = await pg_get_agent(agent_id)

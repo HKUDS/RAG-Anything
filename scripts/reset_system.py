@@ -283,7 +283,7 @@ async def database_preflight() -> dict[str, Any]:
 
         admins = await connection.fetch(
             """
-            SELECT u.id, u.username, u.email, u.password_hash, u.is_active,
+            SELECT u.id, u.username, u.password_hash, u.is_active,
                    u.must_change_password, r.name AS role_name
             FROM users u
             LEFT JOIN roles r ON r.id = u.role_id
@@ -308,7 +308,6 @@ async def database_preflight() -> dict[str, Any]:
             "admin": {
                 "id": int(admin["id"]),
                 "username": admin["username"],
-                "email": admin["email"],
                 "role": admin["role_name"],
                 "must_change_password": int(admin["must_change_password"] or 0),
             },

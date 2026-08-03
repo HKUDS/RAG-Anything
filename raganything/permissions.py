@@ -49,6 +49,28 @@ class Permission:
 
 DEFAULT_ROLE_NAME = "student"
 
+# Role hierarchy: index 0 is the most privileged.  A role may only assign
+# another role whose privilege level is not higher than its own.
+ROLE_ORDER = ["super_admin", "dept_admin", "teacher", "assistant", "student"]
+ROLE_RANK: Dict[str, int] = {
+    role_name: rank for rank, role_name in enumerate(ROLE_ORDER)
+}
+
+
+def can_assign_role(actor_role_name: str, target_role_name: str) -> bool:
+    """Whether ``actor_role_name`` may assign ``target_role_name``.
+
+    A role may assign itself or any lower-privileged role
+    (``super_admin > dept_admin > teacher > assistant > student``).
+    Unknown role names are rejected.
+    """
+    actor_rank = ROLE_RANK.get(actor_role_name)
+    target_rank = ROLE_RANK.get(target_role_name)
+    if actor_rank is None or target_rank is None:
+        return False
+    return target_rank >= actor_rank
+
+
 DEFAULT_ROLES: Dict[str, Dict[str, object]] = {
     "super_admin": {
         "description": "超级管理员，拥有全部权限（信息中心/IT运维）",

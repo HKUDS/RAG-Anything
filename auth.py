@@ -11,4 +11,12 @@ Import from raganything.services.auth directly in new code:
 This wrapper will be removed in a future release.
 """
 
+import warnings
+
+warnings.warn(
+    "Import raganything.services.auth instead of the deprecated root auth module.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 from raganything.services.auth import *  # noqa: F401, F403, E402

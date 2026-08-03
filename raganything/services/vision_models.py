@@ -1475,7 +1475,7 @@ async def run_reindex_job(task_id: str) -> None:
                     if result != "UPDATE 1":
                         raise _ReindexLeaseLost("reindex lease lost")
                     metadata_result = await conn.execute(
-                        "UPDATE kb_metadata SET extra=jsonb_set(extra,'{vision_embedding,task}',$2::jsonb,true) "
+                        "UPDATE kb_metadata SET extra=jsonb_set(extra,'{vision_embedding,task}',$2::jsonb,true),updated_at=NOW() "
                         "WHERE name=$1 AND extra #>> '{vision_embedding,task,id}'=$3",
                         kb,
                         json.dumps(task, ensure_ascii=True),
@@ -1600,7 +1600,7 @@ async def run_reindex_job(task_id: str) -> None:
                     )
                     await conn.execute(
                         "UPDATE kb_metadata SET extra=jsonb_set(jsonb_set(extra,'{vision_embedding,index_state}','\"failed\"'::jsonb,true),"
-                        "'{vision_embedding,task}',$2::jsonb,true) WHERE name=$1 AND extra #>> '{vision_embedding,task,id}'=$3",
+                        "'{vision_embedding,task}',$2::jsonb,true),updated_at=NOW() WHERE name=$1 AND extra #>> '{vision_embedding,task,id}'=$3",
                         kb,
                         json.dumps(failed_task, ensure_ascii=True),
                         task_id,

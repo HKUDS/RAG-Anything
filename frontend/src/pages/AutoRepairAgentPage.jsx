@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback, Component } from 'react'
+import { useState, useEffect, useRef, useCallback, Component } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Send, User, Bot, Code2, MessageSquare, Wrench,
@@ -7,8 +7,9 @@ import {
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { motion, AnimatePresence } from 'framer-motion'
-import { api, getToken } from '../utils/api'
+import { api, streamSSE } from '../utils/api'
 import { useAutoRepairKB } from '../hooks/useAutoRepairKB'
+import { useAuth } from '../context/AuthContext'
 import AutoRepairKBSelector from '../components/AutoRepairKBSelector'
 import { ControlledMediaImage } from '../components/ControlledMedia'
 import GCodeEditor from '../components/GCodeEditor'
@@ -136,6 +137,8 @@ function ThinkingStep({ step, isLast }) {
 export default function AutoRepairAgentPage() {
   const navigate = useNavigate()
   const location = useLocation()
+  const { isAdmin, hasPermission } = useAuth()
+  const canInteract = isAdmin || hasPermission('autorepair:write')
   const [activeTab, setActiveTab] = useState('qa')
   const [loading, setLoading] = useState(false)
 
@@ -156,13 +159,10 @@ export default function AutoRepairAgentPage() {
   }, [])
 
   // 知识库选择器（共享 hook）
-  const { arKb, setArKb, kbList, kbLoading, creating, createArKb } = useAutoRepairKB()
+  const { arKb, setArKb, kbList, kbLoading, creating, canCreateArKb, createArKb } = useAutoRepairKB()
 
   // 代码解析状态
-  const [codeInput, setCodeInput] = useState('')
-  const [codeLang, setCodeLang] = useState('gcode')
   const [codeResult, setCodeResult] = useState(null)
-  const [codeCopied, setCodeCopied] = useState(false)
 
   // 诊断状态
   const [diagInput, setDiagInput] = useState('')
@@ -205,49 +205,30 @@ export default function AutoRepairAgentPage() {
     abortRef.current = controller
 
     try {
-      const token = getToken()
-      const res = await fetch(`/api/autorepair/qa/stream?kb=${arKb}`, {
+      await streamSSE(`/api/autorepair/qa/stream?kb=${arKb}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ query }),
         signal: controller.signal,
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: res.statusText }))
-        throw new Error(err.detail || `HTTP ${res.status}`)
-      }
-      const reader = res.body.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue
-          try {
-            const evt = JSON.parse(line.slice(6))
-            if (evt.type === 'thinking' && evt.step) {
+        onEvent: evt => {
+          if (evt.type === 'thinking' && evt.step) {
               // AgenticRAG 推理步骤
               setQaMessages(prev => prev.map(m =>
                 m._id === msgId ? { ...m, _thinking: [...m._thinking, evt] } : m
               ))
-            } else if (evt.type === 'thinking' && !evt.step) {
+          } else if (evt.type === 'thinking' && !evt.step) {
               // 通用状态消息（显式展示模式，不使用 step:0 哨兵值）
               setQaMessages(prev => prev.map(m =>
                 m._id === msgId ? { ...m, _thinking: [...m._thinking, { ...evt, _displayMode: 'status' }] } : m
               ))
-            } else if (evt.type === 'token') {
+          } else if (evt.type === 'token') {
               setQaMessages(prev => prev.map(m =>
                 m._id === msgId ? { ...m, content: m.content + evt.content } : m
               ))
-            } else if (evt.type === 'images') {
+          } else if (evt.type === 'images') {
               setQaMessages(prev => prev.map(m =>
                 m._id === msgId ? { ...m, _images: evt.images } : m
               ))
-            } else if (evt.type === 'done') {
+          } else if (evt.type === 'done') {
               setQaMessages(prev => prev.map(m =>
                 m._id === msgId ? {
                   ...m, _streaming: false, _id: undefined,
@@ -255,16 +236,16 @@ export default function AutoRepairAgentPage() {
                   confidence: evt.confidence,
                 } : m
               ))
-            } else if (evt.type === 'error') {
+          } else if (evt.type === 'error') {
               setQaMessages(prev => prev.map(m =>
                 m._id === msgId ? { ...m, content: m.content || evt.content, _streaming: false, _id: undefined } : m
               ))
-            }
-          } catch (parseErr) {
-            console.warn('[ManufacturingQA] SSE parse error:', parseErr.message, 'line:', line.slice(0, 100))
           }
-        }
-      }
+        },
+        onParseError: (parseErr, payload) => {
+          console.warn('[ManufacturingQA] SSE parse error:', parseErr.message, 'line:', payload.slice(0, 100))
+        },
+      })
     } catch (e) {
       if (e.name === 'AbortError') {
         setQaMessages(prev => prev.map(m =>
@@ -279,19 +260,6 @@ export default function AutoRepairAgentPage() {
       setLoading(false)
       abortRef.current = null
     }
-  }
-
-  // === 代码解析器 ===
-  const handleCodeParse = async () => {
-    if (!codeInput.trim() || loading) return
-    setLoading(true)
-    setCodeResult(null)
-    try {
-      const res = await api.post(`/autorepair/code/parse?kb=${arKb}`, { query: codeInput, language: codeLang })
-      setCodeResult(res?.data || res)
-    } catch (e) {
-      setCodeResult({ error: '解析请求失败' })
-    } finally { setLoading(false) }
   }
 
   // === 故障诊断 ===
@@ -386,9 +354,15 @@ export default function AutoRepairAgentPage() {
         </div>
         <AutoRepairKBSelector
           arKb={arKb} kbList={kbList} loading={kbLoading} creating={creating}
-          onChange={setArKb} onCreate={createArKb}
+          onChange={setArKb} onCreate={createArKb} canCreate={canCreateArKb}
         />
       </div>
+
+      {!canInteract && (
+        <div className="rounded-xl border border-cloud-200 bg-cloud-100 px-3 py-2 text-xs text-ink-muted" role="status">
+          当前为只读模式：无 autorepair:write 权限，问答与故障诊断输入已禁用。
+        </div>
+      )}
 
       {/* 标签页 */}
       <div className="flex gap-1 p-1 bg-cloud-100 rounded-xl w-fit shrink-0">
@@ -413,14 +387,16 @@ export default function AutoRepairAgentPage() {
                 <div className="text-center py-16 text-ink-muted">
                   <MessageSquare size={40} className="mx-auto mb-3 opacity-30" />
                   <p className="text-sm">输入汽车维修问题，智能助手将基于知识库回答</p>
-                  <div className="flex flex-wrap justify-center gap-2 mt-4">
-                    {['发动机怠速抖动如何诊断？', '自动变速箱故障码 P0730 解析', '如何检测氧传感器信号异常？'].map(q => (
-                      <button key={q} onClick={() => handleQASend(q)}
-                        className="px-3 py-1.5 rounded-full text-xs bg-cloud-100 text-ink-body hover:bg-sky-50 hover:text-sky-600 transition-colors">
-                        {q}
-                      </button>
-                    ))}
-                  </div>
+                  {canInteract && (
+                    <div className="flex flex-wrap justify-center gap-2 mt-4">
+                      {['发动机怠速抖动如何诊断？', '自动变速箱故障码 P0730 解析', '如何检测氧传感器信号异常？'].map(q => (
+                        <button key={q} onClick={() => handleQASend(q)}
+                          className="px-3 py-1.5 rounded-full text-xs bg-cloud-100 text-ink-body hover:bg-sky-50 hover:text-sky-600 transition-colors">
+                          {q}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
               {qaMessages.map((msg, i) => (
@@ -501,6 +477,7 @@ export default function AutoRepairAgentPage() {
             <div className="shrink-0 flex gap-2">
               <input value={qaInput} onChange={e => setQaInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !e.shiftKey && handleQASend()}
+                disabled={!canInteract}
                 placeholder="输入制造领域问题…"
                 className="flex-1 px-4 py-3 rounded-xl border border-cloud-300 text-sm bg-white
                   focus:outline-none focus:border-sky-400 focus:ring-2 focus:ring-sky-50 transition-all" />
@@ -510,7 +487,7 @@ export default function AutoRepairAgentPage() {
                   取消
                 </button>
               ) : (
-                <button onClick={() => handleQASend()} disabled={!qaInput.trim()}
+                <button onClick={() => handleQASend()} disabled={!canInteract || !qaInput.trim()}
                   className="btn-primary px-5 py-3 rounded-xl disabled:opacity-50">
                   <Send size={16} />
                 </button>
@@ -659,11 +636,12 @@ export default function AutoRepairAgentPage() {
                   }
                 }}
                 placeholder={diagSession ? '回答诊断问题或输入补充信息…' : '描述车辆故障现象…'}
+                disabled={!canInteract}
                 rows={2}
                 className="flex-1 px-4 py-3 rounded-xl border border-cloud-300 text-sm bg-white resize-none
                   focus:outline-none focus:border-amber-300 focus:ring-2 focus:ring-amber-50 transition-all" />
               <button onClick={() => diagSession ? continueDiagnosis(diagInput) : startDiagnosis()}
-                disabled={loading || !diagInput.trim()}
+                disabled={!canInteract || loading || !diagInput.trim()}
                 className="btn-primary px-5 py-3 rounded-xl disabled:opacity-50 bg-amber-500 hover:bg-amber-600">
                 <Send size={16} />
               </button>

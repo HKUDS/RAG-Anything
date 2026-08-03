@@ -11,7 +11,7 @@ PostgreSQL 用户认证仓库
 【管理的数据库表】
   ┌──────────────────┬──────────────────────────────────────┐
   │ users            │ 用户表                                │
-  │                  │ id, username, email, password_hash    │
+  │                  │ id, username, password_hash            │
   │                  │ role（admin/editor/viewer/student/    │
   │                  │ guest）, is_active, created_at        │
   ├──────────────────┼──────────────────────────────────────┤
@@ -28,7 +28,7 @@ PostgreSQL 用户认证仓库
 
 【核心函数】
   ── 用户管理 ──
-  pg_create_user(username, email, password, role) → 创建用户
+  pg_create_user(username, password, role) → 创建用户
   pg_authenticate(username, password)              → 验证用户名密码
   pg_get_user_by_id(user_id)                       → 按 ID 查用户
   pg_get_user_by_username(username)                → 按用户名查用户
@@ -87,6 +87,7 @@ from passlib.context import CryptContext
 from raganything.permissions import (
     DEFAULT_ROLE_NAME,
     DEFAULT_ROLES,
+    can_assign_role,
 )
 
 logger = logging.getLogger("rag_server.pg_auth")
@@ -108,7 +109,6 @@ LOCKOUT_DURATION_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
 
 # ── Default Admin ──────────────────────────────────────────
 DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
-DEFAULT_ADMIN_EMAIL = os.getenv("DEFAULT_ADMIN_EMAIL", "admin@raganything.local")
 _raw_admin_pw = os.getenv("DEFAULT_ADMIN_PASSWORD")
 if not _raw_admin_pw:
     _raw_admin_pw = secrets.token_urlsafe(16)
@@ -155,6 +155,22 @@ def _get_pool() -> asyncpg.Pool:
 # Database initialization
 # ═══════════════════════════════════════════════════════════════
 
+def build_default_role_rows() -> dict[str, dict[str, object]]:
+    """Build the runtime role seed from permissions.py DEFAULT_ROLES.
+
+    Single source of truth: init_db writes exactly these rows and tests
+    assert the result stays equal to DEFAULT_ROLES, preventing drift
+    between the runtime seed and the permission constants.
+    """
+    return {
+        role_name: {
+            "description": role_cfg["description"],
+            "permissions": list(role_cfg["permissions"]),
+        }
+        for role_name, role_cfg in DEFAULT_ROLES.items()
+    }
+
+
 async def init_db() -> None:
     """Initialize PostgreSQL: idempotent schema + default admin + key persistence.
 
@@ -169,62 +185,14 @@ async def init_db() -> None:
     pool = _get_pool()
     async with pool.acquire() as conn:
         # Default roles (ON CONFLICT DO UPDATE ensures idempotence + permission refresh)
-        default_roles = {
-            "super_admin": {
-                "desc": "超级管理员，拥有全部权限（信息中心/IT运维）",
-                "perms": [
-                    "users:read", "users:write", "users:delete",
-                    "kb:read", "kb:write", "kb:delete",
-                    "agent:read", "agent:write", "agent:delete",
-                    "settings:read", "settings:write",
-                    "audit:read", "monitor:read",
-                    "analytics:read",
-                    "workflow:read", "workflow:write",
-                    "autorepair:read", "autorepair:write",
-                ],
-            },
-            "dept_admin": {
-                "desc": "系部管理员，管理系统内知识库、智能体和用户（系主任/实训中心主任）",
-                "perms": [
-                    "users:read", "users:write",
-                    "kb:read", "kb:write", "kb:delete",
-                    "agent:read", "agent:write", "agent:delete",
-                    "settings:read", "audit:read", "monitor:read",
-                    "analytics:read",
-                    "workflow:read", "workflow:write",
-                    "autorepair:read", "autorepair:write",
-                ],
-            },
-            "teacher": {
-                "desc": "主讲教师，可创建管理自有知识库和智能体（任课教师）",
-                "perms": [
-                    "kb:read", "kb:write",
-                    "agent:read", "agent:write",
-                    "monitor:read", "analytics:read",
-                    "workflow:read",
-                    "autorepair:read", "autorepair:write",
-                ],
-            },
-            "assistant": {
-                "desc": "助理教师，可编辑知识库内容、使用智能体（实训指导教师/助教）",
-                "perms": [
-                    "kb:read", "kb:write",
-                    "agent:read",
-                    "monitor:read",
-                    "autorepair:read",
-                ],
-            },
-            "student": {
-                "desc": "学生，可查看知识库并使用智能体问答（各年级学生）",
-                "perms": ["kb:read", "agent:read", "autorepair:read"],
-            },
-        }
+        # The runtime seed is built from permissions.py's DEFAULT_ROLES so there
+        # is exactly one source of truth (see build_default_role_rows()).
         default_roles = {
             role_name: {
                 "desc": role_cfg["description"],
                 "perms": role_cfg["permissions"],
             }
-            for role_name, role_cfg in DEFAULT_ROLES.items()
+            for role_name, role_cfg in build_default_role_rows().items()
         }
         for role_name, role_cfg in default_roles.items():
             await conn.execute(
@@ -312,8 +280,10 @@ async def init_db() -> None:
     admin = await get_user_by_username(DEFAULT_ADMIN_USERNAME)
     if not admin:
         super_admin_role = await get_role_by_name("super_admin")
-        await create_user(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASSWORD,
-                          role_id=super_admin_role["id"] if super_admin_role else None, must_change_password=True)
+        await create_user(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_PASSWORD,
+                          role_id=super_admin_role["id"] if super_admin_role else None,
+                          must_change_password=True,
+                          actor_role_name="super_admin")
         print(f"[PG-AUTH] 默认管理员已创建: {DEFAULT_ADMIN_USERNAME} (首次登录需修改密码)")
     else:
         print(f"[PG-AUTH] 管理员账号已存在: {DEFAULT_ADMIN_USERNAME}")
@@ -343,7 +313,9 @@ async def get_user_by_id(user_id: int) -> dict | None:
         return dict(row) if row else None
 
 
-async def create_user(username: str, email: str, password: str, role_id: int | None = None, must_change_password: bool = False) -> dict:
+async def create_user(username: str, password: str, role_id: int | None = None,
+                      must_change_password: bool = False,
+                      actor_role_name: str | None = None) -> dict:
     import re as _re_pw
 
     if len(password) < 8:
@@ -366,17 +338,18 @@ async def create_user(username: str, email: str, password: str, role_id: int | N
 
     password_hash = pwd_context.hash(password)
 
-    # Default role: student
-    if role_id is None:
-        role_name = DEFAULT_ROLE_NAME
-    else:
-        role_name = None  # Use role_id directly
+    # Default role: student; an explicit role assignment must be authorized
+    # by the acting role.  Internal flows that only create default students
+    # pass no role_id and are unaffected (actor_role_name may stay None).
+    if role_id is not None and actor_role_name is None:
+        raise ValueError("显式指定 role_id 时必须提供 actor_role_name")
 
     pool = _get_pool()
     async with pool.acquire() as conn:
-        if role_name is not None:
+        if role_id is None:
+            role_name = DEFAULT_ROLE_NAME
             role_row = await conn.fetchrow(
-                "SELECT id FROM roles WHERE name = $1", role_name
+                "SELECT id, name FROM roles WHERE name = $1", role_name
             )
             if not role_row:
                 raise ValueError(f"角色 '{role_name}' 不存在，请先初始化默认角色")
@@ -385,40 +358,35 @@ async def create_user(username: str, email: str, password: str, role_id: int | N
             # Legacy admin/editor/viewer rows remain for historical data only.
             # They must not be assigned through current user-management APIs.
             role_row = await conn.fetchrow(
-                "SELECT id FROM roles WHERE id = $1 AND name = ANY($2::text[])",
+                "SELECT id, name FROM roles WHERE id = $1 AND name = ANY($2::text[])",
                 role_id,
                 list(DEFAULT_ROLES),
             )
             if not role_row:
                 raise ValueError(f"角色 ID {role_id} 不存在或不可分配")
+            if not can_assign_role(actor_role_name, role_row["name"]):
+                raise PermissionError(
+                    f"无权分配角色 '{role_row['name']}': 目标角色等级高于操作者"
+                )
 
         try:
             row = await conn.fetchrow(
                 """
-                INSERT INTO users (username, email, password_hash, role_id, must_change_password)
-                VALUES ($1, $2, $3, $4, $5)
+                INSERT INTO users (username, password_hash, role_id, must_change_password)
+                VALUES ($1, $2, $3, $4)
                 RETURNING *
                 """,
-                username.strip(), email.strip(), password_hash, role_id,
+                username.strip(), password_hash, role_id,
                 1 if must_change_password else 0,
             )
         except asyncpg.UniqueViolationError:
-            # Check which field caused the conflict
-            existing = await conn.fetchrow(
-                "SELECT username, email FROM users WHERE username = $1 OR email = $2",
-                username.strip(), email.strip(),
-            )
-            if existing and existing["username"] == username.strip():
-                raise ValueError("用户名已被占用")
-            elif existing and existing["email"] == email.strip():
-                raise ValueError("邮箱已被占用")
-            raise ValueError("注册失败，请重试")
+            raise ValueError("用户名已被占用")
 
     return _sanitize_user(dict(row))
 
 
-async def update_user(user_id: int, data: dict) -> dict | None:
-    allowed_fields = {"username", "email", "role_id", "is_active", "must_change_password"}
+async def update_user(user_id: int, data: dict, actor_role_name: str | None = None) -> dict | None:
+    allowed_fields = {"username", "role_id", "is_active", "must_change_password"}
     security_sensitive_fields = {"password_hash", "failed_login_attempts",
                                   "locked_until", "created_at", "updated_at"}
 
@@ -455,13 +423,20 @@ async def update_user(user_id: int, data: dict) -> dict | None:
     pool = _get_pool()
     async with pool.acquire() as conn:
         if "role_id" in updates:
+            # An explicit role change must be authorized by the acting role.
+            if actor_role_name is None:
+                raise ValueError("修改角色时必须提供 actor_role_name")
             role_row = await conn.fetchrow(
-                "SELECT id FROM roles WHERE id = $1 AND name = ANY($2::text[])",
+                "SELECT id, name FROM roles WHERE id = $1 AND name = ANY($2::text[])",
                 updates["role_id"],
                 list(DEFAULT_ROLES),
             )
             if not role_row:
                 raise ValueError(f"角色 ID {updates['role_id']} 不存在或不可分配")
+            if not can_assign_role(actor_role_name, role_row["name"]):
+                raise PermissionError(
+                    f"无权将角色修改为 '{role_row['name']}': 目标角色等级高于操作者"
+                )
         try:
             await conn.execute(
                 f"UPDATE users SET {set_clause} WHERE id = ${len(values)}",

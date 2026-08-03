@@ -1,5 +1,6 @@
 ﻿import { useState, useEffect, useCallback } from 'react'
 import { api } from '../utils/api'
+import { useAuth } from '../context/AuthContext'
 
 /**
  * Shared hook for autorepair KB selection.
@@ -35,6 +36,8 @@ export function useAutoRepairKB() {
   const [kbLoading, setKbLoading] = useState(true)
   const [kbError, setKbError] = useState(null)
   const [creating, setCreating] = useState(false)
+  const { isAdmin, hasPermission } = useAuth()
+  const canCreateArKb = isAdmin || hasPermission('kb:write')
 
   const setArKb = (kb) => {
     setArKbRaw(kb)
@@ -83,6 +86,7 @@ export function useAutoRepairKB() {
 
   /** 创建新的汽修领域知识库并刷新列表。 */
   const createArKb = useCallback(async (kbName, label) => {
+    if (!canCreateArKb) return { success: false, error: '当前账号无权限创建知识库（需要 kb:write）' }
     setCreating(true)
     try {
       const params = new URLSearchParams({ kb_name: kbName, domain: 'autorepair' })
@@ -100,12 +104,12 @@ export function useAutoRepairKB() {
     } finally {
       setCreating(false)
     }
-  }, [refreshKbList, setArKb])
+  }, [canCreateArKb, refreshKbList, setArKb])
 
   // 初始加载
   useEffect(() => {
     refreshKbList()
   }, [refreshKbList])
 
-  return { arKb, setArKb, kbList, kbLoading, kbError, creating, createArKb, refreshKbList }
+  return { arKb, setArKb, kbList, kbLoading, kbError, creating, canCreateArKb, createArKb, refreshKbList }
 }

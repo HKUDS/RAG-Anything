@@ -97,7 +97,7 @@ def read_users() -> list[dict]:
     conn = sqlite3.connect(str(AUTH_DB))
     conn.row_factory = sqlite3.Row
     rows = conn.execute(
-        "SELECT id, username, email, password_hash, role_id, is_admin,"
+        "SELECT id, username, password_hash, role_id, is_admin,"
         "  is_active, failed_login_attempts, locked_until, last_login_at,"
         "  must_change_password, created_at"
         " FROM users ORDER BY id"
@@ -175,15 +175,15 @@ async def migrate_users(
         await conn.execute(
             """
             INSERT INTO users (
-                id, username, email, password_hash, role_id, is_admin,
+                id, username, password_hash, role_id, is_admin,
                 is_active, failed_login_attempts, locked_until, last_login_at,
                 must_change_password, created_at
             ) VALUES (
-                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12
+                $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11
             )
             ON CONFLICT (id) DO NOTHING
             """,
-            u["id"], u["username"], u["email"], u["password_hash"],
+            u["id"], u["username"], u["password_hash"],
             u["role_id"], u["is_admin"], u["is_active"],
             u["failed_login_attempts"],
             _parse_dt(u["locked_until"]),

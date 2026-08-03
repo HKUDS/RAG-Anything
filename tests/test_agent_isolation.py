@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent_manager import (
+from raganything.services.agent_manager import (
     AgentConfig,
     ConversationThread,
     AgentManager,

@@ -2744,6 +2744,28 @@ async def cleanup_kb_resources(name: str) -> None:
     import raganything.routers.shared as _rshared
 
     kb_logger.info(f"[cleanup] 开始清理 KB 资源: {name}")
+    # Collect document/chunk file paths BEFORE the deletion gate.  Once
+    # begin_deletion() marks the KB, PG-backed get_kb() raises
+    # kb_query_deleting and cleanup would fail with 500.  Collection runs
+    # before acquiring the per-KB lock because get_kb() acquires that same
+    # lock (asyncio.Lock is not reentrant) when the KB is not cached.
+    _found_files: set = set()
+    doc_status = await _load_doc_status_json(name)
+    for info in doc_status.values():
+        fp = info.get("file_path", "")
+        if fp:
+            _found_files.add(fp)
+
+    chunks = await _load_text_chunks_json(name)
+    for chunk_data in chunks.values():
+        try:
+            cd = json.loads(chunk_data) if isinstance(chunk_data, str) else chunk_data
+            fp = cd.get("file_path", "")
+            if fp and fp not in _found_files:
+                _found_files.add(fp)
+        except Exception:
+            pass
+
     # Serialize the deletion gate with query-core selection and lease
     # registration.  No cleanup begins until active streams have drained.
     lock = _kb_locks.setdefault(name, asyncio.Lock())
@@ -2814,33 +2836,13 @@ async def cleanup_kb_resources(name: str) -> None:
         except Exception as exc:
             kb_logger.warning(f"[cleanup] finalize_storages 失败 ({name}): {exc}")
 
-    # ── 6. Collect upload files BEFORE deleting dir ──────
-    _found_files: set = set()
-
-    # Use PG dispatch helpers when available, file fallback otherwise
-    doc_status = await _load_doc_status_json(name)
-    for info in doc_status.values():
-        fp = info.get("file_path", "")
-        if fp:
-            _found_files.add(fp)
-
-    chunks = await _load_text_chunks_json(name)
-    for chunk_data in chunks.values():
-        try:
-            cd = json.loads(chunk_data) if isinstance(chunk_data, str) else chunk_data
-            fp = cd.get("file_path", "")
-            if fp and fp not in _found_files:
-                _found_files.add(fp)
-        except Exception:
-            pass
-
-    # ── 7. Delete output & storage directories ───────────
+    # ── 6. Delete output & storage directories ───────────
     output_dir = "./output" if name == "default" else f"./output_{name}"
     _shutil.rmtree(output_dir, ignore_errors=True)
     _shutil.rmtree(kb_dir(name), ignore_errors=True)
     kb_logger.info(f"[cleanup] 已删除存储目录: {kb_dir(name)}")
 
-    # ── 8. Delete upload files ───────────────────────────
+    # ── 7. Delete upload files ───────────────────────────
     for fp in _found_files:
         upload_file = Path("./uploads") / Path(fp).name
         if upload_file.exists():
@@ -2849,7 +2851,7 @@ async def cleanup_kb_resources(name: str) -> None:
             except OSError:
                 pass
 
-    # ── 9. Remove metadata (PG + in-memory) ──────────────
+    # ── 8. Remove metadata (PG + in-memory) ──────────────
     meta = await load_kb_meta()
     if name in meta:
         del meta[name]
@@ -2862,7 +2864,7 @@ async def cleanup_kb_resources(name: str) -> None:
     except Exception:
         pass
 
-    # ── 10. Clean ALL PG LightRAG tables for this workspace ──
+    # ── 9. Clean ALL PG LightRAG tables for this workspace ──
     # LightRAG's postgres_impl.py creates 11+ tables (LIGHTRAG_DOC_STATUS,
     # LIGHTRAG_DOC_FULL, LIGHTRAG_VDB_*, LIGHTRAG_LLM_CACHE, etc.).
     # Hardcoding table names is fragile — new LightRAG versions may add or
@@ -4985,10 +4987,6 @@ async def _process_uploaded_file(
     # sole configuration authority for the queued task and every retry.
     # Keep the profile and snapshot identifiers in the callable contract so
     # queue task dictionaries can be expanded without altering that authority.
-    enable_image = ingestion.get("enable_image")
-    enable_table = ingestion.get("enable_table")
-    enable_equation = ingestion.get("enable_equation")
-    enable_video = ingestion.get("enable_video")
     task_data = {
         "id": task_id, "file": filename, "status": "processing",
         "started_at": datetime.now().isoformat(), "progress": 0,
@@ -5037,22 +5035,8 @@ async def _process_uploaded_file(
             sys.executable, str(worker_script),
             "--file", str(Path(file_path).resolve()),
             "--kb", kb_name,
-            "--strategy", actual_strategy,
             "--task-id", task_id,
         ]
-        # ── Per-upload multimodal flags ─────────────────
-        if enable_image is not None:
-            cmd.append("--enable-image")
-            cmd.append("true" if enable_image else "false")
-        if enable_table is not None:
-            cmd.append("--enable-table")
-            cmd.append("true" if enable_table else "false")
-        if enable_equation is not None:
-            cmd.append("--enable-equation")
-            cmd.append("true" if enable_equation else "false")
-        if enable_video is not None:
-            cmd.append("--enable-video")
-            cmd.append("true" if enable_video else "false")
 
         worker_slot = _get_ocr_worker_slot()
         await worker_slot.acquire()
@@ -5449,10 +5433,6 @@ async def _process_uploaded_file(
                 root_type=e.root_type,
                 error=str(e),
                 chunking_strategy=actual_strategy,
-                enable_image=enable_image,
-                enable_table=enable_table,
-                enable_equation=enable_equation,
-                enable_video=enable_video,
                 retry_job_id=retry_job_id,
                 lease_token=retry_lease_token,
                 claim_owner=claim_owner,

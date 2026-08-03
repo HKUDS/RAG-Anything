@@ -51,7 +51,7 @@ export default function GCodeEditor({ onParseResult }) {
     if (!code.trim() || loading) return
     setLoading(true)
     try {
-      const res = await api.post('/manufacturing/code/parse', { query: code, language: lang })
+      const res = await api.post('/autorepair/code/parse', { query: code, language: lang })
       const data = res
       setResult(data)
       onParseResult?.(data)

@@ -2,6 +2,12 @@
 
 > 本文档记录基于 [HKUDS/RAG-Anything](https://github.com/HKUDS/RAG-Anything) 主线的所有自定义改动。
 
+## 2026-08-03：移除用户邮箱系统（BREAKING）
+
+- **请求/响应**：`register`、admin `users`（create/update/list）与 `profile`（read/update）请求和响应不再包含 `email` 字段，仅保留用户名。
+- **数据库**：`users.email` 列随迁移 `025_remove_user_email.sql` 移除，历史邮箱数据不可恢复。
+- **配置**：`DEFAULT_ADMIN_EMAIL` 环境变量删除；默认管理员仅由 `DEFAULT_ADMIN_USERNAME` 与密码创建。
+
 ---
 
 ## 一、修改的原项目文件（4 个，+82 / -3 行）
@@ -176,13 +182,13 @@ multimodal_content: list[dict[str, Any]] | None = None
 
 ### 2.5 `query.py`（96 行）
 
-独立的命令行查询工具脚本。
+历史独立命令行查询脚本，已退休；请使用受认证的应用 API 或 UI。
 
 ---
 
 ### 2.6 `upload_and_query.py`（168 行）
 
-独立的命令行上传+查询一体脚本。
+历史独立上传+查询脚本，已退休；请使用受认证的应用 API 或 UI。
 
 ---
 

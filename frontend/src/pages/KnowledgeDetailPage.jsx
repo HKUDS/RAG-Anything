@@ -1,4 +1,4 @@
-﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Search, Eye, Trash2, X, FileText, Clock, Filter, ZoomIn, ZoomOut, RotateCcw,
   Plus, Layers, Upload, Globe, FolderOpen, ClipboardPaste,
@@ -18,6 +18,7 @@ import {
   getUploadTaskStatus,
   isCancellableUploadDocument,
 } from '../utils/documentHealth'
+import { formatDate } from '../utils/dateFormat'
 import SideDrawer from '../components/SideDrawer'
 import { UserDialogConfirmation } from '../components/UserDialog'
 import TagRelationsPanel from '../components/TagRelationsPanel'
@@ -227,6 +228,7 @@ function UploadSection({
   onUploaded,
   multimodal,
   setMultimodal,
+  canWrite = true,
 }) {
   const [dragOver, setDragOver] = useState(false)
   const [localFiles, setLocalFiles] = useState([])
@@ -551,14 +553,16 @@ function UploadSection({
 
   return (
     <div>
-      <button
-        onClick={() => setShowUpload(!showUpload)}
-        className="flex items-center gap-2 text-xs font-medium text-ink-body hover:text-ink-primary transition-colors"
-      >
-        {showUpload ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-        <Upload size={14} />
-        {showUpload ? '收起上传面板' : '展开上传面板'} {uploadSummaryCount > 0 && `(${uploadSummaryCount})`}
-      </button>
+      {canWrite && (
+        <button
+          onClick={() => setShowUpload(!showUpload)}
+          className="flex items-center gap-2 text-xs font-medium text-ink-body hover:text-ink-primary transition-colors"
+        >
+          {showUpload ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+          <Upload size={14} />
+          {showUpload ? '收起上传面板' : '展开上传面板'} {uploadSummaryCount > 0 && `(${uploadSummaryCount})`}
+        </button>
+      )}
 
       <AnimatePresence>
         {showUpload && (
@@ -780,7 +784,7 @@ function UploadSection({
                       const taskMessages = getUploadTaskMessages(task)
                       const visualProgress = getVisualTaskProgress(task, progressNow)
                       const progressValue = visualProgress.value
-                      const taskTimestamp = (task.updated_at || task.created_at || '').replace('T', ' ').slice(0, 16)
+                      const taskTimestamp = formatDate(task.updated_at || task.created_at)
 
                       return (
                         <div key={task.task_id} className="rounded-lg border border-cloud-300/60 bg-cloud-100/60 px-3 py-2 text-xs">
@@ -852,12 +856,12 @@ function UploadSection({
                               )}
                               {taskStatus === 'retry_wait' && task.next_retry_at && (
                                 <p className="mt-1 text-2xs text-ink-muted">
-                                  下次重试：{String(task.next_retry_at).replace('T', ' ').slice(0, 19)}
+                                  下次重试：{formatDate(task.next_retry_at)}
                                 </p>
                               )}
                             </div>
 
-                            {task.can_delete && (
+                            {canWrite && task.can_delete && (
                               <button
                                 className="btn-ghost text-xs py-0.5 px-2 text-rose-500 shrink-0"
                                 onClick={() => handleDeleteTask(task)}
@@ -868,7 +872,7 @@ function UploadSection({
                                 {deleting ? (taskStatus === 'processing' ? '停止中…' : taskStatus === 'retry_wait' ? '取消中…' : '删除中…') : (taskStatus === 'processing' ? '停止并删除' : taskStatus === 'retry_wait' ? '取消重试并删除' : '删除')}
                               </button>
                             )}
-                            {taskStatus === 'retry_wait' && (
+                            {canWrite && taskStatus === 'retry_wait' && (
                               <div className="flex shrink-0 gap-1">
                                 <button
                                   className="btn-ghost text-xs py-0.5 px-2"
@@ -926,6 +930,8 @@ export default function KnowledgeDetailPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const { isAdmin, hasPermission } = useAuth()
   const canManageKB = isAdmin || hasPermission('kb:write')
+  const canViewVisionSettings = isAdmin || hasPermission('kb:read')
+  const canManageGraph = isAdmin || hasPermission('graph:write')
 
   const [detailState, setDetailState] = useState(() => createKnowledgeDetailState(
     kbName,
@@ -1000,7 +1006,7 @@ export default function KnowledgeDetailPage() {
   }, [searchParams])
 
   useEffect(() => {
-    if (!kbName || !canManageKB) return undefined
+    if (!kbName || !canViewVisionSettings) return undefined
     let active = true
     setVisionSettingsStatus({ loading: true, saving: false, error: '', confirmReindex: false })
     Promise.all([api.getKBVisionSettings(kbName), api.listModelProfiles('embedding')])
@@ -1016,10 +1022,10 @@ export default function KnowledgeDetailPage() {
         if (active) setVisionSettingsStatus(current => ({ ...current, loading: false, error: error.message || '视觉向量设置加载失败' }))
       })
     return () => { active = false }
-  }, [kbName, canManageKB])
+  }, [kbName, canViewVisionSettings])
 
   useEffect(() => {
-    if (!kbName || !canManageKB || visionSettings?.index_state !== 'reindexing') return undefined
+    if (!kbName || !canViewVisionSettings || visionSettings?.index_state !== 'reindexing') return undefined
     let active = true
     const refresh = async () => {
       try {
@@ -1039,7 +1045,7 @@ export default function KnowledgeDetailPage() {
     const timer = window.setInterval(refresh, 3000)
     void refresh()
     return () => { active = false; window.clearInterval(timer) }
-  }, [kbName, canManageKB, visionSettings?.index_state])
+  }, [kbName, canViewVisionSettings, visionSettings?.index_state])
 
   const selectTab = useCallback((tab) => {
     const next = new URLSearchParams(searchParams)
@@ -1712,6 +1718,12 @@ export default function KnowledgeDetailPage() {
         </div>
       </div>
 
+      {!canManageKB && (
+        <div className="rounded-xl border border-cloud-200 bg-cloud-100 px-3 py-2 text-xs text-ink-muted" role="status">
+          当前为只读模式：上传、删除、重试、图谱编辑与视觉向量设置已禁用。
+        </div>
+      )}
+
       {/* 当前知识库统计 */}
       <div
         className="grid grid-cols-4 gap-5"
@@ -1785,11 +1797,11 @@ export default function KnowledgeDetailPage() {
             onUploaded={loadKBData}
             multimodal={multimodal}
             setMultimodal={setMultimodal}
+            canWrite={canManageKB}
           />
         </div>
 
-        {canManageKB && (
-          <section className="card p-5" aria-labelledby="vision-profile-heading">
+        <section className="card p-5" aria-labelledby="vision-profile-heading">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
               <div className="min-w-0 flex-1">
                 <h3 id="vision-profile-heading" className="text-sm font-semibold text-ink-body">视觉向量模型</h3>
@@ -1802,7 +1814,7 @@ export default function KnowledgeDetailPage() {
                   id="kb-vision-profile"
                   className="select-field min-w-0 flex-1"
                   value={visionProfileDraft}
-                  disabled={visionSettingsStatus.loading || visionSettingsStatus.saving || visionSettings?.index_state === 'reindexing'}
+                  disabled={!canManageKB || visionSettingsStatus.loading || visionSettingsStatus.saving || visionSettings?.index_state === 'reindexing'}
                   onChange={event => {
                     setVisionProfileDraft(event.target.value)
                     setVisionSettingsStatus(current => ({ ...current, confirmReindex: false, error: '' }))
@@ -1814,7 +1826,7 @@ export default function KnowledgeDetailPage() {
                 <button
                   type="button"
                   className={visionSettingsStatus.confirmReindex ? 'btn-danger text-xs' : 'btn-secondary text-xs'}
-                  disabled={!visionProfileDraft || (visionProfileDraft === visionSettings?.profile_id && visionSettings?.index_state !== 'failed') || visionSettingsStatus.loading || visionSettingsStatus.saving || visionSettings?.index_state === 'reindexing'}
+                  disabled={!canManageKB || !visionProfileDraft || (visionProfileDraft === visionSettings?.profile_id && visionSettings?.index_state !== 'failed') || visionSettingsStatus.loading || visionSettingsStatus.saving || visionSettings?.index_state === 'reindexing'}
                   onClick={saveVisionProfile}
                 >
                   {visionSettingsStatus.saving ? <Loader2 size={14} className="animate-spin" /> : visionSettingsStatus.confirmReindex ? <RotateCcw size={14} /> : <Save size={14} />}
@@ -1823,8 +1835,10 @@ export default function KnowledgeDetailPage() {
               </div>
             </div>
             {visionSettings?.profile_id && <p className={`mt-3 text-2xs ${visionSettings.index_state === 'failed' ? 'text-rose-600' : 'text-ink-muted'}`} role={visionSettings.index_state === 'failed' ? 'alert' : 'status'}>当前：{visionSettings.profile_id} · {visionIndexStatus}</p>}
+            {!canManageKB && (
+              <p className="mt-2 text-2xs text-amber-600" role="status">当前为只读模式，无法修改视觉向量模型。</p>
+            )}
           </section>
-        )}
 
         {isAdmin && (
           <div className="card p-4 flex items-start justify-between gap-4">
@@ -1859,7 +1873,7 @@ export default function KnowledgeDetailPage() {
               {displayedDetailState.documents.refreshError && (
                 <span className="text-2xs text-amber-600" role="status">{displayedDetailState.documents.refreshError}</span>
               )}
-              {selectedIds.size > 0 && displayedDetailState.documents.status === 'ready' && (
+              {canManageKB && selectedIds.size > 0 && displayedDetailState.documents.status === 'ready' && (
                 <button className="btn-danger text-xs py-1.5 px-3" onClick={handleBatchDelete} disabled={batchDeleting}>
                   <Trash2 size={12} />
                   {batchDeleting ? '删除中…' : `删除选中 (${selectedIds.size})`}
@@ -1884,7 +1898,7 @@ export default function KnowledgeDetailPage() {
                 <tr className="border-b border-cloud-300/60 text-left">
                   <th className="pb-2.5 font-medium text-xs text-ink-muted w-8">
                     <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredDocs.length}
-                      onChange={toggleSelectAll} disabled={documentListMode !== 'ready' || filteredDocs.length === 0}
+                      onChange={toggleSelectAll} disabled={!canManageKB || documentListMode !== 'ready' || filteredDocs.length === 0}
                       className="w-3.5 h-3.5 accent-sky-500" />
                   </th>
                   <th className="pb-2.5 font-medium text-xs text-ink-muted">文件名</th>
@@ -1905,7 +1919,7 @@ export default function KnowledgeDetailPage() {
                   <tr key={doc.id} className="border-b border-cloud-200 hover:bg-cloud-200/50 transition-colors">
                     <td className="py-2.5">
                       <input type="checkbox" checked={selectedIds.has(doc.id)}
-                        onChange={() => toggleSelect(doc.id)} className="w-3.5 h-3.5 accent-sky-500" />
+                        onChange={() => toggleSelect(doc.id)} disabled={!canManageKB} className="w-3.5 h-3.5 accent-sky-500" />
                     </td>
                     <td className="py-2.5 max-w-40 text-sm" title={doc.file}>
                       <div className="min-w-0">
@@ -1966,12 +1980,12 @@ export default function KnowledgeDetailPage() {
                       )}
                     </td>
                     <td className="py-2.5 font-mono text-ink-muted text-sm">{(doc.length || 0).toLocaleString()}</td>
-                    <td className="py-2.5 text-xs text-ink-muted">{doc.updated?.slice(0, 16) || '-'}</td>
+                    <td className="py-2.5 text-xs text-ink-muted">{formatDate(doc.updated) || '-'}</td>
                     <td className="py-2.5 flex gap-1">
                       {doc.file !== '?' && (
                         <a href={api.downloadDocumentUrl(doc.full_id, kbName)} className="btn-ghost text-xs py-1 px-2 text-sky-600" title="下载" download><Download size={14}/></a>
                       )}
-                      {canRetry && (
+                      {canManageKB && canRetry && (
                         <button
                           className="btn-ghost text-xs py-1 px-2 text-amber-600"
                           onClick={() => handleRetryDocument(doc)}
@@ -1983,7 +1997,9 @@ export default function KnowledgeDetailPage() {
                         </button>
                       )}
                       <button className="btn-ghost text-xs py-1 px-2" onClick={() => setDetailDoc(doc)} title="详情"><Eye size={14}/></button>
-                      <button className="btn-ghost text-xs py-1 px-2 text-rose-500" onClick={() => setDeleteConfirm(doc)} title="删除"><Trash2 size={14}/></button>
+                      {canManageKB && (
+                        <button className="btn-ghost text-xs py-1 px-2 text-rose-500" onClick={() => setDeleteConfirm(doc)} title="删除"><Trash2 size={14}/></button>
+                      )}
                     </td>
                   </tr>
                   )
@@ -2049,13 +2065,17 @@ export default function KnowledgeDetailPage() {
                 <button className="btn-ghost text-xs py-1.5 px-2.5" onClick={() => handleZoom('out')} title="缩小"><ZoomOut size={14}/></button>
                 <button className="btn-ghost text-xs py-1.5 px-2.5" onClick={() => handleZoom('reset')} title="重置"><RotateCcw size={14}/></button>
                 {/* ── 图谱编辑按钮 ── */}
-                <span className="w-px h-5 bg-cloud-300 mx-0.5" />
-                <button className="btn-primary text-xs py-1.5 px-2.5" onClick={() => setShowCreateNodeModal(true)} title="新增实体">
-                  <Plus size={13}/><span className="ml-1 hidden sm:inline">新增</span>
-                </button>
-                <button className="btn-ghost text-xs py-1.5 px-2.5 text-sky-600" onClick={() => setShowCreateEdgeModal(true)} title="创建连线">
-                  <Link2 size={13}/><span className="ml-1 hidden sm:inline">连线</span>
-                </button>
+                {canManageGraph && (
+                  <>
+                    <span className="w-px h-5 bg-cloud-300 mx-0.5" />
+                    <button className="btn-primary text-xs py-1.5 px-2.5" onClick={() => setShowCreateNodeModal(true)} title="新增实体">
+                      <Plus size={13}/><span className="ml-1 hidden sm:inline">新增</span>
+                    </button>
+                    <button className="btn-ghost text-xs py-1.5 px-2.5 text-sky-600" onClick={() => setShowCreateEdgeModal(true)} title="创建连线">
+                      <Link2 size={13}/><span className="ml-1 hidden sm:inline">连线</span>
+                    </button>
+                  </>
+                )}
                 <label className="btn-ghost text-xs py-1.5 px-2.5 cursor-pointer" title="以图搜图">
                   <Image size={14} />
                   <input type="file" accept="image/*" className="hidden" ref={visionInputRef} onChange={handleImageSearch} />
@@ -2116,18 +2136,20 @@ export default function KnowledgeDetailPage() {
                 </div>
 
                 {/* ── 节点操作 ── */}
-                <div className="flex items-center gap-1.5 mb-2 flex-wrap">
-                  <button
-                    className="btn-ghost text-2xs py-0.5 px-1.5 text-ink-muted hover:text-sky-600"
-                    onClick={() => { setRenamingNode(nodeDetails.node.id); setRenameValue(nodeDetails.node.label || nodeDetails.node.id) }}
-                    title="重命名"
-                  ><Pencil size={10}/> <span className="ml-0.5">重命名</span></button>
-                  <button
-                    className="btn-ghost text-2xs py-0.5 px-1.5 text-ink-muted hover:text-rose-500"
-                    onClick={() => setShowDeleteNodeConfirm(nodeDetails.node)}
-                    title="删除实体"
-                  ><Trash2 size={10}/> <span className="ml-0.5">删除</span></button>
-                </div>
+                {canManageGraph && (
+                  <div className="flex items-center gap-1.5 mb-2 flex-wrap">
+                    <button
+                      className="btn-ghost text-2xs py-0.5 px-1.5 text-ink-muted hover:text-sky-600"
+                      onClick={() => { setRenamingNode(nodeDetails.node.id); setRenameValue(nodeDetails.node.label || nodeDetails.node.id) }}
+                      title="重命名"
+                    ><Pencil size={10}/> <span className="ml-0.5">重命名</span></button>
+                    <button
+                      className="btn-ghost text-2xs py-0.5 px-1.5 text-ink-muted hover:text-rose-500"
+                      onClick={() => setShowDeleteNodeConfirm(nodeDetails.node)}
+                      title="删除实体"
+                    ><Trash2 size={10}/> <span className="ml-0.5">删除</span></button>
+                  </div>
+                )}
 
                 {/* ── 接口详情信息 ── */}
                 {graphNodeDetail && (
@@ -2145,7 +2167,7 @@ export default function KnowledgeDetailPage() {
                       <span className="text-sky-500 font-mono shrink-0 text-2xs">{c.direction}</span>
                       <span className="text-ink-body truncate flex-1">{c.other}</span>
                       {c.label && <span className="text-2xs text-ink-muted shrink-0">{c.label.slice(0, 12)}</span>}
-                      {c._userRelationId && (
+                      {canManageGraph && c._userRelationId && (
                         <button
                           className="opacity-0 group-hover:opacity-100 text-rose-400 hover:text-rose-600 shrink-0 transition-opacity"
                           onClick={() => handleDeleteEdge(c._userRelationId)}
@@ -2247,8 +2269,8 @@ export default function KnowledgeDetailPage() {
                 { icon: Scissors, label: '切块方式', val: getChunkingStrategyPresentation(detailDoc.chunking_strategy).name },
                 { icon: FileText, label: '分块数', val: detailDoc.chunks },
                 { icon: FileText, label: '字数', val: (detailDoc.length || 0).toLocaleString() },
-                { icon: Clock, label: '创建时间', val: detailDoc.created?.slice(0, 19) || '-' },
-                { icon: Clock, label: '更新时间', val: detailDoc.updated?.slice(0, 19) || '-' }]
+                { icon: Clock, label: '创建时间', val: formatDate(detailDoc.created) || '-' },
+                { icon: Clock, label: '更新时间', val: formatDate(detailDoc.updated) || '-' }]
                 .map(({ icon: Icon, label, val }) => (
                   <div key={label} className="flex items-center gap-3">
                     <Icon size={14} className="text-ink-muted shrink-0"/>

@@ -52,6 +52,10 @@ def compute_chunk_id(content: str) -> str:
     return compute_mdhash_id(content, prefix="chunk-")
 
 
+# TTL after which the chunk -> doc source cache is refreshed from the durable
+# doc-status store so chunks added by other workers become visible.
+_CHUNK_SOURCE_CACHE_TTL_SECONDS = 60.0
+
 
 class ChunkProcessorMixin:
     """Chunk-to-document source mapping and BM25 index management."""
@@ -147,21 +151,92 @@ class ChunkProcessorMixin:
         # Instance-level initialization (not class-level — avoids cross-instance leakage)
         if not hasattr(self, '_chunk_source_cache'):
             self._chunk_source_cache: Dict[str, Dict[str, str]] = {}
-        if not hasattr(self, '_chunk_source_cache_built'):
-            self._chunk_source_cache_built: bool = False
+        if not hasattr(self, '_chunk_source_cache_lock'):
+            self._chunk_source_cache_lock: asyncio.Lock = asyncio.Lock()
 
-        if self._chunk_source_cache_built:
+        if self._chunk_source_cache_fresh():
             return
 
-        success = False
-        try:
-            # Access all doc_status records via the kv store's internal _data
+        async with self._chunk_source_cache_lock:
+            # Double-check under the lock: another coroutine may have rebuilt
+            # the cache while we were waiting.
+            if self._chunk_source_cache_fresh():
+                return
+
             doc_status_store = self.lightrag.doc_status
-            if hasattr(doc_status_store, '_data'):
-                async with doc_status_store._storage_lock:
-                    all_data = dict(doc_status_store._data)
+            if getattr(doc_status_store, "db", None) is not None:
+                rebuilt = await self._rebuild_chunk_source_cache_from_pg(
+                    doc_status_store
+                )
             else:
-                all_data = {}
+                rebuilt = await self._rebuild_chunk_source_cache_from_memory(
+                    doc_status_store
+                )
+
+            # Only mark the cache as fresh on success — retry next time on failure
+            if rebuilt:
+                self._chunk_source_cache_built_at = time.monotonic()
+
+    def _chunk_source_cache_fresh(self) -> bool:
+        """Whether the chunk-source cache was rebuilt within the TTL window."""
+        built_at = getattr(self, '_chunk_source_cache_built_at', 0.0)
+        return (
+            built_at > 0
+            and (time.monotonic() - built_at) < _CHUNK_SOURCE_CACHE_TTL_SECONDS
+        )
+
+    async def _rebuild_chunk_source_cache_from_pg(self, doc_status_store) -> bool:
+        """Rebuild chunk -> doc mappings from durable LIGHTRAG_DOC_STATUS rows."""
+        try:
+            workspace = getattr(doc_status_store, "workspace", "")
+            sql = (
+                "SELECT file_path, chunks_list FROM LIGHTRAG_DOC_STATUS "
+                "WHERE workspace=$1 AND file_path <> '' AND chunks_list IS NOT NULL"
+            )
+            rows = await doc_status_store.db.query(
+                sql, [workspace], multirows=True
+            )
+        except Exception:
+            return False
+
+        for row in rows or []:
+            try:
+                file_path = row.get("file_path", "")
+                chunks_list = row.get("chunks_list")
+                if isinstance(chunks_list, str):
+                    try:
+                        chunks_list = json.loads(chunks_list)
+                    except (TypeError, ValueError, json.JSONDecodeError):
+                        chunks_list = []
+                elif not isinstance(chunks_list, list):
+                    chunks_list = []
+                if not file_path or not chunks_list:
+                    continue
+                document_name = self._get_file_reference(file_path)
+                for chunk_id in chunks_list:
+                    # Only fill missing mappings — never overwrite processing-time
+                    # registrations made by _register_chunk_sources.
+                    if chunk_id not in self._chunk_source_cache:
+                        self._chunk_source_cache[chunk_id] = {
+                            "file_path": file_path,
+                            "document_name": document_name,
+                        }
+            except Exception:
+                continue  # Skip a corrupt row without aborting the batch
+        return True
+
+    async def _rebuild_chunk_source_cache_from_memory(self, doc_status_store) -> bool:
+        """Rebuild chunk -> doc mappings from the JSON store's in-memory _data."""
+        try:
+            data = getattr(doc_status_store, "_data", None)
+            all_data = {}
+            if data is not None:
+                storage_lock = getattr(doc_status_store, "_storage_lock", None)
+                if storage_lock is not None:
+                    async with storage_lock:
+                        all_data = dict(data)
+                else:
+                    all_data = dict(data)
 
             for doc_id, status in all_data.items():
                 file_path = status.get("file_path", "")
@@ -174,13 +249,9 @@ class ChunkProcessorMixin:
                                 "file_path": file_path,
                                 "document_name": document_name,
                             }
-            success = True
+            return True
         except Exception:
-            pass  # Non-critical; source tracing degrades gracefully
-
-        # Only mark as built on success — retry next time on failure
-        if success:
-            self._chunk_source_cache_built = True
+            return False  # Non-critical; source tracing degrades gracefully
 
     def get_doc_source_info(self, chunk_id: str) -> Dict[str, Any]:
         """Get source document info for a single chunk.
@@ -207,8 +278,7 @@ class ChunkProcessorMixin:
             Dict with file_path, document_name, or None values if not found
         """
         cache = getattr(self, '_chunk_source_cache', {})
-        built = getattr(self, '_chunk_source_cache_built', False)
-        if chunk_id not in cache and not built:
+        if chunk_id not in cache and not self._chunk_source_cache_fresh():
             await self._ensure_chunk_source_cache()
         return self.get_doc_source_info(chunk_id)
 
@@ -240,8 +310,7 @@ class ChunkProcessorMixin:
         Returns:
             Dict mapping chunk_id → {file_path, document_name}
         """
-        built = getattr(self, '_chunk_source_cache_built', False)
-        if not built:
+        if not self._chunk_source_cache_fresh():
             await self._ensure_chunk_source_cache()
         return self.batch_get_doc_source_info(chunk_ids)
     def _convert_to_lightrag_chunks_type_aware(

@@ -29,6 +29,9 @@ _CATALOG_FIELD = "odl_media_catalog"
 _GRANT_TTL_SECONDS = min(max(int(os.getenv("ODL_LEGACY_MEDIA_GRANT_TTL", "300")), 30), 900)
 _legacy_grants: dict[str, tuple[float, str, str, str, str, str]] = {}
 _legacy_grants_lock = threading.Lock()
+_CONTROLLED_ROOTS_TTL_SECONDS = 10.0
+_controlled_roots_cache: tuple[Path, ...] | None = None
+_controlled_roots_cache_at: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -63,15 +66,53 @@ def _grant_secret() -> bytes:
         return b""
 
 
+def _project_root() -> Path:
+    """Absolute project root used to anchor project-owned output directories."""
+    return Path(__file__).resolve().parents[2]
+
+
+def _reset_controlled_roots_cache() -> None:
+    """Test hook: drop the process-level controlled-roots TTL cache."""
+    global _controlled_roots_cache, _controlled_roots_cache_at
+    _controlled_roots_cache = None
+    _controlled_roots_cache_at = 0.0
+
+
 def _controlled_roots() -> tuple[Path, ...]:
+    global _controlled_roots_cache, _controlled_roots_cache_at
+    now = time.monotonic()
+    if (
+        _controlled_roots_cache is not None
+        and now - _controlled_roots_cache_at < _CONTROLLED_ROOTS_TTL_SECONDS
+    ):
+        return _controlled_roots_cache
+
     configured: list[str] = []
     for raw in (os.getenv("ODL_ARTIFACT_ROOT", ""), os.getenv("ODL_LEGACY_MEDIA_ROOTS", "")):
         if raw:
             configured.extend(part.strip() for part in raw.split(os.pathsep) if part.strip())
-    project_root = Path(__file__).resolve().parents[2]
+
+    project_root = _project_root()
     project_artifacts = project_root / "odl-artifacts"
     if project_artifacts.is_dir():
         configured.append(str(project_artifacts))
+
+    # Project-owned parse outputs: exact `output` / `output_*` directories only.
+    try:
+        for entry in project_root.iterdir():
+            if entry.name != "output" and not entry.name.startswith("output_"):
+                continue
+            configured.append(str(entry))
+    except OSError:
+        pass
+
+    # Runtime override: OUTPUT_DIR (defaults to ./output anchored at the project root).
+    output_dir_raw = os.getenv("OUTPUT_DIR", "./output").strip()
+    if output_dir_raw:
+        output_dir = Path(output_dir_raw)
+        if not output_dir.is_absolute():
+            output_dir = project_root / output_dir
+        configured.append(str(output_dir))
 
     roots: list[Path] = []
     for raw in configured:
@@ -84,7 +125,10 @@ def _controlled_roots() -> tuple[Path, ...]:
             continue
         if resolved not in roots:
             roots.append(resolved)
-    return tuple(roots)
+
+    _controlled_roots_cache = tuple(roots)
+    _controlled_roots_cache_at = now
+    return _controlled_roots_cache
 
 
 def _contains_link(path: Path, root: Path) -> bool:

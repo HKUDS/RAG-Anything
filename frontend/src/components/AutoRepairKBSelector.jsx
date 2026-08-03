@@ -23,6 +23,7 @@ export default function AutoRepairKBSelector({
   creating,
   onChange,
   onCreate,
+  canCreate = true,
 }) {
   const [showCreate, setShowCreate] = useState(false)
   const [newName, setNewName] = useState('')
@@ -66,15 +67,17 @@ export default function AutoRepairKBSelector({
         {kbList.map(k => <option key={k.name} value={k.name}>{k.label || k.name}</option>)}
       </select>
 
-      <button
-        onClick={() => { setShowCreate(!showCreate); setCreateError(null) }}
-        disabled={creating}
-        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-cloud-300 text-ink-muted hover:text-ink-body hover:bg-cloud-200 transition-colors disabled:opacity-50"
-        title="新建汽修知识库"
-      >
-        {creating ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
-        <span className="hidden sm:inline">新建</span>
-      </button>
+      {canCreate && (
+        <button
+          onClick={() => { setShowCreate(!showCreate); setCreateError(null) }}
+          disabled={creating}
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs border border-cloud-300 text-ink-muted hover:text-ink-body hover:bg-cloud-200 transition-colors disabled:opacity-50"
+          title="新建汽修知识库"
+        >
+          {creating ? <Loader2 size={13} className="animate-spin" /> : <Plus size={13} />}
+          <span className="hidden sm:inline">新建</span>
+        </button>
+      )}
 
       {/* 行内创建表单 */}
       {showCreate && (
