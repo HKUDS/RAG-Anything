@@ -12,6 +12,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Tuple
 
+import functools
+
 import jieba
 from lightrag.utils import logger as lightrag_logger
 from lightrag.utils import get_env_value
@@ -19,6 +21,20 @@ from lightrag.utils import get_env_value
 # ScoredChunk is imported lazily inside methods to break the circular import
 # between graph_rag ↔ hybrid_search (graph_rag needs ScoredChunk, hybrid_search
 # needs GraphRetriever).
+
+
+@functools.lru_cache(maxsize=8192)
+def _tokenize_entity(name: str) -> frozenset[str]:
+    """Tokenize a single entity name with jieba (cached across queries)."""
+    return frozenset(t for t in jieba.lcut(name) if len(t) >= 1)
+
+
+def _normalize_node_id(value: str) -> str:
+    """Normalize a storage node/edge id (strips enclosing JSON quotes)."""
+    normalized = (value or "").strip()
+    if len(normalized) >= 2 and normalized.startswith('"') and normalized.endswith('"'):
+        return normalized[1:-1]
+    return normalized
 
 
 # ═══════════════════════════════════════════════════════════
@@ -50,6 +66,11 @@ class GraphRAGConfig:
     )
     """Minimum distance-decay weight for a chunk to be included (0 = no filter)."""
 
+    graph_max_seed_entities: int = field(
+        default_factory=lambda: get_env_value("GRAPH_MAX_SEED_ENTITIES", 20, int)
+    )
+    """Max entity seeds fed into neighbor traversal (bounds BFS cost)."""
+
 
 # ═══════════════════════════════════════════════════════════
 # Graph Retriever
@@ -75,6 +96,7 @@ class GraphRetriever:
         self._depth: int = cfg.graph_depth
         self._top_k: int = cfg.graph_top_k
         self._min_score: float = cfg.graph_min_score
+        self._max_seed_entities: int = cfg.graph_max_seed_entities
 
     @property
     def config_snapshot(self) -> Dict[str, Any]:
@@ -82,7 +104,8 @@ class GraphRetriever:
         return {
             "graph_depth": self._depth,
             "graph_top_k": self._top_k,
-            "graph_min_score": self._graph_min_score,
+            "graph_min_score": self._min_score,
+            "graph_max_seed_entities": self._max_seed_entities,
         }
 
     def set_lightrag(self, lightrag_instance):
@@ -90,16 +113,91 @@ class GraphRetriever:
         self._lightrag = lightrag_instance
 
     # ------------------------------------------------------------------
+    # Query-Scoped Snapshot
+    # ------------------------------------------------------------------
+
+    async def _load_snapshot(
+        self,
+    ) -> Tuple[Dict[str, Any], Dict[str, List[Tuple[str, Dict[str, Any]]]], Dict[str, int]] | None:
+        """Load graph nodes/edges once and build local lookup structures.
+
+        Returns ``(node_by_id, adjacency, degree_map)`` where ``adjacency``
+        maps a node id to ``(neighbor_id, edge_data)`` pairs for both edge
+        orientations.  Accessing the graph storage through a single snapshot
+        avoids thousands of per-node/per-edge storage calls (each of which
+        acquires the storage lock and re-checks the reload flag).
+        """
+        graph = getattr(self._lightrag, "chunk_entity_relation_graph", None)
+        if graph is None:
+            return None
+
+        try:
+            all_nodes = await graph.get_all_nodes() or []
+        except Exception as exc:
+            lightrag_logger.warning(f"Graph snapshot node load failed: {exc}")
+            return None
+        try:
+            all_edges = await graph.get_all_edges() or []
+        except Exception as exc:
+            lightrag_logger.warning(f"Graph snapshot edge load failed: {exc}")
+            all_edges = []
+
+        node_by_id: Dict[str, Any] = {}
+        for node_data in all_nodes:
+            node_id = _normalize_node_id(
+                node_data.get("entity_id")
+                or node_data.get("entity_name")
+                or node_data.get("id")
+                or ""
+            )
+            if node_id:
+                node_by_id[node_id] = node_data
+
+        adjacency: Dict[str, List[Tuple[str, Dict[str, Any]]]] = {}
+        degree_map: Dict[str, int] = {}
+        for edge in all_edges:
+            src = _normalize_node_id(edge.get("source") or edge.get("src_id") or "")
+            tgt = _normalize_node_id(edge.get("target") or edge.get("tgt_id") or "")
+            if not src or not tgt:
+                continue
+            degree_map[src] = degree_map.get(src, 0) + 1
+            degree_map[tgt] = degree_map.get(tgt, 0) + 1
+            adjacency.setdefault(src, []).append((tgt, edge))
+            adjacency.setdefault(tgt, []).append((src, edge))
+
+        return node_by_id, adjacency, degree_map
+
+    def _cap_seed_entities(
+        self, matched: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Bound the number of traversal seeds to keep BFS cost predictable."""
+        if self._max_seed_entities > 0 and len(matched) > self._max_seed_entities:
+            lightrag_logger.info(
+                "Graph seed entities capped to %d (matched %d)",
+                self._max_seed_entities,
+                len(matched),
+            )
+            return matched[: self._max_seed_entities]
+        return matched
+
+    # ------------------------------------------------------------------
     # Entity Matching
     # ------------------------------------------------------------------
 
-    async def _match_entities(self, query: str) -> List[Dict[str, Any]]:
+    async def _match_entities(
+        self, query: str, snapshot: Tuple | None = None
+    ) -> List[Dict[str, Any]]:
         """Extract entity names from query text and match in LightRAG's graph.
 
         Uses jieba token-overlap scoring for weighted matching:
         - Entities with more overlapping tokens with the query score higher.
         - Pure substring match (no token overlap) gets a base score of 0.5 as fallback.
         - Results are sorted by token-overlap score desc, then graph degree desc.
+
+        Args:
+            query: The search query text
+            snapshot: Optional preloaded ``_load_snapshot()`` result; loaded
+                on demand when omitted.
 
         Returns:
             List of matched entity dicts: {name, node_id, degree, entity_type, score}
@@ -108,42 +206,26 @@ class GraphRetriever:
             return []
 
         try:
-            graph = getattr(self._lightrag, "chunk_entity_relation_graph", None)
-            if graph is None:
-                return []
+            if snapshot is None:
+                snapshot = await self._load_snapshot()
+                if snapshot is None:
+                    return []
+            node_by_id, _adjacency, degree_map = snapshot
 
             # Tokenize query with jieba for overlap scoring
             query_lower = query.lower()
             query_tokens = set(t for t in jieba.lcut(query) if len(t) >= 1)
 
-            all_nodes = await graph.get_all_nodes()
-
-            # Pre-compute entity degrees from edges (avoids N node_degree calls)
-            degree_map: dict[str, int] = {}
-            try:
-                all_edges = await graph.get_all_edges()
-                if all_edges:
-                    for edge in all_edges:
-                        src = edge.get("source", "")
-                        tgt = edge.get("target", "")
-                        if src:
-                            degree_map[src] = degree_map.get(src, 0) + 1
-                        if tgt:
-                            degree_map[tgt] = degree_map.get(tgt, 0) + 1
-            except Exception:
-                pass  # degree_map stays empty; entities get degree=0 fallback
-
             scored = []
-            for node_data in all_nodes:
-                node_id = node_data.get("entity_id", node_data.get("entity_name", ""))
+            for node_id, node_data in node_by_id.items():
                 entity_name = node_data.get("entity_name", node_id)
                 if not isinstance(entity_name, str) or not entity_name:
                     continue
 
                 entity_lower = entity_name.lower()
 
-                # Token-overlap score (jieba)
-                entity_tokens = set(t for t in jieba.lcut(entity_name) if len(t) >= 1)
+                # Token-overlap score (jieba, cached per entity name)
+                entity_tokens = _tokenize_entity(entity_name)
                 overlap = len(query_tokens & entity_tokens)
 
                 # Substring match as fallback
@@ -187,13 +269,18 @@ class GraphRetriever:
     # ------------------------------------------------------------------
 
     async def _traverse_neighbors(
-        self, matched_entities: List[Dict[str, Any]], depth: int | None = None
+        self,
+        matched_entities: List[Dict[str, Any]],
+        depth: int | None = None,
+        snapshot: Tuple | None = None,
     ) -> Tuple[Dict[str, float], Dict[str, List[Tuple[str, str, int]]]]:
         """BFS traversal returning chunk scores and entity→chunk paths.
 
         Args:
             matched_entities: Entities matched from the query
             depth: Traversal depth (default: self._depth)
+            snapshot: Optional preloaded ``_load_snapshot()`` result; loaded
+                on demand when omitted.
 
         Returns:
             (chunk_scores, entity_paths) where:
@@ -201,9 +288,13 @@ class GraphRetriever:
               entity_paths: {chunk_id: [(entity_name, relation, hop_depth), ...]}
         """
         depth = self._depth if depth is None else depth
-        graph = getattr(self._lightrag, "chunk_entity_relation_graph", None)
-        if graph is None or not matched_entities:
+        if not matched_entities:
             return {}, {}
+        if snapshot is None:
+            snapshot = await self._load_snapshot()
+            if snapshot is None:
+                return {}, {}
+        node_by_id, adjacency, _degree_map = snapshot
 
         chunk_scores: Dict[str, float] = {}
         entity_paths: Dict[str, List[Tuple[str, str, int]]] = {}
@@ -220,7 +311,7 @@ class GraphRetriever:
                 next_frontier = []
                 weight = 1.0 / (d + 1)
                 for node in frontier:
-                    node_data = await graph.get_node(node) or {}
+                    node_data = node_by_id.get(node) or {}
                     entity_chunks = node_data.get("chunk_ids", [])
                     if isinstance(entity_chunks, list):
                         for cid in entity_chunks:
@@ -241,27 +332,15 @@ class GraphRetriever:
                                     (entity_name, "direct", 0)
                                 )
 
-                    edges = await graph.get_node_edges(node)
-                    if edges:
-                        for src, tgt in edges:
-                            neighbor = tgt if src == node else src
-                            if neighbor not in visited:
-                                visited.add(neighbor)
-                                next_frontier.append(neighbor)
-                                # Determine relation type
-                                edge_data = {}
-                                try:
-                                    # Try to get edge metadata if available
-                                    edge_info = await graph.get_edge(src, tgt)
-                                    if edge_info:
-                                        edge_data = edge_info
-                                except Exception:
-                                    pass
-                                rel = edge_data.get(
-                                    "relation",
-                                    edge_data.get("description", "related_to"),
-                                )
-                                path_tracker[neighbor] = (entity_name, rel, d + 1)
+                    for neighbor, edge_data in adjacency.get(node, []):
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            next_frontier.append(neighbor)
+                            rel = edge_data.get(
+                                "relation",
+                                edge_data.get("description", "related_to"),
+                            )
+                            path_tracker[neighbor] = (entity_name, rel, d + 1)
 
                 frontier = next_frontier
                 if not frontier:
@@ -278,6 +357,33 @@ class GraphRetriever:
     # ------------------------------------------------------------------
     # Search (graph-only query)
     # ------------------------------------------------------------------
+
+    async def _fetch_chunk_contents(
+        self, chunk_ids: List[str]
+    ) -> Dict[str, Dict[str, Any]]:
+        """Batch-fetch chunk metadata with per-id fallback for missing rows."""
+        contents: Dict[str, Dict[str, Any]] = {}
+        if not chunk_ids or not hasattr(self._lightrag, "text_chunks"):
+            return contents
+        try:
+            raw = await self._lightrag.text_chunks.get_by_ids(chunk_ids)
+            for record in raw or []:
+                if not record:
+                    continue
+                record_id = record.get("id") or record.get("__id__")
+                if record_id:
+                    contents[record_id] = record
+        except Exception as exc:
+            lightrag_logger.warning(f"Graph chunk batch fetch failed: {exc}")
+        missing = [chunk_id for chunk_id in chunk_ids if chunk_id not in contents]
+        for chunk_id in missing:
+            try:
+                record = await self._lightrag.text_chunks.get_by_id(chunk_id)
+                if record:
+                    contents[chunk_id] = record
+            except Exception:
+                pass
+        return contents
 
     async def search(
         self, query: str, top_k: int | None = None, depth: int | None = None
@@ -298,11 +404,18 @@ class GraphRetriever:
         if self._lightrag is None:
             return []
 
-        matched = await self._match_entities(query)
+        snapshot = await self._load_snapshot()
+        if snapshot is None:
+            return []
+
+        matched = await self._match_entities(query, snapshot=snapshot)
         if not matched:
             return []
 
-        chunk_scores, entity_paths = await self._traverse_neighbors(matched, depth)
+        seeds = self._cap_seed_entities(matched)
+        chunk_scores, entity_paths = await self._traverse_neighbors(
+            seeds, depth, snapshot=snapshot
+        )
 
         if not chunk_scores:
             return []
@@ -311,20 +424,16 @@ class GraphRetriever:
             chunk_scores.items(), key=lambda x: x[1], reverse=True
         )[:top_k]
 
+        chunk_contents = await self._fetch_chunk_contents(
+            [chunk_id for chunk_id, _weight in sorted_chunks]
+        )
+
         results = []
         for rank, (chunk_id, weight) in enumerate(sorted_chunks):
-            content = ""
-            doc_name = None
-            file_path = None
-            try:
-                if hasattr(self._lightrag, "text_chunks"):
-                    chunk_data = await self._lightrag.text_chunks.get_by_id(chunk_id)
-                    if chunk_data:
-                        content = chunk_data.get("content", "")
-                        doc_name = chunk_data.get("document_name")
-                        file_path = chunk_data.get("file_path")
-            except Exception:
-                pass
+            chunk_data = chunk_contents.get(chunk_id, {})
+            content = chunk_data.get("content", "")
+            doc_name = chunk_data.get("document_name")
+            file_path = chunk_data.get("file_path")
 
             # Extract source entity names for this chunk
             chunk_entities = []
@@ -380,20 +489,21 @@ class GraphRetriever:
         if self._lightrag is None:
             return empty_result
 
-        matched = await self._match_entities(query)
+        snapshot = await self._load_snapshot()
+        if snapshot is None:
+            return empty_result
+        node_by_id, _adjacency, _degree_map = snapshot
+
+        matched = await self._match_entities(query, snapshot=snapshot)
+        total_entities = len(node_by_id)
         if not matched:
-            empty_result["graph_stats"]["total_entities"] = 0
+            empty_result["graph_stats"]["total_entities"] = total_entities
             return empty_result
 
-        chunk_scores, entity_paths = await self._traverse_neighbors(matched)
-
-        # Graph stats
-        try:
-            graph = getattr(self._lightrag, "chunk_entity_relation_graph", None)
-            all_nodes = await graph.get_all_nodes() if graph else []
-            total_entities = len(all_nodes)
-        except Exception:
-            total_entities = 0
+        seeds = self._cap_seed_entities(matched)
+        chunk_scores, entity_paths = await self._traverse_neighbors(
+            seeds, snapshot=snapshot
+        )
 
         if not chunk_scores:
             return {
@@ -414,20 +524,16 @@ class GraphRetriever:
             chunk_scores.items(), key=lambda x: x[1], reverse=True
         )[:top_k]
 
+        chunk_contents = await self._fetch_chunk_contents(
+            [chunk_id for chunk_id, _weight in sorted_chunks]
+        )
+
         results = []
         for rank, (chunk_id, weight) in enumerate(sorted_chunks):
-            content = ""
-            doc_name = None
-            file_path = None
-            try:
-                if hasattr(self._lightrag, "text_chunks"):
-                    chunk_data = await self._lightrag.text_chunks.get_by_id(chunk_id)
-                    if chunk_data:
-                        content = chunk_data.get("content", "")
-                        doc_name = chunk_data.get("document_name")
-                        file_path = chunk_data.get("file_path")
-            except Exception:
-                pass
+            chunk_data = chunk_contents.get(chunk_id, {})
+            content = chunk_data.get("content", "")
+            doc_name = chunk_data.get("document_name")
+            file_path = chunk_data.get("file_path")
 
             paths = entity_paths.get(chunk_id, [])
             # Deduplicate paths: keep unique (entity, relation) per chunk

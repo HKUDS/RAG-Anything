@@ -26,15 +26,12 @@ import logging
 import os
 import re
 import time
-import uuid
-from dataclasses import dataclass, field
 
 import jieba
-from datetime import datetime, timezone
 from typing import Dict, List, Any
 from pathlib import Path
 from lightrag import QueryParam
-from lightrag.utils import always_get_an_event_loop
+from lightrag.utils import always_get_an_event_loop, get_env_value
 from raganything.prompt import PROMPTS, INLINE_QUOTE_INSTRUCTION, ANSWER_FORMAT_INSTRUCTION
 
 # Hint appended to LLM prompt when text chunk resolution fails (chunks=0)
@@ -53,6 +50,12 @@ from raganything.services.query_execution import await_before_deadline
 
 logger = logging.getLogger(__name__)
 _RRF_PIPELINE_SETTLE_SECONDS = 0.05
+# Minimum remaining request budget required before an HTTP rerank call is
+# attempted.  Below this threshold the fused order is kept so the deadline is
+# reserved for context building instead of a doomed external call.
+_RRF_RERANK_MIN_BUDGET_SECONDS = get_env_value(
+    "RRF_RERANK_MIN_BUDGET_SECONDS", 1.5, float
+)
 
 
 def _scope_deadline(scope: object | None) -> float | None:
@@ -511,26 +514,50 @@ class QueryMixin:
                     _os.getenv("RERANK_BINDING_API_KEY", ""),
                 )
                 if rerank_api_key:
-                    chunk_texts = [c.content for c in chunks]
-                    try:
-                        ranked = await await_before_deadline(
-                            rerank_chunks(
-                                query, chunk_texts,
-                                api_key=rerank_api_key,
-                                model=rerank_model,
-                                top_n=rerank_top_n,
-                            ),
-                            post_retrieval_deadline,
-                        )
-                    except TimeoutError:
-                        self.logger.info("RRF rerank deadline reached; using fused order")
-                    else:
-                        # Reorder chunks by rerank results.
-                        idx_map = {idx: chunks[idx] for idx, _ in ranked}
-                        chunks = [idx_map[i] for i in range(len(ranked)) if i in idx_map]
+                    remaining_budget = (
+                        deadline_monotonic - time.monotonic()
+                        if deadline_monotonic is not None
+                        else None
+                    )
+                    if (
+                        remaining_budget is not None
+                        and remaining_budget < _RRF_RERANK_MIN_BUDGET_SECONDS
+                    ):
                         self.logger.info(
-                            f"Reranked {len(chunks)} chunks -> top {rerank_top_n}"
+                            "RRF rerank skipped: %.2fs remaining (min %.1fs); "
+                            "using fused order",
+                            remaining_budget,
+                            _RRF_RERANK_MIN_BUDGET_SECONDS,
                         )
+                    else:
+                        # Local import avoids a circular dependency between
+                        # raganything.query.pipeline and raganything.query.
+                        from raganything.query.utils import rerank_chunks
+
+                        chunk_texts = [c.content for c in chunks]
+                        try:
+                            ranked = await await_before_deadline(
+                                rerank_chunks(
+                                    query, chunk_texts,
+                                    api_key=rerank_api_key,
+                                    model=rerank_model,
+                                    top_n=rerank_top_n,
+                                ),
+                                post_retrieval_deadline,
+                            )
+                        except Exception as exc:
+                            # Rerank is best-effort: never let a rerank failure
+                            # fail the whole RRF query.
+                            self.logger.warning(
+                                "RRF rerank failed (%s); using fused order", exc
+                            )
+                        else:
+                            # Reorder chunks by rerank results.
+                            idx_map = {idx: chunks[idx] for idx, _ in ranked}
+                            chunks = [idx_map[idx] for idx, _ in ranked]
+                            self.logger.info(
+                                f"Reranked {len(chunks)} chunks -> top {rerank_top_n}"
+                            )
                 else:
                     self.logger.warning("Rerank enabled but no API key found")
 

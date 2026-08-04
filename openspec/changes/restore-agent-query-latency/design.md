@@ -76,7 +76,7 @@ must not read query scope from an instance attribute.
 ### RRF deadline and BM25 single flight
 
 The Agent sets one absolute monotonic retrieval deadline using
-`AGENT_RETRIEVAL_TIMEOUT` with an 8-second default.  The RRF engine receives
+`AGENT_RETRIEVAL_TIMEOUT` with a 12-second default.  The RRF engine receives
 the deadline through its internal execution context.  BM25 cache lookup,
 PostgreSQL work, chunk reads, and index build are one BM25 channel coroutine,
 started alongside vector and graph channels.  Every awaited operation receives
@@ -111,14 +111,14 @@ recorded.
   affected entries on corpus mutation.
 - [ContextVar propagation can be lost in spawned tasks] → create child tasks
   while the request context is active and add concurrent isolation tests.
-- [Eight seconds can exclude a late channel] → preserve successful channels,
+- [Twelve seconds can exclude a late channel] → preserve successful channels,
   retain the configurable channel budget, and report the specific timeout.
 
 ## Migration Plan
 
 1. Add timing and lifecycle counters, then run focused tests and the
    deterministic benchmark on an isolated backend port.
-2. Deploy the code with `AGENT_RETRIEVAL_TIMEOUT=8` where no explicit value is
+2. Deploy the code with `AGENT_RETRIEVAL_TIMEOUT=12` where no explicit value is
    configured; confirm health, cache hit, phase latency, and detached-task
    counters before normal traffic.
 3. Roll back by restoring the prior application revision and restarting the

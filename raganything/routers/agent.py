@@ -38,7 +38,11 @@ from raganything.routers.shared import (
     verify_kb_access,
 )
 from raganything.utils.security import validate_query_input, decode_and_validate_query_image
-from raganything.dependencies import get_current_user, require_permission
+from raganything.dependencies import (
+    authenticated_sse_events,
+    get_current_user,
+    require_permission,
+)
 from raganything.permissions import Permission
 
 from raganything.services.agent_manager import AgentConfig
