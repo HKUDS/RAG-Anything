@@ -1074,6 +1074,12 @@ async def test_upload_files_all_skipped_returns_summary(monkeypatch, tmp_path):
         "raganything.routers.knowledge._is_file_being_processed",
         lambda kb_name, file_hash: f"existing-{file_hash}",
     )
+    monkeypatch.setattr(
+        "raganything.routers.knowledge._resolve_upload_vlm_snapshot",
+        AsyncMock(return_value=SimpleNamespace(
+            profile=SimpleNamespace(id="vlm-a"), fingerprint="vlm-fingerprint"
+        )),
+    )
 
     queue = asyncio.Queue()
 
@@ -1208,12 +1214,13 @@ async def test_pg_content_updates_batch_fails_open(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_list_kbs_embeds_latest_content_update_and_falls_back_to_created(monkeypatch):
+async def test_list_kbs_embeds_updated_at_and_falls_back_to_created(monkeypatch):
     from raganything.routers import knowledge
 
     async def fake_load_kb_meta():
         return {
-            "kb-a": {"name": "KB A", "created": "2026-07-01T08:00:00", "owner_id": 1},
+            "kb-a": {"name": "KB A", "created": "2026-07-01T08:00:00",
+                     "updated_at": "2026-07-03T09:15:00+00:00", "owner_id": 1},
             "kb-b": {"name": "KB B", "created": "2026-07-02T08:00:00", "owner_id": 1},
             "kb-private": {"name": "Private", "created": "2026-07-04T08:00:00", "owner_id": 2},
         }
@@ -1221,13 +1228,8 @@ async def test_list_kbs_embeds_latest_content_update_and_falls_back_to_created(m
     async def fake_batch_stats(_names):
         return {}
 
-    async def fake_content_updates(names):
-        assert names == ["kb-a", "kb-b"]
-        return {"kb-a": "2026-07-03T09:15:00+00:00"}
-
     monkeypatch.setattr(knowledge, "load_kb_meta", fake_load_kb_meta)
     monkeypatch.setattr(knowledge, "_compute_kb_stats_batch_fast", fake_batch_stats)
-    monkeypatch.setattr(knowledge, "pg_get_latest_content_updates_batch", fake_content_updates)
 
     result = await knowledge.list_kbs(current_user={
         "id": 1, "username": "alice", "is_admin": False, "allowed_kbs": [],
@@ -1244,7 +1246,7 @@ async def test_list_kbs_embeds_latest_content_update_and_falls_back_to_created(m
 
 
 @pytest.mark.asyncio
-async def test_list_kbs_content_update_lookup_failure_keeps_created_fallback(monkeypatch):
+async def test_list_kbs_empty_stats_still_returns_created_fallback(monkeypatch):
     from raganything.routers import knowledge
 
     async def fake_load_kb_meta():
@@ -1252,38 +1254,36 @@ async def test_list_kbs_content_update_lookup_failure_keeps_created_fallback(mon
             "kb-a": {"name": "KB A", "created": "2026-07-01T08:00:00", "owner_id": 1},
         }
 
-    async def fail_content_updates(_names):
-        raise RuntimeError("database unavailable")
+    async def fake_batch_stats(_names):
+        return {}
 
     monkeypatch.setattr(knowledge, "load_kb_meta", fake_load_kb_meta)
-    monkeypatch.setattr(knowledge, "_compute_kb_stats_batch_fast", lambda _names: {})
-    monkeypatch.setattr(knowledge, "pg_get_latest_content_updates_batch", fail_content_updates)
+    monkeypatch.setattr(knowledge, "_compute_kb_stats_batch_fast", fake_batch_stats)
 
     result = await knowledge.list_kbs(current_user={
         "id": 1, "username": "alice", "is_admin": False, "allowed_kbs": [],
     })
 
-    assert result["knowledge_bases"][0]["last_content_updated_at"] == "2026-07-01T08:00:00"
+    kb = result["knowledge_bases"][0]
+    assert kb["last_content_updated_at"] == "2026-07-01T08:00:00"
+    assert kb["stats"]["unavailable"] is True
 
 
 @pytest.mark.asyncio
-async def test_list_kbs_keeps_content_update_when_stats_batch_fails(monkeypatch):
+async def test_list_kbs_stats_batch_failure_returns_list_with_unavailable_stats(monkeypatch):
     from raganything.routers import knowledge
 
     async def fake_load_kb_meta():
         return {
-            "kb-a": {"name": "KB A", "created": "2026-07-01T08:00:00", "owner_id": 1},
+            "kb-a": {"name": "KB A", "created": "2026-07-01T08:00:00",
+                     "updated_at": "2026-07-03T09:15:00+00:00", "owner_id": 1},
         }
 
     async def fail_stats(_names):
         raise RuntimeError("statistics unavailable")
 
-    async def fake_content_updates(_names):
-        return {"kb-a": "2026-07-03T09:15:00+00:00"}
-
     monkeypatch.setattr(knowledge, "load_kb_meta", fake_load_kb_meta)
     monkeypatch.setattr(knowledge, "_compute_kb_stats_batch_fast", fail_stats)
-    monkeypatch.setattr(knowledge, "pg_get_latest_content_updates_batch", fake_content_updates)
 
     result = await knowledge.list_kbs(current_user={
         "id": 1, "username": "alice", "is_admin": False, "allowed_kbs": [],
@@ -1292,6 +1292,7 @@ async def test_list_kbs_keeps_content_update_when_stats_batch_fails(monkeypatch)
     kb = result["knowledge_bases"][0]
     assert kb["last_content_updated_at"] == "2026-07-03T09:15:00+00:00"
     assert kb["stats"]["unavailable"] is True
+    assert kb["stats"]["documents"] == 0
 
 
 @pytest.mark.asyncio
@@ -1627,6 +1628,13 @@ async def test_retry_document_creates_visible_queued_task_and_resets_upload(monk
     monkeypatch.setattr(knowledge, "_compute_file_hash", lambda _path: "hash-1")
     monkeypatch.setattr(knowledge, "add_event", fake_event)
     monkeypatch.setattr(knowledge, "_create_upload_settings_snapshot", fake_snapshot)
+    monkeypatch.setattr(
+        knowledge,
+        "_resolve_upload_vlm_snapshot",
+        AsyncMock(return_value=SimpleNamespace(
+            profile=SimpleNamespace(id="vlm-a"), fingerprint="vlm-fingerprint"
+        )),
+    )
 
     result = await knowledge.retry_document(
         "doc-failed-1", kb="demo-kb", current_user={"id": 7}
@@ -2189,3 +2197,54 @@ async def test_processing_snapshot_is_persisted_in_document_metadata(monkeypatch
     assert metadata["existing"] is True
     assert metadata["processing_settings_snapshot"] == snapshot
     assert saved[1] == "committed"
+
+
+@pytest.mark.asyncio
+async def test_create_upload_settings_snapshot_persists_resolved_with_permitted_sections(
+    monkeypatch,
+):
+    from raganything.routers import knowledge
+    from raganything.services import user_settings
+
+    seen = {}
+    persisted = []
+    resolved_stub = SimpleNamespace(revision=3, fingerprint="fp-1")
+
+    async def fake_available_sections_for_user(user_id):
+        seen["user_id"] = user_id
+        return ("models", "ingestion")
+
+    async def fake_resolve(user_id, *, request_overrides=None, permitted_sections=None, **kwargs):
+        seen["resolve"] = (user_id, request_overrides, permitted_sections)
+        return resolved_stub
+
+    async def fake_create_snapshot(task_id, user_id, resolved):
+        persisted.append((task_id, user_id, resolved))
+
+    monkeypatch.setattr(user_settings, "available_sections_for_user", fake_available_sections_for_user)
+    monkeypatch.setattr(user_settings, "resolve_user_settings_for_task", fake_resolve)
+    monkeypatch.setattr(user_settings, "create_task_settings_snapshot", fake_create_snapshot)
+
+    await knowledge._create_upload_settings_snapshot(
+        "task-42",
+        7,
+        chunking_strategy="sentence",
+        enable_image="true",
+        enable_table="false",
+        enable_equation="true",
+        enable_video="false",
+    )
+
+    assert seen["user_id"] == 7
+    assert seen["resolve"][0] == 7
+    assert seen["resolve"][1] == {
+        "ingestion": {
+            "chunking_strategy": "sentence",
+            "enable_image": True,
+            "enable_table": False,
+            "enable_equation": True,
+            "enable_video": False,
+        }
+    }
+    assert seen["resolve"][2] == ("models", "ingestion")
+    assert persisted == [("task-42", 7, resolved_stub)]

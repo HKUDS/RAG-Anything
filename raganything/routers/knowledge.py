@@ -405,9 +405,14 @@ KB_STATS_BATCH_TIMEOUT_SECONDS = 6.0
 
 async def _resolve_upload_vlm_snapshot(user_id: int):
     from raganything.services import vision_models
+    from raganything.services import user_settings
 
     try:
-        return await vision_models.resolve_user_vlm_selection(user_id)
+        resolved = await user_settings.resolve_user_settings_for_task(
+            user_id,
+            permitted_sections=await user_settings.available_sections_for_user(user_id),
+        )
+        return vision_models.require_available(resolved.models.vlm_profile_id, "vlm")
     except (KeyError, ValueError, RuntimeError) as exc:
         raise HTTPException(
             status_code=503,
@@ -434,6 +439,7 @@ async def _create_upload_settings_snapshot(
 ) -> None:
     """Persist the complete effective upload configuration before enqueueing."""
     from raganything.services.user_settings import (
+        available_sections_for_user,
         create_task_settings_snapshot,
         resolve_user_settings_for_task,
     )
@@ -452,6 +458,7 @@ async def _create_upload_settings_snapshot(
     resolved = await resolve_user_settings_for_task(
         user_id,
         request_overrides={"ingestion": ingestion_overrides},
+        permitted_sections=await available_sections_for_user(user_id),
     )
     await create_task_settings_snapshot(task_id, user_id, resolved)
 
@@ -4917,10 +4924,14 @@ async def list_kbs(current_user: dict = Depends(get_current_user)):
     visible_names = [kb["name"] for kb in kbs]
     stats_by_name: dict[str, dict[str, int]] = {}
     if visible_names:
-        stats_result = await asyncio.wait_for(
-            _compute_kb_stats_batch_fast(visible_names),
-            timeout=KB_STATS_BATCH_TIMEOUT_SECONDS,
-        )
+        try:
+            stats_result = await asyncio.wait_for(
+                _compute_kb_stats_batch_fast(visible_names),
+                timeout=KB_STATS_BATCH_TIMEOUT_SECONDS,
+            )
+        except Exception:
+            lightrag_logger.warning("KB stats batch failed", exc_info=True)
+            stats_result = {}
         if isinstance(stats_result, dict):
             stats_by_name = stats_result
 

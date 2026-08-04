@@ -174,6 +174,13 @@ async def test_retry_reuses_document_chunking_strategy(monkeypatch, tmp_path):
     monkeypatch.setattr(knowledge, "_compute_file_hash", lambda _path: "hash-1")
     monkeypatch.setattr(knowledge, "add_event", AsyncMock())
     monkeypatch.setattr(knowledge, "_create_upload_settings_snapshot", AsyncMock())
+    monkeypatch.setattr(
+        knowledge,
+        "_resolve_upload_vlm_snapshot",
+        AsyncMock(return_value=SimpleNamespace(
+            profile=SimpleNamespace(id="vlm-a"), fingerprint="vlm-fingerprint"
+        )),
+    )
 
     result = await knowledge.retry_document(
         "doc-failed", kb="demo-kb", current_user={"id": 7}

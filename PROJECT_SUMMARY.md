@@ -6,7 +6,7 @@
 
 | 项目 | 当前值 |
 |---|---|
-| 最后核验日期 | 2026-08-03（Asia/Shanghai） |
+| 最后核验日期 | 2026-08-04（Asia/Shanghai） |
 | 核验分支 | `feature/custom-enhancements` |
 | 基准提交 | `52e0482714de` |
 | 工作区状态 | **有未提交改动**；“进行中”内容不得视为已交付 |
@@ -65,6 +65,7 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 - 智能体问答的请求级设置快照必须携带 LLM/VLM 的公开 profile 指纹；知识库实例严格校验 LLM 可用性和两类指纹一致性。纯文本问答不依赖 VLM 可用性，只有图片问答和多模态处理要求可用 VLM；SSE 失败会保留错误消息，不再被会话初始化覆盖。面向用户的检索进度仅发送经过中文化的可解释阶段，第三方库的初始化、缓存、模型和存储告警只保留在服务端日志。
 - 个人设置桌面工作区采用独立详情滚动：左侧分区菜单保持静止，点击项目仅滚动右侧详情；1100px 以下保留页面滚动与横向分区导航。
 - 主侧栏末尾顺序固定为“用户管理、审计日志、个人设置”；权限不足时仅隐藏相应管理入口，个人设置始终位于可见列表末尾。
+- 智能体启用“重排”的 RRF 查询可正常工作：失败降级为融合顺序、预算不足 1.5s 跳过；图谱检索按查询级快照执行（一次读节点/边、批量取 chunk、种子上限 20）。；检索预算默认 12s。
 - 认证仅使用用户名+密码：`users.email` 列已随迁移 `025` 移除（历史数据不可恢复），注册、管理端用户管理、个人设置与审计详情均不再出现邮箱；`DEFAULT_ADMIN_EMAIL` 环境变量不再支持。
 
 - Repository redundancy governance: upload tasks use durable snapshots; retired CLI/client paths removed; shared authenticated SSE serves agent/autorepair Q&A; 4,898 tracked artifacts await archive/reference proof; no HTTP API/migration/RBAC change.
@@ -72,12 +73,14 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 ### 进行中
 
 - **个人设置中心与平台设置策略**：`redesign-personal-settings-center` 规格已归档，实现仍在未提交工作区。`/preferences` 统一“个人设置”，具备独立分区保存、存储值/生效值/来源/约束展示、可执行检索预设和移动端锚点；`/admin/platform` 管理默认值、允许范围和硬上限。
+- **分级个人设置权限投影**：`enforce-personal-settings-capabilities` 已实现未提交。实时权限控制分区与 API；降级的新任务继承默认，旧快照不变。
 - **视觉模型配置与混合检索链路**：工作区实现模型目录、请求/任务设置快照、作用域缓存和 KB 视觉向量重建。默认 `hybrid` 查询使用不可变的用户检索选项（含图谱深度），不修改共享检索器；KB 重建失败保留旧索引并持续显示失败状态与重试入口。生产迁移及真实 PostgreSQL 多进程验收仍取决于部署环境。
 - **部署配置**：Docker 构建上下文排除 `.env`，模型目录使用只读挂载；本机没有 Docker 命令，容器构建和除 `027` 外的部署迁移未在本轮验收。
 - **项目总结质量检查**：当前工作区新增标准库检查器、10 项定向测试和 non-blocking GitHub Actions workflow；本地违规仍返回非零，CI 仅用 `continue-on-error` 提示，不作为合并门禁。入口见 [`check_project_summary.py`](scripts/check_project_summary.py) 和 [`project-summary-quality.yml`](.github/workflows/project-summary-quality.yml)。
 - **处理中上传任务删除**：`cancel-inflight-upload-tasks` 扩展上传抽屉和 `DELETE /upload/tasks/{task_id}`：排队任务即时删除，处理中/重试任务先进入持久化 `cancelling`，停止 worker、抑制晚到状态/重试写入并清理残留；worker 限时终止再限时强杀，未退出则保留 `cancelling` 交由轮询/恢复收敛。前端仅在服务端确认删除后移除任务。部署前须执行迁移 `024_upload_task_cancellation.sql`；真实 PostgreSQL 多进程验收仍取决于部署环境。
 
 - **前端导航与首屏性能优化**：`optimize-frontend-navigation-latency` 已纳入集成检查点（未归档）：KB 卡点击即时跳转、图谱/实体按需加载、15s 任务感知轮询、全局 stats 30s TTL 缓存、加载中显示骨架、App.jsx 移除 framer-motion、字体自托管、nginx 不可变缓存。字体依赖安装和生产构建已通过；启动直接链为 483,290 B，相对旧 `dist` 快照下降 14.2%，因快照非同源干净基线且未达到 ≥20%，仍待可比基准和浏览器/nginx 验收。
+- **知识库/智能体空态布局修复**：前端页面仅在加载中或存在当前分页结果时挂载资源卡片网格；零资源、搜索无匹配和列表加载失败直接渲染主内容空态，避免桌面 `1fr` 网格将空态推到底部。未改变五级 RBAC、资源所有权或写操作门控；学生、助教、教师、系部管理员和超级管理员沿用各自可见资源与 CTA 规则。
 - **图片召回与会话摘要 Schema**：`fix-agent-media-deadline-and-summary-schema` 已纳入集成检查点（未归档），实现独立媒体预算、超时保留已验证图片和幂等迁移 `027`；本地 PostgreSQL 已连续执行两次并核验摘要列与部分索引，仍待重启后的真实问答验收。
 - **智能体查询开发日志**：`improve-agent-query-developer-logs` 已纳入集成检查点（未归档），新增按 trace 汇总的 `QUERY_JOURNEY`，稳定展示检索、媒体、模型和持久化阶段；日志仅含受控标签与耗时，仍待真实 SSE 观察。
 
@@ -248,27 +251,30 @@ Current active change `role-aware-frontend-capability-cleanup` is included in th
 
 | 日期 | 任务/change | 类型 | 结果 | 影响范围 | 验证 | 经验/风险 |
 |---|---|---|---|---|---|---|
-| 2026-08-03 | `fix-agent-media-deadline-and-summary-schema` | Bug 修复/迁移 | 媒体阶段改用独立预算并保留已验证图片；迁移 `027` 补齐摘要列和索引 | Agent SSE、受控媒体、`agent_conversations` | 定向测试 86 通过、2 跳过；`027` 连续执行两次；本地 PG 列/索引核验 | 已纳入集成检查点；仍需重启后验证 SSE 图片与摘要持久化 |
-| 2026-08-03 | 智能体检索冷/热请求复核 | 性能排查 | 冷请求初始化+改写耗尽 8s；热请求命中缓存后成功，但 graph 占满预算使 media 超时 | Agent SSE、RRF、图片召回 | 两组日志对照；deadline/RRF 测试 61 项通过 | 无行为变化；热缓存恢复不等于根因消失，缺少组合竞态测试 |
+| 2026-08-04 | 修复 6 个既有测试失败（VLM 快照补桩 + list_kbs 陈旧测试） | Bug 修复/测试 | A 组 3 个：未提交 _resolve_upload_vlm_snapshot 重写依赖 PG，测试按既有模式补桩通过；B 组 3 个：list_kbs 已移除内容更新时间查询（0989d15），就地重写断言 updated_at/created 兜底，并给 stats 批量调用加 try/except 容错（与 knowledge_stats_batch 一致） | raganything/routers/knowledge.py、tests/test_upload_tasks.py、tests/test_chunking_strategy_tracking.py | 6 个定向测试通过；7 个相关套件 119 通过；py_compile 通过 | A 组仅测试补桩，未回退 WIP 重写；B 组行为变更源自 0989d15 有意移除 corpus_revision 当时间戳；test_kb_stats_batch.py 同步 lambda stub 为既有风格未改 |
+| 2026-08-04 | 智能体重排回答失败修复与图谱快照优化 | Bug 修复/性能优化 | 根因：`rerank_chunks` 从未导入，启用重排必 `NameError` 并耗尽 8s 预算致失败；已补导入、失败降级融合顺序、预算不足 1.5s 跳过。GraphRetriever 改查询级快照（一次读节点/边、批量取 chunk、种子上限 20），存储访问由数千次降至 2 次 | raganything/query/pipeline.py、raganything/graph_rag/__init__.py | 新增 13 回归测试全绿；相关 95 通过；py_compile、diff check、ruff（仅余既有 E402）通过 | 重排依赖外部 API，预算守卫仅防截止边界；`RRF_RERANK_MIN_BUDGET_SECONDS`、`GRAPH_MAX_SEED_ENTITIES` 可经 env 覆盖；建议重启后端实测 ；预算 8s→12s |
+| 2026-08-04 | 上传设置快照 NameError 修复 | Bug 修复 | _create_upload_settings_snapshot 新增 permitted_sections 时漏导入 user_settings 模块，运行时 NameError 致上传 500；补齐 available_sections_for_user 局部导入并直接调用 | raganything/routers/knowledge.py、tests/test_upload_tasks.py | 新增定向回归测试通过；test_upload_tasks + test_user_settings_resolution 71 通过；py_compile 通过；5 项既有失败与本次修复无关 | 未提交 RBAC 分权改动中 _resolve_upload_vlm_snapshot 重写、KB 迁移租约与 list_kbs 内容更新另致 5 项既有测试失败，需另行跟进 |
+| 2026-08-04 | 知识库详情页 setCurrentKB 未定义修复 | Bug 修复 | KnowledgeDetailPage.jsx 漏导入 setCurrentKB 致运行时 ReferenceError、页面加载失败；恢复导入并新增 kbApiSourceContract.test.js 源码契约回归 | KnowledgeDetailPage.jsx、kbApiSourceContract.test.js | 前端单测 128/128；用户实测可正常加载；Vite build 受沙箱 esbuild 权限阻塞未实跑 | 详情页两处 setCurrentKB 与 useConfirmedKnowledgeBase 冗余但一致，保持最小修复 |
+| 2026-08-04 | venv 旧路径与 lightrag 缺失修复 | Bug 修复/排查 | .venv 建于 RAG-Anything，目录改名后 activate.bat 等硬编码旧路径，cmd 激活未生效致 python 落到共享 base（缺 lightrag-hku/asyncpg）；已改相对定位并钉 `lightrag-hku==1.4.16` | .venv 激活、cmd 启动、requirements | cmd 激活后 python 指向 .venv，lightrag 1.4.16 导入成功 | 68 个 uv 启动器 exe 仍旧路径，重建 venv 根治；勿向 base 装包 |
+| 2026-08-04 | frontend node_modules 损坏修复（vite 缺失） | Bug 修复 | dev server 运行期间中断的 npm 全量安装被 Windows 文件锁卡住，esbuild.exe/rollup.node 无法替换，node_modules 残留 10 个半解压目录；`npm ci --offline` 按 lock 从本地缓存重建 306 包（vite 5.4.21 恢复） | frontend 依赖树、npm run dev/build | npm ls 无缺失、vite/esbuild 可执行、单测 127/127；沙箱限制 build 未实跑 | 先停 dev server 再 install/ci；离线安装依赖 D:\DevCache\npm 缓存留存 |
+| 2026-08-04 | release integration | 发布整合进行中 | Compose 迁移需显式备份确认；新增 live/ready；恢复保护；HTTP 不暴露 443；真实隔离恢复演练完成 | Compose、Nginx、健康、迁移、恢复、CI | 聚焦 24/24；真实 PG16.3 backup/verify/restore/validate；编译、YAML、OpenSpec、diff 通过 | Docker/staging/TLS 未验；TLS 由批准边缘层提供 |
+| 2026-08-04 | `enforce-personal-settings-capabilities` | RBAC/个人设置、进行中 | 权限投影分区与 API；降级新任务继承默认、旧快照不变；前端在 403 后刷新 | 设置 API、请求/上传、Preferences | pytest 22、前端 124、构建与严格校验通过 | 未做真实 PostgreSQL 降级或登录态浏览器验收 |
 | 2026-08-03 | `optimize-frontend-navigation-latency` | 前端性能优化/集成检查点、进行中 | 消除页面切换闪现与内容延迟：KB 点击即时跳转；图谱按需加载；轮询收敛为可见性+任务感知；stats TTL 缓存；列表骨架；移除 motion/字体自托管与 hover 预取；nginx assets immutable | 前端 App、页面、utils、main/vite、nginx、样式 | 单测 101/101、生产构建、OpenSpec strict、总结检查、diff check 通过；启动链 483,290 B，较旧快照降 14.2% | 旧快照非同源基线，≥20% 未证实；图谱首开骨架；仍需浏览器与 nginx 验收 |
 
 | 2026-08-03 | 五级 RBAC 分级隔离验证与修复（harden-rbac-isolation） | 安全审计+修复 | 完成角色等级约束、目录白名单、会话/工作流/视觉设置/KB 删除守卫、前端页面门控及矩阵测试 | RBAC、API、知识库、前端门控 | 五角色 API 24/24；新增 39、后端定向 70、前端 81；py_compile、OpenSpec、diff check 通过；Vite build 受环境权限阻塞 | /ws 广播过滤、最后 super_admin 保护、student 汽修问答权限、AuthContext 快照仍有残留风险 |
 | 2026-08-03 | 时间显示与上传时区修复 | Bug 修复 | KB 列表不再将 corpus revision 当时间戳；KB/文档/用户时间统一 UTC-aware 与 `formatDate`；迁移 `026` 移除触发器 | 知识库、文档、用户时间、迁移 026 | KB 定向 68+3、前端 73、JSX、diff check 通过；Vite build 受权限阻塞 | `agent.py` 缓存键仍为版本号；部署前执行迁移 026 |
-| 2026-07-31 | `restore-agent-query-latency` | 性能修复/进行中 | 已补齐无内容阶段计时、改写/VLM 路径隐私日志、revision 感知 query-core 获取、标准/tag/CoT/ReAct/媒体路径共用 deadline 与租约感知 SSE 清理；确定性基准覆盖 acquire、检索、媒体、SSE 边界 | Agent SSE、KB cache、query pipeline、RRF/BM25、受控媒体 | 定向 pytest 96 通过、1 个弃用警告；OpenSpec strict、`py_compile`、`git diff --check`、总结检查通过；受控重启后健康 200；5.2 受控验收 21/21 HTTP 200 且 done+token、P95 23.12s、query-core 1 miss/20 hit，日志无查询/SSE 内容/标识符/凭据/主机；RRF 后枚举全图致约 71s 尾延迟已改 context-only 返回并覆盖慢来源取消与来源标签回归 | 5.2 真实 SSE 会向外部 provider 发送检索上下文与派生 prompt，尚无外发授权；确定性基准不得作为生产 provider 测量 |
-| 2026-07-30 | 上传/租约/模型预检多项修复（7 项合并） | 数据库/队列/Bug 修复 | 迁移 ``023`` 补齐上传恢复租约列并绑定 TTL；worker 预检与 LLM 模型回退按统一 KB 工厂契约修复；``cancel-inflight-upload-tasks`` 增加可取消队列；图片理解模型名称显示实际模型；PDF OCR 兜底按页持久化；详见 ``openspec/changes/archive/`` 与 Git 历史 | 上传 API、worker、``uploaded_files``、迁移 ``023``/``024``、模型目录、PDF OCR | 各单项定向测试当时通过；合并记录以 Git/OpenSpec 归档为准 | 生产启用前必须执行迁移 ``023``/``024`` |
-| 2026-07-31 | 上传租约与完成状态加固 | Bug 修复/运行验证 | 配额租约允许原 owner 未接管时续期；Worker 将真实租约丢失或心跳异常标为可重试 `quota` 错误；完成回写按显式任务元数据匹配并在缓存未同步时直读 PG，避免 `processed_document_status_missing` 误失败 | `user_settings.py`、`process_worker.py`、`kb_service.py`、上传状态和自动标签 | 定向 pytest 38 通过、静态检查/OpenSpec 严格校验通过；后端重启健康；保留的 39 页 PDF 受控重试后完成，37 块、页 32-39 文本逐页命中、标签任务完成（36/36 可标注块） | 不把内部 `track_id` 当作队列任务 ID；延迟心跳必须由 ID+owner 围栏判断，跨进程完成状态以 PG 为准 |
-| 2026-07-31 | 上传外网恢复与 ODL 结果契约修复 | Bug 修复/运行恢复 | Embedding 瞬时连接失败按持久作业重试；后端在具备模型网络权限的环境恢复后自动完成原任务。ODL 输出根目录先绝对化，`PageTrackedContent` 接收并保存 `provenance_ref`，消除转换成功后的路径与构造异常 | 上传预检/自动重试、`opendataloader_parser.py`、`office_parser.py` | DashScope 最小 Embedding 1024 维；ODL 3 页 3/3、39 页 37/37 文本向量、0 空向量、标签 36/36、末页 99.4%+ 相似；后端健康 200 | 外部服务故障不得绕过预检；持久重试依赖存活的后端调度器；文本 Embedding 尚未进入不可变任务快照，后续需消除重试期间配置漂移风险 |
-| 2026-08-03 | 视觉模型名称与栏目用途核验 | UI 优化/说明 | 设置下拉显示纯 model 名称；视觉向量栏目选择 KB 图片相似检索档案，不负责 OCR/图片理解；相同模型不重复应用；编辑入口归属知识库页 | 设置页、KB 详情、视觉索引 | 原改动单测 67 项及 Vite build 通过；本次定向核验前端状态、目录能力和图片搜索端点 | 保留 API 契约；切换档案需按 KB 重建索引；本次无行为变化 |
-| 2026-07-31 | 知识库问答失败、提示闪退与推理卡死修复 | Bug 修复/运行操作 | 补齐请求设置快照与 `get_kb` 初始化；解除纯文本对 VLM 的错误依赖；修复 SSE token/done/error、检索总时限和断连回收 | Agent SSE、KB cache、query pipeline、RRF/BM25、前端问答 | 后端定向 64+终止链路 55、前端 67、Vite build、py_compile、diff check 通过 | 图片问答仍要求 VLM；外部 provider 需授权；上传重试依赖后端恢复 |
-| 2026-08-01 | `consolidate-frontend-streaming-client` | 冗余治理/集成检查点、进行中 | Agent/AutoRepair SSE 统一共享认证传输；删除未发现且含硬编码凭据的 `test_autorepair_api.py`；API、RBAC、数据库模式不变 | 前端 API 工具、两个问答页 | 单测 119/119、生产构建通过；任务仍保持未归档 | 凭据如仍有效需外部撤销/轮换 |
 | 2026-08-03 | `role-aware-frontend-capability-cleanup` | 前端 RBAC 能力收敛 / 集成检查点、active | 普通角色页面仅挂载实际可执行操作；无权直达路由按知识库、智能体、汽修、工作流、监控、平台设置顺序静默回退；知识库详情/切块页先确认 KB；汽修空列表不再伪造 autorepair | 前端 App、路由、知识库、智能体、工作流、监控、平台、汽修 | 前端单测 119/119；Vite build 沙箱外通过；RBAC/AutoRepair 定向 66 通过；Admin monitor 9 通过/1 个既有 FakeCache 失败；OpenSpec strict、总结检查、diff check 通过；无 Playwright/Chromium，1440/390 与键盘仅源码/服务器契约检查 | 保留既有 optimize-frontend-navigation-latency 脏工作；未改后端权限矩阵、API 或迁移 |
 | 2026-08-03 | 智能体检索参数兼容修复与复测 | Bug 修复/运行验收 | QueryMixin 剥离 RRF 专用参数；24 项保存回读、五种检索模式、三种推理模式及重排/引用开关均完成 | Agent SSE、QueryMixin、SearchTool | 真实 API/SSE 复测；定向 pytest 28 通过 | 原生检索模式不应用个人 RRF 选项；已提交 |
 | 2026-08-03 | `improve-agent-query-developer-logs` | 开发可观测性/集成检查点 | 新增一次性 `QUERY_JOURNEY` 终态汇总，稳定聚合检索、媒体、模型和持久化阶段 | Agent timing、RRF/Agentic 检索日志 | 定向及回归 93 通过、1 跳过；`py_compile`、strict OpenSpec、diff check 通过 | 未重启后端做真实 SSE 观察；非法 trace 使用安全别名 |
 
 ## 11. 历史里程碑
 
+- **2026-07-31 `restore-agent-query-latency`（性能修复）**：共用 deadline 与租约感知 SSE 清理；RRF 尾延迟 71s 已改 context-only 返回。
+- **2026-08-01 `consolidate-frontend-streaming-client`（冗余治理）**：SSE 统一共享认证传输；删除含硬编码凭据的测试文件。
+- **2026-08-03 智能体检索冷/热请求复核（性能排查）**：冷请求初始化+改写耗尽 8s；graph 通道占满预算。
 - **2026-07-31 repository redundancy governance**: `remove-legacy-upload-runtime-paths`, `remove-legacy-client-paths`, and `harden-repository-hygiene` are complete in the uncommitted worktree. Focused backend validation: 130 passed, 2 skipped; compatibility: 17 passed, 6 skipped; frontend: 68 passed and production build passed. Mirror check, strict OpenSpec validation, and `git diff --check` passed.
 - **2026-07-31 audit/plan**: Read-only; no behavior change. Isolate credentials/legacy entries, unify HTTP, then archive evidence-backed artifacts.
+- **2026-07-31 upload robustness & recovery**：迁移 `023/024` 补齐租约与可取消队列；worker 按显式任务元数据预检、模型回退、PDF OCR 兜底与完成回写；Embedding 瞬时失败按持久作业重试、环境恢复后自动完成；ODL 输出根目录绝对化并携带 `provenance_ref`。39 页受控重试通过、37/37 文本向量、标签 36/36；生产启用前执行 `023/024`。
 - **2026-07**：完成智能体会话上下文升级、视频/多模态处理、文档质量/标签/修复/上传重试、评估流水线和 OpenDataLoader 集成；个人设置与视觉能力继续迭代。
 - **详细历史**：优先查看 Git 提交与 [`openspec/changes/archive/`](openspec/changes/archive/)；[`CHANGELOG.md`](CHANGELOG.md) 仅覆盖较早阶段。
 
