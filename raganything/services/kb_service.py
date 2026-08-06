@@ -44,6 +44,14 @@ from raganything.embedding import (
     create_vision_embed_func,
     make_cached_embed_func,
 )
+from raganything.embedding.identity import (
+    embedding_identity_from_settings,
+    text_embedding_identity_from_environment,
+)
+from raganything.services.pg_embedding_identity import (
+    assert_workspace_override,
+    ensure_kb_embedding_identity,
+)
 from raganything.chunking import (
     recursive_chunking,
     sentence_chunking,
@@ -118,8 +126,7 @@ def _query_core_compatibility_fingerprint(
     vision_state = vision_state or {}
     payload = {
         "layout": os.getenv("LIGHTRAG_STORAGE_LAYOUT_VERSION", "default"),
-        "embedding_model": EMB_MODEL,
-        "embedding_dimension": EMB_DIM,
+        "embedding_identity": text_embedding_identity_from_environment(),
         "vector_backend": os.getenv("LIGHTRAG_VECTOR_STORAGE", "default"),
         "graph_backend": os.getenv("LIGHTRAG_GRAPH_STORAGE", "default"),
         "doc_status_backend": os.getenv("LIGHTRAG_DOC_STATUS_STORAGE", "default"),
@@ -3058,8 +3065,9 @@ async def create_rag(
     # 下次 create_rag() 调用自动获得最新值。
     _llm_model = os.getenv("LLM_MODEL", "qwen-plus")
     _vision_model = os.getenv("VISION_MODEL", "qwen-vl-plus")
-    _emb_model = os.getenv("EMBEDDING_MODEL", "text-embedding-v3")
-    _emb_dim = int(os.getenv("EMBEDDING_DIM", "1024"))
+    embedding_identity = embedding_identity_from_settings(task_settings) if task_settings is not None else text_embedding_identity_from_environment()
+    _emb_model = str(embedding_identity["model"])
+    _emb_dim = int(embedding_identity["dimension"])
     _api_key = os.getenv("LLM_BINDING_API_KEY")
     _base_url = os.getenv("LLM_BINDING_HOST")
 
@@ -3120,11 +3128,14 @@ async def create_rag(
 
     # Wrap with local persistent cache to avoid redundant API calls.
     # Same entity/relation names across chunks → instant cache hits.
-    _cached_embed_func = make_cached_embed_func(_raw_embed_func, wd, _emb_model)
+    _cached_embed_func = make_cached_embed_func(
+        _raw_embed_func, wd, str(embedding_identity["model_name"])
+    )
 
     embedding_func = EmbeddingFunc(
         embedding_dim=_emb_dim, max_token_size=8192,
         func=_cached_embed_func,
+        model_name=str(embedding_identity["model_name"]),
     )
 
     def _env_int(key: str, default: int, min_val: int = 1, max_val: int = 100) -> int:
@@ -3348,6 +3359,9 @@ async def create_rag(
     # Pass the working directory as the workspace so each KB has its
     # own isolated PG data partition.
     lightrag_kwargs["workspace"] = wd
+    assert_workspace_override(wd)
+    if _use_pg_backends:
+        await ensure_kb_embedding_identity(wd, embedding_identity)
 
     rag = RAGAnything(config=config, llm_model_func=llm_func,
                       vision_model_func=vision_func, embedding_func=embedding_func,
@@ -4977,8 +4991,12 @@ async def _process_uploaded_file(
     # The worker is deliberately driven by the enqueue-time PG snapshot.  A
     # missing snapshot is a deterministic failure, not permission to use
     # process environment or changed user preferences.
-    from raganything.services.user_settings import get_task_settings_snapshot
+    from raganything.services.user_settings import (
+        get_task_settings_snapshot,
+        load_task_text_embedding_identity,
+    )
     snapshot = await get_task_settings_snapshot(task_id)
+    embedding_identity = load_task_text_embedding_identity(snapshot)
     ingestion = (snapshot.get("settings") or {}).get("ingestion") or {}
     actual_strategy = ingestion.get("chunking_strategy")
     if not isinstance(actual_strategy, str) or not actual_strategy:
@@ -4997,6 +5015,7 @@ async def _process_uploaded_file(
         "chunking_strategy": actual_strategy,
         "settings_revision": snapshot.get("revision"),
         "settings_fingerprint": snapshot.get("fingerprint"),
+        "embedding_identity": embedding_identity.get("identity_hash"),
     }
     await upsert_task_state(task_id, task_data)
     await add_event("upload_start", file=filename, task_id=task_id, user_id=user_id)

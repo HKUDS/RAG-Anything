@@ -700,6 +700,12 @@ async def create_task_settings_snapshot(task_id: str, user_id: int, resolved: Re
 
     pool = get_pg_pool()
     payload = resolved.snapshot()
+    from raganything.embedding.identity import text_embedding_identity_from_environment
+
+    # The text embedding provider is not part of user-editable model settings,
+    # but it must be frozen at the same enqueue boundary as every other
+    # processing dependency.  The identity contains no credential or full URL.
+    payload["text_embedding_identity"] = text_embedding_identity_from_environment()
     llm_entry = require_available(resolved.models.llm_profile_id, "llm")
     vlm_entry = require_available(resolved.models.vlm_profile_id, "vlm")
     profile_ids = {
@@ -737,13 +743,27 @@ async def get_task_settings_snapshot(task_id: str) -> dict[str, Any]:
         )
     if row is None:
         raise RuntimeError("settings_snapshot_missing")
+    settings = _json_object(row["settings"])
     return {
         "user_id": int(row["user_id"]),
         "revision": int(row["revision"]),
         "fingerprint": row["fingerprint"],
         "profile_ids": _json_object(row["profile_ids"]),
-        "settings": _json_object(row["settings"]),
+        "settings": settings,
     }
+
+
+def load_task_text_embedding_identity(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Return the strict text identity from a durable task snapshot."""
+    if not isinstance(snapshot, dict):
+        raise RuntimeError("settings_snapshot_invalid")
+    from raganything.embedding.identity import load_text_embedding_identity
+
+    return load_text_embedding_identity(
+        (snapshot.get("settings") or {}).get("text_embedding_identity")
+        if isinstance(snapshot.get("settings"), dict)
+        else None
+    )
 
 
 async def acquire_quota_lease(
