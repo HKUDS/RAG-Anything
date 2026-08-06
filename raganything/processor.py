@@ -32,6 +32,15 @@ from lightrag.utils import compute_mdhash_id
 class ProcessorMixin:
     """ProcessorMixin class containing document processing functionality for RAGAnything"""
 
+    @staticmethod
+    def _file_content_fingerprint(file_path: Path) -> str:
+        """Return a streaming SHA-256 fingerprint for parse-cache identity."""
+        digest = hashlib.sha256()
+        with file_path.open("rb") as file_obj:
+            for chunk in iter(lambda: file_obj.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
     def _get_file_reference(self, file_path: str) -> str:
         """
         Get file reference based on use_full_path configuration.
@@ -51,7 +60,7 @@ class ProcessorMixin:
         self, file_path: Path, parse_method: str = None, **kwargs
     ) -> str:
         """
-        Generate cache key based on file path and parsing configuration
+        Generate cache key based on file content, path, and parsing configuration
 
         Args:
             file_path: Path to the file
@@ -69,6 +78,7 @@ class ProcessorMixin:
         config_dict = {
             "file_path": str(file_path.absolute()),
             "mtime": mtime,
+            "file_sha256": self._file_content_fingerprint(file_path),
             "parser": self.config.parser,
             "parse_method": parse_method or self.config.parse_method,
         }
