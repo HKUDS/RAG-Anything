@@ -31,6 +31,7 @@ The change must preserve completed data, avoid secret exposure, and make incompa
    - Legacy rows block KB initialization, including the startup warm-up path (`get_kb`), surfacing `embedding_legacy_storage_incompatible`; this fail-closed behavior matches the spec, and inventory plus explicit cutover is the operator path (Migration Plan step 3).
    - Out of scope for this change: mixed-identity detection for suffixed tables with no registration is deferred to an explicit audited migration; a registered identity conflict is already covered by `embedding_identity_conflict`.
    - The diagnostic endpoint `read_embedding_identity_diagnostics` must discover tables case-insensitively (`ILIKE`) and compare legacy names case-insensitively.
+   - Implementation note: read paths that count or select vectors (content readiness, failed-residue cleanup) must resolve the physical vector chunk table via `resolve_vector_chunk_table` — case-insensitive `pg_class` lookup that returns the real (lowercase) relname, identity-suffixed preferred and legacy fallback — because PostgreSQL folds LightRAG's unquoted DDL identifiers to lowercase and the suffixed tables are the active storage.
 6. **Read-only diagnostics.** Provide an admin-only, read-only health check that discovers actual LightRAG vector tables from `pg_catalog`, reports model suffix/identity, dimensions, index definitions and sizes, per-workspace counts, and anomalies without DSNs, paths, or stack traces.
 
 ## Risks / Trade-offs

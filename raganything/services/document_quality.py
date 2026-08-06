@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import json
 import re
 from pathlib import Path
 from typing import Any
+
+_logger = logging.getLogger(__name__)
 
 _PATH_SUFFIXES = {
     ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tif", ".tiff",
@@ -75,16 +78,24 @@ async def evaluate_content_readiness(
         # PG pool.  JSON/NanoVectorDB deployments use the local vector file.
         pg_checked = False
         try:
+            from raganything.services.pg_embedding_identity import resolve_vector_chunk_table
             from raganything.services.pg_state_repo import get_pg_pool
 
             pool = get_pg_pool()
             workspace = "./rag_storage" if kb_name == "default" else f"./rag_storage_{kb_name}"
-            rows = await pool.fetch(
-                "SELECT id FROM LIGHTRAG_VDB_CHUNKS WHERE workspace=$1 AND id=ANY($2::text[])",
-                workspace, list(expected),
-            )
-            vector_ids = {str(row["id"]) for row in rows}
-            pg_checked = True
+            chunk_table = await resolve_vector_chunk_table(pool, workspace)
+            if chunk_table is None:
+                _logger.warning(
+                    "vector chunk table not found: kb=%s workspace=%s",
+                    kb_name, workspace,
+                )
+            else:
+                rows = await pool.fetch(
+                    f'SELECT id FROM "{chunk_table}" WHERE workspace=$1 AND id=ANY($2::text[])',
+                    workspace, list(expected),
+                )
+                vector_ids = {str(row["id"]) for row in rows}
+                pg_checked = True
         except Exception:
             pg_checked = False
 
@@ -174,10 +185,14 @@ async def cleanup_failed_invalid_residue(
                 workspace, doc_id,
             )
             chunk_ids = [str(row["id"]) for row in chunks]
-            vector_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM LIGHTRAG_VDB_CHUNKS WHERE workspace=$1 AND full_doc_id=$2",
-                workspace, doc_id,
-            )
+            from raganything.services.pg_embedding_identity import resolve_vector_chunk_table
+            chunk_table = await resolve_vector_chunk_table(conn, workspace)
+            vector_count = 0
+            if chunk_table is not None:
+                vector_count = await conn.fetchval(
+                    f'SELECT COUNT(*) FROM "{chunk_table}" WHERE workspace=$1 AND full_doc_id=$2',
+                    workspace, doc_id,
+                )
             actual_vectors = int(vector_count or 0)
             if require_zero_vectors and actual_vectors != 0:
                 raise ValueError("document has chunk vectors and is not invalid residue")
@@ -189,15 +204,19 @@ async def cleanup_failed_invalid_residue(
                 raise ValueError("document content is not entirely path placeholders")
 
             counts: dict[str, int] = {}
-            for table, sql, args in (
+            delete_operations = [
                 ("chunk_tag_assignments", "DELETE FROM chunk_tag_assignments WHERE kb_name=$1 AND document_id=$2", (kb_name, doc_id)),
                 ("document_tag_jobs", "DELETE FROM document_tag_jobs WHERE kb_name=$1 AND doc_id=$2", (kb_name, doc_id)),
                 ("document_repair_jobs", "DELETE FROM document_repair_jobs WHERE kb_name=$1 AND doc_id=$2", (kb_name, doc_id)),
-                ("vdb_chunks", "DELETE FROM LIGHTRAG_VDB_CHUNKS WHERE workspace=$1 AND full_doc_id=$2", (workspace, doc_id)),
                 ("doc_chunks", "DELETE FROM LIGHTRAG_DOC_CHUNKS WHERE workspace=$1 AND full_doc_id=$2", (workspace, doc_id)),
                 ("doc_full", "DELETE FROM LIGHTRAG_DOC_FULL WHERE workspace=$1 AND id=$2", (workspace, doc_id)),
                 ("doc_status", "DELETE FROM LIGHTRAG_DOC_STATUS WHERE workspace=$1 AND id=$2", (workspace, doc_id)),
-            ):
+            ]
+            if chunk_table is not None:
+                delete_operations.append(
+                    ("vdb_chunks", f'DELETE FROM "{chunk_table}" WHERE workspace=$1 AND full_doc_id=$2', (workspace, doc_id))
+                )
+            for table, sql, args in delete_operations:
                 result = await conn.execute(sql, *args)
                 counts[table] = int(result.split()[-1])
 

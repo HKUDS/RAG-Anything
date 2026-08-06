@@ -12,11 +12,13 @@ from raganything.services.pg_embedding_identity import ensure_kb_embedding_ident
 
 
 class _IdentityConnection:
-    def __init__(self, *, tables=None, table_rows=None, registry_row=None):
+    def __init__(self, *, tables=None, table_rows=None, registry_row=None,
+                 existing_tables=None):
         # tables: requested vector table name -> actual table name or None
         self.tables = dict(tables or {})
         self.table_rows = dict(table_rows or {})
         self.registry_row = registry_row
+        self.existing_tables = set(existing_tables or ())
         self.executed = []
         self.queries = []
 
@@ -27,6 +29,12 @@ class _IdentityConnection:
             return None if actual is None else {"table_name": actual}
         if "kb_text_embedding_identities" in sql:
             return self.registry_row
+        if "pg_catalog.pg_class" in sql:
+            requested = str(_args[0]).lower()
+            for physical in self.existing_tables:
+                if physical.lower() == requested:
+                    return {"relname": physical}
+            return None
         raise AssertionError(f"unexpected query: {sql}")
 
     async def fetchval(self, sql, *_args):
@@ -279,3 +287,111 @@ async def test_kb_identity_registration_matches_actual_table_name_case_insensiti
     assert not any("INSERT INTO kb_text_embedding_identities" in sql for sql, _ in connection.executed)
     info = next(sql for _m, sql, _a in connection.queries if "information_schema.tables" in sql)
     assert "lower(t.table_name)=lower($1)" in info
+
+
+@pytest.mark.asyncio
+async def test_resolve_vector_chunk_table_prefers_identity_suffixed_table():
+    from raganything.services.pg_embedding_identity import resolve_vector_chunk_table
+
+    identity = canonical_text_embedding_identity(
+        provider="provider", model="model", dimension=8, endpoint_semantics="host/v1"
+    )
+    physical = f"lightrag_vdb_chunks_{identity['model_name']}_8d"
+    connection = _IdentityConnection(
+        registry_row={"identity": json.dumps(dict(identity), sort_keys=True)},
+        existing_tables={physical, "lightrag_vdb_chunks"},
+    )
+
+    table = await resolve_vector_chunk_table(connection, "./rag_storage_kb-a")
+
+    assert table == physical
+    assert any("SELECT identity FROM kb_text_embedding_identities" in sql
+               for _m, sql, _a in connection.queries)
+
+
+@pytest.mark.asyncio
+async def test_resolve_vector_chunk_table_matches_lowercase_physical_table():
+    from raganything.services.pg_embedding_identity import resolve_vector_chunk_table
+
+    identity = canonical_text_embedding_identity(
+        provider="provider", model="model", dimension=8, endpoint_semantics="host/v1"
+    )
+    # LightRAG DDL is unquoted, so PostgreSQL stores the physical name in
+    # lowercase even though the candidate is requested in upper case.
+    physical = f"lightrag_vdb_chunks_{identity['model_name']}_8d"
+    connection = _IdentityConnection(
+        registry_row={"identity": json.dumps(dict(identity), sort_keys=True)},
+        existing_tables={physical},
+    )
+
+    table = await resolve_vector_chunk_table(connection, "./rag_storage_kb-a")
+
+    assert table == physical
+
+
+@pytest.mark.asyncio
+async def test_resolve_vector_chunk_table_falls_back_to_legacy_without_registration():
+    from raganything.services.pg_embedding_identity import resolve_vector_chunk_table
+
+    connection = _IdentityConnection(existing_tables={"lightrag_vdb_chunks"})
+
+    table = await resolve_vector_chunk_table(connection, "./rag_storage_kb-a")
+
+    assert table == "lightrag_vdb_chunks"
+
+
+@pytest.mark.asyncio
+async def test_resolve_vector_chunk_table_falls_back_to_legacy_when_suffixed_missing():
+    from raganything.services.pg_embedding_identity import resolve_vector_chunk_table
+
+    identity = canonical_text_embedding_identity(
+        provider="provider", model="model", dimension=8, endpoint_semantics="host/v1"
+    )
+    connection = _IdentityConnection(
+        registry_row={"identity": json.dumps(dict(identity), sort_keys=True)},
+        existing_tables={"lightrag_vdb_chunks"},
+    )
+
+    table = await resolve_vector_chunk_table(connection, "./rag_storage_kb-a")
+
+    assert table == "lightrag_vdb_chunks"
+
+
+@pytest.mark.asyncio
+async def test_resolve_vector_chunk_table_falls_back_after_invalid_identity_json():
+    from raganything.services.pg_embedding_identity import resolve_vector_chunk_table
+
+    connection = _IdentityConnection(
+        registry_row={"identity": "{not-valid-json"},
+        existing_tables={"lightrag_vdb_chunks"},
+    )
+
+    table = await resolve_vector_chunk_table(connection, "./rag_storage_kb-a")
+
+    assert table == "lightrag_vdb_chunks"
+
+
+@pytest.mark.asyncio
+async def test_resolve_vector_chunk_table_parses_string_dimension():
+    from raganything.services.pg_embedding_identity import resolve_vector_chunk_table
+
+    physical = "lightrag_vdb_chunks_provider_model_abc_1024d"
+    connection = _IdentityConnection(
+        registry_row={"identity": {"model_name": "provider_model_abc", "dimension": "1024"}},
+        existing_tables={physical},
+    )
+
+    table = await resolve_vector_chunk_table(connection, "./rag_storage_kb-a")
+
+    assert table == physical
+
+
+@pytest.mark.asyncio
+async def test_resolve_vector_chunk_table_returns_none_when_no_table_exists():
+    from raganything.services.pg_embedding_identity import resolve_vector_chunk_table
+
+    connection = _IdentityConnection(registry_row={"identity": {}})
+
+    table = await resolve_vector_chunk_table(connection, "./rag_storage_kb-a")
+
+    assert table is None

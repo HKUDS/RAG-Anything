@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any, Mapping
 
 from raganything.services.pg_state_repo import get_pg_pool
+
+_SAFE_TABLE_NAME = re.compile(r"^[A-Za-z0-9_]+$")
 
 VECTOR_TABLES = (
     "LIGHTRAG_VDB_CHUNKS",
@@ -115,4 +118,60 @@ async def read_embedding_identity_diagnostics(*, pool=None) -> dict[str, Any]:
     }
 
 
-__all__ = ["assert_workspace_override", "ensure_kb_embedding_identity", "read_embedding_identity_diagnostics"]
+async def _resolve_existing_table(pool, table_name: str) -> str | None:
+    """Return the physical name of a public table, case-insensitively.
+
+    PostgreSQL folds unquoted DDL identifiers to lowercase, so the requested
+    name must be matched with lower() and the real relname returned.
+    """
+    row = await pool.fetchrow(
+        "SELECT c.relname FROM pg_catalog.pg_class c "
+        "JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace "
+        "WHERE n.nspname='public' AND lower(c.relname)=lower($1) AND c.relkind='r' "
+        "LIMIT 1",
+        table_name,
+    )
+    return None if row is None else str(row["relname"])
+
+
+async def resolve_vector_chunk_table(pool, workspace: str) -> str | None:
+    """Return the vector chunk table that stores rows for a workspace.
+
+    The identity-suffixed table is preferred when the workspace has a
+    registered embedding identity; the legacy unsuffixed table is the
+    fallback.  Returns None when neither table exists.
+    """
+    row = await pool.fetchrow(
+        "SELECT identity FROM kb_text_embedding_identities WHERE workspace=$1",
+        workspace,
+    )
+    if row is not None:
+        identity = row["identity"]
+        if isinstance(identity, str):
+            try:
+                identity = json.loads(identity)
+            except (TypeError, ValueError):
+                identity = None
+        if isinstance(identity, Mapping):
+            model_name = str(identity.get("model_name") or "").strip()
+            try:
+                dimension = int(identity.get("dimension") or 0)
+            except (TypeError, ValueError):
+                dimension = 0
+            if model_name and dimension > 0:
+                candidate = f"LIGHTRAG_VDB_CHUNKS_{model_name}_{dimension}d"
+                physical = await _resolve_existing_table(pool, candidate)
+                if physical is not None and _SAFE_TABLE_NAME.fullmatch(physical):
+                    return physical
+    physical = await _resolve_existing_table(pool, "LIGHTRAG_VDB_CHUNKS")
+    if physical is not None and _SAFE_TABLE_NAME.fullmatch(physical):
+        return physical
+    return None
+
+
+__all__ = [
+    "assert_workspace_override",
+    "ensure_kb_embedding_identity",
+    "read_embedding_identity_diagnostics",
+    "resolve_vector_chunk_table",
+]
