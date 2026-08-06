@@ -84,7 +84,7 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 - **前端导航与首屏性能优化**：`optimize-frontend-navigation-latency` 未归档，详见 2026-08-03 记录；启动链 483,290 B，较旧快照降 14.2%（非同源基线未达 ≥20%，待浏览器/nginx 验收）。
 - **知识库/智能体空态布局修复**：前端页面仅在加载中或存在当前分页结果时挂载资源卡片网格；零资源、搜索无匹配和列表加载失败直接渲染主内容空态，避免桌面 `1fr` 网格将空态推到底部。未改变五级 RBAC、资源所有权或写操作门控；学生、助教、教师、系部管理员和超级管理员沿用各自可见资源与 CTA 规则。
 - **图片召回与会话摘要 Schema**：`fix-agent-media-deadline-and-summary-schema` 已纳入集成检查点（未归档），实现独立媒体预算、超时保留已验证图片和幂等迁移 `027`；本地 PostgreSQL 已连续执行两次并核验摘要列与部分索引，仍待重启后的真实问答验收。
-- **视频语义分段索引**：进行中；新视频固定 v2、中文分段、无页码空块；legacy 处理器/整段模板退役，遗留未完成任务取消或以 `video_profile_retired` 失败，历史成品不回填。段字数回写且重试不累计；帧短暂不可读重试，持续失败以可重试 `video_frame_encode_failed` 输出，不走 Docling/OCR 兜底或误报完成。批量以完整任务 ID 隔离暂存，逐文件稳定序号并区分重复跳过/注册失败、清理未入队文件。聚焦 151 通过、2 跳过；真实 Worker/PG 待验收。
+- **视频语义分段索引**：进行中；新视频固定 v2、中文分段、无页码空块；legacy 处理器/整段模板退役，遗留未完成任务取消或以 `video_profile_retired` 失败，历史成品不回填。段字数回写且重试不累计；帧短暂不可读重试，持续失败以可重试 `video_frame_encode_failed` 输出，不走 Docling/OCR 兜底或误报完成。批量以完整任务 ID 隔离暂存，逐文件稳定序号并区分重复跳过/注册失败、清理未入队文件。聚焦 151 通过、2 跳过；真实 Worker/PG 待验收。v2 索引吞吐优化已落地（`optimize-video-index-throughput`）：新增阶段耗时指标（`video_v2_metrics`/`video_v2_segment_metrics`）、`VIDEO_SEGMENT_CONCURRENT`（默认 2、上限 4）受控并发处理独立片段、按片段序号确定性写入、v2 延迟整文档落盘消除逐块 JSON 全量重写。
 
 ### 计划与待收敛 OpenSpec
 
@@ -246,6 +246,7 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 
 | 日期 | 任务/change | 类型 | 结果 | 影响范围 | 验证 | 经验/风险 |
 |---|---|---|---|---|---|---|
+| 2026-08-06 | `optimize-video-index-throughput` | 性能/OpenSpec、进行中 | v2 视频分段阶段耗时指标（探测/抽帧/ASR/场景/VLM/抽取/PG/总耗时，含失败 `failed=true`）；`VIDEO_SEGMENT_CONCURRENT`（默认 2、上限 4）受控并发处理独立片段；并发结果按 `segment.index` 归位，PG/`chunk_ids`/`chunk_results` 确定性顺序；`_create_entity_and_chunk` 新增 `defer_flush`/`defer_extraction`（默认行为不变），v2 延迟到整文档 `_insert_done()` 落盘。 | 视频处理器、modalprocessors/base、config、env.example、相关 tests | 聚焦 104 通过、2 跳过；`py_compile`、OpenSpec strict、`git diff --check` 通过 | 评审/测试子代理曾因项目铁律递归派生子代理失控，已中断并由协调者自审补位；`test_callbacks.py::test_process_document_emits_callbacks` 为既有 doc_processor PDF 路径失败，与本次无关；真实 Worker/PG 时长收益与检索验收待部署验证。 |
 | 2026-08-06 | 上传/分页 | UI | 上传折叠；10条/页、分页居中。 | 详情 | 单测/构建 | UI |
 | 2026-08-06 | v2 视频帧/批量反馈 | Bug/OpenSpec、进行中 | 帧短暂不可读重试；持续失败为可重试 `video_frame_encode_failed`，Worker 不再经 Docling/OCR 兜底或误报完成；批量注册失败返回逐文件错误；已启用只读上传监控。 | 视频、Worker、上传 | 聚焦 151 通过、2 跳过；编译、strict、总结、diff 通过 | 重启后生效；未改写历史任务，真实 Worker/PG 新上传待验收。 |
 | 2026-08-05 | `fix-kb-card-update-time` | Bug/OpenSpec、进行中 | 列表新增 `last_updated_at`，兼容旧字段；卡片/排序优先新字段。`031` 移除遗留触发器，并对重复时间按终态上传/语料提交最佳可得回填。 | KB 列表、卡片、迁移 | 后端 17 通过、PG 1 跳过；前端 155/155、构建、OpenSpec strict 通过 | 现网须在备份和预览后确认 `026`/`031`；历史设置时间无法精确恢复。 |
@@ -299,8 +300,18 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 - Focused identity/settings/Worker/KB tests: 51 passed; `py_compile` and
   `git diff --check` passed. OpenSpec strict validation passes for this change;
   repository-wide validation still reports three unrelated pre-existing changes.
-- Real PostgreSQL two-KB chunk/entity/relation isolation, Worker upload, and
-  full pytest remain pending live-environment acceptance.
+- Real PostgreSQL Worker upload acceptance passed 2026-08-06: fresh scratch KB
+  upload runs the worker to `completed` (entity-extraction -> graph-building),
+  registers the workspace identity with the environment hash, writes
+  chunks/entities/relations into the identity-suffixed vector tables only
+  (`lightrag_vdb_chunks_openai_compa_639985a6e4b87473_1024d` etc.), and the
+  automatic tagging content-readiness gate passes. `evaluate_content_readiness`
+  and `cleanup_failed_invalid_residue` now resolve the physical vector chunk
+  table via `resolve_vector_chunk_table` (case-insensitive `pg_class` lookup
+  returning the real lowercase relname, identity-suffixed preferred, legacy
+  fallback) instead of the hard-coded unsuffixed `LIGHTRAG_VDB_CHUNKS`;
+  focused tests 116 passed, `py_compile`/`git diff --check` clean. Full pytest
+  still blocked by unrelated PG-pool setup tests.
 - 2026-08-06 崩溃修复与本地验收（并入本 change）：`_legacy_rows` 改为
   information_schema 大小写不敏感存在性 + workspace 列检查，缺表/缺列返回 0
   不中止事务（原带引号大写查询无法发现小写 legacy 表，缺表时吞错后事务被
@@ -317,3 +328,26 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 - 根因（已实测复现）：`ensure_kb_embedding_identity` 在事务内用带引号大写 `"LIGHTRAG_VDB_*"` 做 legacy 计数；LightRAG 实际以小写未引号建表，该查询必然 `UndefinedTableError`，被 `_legacy_rows` 吞掉但 PostgreSQL 已把整个事务标记为 aborted，第二条 COUNT 即抛 `InFailedSQLTransactionError` 上抛。
 - 附带：迁移 `032`（`kb_text_embedding_identities`）当时未应用；当前 PGVectorStorage 使用带 identity 后缀的 suffixed 表，unsuffixed 表仅承载 legacy 数据，修复后 legacy 探测不误伤当前存储。
 - 处置：按 OpenSpec 并入 `stabilize-lightrag-embedding-kb-isolation`（任务 2.4/3.1/3.3/4.4）修复并完成本地 PG 验收，详见第 14 节。
+- 2026-08-06 Worker 上传验收阻塞与修复：首次 live 启动 `embedding_identity_conflict`
+  源于 asyncpg 将 JSONB 返回为字符串，`ensure_kb_embedding_identity` 已按 str
+  解析（回归测试 2 条）；Worker 曾连续 Rust OOM，根因是残留 `server.py` 子进程
+  堆积（venv python 是 launcher，`terminate()` 只杀 launcher），验收脚本改为
+  `taskkill /PID /T /F` + 启动前释放端口；最后阻塞为内容就绪检查直查未后缀
+  `LIGHTRAG_VDB_CHUNKS` 导致 `vector_count=0`，已由任务 2.5 的 suffixed 表解析
+  修复；真实 Worker 上传验收最终 `completed`（chunk=1/entity=16/relation=21，
+  suffixed 表落库、标签门禁通过），scratch 数据已清理。
+
+## 16. 2026-08-06 火山引擎云服务器部署指南
+
+- 新增 [deploy/volcano-engine-docker.md](deploy/volcano-engine-docker.md)：Docker Compose 部署到火山引擎 ECS 的完整手册（SSH、Docker 安装与国内镜像、代码上机、.env 必填项、构建/启动、安全组、HTTPS、备份与升级、FAQ）。
+- 部署要点：RAGANYTHING_ENV=production 时强制要求 JWT_SECRET/JWT_REFRESH_SECRET/DEFAULT_ADMIN_PASSWORD/DATABASE_URL 及视觉目录 pi_key_env；compose 内 DATABASE_URL host 必须为 postgres；MIGRATION_BACKUP_ACKNOWLEDGED=true 为迁移闸门。
+- 本次仅新增文档，未改动运行代码、配置或迁移；应用行为无持久变化。
+
+## 16. 2026-08-06 purge legacy embedding vectors（存量 KB 查询恢复）
+
+- Applied `purge-legacy-embedding-vectors`：propose 阶段 2 位专家评审、apply 阶段 3 位专家（执行/审查/测试）全部通过；脚本、测试与 OpenSpec 变更已落地。
+- 新增一次性运维脚本 `scripts/purge_legacy_embedding_vectors.py`：`--dry-run` 大小写不敏感发现 legacy 与全部 suffixed 向量表（information_schema + workspace 列），输出行数基线与孤儿行清单；`--apply` 必须通过 `--backup-dir` 门禁（dump 非空且精确匹配 `COPY public.<表>`），单事务内取 workspace 级 advisory lock，以 `./rag_storage` 为权威身份并逐字段交叉校验运行时 env，逐 workspace `FOR UPDATE` 冲突校验（INSERTED/EXISTED），DELETE 后逐表校验 0 行；suffixed 孤儿行需 `--force`；幂等；退出码 0/2/1；错误输出 DSN 脱敏。
+- 本地 PG 16 已执行：三张 legacy 表与身份表备份到仓库外目录（行数 4047/19124/48290 与基线一致），`--apply` 将 7 个 workspace 全部注册（hash 639985a6…）并删除 71461 行，逐表校验 0 残留。
+- 回归：`create_rag` + `_ensure_lightrag_initialized` 对 视频/odl解析 均 `{'success': True}`（此前 28ms 内 `embedding_legacy_storage_incompatible` 拦截）；server 启动探针 `/api/live` 返回 `{"status":"live"}`，启动日志 0 次 `embedding_legacy_storage_incompatible`、0 次 `PG doc_status instance unavailable`。
+- 剩余验收（端到端 MP4 上传 + 智能体 SSE 查询）需外网 LLM/Embedding 可达环境（沙箱 DashScope 不可达）；空 legacy 表保留且无害（守卫按行数判定 0），新上传将写入 `..._openai_compa_639985a6e4b87473_1024d` 后缀表。
+- 检查：29 项脚本自检 + 60 项相关 focused 测试（identity/upload-retry/kb-mutation/migration）、`py_compile`、OpenSpec strict、`git diff --check` 全部通过。
