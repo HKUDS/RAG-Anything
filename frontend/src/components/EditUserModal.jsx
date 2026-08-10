@@ -38,7 +38,7 @@ const FIELD_IDS = {
 }
 
 export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated, actorRole }) {
-  const { user: me } = useAuth()
+  const { clearAuth, user: me } = useAuth()
   const [editForm, setEditForm] = useState({
     username: '',
     role_id: null,
@@ -89,7 +89,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated,
 
   const hasChanges = useCallback(() => {
     if (!initialForm) return false
-    return editForm.username !== initialForm.username
+      return editForm.username !== initialForm.username
       || editForm.role_id !== initialForm.role_id
       || editForm.is_active !== initialForm.is_active
       || (editForm.password || '') !== (initialForm.password || '')
@@ -127,6 +127,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated,
     ?? roles?.find((role) => role.name === userRoleName)?.id
   const roleLocked = Boolean(actorRole) && !canAssignRole(actorRole, userRoleName)
   const isAdminSelf = isEditingSelf && userRoleName === 'super_admin'
+  const lifecycleProtected = Boolean(user.lifecycle_protected)
   const superAdminRoleId = userRoleId ?? roles?.find((role) => role.name === 'super_admin')?.id
   const isSelfDemotion = isAdminSelf && editForm.role_id !== superAdminRoleId
   const strength = editForm.password ? checkPasswordStrength(editForm.password) : null
@@ -138,9 +139,15 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated,
     setLoading(true)
     try {
       const token = JSON.parse(localStorage.getItem('raganything_auth')).token
-      const body = { ...editForm }
-      if (!body.password) delete body.password
-      body.is_active = body.is_active ? 1 : 0
+      const body = {}
+      if (editForm.username !== initialForm.username) body.username = editForm.username
+      if (editForm.role_id !== initialForm.role_id) body.role_id = editForm.role_id
+      if (editForm.is_active !== initialForm.is_active) body.is_active = editForm.is_active ? 1 : 0
+      if (editForm.password) body.password = editForm.password
+      if (Object.keys(body).length === 0) {
+        onClose()
+        return
+      }
       // 目标用户角色高于操作者等级时，不提交角色变更字段
       if (roleLocked) delete body.role_id
 
@@ -150,6 +157,11 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated,
         body: JSON.stringify(body),
       })
       const data = await response.json().catch(() => ({}))
+      if (response.status === 401) {
+        clearAuth()
+        onClose()
+        return
+      }
       if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`)
 
       const savedForm = { ...editForm, password: '' }
@@ -183,6 +195,13 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated,
 
     if (isSelfDemotion) {
       setShowRoleDowngradeWarning(true)
+      return
+    }
+
+    if (lifecycleProtected && (
+      !editForm.is_active || editForm.role_id !== initialForm.role_id
+    )) {
+      setError('最后一个超级管理员不能被禁用或降级。')
       return
     }
 
@@ -278,7 +297,7 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated,
             roles={roles}
             value={editForm.role_id}
             onChange={(roleId) => setEditForm((form) => ({ ...form, role_id: roleId }))}
-            disabled={loading || roleLocked}
+            disabled={loading || roleLocked || lifecycleProtected}
             actorRole={actorRole}
             cautionLabel={isAdminSelf ? '谨慎修改' : undefined}
           />
@@ -293,13 +312,16 @@ export default function EditUserModal({ user, roles, isOpen, onClose, onUpdated,
               className="input-field text-sm py-2 w-full"
               value={editForm.is_active ? '1' : '0'}
               onChange={(event) => setEditForm((form) => ({ ...form, is_active: event.target.value === '1' }))}
-              disabled={loading}
+              disabled={loading || lifecycleProtected}
             >
               <option value="1">启用</option>
               <option value="0">禁用</option>
             </select>
             {isEditingSelf && !editForm.is_active && (
               <p className="text-2xs text-rose-500 mt-1">注意：禁用自己的账户将导致无法登录。</p>
+            )}
+            {lifecycleProtected && (
+              <p className="text-2xs text-amber-600 mt-1">最后一个超级管理员不能被禁用或降级。</p>
             )}
           </div>
 

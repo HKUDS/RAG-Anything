@@ -1,8 +1,27 @@
+import ast
+import asyncio
+from pathlib import Path
+
 import pytest
 from types import SimpleNamespace
 
 import raganything.raganything as rag_module
 from raganything.services import kb_service
+
+
+def test_server_startup_does_not_eagerly_initialize_default_kb():
+    source = (Path(__file__).resolve().parents[1] / "server.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    startup = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.AsyncFunctionDef) and node.name == "startup"
+    )
+    assert not any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "get_kb"
+        for node in ast.walk(startup)
+    )
 
 
 class _InitializationFailure:
@@ -37,6 +56,44 @@ async def test_get_kb_does_not_cache_a_partially_initialized_instance(monkeypatc
 
     assert "broken" not in cache
     assert instance.finalized is True
+
+
+@pytest.mark.asyncio
+async def test_get_kb_retries_after_a_transient_initialization_failure(monkeypatch, tmp_path):
+    class _Attempt:
+        lightrag = None
+
+        def __init__(self, success):
+            self.success = success
+            self.finalized = False
+
+        async def _ensure_lightrag_initialized(self):
+            return {"success": self.success, "error": "temporary tokenizer failure"}
+
+        async def finalize_storages(self):
+            self.finalized = True
+
+    attempts = []
+
+    async def create_rag(*_args, **_kwargs):
+        attempt = _Attempt(bool(attempts))
+        attempts.append(attempt)
+        return attempt
+
+    monkeypatch.setattr(kb_service, "kb_instances", kb_service.KBCache())
+    monkeypatch.setattr(kb_service, "_kb_locks", {})
+    monkeypatch.setattr(kb_service, "_kb_init_tasks", {})
+    monkeypatch.setattr(kb_service, "_pg_storage_ready", lambda: False)
+    monkeypatch.setattr(kb_service, "kb_dir", lambda _name: str(tmp_path))
+    monkeypatch.setattr(kb_service, "create_rag", create_rag)
+
+    with pytest.raises(RuntimeError, match="temporary tokenizer failure"):
+        await kb_service.get_kb("retryable")
+    await asyncio.sleep(0)
+
+    recovered = await kb_service.get_kb("retryable")
+    assert recovered is attempts[1]
+    assert attempts[0].finalized is True
 
 
 @pytest.mark.asyncio

@@ -43,6 +43,7 @@ class TestJWT:
         assert payload is not None
         assert payload["user_id"] == 42
         assert payload["username"] == "alice"
+        assert payload["sg"] == 0
         # is_admin is no longer in token payload — derived server-side from RBAC role
         assert payload["role"] == "student"
 
@@ -63,6 +64,7 @@ class TestJWT:
         assert payload is not None
         assert payload["type"] == "refresh"
         assert payload["user_id"] == 42
+        assert payload["sg"] == 0
 
     def test_refresh_token_rejected_as_access(self):
         from raganything.services.auth import create_refresh_token
@@ -100,6 +102,15 @@ class TestJWTWithJTI:
         assert "jti" in payload
         assert "rfam" in payload  # refresh token family
         assert payload["type"] == "refresh"
+
+    def test_tokens_bind_the_requested_session_generation(self):
+        from raganything.services.auth import create_refresh_token, decode_refresh_token
+        access = decode_token(create_token(42, "alice", False, session_generation=9))
+        refresh = decode_refresh_token(create_refresh_token(
+            42, "alice", False, session_generation=9, family_id="family-9",
+        ))
+        assert access["sg"] == refresh["sg"] == 9
+        assert refresh["rfam"] == "family-9"
 
 
 class TestRBACIntegration:

@@ -392,7 +392,8 @@ def _separate_content_structured(
         elif content_type == "video":
             enriched = _enrich_multimodal_item(item, content_list, index)
             multimodal_items.append(enriched)
-            text_blocks.append(f"\n[🎬 视频：{item.get('video_path', '')}]\n")
+            # Video source paths are controlled media metadata, never ordinary
+            # text. Indexing this marker creates a useless path-only chunk.
 
         else:
             # Unknown types → treat as multimodal
@@ -400,6 +401,24 @@ def _separate_content_structured(
             multimodal_items.append(enriched)
 
     text_content = "\n".join(text_blocks)
+
+    # A video-only source has no text payload. Its page marker alone used to
+    # become a meaningless first LightRAG chunk before the semantic segments.
+    # Check the source content rather than ``multimodal_items``: a document
+    # containing text plus a video still has only video modal items, but its
+    # ordinary text must remain searchable.
+    has_source_text = any(
+        item.get("type", "text") == "text"
+        and str(item.get("text", "") or "").strip()
+        for item in content_list
+        if isinstance(item, dict)
+    )
+    if (
+        multimodal_items
+        and all(item.get("type") == "video" for item in multimodal_items)
+        and not has_source_text
+    ):
+        text_content = ""
 
     _log_separation_stats(text_content, multimodal_items)
 

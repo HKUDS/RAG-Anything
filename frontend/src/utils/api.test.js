@@ -8,6 +8,35 @@ import {
   streamSSE,
 } from './api.js'
 
+test('knowledge-base member and metadata mutations use scoped APIs and invalidate the list cache', async t => {
+  const originalFetch = globalThis.fetch
+  const originalLocalStorage = globalThis.localStorage
+  const calls = []
+  globalThis.localStorage = { getItem: () => null }
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options })
+    if (String(url).includes('/members/')) return jsonResponse({ member: { id: 8, access_level: 'operate' } })
+    if (String(url).includes('/metadata')) return jsonResponse({ label: '新名称' })
+    return jsonResponse({ knowledge_bases: [{ name: `kb-${calls.length}` }] })
+  }
+  t.after(() => { globalThis.fetch = originalFetch; globalThis.localStorage = originalLocalStorage })
+
+  await api.listKBs({ force: true })
+  await api.updateKBMetadata('知识库 A', { display_name: '新名称', expected_updated_at: '2026-08-07T00:00:00+00:00' })
+  await api.updateKBMember('知识库 A', 8, 'operate')
+  await api.removeKBMember('知识库 A', 8)
+  await api.searchKBMemberCandidates('知识库 A', '教师', 2, 10)
+  await api.listKBs()
+
+  assert.equal(calls[1].url, '/api/kb/%E7%9F%A5%E8%AF%86%E5%BA%93%20A/metadata')
+  assert.equal(calls[1].options.method, 'PATCH')
+  assert.equal(calls[2].url, '/api/kb/%E7%9F%A5%E8%AF%86%E5%BA%93%20A/members/8')
+  assert.equal(calls[2].options.method, 'PUT')
+  assert.equal(calls[3].options.method, 'DELETE')
+  assert.match(calls[4].url, /member-candidates\?q=%E6%95%99%E5%B8%88&page=2&page_size=10$/)
+  assert.equal(calls.filter(call => call.url === '/api/kb/list').length, 2)
+})
+
 test('streams authenticated terminal SSE events without reading past done', async t => {
   const originalFetch = globalThis.fetch
   const originalLocalStorage = globalThis.localStorage
@@ -40,6 +69,54 @@ test('streams authenticated terminal SSE events without reading past done', asyn
   assert.equal(reads, 1)
   assert.equal(cancelled, true)
   assert.equal(requestHeaders.Authorization, 'Bearer token-1')
+})
+
+test('retries one unauthorized API request after a single-flight refresh', async t => {
+  const originalFetch = globalThis.fetch
+  const originalLocalStorage = globalThis.localStorage
+  const values = new Map([
+    ['raganything_auth', JSON.stringify({
+      token: 'expired-access',
+      refreshToken: 'refresh-old',
+      user: { id: 1 },
+    })],
+  ])
+  globalThis.localStorage = {
+    getItem: key => values.get(key) || null,
+    setItem: (key, value) => values.set(key, String(value)),
+    removeItem: key => values.delete(key),
+  }
+  const calls = []
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url: String(url), options })
+    if (String(url) === '/api/auth/refresh') {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          access_token: 'fresh-access',
+          refresh_token: 'refresh-new',
+          user: { id: 1, role: { name: 'student', permissions: [] } },
+        }),
+      }
+    }
+    if (calls.filter(call => call.url === '/api/auth/me').length === 1) {
+      return { ok: false, status: 401, statusText: 'Unauthorized' }
+    }
+    return jsonResponse({ status: 'ok', user: { id: 1 } })
+  }
+  t.after(() => {
+    globalThis.fetch = originalFetch
+    globalThis.localStorage = originalLocalStorage
+  })
+
+  const result = await api.getMe()
+
+  assert.deepEqual(result, { status: 'ok', user: { id: 1 } })
+  assert.equal(calls.filter(call => call.url === '/api/auth/refresh').length, 1)
+  assert.equal(calls.filter(call => call.url === '/api/auth/me').length, 2)
+  assert.equal(calls[2].options.headers.Authorization, 'Bearer fresh-access')
+  assert.equal(JSON.parse(values.get('raganything_auth')).refreshToken, 'refresh-new')
 })
 
 function jsonResponse(value) {

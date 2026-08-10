@@ -153,7 +153,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 <div class="pg-hd">
   <div>
     <h1>📋 RAG-Anything 项目管理看板</h1>
-    <p class="sub">点击日期格标记任务完成 · 右键添加备注 · 数据自动保存到浏览器</p>
+    <p class="sub">实现完成 = 代码与本地证据齐备；云端、真实 PG、Worker 与浏览器验收见任务备注 · 点击日期格可调整记录</p>
   </div>
   <div class="actions">
     <button class="btn" onclick="openAddTaskModal()" title="Ctrl+N">➕ 添加任务</button>
@@ -178,7 +178,7 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   </select>
   <select id="filterStatus" onchange="render()">
     <option value="">全部状态</option>
-    <option value="done">✅ 已完成</option>
+    <option value="done">✅ 实现完成</option>
     <option value="progress">🔄 进行中</option>
     <option value="planned">🎯 计划中</option>
     <option value="pending">⬜ 未开始</option>
@@ -188,14 +188,14 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
   <span class="sep"></span>
   <span style="display:flex;align-items:center;gap:6px;font-size:0.65rem;color:var(--text2)" id="weekSummary"></span>
   <span class="sep"></span>
-  <span style="font-size:0.62rem;color:var(--text3)">⌨ 1-6周 | Ctrl+Z撤销 | Ctrl+N添加 | Esc关闭</span>
+  <span style="font-size:0.62rem;color:var(--text3)">⌨ 1-6阶段 | Ctrl+Z撤销 | Ctrl+N添加 | Esc关闭</span>
 </div>
 
 <!-- Bulk Action Bar -->
 <div id="bulkBar" style="display:none;background:var(--c-progress-bg);border:1px solid var(--c-progress);border-radius:8px;padding:8px 12px;margin-bottom:0.75rem;align-items:center;gap:8px;">
   <span style="font-size:0.7rem;font-weight:600;color:var(--c-progress)">☑️ 批量模式 — 点击任务行选择</span>
   <span style="font-size:0.65rem;color:var(--text2)" id="bulkCount">已选 0 个</span>
-  <button class="btn sm ac" onclick="bulkComplete()">✅ 标记为本周完成</button>
+  <button class="btn sm ac" onclick="bulkComplete()">✅ 标记为本周实现完成</button>
   <button class="btn sm" onclick="toggleBulkMode()">退出批量模式</button>
 </div>
 
@@ -222,72 +222,66 @@ body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSy
 
 <script>
 // ═══════════════════ DATA ═══════════════════
+const BOARD_VERSION = '2026-08-10-current-delivery';
 const WEEKS = [
-  {id:1, label:'第 1 周', date:'6.9 — 6.15', status:'done', days:['6.9 周一','6.10 周二','6.11 周三','6.12 周四','6.13 周五']},
-  {id:2, label:'第 2 周', date:'6.23 — 6.29', status:'current', days:['6.23 周一','6.24 周二','6.25 周三','6.26 周四','6.27 周五']},
-  {id:3, label:'第 3 周', date:'6.30 — 7.06', status:'future', days:['6.30 周一','7.01 周二','7.02 周三','7.03 周四','7.04 周五']},
-  {id:4, label:'第 4 周', date:'7.07 — 7.13', status:'future', days:['7.07 周一','7.08 周二','7.09 周三','7.10 周四','7.11 周五']},
-  {id:5, label:'第 5 周', date:'7.14 — 7.20', status:'future', days:['7.14 周一','7.15 周二','7.16 周三','7.17 周四','7.18 周五']},
-  {id:6, label:'第 6 周', date:'7.21 — 7.27', status:'future', days:['7.21 周一','7.22 周二','7.23 周三','7.24 周四','7.25 周五']},
+  {id:1, label:'第 1 阶段', date:'8.10 — 8.14', status:'current', days:['8.10 周一','8.11 周二','8.12 周三','8.13 周四','8.14 周五']},
+  {id:2, label:'第 2 阶段', date:'8.17 — 8.21', status:'future', days:['8.17 周一','8.18 周二','8.19 周三','8.20 周四','8.21 周五']},
+  {id:3, label:'第 3 阶段', date:'8.24 — 8.28', status:'future', days:['8.24 周一','8.25 周二','8.26 周三','8.27 周四','8.28 周五']},
+  {id:4, label:'第 4 阶段', date:'8.31 — 9.04', status:'future', days:['8.31 周一','9.01 周二','9.02 周三','9.03 周四','9.04 周五']},
+  {id:5, label:'第 5 阶段', date:'9.07 — 9.11', status:'future', days:['9.07 周一','9.08 周二','9.09 周三','9.10 周四','9.11 周五']},
+  {id:6, label:'第 6 阶段', date:'9.14 — 9.18', status:'future', days:['9.14 周一','9.15 周二','9.16 周三','9.17 周四','9.18 周五']},
 ];
 
 const MODULES = [
-  {id:'core', name:'一、知识库核心能力', cls:'mod-c1', tasks:[
-    {id:'t1', name:'多模态文档解析引擎 — 6种分块策略 + VLM OCR', desc:'支持20种文件格式，MinerU 2.0 + PaddleOCR + Whisper', deps:[], week:1, day:1, status:'done'},
-    {id:'t2', name:'知识库数据隔离 — 多知识库 + 文档级权限控制', desc:'verify_kb_access 鉴权中间件，知识库级资源隔离', deps:[], week:1, day:1, status:'done'},
-    {id:'t3', name:'图像语义预过滤 — 非必要图像自动剔除', desc:'减少无效图片干扰向量检索精度', deps:[], week:1, day:3, status:'done'},
-    {id:'t4', name:'文档解析管线升级 — Docling / Marker 高精度解析', desc:'PDF/表格/扫描件精度提升 40%+，双引擎策略', deps:['t1'], week:4, day:3, status:'planned'},
-    {id:'t5', name:'Agentic RAG 智能体引擎 — 多步推理 + 工具调用', desc:'ReAct/CoT推理模式，max_steps=5，Calculator+WebSearch+DB工具', deps:[], week:2, day:1, status:'progress'},
+  {id:'foundation', name:'一、认证、权限与设置基础', cls:'mod-c1', tasks:[
+    {id:'u1', name:'五级 RBAC 与持久会话刷新', desc:'PostgreSQL 认证、五级角色、refresh token family 轮转与前端 401 重放。', deps:[], week:1, day:1, status:'done', note:'实现与本地证据完成；真实生产 PostgreSQL/浏览器验收仍需受控环境。'},
+    {id:'u2', name:'知识库成员授权与显示名称', desc:'KB 级 read/operate 授权、kb:manage 作用域、显示名称乐观锁更新与前端抽屉。', deps:['u1'], week:1, day:2, status:'done', note:'后端 42、前端 166、strict/diff 已通过；迁移 033/034 与五角色浏览器验收待执行。'},
+    {id:'u3', name:'个人设置与分级能力投影', desc:'/preferences、/admin/platform、按角色隐藏分区与 API 能力，旧快照保持不变。', deps:['u1'], week:1, day:3, status:'done', note:'实现已在工作区；提交后需做浏览器与 API 验收。'},
+    {id:'u4', name:'知识库级上传默认与单次快照', desc:'平台 -> 个人 -> KB -> 单次覆盖，解析器/分块策略按任务冻结，历史任务不回写。', deps:['u2','u3'], week:1, day:4, status:'done', note:'聚焦后端/前端测试与 strict 已通过；真实 PostgreSQL 多角色上传验收待执行。'},
   ]},
-  {id:'search', name:'二、智能检索与召回', cls:'mod-c2', tasks:[
-    {id:'t6', name:'Rerank 重排序 — Cross-encoder 精排接入', desc:'top_n=10, batch=32, P95延迟<200ms', deps:[], week:2, day:1, status:'done'},
-    {id:'t7', name:'查询改写 — HyDE 假设文档 + Multi-Query 多路召回', desc:'HyDE n=3, Multi-Query n=3, temperature=0.7/0.8', deps:[], week:2, day:2, status:'progress'},
-    {id:'t8', name:'混合检索 — BM25 + 向量 + 图谱 RRF 三路融合', desc:'BM25(k1=1.5,b=0.75)+Cosine(HNSW)+Graph, RRF k=60', deps:['t6'], week:3, day:1, status:'planned'},
-    {id:'t9', name:'GraphRAG 知识图谱增强检索', desc:'实体抽取阈值0.6，关系深度2，1-2跳邻居遍历', deps:[], week:3, day:2, status:'planned'},
-    {id:'t10', name:'多轮对话上下文管理 — 滑动窗口 + 摘要压缩', desc:'context_window=10轮, token_budget=2000, 压缩比≥60%', deps:[], week:3, day:4, status:'planned'},
+  {id:'ingestion', name:'二、解析、上传与 Worker 持久化', cls:'mod-c2', tasks:[
+    {id:'u5', name:'按文件类型解析器与分块策略目录', desc:'PDF/Office/图片 per-type 覆盖、6 种分块策略、未安装解析器置灰与渐进式折叠。', deps:['u4'], week:1, day:5, status:'done', note:'相关后端/前端聚焦测试与 py_compile 已通过；Vite 构建和重启后实测待环境恢复。'},
+    {id:'u6', name:'上传取消、租约与 PostgreSQL 瞬断韧性', desc:'cancelling 状态、worker 终止、claim fencing、心跳、stale 接管与退避恢复。', deps:['u4'], week:2, day:1, status:'done', note:'实现及聚焦测试完成；真实多进程故障注入与迁移 024 部署验收待执行。'},
+    {id:'u7', name:'Embedding identity 与 legacy 向量清理', desc:'按 KB 绑定 embedding identity、阻止旧无后缀向量存储、恢复存量 KB 查询。', deps:['u4'], week:2, day:2, status:'done', note:'本地 PG、脚本自检、focused tests 和 strict 已通过；生产迁移须先备份并预览。'},
+    {id:'u8', name:'Embedding cache 事件循环安全', desc:'共享 asyncpg pool 留在 Worker event loop，缓存读写失败降级为 miss/no-op。', deps:['u7'], week:2, day:3, status:'done', note:'62 项 focused tests、py_compile、diff/strict 已通过；云端新 PDF 向量写入验收待执行。'},
+    {id:'u9', name:'NanoVectorDB Worker 快照持久化', desc:'Worker 写入后仅跳过旧缓存实例的三类 VDB 持久化回调，防止空快照覆盖新向量。', deps:['u8'], week:2, day:4, status:'done', note:'40 项 Worker/持久化测试与 12 项缓存回归已通过；云端 KB 3 新 PDF、vector_count 与自动标签验收待执行。'},
+    {id:'u10', name:'OpenDataLoader / Marker 解析运行时', desc:'独立解析器运行时、模型缓存挂载、Docker 构建上下文和 PDF 端到端路径。', deps:['u5'], week:2, day:5, status:'progress', note:'镜像/缓存准备与聚焦测试完成；真实 PDF 容器 smoke 与网络缓存问题仍待云端确认。'},
   ]},
-  {id:'security', name:'三、安全防护体系', cls:'mod-c3', tasks:[
-    {id:'t11', name:'用户认证 — JWT + bcrypt + RBAC 角色权限', desc:'HS256, work_factor=12, 双Token机制(24h+7d)', deps:[], week:1, day:1, status:'done'},
-    {id:'t12', name:'API 限流 — 令牌桶 + 滑动窗口双策略', desc:'slowapi, 全局100/min, burst=200, 登录10/min独立限流', deps:['t11'], week:2, day:2, status:'done'},
-    {id:'t13', name:'Web 安全 — CORS 白名单 + XSS + SQL注入防护', desc:'CORS_ORIGINS环境变量, bleach清洗, SQLAlchemy参数化', deps:[], week:2, day:2, status:'done'},
-    {id:'t14', name:'文件上传安全 — 类型白名单 + 魔数校验 + 大小限制', desc:'python-magic魔数校验, MIME白名单, MAX_UPLOAD_SIZE_MB=500', deps:[], week:2, day:3, status:'done'},
-    {id:'t15', name:'密钥管理 — 环境变量脱敏 + .env 安全策略', desc:'secrets.token_hex(32)自动生成, mask_sensitive_data日志脱敏', deps:[], week:3, day:1, status:'planned'},
-    {id:'t16', name:'依赖安全扫描 — npm audit + pip audit + CVE 告警', desc:'CI集成自动扫描, 高危阻断合并', deps:[], week:3, day:2, status:'planned'},
-    {id:'t17', name:'审计日志 — 全操作追踪 + SQLite 存储 + 查询接口', desc:'操作人+IP+时间+资源+动作+结果, 保留1年', deps:[], week:4, day:2, status:'planned'},
+  {id:'retrieval', name:'三、检索、媒体与智能体链路', cls:'mod-c3', tasks:[
+    {id:'u11', name:'视频语义分段 v2', desc:'中文语义段、时间引用、失败补偿、批量任务隔离与历史成品不回填。', deps:['u7'], week:3, day:1, status:'done', note:'聚焦测试、迁移、认证和入口隔离已通过；真实 Worker/PG 样片与 Recall@5/MRR 验收待执行。'},
+    {id:'u12', name:'视频分段吞吐优化', desc:'VIDEO_SEGMENT_CONCURRENT 受控并发、阶段耗时指标、确定性写入与延迟整文档落盘。', deps:['u11'], week:3, day:2, status:'done', note:'聚焦 104 通过、2 跳过；真实时长收益和检索验收待部署验证。'},
+    {id:'u13', name:'媒体召回预算与会话摘要 Schema', desc:'独立媒体预算、超时保留已验证图片、幂等迁移 027 与摘要列/索引。', deps:['u7'], week:3, day:3, status:'done', note:'本地 PostgreSQL 已连续执行迁移并核验；重启后的真实问答验收待执行。'},
+    {id:'u14', name:'混合检索、RRF 与图谱布局', desc:'默认 hybrid 用户检索选项快照、RRF 降级、图谱深度控制与 orderly graph layout。', deps:['u11'], week:3, day:4, status:'progress', note:'核心实现可用；active change 仍有待办，性能与真实多进程检索验收待收敛。'},
+    {id:'u15', name:'视觉模型配置与 KB 视觉向量重建', desc:'模型目录、请求快照、作用域缓存、失败保留旧索引和重试入口。', deps:['u14'], week:3, day:5, status:'progress', note:'工作区实现已落地；生产迁移、真实 PostgreSQL 多进程和视觉 Embedding 凭据验收待执行。'},
   ]},
-  {id:'platform', name:'四、平台基础能力', cls:'mod-c4', tasks:[
-    {id:'t18', name:'SPA 前端应用 — React 18 + Vite 5 + Tailwind 10页面', desc:'React 18.3.1, Vite 5.4.2, Tailwind 3.4.10, 含D3+Recharts可视化', deps:[], week:1, day:1, status:'done'},
-    {id:'t19', name:'FastAPI 后端 — 42 REST端点 + WebSocket 实时通信', desc:'Uvicorn workers=4, 流式SSE, 自动OpenAPI 3.0文档', deps:[], week:1, day:1, status:'done'},
-    {id:'t20', name:'多智能体管理 — agent_manager + 5预置模板', desc:'通用/学术/代码/精确/创意 5种模板, 子进程Worker隔离', deps:[], week:1, day:2, status:'done'},
-    {id:'t21', name:'Docker 容器化部署 — 多阶段构建 + docker-compose', desc:'4服务编排(app+pg+redis+nginx), HEALTHCHECK, 镜像~450MB', deps:['t18','t19'], week:2, day:3, status:'done'},
-    {id:'t22', name:'后端模块化重构 — server.py 拆分为 5 个 Router', desc:'auth/knowledge/agent/upload/query 模块独立, 每模块<400行', deps:['t19'], week:2, day:4, status:'progress'},
-    {id:'t23', name:'核心测试覆盖 — pytest auth + agent + chunking', desc:'覆盖率>60%, 含压力测试和边界用例', deps:['t19'], week:3, day:3, status:'planned'},
-    {id:'t24', name:'前端状态管理升级 — Zustand + i18n 国际化', desc:'Zustand替代Context, 中英文切换, 动态语言包加载', deps:['t18'], week:4, day:1, status:'planned'},
-    {id:'t25', name:'OAuth / SSO 企业统一认证 — OIDC + Keycloak + 飞书', desc:'OIDC协议, 支持Keycloak/LDAP/OAuth 2.0', deps:['t11'], week:3, day:5, status:'planned'},
-    {id:'t26', name:'可视化工作流编排 — DAG 拖拽画布 + 节点配置', desc:'React Flow实现, 20+算子模板, 自由/网格布局, 周期调度', deps:[], week:3, day:4, status:'planned'},
-    {id:'t27', name:'性能优化 — 大规模压测 + 生产环境调优', desc:'目标≥50QPS(非AI), P95<200ms, 内存<16GB(标准部署)', deps:[], week:4, day:4, status:'planned'},
-    {id:'t28', name:'项目管理看板集成到前端 — /admin/pm 页面', desc:'独立HTML→React组件, Zustand Store, 后端API, WebSocket协作', deps:['t24'], week:4, day:5, status:'planned'},
+  {id:'delivery', name:'四、前端体验、性能与发布', cls:'mod-c4', tasks:[
+    {id:'u16', name:'前端空态、遮罩与导航体验', desc:'空资源/无匹配/加载失败主内容空态、遮罩去蓝化、首屏按需加载与导航优化。', deps:['u3'], week:4, day:1, status:'done', note:'前端单测、构建或定向静态检查已通过；浏览器/nginx 同源基线验收仍需执行。'},
+    {id:'u17', name:'PostgreSQL 迁移链与发布安全门禁', desc:'迁移 manifest/runner、备份确认、RBAC 生命周期、安全扫描与 release CI gates。', deps:['u2'], week:4, day:2, status:'done', note:'实现与本地检查完成；生产 apply 必须先完成可恢复备份及 staging fresh/upgrade/repeat/failure 验收。'},
+    {id:'u18', name:'Docker 解析器运行时与 ECS 部署', desc:'app/pg/redis/nginx Compose、只读模型挂载、解析器镜像和云端重启流程。', deps:['u10','u17'], week:4, day:3, status:'progress', note:'ECS Compose 曾上线且镜像归档已校验；当前分支重建、迁移和真实健康/业务验收仍需执行。'},
+    {id:'u19', name:'真实环境验收闭环', desc:'云端重建 app、上传新 PDF/视频、核验向量非空、自动标签、五角色浏览器和 Worker/PG 故障注入。', deps:['u9','u10','u12','u18'], week:4, day:4, status:'planned', note:'外部环境验收不能以本地测试或 HTTP 200 代替。'},
   ]},
-  {id:'future', name:'五、远期规划（待定）', cls:'mod-c1', tasks:[
-    {id:'f1', name:'数据集模块 — Clickhouse/Hive 存储管理', desc:'表结构预览/数据下载/SQL查询/数据血缘/操作记录', deps:[], week:0, day:0, status:'pending'},
-    {id:'f2', name:'多数据库接入扩展 — Oracle/SQL Server/TiDB/MongoDB', desc:'统一 BaseDBConnector 接口, 按需扩展驱动', deps:[], week:0, day:0, status:'pending'},
-    {id:'f3', name:'知识质量检测 — 错别字+语句完整+敏感词', desc:'pycorrector + HanLP + AC自动机本地敏感词库', deps:[], week:0, day:0, status:'pending'},
-    {id:'f4', name:'非结构化数据打标应用', desc:'预置AI应用(ASR/图片理解/标签/情感/观点/水军) + 自定义应用', deps:[], week:0, day:0, status:'pending'},
-    {id:'f5', name:'更多数据源接入 — 腾讯/钉钉/金山云文档 + 微信素材库', desc:'按甲方实际使用的协作工具优先级接入', deps:[], week:0, day:0, status:'pending'},
-    {id:'f6', name:'DAG工作流完整版 — 41种节点 + cron周期调度', desc:'MVP版(第3周)只含5-8种节点+手动执行, 完整版延后', deps:['t26'], week:0, day:0, status:'pending'},
+  {id:'convergence', name:'五、OpenSpec 收敛与后续规划', cls:'mod-c5', tasks:[
+    {id:'u20', name:'Active changes 复核、提交与归档', desc:'按当前代码和验证证据复核 active change 清单，补齐任务、同步总结后再归档。', deps:['u19'], week:5, day:1, status:'progress', note:'当前 active change 与 checkbox 存在漂移，需逐项复核；未归档不代表发布完成。'},
+    {id:'u21', name:'OpenDataLoader、图谱布局与发布遗留清单', desc:'收敛 add-opendataloader、orderly-graph-layout、release gate 等剩余任务。', deps:['u10','u14','u17'], week:5, day:2, status:'progress', note:'按 tasks.md 和实际实现重新核对，保留未验证边界。'},
+    {id:'u22', name:'Canvas rendering migration', desc:'画布渲染迁移 active change，当前尚未开始实现。', deps:[], week:5, day:3, status:'planned'},
+    {id:'u23', name:'Manufacturing -> Autorepair change 复核', desc:'清单落后，先确认当前 autorepair 路由和权限事实，再决定继续、拆分或归档。', deps:[], week:5, day:4, status:'planned'},
+    {id:'f1', name:'企业 SSO / OAuth', desc:'OIDC、Keycloak、LDAP 或 OAuth 2.0 接入，需明确身份源和部署边界。', deps:['u1'], week:6, day:1, status:'pending'},
+    {id:'f2', name:'完整 DAG 工作流编排', desc:'React Flow、节点模板、网格布局和周期调度完整版。', deps:['u22'], week:6, day:2, status:'pending'},
+    {id:'f3', name:'数据集与更多数据源', desc:'ClickHouse/Hive、Oracle/SQL Server/TiDB/MongoDB 及协作平台接入。', deps:[], week:6, day:3, status:'pending'},
+    {id:'f4', name:'知识质量检测与非结构化打标', desc:'质量规则、敏感词、本地纠错和可配置 AI 标注应用。', deps:[], week:6, day:4, status:'pending'},
   ]},
 ];
 
 // ═══════════════════ STATE ═══════════════════
-const STORAGE_KEY = 'raganything_pm_data';
+const STORAGE_KEY = 'raganything_pm_data_2026_08';
 let appData;
-let currentWeek = 2; // Default to Week 2 (current)
+let currentWeek = 1; // 2026-08-10 is the current delivery phase
 let undoStack = [];
 let collapsedModules = new Set();
 let lastToggledCell = null; // For click animation {taskId, weekId, dayIdx}
 
 function getDefaultData() {
-  const data = { completions: {}, notes: {}, deletedTasks: [], customTasks: [] };
+  const data = { version: BOARD_VERSION, completions: {}, notes: {}, deletedTasks: [], customTasks: [] };
   // Auto-populate completions for all tasks with status 'done' based on their planned week+day
   MODULES.forEach(m => m.tasks.forEach(t => {
     if (t.status === 'done' && t.week >= 1 && t.day >= 1) {
@@ -297,6 +291,7 @@ function getDefaultData() {
         data.completions[t.id].push(key);
       }
     }
+    if (t.note) data.notes[t.id] = t.note;
   }));
   return data;
 }
@@ -334,16 +329,15 @@ function loadData() {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
       const data = JSON.parse(raw);
-      return normalizeData(data);
+      if (data.version === BOARD_VERSION) return normalizeData(data);
     }
   } catch(e) {
     console.error('localStorage 数据加载失败:', e);
-    try { localStorage.removeItem(STORAGE_KEY); } catch(ignore) {}
   }
 
   // 2. 从 URL hash 加载
   const hashData = hashLoad();
-  if (hashData && hashData.completions) {
+  if (hashData && hashData.version === BOARD_VERSION && hashData.completions) {
     console.log('从 URL hash 恢复数据');
     return normalizeData(hashData);
   }
@@ -353,11 +347,25 @@ function loadData() {
 }
 
 function normalizeData(data) {
-  // 仅在数据为空（首次使用）时，为 status='done' 的任务填充完成记录
+  // 仅在数据为空（首次使用）时，为 status='done' 的任务填充实现完成记录
   // 已有数据时尊重用户手工调整，不强制覆写
-  data.completions = data.completions || {};
-  data.deletedTasks = data.deletedTasks || [];
-  data.customTasks = data.customTasks || [];
+  data.version = BOARD_VERSION;
+  data.completions = data.completions && typeof data.completions === 'object' ? data.completions : {};
+  data.deletedTasks = Array.isArray(data.deletedTasks) ? data.deletedTasks : [];
+  data.customTasks = Array.isArray(data.customTasks) ? data.customTasks : [];
+  const staticIds = new Set(MODULES.flatMap(m => m.tasks.map(t => t.id)));
+  data.customTasks = data.customTasks.filter(ct => ct && typeof ct.id === 'string' && ct.modId && MODULES.some(m => m.id === ct.modId));
+  const validIds = new Set([...staticIds, ...data.customTasks.map(ct => ct.id)]);
+  const validWeeks = new Set(WEEKS.map(w => w.id));
+  data.completions = Object.fromEntries(Object.entries(data.completions).flatMap(([taskId, keys]) => {
+    if (!validIds.has(taskId) || !Array.isArray(keys)) return [];
+    const validKeys = [...new Set(keys)].filter(key => {
+      const match = /^(\d+)-([1-5])$/.exec(key);
+      return match && validWeeks.has(Number(match[1]));
+    });
+    return validKeys.length ? [[taskId, validKeys]] : [];
+  }));
+  data.deletedTasks = data.deletedTasks.filter(id => validIds.has(id));
   const hasExistingData = Object.keys(data.completions).length > 0 || data.customTasks.length > 0;
   if (!hasExistingData) {
     MODULES.forEach(m => m.tasks.forEach(t => {
@@ -370,7 +378,11 @@ function normalizeData(data) {
       }
     }));
   }
-  data.notes = data.notes || {};
+  data.notes = data.notes && typeof data.notes === 'object' ? data.notes : {};
+  data.notes = Object.fromEntries(Object.entries(data.notes).filter(([taskId]) => validIds.has(taskId)));
+  MODULES.forEach(m => m.tasks.forEach(t => {
+    if (t.note && !data.notes[t.id]) data.notes[t.id] = t.note;
+  }));
   // 恢复自定义任务到模块中（刷新后 MODULES 被重建，需从持久化数据恢复）
   (data.customTasks || []).forEach(ct => {
     const mod = MODULES.find(m => m.id === ct.modId);
@@ -414,12 +426,12 @@ appData = loadData();
 
 // ═══════════════════ DATE HELPERS ═══════════════════
 function parseWeekDate(weekId, dayIdx) {
-  // Parse "6.9" style date from WEEKS data, assume current year
+  // The delivery plan is anchored to 2026-08-10, not the viewer's calendar year.
   const week = WEEKS.find(w => w.id === weekId);
   if (!week) return null;
-  const dateStr = week.date.split(' — ')[0]; // "6.9"
+  const dateStr = week.date.split(' — ')[0];
   const [month, day] = dateStr.split('.').map(Number);
-  const year = new Date().getFullYear();
+  const year = 2026;
   // dayIdx is 1-5 (Mon-Fri); the start date is Monday
   return new Date(year, month - 1, day + dayIdx - 1);
 }
@@ -456,6 +468,18 @@ function getTaskCompletion(taskId) {
   return appData.completions[taskId] || [];
 }
 
+const STATUS_LABELS = {
+  done: '✅ 实现完成',
+  progress: '🔄 进行中',
+  planned: '🎯 计划中',
+  pending: '⬜ 未开始'
+};
+
+function getDisplayStatus(task) {
+  const comps = getTaskCompletion(task.id);
+  return comps.length > 0 || task.status === 'done' ? 'done' : task.status;
+}
+
 function isCompleted(taskId, weekId, dayIdx) {
   return getTaskCompletion(taskId).includes(`${weekId}-${dayIdx}`);
 }
@@ -481,6 +505,19 @@ function toggleCompletion(taskId, weekId, dayIdx) {
 function undoLast() {
   if (!undoStack.length) return;
   const last = undoStack.pop();
+  if (last.action === 'bulk') {
+    last.added.forEach(({taskId, key}) => {
+      const completions = appData.completions[taskId] || [];
+      const idx = completions.indexOf(key);
+      if (idx >= 0) completions.splice(idx, 1);
+      if (!completions.length) delete appData.completions[taskId];
+    });
+    if (!undoStack.length) document.getElementById('undoBtn').disabled = true;
+    render();
+    saveData();
+    showToast('已撤销批量实现完成');
+    return;
+  }
   const completions = appData.completions[last.taskId] || [];
   if (last.action === 'add') {
     completions.splice(completions.indexOf(last.key), 1);
@@ -522,20 +559,20 @@ function render() {
   const filterMod = document.getElementById('filterModule').value;
   const filterStat = document.getElementById('filterStatus').value;
 
-  // Stats — completions 是唯一的"已完成"判断依据；status 仅表示计划状态
+  // Stats and filtering share getDisplayStatus so implementation status is consistent.
   let totalDone = 0, totalProgress = 0, totalPlanned = 0, totalPending = 0;
   MODULES.forEach(m => m.tasks.forEach(t => {
-    const comps = getTaskCompletion(t.id);
-    if (comps.length > 0) { totalDone++; }
-    else if (t.status === 'progress') totalProgress++;
-    else if (t.status === 'planned') totalPlanned++;
+    const status = getDisplayStatus(t);
+    if (status === 'done') totalDone++;
+    else if (status === 'progress') totalProgress++;
+    else if (status === 'planned') totalPlanned++;
     else totalPending++;
   }));
   const total = totalDone + totalProgress + totalPlanned + totalPending;
 
   const activeStatus = document.getElementById('filterStatus').value;
   document.getElementById('statsRow').innerHTML = `
-    <div class="stat ${activeStatus==='done'?'sel':''}" onclick="setFilter('status','done')"><div class="n" style="color:var(--c-done)">${totalDone}</div><div class="l">✅ 已完成</div></div>
+    <div class="stat ${activeStatus==='done'?'sel':''}" onclick="setFilter('status','done')"><div class="n" style="color:var(--c-done)">${totalDone}</div><div class="l">✅ 实现完成</div></div>
     <div class="stat ${activeStatus==='progress'?'sel':''}" onclick="setFilter('status','progress')"><div class="n" style="color:var(--c-progress)">${totalProgress}</div><div class="l">🔄 进行中</div></div>
     <div class="stat ${activeStatus==='planned'?'sel':''}" onclick="setFilter('status','planned')"><div class="n" style="color:var(--c-planned)">${totalPlanned}</div><div class="l">🎯 计划中</div></div>
     <div class="stat ${activeStatus==='pending'?'sel':''}" onclick="setFilter('status','pending')"><div class="n" style="color:var(--text3)">${totalPending}</div><div class="l">⬜ 未开始</div></div>
@@ -565,9 +602,7 @@ function render() {
       if (search && !t.name.toLowerCase().includes(search) && !t.desc.toLowerCase().includes(search)) return false;
       if (filterMod && mod.id !== filterMod) return false;
       if (filterStat) {
-        const comps = getTaskCompletion(t.id);
-        const mine = comps.length > 0 ? 'done' : t.status;
-        if (mine !== filterStat) return false;
+        if (getDisplayStatus(t) !== filterStat) return false;
       }
       // 远期任务(week=0)在所有周显示
       if (t.week === 0 && currentWeek >= 1) return true;
@@ -576,18 +611,18 @@ function render() {
     if (!visibleTasks.length && (search || filterMod || filterStat)) return;
 
     const isCollapsed = collapsedModules.has(mod.id);
-    const modDone = visibleTasks.filter(t => getTaskCompletion(t.id).length > 0 || t.status === 'done').length;
+    const modDone = visibleTasks.filter(t => getDisplayStatus(t) === 'done').length;
     html += `<tr class="mod-row ${mod.cls}"><td colspan="6">
       <div class="mod-bar ${isCollapsed?'collapsed':''}" onclick="toggleModule('${mod.id}')">
         <span class="arrow">▼</span><span class="dot"></span>${mod.name}
-        <span class="cnt">${modDone}/${visibleTasks.length} 完成</span>
+        <span class="cnt">${modDone}/${visibleTasks.length} 实现完成</span>
       </div></td></tr>`;
 
     if (isCollapsed) return;
 
     visibleTasks.forEach(t => {
       const comps = getTaskCompletion(t.id);
-      const effectiveStatus = comps.length > 0 ? 'done' : (t.status === 'done' ? 'progress' : t.status);
+      const effectiveStatus = getDisplayStatus(t);
       const statusCls = effectiveStatus === 'done' ? 's-done' : effectiveStatus === 'progress' ? 's-progress' : effectiveStatus === 'planned' ? 's-planned' : 's-pending';
       const note = getTaskNote(t.id);
       const hasNote = note ? ' 📝' : '';
@@ -611,7 +646,7 @@ function render() {
           html += `<td class="day-cell ${done?'done':''} ${isPast&&!done?'past':''} ${isToday?'today-col':''} ${isPopping?'popping':''}"
             onclick="toggleCompletion('${t.id}',${currentWeek},${d})"
             oncontextmenu="event.preventDefault();openNoteModal('${t.id}')"
-            title="${isToday?'📍 今天 · ':''}点击标记完成 · 右键添加备注${ms?' · 🏁 '+ms.label:''}">${done?'✅':''}${ms?'<span style="font-size:0.55rem;color:var(--c-ms);font-weight:700">🏁</span>':''}</td>`;
+            title="${isToday?'📍 今天 · ':''}点击标记实现完成 · 右键添加备注${ms?' · 🏁 '+ms.label:''}">${done?'✅':''}${ms?'<span style="font-size:0.55rem;color:var(--c-ms);font-weight:700">🏁</span>':''}</td>`;
         }
       }
       html += '</tr>';
@@ -641,7 +676,7 @@ function render() {
   // Update week summary
   const ws = getWeekSummary(currentWeek);
   const wsEl = document.getElementById('weekSummary');
-  if (wsEl) wsEl.innerHTML = `${WEEKS[currentWeek-1].label} 完成: ${ws.done}/${ws.total} (${ws.pct}%)<div class="prog-wrap" style="margin-top:4px;width:100px"><div class="prog-bar done" style="width:${ws.pct}%"></div></div>`;
+  if (wsEl) wsEl.innerHTML = `${WEEKS[currentWeek-1].label} 实现完成: ${ws.done}/${ws.total} (${ws.pct}%)<div class="prog-wrap" style="margin-top:4px;width:100px"><div class="prog-bar done" style="width:${ws.pct}%"></div></div>`;
 }
 
 function switchWeek(wid) { currentWeek = wid; render(); }
@@ -668,8 +703,8 @@ function openTaskDetail(taskId) {
   document.getElementById('modalContent').innerHTML = `
     <h3>${task.name}</h3>
     <label>描述</label><p style="font-size:0.72rem;color:var(--text2);margin-bottom:0.6rem">${task.desc}</p>
-    <label>状态</label><p style="font-size:0.72rem">${comps.length>0?'✅ 已完成':task.status==='progress'?'🔄 进行中':task.status==='planned'?'🎯 计划中':'⬜ 未开始'}</p>
-    ${comps.length ? `<label>完成记录</label><p style="font-size:0.68rem;color:var(--text2)">${comps.map(c=>{const[p,w,d]=c.split('-');const wk=WEEKS[w-1];return wk?wk.days[d-1]:c;}).join(', ')}</p>` : ''}
+    <label>状态</label><p style="font-size:0.72rem">${STATUS_LABELS[getDisplayStatus(task)]}</p>
+    ${comps.length ? `<label>实现完成记录</label><p style="font-size:0.68rem;color:var(--text2)">${comps.map(c=>{const[p,w,d]=c.split('-');const wk=WEEKS[w-1];return wk?wk.days[d-1]:c;}).join(', ')}</p>` : ''}
     ${depNames.length ? `<label>依赖任务</label><p style="font-size:0.68rem;color:var(--text3)">${depNames.join('<br>')}</p>` : ''}
     <label>备注</label>
     <textarea id="noteText" placeholder="添加备注...">${note}</textarea>
@@ -710,7 +745,9 @@ function exportData() {
     exportTime: new Date().toISOString(),
     completions: appData.completions,
     notes: appData.notes,
-    version: '1.0'
+    version: BOARD_VERSION,
+    deletedTasks: appData.deletedTasks,
+    customTasks: appData.customTasks
   };
   const blob = new Blob([JSON.stringify(exportObj, null, 2)], {type: 'application/json'});
   const url = URL.createObjectURL(blob);
@@ -730,15 +767,21 @@ function importData() {
     reader.onload = ev => {
       try {
         const imported = JSON.parse(ev.target.result);
-        if (imported.completions && imported.notes) {
-          if (confirm(`导入数据包含 ${Object.keys(imported.completions).length} 个任务的完成记录。确认导入？`)) {
-            appData = imported;
+        if (imported.version === BOARD_VERSION && imported.completions && imported.notes) {
+          if (confirm(`导入数据包含 ${Object.keys(imported.completions).length} 个任务的实现完成记录。确认导入？`)) {
+            appData = normalizeData({
+              version: imported.version,
+              completions: imported.completions,
+              notes: imported.notes,
+              deletedTasks: imported.deletedTasks,
+              customTasks: imported.customTasks
+            });
             render();
             saveData();
             showToast('数据已导入');
           }
         } else {
-          showToast('无效的导入文件格式');
+          showToast('无效或版本不匹配的导入文件');
         }
       } catch(e) { showToast('文件解析失败'); }
     };
@@ -819,19 +862,23 @@ function bulkComplete() {
   const weekId = currentWeek;
   const today = new Date().getDay(); // 0=Sun, 1=Mon...
   const dayIdx = today >= 1 && today <= 5 ? today : 1;
+  const added = [];
   selectedTasks.forEach(tid => {
     const key = `${weekId}-${dayIdx}`;
     const completions = appData.completions[tid] || [];
     appData.completions[tid] = completions;
-    if (!completions.includes(key)) completions.push(key);
+    if (!completions.includes(key)) {
+      completions.push(key);
+      added.push({taskId: tid, key});
+    }
   });
-  undoStack.push({action:'bulk', tasks:[...selectedTasks], weekId, dayIdx});
+  undoStack.push({action:'bulk', added, weekId, dayIdx});
   if (undoStack.length > 50) undoStack.shift();
   document.getElementById('undoBtn').disabled = false;
   selectedTasks.clear();
   render();
   saveData();
-  showToast(`✅ 批量完成 ${count} 个任务`);
+  showToast(`✅ 批量标记 ${count} 个任务为实现完成`);
 }
 
 // ═══════════════════ EXTENDED: Add Custom Task ═══════════════════
@@ -843,7 +890,7 @@ function openAddTaskModal() {
     <label>所属模块</label><select id="newTaskMod">${MODULES.map(m=>`<option value="${m.id}">${m.name}</option>`).join('')}</select>
     <label>计划完成周</label><select id="newTaskWeek">${WEEKS.map(w=>`<option value="${w.id}" ${w.id===currentWeek?'selected':''}>${w.label} (${w.date})</option>`).join('')}</select>
     <label>计划完成日</label><select id="newTaskDay">${['周一','周二','周三','周四','周五'].map((d,i)=>`<option value="${i+1}">${d}</option>`).join('')}</select>
-    <label>状态</label><select id="newTaskStatus"><option value="planned">🎯 计划中</option><option value="progress">🔄 进行中</option><option value="done">✅ 已完成</option></select>
+    <label>状态</label><select id="newTaskStatus"><option value="planned">🎯 计划中</option><option value="progress">🔄 进行中</option><option value="done">✅ 实现完成</option></select>
     <div class="btn-row">
       <button class="btn" onclick="closeModal()">取消</button>
       <button class="btn ac" onclick="addCustomTask()">✅ 添加任务</button>
@@ -904,19 +951,19 @@ function deleteTask(taskId) {
 
 // ═══════════════════ EXTENDED: Milestone Markers ═══════════════════
 const MILESTONES = [
-  { week: 2, day: 5, label: 'M1 · v1.0 MVP 发布' },
-  { week: 3, day: 5, label: 'M2 · 混合检索上线' },
-  { week: 4, day: 5, label: 'M3 · v2.0 企业版' },
+  { week: 2, day: 5, label: 'M1 · 云端向量写入验收' },
+  { week: 4, day: 4, label: 'M2 · 真实环境验收' },
+  { week: 5, day: 5, label: 'M3 · OpenSpec 收敛' },
 ];
 
 // ═══════════════════ EXTENDED: Export as Markdown ═══════════════════
 function exportMarkdown() {
   let md = `# RAG-Anything 项目进度报告\n\n> 导出时间: ${new Date().toLocaleString()}\n\n`;
   MODULES.forEach(mod => {
-    md += `## ${mod.name}\n\n| 任务 | 状态 | 完成日期 | 备注 |\n|------|------|---------|------|\n`;
+    md += `## ${mod.name}\n\n| 任务 | 状态 | 实现完成日期 | 备注 |\n|------|------|-------------|------|\n`;
     mod.tasks.forEach(t => {
       const comps = getTaskCompletion(t.id);
-      const statusStr = comps.length > 0 ? '✅ 已完成' : t.status === 'done' ? '✅ 已完成' : t.status === 'progress' ? '🔄 进行中' : '🎯 计划中';
+      const statusStr = STATUS_LABELS[getDisplayStatus(t)] || STATUS_LABELS.pending;
       const dateStr = comps.length ? comps.map(c => { const [,w,d] = c.split('-'); return `W${w} ${['一','二','三','四','五'][d-1]}`; }).join(', ') : '-';
       const note = getTaskNote(t.id) || '-';
       md += `| ${t.name} | ${statusStr} | ${dateStr} | ${note} |\n`;
@@ -940,8 +987,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (saved === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
   } catch(e) {}
 
-  // 首次使用：将默认数据写入 hash
-  if (!location.hash.slice(1)) {
+  // 新版看板忽略旧 hash，首次渲染后写入当前数据版本。
+  if (!location.hash.slice(1) || hashLoad()?.version !== BOARD_VERSION) {
     hashSave(appData);
   }
 

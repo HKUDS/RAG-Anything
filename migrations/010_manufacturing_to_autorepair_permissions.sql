@@ -6,35 +6,42 @@
 -- ============================================================================
 
 -- Verify current state before migration
--- SELECT role_name, permissions FROM roles
--- WHERE 'manufacturing:read' = ANY(permissions)
---    OR 'manufacturing:write' = ANY(permissions);
+-- SELECT name, permissions FROM roles
+-- WHERE permissions ?| array['manufacturing:read', 'manufacturing:write'];
 
 BEGIN;
 
--- Replace manufacturing:read → autorepair:read
+-- Replace manufacturing permissions while preserving JSON array order.
 UPDATE roles
-SET permissions = array_replace(permissions, 'manufacturing:read', 'autorepair:read')
-WHERE 'manufacturing:read' = ANY(permissions);
+SET permissions = (
+    SELECT COALESCE(
+        jsonb_agg(
+            to_jsonb(
+                CASE value
+                    WHEN 'manufacturing:read' THEN 'autorepair:read'
+                    WHEN 'manufacturing:write' THEN 'autorepair:write'
+                    ELSE value
+                END
+            ) ORDER BY ordinal
+        ),
+        '[]'::jsonb
+    )
+    FROM jsonb_array_elements_text(permissions)
+         WITH ORDINALITY AS items(value, ordinal)
+)
+WHERE permissions ?| array['manufacturing:read', 'manufacturing:write'];
 
--- Replace manufacturing:write → autorepair:write
-UPDATE roles
-SET permissions = array_replace(permissions, 'manufacturing:write', 'autorepair:write')
-WHERE 'manufacturing:write' = ANY(permissions);
+-- Update KB domain from manufacturing → autorepair.
+UPDATE kb_metadata SET domain = 'autorepair' WHERE domain = 'manufacturing';
 
--- Update KB domain from manufacturing → autorepair
--- (Existing KBs in pg_kb_meta use domain='manufacturing')
-UPDATE pg_kb_meta SET domain = 'autorepair' WHERE domain = 'manufacturing';
-
--- Update KB metadata JSON (backward compat field)
-UPDATE pg_kb_meta
-SET meta = jsonb_set(meta, '{domain}', '"autorepair"')
-WHERE meta->>'domain' = 'manufacturing';
+-- Update the extensible metadata JSON (backward-compatible field).
+UPDATE kb_metadata
+SET extra = jsonb_set(extra, '{domain}', '"autorepair"', true)
+WHERE extra->>'domain' = 'manufacturing';
 
 COMMIT;
 
 -- Verify after migration
--- SELECT role_name, permissions FROM roles
--- WHERE 'autorepair:read' = ANY(permissions)
---    OR 'autorepair:write' = ANY(permissions);
--- SELECT kb_name, domain FROM pg_kb_meta WHERE domain = 'autorepair';
+-- SELECT name, permissions FROM roles
+-- WHERE permissions ?| array['autorepair:read', 'autorepair:write'];
+-- SELECT name, domain FROM kb_metadata WHERE domain = 'autorepair';

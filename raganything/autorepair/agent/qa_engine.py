@@ -38,6 +38,37 @@ _SENSITIVE_TEXT_PATTERNS = (
 )
 
 
+_VIDEO_SEGMENT_CONTEXT_PATTERN = re.compile(
+    r"\[VIDEO_SEGMENT\s+segment_id=(?P<segment_id>[^\s\]]+)\s+"
+    r"media_id=(?P<media_id>[^\s\]]+)\s+start_ms=(?P<start_ms>\d+)\s+"
+    r"end_ms=(?P<end_ms>\d+)\s+document_id=(?P<document_id>[^\s\]]+)\]"
+)
+
+
+def _video_segment_anchors_from_contexts(contexts: object, kb_name: str) -> list[dict]:
+    """Extract raw video segment anchors from retrieval contexts.
+
+    The router layer converts these into path-free citation DTOs after its
+    KB authorization check; this layer only adds structured timing/identity
+    fields without exposing server paths.
+    """
+    sources = [contexts] if isinstance(contexts, str) else contexts
+    segments: list[dict] = []
+    for context in sources or []:
+        if not isinstance(context, str):
+            continue
+        for match in _VIDEO_SEGMENT_CONTEXT_PATTERN.finditer(context):
+            value = match.groupdict()
+            segments.append({
+                **value,
+                "segment_index": int(value["start_ms"]),
+                "start_ms": int(value["start_ms"]),
+                "end_ms": int(value["end_ms"]),
+                "media_kb": kb_name,
+            })
+    return segments
+
+
 def _sanitize_client_text(value: object) -> str:
     """Remove local-path and inline-image material from client-visible text."""
     text = value if isinstance(value, str) else str(value or "")
@@ -390,6 +421,7 @@ class QAEngine:
         ctx = "\n\n".join([t for t in retrieved_texts if t])
         images = await self._recall_images_from_context(query, ctx, docs)
         citations = self.source_tracer.extract_citations(safe_answer, docs)
+        citations = citations + _video_segment_anchors_from_contexts(retrieved_texts, self.kb_name)
         confidence = self._estimate_confidence(docs)
         ms = round((time.time() - start_time) * 1000, 2)
         safe_trace = [
@@ -556,7 +588,8 @@ class QAEngine:
                 "type": "done",
                 "answer": safe_answer,
                 "images": await self._recall_images_from_context(query, "\n\n".join(retrieved_contexts), docs),
-                "citations": self.source_tracer.extract_citations(safe_answer, docs),
+                "citations": self.source_tracer.extract_citations(safe_answer, docs)
+                + _video_segment_anchors_from_contexts(retrieved_contexts, self.kb_name),
                 "confidence": self._estimate_confidence(docs),
                 "elapsed_ms": round((time.time() - start_time) * 1000, 2),
                 "trace": trace_steps,
@@ -600,7 +633,8 @@ class QAEngine:
             "type": "done",
             "answer": safe_answer,
             "images": await self._recall_images_from_context(query, ctx, docs),
-            "citations": self.source_tracer.extract_citations(safe_answer, docs),
+            "citations": self.source_tracer.extract_citations(safe_answer, docs)
+            + _video_segment_anchors_from_contexts([ctx], self.kb_name),
             "confidence": self._estimate_confidence(docs),
             "elapsed_ms": round((time.time() - start_time) * 1000, 2),
         }

@@ -21,12 +21,23 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "asyncpg>=0.29,<1.0",
     "huggingface_hub",
     "lightrag-hku<1.5",
     "mineru[core]",
     "docling>=2.0,<3.0",
     "pypdf>=3.9.0",
     "tqdm",
+    "slowapi>=0.1.9,<0.2",
+    "PyJWT>=2.8,<3.0",
+    "passlib>=1.7.4,<1.8",
+    "python-docx>=1.1,<2.0",
+    "pypdfium2>=4.30,<5.0",
+    "Markdown>=3.4,<4.0",
+    "beautifulsoup4>=4.12,<5.0",
+    "aiohttp>=3.9,<4.0",
+    "psutil>=5.9",
+    "reportlab>=4.0,<5.0",
 ]
 
 [project.optional-dependencies]
@@ -34,7 +45,8 @@ image = ["Pillow>=10.0.0"]
 text = ["reportlab>=4.0.0"]
 office = []  # Requires LibreOffice (external program)
 paddleocr = [
-    "paddleocr>=2.7.0",
+    "paddleocr==2.9.1",
+    "paddlepaddle==2.6.2",
     "pypdfium2>=4.25.0",
 ]
 markdown = [
@@ -48,11 +60,13 @@ opendataloader = [
 all = [
     "Pillow>=10.0.0",
     "reportlab>=4.0.0",
-    "paddleocr>=2.7.0",
+    "paddleocr==2.9.1",
+    "paddlepaddle==2.6.2",
     "pypdfium2>=4.25.0",
     "markdown>=3.4.0",
     "weasyprint>=60.0",
     "pygments>=2.10.0",
+    "opendataloader-pdf==2.5.0",
 ]
 
 [project.urls]
@@ -71,6 +85,7 @@ dev-dependencies = [
     "mypy",
     "openai",
     "python-dotenv",
+    "ruff>=0.6,<1.0",
 ]
 
 [tool.setuptools.packages.find]

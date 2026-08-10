@@ -18,7 +18,6 @@ const MonitorPage                 = lazy(() => import('./pages/MonitorPage'))
 const AgentsPage                  = lazy(() => import('./pages/AgentsPage'))
 const AgentChatPage               = lazy(() => import('./pages/AgentChatPage'))
 const LoginPage                   = lazy(() => import('./pages/LoginPage'))
-const RegisterPage                = lazy(() => import('./pages/RegisterPage'))
 const AdminUsersPage              = lazy(() => import('./pages/AdminUsersPage'))
 const AdminAuditLogsPage          = lazy(() => import('./pages/AdminAuditLogsPage'))
 const AutoRepairDashboardPage  = lazy(() => import('./pages/AutoRepairDashboardPage'))
@@ -151,7 +150,7 @@ const NAV_ITEMS = [
   { to: '/admin/platform', icon: Settings, label: '平台管理', desc: '默认值与资源上限', requiredPermission: 'settings:read' },
   { to: '/admin/users', icon: Shield, label: '用户管理', desc: '角色与权限', requiredPermission: 'users:read' },
   { to: '/admin/audit-logs', icon: ScrollText, label: '审计日志', desc: '操作追踪', requiredPermission: 'audit:read' },
-  { to: '/preferences', icon: Settings, label: '个人设置', desc: '模型、检索与账户', requiredPermission: null },
+  { to: '/preferences', icon: Settings, label: '个人设置', desc: '账户、外观与已授权设置', requiredPermission: null },
 ]
 
 const ROUTE_META = [
@@ -165,7 +164,7 @@ const ROUTE_META = [
   { test: p => p.startsWith('/autorepair'), kicker: '场景实验室', title: '汽修智能制造工作台', subtitle: '面向专业教学与竞赛场景的知识图谱和智能问答系统。' },
   { test: p => p.startsWith('/monitor'), kicker: '运行管理', title: '运行监控', subtitle: '观察服务状态、处理吞吐和知识系统运行指标。' },
   { test: p => p.startsWith('/admin/platform'), kicker: '系统配置', title: '平台管理', subtitle: '维护默认值、允许范围和资源硬上限。' },
-  { test: p => p.startsWith('/preferences'), kicker: '账户中心', title: '个人设置', subtitle: '管理模型、检索、解析、外观与账户安全。' },
+  { test: p => p.startsWith('/preferences'), kicker: '账户中心', title: '个人设置', subtitle: '管理已授权的个人设置、外观与账户安全。' },
   { test: p => p.startsWith('/admin/users'), kicker: '管理后台', title: '用户与权限', subtitle: '管理账号、角色、部门和访问边界。' },
   { test: p => p.startsWith('/admin/audit-logs'), kicker: '管理后台', title: '审计日志', subtitle: '追踪关键操作与安全事件。' },
 ]
@@ -513,7 +512,6 @@ export default function App() {
           <SuspenseWithTimeout fallback={<PageLoader />}>
             <Routes>
               <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
               <Route path="*" element={<LoginPage />} />
             </Routes>
           </SuspenseWithTimeout>

@@ -62,9 +62,9 @@ test('filterAssignableRoles 按操作者等级过滤可选角色', () => {
   assert.deepEqual(filterAssignableRoles(roles, 'unknown'), [])
 })
 
-test('filterAssignableRoles 未提供操作者角色时保持全量（向后兼容）', () => {
-  assert.deepEqual(filterAssignableRoles(roles, undefined).map((role) => role.name), ROLE_ORDER)
-  assert.deepEqual(filterAssignableRoles(roles, null).map((role) => role.name), ROLE_ORDER)
+test('filterAssignableRoles 未提供操作者角色时拒绝分配', () => {
+  assert.deepEqual(filterAssignableRoles(roles, undefined).map((role) => role.name), [])
+  assert.deepEqual(filterAssignableRoles(roles, null).map((role) => role.name), [])
 })
 
 test('filterAssignableRoles 忽略未知目标角色', () => {

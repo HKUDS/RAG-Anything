@@ -1,14 +1,6 @@
 name: OpenDataLoader Release Gate
 
 on:
-  pull_request:
-    paths:
-      - 'pyproject.toml'
-      - 'setup.py'
-      - 'uv.lock'
-      - 'Dockerfile'
-      - 'scripts/opendataloader_release_gate.py'
-      - '.github/workflows/opendataloader-release-gate.yml'
   workflow_dispatch:
     inputs:
       run_release_gate:
@@ -71,9 +63,6 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - environment: default
-            extra: ''
-            parser: mineru
           - environment: opendataloader
             extra: opendataloader
             parser: opendataloader
@@ -93,7 +82,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           version: '0.6.14'
-      - name: Install default or OpenDataLoader environment
+      - name: Install opt-in OpenDataLoader environment
         if: matrix.environment != 'marker'
         run: |
           if [ -n '${{ matrix.extra }}' ]; then
@@ -114,18 +103,12 @@ jobs:
           marker-runtime/bin/python -c "import marker"
 
   container-smoke:
-    name: Default and opt-in container smoke
+    name: OpenDataLoader opt-in container smoke
     needs: lock
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
-      - name: Build default image
-        run: docker build --target default --tag raganything:default .
-      - name: Assert default image excludes Java and OpenDataLoader
-        run: |
-          docker run --rm --entrypoint sh raganything:default -c '! command -v java'
-          docker run --rm --entrypoint python raganything:default -c "from importlib.util import find_spec; assert find_spec('opendataloader_pdf') is None"
       - name: Build opt-in image
         run: docker build --target opendataloader --tag raganything:opendataloader .
       - name: Assert opt-in Java and SDK versions

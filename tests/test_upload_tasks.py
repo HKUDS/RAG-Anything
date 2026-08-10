@@ -52,6 +52,101 @@ def test_upload_queue_claim_owner_has_uuid_factory():
 
 
 @pytest.mark.asyncio
+async def test_retired_video_profile_is_terminal_and_never_retried(monkeypatch, tmp_path):
+    from raganything.services import kb_service, state_service, ws_service
+
+    file_path = tmp_path / "retired.mp4"
+    file_path.write_bytes(b"video")
+    calls = []
+
+    class Stream:
+        def __init__(self, lines):
+            self._lines = iter(lines)
+
+        async def readline(self):
+            return next(self._lines, b"")
+
+    class FailedWorker:
+        returncode = 1
+        stdout = Stream([
+            'WORKER_ERROR_JSON {"stage":"video_profile","root_type":"RetiredVideoProfileError","failure_code":"video_profile_retired","retryable":false,"message":"请重新上传该视频"}\n'.encode("utf-8")
+        ])
+        stderr = Stream([])
+
+        async def wait(self):
+            return self.returncode
+
+    async def no_op(*_args, **_kwargs):
+        return None
+
+    async def update_upload(*args, **kwargs):
+        calls.append(("upload", args, kwargs))
+        return {"task_id": args[0]}
+
+    async def fail_task(*args, **kwargs):
+        calls.append(("task", args, kwargs))
+
+    async def event(*args, **kwargs):
+        calls.append(("event", args, kwargs))
+
+    async def fake_subprocess(*_args, **_kwargs):
+        return FailedWorker()
+
+    monkeypatch.setattr(kb_service.asyncio, "create_subprocess_exec", fake_subprocess)
+    monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", update_upload)
+    monkeypatch.setattr(kb_service, "_register_processing_file", lambda *_args: None)
+    monkeypatch.setattr(kb_service, "_unregister_processing_file", lambda *_args: None)
+    monkeypatch.setattr(kb_service, "_kb_worker_procs", {})
+    monkeypatch.setattr(kb_service, "_finalize_failed_upload", AsyncMock())
+    monkeypatch.setattr(state_service, "processing_tasks", {})
+    monkeypatch.setattr(state_service, "upsert_task_state", no_op)
+    monkeypatch.setattr(state_service, "update_task_progress", no_op)
+    monkeypatch.setattr(state_service, "complete_task", no_op)
+    monkeypatch.setattr(state_service, "fail_task", fail_task)
+    monkeypatch.setattr(ws_service, "emit_progress", no_op)
+    monkeypatch.setattr(ws_service, "add_event", event)
+    monkeypatch.setattr(ws_service, "ws_broadcast", no_op)
+
+    await kb_service._process_uploaded_file(
+        "task-retired", str(file_path), "retired.mp4", kb_name="demo", user_id=7,
+    )
+
+    uploads = [call for call in calls if call[0] == "upload"]
+    assert uploads == [
+        (
+            "upload",
+            ("task-retired", "processing"),
+            {"kb_name": "demo", "error_message": "", "claim_owner": None, "claim_generation": None},
+        ),
+        (
+            "upload",
+            ("task-retired", "failed"),
+            {
+                "kb_name": "demo",
+                "error_message": "请重新上传该视频",
+                "claim_owner": None,
+                "claim_generation": None,
+            },
+        ),
+    ]
+    task_failure = next(call for call in calls if call[0] == "task")
+    assert task_failure == (
+        "task",
+        ("task-retired", "请重新上传该视频"),
+        {
+            "failure_stage": "video_profile",
+            "retryable": False,
+        },
+    )
+    failure_event = next(
+        call for call in calls
+        if call[0] == "event" and call[1] == ("upload_error",)
+    )
+    assert failure_event[2]["failure_stage"] == "video_profile"
+    kb_service._finalize_failed_upload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_cancellation_keeps_task_pending_when_worker_survives_kill(monkeypatch):
     from raganything.services import kb_service
 
@@ -96,6 +191,7 @@ async def test_content_upload_uses_a_persisted_snapshot_and_isolated_instance(mo
 
     async def fake_snapshot(task_id, user_id, **overrides):
         snapshots.append((task_id, user_id, overrides))
+        return SimpleNamespace(chunking_strategy="recursive")
 
     class IsolatedInstance:
         lightrag = None
@@ -139,7 +235,8 @@ async def test_uploaded_document_id_resolution_refreshes_stale_cache_for_all_for
     import raganything.services.kb_service as kb_service
 
     class RetirableCache(dict):
-        async def retire(self, name):
+        async def retire(self, name, *, persist_vector_stores=True):
+            assert persist_vector_stores is False
             self.pop(name, None)
             return True
 
@@ -1083,10 +1180,14 @@ async def test_upload_files_all_skipped_returns_summary(monkeypatch, tmp_path):
 
     queue = asyncio.Queue()
 
-    async def fake_ensure_queue_draining(_kb_name):
-        return queue, queue.qsize()
+    enqueued = []
 
-    monkeypatch.setattr(shared, "_ensure_queue_draining", fake_ensure_queue_draining)
+    async def fake_enqueue(task_info):
+        enqueued.append(task_info)
+        queue.put_nowait(task_info)
+        return queue, queue.qsize() - 1
+
+    monkeypatch.setattr(shared, "_enqueue_upload_task", fake_enqueue)
 
     files = [
         UploadFile(filename="a.docx", file=BytesIO(b"a")),
@@ -1105,7 +1206,151 @@ async def test_upload_files_all_skipped_returns_summary(monkeypatch, tmp_path):
     assert result["total"] == 0
     assert result["queue_size"] == 0
     assert result["skipped"] == ["a.docx", "b.docx"]
+    assert result["skipped_details"] == [
+        {"filename": "a.docx", "file_index": 0},
+        {"filename": "b.docx", "file_index": 1},
+    ]
+    assert not list((tmp_path / "uploads").iterdir())
     assert "没有新任务入队" in result["message"]
+
+
+@pytest.mark.asyncio
+async def test_upload_files_continues_after_snapshot_failure(monkeypatch, tmp_path):
+    import raganything.routers.shared as shared
+    from raganything.routers.knowledge import upload_files
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "raganything.routers.knowledge._resolve_upload_vlm_snapshot",
+        AsyncMock(return_value=SimpleNamespace(
+            profile=SimpleNamespace(id="vlm-a"), fingerprint="vlm-fingerprint"
+        )),
+    )
+    monkeypatch.setattr(
+        "raganything.routers.knowledge._is_file_being_processed",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        "raganything.routers.knowledge._register_upload_with_stale_recovery",
+        AsyncMock(return_value=1),
+    )
+    monkeypatch.setattr(
+        "raganything.routers.knowledge._register_processing_file",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        "raganything.routers.knowledge._delete_upload_settings_snapshot",
+        AsyncMock(),
+    )
+
+    calls = 0
+
+    async def snapshot(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("settings unavailable")
+        return SimpleNamespace(
+            chunking_strategy="recursive",
+            enable_image=True,
+            enable_table=True,
+            enable_equation=True,
+            enable_video=True,
+        )
+
+    monkeypatch.setattr(
+        "raganything.routers.knowledge._create_upload_settings_snapshot", snapshot
+    )
+    queue = asyncio.Queue()
+
+    enqueued = []
+
+    async def fake_enqueue(task_info):
+        enqueued.append(task_info)
+        queue.put_nowait(task_info)
+        return queue, queue.qsize() - 1
+
+    monkeypatch.setattr(shared, "_enqueue_upload_task", fake_enqueue)
+    endpoint = getattr(upload_files, "__wrapped__", upload_files)
+    result = await endpoint(
+        request=None,
+        files=[
+            UploadFile(filename="first.mp4", file=BytesIO(b"first")),
+            UploadFile(filename="second.mp4", file=BytesIO(b"second")),
+        ],
+        kb="demo-kb",
+        current_user={"id": 1},
+    )
+
+    assert result["status"] == "queued"
+    assert [task["filename"] for task in result["tasks"]] == ["second.mp4"]
+    assert result["errors"] == [{
+        "filename": "first.mp4",
+        "file_index": 0,
+        "code": "settings_snapshot_unavailable",
+        "message": "无法创建任务设置快照",
+    }]
+    assert queue.qsize() == 1
+    assert [task["filename"] for task in enqueued] == ["second.mp4"]
+    assert result["tasks"][0]["file_index"] == 1
+
+
+@pytest.mark.asyncio
+async def test_batch_registration_failure_is_not_reported_as_a_duplicate_skip(monkeypatch, tmp_path):
+    import raganything.routers.shared as shared
+    from raganything.routers.knowledge import upload_files
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        "raganything.routers.knowledge._resolve_upload_vlm_snapshot",
+        AsyncMock(return_value=SimpleNamespace(
+            profile=SimpleNamespace(id="vlm-a"), fingerprint="vlm-fingerprint"
+        )),
+    )
+    monkeypatch.setattr("raganything.routers.knowledge._is_file_being_processed", lambda *_args: None)
+    monkeypatch.setattr("raganything.routers.knowledge._register_upload_with_stale_recovery", AsyncMock(return_value=None))
+    monkeypatch.setattr("raganything.routers.knowledge._delete_upload_settings_snapshot", AsyncMock())
+    monkeypatch.setattr(
+        "raganything.routers.knowledge._create_upload_settings_snapshot",
+        AsyncMock(return_value=SimpleNamespace(
+            chunking_strategy="recursive", enable_image=True, enable_table=True,
+            enable_equation=True, enable_video=True,
+        )),
+    )
+
+    async def unexpected_enqueue(_task):
+        raise AssertionError("a failed registration must not enter the queue")
+
+    monkeypatch.setattr(shared, "_enqueue_upload_task", unexpected_enqueue)
+    endpoint = getattr(upload_files, "__wrapped__", upload_files)
+    result = await endpoint(
+        request=None,
+        files=[UploadFile(filename="battery.mp4", file=BytesIO(b"content"))],
+        kb="demo-kb",
+        current_user={"id": 1},
+    )
+
+    assert result["status"] == "skipped"
+    assert "skipped" not in result
+    assert result["errors"] == [{
+        "filename": "battery.mp4",
+        "file_index": 0,
+        "code": "upload_registration_failed",
+        "message": "文件内容已存在或上传注册暂不可用，请稍后重试",
+    }]
+    assert not list((tmp_path / "uploads").iterdir())
+
+
+def test_staged_upload_paths_are_unique_for_duplicate_batch_filenames(tmp_path):
+    from raganything.routers.knowledge import _staged_upload_path, _strip_hash_prefix
+
+    first = _staged_upload_path(tmp_path, "a1b2c3d4-0000-0000-0000-000000000000", "lesson.mp4")
+    second = _staged_upload_path(tmp_path, "e5f60708-0000-0000-0000-000000000000", "lesson.mp4")
+
+    assert first != second
+    assert first.name == "a1b2c3d4000000000000000000000000_lesson.mp4"
+    assert second.name == "e5f60708000000000000000000000000_lesson.mp4"
+    assert _strip_hash_prefix(first.name) == "lesson.mp4"
 
 
 @pytest.mark.asyncio
@@ -1553,6 +1798,10 @@ async def test_failed_upload_persists_document_before_terminal_task(monkeypatch)
 
     monkeypatch.setattr(kb_service, "_fix_stuck_doc_status", fake_fix)
     monkeypatch.setattr(kb_service, "_find_degraded_document", no_degraded_document)
+    async def fake_upload_status(*_args, **_kwargs):
+        return {"status": "failed"}
+
+    monkeypatch.setattr(kb_service, "pg_update_upload_status_by_task_id", fake_upload_status)
     monkeypatch.setattr(state_service, "fail_task", fake_fail)
     monkeypatch.setattr(ws_service, "add_event", fake_event)
 
@@ -1971,6 +2220,13 @@ async def test_single_upload_persists_snapshot_before_queued_metadata(monkeypatc
 
     async def save_snapshot(task_id, user_id, **_overrides):
         calls.append(("snapshot", task_id, user_id))
+        return SimpleNamespace(
+            chunking_strategy="recursive",
+            enable_image=True,
+            enable_table=True,
+            enable_equation=True,
+            enable_video=False,
+        )
 
     async def register_upload(**kwargs):
         assert calls and calls[0][0] == "snapshot"
@@ -2024,7 +2280,13 @@ async def test_single_upload_removes_snapshot_when_metadata_registration_fails(
         )
 
     async def save_snapshot(*_args, **_kwargs):
-        return None
+        return SimpleNamespace(
+            chunking_strategy="recursive",
+            enable_image=True,
+            enable_table=True,
+            enable_equation=True,
+            enable_video=False,
+        )
 
     async def registration_failed(**_kwargs):
         return None
@@ -2208,7 +2470,14 @@ async def test_create_upload_settings_snapshot_persists_resolved_with_permitted_
 
     seen = {}
     persisted = []
-    resolved_stub = SimpleNamespace(revision=3, fingerprint="fp-1")
+    resolved_stub = SimpleNamespace(
+        revision=3,
+        fingerprint="fp-1",
+        ingestion=SimpleNamespace(
+            chunking_strategy="sentence",
+            enable_video=False,
+        ),
+    )
 
     async def fake_available_sections_for_user(user_id):
         seen["user_id"] = user_id
@@ -2225,7 +2494,7 @@ async def test_create_upload_settings_snapshot_persists_resolved_with_permitted_
     monkeypatch.setattr(user_settings, "resolve_user_settings_for_task", fake_resolve)
     monkeypatch.setattr(user_settings, "create_task_settings_snapshot", fake_create_snapshot)
 
-    await knowledge._create_upload_settings_snapshot(
+    ingestion = await knowledge._create_upload_settings_snapshot(
         "task-42",
         7,
         chunking_strategy="sentence",
@@ -2248,3 +2517,4 @@ async def test_create_upload_settings_snapshot_persists_resolved_with_permitted_
     }
     assert seen["resolve"][2] == ("models", "ingestion")
     assert persisted == [("task-42", 7, resolved_stub)]
+    assert ingestion is resolved_stub.ingestion

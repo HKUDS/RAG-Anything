@@ -40,7 +40,7 @@ function ConfirmDialog({ title, message, onConfirm, onCancel }) {
   return (
     <motion.div
       initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-      className="fixed inset-0 bg-sky-900/25 dark:bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center"
+      className="fixed inset-0 bg-black/25 dark:bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center"
       onClick={onCancel}
       role="dialog"
       aria-modal="true"
@@ -433,7 +433,7 @@ function WorkflowPageInner() {
         {showLoadDialog && (
           <motion.div
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-sky-900/25 dark:bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center"
+            className="fixed inset-0 bg-black/25 dark:bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center"
             onClick={() => setShowLoadDialog(false)}
             role="dialog"
             aria-modal="true"

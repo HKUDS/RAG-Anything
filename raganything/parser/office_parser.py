@@ -190,7 +190,13 @@ def _rapidocr_render_scale(scale: float):
 
 
 def _mirror_docling_package(source: Path, runtime_root: Path) -> None:
-    """Create one atomic mirror while coordinating across worker processes."""
+    """Create one atomic mirror while coordinating across worker processes.
+
+    A previous interrupted attempt can leave an incomplete mirror behind.
+    ``os.replace`` cannot overwrite an existing non-empty directory on
+    Windows (or POSIX), so remove the stale tree under the lock before the
+    atomic swap; otherwise startup keeps failing on the stale sentinel.
+    """
     runtime_base = runtime_root.parent
     target_sentinel = (
         runtime_root / "docling_parse" / "pdf_resources" / "glyphs" / "standard" / "additional.dat"
@@ -205,6 +211,8 @@ def _mirror_docling_package(source: Path, runtime_root: Path) -> None:
     try:
         if target_sentinel.is_file():
             return
+        if runtime_root.exists():
+            shutil.rmtree(runtime_root, ignore_errors=True)
         staging = runtime_base / (
             f".{runtime_root.name}-{os.getpid()}-{threading.get_ident()}"
         )
@@ -213,13 +221,7 @@ def _mirror_docling_package(source: Path, runtime_root: Path) -> None:
                 shutil.rmtree(staging, ignore_errors=True)
             staging.mkdir(parents=True)
             shutil.copytree(source, staging / "docling_parse")
-            try:
-                os.replace(staging, runtime_root)
-            except OSError:
-                if runtime_root.exists():
-                    shutil.rmtree(staging, ignore_errors=True)
-                else:
-                    raise
+            os.replace(staging, runtime_root)
         finally:
             if staging.exists():
                 shutil.rmtree(staging, ignore_errors=True)
@@ -1127,6 +1129,16 @@ class DoclingParser(Parser):
             doc_path = Path(doc_path)
             if not doc_path.exists():
                 raise FileNotFoundError(f"Document file does not exist: {doc_path}")
+
+            # HTML formats belong to the HTML pipeline; delegate before the
+            # OFFICE_FORMATS check rejects them.
+            if doc_path.suffix.lower() in self.HTML_FORMATS:
+                return self.parse_html(
+                    html_path=doc_path,
+                    output_dir=output_dir,
+                    lang=lang,
+                    **kwargs,
+                )
 
             if doc_path.suffix.lower() not in self.OFFICE_FORMATS:
                 raise ValueError(f"Unsupported office format: {doc_path.suffix}")

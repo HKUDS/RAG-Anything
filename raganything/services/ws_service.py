@@ -29,6 +29,9 @@ ws_clients: list[WebSocket] = []
 active_ws_connections: dict[str, list] = {}
 """Per-run WebSocket connections: run_id → [ws1, ws2, ...]."""
 
+_ws_sessions: dict[WebSocket, dict[str, Any]] = {}
+"""Authenticated account session snapshot for each connected WebSocket."""
+
 _event_lock = asyncio.Lock()
 """Lock for thread-safe event list mutation."""
 
@@ -58,12 +61,17 @@ async def ws_broadcast(data: dict[str, Any]) -> None:
     dead = []
     for ws in ws_clients:
         try:
+            if not await _session_is_current(_ws_sessions.get(ws, {})):
+                await ws.close(code=4001, reason="Account session is no longer valid")
+                dead.append(ws)
+                continue
             await ws.send_json(data)
         except Exception:
             dead.append(ws)
     for ws in dead:
         if ws in ws_clients:
             ws_clients.remove(ws)
+        _ws_sessions.pop(ws, None)
 
 
 async def push_run_status(
@@ -88,9 +96,34 @@ async def push_run_status(
         msg["data"] = data
     for ws in active_ws_connections.get(run_id, []):
         try:
+            if not await _session_is_current(_ws_sessions.get(ws, {})):
+                await ws.close(code=4001, reason="Account session is no longer valid")
+                continue
             await ws.send_json(msg)
         except Exception:
             pass
+
+
+async def _session_is_current(session: dict[str, Any]) -> bool:
+    """Fail closed before delivering a WS event to an existing connection."""
+    user_id = session.get("id")
+    if not user_id:
+        return False
+    try:
+        from raganything.services.auth import get_user_by_id, is_token_revoked
+
+        jti = session.get("token_jti")
+        if jti and await is_token_revoked(jti):
+            return False
+        account = await get_user_by_id(user_id)
+        return bool(
+            account and account.get("is_active") and account.get("archived_at") is None
+            and int(account.get("session_generation", 0)) == int(session.get("session_generation"))
+        )
+    except (TypeError, ValueError):
+        return False
+    except Exception:
+        return False
 
 
 # ── Progress ───────────────────────────────────────────────
@@ -196,7 +229,7 @@ async def add_event(event: str, user_id: int = 0, **kw: Any) -> None:
 
 # ── Connection Management ──────────────────────────────────
 
-def register_ws(run_id: str, ws: WebSocket):
+def register_ws(run_id: str, ws: WebSocket, session: dict[str, Any] | None = None):
     """Register a WebSocket connection for a workflow run.
 
     Args:
@@ -206,6 +239,14 @@ def register_ws(run_id: str, ws: WebSocket):
     if run_id not in active_ws_connections:
         active_ws_connections[run_id] = []
     active_ws_connections[run_id].append(ws)
+    if session is not None:
+        _ws_sessions[ws] = dict(session)
+
+
+def register_general_ws(ws: WebSocket, session: dict[str, Any]) -> None:
+    """Register a general WebSocket together with its validated session."""
+    ws_clients.append(ws)
+    _ws_sessions[ws] = dict(session)
 
 
 def unregister_ws(run_id: str, ws: WebSocket):
@@ -222,6 +263,14 @@ def unregister_ws(run_id: str, ws: WebSocket):
             pass
         if not active_ws_connections[run_id]:
             del active_ws_connections[run_id]
+    _ws_sessions.pop(ws, None)
+
+
+def unregister_general_ws(ws: WebSocket) -> None:
+    """Remove a general WebSocket and its authentication snapshot."""
+    if ws in ws_clients:
+        ws_clients.remove(ws)
+    _ws_sessions.pop(ws, None)
 
 
 __all__ = [
@@ -236,4 +285,6 @@ __all__ = [
     "add_event",
     "register_ws",
     "unregister_ws",
+    "register_general_ws",
+    "unregister_general_ws",
 ]

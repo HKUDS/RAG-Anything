@@ -188,10 +188,21 @@ class MultimodalProcessorMixin:
                 pipeline_status["latest_message"] = log_message
                 pipeline_status["history_messages"].append(log_message)
 
+        has_video = False
         try:
-            processed = await self._process_multimodal_content_batch_type_aware(
-                multimodal_items=multimodal_items, file_path=file_path, doc_id=doc_id
-            )
+            # Video owns its chunk creation because one source item becomes
+            # several time-bounded chunks. The generic batch path only calls
+            # generate_description_only(), which cannot persist video segment
+            # records and must never be an ingestion fallback.
+            has_video = any(item.get("type") == "video" for item in multimodal_items)
+            if has_video:
+                processed = await self._process_multimodal_content_individual(
+                    multimodal_items, file_path, doc_id
+                )
+            else:
+                processed = await self._process_multimodal_content_batch_type_aware(
+                    multimodal_items=multimodal_items, file_path=file_path, doc_id=doc_id
+                )
             if processed is not True:
                 raise RuntimeError(
                     "multimodal processing completed without processing every item"
@@ -222,6 +233,12 @@ class MultimodalProcessorMixin:
 
         except Exception as e:
             self.logger.error(f"Error in multimodal processing: {e}")
+            # A v2 video is an atomic indexing unit: its own compensation
+            # cleanup already removed partial artifacts, and the generic batch
+            # fallback would silently index a competing whole-video chunk.
+            # Surface the failure so the Worker can retry the same snapshot.
+            if has_video:
+                raise
             if getattr(self, "_multimodal_storage_started", False):
                 await self._set_multimodal_status_record(doc_id, False)
                 raise RuntimeError(
@@ -377,6 +394,7 @@ class MultimodalProcessorMixin:
 
         processed_count = 0
         failed_count = 0
+        next_chunk_order_index = existing_chunks_count
         for i, item in enumerate(multimodal_items):
             try:
                 content_type = item.get("type", "unknown")
@@ -403,15 +421,21 @@ class MultimodalProcessorMixin:
                         item_info=item_info,  # Pass item info for context extraction
                         batch_mode=True,
                         doc_id=doc_id,  # Pass doc_id for proper association
-                        chunk_order_index=existing_chunks_count
-                        + i,  # Proper order index
+                        chunk_order_index=next_chunk_order_index,
                     )
                     if not isinstance(result, tuple) or len(result) != 3:
                         raise RuntimeError(
                             "multimodal processor returned an invalid result contract"
                         )
                     _, entity_info, chunk_results = result
-                    if not isinstance(entity_info, dict) or not entity_info.get("chunk_id"):
+                    chunk_ids = (
+                        entity_info.get("chunk_ids")
+                        if isinstance(entity_info, dict) else None
+                    )
+                    if not isinstance(chunk_ids, list):
+                        chunk_ids = [entity_info.get("chunk_id")] if isinstance(entity_info, dict) else []
+                    chunk_ids = [str(chunk_id) for chunk_id in chunk_ids if chunk_id]
+                    if not chunk_ids:
                         raise RuntimeError(
                             "multimodal processor did not persist an indexable chunk"
                         )
@@ -419,10 +443,8 @@ class MultimodalProcessorMixin:
                     # Collect chunk results for batch processing
                     all_chunk_results.extend(chunk_results)
 
-                    # Extract chunk ID from the entity_info (actual chunk_id created by processor)
-                    if entity_info and "chunk_id" in entity_info:
-                        chunk_id = entity_info["chunk_id"]
-                        multimodal_chunk_ids.append(chunk_id)
+                    multimodal_chunk_ids.extend(chunk_ids)
+                    next_chunk_order_index += len(chunk_ids)
 
                     self.logger.info(
                         f"{content_type} processing complete: {entity_info.get('entity_name', 'Unknown')}"
@@ -435,6 +457,11 @@ class MultimodalProcessorMixin:
                     failed_count += 1
 
             except Exception as e:
+                # Native video failures are retryable Worker failures, not a
+                # partial multimodal success that could leave segments indexed.
+                from raganything.video_processor import VideoProcessingError
+                if isinstance(e, VideoProcessingError):
+                    raise
                 self.logger.error(f"Error processing multimodal content: {str(e)}")
                 self.logger.debug("Exception details:", exc_info=True)
                 failed_count += 1

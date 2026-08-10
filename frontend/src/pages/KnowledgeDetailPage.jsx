@@ -8,9 +8,12 @@ import {
 import { loadD3 } from '../utils/lazyD3'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Link, useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { api } from '../utils/api'
+import { api, setCurrentKB } from '../utils/api'
+import Pagination from '../components/Pagination'
 import ChunkingStrategySelector from '../components/ChunkingStrategySelector'
 import { getChunkingStrategyPresentation } from '../utils/chunkingStrategyPresentation'
+import { canonicalChunkingStrategyId, fallbackChunkingStrategyCatalog, normalizeChunkingStrategyCatalog } from '../utils/chunkingOptions'
+import { resolveBatchUploadOutcomes } from '../utils/batchUploadOutcomes'
 import { getDocumentTagPresentation } from '../utils/documentTagHealth'
 import {
   getDocumentHealth,
@@ -19,6 +22,7 @@ import {
   isCancellableUploadDocument,
 } from '../utils/documentHealth'
 import { formatDate } from '../utils/dateFormat'
+import { clampPage, getStoredPageSize, getTotalPages, storePageSize } from '../utils/pagination'
 import SideDrawer from '../components/SideDrawer'
 import { UserDialogConfirmation } from '../components/UserDialog'
 import TagRelationsPanel from '../components/TagRelationsPanel'
@@ -68,6 +72,7 @@ const STATUS_CN = {
   degraded: '已入库，图谱待补全',
 }
 const UPLOAD_TASK_TERMINAL_STATUSES = new Set(['completed', 'processed', 'failed', 'degraded'])
+const DOCUMENT_PAGE_SIZE_STORAGE_KEY = 'raganything:pagination:knowledge-detail-documents'
 const TAG_TONE_CLASS = {
   success: 'text-sage-600',
   info: 'text-sky-600',
@@ -243,6 +248,8 @@ function UploadSection({
   onUploaded,
   multimodal,
   setMultimodal,
+  effectiveSource = '个人默认',
+  effectiveIngestion = null,
   canWrite = false,
 }) {
   const [dragOver, setDragOver] = useState(false)
@@ -262,6 +269,8 @@ function UploadSection({
   const [folderPath, setFolderPath] = useState('')
   const [folderLoading, setFolderLoading] = useState(false)
   const [showUpload, setShowUpload] = useState(false)
+  const [showPendingFiles, setShowPendingFiles] = useState(true)
+  const [showServerTasks, setShowServerTasks] = useState(true)
   const [progressNow, setProgressNow] = useState(() => Date.now())
   const fileInputRef = useRef(null)
   const taskRequestRef = useRef(0)
@@ -412,40 +421,24 @@ function UploadSection({
         multimodal,
       )
 
-      const successCounts = new Map()
-      const skippedCounts = new Map()
-      ;(result.tasks || []).forEach(task => {
-        successCounts.set(task.filename, (successCounts.get(task.filename) || 0) + 1)
-      })
-      ;(result.skipped || []).forEach(name => {
-        skippedCounts.set(name, (skippedCounts.get(name) || 0) + 1)
-      })
+      const outcomes = resolveBatchUploadOutcomes(pendingFiles, result)
+      const targetIndexById = new Map(pendingFiles.map((item, index) => [item.id, index]))
 
       setLocalFiles(prev => prev.flatMap(item => {
         if (!targetIds.has(item.id)) return [item]
-
-        const queuedCount = successCounts.get(item.name) || 0
-        if (queuedCount > 0) {
-          successCounts.set(item.name, queuedCount - 1)
-          return []
-        }
-
-        const skippedCount = skippedCounts.get(item.name) || 0
-        if (skippedCount > 0) {
-          skippedCounts.set(item.name, skippedCount - 1)
-          return [{ ...item, submitting: false, error: '文件重复或注册失败' }]
-        }
-
-        return [{ ...item, submitting: false }]
+        const outcome = outcomes.get(targetIndexById.get(item.id))
+        if (outcome?.status === 'queued') return []
+        return [{ ...item, submitting: false, error: outcome?.error || '' }]
       }))
 
       await refreshUploadTasks({ silent: true })
       onUploaded?.()
       const queued = result.tasks?.length || 0
       const skipped = result.skipped?.length || 0
+      const failed = result.errors?.length || 0
       onToast?.(
         queued > 0
-          ? `已提交 ${queued} 个上传任务${skipped > 0 ? `，跳过 ${skipped} 个` : ''}`
+          ? `已提交 ${queued} 个上传任务${skipped > 0 ? `，跳过 ${skipped} 个` : ''}${failed > 0 ? `，${failed} 个提交失败` : ''}`
           : (result.message || '没有可提交的文件'),
         queued > 0 ? 'success' : 'info',
       )
@@ -630,7 +623,13 @@ function UploadSection({
                   helperText="选择本次上传的文本切分方式，会影响检索效果和处理时间。"
                 />
 
-                <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-2xs text-ink-muted">当前基础：{effectiveSource}</span>
+                <button type="button" className="btn-ghost text-xs py-0.5 px-2" onClick={() => {
+                  const value = effectiveIngestion || {}
+                  setChunkingStrategy(canonicalChunkingStrategyId(value.chunking_strategy || ''))
+                  setMultimodal({ enable_image: value.enable_image ?? true, enable_table: value.enable_table ?? true, enable_equation: value.enable_equation ?? true, enable_video: value.enable_video ?? false })
+                }}>恢复默认</button>
                   <Zap size={13} className="text-ink-muted" />
                   <span className="text-xs text-ink-muted">内容识别:</span>
                   {[
@@ -709,59 +708,84 @@ function UploadSection({
                       <p className="text-xs font-medium text-ink-body">待上传文件 ({localFiles.length})</p>
                       <p className="text-2xs text-ink-muted mt-0.5">这里是浏览器里尚未提交到服务器的草稿文件。</p>
                     </div>
-                    {pendingLocalCount > 0 && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      {pendingLocalCount > 0 && (
+                        <button
+                          className="btn-primary text-xs py-1 px-3"
+                          onClick={submitAllFiles}
+                          disabled={batchUploading}
+                        >
+                          {batchUploading ? '提交中…' : `全部上传 (${pendingLocalCount})`}
+                        </button>
+                      )}
                       <button
-                        className="btn-primary text-xs py-1 px-3"
-                        onClick={submitAllFiles}
-                        disabled={batchUploading}
+                        type="button"
+                        className="btn-ghost p-1.5"
+                        onClick={() => setShowPendingFiles(current => !current)}
+                        aria-expanded={showPendingFiles}
+                        aria-controls="pending-upload-files"
+                        aria-label={showPendingFiles ? '收起待上传文件' : '展开待上传文件'}
+                        title={showPendingFiles ? '收起待上传文件' : '展开待上传文件'}
                       >
-                        {batchUploading ? '提交中…' : `全部上传 (${pendingLocalCount})`}
+                        {showPendingFiles ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                       </button>
-                    )}
+                    </div>
                   </div>
 
-                  {localFiles.length === 0 ? (
-                    <div className="rounded-lg border border-cloud-300/60 bg-cloud-100/60 px-3 py-6 text-center">
-                      <p className="text-xs text-ink-muted">还没有待提交文件</p>
-                      <p className="text-2xs text-ink-muted mt-1">选择文件后会先出现在这里，提交成功后转入右侧上传任务。</p>
-                    </div>
-                  ) : (
-                    localFiles.map(file => (
-                      <div key={file.id} className="rounded-lg border border-cloud-300/60 bg-cloud-100/60 px-3 py-2 text-xs">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {file.submitting
-                                ? <Loader2 size={14} className="animate-spin text-sky-500 shrink-0" />
-                                : file.error
-                                  ? <XCircle size={14} className="text-rose-500 shrink-0" />
-                                  : <FileText size={14} className="text-ink-muted shrink-0" />}
-                              <span className="text-ink-body truncate">{file.name}</span>
-                            </div>
-                            <div className="flex items-center gap-3 mt-1 text-2xs text-ink-muted">
-                              <span className="font-mono">{(file.size / 1024).toFixed(0)} KB</span>
-                              <span>{file.submitting ? '提交中…' : '待提交'}</span>
-                            </div>
-                            {file.error && (
-                              <p className="mt-1 text-2xs text-rose-500 break-all">{file.error}</p>
-                            )}
+                  <AnimatePresence initial={false}>
+                    {showPendingFiles && (
+                      <motion.div
+                        id="pending-upload-files"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden space-y-2"
+                      >
+                        {localFiles.length === 0 ? (
+                          <div className="rounded-lg border border-cloud-300/60 bg-cloud-100/60 px-3 py-6 text-center">
+                            <p className="text-xs text-ink-muted">还没有待提交文件</p>
+                            <p className="text-2xs text-ink-muted mt-1">选择文件后会先出现在这里，提交成功后转入右侧上传任务。</p>
                           </div>
-                          <div className="flex items-center gap-2 shrink-0">
-                            {!file.submitting && (
-                              <>
-                                <button className="btn-primary text-xs py-0.5 px-2" onClick={() => submitLocalFile(file.id)}>
-                                  上传
-                                </button>
-                                <button className="btn-ghost text-xs py-0.5 px-2 text-rose-500" onClick={() => removeLocalFile(file.id)}>
-                                  移除
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))
-                  )}
+                        ) : (
+                          localFiles.map(file => (
+                            <div key={file.id} className="rounded-lg border border-cloud-300/60 bg-cloud-100/60 px-3 py-2 text-xs">
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    {file.submitting
+                                      ? <Loader2 size={14} className="animate-spin text-sky-500 shrink-0" />
+                                      : file.error
+                                        ? <XCircle size={14} className="text-rose-500 shrink-0" />
+                                        : <FileText size={14} className="text-ink-muted shrink-0" />}
+                                    <span className="text-ink-body truncate">{file.name}</span>
+                                  </div>
+                                  <div className="flex items-center gap-3 mt-1 text-2xs text-ink-muted">
+                                    <span className="font-mono">{(file.size / 1024).toFixed(0)} KB</span>
+                                    <span>{file.submitting ? '提交中…' : '待提交'}</span>
+                                  </div>
+                                  {file.error && (
+                                    <p className="mt-1 text-2xs text-rose-500 break-all">{file.error}</p>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  {!file.submitting && (
+                                    <>
+                                      <button className="btn-primary text-xs py-0.5 px-2" onClick={() => submitLocalFile(file.id)}>
+                                        上传
+                                      </button>
+                                      <button className="btn-ghost text-xs py-0.5 px-2 text-rose-500" onClick={() => removeLocalFile(file.id)}>
+                                        移除
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
 
                 <div className="card p-3 space-y-2">
@@ -770,11 +794,33 @@ function UploadSection({
                       <p className="text-xs font-medium text-ink-body">上传任务 ({serverTasks.length})</p>
                       <p className="text-2xs text-ink-muted mt-0.5">这里展示已经提交到服务器的上传状态，刷新页面后仍可恢复。</p>
                     </div>
-                    <button className="btn-ghost text-xs py-1 px-2" onClick={() => refreshUploadTasks()} disabled={tasksLoading}>
-                      {tasksLoading ? '刷新中…' : '刷新'}
-                    </button>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button className="btn-ghost text-xs py-1 px-2" onClick={() => refreshUploadTasks()} disabled={tasksLoading}>
+                        {tasksLoading ? '刷新中…' : '刷新'}
+                      </button>
+                      <button
+                        type="button"
+                        className="btn-ghost p-1.5"
+                        onClick={() => setShowServerTasks(current => !current)}
+                        aria-expanded={showServerTasks}
+                        aria-controls="server-upload-tasks"
+                        aria-label={showServerTasks ? '收起上传任务' : '展开上传任务'}
+                        title={showServerTasks ? '收起上传任务' : '展开上传任务'}
+                      >
+                        {showServerTasks ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                      </button>
+                    </div>
                   </div>
 
+                  <AnimatePresence initial={false}>
+                    {showServerTasks && (
+                      <motion.div
+                        id="server-upload-tasks"
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        className="overflow-hidden space-y-2"
+                      >
                   {tasksError && (
                     <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-600">
                       上传任务加载失败: {tasksError}
@@ -913,6 +959,9 @@ function UploadSection({
                     })}
                     </>
                   )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               </div>
             </div>
@@ -943,7 +992,7 @@ export default function KnowledgeDetailPage() {
   const { kbName } = useParams()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const { hasPermission } = useAuth()
+  const { hasPermission, verifyToken } = useAuth()
   const canManageKB = hasPermission('kb:write')
   const canViewVisionSettings = hasPermission('kb:read')
   const canManageGraph = hasPermission('graph:write')
@@ -964,6 +1013,8 @@ export default function KnowledgeDetailPage() {
   const [cancellingUploadTaskIds, setCancellingUploadTaskIds] = useState([])
   const [retryingDocIds, setRetryingDocIds] = useState([])
   const [selectedIds, setSelectedIds] = useState(new Set())
+  const [documentPage, setDocumentPage] = useState(1)
+  const [documentPageSize, setDocumentPageSize] = useState(() => getStoredPageSize(DOCUMENT_PAGE_SIZE_STORAGE_KEY))
   const [batchDeleting, setBatchDeleting] = useState(false)
   const [reprocessingMultimodal, setReprocessingMultimodal] = useState(false)
   const [selectedNode, setSelectedNode] = useState(null)
@@ -971,6 +1022,11 @@ export default function KnowledgeDetailPage() {
   const [toast, setToast] = useState(null)
   const [chunkingStrategy, setChunkingStrategy] = useState('')
   const [strategies, setStrategies] = useState({})
+  const [parserOptions, setParserOptions] = useState([])
+  const [ingestionSettings, setIngestionSettings] = useState(null)
+  const [ingestionDraft, setIngestionDraft] = useState({})
+  const [ingestionSettingsError, setIngestionSettingsError] = useState('')
+  const [savingIngestionSettings, setSavingIngestionSettings] = useState(false)
   // 图谱编辑状态
   const [showCreateNodeModal, setShowCreateNodeModal] = useState(false)
   const [showCreateEdgeModal, setShowCreateEdgeModal] = useState(false)
@@ -1007,6 +1063,7 @@ export default function KnowledgeDetailPage() {
   const loadAbortRef = useRef(null)
   const graphLoadAbortRef = useRef(null)
   const nodeDetailAbortRef = useRef(null)
+  const documentSelectAllRef = useRef(null)
   const visionRequestRef = useRef(0)
   const selectedNodeRef = useRef(null)
   selectedNodeRef.current = selectedNode
@@ -1211,17 +1268,55 @@ export default function KnowledgeDetailPage() {
 
   // 加载设置（分块策略），仅执行一次
   useEffect(() => {
-    api.getPersonalSettings().then(r => {
-      const ingestion = r?.effective?.ingestion || {}
-      setChunkingStrategy(ingestion.chunking_strategy || '')
+    if (!kbAccess.confirmed || !canManageKB) return undefined
+    let active = true
+    Promise.all([api.getPersonalSettings(), api.getPersonalSettingsOptions(), api.getKBIngestionSettings(kbName)]).then(([personal, options, kbSettings]) => {
+      if (!active) return
+      const ingestion = kbSettings?.effective || personal?.effective?.ingestion || {}
+      setChunkingStrategy(canonicalChunkingStrategyId(ingestion.chunking_strategy || ''))
       setMultimodal({
         enable_image: ingestion.enable_image ?? true,
         enable_table: ingestion.enable_table ?? true,
         enable_equation: ingestion.enable_equation ?? true,
         enable_video: ingestion.enable_video ?? false,
       })
-    }).catch(() => {})
-  }, [])
+      setIngestionSettings(kbSettings)
+      setIngestionDraft(kbSettings?.stored || {})
+      const catalog = options?.chunking_strategies
+      setParserOptions(Array.isArray(options?.parsers) ? options.parsers : [])
+      // The catalog determines UI choices; server-side validation remains
+      // authoritative for stale clients and direct API callers.
+      const normalized = Array.isArray(catalog) ? normalizeChunkingStrategyCatalog(catalog) : {}
+      setStrategies(Object.keys(normalized).length > 0 ? normalized : fallbackChunkingStrategyCatalog())
+    }).catch(error => {
+      if (!active) return
+      if (error?.status === 403) void verifyToken()
+      setIngestionSettingsError(error.message || '上传默认设置加载失败')
+      setStrategies(fallbackChunkingStrategyCatalog())
+    })
+    return () => { active = false }
+  }, [canManageKB, kbAccess.confirmed, kbName, verifyToken])
+
+  const saveKBIngestionSettings = async () => {
+    if (!canManageKB || !ingestionSettings || savingIngestionSettings) return
+    setSavingIngestionSettings(true)
+    setIngestionSettingsError('')
+    try {
+      const next = await api.updateKBIngestionSettings(kbName, {
+        expected_revision: ingestionSettings.revision,
+        values: ingestionDraft,
+      })
+      setIngestionSettings(next)
+      setIngestionDraft(next.stored || {})
+      const effective = next.effective || {}
+      setChunkingStrategy(canonicalChunkingStrategyId(effective.chunking_strategy || ''))
+      setMultimodal({ enable_image: effective.enable_image ?? true, enable_table: effective.enable_table ?? true, enable_equation: effective.enable_equation ?? true, enable_video: effective.enable_video ?? false })
+      showToast('知识库上传默认已保存', 'success')
+    } catch (error) {
+      if (error?.status === 403) void verifyToken()
+      setIngestionSettingsError(error.message || '知识库上传默认保存失败')
+    } finally { setSavingIngestionSettings(false) }
+  }
 
   // 文档/统计核心数据加载；每个响应都绑定显式 KB、abort 与 generation。
   // 图谱/实体数据由 loadGraphData 在图谱 tab 激活时按需加载。
@@ -1632,12 +1727,44 @@ export default function KnowledgeDetailPage() {
   const filteredDocs = displayedDetailState.documents.status === 'ready'
     ? docs.filter(d => d.file?.toLowerCase().includes(filter.toLowerCase()))
     : []
+  const documentTotalPages = getTotalPages(filteredDocs.length, documentPageSize)
+  const currentDocumentPage = clampPage(documentPage, documentTotalPages)
+  const paginatedDocs = filteredDocs.slice(
+    (currentDocumentPage - 1) * documentPageSize,
+    currentDocumentPage * documentPageSize,
+  )
+  const selectedDocsOnPage = paginatedDocs.filter(doc => selectedIds.has(doc.id))
+  const allDocsOnPageSelected = paginatedDocs.length > 0 && selectedDocsOnPage.length === paginatedDocs.length
+  const someDocsOnPageSelected = selectedDocsOnPage.length > 0 && !allDocsOnPageSelected
   const documentListMode = getDocumentListMode({
     routeKB: kbName,
     state: displayedDetailState,
     filteredCount: filteredDocs.length,
     hasFilter: Boolean(filter.trim()),
   })
+
+  useEffect(() => {
+    if (documentPage !== currentDocumentPage) setDocumentPage(currentDocumentPage)
+  }, [currentDocumentPage, documentPage])
+
+  useEffect(() => {
+    if (documentSelectAllRef.current) documentSelectAllRef.current.indeterminate = someDocsOnPageSelected
+  }, [someDocsOnPageSelected])
+
+  useEffect(() => {
+    if (displayedDetailState.documents.status !== 'ready') return
+    const availableIds = new Set(docs.map(doc => doc.id))
+    setSelectedIds(current => {
+      const next = new Set([...current].filter(id => availableIds.has(id)))
+      return next.size === current.size ? current : next
+    })
+  }, [displayedDetailState.documents.status, docs])
+
+  const updateDocumentPageSize = value => {
+    const next = storePageSize(DOCUMENT_PAGE_SIZE_STORAGE_KEY, value)
+    setDocumentPageSize(next)
+    setDocumentPage(1)
+  }
 
   const handleRetryDocument = async (doc) => {
     if (!canManageKB) return
@@ -1737,7 +1864,12 @@ export default function KnowledgeDetailPage() {
   }
   const toggleSelectAll = () => {
     if (!canManageKB) return
-    setSelectedIds(prev => prev.size === filteredDocs.length ? new Set() : new Set(filteredDocs.map(d => d.id)))
+    setSelectedIds(current => {
+      const next = new Set(current)
+      if (allDocsOnPageSelected) paginatedDocs.forEach(doc => next.delete(doc.id))
+      else paginatedDocs.forEach(doc => next.add(doc.id))
+      return next
+    })
   }
 
   const handleBatchDelete = async () => {
@@ -1918,6 +2050,37 @@ export default function KnowledgeDetailPage() {
       {/* ── 标签页：文档 ── */}
       {activeTab === 'documents' && (
       <>
+        {canManageKB && <section className="card p-5" aria-labelledby="kb-ingestion-heading">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h3 id="kb-ingestion-heading" className="text-sm font-semibold text-ink-body">知识库上传默认</h3>
+              <p className="mt-1 text-xs text-ink-muted">用于之后的新上传任务，优先于个人默认偏好；已有文档不会改变。</p>
+            </div>
+            <button type="button" className="btn-secondary text-xs" onClick={() => setIngestionDraft({})} disabled={savingIngestionSettings}>恢复个人默认</button>
+          </div>
+          {ingestionSettingsError && <p className="mt-3 text-xs text-rose-600" role="alert">{ingestionSettingsError}</p>}
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <label className="text-xs text-ink-body">默认解析器
+              <select className="select-field mt-1 w-full text-sm" value={ingestionDraft.parser || ''} onChange={event => setIngestionDraft(current => ({ ...current, parser: event.target.value || undefined }))}>
+                <option value="">继承个人默认</option>
+                {parserOptions.map(parser => <option key={parser.id} value={parser.id} disabled={!parser.available}>{parser.name}{parser.available ? '' : '（不可用）'}</option>)}
+              </select>
+            </label>
+            <label className="text-xs text-ink-body">默认切块方式
+              <select className="select-field mt-1 w-full text-sm" value={ingestionDraft.chunking_strategy || ''} onChange={event => setIngestionDraft(current => ({ ...current, chunking_strategy: event.target.value || undefined }))}>
+                <option value="">继承个人默认</option>
+                {Object.entries(strategies).map(([id, strategy]) => <option key={id} value={id}>{strategy.name || id}</option>)}
+              </select>
+            </label>
+            <label className="text-xs text-ink-body">分块大小
+              <input className="input-field mt-1 w-full text-sm" type="number" min="64" value={ingestionDraft.chunk_size ?? ''} placeholder="继承个人默认" onChange={event => setIngestionDraft(current => ({ ...current, chunk_size: event.target.value === '' ? undefined : Number(event.target.value) }))} />
+            </label>
+          </div>
+          <div className="mt-3 flex items-center justify-between gap-3 text-xs text-ink-muted">
+            <span>当前生效分块：{getChunkingStrategyPresentation(ingestionSettings?.effective?.chunking_strategy || 'recursive').name}</span>
+            <button type="button" className="btn-primary text-xs" onClick={saveKBIngestionSettings} disabled={!ingestionSettings || savingIngestionSettings}>{savingIngestionSettings ? '保存中' : '保存默认'}</button>
+          </div>
+        </section>}
         {canManageKB && <div className="card p-5">
           <UploadSection
             kbName={kbName}
@@ -1928,6 +2091,8 @@ export default function KnowledgeDetailPage() {
             onUploaded={loadKBData}
             multimodal={multimodal}
             setMultimodal={setMultimodal}
+            effectiveSource={Object.values(ingestionSettings?.sources || {}).includes('knowledge_base_setting') ? '知识库默认' : '个人默认'}
+            effectiveIngestion={ingestionSettings?.effective}
             canWrite={canManageKB}
           />
         </div>}
@@ -2011,7 +2176,10 @@ export default function KnowledgeDetailPage() {
             <div className="flex items-center gap-2">
               <Search size={14} className="text-ink-muted"/>
               <input className="input-field text-xs w-48 py-1.5" placeholder="搜索文档…" aria-label="搜索文档" value={filter}
-                onChange={e => setFilter(e.target.value)} disabled={displayedDetailState.documents.status !== 'ready'} />
+                onChange={e => {
+                  setFilter(e.target.value)
+                  setDocumentPage(1)
+                }} disabled={displayedDetailState.documents.status !== 'ready'} />
             </div>
           </div>
           {documentListMode === 'loading' && (
@@ -2025,8 +2193,9 @@ export default function KnowledgeDetailPage() {
               <thead>
                 <tr className="border-b border-cloud-300/60 text-left">
                   {canManageKB && <th className="pb-2.5 font-medium text-xs text-ink-muted w-8">
-                    <input type="checkbox" checked={selectedIds.size > 0 && selectedIds.size === filteredDocs.length}
-                      onChange={toggleSelectAll} disabled={documentListMode !== 'ready' || filteredDocs.length === 0}
+                    <input ref={documentSelectAllRef} type="checkbox" checked={allDocsOnPageSelected}
+                      onChange={toggleSelectAll} disabled={documentListMode !== 'ready' || paginatedDocs.length === 0}
+                      aria-label="选择本页全部文档"
                       className="w-3.5 h-3.5 accent-sky-500" />
                   </th>}
                   <th className="pb-2.5 font-medium text-xs text-ink-muted">文件名</th>
@@ -2038,7 +2207,7 @@ export default function KnowledgeDetailPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredDocs.map(doc => {
+                {paginatedDocs.map(doc => {
                   const health = getDocumentHealth(doc)
                   const tagPresentation = getDocumentTagPresentation(doc)
                   const canRetry = health === 'degraded' || (health === 'failed' && doc.retryable !== false)
@@ -2166,6 +2335,21 @@ export default function KnowledgeDetailPage() {
               </div>
             )}
           </div>
+          {documentListMode === 'ready' && filteredDocs.length > 0 && (
+            <>
+              <span className="sr-only" role="status" aria-live="polite">
+                第 {currentDocumentPage} / {documentTotalPages} 页，显示 {paginatedDocs.length} 条，共 {filteredDocs.length} 个文档
+              </span>
+              <Pagination
+                page={currentDocumentPage}
+                totalPages={documentTotalPages}
+                onPageChange={setDocumentPage}
+                pageSize={documentPageSize}
+                onPageSizeChange={updateDocumentPageSize}
+                className="resource-pagination resource-pagination-documents"
+              />
+            </>
+          )}
         </div>
       </>
       )}
@@ -2487,7 +2671,7 @@ export default function KnowledgeDetailPage() {
       {/* ── 创建节点弹窗 ── */}
       {showCreateNodeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowCreateNodeModal(false)} role="dialog" aria-modal="true" aria-label="新增实体">
-          <div className="absolute inset-0 bg-sky-900/20" />
+          <div className="absolute inset-0 bg-black/20" />
           <div className="relative card p-6 w-96" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-ink-primary">新增实体</h3>
@@ -2531,7 +2715,7 @@ export default function KnowledgeDetailPage() {
       {/* ── 创建边弹窗 ── */}
       {showCreateEdgeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowCreateEdgeModal(false)} role="dialog" aria-modal="true" aria-label="创建连线">
-          <div className="absolute inset-0 bg-sky-900/20" />
+          <div className="absolute inset-0 bg-black/20" />
           <div className="relative card p-6 w-96" onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-ink-primary">创建连线</h3>
@@ -2588,7 +2772,7 @@ export default function KnowledgeDetailPage() {
       {/* ── 删除节点确认 ── */}
       {showDeleteNodeConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" onClick={() => setShowDeleteNodeConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除实体">
-          <div className="absolute inset-0 bg-sky-900/20" />
+          <div className="absolute inset-0 bg-black/20" />
           <div className="relative card p-6 w-80 text-center" onClick={e => e.stopPropagation()}>
             <Trash2 size={32} className="mx-auto mb-3 text-rose-500" />
             <p className="text-ink-primary font-medium mb-1">确认删除实体</p>

@@ -44,6 +44,15 @@ import raganything.services.runtime_settings as runtime_settings
 router = APIRouter(tags=["admin"])
 
 
+@router.get("/diagnostics/embedding-isolation")
+async def embedding_isolation_diagnostics(
+    _perm: None = Depends(require_permission(Permission.EMBEDDING_DIAGNOSTICS_READ)),
+    current_user: dict = Depends(get_current_user),
+):
+    from raganything.services.pg_embedding_identity import read_embedding_identity_diagnostics
+    return await read_embedding_identity_diagnostics()
+
+
 # ── 请求/响应模型 ──────────────────────────────────
 class SettingsUpdate(BaseModel):
     parser: Optional[str] = None
@@ -396,6 +405,14 @@ async def _authenticate_ws(ws: WebSocket, required_permission: str | None = None
         await ws.close(code=4001, reason="Account disabled")
         return None
 
+    try:
+        generation_matches = payload.get("sg") is not None and int(payload["sg"]) == int(user.get("session_generation", 0))
+    except (TypeError, ValueError):
+        generation_matches = False
+    if user.get("archived_at") is not None or not generation_matches:
+        await ws.close(code=4001, reason="Account session is no longer valid")
+        return None
+
     lock_error = await check_account_locked(user_id)
     if lock_error:
         await ws.close(code=4001, reason="Account locked")
@@ -407,7 +424,15 @@ async def _authenticate_ws(ws: WebSocket, required_permission: str | None = None
             await ws.close(code=4001, reason=f"Insufficient permission: {required_permission}")
             return None
 
-    return {"id": user_id, "username": user["username"]}
+    return {"id": user_id, "username": user["username"], "session_generation": int(user.get("session_generation", 0))}
+
+
+async def _ws_session_is_current(user: dict) -> bool:
+    account = await get_user_by_id(user["id"])
+    return bool(
+        account and account.get("is_active") and account.get("archived_at") is None
+        and int(account.get("session_generation", 0)) == user.get("session_generation")
+    )
 
 
 # ── WebSocket 端点 ─────────────────────────────────
@@ -440,21 +465,17 @@ async def websocket_workflow_run(ws: WebSocket, run_id: str):
         return
 
     await ws.accept()
-    if run_id not in shared.active_ws_connections:
-        shared.active_ws_connections[run_id] = []
-    shared.active_ws_connections[run_id].append(ws)
+    shared.register_ws(run_id, ws, user)
     try:
         while True:
             await ws.receive_text()  # 保持连接，忽略客户端消息
+            if not await _ws_session_is_current(user):
+                await ws.close(code=4001, reason="Account session is no longer valid")
+                return
     except WebSocketDisconnect:
         pass
     finally:
-        try:
-            shared.active_ws_connections[run_id].remove(ws)
-        except (ValueError, KeyError):
-            pass
-        if run_id in shared.active_ws_connections and not shared.active_ws_connections[run_id]:
-            del shared.active_ws_connections[run_id]
+        shared.unregister_ws(run_id, ws)
 
 
 @router.post("/workflows/{workflow_id}/run")
@@ -583,15 +604,17 @@ async def websocket_endpoint(ws: WebSocket):
         return  # 认证失败，连接已关闭
 
     await ws.accept()
-    shared.ws_clients.append(ws)
+    shared.register_general_ws(ws, user)
     try:
         while True:
             await ws.receive_text()  # keep alive
+            if not await _ws_session_is_current(user):
+                await ws.close(code=4001, reason="Account session is no longer valid")
+                return
     except WebSocketDisconnect:
         pass
     finally:
-        if ws in shared.ws_clients:
-            shared.ws_clients.remove(ws)
+        shared.unregister_general_ws(ws)
 
 
 # ── ⚙️ 系统设置 ─────────────────────────────────────
@@ -793,8 +816,13 @@ async def vision_embedding_health(
     }
 
 
-@router.get("/health")
-async def health():
+@router.get("/live")
+async def live():
+    return {"status": "live"}
+
+
+async def _readiness_payload() -> tuple[dict, bool]:
+    """Build sanitized readiness data and indicate required dependency failure."""
     """健康检查（公开接口，用于 Docker/监控探测）"""
     components = {"server": "ok", "active_kb": shared.active_kb}
     system_data_epoch = ""
@@ -803,8 +831,8 @@ async def health():
     try:
         meta = await shared.load_kb_meta()
         components["kb_count"] = len(meta)
-    except Exception as e:
-        components["kb_meta"] = f"error: {e}"
+    except Exception:
+        components["kb_meta"] = "error"
 
     # 检查认证数据库 (PG)
     try:
@@ -815,14 +843,19 @@ async def health():
             monitor_table_ready = await conn.fetchval(
                 "SELECT to_regclass('public.monitor_events') IS NOT NULL"
             )
+            migration_history_ready = await conn.fetchval(
+                "SELECT to_regclass('public.schema_migration_history') IS NOT NULL"
+            )
             system_data_epoch = await conn.fetchval(
                 "SELECT value FROM settings WHERE key = 'system_data_epoch'"
             )
         components["auth_db"] = "ok"
-        components["monitor_logs"] = "ok" if monitor_table_ready else "error: monitor_events table missing"
-    except Exception as e:
-        components["auth_db"] = f"error: {e}"
-        components["monitor_logs"] = f"error: {e}"
+        components["monitor_logs"] = "ok" if monitor_table_ready else "error"
+        components["migration_history"] = "ok" if migration_history_ready else "error"
+    except Exception:
+        components["auth_db"] = "error"
+        components["monitor_logs"] = "error"
+        components["migration_history"] = "error"
 
     # 检查磁盘空间
     try:
@@ -842,7 +875,22 @@ async def health():
         "version": "1.3.1",
         "system_data_epoch": system_data_epoch or "",
         "components": components,
-    }
+    }, has_errors
+
+
+@router.get("/ready")
+async def ready(response: Response):
+    payload, has_errors = await _readiness_payload()
+    response.status_code = 503 if has_errors else 200
+    return {**payload, "status": "not_ready" if has_errors else "ready"}
+
+
+@router.get("/health")
+async def health(response: Response = None):
+    payload, has_errors = await _readiness_payload()
+    if response is not None:
+        response.status_code = 503 if has_errors else 200
+    return payload
 
 
 # ════════════════════════════════════════════════════════

@@ -202,6 +202,8 @@ class BaseModalProcessor:
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
+        defer_flush: bool = False,
+        defer_extraction: bool = False,
     ) -> Tuple[str, Dict[str, Any]]:
         """Create entity and text chunk"""
         # Truncate + hash via unified helper — ensures chunk_id matches
@@ -241,8 +243,11 @@ class BaseModalProcessor:
         # JsonKVStorage.upsert() 仅写入内存，index_done_callback() 才
         # 真正落盘。若不调用，服务器重启后所有多模态 chunk 数据丢失。
         # 注意：每次调用都会完整重写 JSON 文件；批量路径已在
-        # _store_chunks_to_lightrag_storage_type_aware 中统一 flush。
-        await self.text_chunks_db.index_done_callback()
+        # _store_chunks_to_lightrag_storage_type_aware 中统一 flush，
+        # v2 视频路径通过 defer_flush=True 跳过逐块落盘，最终由
+        # 整文档 _insert_done() 一次性落盘。
+        if not defer_flush:
+            await self.text_chunks_db.index_done_callback()
 
         # Store chunk in vector database for retrieval
         chunk_vdb_data = {
@@ -282,10 +287,15 @@ class BaseModalProcessor:
         }
         await self.entities_vdb.upsert(entity_vdb_data)
 
-        # Process entity and relationship extraction
-        chunk_results = await self._process_chunk_for_extraction(
-            chunk_id, entity_info["entity_name"], batch_mode
-        )
+        # Process entity and relationship extraction.  The v2 video path
+        # defers extraction (defer_extraction=True) so independent segment
+        # extractions can run concurrently and be timed separately.
+        if defer_extraction:
+            chunk_results = []
+        else:
+            chunk_results = await self._process_chunk_for_extraction(
+                chunk_id, entity_info["entity_name"], batch_mode
+            )
 
         return (
             entity_info["summary"],

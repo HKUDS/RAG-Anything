@@ -13,11 +13,13 @@ from pydantic import BaseModel
 from lightrag.llm.openai import openai_complete_if_cache
 from raganything.routers import shared
 from raganything.dependencies import (
+    authenticated_sse_events,
     get_current_user,
     require_permission,
     verify_kb_access,
 )
 from raganything.permissions import Permission
+from raganything.services.video_segments import enrich_video_segment_citations
 from raganything.utils.security import validate_query_input
 
 if TYPE_CHECKING:
@@ -107,6 +109,11 @@ def _sanitize_client_value(value):
             for key, item in value.items()
         }
     return value
+
+
+def _authorized_citations(value: object, kb_name: str) -> list[dict]:
+    """Expose video timing only after this route has authorized its KB."""
+    return _sanitize_client_value(enrich_video_segment_citations(value, kb_name))
 
 
 def _sanitize_trace(value: object) -> list[dict]:
@@ -602,7 +609,7 @@ async def ar_qa(body: AutoRepairAgentQuery, kb: str = QueryParam("default"),
     return {
         "query": _sanitize_sse_text(response.query),
         "answer": _sanitize_sse_text(response.answer),
-        "citations": _sanitize_client_value(response.citations),
+        "citations": _authorized_citations(response.citations, actual_kb),
         "related_images": _sanitize_media_payloads(response.related_images, actual_kb),
         "confidence": response.confidence,
         "processing_time_ms": response.processing_time_ms,
@@ -694,6 +701,9 @@ async def ar_qa_stream(body: AutoRepairAgentQuery, kb: str = QueryParam("default
                         'citations_count': len(event_data.get('citations', [])),
                         'images_count': len(safe_images),
                     }
+                    citations = _authorized_citations(event_data.get("citations"), actual_kb)
+                    if citations:
+                        done_data["citations"] = citations
                     yield f"data: {json.dumps(done_data, ensure_ascii=False)}\n\n"
 
         except Exception as exc:
@@ -708,7 +718,7 @@ async def ar_qa_stream(body: AutoRepairAgentQuery, kb: str = QueryParam("default
             yield f"data: {json.dumps(error_data, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
-        event_stream(),
+        authenticated_sse_events(event_stream(), current_user),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

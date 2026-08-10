@@ -74,6 +74,7 @@ from raganything.services.kb_service import (
 from raganything.services.odl_media_delivery import catalog_media_payload
 from raganything.services.query_timing import QueryTiming
 from raganything.services.query_execution import QueryExecutionScope, await_before_deadline
+from raganything.services.video_segments import merge_video_segment_citations
 
 
 _SENSITIVE_MEDIA_REFERENCE_PATTERNS = (
@@ -82,6 +83,29 @@ _SENSITIVE_MEDIA_REFERENCE_PATTERNS = (
     re.compile(r"(?:[A-Za-z]:[\\/]|\\\\)[^\r\n<>\"']+"),
     re.compile(r"/(?:home|Users|var|tmp|etc|root|opt|mnt)/[^\r\n<>\"']+"),
 )
+
+_VIDEO_SEGMENT_CONTEXT_PATTERN = re.compile(
+    r"\[VIDEO_SEGMENT\s+segment_id=(?P<segment_id>[^\s\]]+)\s+"
+    r"media_id=(?P<media_id>[^\s\]]+)\s+start_ms=(?P<start_ms>\d+)\s+"
+    r"end_ms=(?P<end_ms>\d+)\s+document_id=(?P<document_id>[^\s\]]+)\]"
+)
+
+
+def _video_segment_citations_from_context(context: object, kb_name: str) -> list[dict]:
+    """Convert internal retrieval anchors into path-free citation DTOs."""
+    if not isinstance(context, str):
+        return []
+    segments = []
+    for match in _VIDEO_SEGMENT_CONTEXT_PATTERN.finditer(context):
+        value = match.groupdict()
+        segments.append({
+            **value,
+            "segment_index": int(value["start_ms"]),
+            "start_ms": int(value["start_ms"]),
+            "end_ms": int(value["end_ms"]),
+            "media_kb": kb_name,
+        })
+    return merge_video_segment_citations(segments)
 
 
 def _consume_background_task_result(task: asyncio.Task) -> None:
@@ -1073,9 +1097,12 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
 
     from raganything.services import vision_models
     try:
-        from raganything.services.user_settings import resolve_user_settings_for_task
-        resolved_settings = await resolve_user_settings_for_task(
-            int(current_user["id"])
+        from raganything.services import user_settings
+        resolved_settings = await user_settings.resolve_user_settings_for_task(
+            int(current_user["id"]),
+            permitted_sections=await user_settings.available_sections_for_user(
+                int(current_user["id"])
+            ),
         )
         # Text-only questions must not depend on the optional image model.
         # Requiring VLM here made every KB question fail with 503 when only
@@ -1142,7 +1169,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             503,
             detail={"code": "quota_settings_unavailable", "message": "runtime limits are unavailable"},
         ) from exc
-    retrieval_timeout = max(0.1, float(os.getenv("AGENT_RETRIEVAL_TIMEOUT", "8")))
+    retrieval_timeout = max(0.1, float(os.getenv("AGENT_RETRIEVAL_TIMEOUT", "12")))
     retrieval_deadline = time.monotonic() + retrieval_timeout
     lease_owner = f"interactive:{os.getpid()}:{uuid.uuid4()}"
     lease_id = None
@@ -1295,6 +1322,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
         query_kb_lease = None
         full_answer = ""
         timing_outcome = "ok"
+        citation_context = ""
 
         try:
             timing.start("query_core_acquire")
@@ -1566,6 +1594,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                             if event.answer and len(event.answer) > len(full_answer):
                                 full_answer = event.answer
                             break
+                    citation_context = react_query
                 else:
                     # CoT 路径：先 RRF 检索获取上下文，再注入 CoT 推理
                     # If we have an image description, use it to enrich the search query
@@ -1653,6 +1682,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                         return
                     # 对话历史已在 line 527-530 注入到 _img_cot_ctx，此处不重复注入
                     agent_result = await agentic.run_with_context(rewritten_query, cot_context)
+                    citation_context = cot_context
                     full_answer = agent_result.answer
                     for s in agent_result.trace:
                         trace_steps.append({
@@ -1760,6 +1790,9 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                     pass
 
                 _done_agentic = {'type': 'done', 'id': query_id, 'elapsed': elapsed, 'thread_id': thread_id, 'images': agent_images}
+                video_citations = _video_segment_citations_from_context(_agent_ctx, actual_kb)
+                if video_citations:
+                    _done_agentic['citations'] = video_citations
                 if image_description:
                     _done_agentic['image_description'] = image_description
                 if _display_similar_images:
@@ -1835,6 +1868,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 await asyncio.sleep(min(0.06, max(0.001, remaining)))
 
             ctx = ctx_task.result()
+            citation_context = ctx
             timing.finish("retrieval")
 
             # ── 快速检测：真正空的上下文（fail_response / None / 空字符串）──
@@ -2163,6 +2197,9 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
                 'type': 'done', 'id': query_id, 'elapsed': elapsed,
                 'thread_id': thread_id, 'images': agent_images,
             }
+            video_citations = _video_segment_citations_from_context(citation_context, actual_kb)
+            if video_citations:
+                _done_data['citations'] = video_citations
             if is_fallback:
                 _done_data['fallback'] = True
             if image_description:
@@ -2200,7 +2237,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
             timing.total(outcome=timing_outcome)
 
     return StreamingResponse(
-        event_stream(),
+        authenticated_sse_events(event_stream(), current_user),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

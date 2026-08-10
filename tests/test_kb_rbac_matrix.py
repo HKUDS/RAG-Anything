@@ -109,6 +109,7 @@ async def test_kb_write_routes_require_kb_write_permission():
         ("POST", "/knowledge/documents/batch-delete"),
         ("POST", "/knowledge/documents/{doc_id}/retry"),
         ("POST", "/kb/create"),
+        ("PUT", "/kb/{kb}/ingestion-settings"),
     ]
 
     for method, path in guarded_routes:
@@ -137,7 +138,7 @@ async def test_reprocess_multimodal_rejects_unscoped_kb_before_work(monkeypatch)
     async def unexpected_work(_kb_name):
         raise AssertionError("must not begin work before KB access is verified")
 
-    monkeypatch.setattr(knowledge, "verify_kb_access", deny_kb)
+    monkeypatch.setattr(knowledge, "verify_kb_operate_access", deny_kb)
     monkeypatch.setattr(knowledge, "_ensure_vision_index_mutable", unexpected_work)
 
     with pytest.raises(HTTPException) as exc:

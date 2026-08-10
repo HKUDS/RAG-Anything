@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { BookOpen, Loader2, ArrowRight, KeyRound, Check, Circle } from 'lucide-react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../context/AuthContext'
@@ -18,7 +18,7 @@ function checkPasswordStrength(pw) {
 }
 
 export default function LoginPage() {
-  const { login, token } = useAuth()
+  const { login, token, saveAuth } = useAuth()
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -82,6 +82,11 @@ export default function LoginPage() {
         const err = await res.json().catch(() => ({ detail: '密码修改失败' }))
         throw new Error(err.detail || '密码修改失败')
       }
+      const data = await res.json()
+      if (!data.access_token || !data.refresh_token || !data.user) {
+        throw new Error('密码已修改，但新会话创建失败，请重新登录')
+      }
+      saveAuth(data.access_token, data.refresh_token, data.user)
       navigate('/')
     } catch (err) {
       setError(err.message)
@@ -227,12 +232,6 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="text-center text-xs text-ink-muted mt-5">
-            还没有账号？{' '}
-            <Link to="/register" className="text-sky-500 hover:text-sky-600 font-medium transition-colors">
-              立即注册
-            </Link>
-          </p>
         </div>
 
         <p className="text-center text-2xs text-ink-muted mt-6">

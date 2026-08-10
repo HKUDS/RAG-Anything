@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { Trash2, Edit3, Loader2, Shield, User, Users, Search, UserPlus, X } from 'lucide-react'
+import { Archive, Edit3, Loader2, Shield, User, Users, Search, UserPlus, X } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
 import Pagination from '../components/Pagination'
 import CreateUserModal from '../components/CreateUserModal'
@@ -23,7 +23,9 @@ async function authFetch(url, options = {}) {
   })
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: '请求失败' }))
-    throw new Error(err.detail || `HTTP ${res.status}`)
+    const error = new Error(err.detail || `HTTP ${res.status}`)
+    error.status = res.status
+    throw error
   }
   return res.json()
 }
@@ -230,7 +232,7 @@ function RolePermissionPopover({ role, anchorRect, pinned, onClose, onMouseEnter
 }
 
 export default function AdminUsersPage() {
-  const { user: me, hasPermission, roleName } = useAuth()
+  const { user: me, clearAuth, hasPermission, roleName } = useAuth()
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -359,11 +361,15 @@ export default function AdminUsersPage() {
       setTotal(data.total || 0)
       setTotalPages(data.total_pages || 1)
     } catch (e) {
+      if (e.status === 401) {
+        clearAuth()
+        return
+      }
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }, [page, pageSize, search, roleFilter, statusFilter])
+  }, [clearAuth, page, pageSize, search, roleFilter, statusFilter])
 
   const updatePageSize = value => {
     const next = storePageSize(PAGE_SIZE_STORAGE_KEY, value)
@@ -376,9 +382,10 @@ export default function AdminUsersPage() {
       const data = await authFetch('/api/admin/roles')
       setRoles(data.roles || [])
     } catch (_) {
+      if (_.status === 401) clearAuth()
       setRoles([])
     }
-  }, [])
+  }, [clearAuth])
 
   useEffect(() => { loadUsers() }, [loadUsers])
   useEffect(() => { loadRoles() }, [loadRoles])
@@ -430,14 +437,18 @@ export default function AdminUsersPage() {
   }, [rolePopover, closeRoleDetails])
 
   const handleDelete = async (userId) => {
-    if (userId === me?.id) { alert('不能删除自己'); return }
-    if (!confirm('确认删除该用户？此操作不可撤销。')) return
+    if (userId === me?.id) { alert('不能归档自己'); return }
+    if (!confirm('确认归档该用户？该账户将被禁用且现有会话立即失效。')) return
     setDeletingId(userId)
     try {
       await authFetch(`/api/admin/users/${userId}`, { method: 'DELETE' })
       loadUsers()
     } catch (e) {
-      alert('删除失败: ' + e.message)
+      if (e.status === 401) {
+        clearAuth()
+        return
+      }
+      alert('归档失败: ' + e.message)
     } finally {
       setDeletingId(null)
     }
@@ -574,8 +585,8 @@ export default function AdminUsersPage() {
                       </div>
                     </td>
                     <td className="px-3 py-2">
-                      <span className={`rounded-lg px-1.5 py-0.5 text-2xs ${u.is_active ? 'border border-sage-200 bg-sage-50 text-sage-600' : 'border border-rose-200 bg-rose-50 text-rose-600'}`}>
-                        {u.is_active ? '启用' : '禁用'}
+                       <span className={`rounded-lg px-1.5 py-0.5 text-2xs ${u.archived_at ? 'border border-amber-200 bg-amber-50 text-amber-700' : u.is_active ? 'border border-sage-200 bg-sage-50 text-sage-600' : 'border border-rose-200 bg-rose-50 text-rose-600'}`}>
+                         {u.archived_at ? '已归档' : u.is_active ? '启用' : '禁用'}
                       </span>
                     </td>
                     <td className="px-3 py-2 text-xs text-ink-muted">
@@ -588,8 +599,8 @@ export default function AdminUsersPage() {
                         </button>
                       )}
                       {canDeleteUsers && u.id !== me?.id && (
-                        <button className="text-ink-muted transition-colors hover:text-rose-500" onClick={() => handleDelete(u.id)} disabled={deletingId === u.id} title="删除" aria-label={`删除用户 ${u.username}`}>
-                          {deletingId === u.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Trash2 size={13} aria-hidden="true" />}
+                        <button className="text-ink-muted transition-colors hover:text-rose-500" onClick={() => handleDelete(u.id)} disabled={deletingId === u.id || u.lifecycle_protected} title={u.lifecycle_protected ? '最后一个超级管理员不可归档' : '归档'} aria-label={`归档用户 ${u.username}`}>
+                          {deletingId === u.id ? <Loader2 size={13} className="animate-spin" aria-hidden="true" /> : <Archive size={13} aria-hidden="true" />}
                         </button>
                       )}
                     </td>

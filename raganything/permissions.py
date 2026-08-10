@@ -17,6 +17,7 @@ class Permission:
     KB_READ = "kb:read"
     KB_WRITE = "kb:write"
     KB_DELETE = "kb:delete"
+    KB_MANAGE = "kb:manage"
 
     AGENT_READ = "agent:read"
     AGENT_WRITE = "agent:write"
@@ -28,6 +29,7 @@ class Permission:
     AUDIT_READ = "audit:read"
     MONITOR_READ = "monitor:read"
     ANALYTICS_READ = "analytics:read"
+    EMBEDDING_DIAGNOSTICS_READ = "embedding:diagnostics_read"
 
     WORKFLOW_READ = "workflow:read"
     WORKFLOW_WRITE = "workflow:write"
@@ -84,6 +86,7 @@ DEFAULT_ROLES: Dict[str, Dict[str, object]] = {
             Permission.KB_READ,
             Permission.KB_WRITE,
             Permission.KB_DELETE,
+            Permission.KB_MANAGE,
             Permission.AGENT_READ,
             Permission.AGENT_WRITE,
             Permission.AGENT_DELETE,
@@ -104,6 +107,7 @@ DEFAULT_ROLES: Dict[str, Dict[str, object]] = {
         "permissions": [
             Permission.KB_READ,
             Permission.KB_WRITE,
+            Permission.KB_MANAGE,
             Permission.AGENT_READ,
             Permission.AGENT_WRITE,
             Permission.MONITOR_READ,

@@ -1,0 +1,12 @@
+diff --git a/raganything/routers/agent.py b/raganything/routers/agent.py
+--- a/raganything/routers/agent.py
++++ b/raganything/routers/agent.py
+@@ -1138,7 +1138,7 @@ async def agent_query_stream(agent_id: str, req: AgentQueryRequest, request: Req
+             503,
+             detail={"code": "quota_settings_unavailable", "message": "runtime limits are unavailable"},
+         ) from exc
+-    retrieval_timeout = max(0.1, float(os.getenv("AGENT_RETRIEVAL_TIMEOUT", "8")))
++    retrieval_timeout = max(0.1, float(os.getenv("AGENT_RETRIEVAL_TIMEOUT", "12")))
+     retrieval_deadline = time.monotonic() + retrieval_timeout
+     lease_owner = f"interactive:{os.getpid()}:{uuid.uuid4()}"
+     lease_id = None

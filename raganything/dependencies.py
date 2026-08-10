@@ -5,7 +5,7 @@ RAG-Anything 共享 FastAPI 依赖项。
 各 Router 模块统一从此处导入，避免重复定义。
 """
 
-from typing import Optional, Dict, Any
+from typing import AsyncIterable, AsyncIterator, Optional, Dict, Any
 
 from fastapi import Query as QueryParam, Request, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -68,6 +68,16 @@ async def get_current_user(
     if not user.get("is_active"):
         raise HTTPException(401, "账号已被禁用")
 
+    if user.get("archived_at") is not None:
+        raise HTTPException(401, "账号已归档无法使用")
+
+    try:
+        generation_matches = payload.get("sg") is not None and int(payload["sg"]) == int(user.get("session_generation", 0))
+    except (TypeError, ValueError):
+        generation_matches = False
+    if not generation_matches:
+        raise HTTPException(401, "Token 已失效，请重新登录")
+
     lock_error = await check_account_locked(user_id)
     if lock_error:
         raise HTTPException(403, lock_error)
@@ -80,8 +90,45 @@ async def get_current_user(
         "id": user_id,
         "username": user["username"],
         "is_admin": is_admin,
+        "session_generation": int(user.get("session_generation", 0)),
+        "token_jti": jti,
         "role": role,  # 完整角色信息（含 permissions）
+        "allowed_kbs": user.get("allowed_kbs", []),
+        "kb_access_levels": user.get("kb_access_levels", {}),
     }
+
+
+async def account_session_is_current(current_user: Dict[str, Any]) -> bool:
+    """Check that an already-authenticated account is still usable.
+
+    SSE requests authenticate before the response starts.  Rechecking the
+    account generation immediately before each event prevents a later
+    archive, disable, or role/password security change from leaking further
+    protected events on an established response.
+    """
+    user_id = current_user.get("id")
+    if not user_id:
+        return False
+    jti = current_user.get("token_jti")
+    if jti and await _auth_is_token_revoked(jti):
+        return False
+    user = await get_user_by_id(user_id)
+    if not user or not user.get("is_active") or user.get("archived_at") is not None:
+        return False
+    try:
+        return int(user.get("session_generation", 0)) == int(current_user.get("session_generation"))
+    except (TypeError, ValueError):
+        return False
+
+
+async def authenticated_sse_events(
+    events: AsyncIterable[str], current_user: Dict[str, Any]
+) -> AsyncIterator[str]:
+    """Yield only events emitted while the account session remains current."""
+    async for event in events:
+        if not await account_session_is_current(current_user):
+            return
+        yield event
 
 
 async def get_admin_user(
@@ -248,6 +295,61 @@ async def verify_kb_access(
         raise HTTPException(403, "无权访问该知识库")
 
     return kb
+
+
+def _kb_grant_level(current_user: dict, kb: str) -> str | None:
+    levels = current_user.get("kb_access_levels") or {}
+    if isinstance(levels, dict):
+        level = levels.get(kb)
+        if level in {"read", "operate"}:
+            return level
+    # Compatibility for a session created before access_level projection.  A
+    # fresh authentication request always supplies kb_access_levels.
+    if kb in (current_user.get("allowed_kbs") or []):
+        return "read"
+    return None
+
+
+async def verify_kb_operate_access(
+    kb: str = QueryParam("default"),
+    current_user: dict = Depends(get_current_user),
+) -> str:
+    """Require owner/super-admin scope or an explicit ``operate`` grant."""
+    from raganything.services.kb_service import load_kb_meta
+
+    kb_meta = await load_kb_meta()
+    if kb not in kb_meta:
+        raise HTTPException(404, f"知识库 '{kb}' 不存在")
+    if current_user.get("is_admin"):
+        return kb
+    kb_info = kb_meta.get(kb, {})
+    if kb_info.get("owner_id") == current_user.get("id"):
+        return kb
+    if _kb_grant_level(current_user, kb) == "operate":
+        return kb
+    raise HTTPException(403, "无权操作该知识库")
+
+
+async def verify_kb_manage_access(
+    kb: str = QueryParam("default"),
+    current_user: dict = Depends(get_current_user),
+) -> str:
+    """Apply the object-level KB member-management matrix."""
+    if current_user.get("is_admin"):
+        return kb
+
+    from raganything.services.kb_service import load_kb_meta
+
+    kb_meta = await load_kb_meta()
+    if kb not in kb_meta:
+        raise HTTPException(404, f"知识库 '{kb}' 不存在")
+    role_name = (current_user.get("role") or {}).get("name")
+    is_owner = kb_meta[kb].get("owner_id") == current_user.get("id")
+    if role_name == "teacher" and is_owner:
+        return kb
+    if role_name == "dept_admin" and (is_owner or _kb_grant_level(current_user, kb)):
+        return kb
+    raise HTTPException(403, "无权管理该知识库成员")
 
 
 # ── 分页参数 ─────────────────────────────────────

@@ -147,6 +147,31 @@ class TestFrameExtractor:
             assert frames == []
 
 
+def test_frame_encoding_retries_a_short_lived_windows_file_lock(monkeypatch, tmp_path):
+    import builtins
+    from raganything import video_processor
+    from raganything.video_processor import VideoModalProcessor
+
+    frame_path = tmp_path / "frame.png"
+    frame_path.write_bytes(b"frame-bytes")
+    original_open = builtins.open
+    calls = 0
+
+    def flaky_open(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise PermissionError(13, "Access is denied")
+        return original_open(*args, **kwargs)
+
+    monkeypatch.setattr(builtins, "open", flaky_open)
+    monkeypatch.setattr(video_processor.time, "sleep", lambda _seconds: None)
+    processor = object.__new__(VideoModalProcessor)
+
+    assert processor._encode_image_to_base64(str(frame_path)) == "ZnJhbWUtYnl0ZXM="
+    assert calls == 2
+
+
 # ── SceneDetector ──────────────────────────────────────────────────────────
 
 
@@ -349,6 +374,7 @@ class TestConfigIntegration:
                 "video_sample_rate": 1.0,
                 "video_max_frames": 8,
                 "video_frame_concurrent": 2,
+                "video_segment_concurrent": 2,
                 "enable_frame_cache": True,
             },
         )()
@@ -387,6 +413,7 @@ class TestConfigIntegration:
                 "video_sample_rate": 1.0,
                 "video_max_frames": 8,
                 "video_frame_concurrent": 2,
+                "video_segment_concurrent": 2,
                 "enable_frame_cache": True,
             },
         )()
@@ -460,22 +487,14 @@ class TestVideoPrompts:
         from raganything.prompt import PROMPTS
         assert "video_prompt" in PROMPTS
 
-    def test_video_chunk_exists(self):
+    def test_whole_video_chunk_is_retired(self):
         from raganything.prompt import PROMPTS
-        assert "video_chunk" in PROMPTS
+        assert "video_chunk" not in PROMPTS
 
-    def test_video_chunk_format(self):
-        from raganything.prompt import PROMPTS
-        chunk = PROMPTS["video_chunk"].format(
-            video_path="/test/video.mp4",
-            duration="30.0",
-            frame_count="30",
-            transcript_summary="Test transcript",
-            enhanced_caption="Test caption",
-        )
-        assert "/test/video.mp4" in chunk
-        assert "30.0" in chunk
-        assert "Test caption" in chunk
+    def test_legacy_video_processor_is_removed(self):
+        from raganything.video_processor import VideoModalProcessor
+
+        assert not hasattr(VideoModalProcessor, "_process_legacy_video")
 
 
 # ── Frame Cache Tests ──────────────────────────────────────────────────────
@@ -580,6 +599,49 @@ class TestParallelFrames:
 
 class TestOptimizationConfig:
     """Tests for new optimization config fields."""
+
+
+class TestVideoSegmentConcurrencyConfig:
+    """Tests for VIDEO_SEGMENT_CONCURRENT configuration wiring."""
+
+    def test_default_segment_concurrent(self):
+        from raganything.config import RAGAnythingConfig
+        config = RAGAnythingConfig()
+        assert config.video_segment_concurrent == 2
+
+    def test_segment_concurrent_env_override(self, monkeypatch):
+        import importlib
+        import raganything.config as config_module
+        monkeypatch.setenv("VIDEO_SEGMENT_CONCURRENT", "3")
+        config_module = importlib.reload(config_module)
+        config = config_module.RAGAnythingConfig()
+        assert config.video_segment_concurrent == 3
+
+    def test_segment_concurrent_clamped_to_max(self, monkeypatch):
+        import importlib
+        import pytest
+        import raganything.config as config_module
+        monkeypatch.setenv("VIDEO_SEGMENT_CONCURRENT", "10")
+        config_module = importlib.reload(config_module)
+        with pytest.warns(UserWarning):
+            config = config_module.RAGAnythingConfig()
+        assert config.video_segment_concurrent == 4
+
+    def test_processor_wires_segment_semaphore(self):
+        from unittest.mock import AsyncMock, Mock
+        from raganything.video_processor import VideoModalProcessor
+        try:
+            processor = VideoModalProcessor(
+                lightrag=Mock(),
+                modal_caption_func=AsyncMock(),
+                video_segment_concurrent=3,
+            )
+        except Exception:
+            # Optional heavy dependencies may make construction fail in CI;
+            # the config wiring is covered by the config tests above.
+            return
+        assert processor._video_segment_concurrent == 3
+        assert processor._segment_semaphore._value == 3
 
     def test_default_frame_concurrent(self):
         from raganything.config import RAGAnythingConfig

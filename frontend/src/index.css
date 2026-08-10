@@ -1,4 +1,4 @@
-﻿/*
+/*
  * RAG-Anything / Neutral Modern 设计系统
  * 设计令牌来源：Neutral Modern（--bg: #FAFAFA / --accent: #2F6FEB）
  * 字体：Inter（display + body）与 JetBrains Mono（mono）
@@ -1605,9 +1605,9 @@ select.input-field {
   box-shadow: var(--tech-shadow) !important;
 }
 
-.fixed.inset-0.bg-sky-900\/25,
-.fixed.inset-0 .bg-sky-900\/20,
-.fixed.inset-0.bg-sky-900\/20 {
+.fixed.inset-0.bg-black\/25,
+.fixed.inset-0 .bg-black\/20,
+.fixed.inset-0.bg-black\/20 {
   backdrop-filter: blur(8px);
 }
 
@@ -2935,6 +2935,10 @@ select.input-field {
   padding-top: 12px;
 }
 
+.resource-pagination-documents {
+  justify-content: center;
+}
+
 .resource-pagination-kbs {
   margin-top: 8px;
   padding-top: 20px;
@@ -3468,7 +3472,7 @@ select.input-field {
   justify-content: center;
   overflow: hidden;
   padding: 16px;
-  background: rgba(12, 74, 110, 0.24);
+  background: rgba(0, 0, 0, 0.24);
   backdrop-filter: blur(8px);
   overscroll-behavior: none;
 }
@@ -3500,7 +3504,7 @@ body.user-dialog-scroll-locked {
   align-items: stretch;
   justify-content: flex-end;
   padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
-  background: rgba(8, 30, 56, 0.22);
+  background: rgba(0, 0, 0, 0.22);
 }
 
 .side-drawer-panel {
@@ -3536,13 +3540,13 @@ body.user-dialog-scroll-locked {
   display: grid;
   place-items: center;
   padding: max(16px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  background: rgba(8, 30, 56, 0.22);
+  background: rgba(0, 0, 0, 0.22);
 }
 
 .user-dialog-layer--confirmation {
   z-index: 80;
   display: block;
-  background: rgba(8, 30, 56, 0.28);
+  background: rgba(0, 0, 0, 0.28);
 }
 
 /* Confirmation dialogs must be centered in the viewport, not in a drawer or
@@ -3781,7 +3785,7 @@ body.user-dialog-scroll-locked {
   inset: auto 0 0;
   height: min(220px, 32vh);
   pointer-events: none;
-  background: linear-gradient(180deg, transparent, rgba(15, 23, 42, 0.10) 55%, rgba(15, 23, 42, 0.16));
+  background: linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.10) 55%, rgba(0, 0, 0, 0.16));
 }
 
 .agent-config-modal {
@@ -6362,16 +6366,24 @@ body.user-dialog-scroll-locked {
   padding-top: 14px;
 }
 
-.preferences-state-details summary {
+.preferences-state-details summary,
+.preferences-advanced summary {
   cursor: pointer;
   color: #344054;
   font-size: 12px;
   font-weight: 700;
 }
 
-.preferences-state-details summary:focus-visible {
+.preferences-state-details summary:focus-visible,
+.preferences-advanced summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
+}
+
+.preferences-advanced-summary {
+  margin-left: 6px;
+  color: #7a8699;
+  font-weight: 400;
 }
 
 .preferences-field-state-item > p {
@@ -6565,6 +6577,10 @@ body.user-dialog-scroll-locked {
 
 .preferences-advanced {
   margin-top: 20px;
+}
+
+.preferences-advanced + .preferences-field-grid {
+  margin-top: 18px;
 }
 
 .preferences-channel-list {
@@ -6828,8 +6844,13 @@ body.user-dialog-scroll-locked {
 }
 
 .dark .preferences-state-details summary,
+.dark .preferences-advanced summary,
 .dark .preferences-field-state-item > p {
   color: #e2ebf5;
+}
+
+.dark .preferences-advanced-summary {
+  color: #9fb0c4;
 }
 
 .dark .preferences-preset-preview {
@@ -7043,6 +7064,7 @@ body.user-dialog-scroll-locked {
   .preferences-local-note,
   .preferences-alert,
   .preferences-state-details summary,
+  .preferences-advanced summary,
   .preferences-field-state {
     font-size: 14px;
   }

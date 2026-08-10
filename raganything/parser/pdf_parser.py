@@ -753,6 +753,7 @@ class MineruParser(Parser):
                 "check": True,
                 "encoding": "utf-8",
                 "errors": "ignore",
+                "timeout": 10,
             }
 
             # Hide console window on Windows
@@ -762,7 +763,7 @@ class MineruParser(Parser):
             result = subprocess.run(["mineru", "--version"], **subprocess_kwargs)
             self.logger.debug(f"MinerU version: {result.stdout.strip()}")
             return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
             self.logger.debug(
                 "MinerU 2.0 is not properly installed. "
                 "Please install it using: pip install -U 'mineru[core]'"

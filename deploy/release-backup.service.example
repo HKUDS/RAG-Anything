@@ -1,0 +1,9 @@
+[Service]
+# Install outside the repository. This unit requires a protected PGPASSFILE and
+# an encryption/off-site wrapper owned by platform operations.
+EnvironmentFile=/etc/rag-anything/backup.env
+ExecStart=/opt/rag-anything/.venv/bin/python /opt/rag-anything/scripts/ops/release_ops.py backup --config /etc/rag-anything/release-operations.json --backup-root /var/backups/rag-anything
+User=ragbackup
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes

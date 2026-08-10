@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   BrainCircuit,
@@ -20,10 +20,14 @@ import {
 import { api } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 import { boundedRange, findModelProfile, mergeSavedSectionDrafts, modelProfileSummary, modelSettingValueLabel, retrievalPresetValues, settingValueLabel } from './preferencesPresentation'
+import { preferenceNavigationGroups, recoverPreferenceSection, shouldLoadSettingsOptions, visiblePreferenceSections } from './preferencesAccessPolicy'
+import { getChunkingStrategyPresentation, UNKNOWN_CHUNKING_STRATEGY_NAME } from '../utils/chunkingStrategyPresentation'
+import { canonicalChunkingStrategyId, resolveChunkingStrategyIds, resolveParserOptions } from '../utils/chunkingOptions'
+import { fallbackParserOptionsByType, formatParsersByType, normalizeParsersByType, PARSER_FILE_TYPES, resolveParserOptionsByType, summarizeParsersByType } from '../utils/parserTypeOptions'
 
 const SETTINGS_META = {
   models: { title: 'AI 模型', description: '为后续任务选择文本与图片理解模型。', icon: BrainCircuit },
-  ingestion: { title: '上传与解析', description: '控制新任务的解析、分块和多模态处理方式。', icon: FileInput },
+  ingestion: { title: '上传默认偏好', description: '作为未设置知识库默认值时的新任务回退；知识库设置优先。', icon: FileInput },
   retrieval: { title: '检索策略', description: '从常用方案开始，需要时再展开底层检索参数。', icon: Search },
   runtime: { title: '运行控制', description: '调整个人并发和等待时间，始终受平台上限保护。', icon: Gauge },
   appearance: { title: '外观', description: '选择适合当前设备和环境的显示模式。', icon: Palette },
@@ -34,11 +38,6 @@ const SETTINGS_META = {
 const SECTION_META = Object.fromEntries(
   Object.entries(SETTINGS_META).filter(([id]) => ['models', 'ingestion', 'retrieval', 'runtime'].includes(id)),
 )
-
-const SETTINGS_NAV = [
-  { label: '智能与任务', items: ['models', 'ingestion', 'retrieval', 'runtime'] },
-  { label: '账户与体验', items: ['appearance', 'account', 'security'] },
-]
 
 const SOURCE_LABELS = {
   platform_default: '平台默认',
@@ -63,6 +62,7 @@ const FIELD_LABELS = {
   enable_table: '表格处理',
   enable_equation: '公式处理',
   enable_video: '视频处理',
+  parsers_by_type: '按文件类型解析器',
   preset: '检索预设',
   rrf_k: 'RRF',
   bm25_top_k: 'BM25 Top K',
@@ -119,11 +119,10 @@ function Section({ id, title, description, icon, children, pending, error, onSav
 }
 
 export default function PreferencesPage({ onToast }) {
-  const { verifyToken } = useAuth()
+  const { hasPermission, verifyToken } = useAuth()
   const contentRef = useRef(null)
   const [data, setData] = useState(null)
   const [options, setOptions] = useState(null)
-  const [profiles, setProfiles] = useState([])
   const [drafts, setDrafts] = useState({})
   const [status, setStatus] = useState({})
   const [account, setAccount] = useState({ username: '', current_password: '' })
@@ -132,7 +131,7 @@ export default function PreferencesPage({ onToast }) {
   const [passwordError, setPasswordError] = useState('')
   const [notice, setNotice] = useState('')
   const [theme, setTheme] = useState(() => localStorage.getItem('raganything_theme_mode') || localStorage.getItem('raganything_theme') || 'system')
-  const [activeSection, setActiveSection] = useState(() => window.location.hash.slice(1) || 'models')
+  const [activeSection, setActiveSection] = useState(() => window.location.hash.slice(1) || 'appearance')
 
   const applyTheme = value => {
     const resolved = value === 'system'
@@ -145,28 +144,40 @@ export default function PreferencesPage({ onToast }) {
     window.dispatchEvent(new CustomEvent('raganything-theme-change', { detail: resolved }))
   }
 
+  const loadSettingsProjection = useCallback(async ({ isActive = () => true } = {}) => {
+    const settings = await api.getPersonalSettings()
+    if (!isActive()) return false
+    setData(settings)
+    // A projected reload is also the authoritative boundary for local drafts.
+    // This removes any section that a live permission change has revoked.
+    setDrafts(settings.stored || {})
+    setOptions(null)
+    setStatus(current => {
+      const { options: _options, ...remaining } = current
+      return remaining
+    })
+    if (!shouldLoadSettingsOptions(visiblePreferenceSections(settings.available_sections, hasPermission))) return true
+    try {
+      const value = await api.getPersonalSettingsOptions()
+      if (isActive()) setOptions(value)
+    } catch (error) {
+      if (isActive()) setStatus(current => ({ ...current, options: error.message || '个人设置选项暂不可用' }))
+    }
+    return true
+  }, [hasPermission])
+
   useEffect(() => {
     let active = true
     const loadSettings = async () => {
       try {
-        const settings = await api.getPersonalSettings()
-        if (!active) return
-        setData(settings); setDrafts(settings.stored || {})
+        await loadSettingsProjection({ isActive: () => active })
       } catch (error) {
         if (!active) return
         // Keep account, appearance, and security controls reachable even when
         // the settings service itself is unavailable.
-        setData({ revision: 0, stored: {}, effective: {}, sources: {}, constraints: {} })
+        setData({ revision: 0, stored: {}, effective: {}, sources: {}, constraints: {}, available_sections: [] })
         setStatus(current => ({ ...current, global: error.message || '个人设置加载失败' }))
       }
-    }
-    const loadOptions = async () => {
-      try { const value = await api.getPersonalSettingsOptions(); if (active) setOptions(value) }
-      catch (error) { if (active) setStatus(current => ({ ...current, options: error.message || '模型选项暂不可用' })) }
-    }
-    const loadCatalog = async () => {
-      try { const value = await api.listModelProfiles(); if (active) setProfiles(value?.profiles || []) }
-      catch (error) { if (active) setStatus(current => ({ ...current, models: { error: error.message || '模型目录暂不可用' } })) }
     }
     const loadAccount = async () => {
       try {
@@ -178,13 +189,26 @@ export default function PreferencesPage({ onToast }) {
         if (active) setAccountError(error.message || '账户资料加载失败')
       }
     }
-    void loadSettings(); void loadOptions(); void loadCatalog(); void loadAccount()
+    void loadSettings(); void loadAccount()
     return () => { active = false }
-  }, [])
+  }, [loadSettingsProjection])
+
+  const visibleSections = useMemo(
+    () => visiblePreferenceSections(data?.available_sections, hasPermission),
+    [data?.available_sections, hasPermission],
+  )
+  const navigationGroups = useMemo(() => preferenceNavigationGroups(visibleSections), [visibleSections])
+
+  useEffect(() => {
+    if (!data) return
+    const recovered = recoverPreferenceSection(window.location.hash, visibleSections)
+    if (activeSection !== recovered) setActiveSection(recovered)
+    if (window.location.hash.slice(1) !== recovered) window.history.replaceState(null, '', `#${recovered}`)
+  }, [activeSection, data, visibleSections])
 
   useEffect(() => {
     if (!data || typeof IntersectionObserver === 'undefined') return undefined
-    const sections = Object.keys(SETTINGS_META)
+    const sections = visibleSections
       .map(id => document.getElementById(id))
       .filter(Boolean)
     const observer = new IntersectionObserver(entries => {
@@ -195,19 +219,52 @@ export default function PreferencesPage({ onToast }) {
     }, { root: contentRef.current || document.querySelector('.cockpit-main'), rootMargin: '-16% 0px -68%', threshold: [0, 0.15, 0.4] })
     sections.forEach(section => observer.observe(section))
     return () => observer.disconnect()
-  }, [data])
+  }, [data, visibleSections])
 
   const effective = data?.effective || {}
   const dirty = section => JSON.stringify(drafts[section] || {}) !== JSON.stringify(data?.stored?.[section] || {})
   const setDraft = (section, patch) => setDrafts(current => ({ ...current, [section]: { ...(current[section] || {}), ...patch } }))
+
+  const parserOptions = useMemo(
+    () => resolveParserOptions(options?.parsers, effective.ingestion?.parser),
+    [options, effective],
+  )
+
+  const parserOptionsByType = useMemo(
+    () => Object.fromEntries(PARSER_FILE_TYPES.map(({ id }) => [id, Array.isArray(options?.parsers) ? resolveParserOptionsByType(options.parsers, id) : fallbackParserOptionsByType()])),
+    [options],
+  )
+
+  const strategyOptions = useMemo(
+    () => resolveChunkingStrategyIds(options?.chunking_strategies),
+    [options],
+  )
   const saveSection = async section => {
     setStatus(current => ({ ...current, [section]: { pending: true, error: '' } }))
     try {
-      const result = await api.patchPersonalSettings(section, { expected_revision: data.revision, values: drafts[section] || {} })
+      const rawValues = drafts[section] || {}
+      const values = section === 'ingestion' ? { ...rawValues } : rawValues
+      if (section === 'ingestion') {
+        if (rawValues.chunking_strategy) values.chunking_strategy = canonicalChunkingStrategyId(rawValues.chunking_strategy)
+        if (rawValues.parsers_by_type !== undefined) values.parsers_by_type = normalizeParsersByType(rawValues.parsers_by_type)
+      }
+      const result = await api.patchPersonalSettings(section, { expected_revision: data.revision, values })
       setData(result)
       setDrafts(current => mergeSavedSectionDrafts(current, section, result.stored))
       setNotice(`${SECTION_META[section].title}已保存`); onToast?.(`${SECTION_META[section].title}已保存`, 'success')
     } catch (error) {
+      if (error.status === 403) {
+        try {
+          await loadSettingsProjection()
+          setNotice('权限已更新，已刷新可用的个人设置')
+          setStatus(current => ({ ...current, global: '权限已更新，已刷新可用的个人设置' }))
+          onToast?.('权限已更新，已刷新可用的个人设置', 'info')
+        } catch (refreshError) {
+          setStatus(current => ({ ...current, [section]: { error: refreshError.message || '权限已更新，但个人设置刷新失败' } }))
+          onToast?.(refreshError.message || '权限已更新，但个人设置刷新失败', 'error')
+        }
+        return
+      }
       setDrafts(current => mergeSavedSectionDrafts(current, section, data?.stored || {}))
       setStatus(current => ({ ...current, [section]: { error: error.message || '保存失败' } }))
       onToast?.(error.message || '保存失败', 'error')
@@ -222,12 +279,26 @@ export default function PreferencesPage({ onToast }) {
       setDrafts(current => ({ ...current, [section]: {} }))
       setNotice(`${SECTION_META[section].title}已恢复继承`)
     }
-    catch (error) { setStatus(current => ({ ...current, [section]: { error: error.message || '恢复继承失败' } })) }
+    catch (error) {
+      if (error.status === 403) {
+        try {
+          await loadSettingsProjection()
+          setNotice('权限已更新，已刷新可用的个人设置')
+          setStatus(current => ({ ...current, global: '权限已更新，已刷新可用的个人设置' }))
+          onToast?.('权限已更新，已刷新可用的个人设置', 'info')
+        } catch (refreshError) {
+          setStatus(current => ({ ...current, [section]: { error: refreshError.message || '权限已更新，但个人设置刷新失败' } }))
+          onToast?.(refreshError.message || '权限已更新，但个人设置刷新失败', 'error')
+        }
+        return
+      }
+      setStatus(current => ({ ...current, [section]: { error: error.message || '恢复继承失败' } }))
+    }
     finally { setStatus(current => ({ ...current, [section]: { ...current[section], pending: false } })) }
   }
   const profileChoices = useMemo(
-    () => options?.profiles?.length ? options.profiles : profiles,
-    [options, profiles],
+    () => options?.profiles || [],
+    [options],
   )
   const profileFor = field => findModelProfile(profileChoices, drafts.models?.[field] ?? effective.models?.[field])
   const modelValueLabel = value => modelSettingValueLabel(profileChoices, value)
@@ -254,7 +325,7 @@ export default function PreferencesPage({ onToast }) {
   const sectionProps = section => ({ id: section, ...SECTION_META[section], pending: status[section]?.pending, error: status[section]?.error, dirty: dirty(section), onSave: () => saveSection(section), onReset: () => resetSection(section) })
   return <div className="preferences-page">
     <nav className="preferences-mobile-nav" aria-label="个人设置分区">
-      {Object.entries(SETTINGS_META).map(([id, { title, icon: Icon }]) => <a className={activeSection === id ? 'is-active' : ''} href={`#${id}`} aria-current={activeSection === id ? 'location' : undefined} onClick={event => navigateToSection(event, id)} key={id}><Icon size={15} aria-hidden="true" /><span>{title}</span></a>)}
+      {visibleSections.map(id => { const { title, icon: Icon } = SETTINGS_META[id]; return <a className={activeSection === id ? 'is-active' : ''} href={`#${id}`} aria-current={activeSection === id ? 'location' : undefined} onClick={event => navigateToSection(event, id)} key={id}><Icon size={15} aria-hidden="true" /><span>{title}</span></a> })}
     </nav>
     <div className="preferences-shell">
       <aside className="preferences-sidebar">
@@ -263,7 +334,7 @@ export default function PreferencesPage({ onToast }) {
           <div><strong>设置中心</strong><small>修订 {data.revision}</small></div>
         </div>
         <nav aria-label="个人设置分区">
-          {SETTINGS_NAV.map(group => <div className="preferences-nav-group" key={group.label}>
+          {navigationGroups.map(group => <div className="preferences-nav-group" key={group.label}>
             <p>{group.label}</p>
             {group.items.map(id => {
               const { title, icon: Icon } = SETTINGS_META[id]
@@ -276,11 +347,11 @@ export default function PreferencesPage({ onToast }) {
       <div className="preferences-content" ref={contentRef}>
         <div className="preferences-context">
           <span><Check size={16} aria-hidden="true" /></span>
-          <div><strong>设置只对当前账户生效</strong><p>模型、上传和检索设置会从下一次新任务开始使用。</p></div>
+          <div><strong>设置只对当前账户生效</strong><p>已授权的任务设置会从下一次新任务开始使用。</p></div>
         </div>
         <p className="sr-only" role="status" aria-live="polite">{notice}</p>
-        {(status.global || status.options) && <div role="alert" className="preferences-alert preferences-alert-warning"><AlertCircle size={16} aria-hidden="true" /><span>{status.global || status.options}；账户、主题与密码功能仍可正常使用。</span></div>}
-        <Section {...sectionProps('models')}>
+        {(status.global || status.options) && <div role="alert" className="preferences-alert preferences-alert-warning"><AlertCircle size={16} aria-hidden="true" /><span>{status.global || status.options}；仍可使用当前可见的个人设置。</span></div>}
+        {visibleSections.includes('models') && <Section {...sectionProps('models')}>
           <div className="preferences-model-grid">
             {[['llm_profile_id', '文本模型', 'llm'], ['vlm_profile_id', '图片理解模型', 'vlm']].map(([field, label, kind]) => {
               const profile = profileFor(field)
@@ -315,29 +386,40 @@ export default function PreferencesPage({ onToast }) {
               </div>
             })}
           </div>
-        </Section>
+        </Section>}
 
-        <Section {...sectionProps('ingestion')}>
+        {visibleSections.includes('ingestion') && <Section {...sectionProps('ingestion')}>
           <div className="preferences-field-grid">
-            <label htmlFor="ingestion-parser">解析器<select id="ingestion-parser" className="select-field" value={drafts.ingestion?.parser ?? effective.ingestion?.parser ?? 'docling'} onChange={event => setDraft('ingestion', { parser: event.target.value })}>{(options?.allowed?.parsers || ['docling']).map(value => <option value={value} key={value}>{value}</option>)}</select></label>
-            <label htmlFor="ingestion-strategy">分块策略<select id="ingestion-strategy" className="select-field" value={drafts.ingestion?.chunking_strategy ?? effective.ingestion?.chunking_strategy ?? 'recursive'} onChange={event => setDraft('ingestion', { chunking_strategy: event.target.value })}><option value="recursive">递归分块</option><option value="fixed">固定长度</option></select></label>
+            <label htmlFor="ingestion-parser">默认解析器<select id="ingestion-parser" className="select-field" value={drafts.ingestion?.parser ?? effective.ingestion?.parser ?? 'docling'} onChange={event => setDraft('ingestion', { parser: event.target.value })}>{parserOptions.map(item => <option value={item.id} key={item.id} disabled={item.available === false}>{item.name || item.id}</option>)}</select><small>未单独指定时，所有文件类型使用此解析器；未安装的解析器会置灰。</small></label>
+            <label htmlFor="ingestion-video">启用视频处理<input id="ingestion-video" type="checkbox" checked={drafts.ingestion?.enable_video ?? effective.ingestion?.enable_video ?? false} onChange={event => setDraft('ingestion', { enable_video: event.target.checked })} /><small>视频不经解析器，自动抽帧与转写。</small></label>
+          </div>
+          <details className="preferences-advanced">
+            <summary>按文件类型指定（可选）<span className="preferences-advanced-summary">{summarizeParsersByType(drafts.ingestion?.parsers_by_type ?? effective.ingestion?.parsers_by_type)}</span></summary>
+            <div className="preferences-field-grid">
+              {PARSER_FILE_TYPES.map(fileType => <label key={fileType.id} htmlFor={`ingestion-parser-${fileType.id}`}>{fileType.label}<select id={`ingestion-parser-${fileType.id}`} className="select-field" value={drafts.ingestion?.parsers_by_type?.[fileType.id] ?? ''} onChange={event => { const parsersByType = { ...(drafts.ingestion?.parsers_by_type || {}) }; if (event.target.value === '') delete parsersByType[fileType.id]; else parsersByType[fileType.id] = event.target.value; setDraft('ingestion', { parsers_by_type: parsersByType }) }}>{parserOptionsByType[fileType.id].map(item => <option value={item.id} key={item.id} disabled={item.available === false}>{item.name || item.id}</option>)}</select></label>)}
+            </div>
+          </details>
+          <div className="preferences-field-grid">
+            <label htmlFor="ingestion-strategy">分块策略<select id="ingestion-strategy" className="select-field" value={canonicalChunkingStrategyId(drafts.ingestion?.chunking_strategy ?? effective.ingestion?.chunking_strategy ?? 'recursive')} onChange={event => setDraft('ingestion', { chunking_strategy: event.target.value })}>{strategyOptions.map(item => { const id = item.id; const presentation = getChunkingStrategyPresentation(id); const label = presentation.name !== UNKNOWN_CHUNKING_STRATEGY_NAME ? presentation.name : (item.name || id); return <option value={id} key={id}>{label}</option> })}</select></label>
             <label htmlFor="ingestion-size">分块大小<input id="ingestion-size" className="input-field" type="number" min="64" value={drafts.ingestion?.chunk_size ?? effective.ingestion?.chunk_size ?? 800} onChange={event => setDraft('ingestion', { chunk_size: Number(event.target.value) })} /></label>
             <label htmlFor="ingestion-entities">实体类型<input id="ingestion-entities" className="input-field" value={(drafts.ingestion?.entity_types ?? effective.ingestion?.entity_types ?? []).join(', ')} placeholder="人物, 组织, 概念" onChange={event => setDraft('ingestion', { entity_types: event.target.value.split(',').map(value => value.trim()).filter(Boolean) })} /><small>使用逗号分隔，留空表示不额外限定。</small></label>
             <label htmlFor="ingestion-relation-degree">最低关系度<input id="ingestion-relation-degree" className="input-field" type="number" min="0" value={drafts.ingestion?.minimum_relation_degree ?? effective.ingestion?.minimum_relation_degree ?? 0} onChange={event => setDraft('ingestion', { minimum_relation_degree: Number(event.target.value) })} /></label>
           </div>
           <fieldset className="preferences-toggle-list">
-            <legend>多模态内容处理</legend>
-            {[['enable_image', '图片'], ['enable_table', '表格'], ['enable_equation', '公式'], ['enable_video', '视频']].map(([field, label]) => <label key={field}><span>{label}处理</span><input type="checkbox" checked={drafts.ingestion?.[field] ?? effective.ingestion?.[field] ?? false} onChange={event => setDraft('ingestion', { [field]: event.target.checked })} /></label>)}
+            <legend>文档内多模态处理</legend>
+            {[['enable_image', '文档内图片'], ['enable_table', '表格'], ['enable_equation', '公式']].map(([field, label]) => <label key={field}><span>{label}处理</span><input type="checkbox" checked={drafts.ingestion?.[field] ?? effective.ingestion?.[field] ?? false} onChange={event => setDraft('ingestion', { [field]: event.target.checked })} /></label>)}
+            <small className="preferences-local-note">“文档内图片处理”针对文档中内嵌的插图；独立图片文件请使用上方“图片文件解析”。</small>
           </fieldset>
           <details className="preferences-state-details">
             <summary>查看已保存值与生效状态</summary>
             <div className="preferences-state-grid">
               {['parser', 'chunking_strategy', 'chunk_size', 'entity_types', 'minimum_relation_degree', 'enable_image', 'enable_table', 'enable_equation', 'enable_video'].map(field => <FieldState key={field} label={FIELD_LABELS[field]} stored={data.stored?.ingestion?.[field]} effective={effective.ingestion?.[field]} source={data.sources?.ingestion?.[field]} constraint={data.constraints?.ingestion?.[field]} />)}
+              <FieldState label={FIELD_LABELS.parsers_by_type} stored={data.stored?.ingestion?.parsers_by_type} effective={effective.ingestion?.parsers_by_type} source={data.sources?.ingestion?.parsers_by_type} constraint={data.constraints?.ingestion?.parsers_by_type} valueLabel={formatParsersByType} />
             </div>
           </details>
-        </Section>
+        </Section>}
 
-        <Section {...sectionProps('retrieval')}>
+        {visibleSections.includes('retrieval') && <Section {...sectionProps('retrieval')}>
           <fieldset className="preferences-segmented">
             <legend className="sr-only">检索预设</legend>
             {['balanced', 'precise', 'broad', 'custom'].map(preset => <label key={preset}><input type="radio" name="retrieval-preset" value={preset} checked={selectedRetrievalPreset === preset} onChange={() => setDraft('retrieval', { preset, ...(retrievalPresetValues(preset) || {}) })} /><span>{({ balanced: '均衡', precise: '精准', broad: '广泛', custom: '自定义' })[preset]}</span></label>)}
@@ -366,14 +448,14 @@ export default function PreferencesPage({ onToast }) {
               {['preset', 'rrf_k', 'bm25_top_k', 'vector_top_k', 'graph_top_k', 'graph_depth', 'channels', 'bm25_tokenizer', 'bm25_k1', 'bm25_b'].map(field => <FieldState key={field} label={FIELD_LABELS[field]} stored={data.stored?.retrieval?.[field]} effective={effective.retrieval?.[field]} source={data.sources?.retrieval?.[field]} constraint={data.constraints?.retrieval?.[field]} />)}
             </div>
           </details>
-        </Section>
+        </Section>}
 
-        <Section {...sectionProps('runtime')}>
+        {visibleSections.includes('runtime') && <Section {...sectionProps('runtime')}>
           <div className="preferences-range-grid">
             <label htmlFor="runtime-concurrency">个人并发额度<span>平台上限 {runtimeConcurrencyRange.max}</span><div><input id="runtime-concurrency" aria-describedby="runtime-hint" aria-valuetext={`${drafts.runtime?.personal_concurrency ?? effective.runtime?.personal_concurrency ?? 7} 个并发任务`} type="range" min={runtimeConcurrencyRange.min} max={runtimeConcurrencyRange.max} step="1" value={drafts.runtime?.personal_concurrency ?? effective.runtime?.personal_concurrency ?? 7} onInput={event => setDraft('runtime', { personal_concurrency: Number(event.currentTarget.value) })} onChange={event => setDraft('runtime', { personal_concurrency: Number(event.target.value) })} /><output htmlFor="runtime-concurrency">{drafts.runtime?.personal_concurrency ?? effective.runtime?.personal_concurrency ?? 7}</output></div><FieldState stored={data.stored?.runtime?.personal_concurrency} effective={effective.runtime?.personal_concurrency} source={data.sources?.runtime?.personal_concurrency} constraint={data.constraints?.runtime?.personal_concurrency} /></label>
             <label htmlFor="runtime-timeout">LLM 等待时间<span>平台上限 {runtimeTimeoutRange.max} 秒</span><div><input id="runtime-timeout" aria-describedby="runtime-hint" aria-valuetext={`${drafts.runtime?.llm_timeout ?? effective.runtime?.llm_timeout ?? 180} 秒`} type="range" min={runtimeTimeoutRange.min} max={runtimeTimeoutRange.max} step="5" value={drafts.runtime?.llm_timeout ?? effective.runtime?.llm_timeout ?? 180} onInput={event => setDraft('runtime', { llm_timeout: Number(event.currentTarget.value) })} onChange={event => setDraft('runtime', { llm_timeout: Number(event.target.value) })} /><output htmlFor="runtime-timeout">{drafts.runtime?.llm_timeout ?? effective.runtime?.llm_timeout ?? 180}<small>秒</small></output></div><FieldState stored={data.stored?.runtime?.llm_timeout} effective={effective.runtime?.llm_timeout} source={data.sources?.runtime?.llm_timeout} constraint={data.constraints?.runtime?.llm_timeout} /></label>
           </div>
-        </Section>
+        </Section>}
 
         <SettingsBlock {...SETTINGS_META.appearance} id="appearance">
           <fieldset className="preferences-theme-options">

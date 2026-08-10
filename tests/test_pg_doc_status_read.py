@@ -8,6 +8,12 @@ from raganything.services import kb_service
 class _Cache(dict):
     """Small dict-compatible cache for exercising cache recovery."""
 
+    async def retire(self, name, instance=None):
+        target = instance if instance is not None else self.get(name)
+        if self.get(name) is target and target is not None:
+            self.pop(name, None)
+        return True
+
 
 class _DirectSummaryConnection:
     def __init__(self, rows):

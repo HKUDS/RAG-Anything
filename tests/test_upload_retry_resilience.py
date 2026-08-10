@@ -166,6 +166,55 @@ async def test_content_readiness_reads_local_nanovector_ids_without_pg(monkeypat
     assert result["vector_count"] == 1
 
 
+@pytest.mark.asyncio
+async def test_content_readiness_reads_non_default_nanovector_workspace(monkeypatch, tmp_path):
+    from raganything.services import document_quality, pg_state_repo
+
+    def unavailable_pool():
+        raise RuntimeError("PG vector storage is unavailable")
+
+    default_dir = tmp_path / "rag_storage"
+    kb_dir = tmp_path / "rag_storage_1"
+    kb_dir.mkdir()
+    (kb_dir / "vdb_chunks.json").write_text(
+        '{"data":[{"__id__":"chunk-1"}]}', encoding="utf-8",
+    )
+    monkeypatch.setattr(pg_state_repo, "get_pg_pool", unavailable_pool)
+    monkeypatch.setenv("WORKING_DIR", str(default_dir))
+
+    result = await document_quality.evaluate_content_readiness(
+        "1", ["chunk-1"], {"chunk-1": {"content": "有效文本"}},
+    )
+
+    assert result["ready"] is True
+    assert result["vector_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_content_readiness_reads_legacy_nested_nanovector_workspace(monkeypatch, tmp_path):
+    from raganything.services import document_quality, pg_state_repo
+
+    default_dir = tmp_path / "rag_storage"
+    nested_dir = tmp_path / "rag_storage_1" / "rag_storage_1"
+    nested_dir.mkdir(parents=True)
+    (nested_dir / "vdb_chunks.json").write_text(
+        '{"data":[{"__id__":"chunk-1"}]}', encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        pg_state_repo, "get_pg_pool", lambda: (_ for _ in ()).throw(
+            RuntimeError("PG vector storage is unavailable")
+        )
+    )
+    monkeypatch.setenv("WORKING_DIR", str(default_dir))
+
+    result = await document_quality.evaluate_content_readiness(
+        "1", ["chunk-1"], {"chunk-1": {"content": "有效文本"}},
+    )
+
+    assert result["ready"] is True
+    assert result["vector_count"] == 1
+
+
 def test_worker_async_flow_contains_no_sys_exit():
     import inspect
     import process_worker
@@ -191,8 +240,13 @@ async def test_rag_finalization_order_and_idempotency():
             events.append("vision_flush")
 
     class Store:
+        def __init__(self, result=True, updated=False):
+            self.result = result
+            self.storage_updated = type("Flag", (), {"value": updated})()
+
         async def index_done_callback(self):
             events.append("persist")
+            return self.result
 
     class Cache:
         def __init__(self, name):
@@ -224,6 +278,136 @@ async def test_rag_finalization_order_and_idempotency():
         "vision_tasks", "vision_flush", "persist", "parse_cache",
         "multimodal_cache", "lightrag",
     ]
+
+
+@pytest.mark.asyncio
+async def test_worker_vdb_persistence_clears_stale_flag_and_checks_callback():
+    import logging
+    from raganything.raganything import RAGAnything
+
+    class VDB:
+        def __init__(self, result=True):
+            self.storage_updated = type("Flag", (), {"value": True})()
+            self.result = result
+
+        async def index_done_callback(self):
+            assert self.storage_updated.value is False
+            return self.result
+
+    class LightRAG:
+        chunks_vdb = VDB()
+
+    rag = object.__new__(RAGAnything)
+    rag._finalized = False
+    rag._finalize_lock = None
+    rag._finalize_components = {}
+    rag.modal_processors = {}
+    rag.lightrag = LightRAG()
+    rag.parse_cache = None
+    rag.multimodal_status_cache = None
+    rag.logger = logging.getLogger("test.worker-vdb")
+
+    await rag.finalize_storages(worker_vdb_persistence=True)
+    assert LightRAG.chunks_vdb.storage_updated.value is False
+
+
+@pytest.mark.asyncio
+async def test_worker_vdb_persistence_raises_on_false_callback():
+    import logging
+    from raganything.raganything import RAGAnything
+
+    class VDB:
+        storage_updated = type("Flag", (), {"value": True})()
+
+        async def index_done_callback(self):
+            return False
+
+    class LightRAG:
+        chunks_vdb = VDB()
+
+    rag = object.__new__(RAGAnything)
+    rag.lightrag = LightRAG()
+    rag.logger = logging.getLogger("test.worker-vdb-failure")
+
+    with pytest.raises(RuntimeError, match="nanovectordb_persist_failed:chunks_vdb"):
+        await rag._persist_lightrag_stores(worker_vdb_persistence=True)
+
+
+@pytest.mark.asyncio
+async def test_worker_vdb_persistence_propagates_callback_exception():
+    import logging
+    from raganything.raganything import RAGAnything
+
+    class VDB:
+        storage_updated = type("Flag", (), {"value": True})()
+
+        async def index_done_callback(self):
+            raise OSError("disk full")
+
+    class LightRAG:
+        chunks_vdb = VDB()
+
+    rag = object.__new__(RAGAnything)
+    rag.lightrag = LightRAG()
+    rag.logger = logging.getLogger("test.worker-vdb-exception")
+
+    with pytest.raises(OSError, match="disk full"):
+        await rag._persist_lightrag_stores(worker_vdb_persistence=True)
+
+
+@pytest.mark.asyncio
+async def test_regular_vdb_persistence_keeps_update_flag_behavior():
+    import logging
+    from raganything.raganything import RAGAnything
+
+    class VDB:
+        storage_updated = type("Flag", (), {"value": True})()
+
+        async def index_done_callback(self):
+            return True
+
+    class LightRAG:
+        chunks_vdb = VDB()
+
+    rag = object.__new__(RAGAnything)
+    rag.lightrag = LightRAG()
+    rag.logger = logging.getLogger("test.regular-vdb")
+
+    await rag._persist_lightrag_stores()
+    assert LightRAG.chunks_vdb.storage_updated.value is True
+
+
+@pytest.mark.asyncio
+async def test_post_worker_cache_retirement_skips_file_backed_vector_stores():
+    import logging
+    from raganything.raganything import RAGAnything
+
+    events = []
+
+    class Store:
+        async def index_done_callback(self):
+            events.append("store")
+            return True
+
+    class LightRAG:
+        chunks_vdb = Store()
+        text_chunks = Store()
+
+    rag = object.__new__(RAGAnything)
+    rag._finalized = False
+    rag._finalize_lock = None
+    rag._finalize_components = {}
+    rag.modal_processors = {}
+    rag.lightrag = LightRAG()
+    rag.parse_cache = None
+    rag.multimodal_status_cache = None
+    rag.logger = logging.getLogger("test.post-worker-retire")
+
+    await rag.finalize_storages(persist_vector_stores=False)
+
+    # Text/KV stores stay durable; the stale server-side VDB must not overwrite
+    # the snapshot already written by the independent Worker.
+    assert events == ["store"]
 
 
 @pytest.mark.asyncio

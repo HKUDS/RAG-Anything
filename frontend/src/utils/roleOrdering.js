@@ -24,10 +24,10 @@ export function orderRoles(roles) {
 }
 
 /**
- * 按操作者等级过滤可选角色；未提供 actorRole 时保持全量（向后兼容）。
+ * 按操作者等级过滤可选角色；未知操作者没有可分配角色。
  */
 export function filterAssignableRoles(roles, actorRole) {
   const ordered = orderRoles(roles)
-  if (!actorRole) return ordered
+  if (!actorRole) return []
   return ordered.filter((role) => canAssignRole(actorRole, role.name))
 }

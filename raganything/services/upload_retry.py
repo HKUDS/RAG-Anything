@@ -230,6 +230,96 @@ async def complete_upload_retry(job_id: int, lease_token: str) -> bool:
             return True
 
 
+async def terminalize_hnsw_memory_failure(
+    *, task_id: str, kb_name: str, file_path: str, filename: str,
+    file_hash: str, user_id: int, error: str, chunking_strategy: str,
+    retry_job_id: int | None = None, lease_token: str | None = None,
+    claim_owner: str | None = None, claim_generation: int | None = None,
+) -> dict[str, Any] | None:
+    """Fence an HNSW OOM as terminal while retaining an explicit retry record."""
+    pool = get_pg_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            upload = await conn.fetchrow(
+                "SELECT id, status FROM uploaded_files WHERE task_id=$1 AND kb_name=$2 FOR UPDATE",
+                task_id, kb_name,
+            )
+            if not upload or upload["status"] != "processing":
+                return None
+            if claim_owner is not None:
+                if claim_generation is None:
+                    return None
+                owned = await conn.fetchval(
+                    "SELECT EXISTS(SELECT 1 FROM uploaded_files WHERE id=$1 "
+                    "AND processing_owner=$2 AND processing_generation=$3)",
+                    upload["id"], claim_owner, int(claim_generation),
+                )
+                if not owned:
+                    return None
+
+            if retry_job_id is not None:
+                if not lease_token:
+                    return None
+                existing = await conn.fetchrow(
+                    "SELECT * FROM upload_retry_jobs WHERE id=$1 FOR UPDATE", retry_job_id,
+                )
+                if (
+                    not existing
+                    or existing["status"] != "running"
+                    or str(existing["lease_token"]) != str(lease_token)
+                ):
+                    return None
+            else:
+                existing = await conn.fetchrow(
+                    "SELECT * FROM upload_retry_jobs WHERE upload_id=$1 AND stage='graph_index' FOR UPDATE",
+                    upload["id"],
+                )
+
+            if existing:
+                row = await conn.fetchrow(
+                    """
+                    UPDATE upload_retry_jobs SET
+                        stage='graph_index', status='terminal_failed',
+                        next_attempt_at=NOW(), lease_token=NULL, lease_until=NULL,
+                        root_type='GraphIndexHnswMemoryExhausted', last_error=$2,
+                        completed_at=NOW(), updated_at=NOW()
+                    WHERE id=$1 RETURNING *
+                    """,
+                    existing["id"], error,
+                )
+            else:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO upload_retry_jobs
+                    (upload_id,task_id,kb_name,file_path,filename,file_hash,user_id,stage,
+                     chunking_strategy,status,attempt_count,max_attempts,next_attempt_at,
+                     root_type,last_error,completed_at)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7,'graph_index',$8,'terminal_failed',0,$9,NOW(),
+                            'GraphIndexHnswMemoryExhausted',$10,NOW())
+                    RETURNING *
+                    """,
+                    upload["id"], task_id, kb_name, file_path, filename, file_hash,
+                    user_id, chunking_strategy, DEFAULT_MAX_RETRIES, error,
+                )
+
+            await conn.execute(
+                "UPDATE uploaded_files SET status='failed',error_message=$2,updated_at=NOW() "
+                "WHERE id=$1 AND status<>'deleted'",
+                upload["id"], error,
+            )
+            await conn.execute(
+                """
+                UPDATE processing_tasks SET status='failed',retryable=FALSE,
+                    failure_stage='graph_index',retry_count=0,
+                    next_retry_at=NULL,error_message=$2,message=$3,
+                    completed_at=NOW(),updated_at=NOW()
+                WHERE task_id=$1
+                """,
+                task_id, error, "Graph index memory exhausted; explicit retry required",
+            )
+            return dict(row)
+
+
 async def retry_now(task_id: str, *, reset_budget: bool = False) -> bool:
     pool = get_pg_pool()
     async with pool.acquire() as conn:
@@ -238,7 +328,9 @@ async def retry_now(task_id: str, *, reset_budget: bool = False) -> bool:
                 "UPDATE upload_retry_jobs SET status='queued',next_attempt_at=NOW(),"
                 "attempt_count=CASE WHEN $2 THEN 1 ELSE attempt_count END,"
                 "lease_token=NULL,lease_until=NULL,completed_at=NULL,updated_at=NOW() "
-                "WHERE task_id=$1 AND status IN ('retry_wait','terminal_failed') RETURNING upload_id",
+                "WHERE task_id=$1 AND (status='retry_wait' OR "
+                "(status='terminal_failed' AND stage='graph_index' "
+                "AND root_type='GraphIndexHnswMemoryExhausted')) RETURNING upload_id",
                 task_id, reset_budget,
             )
             if not row:
@@ -295,6 +387,8 @@ async def get_retry_metadata(task_ids: list[str]) -> dict[str, dict[str, Any]]:
 
 async def _retry_loop() -> None:
     assert _stop_event is not None
+    backoff = 2.0
+    failures = 0
     while not _stop_event.is_set():
         try:
             job = await claim_due_retry()
@@ -314,7 +408,28 @@ async def _retry_loop() -> None:
             raise
         except Exception:
             import logging
-            logging.getLogger("rag_server.upload_retry").exception("Upload retry loop failed")
+            failures += 1
+            retry_logger = logging.getLogger("rag_server.upload_retry")
+            if failures == 1:
+                retry_logger.exception("Upload retry loop failed")
+            else:
+                retry_logger.warning(
+                    "Upload retry loop still unavailable: attempt=%s retry_in=%ss",
+                    failures, backoff,
+                )
+            try:
+                await asyncio.wait_for(_stop_event.wait(), timeout=backoff)
+            except asyncio.TimeoutError:
+                pass
+            backoff = min(backoff * 2, 60.0)
+            continue
+        if failures:
+            import logging
+            logging.getLogger("rag_server.upload_retry").info(
+                "Upload retry loop recovered after %s failures", failures,
+            )
+            failures = 0
+        backoff = 2.0
         try:
             await asyncio.wait_for(_stop_event.wait(), timeout=2.0)
         except asyncio.TimeoutError:

@@ -1,198 +1,208 @@
 #!/usr/bin/env python3
-"""
-PostgreSQL 一键初始化脚本
-- 创建数据库
-- 运行 schema 迁移
-- 配置 .env
+"""Provision a PostgreSQL database/user, then delegate migrations to the runner.
 
-用法:
-  python scripts/pg_setup.py --password <你的postgres密码>
-
-或交互式:
-  python scripts/pg_setup.py
+This script intentionally does not write ``.env`` or apply a handwritten list
+of SQL files. Set ``PGPASSWORD`` through an approved secret mechanism for
+automation; credentials are never printed or accepted on the command line.
 """
+
+from __future__ import annotations
 
 import argparse
 import getpass
 import os
-import sys
+import re
 import subprocess
+import sys
 from pathlib import Path
+
+from pg_migration_runner import MigrationRunner, PsqlExecutor, sanitize_failure
+
+
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def find_psql() -> str:
-    """Find psql.exe on this system."""
     candidates = [
-        "psql",
+        os.getenv("PSQL_BIN", "psql"),
         r"D:\PostgreSQL\bin\psql.exe",
         r"C:\Program Files\PostgreSQL\16\bin\psql.exe",
         r"D:\Program Files\PostgreSQL\16\bin\psql.exe",
     ]
-    for p in candidates:
+    for candidate in dict.fromkeys(candidates):
         try:
-            result = subprocess.run([p, "--version"], capture_output=True, text=True, timeout=5)
-            if result.returncode == 0:
-                return p
-        except (subprocess.TimeoutExpired, FileNotFoundError):
+            result = subprocess.run(
+                [candidate, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired):
             continue
-    print("[错误] 找不到 psql.exe，确认 PostgreSQL 已安装")
-    sys.exit(1)
-
-
-def main():
-    parser = argparse.ArgumentParser(description="RAG-Anything PostgreSQL 初始化")
-    parser.add_argument("--password", help="postgres 用户密码")
-    parser.add_argument("--db-name", default="raganything", help="数据库名")
-    parser.add_argument("--db-user", default="raganything", help="应用数据库用户")
-    parser.add_argument("--db-password", help="应用数据库用户密码（默认同 --password）")
-    args = parser.parse_args()
-
-    password = args.password or os.getenv("PGPASSWORD") or getpass.getpass("postgres 用户密码: ")
-    db_password = args.db_password or password
-
-    ROOT = Path(__file__).resolve().parent.parent
-    migration_files = [
-        ROOT / "migrations" / "001_pg_schema.sql",
-        ROOT / "migrations" / "003_p0_agent_kb_meta.sql",
-        ROOT / "migrations" / "005_image_vision_vectors_pg.sql",
-        ROOT / "migrations" / "007_infra_state_pg.sql",
-        ROOT / "migrations" / "009_uploaded_files_meta.sql",
-        ROOT / "migrations" / "010_uploaded_files_task_queue.sql",
-        ROOT / "migrations" / "012_uploaded_files_status_default_queued.sql",
-        ROOT / "migrations" / "013_monitor_events.sql",
-        ROOT / "migrations" / "014_image_vision_workspace.sql",
-        ROOT / "migrations" / "015_restore_5level_rbac.sql",
-        ROOT / "migrations" / "016_knowledge_chunk_tags.sql",
-        ROOT / "migrations" / "017_automatic_tag_assignments.sql",
-        ROOT / "migrations" / "018_agent_activity_sort_index.sql",
-        ROOT / "migrations" / "019_document_repair_jobs.sql",
-        ROOT / "migrations" / "020_document_tag_jobs.sql",
-        ROOT / "migrations" / "021_upload_retry_jobs.sql",
-        ROOT / "migrations" / "022_document_tag_upload_link.sql",
-        ROOT / "migrations" / "023_personal_settings_platform_policy.sql",
-        ROOT / "migrations" / "024_upload_task_cancellation.sql",
-        ROOT / "migrations" / "025_remove_user_email.sql",
-        ROOT / "migrations" / "026_kb_updated_at_semantics.sql",
-        ROOT / "migrations" / "027_agent_conversation_summary_columns.sql",
-    ]
-    env_file = ROOT / ".env"
-
-    for migration_file in migration_files:
-        if not migration_file.exists():
-            print(f"[错误] Schema 文件不存在: {migration_file}")
-            sys.exit(1)
-
-    psql = find_psql()
-    print(f"[OK] 找到 psql: {psql}")
-
-    env = os.environ.copy()
-    env["PGPASSWORD"] = password
-
-    def run_sql(sql: str, db: str = "postgres", desc: str = ""):
-        """Execute SQL via psql."""
-        print(f"  {desc} ...", end=" ", flush=True)
-        cmd = [psql, "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", db, "-c", sql]
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
         if result.returncode == 0:
-            print("OK")
-        elif "already exists" in result.stderr.lower():
-            print("已存在，跳过")
-        elif "does not exist" in result.stderr.lower():
-            print("已跳过（无需操作）")
-        else:
-            print(f"失败: {result.stderr.strip()[:200]}")
-            if "password authentication failed" in result.stderr.lower():
-                print("[错误] 密码不正确，请重试")
-                sys.exit(1)
-
-    print("\n--- 1. 创建数据库 ---")
-    run_sql(
-        f"CREATE DATABASE {args.db_name} OWNER postgres;",
-        desc=f"创建数据库 {args.db_name}",
+            return candidate
+    raise RuntimeError(
+        "psql was not found; install PostgreSQL client tools or set PSQL_BIN"
     )
 
-    print("\n--- 2. 创建应用用户 ---")
-    run_sql(
-        f"CREATE USER {args.db_user} WITH PASSWORD '{db_password}';",
-        desc=f"创建用户 {args.db_user}",
+
+def sql_identifier(value: str) -> str:
+    if not _IDENTIFIER_RE.fullmatch(value):
+        raise ValueError(f"unsafe PostgreSQL identifier: {value!r}")
+    return '"' + value + '"'
+
+
+def sql_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
+
+
+def run_admin_psql(
+    psql: str,
+    args: list[str],
+    *,
+    env: dict[str, str],
+    input_text: str | None = None,
+) -> str:
+    result = subprocess.run(
+        [psql, "-X", "-w", "-v", "ON_ERROR_STOP=1", *args],
+        input=input_text,
+        capture_output=True,
+        text=True,
+        env=env,
+        timeout=60,
+        check=False,
     )
-    run_sql(
-        f"GRANT ALL ON DATABASE {args.db_name} TO {args.db_user};",
-        desc=f"授权 {args.db_user} 访问 {args.db_name}",
-    )
-
-    print("\n--- 3. 运行 Schema 迁移 ---")
-    env["PGPASSWORD"] = db_password
-    migration_failures = 0
-    for migration_file in migration_files:
-        print(f"  -> 执行 {migration_file.name}")
-        cmd = [
-            psql, "-v", "ON_ERROR_STOP=1", "-U", args.db_user,
-            "-d", args.db_name, "-f", str(migration_file),
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
-        if result.returncode == 0:
-            print(f"     [OK] {migration_file.name} 执行完成")
-            continue
-
-        error_msg = result.stderr.strip()
-        if "already exists" in error_msg.lower():
-            print(f"     [OK] {migration_file.name} 已存在，跳过")
-            continue
-
-        print(f"     [失败] {error_msg[:300]}")
-        print("     可能需要先授权 schema 权限:")
-        env["PGPASSWORD"] = password
-        grant_sql = f"GRANT ALL ON SCHEMA public TO {args.db_user}; ALTER SCHEMA public OWNER TO {args.db_user};"
-        subprocess.run(
-            [psql, "-v", "ON_ERROR_STOP=1", "-U", "postgres", "-d", args.db_name, "-c", grant_sql],
-            capture_output=True, text=True, env=env, timeout=30,
+    if result.returncode:
+        raise RuntimeError(
+            f"administrative PostgreSQL command failed: {sanitize_failure(result.stderr or result.stdout)}"
         )
-        env["PGPASSWORD"] = db_password
-        result2 = subprocess.run(cmd, capture_output=True, text=True, env=env, timeout=30)
-        if result2.returncode == 0:
-            print(f"     [OK] {migration_file.name} 执行完成（授权后重试）")
-        else:
-            migration_failures += 1
-            print(f"     [失败] {result2.stderr.strip()[:300]}")
+    return result.stdout.strip()
 
-    print("\n--- 4. 配置 .env ---")
-    if migration_failures:
-        raise SystemExit(
-            f"{migration_failures} migration(s) failed; refusing to report success"
+
+def provision_database(
+    psql: str,
+    *,
+    admin_env: dict[str, str],
+    db_name: str,
+    db_user: str,
+    db_password: str,
+) -> None:
+    db_ident = sql_identifier(db_name)
+    user_ident = sql_identifier(db_user)
+    user_literal = sql_literal(db_user)
+    existing_user = run_admin_psql(
+        psql,
+        [
+            "-At",
+            "-d",
+            "postgres",
+            "-c",
+            f"SELECT 1 FROM pg_roles WHERE rolname = {user_literal};",
+        ],
+        env=admin_env,
+    )
+    if existing_user != "1":
+        run_admin_psql(
+            psql,
+            ["-f", "-"],
+            env=admin_env,
+            input_text=f"CREATE ROLE {user_ident} LOGIN PASSWORD {sql_literal(db_password)};\n",
         )
 
-    dsn = f"postgresql://{args.db_user}:{db_password}@localhost:5432/{args.db_name}"
-    env_lines = []
-    if env_file.exists():
-        env_lines = env_file.read_text(encoding="utf-8").splitlines()
+    existing_database = run_admin_psql(
+        psql,
+        [
+            "-At",
+            "-d",
+            "postgres",
+            "-c",
+            f"SELECT 1 FROM pg_database WHERE datname = {sql_literal(db_name)};",
+        ],
+        env=admin_env,
+    )
+    if existing_database != "1":
+        run_admin_psql(
+            psql,
+            ["-d", "postgres", "-c", f"CREATE DATABASE {db_ident} OWNER {user_ident};"],
+            env=admin_env,
+        )
+    run_admin_psql(
+        psql,
+        ["-d", "postgres", "-c", f"GRANT ALL ON DATABASE {db_ident} TO {user_ident};"],
+        env=admin_env,
+    )
 
-    # 移除旧的 DATABASE_URL 行，添加新的
-    new_lines = []
-    replaced = False
-    for line in env_lines:
-        if line.startswith("DATABASE_URL=") or line.startswith("# DATABASE_URL="):
-            if not replaced:
-                new_lines.append(f"DATABASE_URL={dsn}")
-                replaced = True
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="Provision RAG-Anything PostgreSQL and run the official migration chain"
+    )
+    parser.add_argument("--db-name", default="raganything")
+    parser.add_argument("--db-user", default="raganything")
+    parser.add_argument(
+        "--backup-acknowledged",
+        action="store_true",
+        help="acknowledge a verified backup before applying migrations",
+    )
+    parser.add_argument(
+        "--skip-migrations",
+        action="store_true",
+        help="only provision the database/user; do not apply schema migrations",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _build_parser().parse_args(argv)
+    try:
+        sql_identifier(args.db_name)
+        sql_identifier(args.db_user)
+        if not args.skip_migrations and not args.backup_acknowledged:
+            raise RuntimeError(
+                "migration apply requires --backup-acknowledged after a verified backup; "
+                "use --skip-migrations for provisioning only"
+            )
+        admin_password = os.getenv("PGPASSWORD") or getpass.getpass(
+            "PostgreSQL administrator password: "
+        )
+        db_password = admin_password
+        psql = find_psql()
+        admin_env = os.environ.copy()
+        admin_env["PGPASSWORD"] = admin_password
+        admin_env["PGUSER"] = "postgres"
+        admin_env["PGDATABASE"] = "postgres"
+        provision_database(
+            psql,
+            admin_env=admin_env,
+            db_name=args.db_name,
+            db_user=args.db_user,
+            db_password=db_password,
+        )
+        if not args.skip_migrations:
+            app_env = os.environ.copy()
+            app_env.pop("DATABASE_URL", None)
+            app_env["PGPASSWORD"] = db_password
+            app_env["PGUSER"] = args.db_user
+            app_env["PGDATABASE"] = args.db_name
+            root = Path(__file__).resolve().parents[1]
+            runner = MigrationRunner(
+                root,
+                executor=PsqlExecutor(psql_bin=psql, env=app_env, cwd=root),
+            )
+            plan = runner.apply(backup_acknowledged=True)
+            print(
+                f"PostgreSQL provisioned and migration chain applied: {len(plan.pending)} migration(s)"
+            )
         else:
-            new_lines.append(line)
-    if not replaced:
-        new_lines.append("")
-        new_lines.append(f"# PostgreSQL 连接")
-        new_lines.append(f"DATABASE_URL={dsn}")
-
-    env_file.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
-    print(f"  [OK] DATABASE_URL 已写入 {env_file}")
-
-    print("\n" + "=" * 50)
-    print("  PostgreSQL 初始化完成！")
-    print(f"  数据库: {args.db_name}")
-    print(f"  用户:   {args.db_user}")
-    print("  DSN:    written to .env (credentials redacted)")
-    print("=" * 50)
-    print("\n  现在启动服务器: python server.py -w 4")
+            print(
+                "PostgreSQL database and user provisioned; migrations were not applied"
+            )
+        return 0
+    except (RuntimeError, ValueError) as exc:
+        print(f"PostgreSQL setup failed: {sanitize_failure(str(exc))}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

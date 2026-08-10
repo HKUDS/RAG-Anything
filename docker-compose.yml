@@ -2,6 +2,7 @@ version: "3.8"
 
 services:
   app:
+    image: ${RAGANYTHING_APP_IMAGE:-raganything-app:parsers}
     build:
       context: .
       target: default
@@ -12,43 +13,106 @@ services:
     env_file:
       - .env
     environment:
-      - POSTGRES_HOST=postgres
-      - POSTGRES_PORT=5432
-      - PORT=8000
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-raganything}:${POSTGRES_PASSWORD:-raganything}@postgres:5432/${POSTGRES_DATABASE:-raganything}
-      - REDIS_URI=redis://redis:6379
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      PORT: 8000
+      RAGANYTHING_ENV: ${RAGANYTHING_ENV:?RAGANYTHING_ENV must be set}
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET must be set}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set}
+      DEFAULT_ADMIN_USERNAME: ${DEFAULT_ADMIN_USERNAME:?DEFAULT_ADMIN_USERNAME must be set}
+      DEFAULT_ADMIN_PASSWORD: ${DEFAULT_ADMIN_PASSWORD:?DEFAULT_ADMIN_PASSWORD must be set}
+      REDIS_URI: redis://redis:6379
+      HF_HOME: /root/.cache/huggingface
+      HF_HUB_CACHE: /root/.cache/huggingface/hub
+      PADDLE_PDX_CACHE_HOME: /root/.paddlex
+      # Marker runs in a separate Pillow-compatible container. It shares only
+      # ingestion directories and is never published on a host port.
+      MARKER_SERVICE_URL: http://marker:8765
+      MARKER_SHARED_OUTPUT_DIR: /app/output
+      MARKER_SERVICE_TIMEOUT_SECONDS: ${MARKER_SERVICE_TIMEOUT_SECONDS:-1800}
+      # Recovery profile: these lower global LLM load while HNSW capacity is
+      # investigated. ENTITY_EXTRACT_CONCURRENCY is independent of MAX_ASYNC.
+      MAX_ASYNC: ${MAX_ASYNC:-1}
+      ENTITY_EXTRACT_CONCURRENCY: ${ENTITY_EXTRACT_CONCURRENCY:-2}
+      POSTGRES_HNSW_M: ${POSTGRES_HNSW_M:-16}
+      POSTGRES_HNSW_EF: ${POSTGRES_HNSW_EF:-64}
       # The catalog is deployment-owned. It is mounted read-only below and is
       # never supplied by an API request or browser client.
-      - MODEL_PROFILE_CATALOG_FILE=/app/config/model_profiles.json
+      MODEL_PROFILE_CATALOG_FILE: /app/config/model_profiles.json
     volumes:
-      - ./rag_storage:/app/rag_storage
-      - ./uploads:/app/uploads
-      - ./output:/app/output
+      - ${RAG_STORAGE_HOST_PATH:-./rag_storage}:/app/rag_storage
+      - ${UPLOADS_HOST_PATH:-./uploads}:/app/uploads
+      - ${OUTPUT_HOST_PATH:-./output}:/app/output
+      # Parser/model caches live outside the image so new containers and new
+      # hosts can restore them without reinstalling or redownloading models.
+      - ${HF_HOME_HOST_PATH:-./models/huggingface}:/root/.cache/huggingface
+      - ${PADDLE_HOME_HOST_PATH:-./models/paddle}:/root/.paddleocr
+      - ${PADDLEX_HOME_HOST_PATH:-./models/paddlex}:/root/.paddlex
       # Override MODEL_PROFILE_CATALOG_HOST_PATH at deploy time to use a
       # dedicated unified catalog; the existing vision catalog is a safe
       # backwards-compatible default.
       - ${MODEL_PROFILE_CATALOG_HOST_PATH:-./config/vision_models.json}:/app/config/model_profiles.json:ro
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
+      marker:
+        condition: service_healthy
 
   postgres:
     image: postgres:16-alpine
     container_name: raganything-pg
     restart: unless-stopped
+    mem_limit: 4g
+    shm_size: 1g
+    command:
+      - postgres
+      - -c
+      - tcp_keepalives_idle=60
+      - -c
+      - tcp_keepalives_interval=10
+      - -c
+      - tcp_keepalives_count=6
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=512MB
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-raganything}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-raganything}
-      POSTGRES_DB: ${POSTGRES_DATABASE:-raganything}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER must be set}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
+      POSTGRES_DB: ${POSTGRES_DATABASE:?POSTGRES_DATABASE must be set}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-raganything}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:?POSTGRES_USER must be set} -d ${POSTGRES_DATABASE:?POSTGRES_DATABASE must be set}"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  migrate:
+    image: ${RAGANYTHING_APP_IMAGE:-raganything-app:parsers}
+    build:
+      context: .
+      target: default
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL must be set}
+      MIGRATION_BACKUP_ACKNOWLEDGED: ${MIGRATION_BACKUP_ACKNOWLEDGED:-}
+    command:
+      - sh
+      - -ec
+      - >-
+        test "$${MIGRATION_BACKUP_ACKNOWLEDGED}" = true
+        || { echo "MIGRATION_BACKUP_ACKNOWLEDGED=true is required after backup verification" >&2; exit 2; };
+        python scripts/pg_migration_runner.py apply --backup-acknowledged
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
@@ -57,7 +121,37 @@ services:
     volumes:
       - redisdata:/data
 
+  marker:
+    image: ${RAGANYTHING_MARKER_IMAGE:-raganything-marker:parsers}
+    build:
+      context: .
+      target: marker
+    container_name: raganything-marker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MARKER_PORT: 8765
+      MARKER_INPUT_ROOTS: /app/uploads,/app/rag_storage,/app/output
+      MARKER_OUTPUT_ROOT: /app/output
+    volumes:
+      - ${RAG_STORAGE_HOST_PATH:-./rag_storage}:/app/rag_storage:ro
+      - ${UPLOADS_HOST_PATH:-./uploads}:/app/uploads:ro
+      - ${OUTPUT_HOST_PATH:-./output}:/app/output
+      # Keeps Marker/Surya, Torch and its Hugging Face model cache across
+      # container rebuilds and server migrations.
+      - ${MARKER_CACHE_HOST_PATH:-./models/marker}:/root/.cache
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8765/healthz', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    mem_limit: ${MARKER_MEM_LIMIT:-8g}
+    cpus: ${MARKER_CPUS:-2.0}
+
   nginx:
+    image: ${RAGANYTHING_NGINX_IMAGE:-raganything-nginx:parsers}
     build:
       context: .
       target: frontend
@@ -65,7 +159,6 @@ services:
     restart: unless-stopped
     ports:
       - "80:80"
-      - "443:443"
     depends_on:
       - app
 

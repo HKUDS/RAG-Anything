@@ -412,15 +412,6 @@ Content: {content}
 
 Analysis: {enhanced_caption}"""
 
-PROMPTS["video_chunk"] = """Video Content Analysis:
-- Video Path: {video_path}
-- Duration: {duration}s
-- Estimated Frames: {frame_count}
-
-Transcript Preview: {transcript_summary}
-
-Comprehensive Video Analysis: {enhanced_caption}"""
-
 # Query-related prompts
 PROMPTS["QUERY_IMAGE_DESCRIPTION"] = (
     "Please briefly describe the main content, key elements, and important information in this image."

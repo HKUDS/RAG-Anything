@@ -60,6 +60,29 @@ def chunk_content(row: Any) -> str:
     return ""
 
 
+def _nanovector_workspace_dir(kb_name: str) -> Path:
+    """Return the NanoVectorDB directory for the requested knowledge base."""
+    default_dir = Path(os.getenv("WORKING_DIR", "./rag_storage"))
+    if kb_name == "default":
+        return default_dir
+    return default_dir.with_name(f"{default_dir.name}_{kb_name}")
+
+
+def _nanovector_vector_paths(kb_name: str) -> tuple[Path, ...]:
+    """Return compatible NanoVectorDB paths, including LightRAG's nested form.
+
+    LightRAG appends its non-empty ``workspace`` to ``working_dir`` for the
+    file-backed vector store.  Existing deployments therefore have either
+    ``<kb>/vdb_chunks.json`` or ``<kb>/<kb>/vdb_chunks.json`` depending on the
+    initialization version.
+    """
+    workspace_dir = _nanovector_workspace_dir(kb_name)
+    return (
+        workspace_dir / "vdb_chunks.json",
+        workspace_dir / workspace_dir.name / "vdb_chunks.json",
+    )
+
+
 async def evaluate_content_readiness(
     kb_name: str,
     chunk_ids: list[str],
@@ -100,25 +123,19 @@ async def evaluate_content_readiness(
             pg_checked = False
 
         if not pg_checked:
-            workspace_dir = Path(
-                os.getenv(
-                    "WORKING_DIR",
-                    "./rag_storage" if kb_name == "default" else f"./rag_storage_{kb_name}",
-                )
-            )
-            vector_path = workspace_dir / "vdb_chunks.json"
-            try:
-                payload = json.loads(vector_path.read_text(encoding="utf-8"))
-                rows = payload.get("data", []) if isinstance(payload, dict) else payload
-                if isinstance(rows, list):
-                    vector_ids = {
-                        str(row.get("__id__") or row.get("id"))
-                        for row in rows
-                        if isinstance(row, dict)
-                        and (row.get("__id__") or row.get("id")) in expected
-                    }
-            except (OSError, TypeError, ValueError, json.JSONDecodeError):
-                vector_ids = set()
+            for vector_path in _nanovector_vector_paths(kb_name):
+                try:
+                    payload = json.loads(vector_path.read_text(encoding="utf-8"))
+                    rows = payload.get("data", []) if isinstance(payload, dict) else payload
+                    if isinstance(rows, list):
+                        vector_ids.update(
+                            str(row.get("__id__") or row.get("id"))
+                            for row in rows
+                            if isinstance(row, dict)
+                            and (row.get("__id__") or row.get("id")) in expected
+                        )
+                except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                    continue
     ready = bool(expected) and present == expected and vector_ids == expected and not invalid
     return {
         "ready": ready,

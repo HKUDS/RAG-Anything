@@ -33,17 +33,34 @@ import asyncio
 # Subprocess entry points (process_worker.py) await these before exiting
 # so that async multimodal processing is not killed mid-flight.
 _pending_background_tasks: "set[asyncio.Task]" = set()
+_background_task_errors: "list[BaseException]" = []
 
 
 def register_background_task(task: "asyncio.Task") -> None:
     """Register a background task so subprocesses can await it before exit."""
     _pending_background_tasks.add(task)
-    task.add_done_callback(lambda t: _pending_background_tasks.discard(t))
+
+    def _record_completion(completed: "asyncio.Task") -> None:
+        _pending_background_tasks.discard(completed)
+        if completed.cancelled():
+            return
+        error = completed.exception()
+        if error is not None:
+            _background_task_errors.append(error)
+
+    task.add_done_callback(_record_completion)
 
 
 def get_pending_background_tasks() -> "set[asyncio.Task]":
     """Return a snapshot of currently pending background tasks."""
     return set(_pending_background_tasks)
+
+
+def consume_background_task_errors() -> "list[BaseException]":
+    """Return and clear exceptions from registered tasks that already completed."""
+    errors = list(_background_task_errors)
+    _background_task_errors.clear()
+    return errors
 
 
 class BatchProcessorMixin:

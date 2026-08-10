@@ -407,6 +407,11 @@ async def test_agent_stream_done_event_uses_controlled_media_payload(tmp_path, m
         "resolve_user_settings_for_task",
         AsyncMock(return_value=_resolved_settings()),
     )
+    monkeypatch.setattr(
+        user_settings,
+        "available_sections_for_user",
+        AsyncMock(return_value=frozenset()),
+    )
     monkeypatch.setattr(user_settings, "get_platform_settings", AsyncMock(return_value={
         "settings": {"limits": {"interactive_wait_seconds": 0}}
     }))
@@ -433,6 +438,14 @@ async def test_agent_stream_done_event_uses_controlled_media_payload(tmp_path, m
     monkeypatch.setattr(vision_models, "reset_llm_snapshot", lambda _token: None)
     monkeypatch.setattr(vision_models, "activate_vlm_selection", lambda _snapshot: None)
     monkeypatch.setattr(vision_models, "reset_vlm_snapshot", lambda _token: None)
+
+    async def passthrough_authenticated_events(events, _current_user):
+        async for event in events:
+            yield event
+
+    # This regression isolates controlled-media payload shaping. Account
+    # session revalidation is exercised in the lifecycle transport suite.
+    monkeypatch.setattr(agent, "authenticated_sse_events", passthrough_authenticated_events)
 
     request = Request({"type": "http", "method": "POST", "path": "/", "headers": []})
     response = await agent.agent_query_stream(

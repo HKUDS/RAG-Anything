@@ -1,6 +1,7 @@
 ﻿const API_BASE = '/api'
 import { knowledgeDetailCache } from './knowledgeDetailCache.js'
 import { createGlobalStatsCache, GLOBAL_STATS_CACHE_TTL_MS } from './globalStatsCache.js'
+import { notifyAuthExpired, refreshStoredSession, readStoredAuth } from './authSession.js'
 
 const UPLOAD_TIMEOUT_MS = 600_000 // 600s — aligned with nginx proxy_read_timeout
 const KB_STATS_TIMEOUT_MS = 8_000
@@ -46,16 +47,12 @@ export function advanceKnowledgeDetailAuthGeneration() {
 
 // 从 localStorage 读取 token
 export function getToken() {
-  try {
-    const saved = localStorage.getItem('raganything_auth')
-    return saved ? JSON.parse(saved).token : ''
-  } catch { return '' }
+  return readStoredAuth()?.token || ''
 }
 
 function handleAuthError() {
   advanceKnowledgeDetailAuthGeneration()
-  localStorage.removeItem('raganything_auth')
-  window.dispatchEvent(new CustomEvent('raganything:auth-expired'))
+  notifyAuthExpired()
 }
 
 function authHeaders(extra = {}) {
@@ -150,17 +147,36 @@ async function listAllKnowledgeTags({ kb, query = '', signal } = {}) {
   return { tags }
 }
 
+async function fetchWithAuthRefresh(url, options = {}) {
+  const response = await fetch(url, options)
+  if (response.status !== 401) return response
+
+  const refreshed = await refreshStoredSession()
+  if (refreshed?.access_token) {
+    const retried = await fetch(url, {
+      ...options,
+      headers: {
+        ...(options.headers || {}),
+        Authorization: `Bearer ${refreshed.access_token}`,
+      },
+    })
+    if (retried.status === 401) handleAuthError()
+    return retried
+  }
+  handleAuthError()
+  return response
+}
+
 async function request(url, options = {}) {
   if (!currentKB) {
     console.warn(`[api] 跳过请求 ${url}：currentKB 未初始化`)
     return {}
   }
-  const res = await fetch(`${API_BASE}${kbUrl(url)}`, {
+  const res = await fetchWithAuthRefresh(`${API_BASE}${kbUrl(url)}`, {
     ...options,
     headers: authHeaders({ 'Content-Type': 'application/json', ...(options.headers || {}) }),
   })
   if (res.status === 401) {
-    handleAuthError()
     const error = new Error('登录已过期，请重新登录')
     error.status = 401
     throw error
@@ -198,7 +214,7 @@ async function fetchJson(url, options = {}) {
 
   let res
   try {
-    res = await fetch(`${API_BASE}${url}`, {
+    res = await fetchWithAuthRefresh(`${API_BASE}${url}`, {
       ...restOptions,
       signal: activeSignal,
       headers: authHeaders({ 'Content-Type': 'application/json', ...(restOptions.headers || {}) }),
@@ -223,7 +239,6 @@ async function fetchJson(url, options = {}) {
   if (timeoutId) clearTimeout(timeoutId)
   if (signal && abortForwarder) signal.removeEventListener('abort', abortForwarder)
   if (res.status === 401) {
-    handleAuthError()
     const error = new Error('登录已过期，请重新登录')
     error.status = 401
     throw error
@@ -254,7 +269,7 @@ export async function streamSSE(url, {
 } = {}) {
   let response
   try {
-    response = await fetch(url, {
+    response = await fetchWithAuthRefresh(url, {
       method,
       body,
       signal,
@@ -266,9 +281,6 @@ export async function streamSSE(url, {
     throw error
   }
 
-  if (response.status === 401) {
-    handleAuthError()
-  }
   if (!response.ok) {
     const payload = await readResponseBody(response, response.statusText || `HTTP ${response.status}`)
     const error = new Error(streamErrorMessage(payload, response.statusText || `HTTP ${response.status}`))
@@ -445,6 +457,35 @@ export const api = {
       invalidateKnowledgeDetail(name)
       return response
     }),
+  getKBMembers: (name) => fetchJson(`/kb/${encodeURIComponent(name)}/members`),
+  searchKBMemberCandidates: (name, query, page = 1, pageSize = 20) => {
+    const params = new URLSearchParams({ q: query, page: String(page), page_size: String(pageSize) })
+    return fetchJson(`/kb/${encodeURIComponent(name)}/member-candidates?${params.toString()}`)
+  },
+  updateKBMember: (name, userId, accessLevel) => fetchJson(
+    `/kb/${encodeURIComponent(name)}/members/${encodeURIComponent(userId)}`,
+    { method: 'PUT', body: JSON.stringify({ access_level: accessLevel }) },
+  ).then(response => {
+    clearKBListCache()
+    invalidateKnowledgeDetail(name)
+    return response
+  }),
+  removeKBMember: (name, userId) => fetchJson(
+    `/kb/${encodeURIComponent(name)}/members/${encodeURIComponent(userId)}`,
+    { method: 'DELETE' },
+  ).then(response => {
+    clearKBListCache()
+    invalidateKnowledgeDetail(name)
+    return response
+  }),
+  updateKBMetadata: (name, data) => fetchJson(
+    `/kb/${encodeURIComponent(name)}/metadata`,
+    { method: 'PATCH', body: JSON.stringify(data) },
+  ).then(response => {
+    clearKBListCache()
+    invalidateKnowledgeDetail(name)
+    return response
+  }),
 
   // 上传（FormData 不手动设置 Content-Type，由浏览器设置 multipart 边界）
   uploadFile: (file, chunking_strategy = '', multimodal = {}) => {
@@ -702,6 +743,8 @@ export const api = {
   probeModelProfile: (profileId) => fetchJson(`/admin/model-profiles/${encodeURIComponent(profileId)}/probe`, { method: 'POST' }),
   getKBVisionSettings: (kbName) => fetchJson(`/kb/${encodeURIComponent(kbName)}/vision-settings`),
   updateKBVisionSettings: (kbName, data) => fetchJson(`/kb/${encodeURIComponent(kbName)}/vision-settings`, { method: 'PUT', body: JSON.stringify(data) }),
+  getKBIngestionSettings: (kbName) => fetchJson(`/kb/${encodeURIComponent(kbName)}/ingestion-settings`),
+  updateKBIngestionSettings: (kbName, data) => fetchJson(`/kb/${encodeURIComponent(kbName)}/ingestion-settings`, { method: 'PUT', body: JSON.stringify(data) }),
   updateMyProfile: (data) => fetchJson('/auth/me/profile', { method: 'PUT', body: JSON.stringify(data) }),
   updateMyPassword: (data) => fetchJson('/auth/me/password', { method: 'PUT', body: JSON.stringify(data) }),
 

@@ -8,7 +8,11 @@ permissions:
   contents: read
 
 jobs:
+  release-gate:
+    uses: ./.github/workflows/reusable-release-gate.yml
+
   release-build:
+    needs: release-gate
     runs-on: ubuntu-latest
 
     steps:

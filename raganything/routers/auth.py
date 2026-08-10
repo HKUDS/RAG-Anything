@@ -25,14 +25,16 @@ from raganything.services.auth import (
     update_user,
     verify_password,
     # Token blacklist dispatch (Phase 1 PG migration)
-    is_token_revoked,
     revoke_token,
     revoke_refresh_family,
     register_refresh_family,
+    rotate_refresh_token,
     # Audit log dispatch (PG-backed)
     audit_log,
     query_audit_logs as _dispatch_query_audit_logs,
+    public_registration_enabled,
 )
+from raganything.services.pg_auth_repo import AccountLifecycleConflict
 from raganything.dependencies import (
     get_current_user,
     get_admin_user,
@@ -67,6 +69,7 @@ class AdminUpdateUserRequest(BaseModel):
     is_admin: Optional[int] = None   # no-op: 已废弃，使用 role_id 代替，前端兼容保留
     is_active: Optional[int] = None
     role_id: Optional[int] = None
+    allowed_kbs: Optional[list[str]] = None
 
 
 class RefreshRequest(BaseModel):
@@ -83,12 +86,32 @@ class PasswordUpdateRequest(BaseModel):
     new_password: str
 
 
+def _token_expiry(payload: dict) -> datetime:
+    try:
+        return datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc)
+    except (KeyError, TypeError, ValueError, OverflowError) as exc:
+        raise HTTPException(401, "Refresh Token 无效或已过期") from exc
+
+
+def _public_auth_user(user: dict, role: dict | None, is_admin: bool) -> dict:
+    return {
+        "id": int(user["id"]),
+        "username": user["username"],
+        "is_admin": bool(is_admin),
+        "must_change_password": bool(user.get("must_change_password", False)),
+        "role": role,
+        "allowed_kbs": user.get("allowed_kbs", []),
+    }
+
+
 # ── Auth Routes ─────────────────────────────────────────
 
 @router.post("/auth/register")
 @limiter.limit("5/minute")
 async def register(request: Request, req: AuthRegisterRequest):
     """用户注册"""
+    if not public_registration_enabled():
+        raise HTTPException(404, "Not found")
     try:
         user = await create_user(req.username, req.password)
         return {"status": "ok", "user": user}
@@ -108,7 +131,7 @@ async def login(request: Request, req: AuthLoginRequest):
     if lock_error:
         raise HTTPException(403, lock_error)
 
-    if not user.get("is_active"):
+    if not user.get("is_active") or user.get("archived_at") is not None:
         raise HTTPException(403, "账号已被禁用")
 
     if not verify_password(req.password, user["password_hash"]):
@@ -123,22 +146,23 @@ async def login(request: Request, req: AuthLoginRequest):
     # Fetch role for embedding in JWT
     role = await _auth_get_user_role(user["id"])
     is_admin = role is not None and role.get("name") == "super_admin"
-    token = create_token(user["id"], user["username"], is_admin, role)
-    refresh = create_refresh_token(user["id"], user["username"], is_admin, role)
+    token = create_token(user["id"], user["username"], is_admin, role, user.get("session_generation", 0))
+    refresh = create_refresh_token(user["id"], user["username"], is_admin, role, user.get("session_generation", 0))
 
-    # 注册 refresh token 到 family (PG-first dispatch)
-    import jwt as _pyjwt
-    try:
-        r_payload = _pyjwt.decode(refresh, options={"verify_signature": False})
-        await register_refresh_family(r_payload.get("rfam", ""), r_payload.get("jti", ""))
-    except Exception:
-        pass
+    # 注册可用 refresh token；失败必须让登录失败，避免向客户端发放
+    # 一个无法持久轮转的 refresh token。
+    r_payload = decode_refresh_token(refresh)
+    if not r_payload:
+        raise HTTPException(500, "登录会话创建失败，请稍后重试")
+    await register_refresh_family(
+        r_payload["rfam"], r_payload["jti"], _token_expiry(r_payload),
+    )
 
     return {
         "status": "ok",
         "access_token": token,
         "refresh_token": refresh,
-        "user": {"id": user["id"], "username": user["username"], "is_admin": is_admin},
+        "user": _public_auth_user(user, role, is_admin),
     }
 
 
@@ -154,45 +178,43 @@ async def refresh(request: Request, req: RefreshRequest):
     if payload is None:
         raise HTTPException(401, "Refresh Token 无效或已过期")
 
-    # 检查 refresh token 是否已被撤销（重放检测，PG-first dispatch）
+    # 校验 account/session 后在同一数据库事务中消费旧 token；不能使用
+    # 先查询再撤销的两步流程，否则并发 refresh 会同时成功。
     jti = payload.get("jti")
-    if jti and await is_token_revoked(jti):
-        # 重放攻击检测：撤销该用户整个 refresh family
-        rfam = payload.get("rfam", "")
-        if rfam:
-            await revoke_refresh_family(rfam)
-        raise HTTPException(401, "Refresh Token 已被使用过，请重新登录")
+    rfam = payload.get("rfam", "")
+    if not jti or not rfam:
+        raise HTTPException(401, "Refresh Token 无效或已过期")
 
     user = await get_user_by_id(payload["user_id"])
-    if not user or not user.get("is_active"):
+    if not user or not user.get("is_active") or user.get("archived_at") is not None:
         raise HTTPException(401, "用户不存在或已禁用")
-
-    # 撤销旧的 refresh token (PG-first dispatch)
-    if jti:
-        from datetime import timedelta as _td
-        await revoke_token(jti, datetime.now(timezone.utc) + _td(days=30))
+    if payload.get("sg") is None or int(payload["sg"]) != int(user.get("session_generation", 0)):
+        raise HTTPException(401, "Refresh Token 已失效，请重新登录")
 
     # 颁发新 token 对（嵌入角色信息）
     role = await _auth_get_user_role(user["id"])
     is_admin = role is not None and role.get("name") == "super_admin"
-    token = create_token(user["id"], user["username"], is_admin, role)
-    new_refresh = create_refresh_token(user["id"], user["username"], is_admin, role)
+    token = create_token(user["id"], user["username"], is_admin, role, user.get("session_generation", 0))
+    new_refresh = create_refresh_token(
+        user["id"], user["username"], is_admin, role,
+        user.get("session_generation", 0), family_id=rfam,
+    )
 
-    # 注册新 refresh token（保持同一 family，PG-first dispatch）
-    import jwt as _pyjwt
-    try:
-        r_payload = _pyjwt.decode(new_refresh, options={"verify_signature": False})
-        new_jti = r_payload.get("jti", "")
-        rfam = payload.get("rfam", "")  # 使用原始 family
-        if rfam and new_jti:
-            await register_refresh_family(rfam, new_jti)
-    except Exception:
-        pass
+    new_payload = decode_refresh_token(new_refresh)
+    if not new_payload:
+        raise HTTPException(500, "刷新会话创建失败，请稍后重试")
+    rotated = await rotate_refresh_token(
+        rfam, jti, new_payload["jti"], _token_expiry(new_payload),
+    )
+    if not rotated:
+        await revoke_refresh_family(rfam)
+        raise HTTPException(401, "Refresh Token 已被使用过，请重新登录")
 
     return {
         "status": "ok",
         "access_token": token,
         "refresh_token": new_refresh,
+        "user": _public_auth_user(user, role, is_admin),
     }
 
 
@@ -333,10 +355,12 @@ async def change_password(
 
     # 更新密码（使用派发函数，支持 PG/SQLite）
     try:
-        await update_user(current_user["id"], {
+        updated = await update_user(current_user["id"], {
             "password": new_password,
             "must_change_password": 0,
         })
+    except AccountLifecycleConflict as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -345,7 +369,29 @@ async def change_password(
         details={"result": "updated"}, ip_address=request.client.host if request.client else None,
     )
 
-    return {"status": "ok", "message": "密码修改成功"}
+    role = await _auth_get_user_role(updated["id"])
+    is_admin = role is not None and role.get("name") == "super_admin"
+    access_token = create_token(
+        updated["id"], updated["username"], is_admin, role,
+        updated.get("session_generation", 0),
+    )
+    refresh_token = create_refresh_token(
+        updated["id"], updated["username"], is_admin, role,
+        updated.get("session_generation", 0),
+    )
+    refresh_payload = decode_refresh_token(refresh_token)
+    if not refresh_payload:
+        raise HTTPException(500, "新会话创建失败，请稍后重试")
+    await register_refresh_family(
+        refresh_payload["rfam"], refresh_payload["jti"], _token_expiry(refresh_payload),
+    )
+    return {
+        "status": "ok",
+        "message": "密码修改成功",
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "user": _public_auth_user(updated, role, is_admin),
+    }
 
 
 # ── Auth: must_change_password check ─────────────────────
@@ -396,6 +442,13 @@ async def admin_list_users(
         u["role_name"] = r["name"] if r else None
         u["role_permissions"] = r.get("permissions", []) if r else []
         u["is_admin"] = (u["role_name"] == "super_admin")
+
+    active_super_admins = [
+        u for u in all_users
+        if u.get("role_name") == "super_admin" and u.get("is_active") and u.get("archived_at") is None
+    ]
+    if len(active_super_admins) == 1:
+        active_super_admins[0]["lifecycle_protected"] = True
 
     # Filter
     filtered = all_users
@@ -507,6 +560,15 @@ async def admin_get_user(
         u["role"] = {"id": None, "name": None, "permissions": []}
         u["is_admin"] = False
 
+    if u.get("role", {}).get("name") == "super_admin" and u.get("is_active") and u.get("archived_at") is None:
+        all_users = await list_users()
+        active_admin_count = sum(
+            1 for candidate in all_users
+            if candidate.get("is_active") and candidate.get("archived_at") is None
+            and (await _auth_get_user_role(candidate["id"]) or {}).get("name") == "super_admin"
+        )
+        u["lifecycle_protected"] = active_admin_count == 1
+
     return {"status": "ok", "user": u}
 
 
@@ -521,6 +583,11 @@ async def admin_update_user(
     update_data = {k: v for k, v in req.dict().items() if v is not None}
     if not update_data:
         raise HTTPException(400, "无更新内容")
+    if "allowed_kbs" in update_data:
+        raise HTTPException(
+            422,
+            "知识库成员授权已迁移至知识库页面的成员与权限管理",
+        )
 
     # is_admin 已废弃，忽略此字段（使用 role_id 代替）
     update_data.pop("is_admin", None)
@@ -538,9 +605,16 @@ async def admin_update_user(
 
     actor_role_name = (user.get("role") or {}).get("name")
     try:
-        updated = await update_user(user_id, update_data, actor_role_name=actor_role_name)
+        updated = await update_user(
+            user_id,
+            update_data,
+            actor_role_name=actor_role_name,
+            actor_id=user["id"],
+        )
     except PermissionError as e:
         raise HTTPException(403, str(e))
+    except AccountLifecycleConflict as e:
+        raise HTTPException(409, str(e))
     except ValueError as e:
         raise HTTPException(400, str(e))
 
@@ -588,33 +662,40 @@ async def admin_update_user(
 async def admin_delete_user(
     user_id: int,
     request: Request,
+    archive_reason: Optional[str] = QueryParam(None, max_length=500),
     user: dict = Depends(require_permission(Permission.USERS_DELETE)),
 ):
-    """管理员删除用户"""
+    """Archive a user without removing their identity or audit references."""
     if user_id == user["id"]:
         raise HTTPException(403, "不能删除自己")
 
     # 获取被删用户信息用于审计
     deleted_user = await get_user_by_id(user_id)
 
-    success = await delete_user(user_id)
+    try:
+        success = await delete_user(
+            user_id, archived_by=user["id"], archive_reason=archive_reason
+        )
+    except AccountLifecycleConflict as e:
+        raise HTTPException(409, str(e))
     if not success:
         raise HTTPException(404, "用户不存在")
 
     # 审计日志（PG-first dispatch）
     await audit_log(
         actor_id=user["id"],
-        action="user.delete",
+        action="user.archive",
         target_user_id=user_id,
         details={
             "username": deleted_user.get("username") if deleted_user else "unknown",
             "role_id": deleted_user.get("role_id") if deleted_user else None,
             "actor_role": user.get("role", {}).get("name", "unknown"),
+            "archive_reason": archive_reason,
         },
         ip_address=request.client.host if request.client else None,
     )
 
-    return {"status": "ok"}
+    return {"status": "ok", "lifecycle": "archived"}
 
 
 # ── Admin: Audit Logs ───────────────────────────────────

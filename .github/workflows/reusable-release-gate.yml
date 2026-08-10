@@ -1,0 +1,244 @@
+name: Reusable default release gate
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-quality:
+    name: backend-quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: '0.6.14'
+      - name: Validate committed Python lock
+        run: uv lock --locked
+      - name: Install frozen backend environment
+        run: uv sync --frozen
+      - name: Run backend tests
+        run: uv run pytest -q -p no:cacheprovider tests
+      - name: Verify deployment and recovery command contracts
+        run: |
+          uv run python scripts/pg_migration_runner.py --help
+          uv run python scripts/ops/release_ops.py --help
+          uv run pytest -q -p no:cacheprovider tests/ops/test_release_ops.py tests/ops/test_release_operations_contract.py
+
+  frontend-unit-build:
+    name: frontend-unit-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      TZ: Asia/Shanghai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked frontend dependencies
+        run: npm ci --ignore-scripts
+      - name: Run frontend unit tests
+        run: npm run test:unit
+      - name: Build frontend production assets
+        run: npm run build
+
+  lint-and-static:
+    name: lint-and-static
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: '0.6.14'
+      - name: Install frozen static tooling
+        run: uv sync --frozen
+      - name: Check Python lint and formatting without fixes
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Verify CI did not mutate the checkout
+        run: git diff --exit-code
+
+  postgres-migrations-api:
+    name: postgres-migrations-api
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci_release
+          POSTGRES_PASSWORD: ci_release_password
+          POSTGRES_DB: ci_release
+        options: >-
+          --health-cmd "pg_isready -U ci_release -d ci_release"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://ci_release:ci_release_password@localhost:5432/ci_release
+      MIGRATION_TEST_DATABASE_URL: postgresql://ci_release:ci_release_password@localhost:5432/ci_release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: '0.6.14'
+      - name: Install PostgreSQL client
+        run: sudo apt-get update && sudo apt-get install --yes postgresql-client
+      - name: Wait for PostgreSQL service
+        run: |
+          for attempt in $(seq 1 24); do
+            pg_isready -d "$DATABASE_URL" && exit 0
+            sleep 2
+          done
+          exit 1
+      - name: Install frozen PostgreSQL integration environment
+        run: uv sync --frozen
+      - name: Run isolated PostgreSQL migration integration fixtures
+        run: uv run pytest -q -p no:cacheprovider tests/test_pg_migration_runner_integration.py
+      - name: Apply fresh canonical migration chain
+        run: python scripts/pg_migration_runner.py apply --backup-acknowledged
+      - name: Verify repeated canonical migration run is current
+        run: |
+          python scripts/pg_migration_runner.py verify | grep -Fx 'migration verification passed; pending=0'
+          python scripts/pg_migration_runner.py apply --backup-acknowledged
+      - name: Assert release schema facts
+        run: |
+          expected="$(python -c "from pathlib import Path; from scripts.pg_migration_runner import load_manifest; print(len(load_manifest(Path('.'))))")"
+          actual="$(psql -X -v ON_ERROR_STOP=1 -At -d "$DATABASE_URL" -c "SELECT COUNT(*) FROM schema_migration_history WHERE state = 'applied';")"
+          test "$actual" = "$expected"
+          psql -X -v ON_ERROR_STOP=1 -At -d "$DATABASE_URL" -c "SELECT to_regclass('public.kb_metadata');" | grep -Fx 'kb_metadata'
+          psql -X -v ON_ERROR_STOP=1 -At -d "$DATABASE_URL" -c "SELECT to_regclass('public.uploaded_files');" | grep -Fx 'uploaded_files'
+          psql -X -v ON_ERROR_STOP=1 -At -d "$DATABASE_URL" -c "SELECT to_regclass('public.idx_kb_metadata_domain');" | grep -Fx 'idx_kb_metadata_domain'
+      - name: Run real PostgreSQL CRUD integration
+        run: uv run python tests/test_pg_crud_e2e.py
+      - name: Run authenticated PostgreSQL API integration
+        run: uv run pytest -q -p no:cacheprovider tests/test_pg_authenticated_api_integration.py
+      - name: Publish sanitized migration status on failure
+        if: failure()
+        run: python scripts/pg_migration_runner.py status || true
+
+  default-container-smoke:
+    name: default-container-smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci_release
+          POSTGRES_PASSWORD: ci_release_password
+          POSTGRES_DB: ci_release
+        options: >-
+          --health-cmd "pg_isready -U ci_release -d ci_release"
+          --health-interval 5s --health-timeout 5s --health-retries 12
+        ports:
+          - 5432:5432
+    env:
+      DATABASE_URL: postgresql://ci_release:ci_release_password@localhost:5432/ci_release
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install PostgreSQL client and apply migrations
+        run: |
+          sudo apt-get update && sudo apt-get install --yes postgresql-client
+          python scripts/pg_migration_runner.py apply --backup-acknowledged
+      - name: Build default image only
+        run: docker build --target default --tag raganything:ci-default .
+      - name: Start default image with isolated runtime state
+        run: |
+          ci_admin_password="$(python -c 'import secrets; print("Ci" + secrets.token_urlsafe(18) + "!9")')"
+          ci_jwt_secret="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          ci_refresh_secret="$(python -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          docker run --detach --name raganything-ci --network host \
+            -e DATABASE_URL="$DATABASE_URL" -e PORT=8000 \
+            -e DEFAULT_ADMIN_USERNAME=ci_container_admin \
+            -e DEFAULT_ADMIN_PASSWORD="$ci_admin_password" \
+            -e JWT_SECRET="$ci_jwt_secret" \
+            -e JWT_REFRESH_SECRET="$ci_refresh_secret" \
+            -e WORKING_DIR=/tmp/raganything-ci -e LOG_DIR=/tmp/raganything-ci-log \
+            raganything:ci-default
+      - name: Poll health API
+        run: |
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent --show-error http://127.0.0.1:8000/api/health; then exit 0; fi
+            sleep 2
+          done
+          exit 1
+      - name: Capture sanitized container diagnostics
+        if: failure()
+        run: docker logs raganything-ci 2>&1 | sed -E 's#(postgres(ql)?://)[^[:space:]]+#\1<redacted>#g' || true
+      - name: Cleanup container
+        if: always()
+        run: docker rm --force raganything-ci || true
+
+  supply-chain-security:
+    name: supply-chain-security
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: '0.6.14'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.18.1'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Validate reviewed security exception policy
+        run: python scripts/check_security_exceptions.py
+      - name: Verify committed locks
+        run: |
+          uv lock --locked
+          cd frontend && npm ci --ignore-scripts
+      - name: Scan tracked history for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Scan production dependency graphs
+        run: |
+          uv export --locked --no-dev --no-emit-project -o requirements-ci.txt
+          npm audit --prefix frontend --omit=dev --audit-level=high
+          docker run --rm -v "$PWD:/src:ro" aquasec/trivy:0.59.1 fs --scanners vuln --severity HIGH,CRITICAL --exit-code 1 /src/requirements-ci.txt
+      - name: Build exact default image for SBOM and scan
+        run: docker build --target default --tag raganything:ci-security .
+      - name: Generate CycloneDX image SBOM
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock -v "$PWD:/work" anchore/syft:v1.20.0 raganything:ci-security -o cyclonedx-json=/work/raganything-default.sbom.json
+      - name: Scan exact default image
+        run: docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.59.1 image --severity HIGH,CRITICAL --exit-code 1 raganything:ci-security
+      - name: Upload default image SBOM
+        uses: actions/upload-artifact@v4
+        with:
+          name: raganything-default-image-sbom
+          path: raganything-default.sbom.json
+          if-no-files-found: error
+
+  project-summary-quality:
+    name: project-summary-quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check PROJECT_SUMMARY quality
+        run: python scripts/check_project_summary.py

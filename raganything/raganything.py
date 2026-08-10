@@ -88,6 +88,14 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
     config: Optional[RAGAnythingConfig] = field(default=None)
     """Configuration object, if None will create with environment variables."""
 
+    parsers_by_type: Dict[str, str] = field(default_factory=dict)
+    """Per-file-type parser overrides (keys: ``pdf`` / ``office`` / ``image``).
+
+    When non-empty, written into ``config.parsers_by_type`` during
+    initialization so callers that construct :class:`RAGAnything` directly
+    (without a pre-built config) still get per-type dispatch at runtime.
+    """
+
     # LightRAG Configuration
     # ---
     lightrag_kwargs: Dict[str, Any] = field(default_factory=dict)
@@ -144,6 +152,10 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         # Initialize configuration if not provided
         if self.config is None:
             self.config = RAGAnythingConfig()
+
+        # Apply per-file-type parser overrides to the effective config
+        if self.parsers_by_type:
+            self.config.parsers_by_type = dict(self.parsers_by_type)
 
         # Set working directory
         self.working_dir = self.config.working_dir
@@ -368,6 +380,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                     audio_transcriber=audio_transcriber,
                     scene_detector=scene_detector,
                     video_frame_concurrent=self.config.video_frame_concurrent,
+                    video_segment_concurrent=self.config.video_segment_concurrent,
                     enable_frame_cache=self.config.enable_frame_cache,
                     config=self.config,
                 )
@@ -655,7 +668,12 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             )
             self.vision_embed_func = None  # disable gracefully
 
-    async def finalize_storages(self):
+    async def finalize_storages(
+        self,
+        *,
+        worker_vdb_persistence: bool = False,
+        persist_vector_stores: bool = True,
+    ):
         """Finalize resources in dependency order, retrying only failed steps."""
         if self._finalized:
             return
@@ -664,7 +682,10 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         async with self._finalize_lock:
             if self._finalized:
                 return
-            await self._finalize_storages_once()
+            await self._finalize_storages_once(
+                worker_vdb_persistence=worker_vdb_persistence,
+                persist_vector_stores=persist_vector_stores,
+            )
             self._finalized = True
             try:
                 atexit.unregister(self.close)
@@ -681,7 +702,12 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         if storage is not None:
             await storage.finalize()
 
-    async def _persist_lightrag_stores(self) -> None:
+    async def _persist_lightrag_stores(
+        self,
+        *,
+        worker_vdb_persistence: bool = False,
+        persist_vector_stores: bool = True,
+    ) -> None:
         if self.lightrag is None:
             return
         stores = (
@@ -695,10 +721,23 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             ("relationships_vdb", getattr(self.lightrag, "relationships_vdb", None)),
             ("chunks_vdb", getattr(self.lightrag, "chunks_vdb", None)),
         )
+        vector_store_names = {"entities_vdb", "relationships_vdb", "chunks_vdb"}
         for name, storage in stores:
             if storage is None:
                 continue
-            await storage.index_done_callback()
+            if name in vector_store_names and not persist_vector_stores:
+                self.logger.debug("Skipped stale file-backed vector store %s", name)
+                continue
+            if worker_vdb_persistence and name in vector_store_names:
+                update_flag = getattr(storage, "storage_updated", None)
+                if update_flag is not None and hasattr(update_flag, "value"):
+                    # NanoVectorDB reloads the on-disk snapshot when this flag
+                    # is stale. Workers hold the KB lock, so their in-memory
+                    # vectors are the authoritative snapshot to persist.
+                    update_flag.value = False
+            result = await storage.index_done_callback()
+            if worker_vdb_persistence and name in vector_store_names and result is False:
+                raise RuntimeError(f"nanovectordb_persist_failed:{name}")
             self.logger.debug("Persisted LightRAG store %s", name)
 
     async def _flush_vision_repository(self) -> None:
@@ -722,7 +761,12 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         except Exception:
             pass
 
-    async def _finalize_storages_once(self):
+    async def _finalize_storages_once(
+        self,
+        *,
+        worker_vdb_persistence: bool = False,
+        persist_vector_stores: bool = True,
+    ):
         """Finalize all storages including parse cache and LightRAG storages
 
         This method should be called when shutting down to properly clean up resources
@@ -749,7 +793,13 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         """
         await self._finalize_component("vision_tasks", self._await_pending_vision)
         await self._finalize_component("vision_repository", self._flush_vision_repository)
-        await self._finalize_component("lightrag_persist", self._persist_lightrag_stores)
+        await self._finalize_component(
+            "lightrag_persist",
+            lambda: self._persist_lightrag_stores(
+                worker_vdb_persistence=worker_vdb_persistence,
+                persist_vector_stores=persist_vector_stores,
+            ),
+        )
         await self._finalize_component(
             "parse_cache", lambda: self._finalize_optional_storage(self.parse_cache)
         )

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""KB list timestamp semantics: last_content_updated_at uses kb_metadata.updated_at."""
+"""KB list timestamp semantics use the canonical generic update timestamp."""
 import pytest
 from datetime import datetime, timezone
 
 
 @pytest.mark.asyncio
-async def test_list_kbs_uses_updated_at_with_created_fallback(monkeypatch):
+async def test_list_kbs_exposes_canonical_and_legacy_update_timestamps(monkeypatch):
     from raganything.routers.knowledge import list_kbs
 
     async def fake_load_kb_meta():
@@ -38,8 +38,10 @@ async def test_list_kbs_uses_updated_at_with_created_fallback(monkeypatch):
     result = await list_kbs(current_user=current_user)
     by_name = {kb["name"]: kb for kb in result["knowledge_bases"]}
 
-    assert by_name["kb-a"]["last_content_updated_at"] == "2026-08-01T02:00:00+00:00"
-    assert by_name["kb-b"]["last_content_updated_at"] == "2026-07-02T00:00:00+00:00"
+    assert by_name["kb-a"]["last_updated_at"] == "2026-08-01T02:00:00+00:00"
+    assert by_name["kb-a"]["last_content_updated_at"] == by_name["kb-a"]["last_updated_at"]
+    assert by_name["kb-b"]["last_updated_at"] == "2026-07-02T00:00:00+00:00"
+    assert by_name["kb-b"]["last_content_updated_at"] == by_name["kb-b"]["last_updated_at"]
 
 
 @pytest.mark.asyncio

@@ -86,6 +86,44 @@ def test_worker_external_cancellation_is_not_misclassified_as_quota_failure():
     assert worker._quota_failure_for_cancel(asyncio.CancelledError()) is None
 
 
+def test_worker_classifies_wrapped_v2_video_failure_as_retryable():
+    worker = _load_process_worker()
+
+    wrapped = RuntimeError("background processing failed: video_frame_encode_failed")
+
+    assert worker._video_failure_code(wrapped) == "video_frame_encode_failed"
+    assert worker._is_retryable_video_error(wrapped) is True
+
+
+@pytest.mark.parametrize(
+    "wrapped",
+    [
+        RuntimeError("Hnsw insert temporary context: out of memory"),
+        RuntimeError("background graph write failed"),
+    ],
+)
+def test_worker_classifies_chained_hnsw_memory_failure_as_terminal(capsys, wrapped):
+    worker = _load_process_worker()
+    if "background" in str(wrapped):
+        cause = RuntimeError("out of memory")
+        cause.sqlstate = "53200"
+        wrapped.__cause__ = cause
+
+    assert worker._is_hnsw_memory_error(wrapped) is True
+
+    worker._emit_worker_error(
+        stage="graph_index",
+        error=worker.GraphIndexHnswMemoryExhausted(),
+        retryable=False,
+        secondary=[],
+    )
+
+    line = capsys.readouterr().out
+    assert '"stage": "graph_index"' in line
+    assert '"failure_code": "graph_index_hnsw_memory_exhausted"' in line
+    assert '"retryable": false' in line
+
+
 @pytest.mark.asyncio
 async def test_processing_snapshot_reads_fresh_pg_status_after_worker_commit(monkeypatch):
     from raganything.services import kb_service
@@ -145,14 +183,37 @@ async def test_worker_waits_for_background_tasks_before_finalizing(monkeypatch):
         events.append("background-complete")
 
     class FakeRAG:
-        async def finalize_storages(self):
-            events.append("storage-finalized")
+        async def finalize_storages(self, **kwargs):
+            events.append(("storage-finalized", kwargs))
 
     monkeypatch.setattr(worker, "_drain_background_tasks_or_raise", wait_for_background_tasks)
 
     await worker._flush_background_tasks_and_finalize(FakeRAG(), "sample.pdf")
 
-    assert events == ["background-complete", "storage-finalized"]
+    assert events == [
+        "background-complete",
+        ("storage-finalized", {"worker_vdb_persistence": True}),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_worker_persistence_failure_propagates_before_graph_done(monkeypatch, capsys):
+    worker = _load_process_worker()
+
+    async def wait_for_background_tasks():
+        return None
+
+    class FakeRAG:
+        async def finalize_storages(self, **kwargs):
+            assert kwargs == {"worker_vdb_persistence": True}
+            raise RuntimeError("nanovectordb_persist_failed:chunks_vdb")
+
+    monkeypatch.setattr(worker, "_drain_background_tasks_or_raise", wait_for_background_tasks)
+
+    with pytest.raises(RuntimeError, match="nanovectordb_persist_failed:chunks_vdb"):
+        await worker._flush_background_tasks_and_finalize(FakeRAG(), "sample.pdf")
+
+    assert "phase=graph-building status=done" not in capsys.readouterr().out
 
 
 @pytest.mark.asyncio
@@ -167,6 +228,51 @@ async def test_worker_background_failure_prevents_finalize(monkeypatch):
 
     with pytest.raises(RuntimeError, match="background processing failed"):
         await worker._drain_background_tasks_or_raise()
+
+
+@pytest.mark.asyncio
+async def test_worker_detects_failure_that_completed_before_drain():
+    worker = _load_process_worker()
+    from raganything.processor import (
+        consume_background_task_errors,
+        get_pending_background_tasks,
+        register_background_task,
+    )
+
+    consume_background_task_errors()
+
+    async def failed_task():
+        raise RuntimeError("multimodal failed before drain")
+
+    task = worker.asyncio.create_task(failed_task())
+    register_background_task(task)
+    with pytest.raises(RuntimeError, match="multimodal failed before drain"):
+        await task
+    await worker.asyncio.sleep(0)
+    assert task not in get_pending_background_tasks()
+
+    with pytest.raises(RuntimeError, match="background processing failed"):
+        await worker._drain_background_tasks_or_raise()
+
+
+@pytest.mark.asyncio
+async def test_cancelled_registered_background_task_is_not_reported_as_failure():
+    worker = _load_process_worker()
+    from raganything.processor import (
+        consume_background_task_errors,
+        register_background_task,
+    )
+
+    consume_background_task_errors()
+    task = worker.asyncio.create_task(worker.asyncio.Event().wait())
+    register_background_task(task)
+    task.cancel()
+
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    await worker.asyncio.sleep(0)
+
+    assert consume_background_task_errors() == []
 
 
 @pytest.mark.asyncio

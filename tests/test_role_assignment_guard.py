@@ -96,12 +96,26 @@ class TestRuntimeSeedConsistency:
         assert set(build_default_role_rows()) == set(ROLE_ORDER)
 
 
+class _FakeTransaction:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
 class _FakeConn:
     def __init__(self, role_row, user_row=None):
         self.role_row = role_row
         self.user_row = user_row
 
     async def fetchrow(self, sql, *args):
+        if "FOR UPDATE" in sql:
+            return {
+                "is_active": 1,
+                "archived_at": None,
+                "role_name": self.role_row["name"],
+            }
         if "INSERT INTO users" in sql or "UPDATE users" in sql:
             return self.user_row
         if "SELECT * FROM users" in sql:
@@ -110,6 +124,12 @@ class _FakeConn:
 
     async def execute(self, sql, *args):
         return "UPDATE 1"
+
+    async def fetchval(self, sql, *args):
+        return 2
+
+    def transaction(self):
+        return _FakeTransaction()
 
 
 class _FakePool:

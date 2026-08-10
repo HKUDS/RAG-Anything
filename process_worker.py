@@ -11,6 +11,7 @@ import os
 import sys
 import io
 import math
+import re
 import uuid
 from pathlib import Path
 
@@ -43,15 +44,47 @@ if __name__ == "__main__" and hasattr(sys.stdout, "buffer"):
 # 这确保 Admin API 的运行时设置变更能真正传播到 Worker。
 
 from raganything.chunking import STRATEGY_META
-from raganything.processor import get_pending_background_tasks
+from raganything.processor import (
+    consume_background_task_errors,
+    get_pending_background_tasks,
+)
 from raganything.utils.pdf_fallback import extract_pdf_embedded_images
 from raganything.utils.process_lock import FileLock, get_file_lock_path
+
+# Keep in sync with kb_service.EMB_DIM; the worker subprocess inherits the parent's os.environ.
+EMB_DIM = int(os.getenv("EMBEDDING_DIM", "1024"))
 
 # 所有配置从 os.environ 读取（继承自父进程，反映 Admin API 最新设置）
 
 
 class RetryableExternalServiceError(RuntimeError):
     """Raised before durable writes when a configured model endpoint is offline."""
+
+
+class RetryableVideoProcessingError(RuntimeError):
+    """Stable failure for native video tools and probe metadata."""
+
+    def __init__(self, failure_code: str) -> None:
+        self.failure_code = failure_code
+        super().__init__(failure_code)
+
+
+class RetiredVideoProfileError(RuntimeError):
+    """A video task snapshot references a processing profile that was removed."""
+
+    failure_code = "video_profile_retired"
+
+    def __init__(self) -> None:
+        super().__init__("视频处理配置已升级为 v2；请重新上传该视频")
+
+
+class GraphIndexHnswMemoryExhausted(RuntimeError):
+    """Terminal PostgreSQL HNSW memory exhaustion during graph indexing."""
+
+    failure_code = "graph_index_hnsw_memory_exhausted"
+
+    def __init__(self) -> None:
+        super().__init__("PostgreSQL HNSW graph-index write exhausted memory")
 
 
 class QuotaLeaseLost(RuntimeError):
@@ -119,6 +152,8 @@ def _emit_worker_error(
         "message": str(error)[:2000],
         "secondary": [str(item)[:1000] for item in (secondary or [])],
     }
+    if payload["failure_code"].startswith("video_"):
+        payload["probe_error"] = payload["failure_code"][:240]
     page_coverage = getattr(error, "page_coverage", None)
     if isinstance(page_coverage, dict):
         payload["page_coverage"] = {
@@ -173,6 +208,59 @@ def _is_retryable_external_error(exc: BaseException) -> bool:
         "status code: 503",
         "status code: 504",
     ))
+
+
+def _is_hnsw_memory_error(exc: BaseException) -> bool:
+    """Recognize PostgreSQL HNSW exhaustion through wrappers and chained causes."""
+    text = _exception_chain_text(exc)
+    if "hnsw insert temporary context" in text or re.search(
+        r"(?:sqlstate|sql state|postgresql error)\s*[:=]?\s*53200\b", text,
+    ):
+        return True
+
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if str(
+            getattr(current, "sqlstate", None)
+            or getattr(current, "pgcode", None)
+            or ""
+        ) == "53200":
+            return True
+        last_attempt = getattr(current, "last_attempt", None)
+        if last_attempt is not None:
+            try:
+                nested = last_attempt.exception()
+            except Exception:
+                nested = None
+            if isinstance(nested, BaseException) and id(nested) not in seen:
+                current = nested
+                continue
+        current = current.__cause__ or current.__context__
+    return False
+
+
+def _is_retryable_video_error(exc: BaseException) -> bool:
+    return (
+        not isinstance(exc, RetiredVideoProfileError)
+        and bool(_video_failure_code(exc))
+        and _video_failure_code(exc) != "video_profile_retired"
+    )
+
+
+def _video_failure_code(exc: BaseException) -> str:
+    """Extract a bounded v2 video failure code, including task wrappers."""
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        code = str(getattr(current, "failure_code", "") or "")
+        if code.startswith("video_"):
+            return code[:240]
+        current = current.__cause__ or current.__context__
+    match = re.search(r"\b(video_[a-z0-9_]+)\b", _exception_chain_text(exc))
+    return match.group(1)[:240] if match else ""
 
 
 def _is_ocr_memory_error(exc: BaseException) -> bool:
@@ -425,8 +513,16 @@ async def _drain_background_tasks_or_raise() -> None:
     loop = asyncio.get_running_loop()
     deadline = loop.time() + _BG_TASK_MAX_WAIT
     while True:
+        completed_errors = consume_background_task_errors()
+        if completed_errors:
+            raise RuntimeError(f"background processing failed: {completed_errors[0]}")
         pending = get_pending_background_tasks()
         if not pending:
+            completed_errors = consume_background_task_errors()
+            if completed_errors:
+                raise RuntimeError(
+                    f"background processing failed: {completed_errors[0]}"
+                )
             return
         remaining = deadline - loop.time()
         if remaining <= 0:
@@ -439,6 +535,7 @@ async def _drain_background_tasks_or_raise() -> None:
         done, still_pending = await asyncio.wait(pending, timeout=remaining)
         results = await asyncio.gather(*done, return_exceptions=True)
         errors = [result for result in results if isinstance(result, BaseException)]
+        errors.extend(consume_background_task_errors())
         if errors:
             raise RuntimeError(f"background processing failed: {errors[0]}")
         if still_pending:
@@ -456,8 +553,25 @@ async def _flush_background_tasks_and_finalize(rag, filename: str) -> None:
     await _drain_background_tasks_or_raise()
     print(f"[PROGRESS] phase=multimodal-tasks status=done file={filename}", flush=True)
     print(f"[PROGRESS] phase=graph-building status=start file={filename}", flush=True)
-    await rag.finalize_storages()
+    await rag.finalize_storages(worker_vdb_persistence=True)
     print(f"[PROGRESS] phase=graph-building status=done file={filename}", flush=True)
+
+
+def _is_video_file(filename: str) -> bool:
+    return Path(filename).suffix.lower() in {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+
+
+def _probe_video_indexing_gate(file_path: str, ingestion: dict) -> None:
+    """Run before RAG initialization so a bad video creates no searchable rows."""
+    if not ingestion.get("enable_video") or not _is_video_file(file_path):
+        return
+    if ingestion.get("video_index_profile_version") != "v2":
+        raise RetiredVideoProfileError()
+    from raganything.video_processor import VideoProcessingError, probe_video_for_indexing
+    try:
+        probe_video_for_indexing(file_path)
+    except VideoProcessingError as exc:
+        raise RetryableVideoProcessingError(exc.failure_code) from exc
 
 
 async def process_file(
@@ -490,6 +604,10 @@ async def process_file(
     enable_table = bool(ingestion.get("enable_table"))
     enable_equation = bool(ingestion.get("enable_equation"))
     enable_video = bool(ingestion.get("enable_video"))
+
+    # New semantic video uploads fail before RAG storage initialization when
+    # ffmpeg/ffprobe or the media metadata are not usable.
+    _probe_video_indexing_gate(file_path, ingestion)
 
     # Per-upload multimodal values are passed directly into the isolated
     # RAGAnythingConfig below; they never mutate this process environment.
@@ -669,6 +787,10 @@ async def process_file(
                 )
                 docling_ok = True
             except Exception as e:
+                video_failure_code = _video_failure_code(e)
+                if video_failure_code:
+                    current_stage = "video_processing"
+                    raise RetryableVideoProcessingError(video_failure_code) from e
                 if _is_retryable_external_error(e):
                     current_stage = "embedding"
                     raise RetryableExternalServiceError(
@@ -843,13 +965,28 @@ async def process_file(
         import traceback
         print(f"[WORKER] ERROR: unhandled {type(e).__name__}: {e}", flush=True)
         traceback.print_exc()
-        primary_error = e
+        hnsw_memory_error = _is_hnsw_memory_error(e)
+        video_failure_code = _video_failure_code(e)
+        primary_error = (
+            GraphIndexHnswMemoryExhausted() if hnsw_memory_error
+            else e if isinstance(e, RetryableVideoProcessingError) or not video_failure_code
+            else RetryableVideoProcessingError(video_failure_code)
+        )
         retryable = (
-            not _is_ocr_memory_error(e)
-            and (isinstance(e, RetryableExternalServiceError) or _is_retryable_external_error(e))
+            not hnsw_memory_error
+            and not _is_ocr_memory_error(e)
+            and (
+                isinstance(e, (RetryableExternalServiceError, RetryableVideoProcessingError))
+                or _is_retryable_external_error(e)
+                or bool(video_failure_code)
+            )
         )
         exit_code = 4 if retryable else 1
         chain_text = _exception_chain_text(e)
+        if hnsw_memory_error:
+            current_stage = "graph_index"
+        elif video_failure_code:
+            current_stage = "video_processing"
         if current_stage == "parsing" and _is_ocr_memory_error(e):
             current_stage = "ocr"
         elif current_stage == "parsing" and "embedding" in chain_text:
@@ -864,7 +1001,7 @@ async def process_file(
     finally:
         if rag is not None and not finalized:
             try:
-                await rag.finalize_storages()
+                await rag.finalize_storages(worker_vdb_persistence=True)
             except Exception as exc:
                 secondary_errors.append(f"finalize: {type(exc).__name__}: {exc}")
                 print(f"[WORKER] WARNING: storage cleanup failed: {exc}", flush=True)
@@ -921,9 +1058,20 @@ if __name__ == "__main__":
     except asyncio.CancelledError:
         raise
     except BaseException as exc:
-        retryable = _is_retryable_external_error(exc)
+        hnsw_memory_error = _is_hnsw_memory_error(exc)
+        error = GraphIndexHnswMemoryExhausted() if hnsw_memory_error else exc
+        retryable = (
+            not hnsw_memory_error
+            and (_is_retryable_external_error(exc) or _is_retryable_video_error(exc))
+        )
+        stage = (
+            "graph_index" if hnsw_memory_error
+            else "video_profile" if isinstance(exc, RetiredVideoProfileError)
+            else "video_probe" if _is_retryable_video_error(exc)
+            else "bootstrap"
+        )
         _emit_worker_error(
-            stage="bootstrap", error=exc, retryable=retryable, secondary=[],
+            stage=stage, error=error, retryable=retryable, secondary=[],
         )
         worker_exit_code = 4 if retryable else 1
     _flush_standard_streams()

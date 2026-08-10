@@ -33,6 +33,8 @@ const STRATEGY_PRESENTATION = {
 
 export const DEFAULT_CHUNKING_STRATEGY = 'recursive'
 
+export const UNKNOWN_CHUNKING_STRATEGY_NAME = '未识别的切块方式'
+
 export function getChunkingStrategyPresentation(strategy) {
   if (!strategy) {
     return {
@@ -43,7 +45,7 @@ export function getChunkingStrategyPresentation(strategy) {
   }
 
   return STRATEGY_PRESENTATION[strategy] || {
-    name: '未识别的切块方式',
+    name: UNKNOWN_CHUNKING_STRATEGY_NAME,
     description: '该文档使用的切块方式无法在当前版本中识别。',
     timing: '',
   }

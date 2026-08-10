@@ -71,6 +71,10 @@ download_models_hf.py
 lightrag-dev/
 gui/
 tiktoken_cache/
+models/huggingface/
+models/paddle/
+models/paddlex/
+models/marker/
 
 # Ad-hoc root-level test artifacts. Tests under tests/ are source files.
 /test_*

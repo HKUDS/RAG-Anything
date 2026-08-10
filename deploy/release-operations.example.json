@@ -1,0 +1,12 @@
+{
+  "schema_version": 1,
+  "pg_dump_command": "pg_dump",
+  "assets": [
+    {"id": "rag-storage", "classification": "include", "path": "/srv/rag-anything/rag_storage"},
+    {"id": "uploads", "classification": "include", "path": "/srv/rag-anything/uploads"},
+    {"id": "output", "classification": "include", "path": "/srv/rag-anything/output"},
+    {"id": "model-catalog", "classification": "reproducible"},
+    {"id": "redis", "classification": "rebuildable", "owner": "platform-operations"},
+    {"id": "external-vector-store", "classification": "externally_owned", "owner": "vector-store-owner"}
+  ]
+}

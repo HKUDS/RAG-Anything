@@ -80,7 +80,7 @@ async def probe_model_profile(
 
 
 @router.get("/users/me/model-preferences")
-async def get_model_preferences(user: dict = Depends(get_current_user)):
+async def get_model_preferences(user: dict = Depends(require_permission(Permission.AGENT_WRITE))):
     profile_id = await vision_models.get_user_vlm_preference(int(user["id"]))
     return {"vision_vlm_profile_id": profile_id, "profile": _profile_or_missing(profile_id)}
 
@@ -88,7 +88,7 @@ async def get_model_preferences(user: dict = Depends(get_current_user)):
 @router.put("/users/me/model-preferences")
 async def update_model_preferences(
     payload: ModelPreferenceUpdate,
-    user: dict = Depends(get_current_user),
+    user: dict = Depends(require_permission(Permission.AGENT_WRITE)),
 ):
     previous = await vision_models.get_user_vlm_preference(int(user["id"]))
     try:

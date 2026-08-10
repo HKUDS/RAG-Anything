@@ -93,6 +93,10 @@ from raganything.services.ws_service import (  # noqa: F401 — re-export
     ws_broadcast,
     push_run_status,
     emit_progress,
+    register_general_ws,
+    unregister_general_ws,
+    register_ws,
+    unregister_ws,
     load_persisted_monitor_events,
     get_monitor_events,
     add_event,
@@ -1140,6 +1144,7 @@ __all__ = [
     # WebSocket
     "ws_clients", "active_ws_connections", "processing_events",
     "ws_broadcast", "push_run_status", "emit_progress",
+    "register_general_ws", "unregister_general_ws", "register_ws", "unregister_ws",
     "load_persisted_monitor_events", "get_monitor_events", "add_event",
     # State
     "processing_tasks", "query_history", "QUERY_HISTORY_FILE", "load_query_history", "save_query_history",

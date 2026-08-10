@@ -1,0 +1,33 @@
+groups:
+  - name: raganything-release-operations
+    rules:
+      - alert: RAGAnythingApplicationUnavailable
+        expr: up{job="raganything"} == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations: {runbook_url: "docs/ops/release-operations-runbook.md#p1"}
+      - alert: RAGAnythingServerErrorRate
+        expr: sum(rate(http_requests_total{job="raganything",status=~"5.."}[5m])) / clamp_min(sum(rate(http_requests_total{job="raganything"}[5m])), 1) > 0.05
+        for: 10m
+        labels: {severity: warning}
+        annotations: {runbook_url: "docs/ops/release-operations-runbook.md#p2"}
+      - alert: RAGAnythingPostgresUnavailable
+        expr: pg_up{job="postgres"} == 0
+        for: 5m
+        labels: {severity: critical}
+        annotations: {runbook_url: "docs/ops/release-operations-runbook.md#p1"}
+      - alert: RAGAnythingRedisUnavailable
+        expr: redis_up{job="redis"} == 0
+        for: 10m
+        labels: {severity: warning}
+        annotations: {runbook_url: "docs/ops/release-operations-runbook.md#p2"}
+      - alert: RAGAnythingDiskLow
+        expr: node_filesystem_avail_bytes{mountpoint=~"/srv/rag-anything.*"} / node_filesystem_size_bytes{mountpoint=~"/srv/rag-anything.*"} < 0.15
+        for: 15m
+        labels: {severity: warning}
+        annotations: {runbook_url: "docs/ops/release-operations-runbook.md#p2"}
+      - alert: RAGAnythingBackupStale
+        expr: time() - raganything_backup_verified_timestamp_seconds > 93600
+        for: 30m
+        labels: {severity: critical}
+        annotations: {runbook_url: "docs/ops/release-operations-runbook.md#backup"}

@@ -9,7 +9,6 @@ Primary Responsibility: bcrypt password hashing, JWT token issuance/verification
 """
 
 import os
-import secrets
 import uuid
 from datetime import datetime, timedelta
 from typing import Optional
@@ -21,32 +20,6 @@ from raganything.permissions import DEFAULT_ROLE_NAME
 
 # ── Password Hashing ───────────────────────────────────────
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-# ── JWT Configuration ──────────────────────────────────────
-SECRET_KEY = os.getenv("JWT_SECRET") or secrets.token_hex(32)
-REFRESH_SECRET_KEY = os.getenv("JWT_REFRESH_SECRET") or secrets.token_hex(32)
-JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "1"))
-REFRESH_EXPIRY_DAYS = int(os.getenv("REFRESH_EXPIRY_DAYS", "7"))
-ALGORITHM = "HS256"
-SERVER_START_ID = uuid.uuid4().hex
-
-# ── Brute-Force Protection ─────────────────────────────────
-MAX_FAILED_ATTEMPTS = int(os.getenv("MAX_FAILED_LOGIN_ATTEMPTS", "5"))
-LOCKOUT_DURATION_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
-
-# ── Default Admin ──────────────────────────────────────────
-DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
-_raw_admin_pw = os.getenv("DEFAULT_ADMIN_PASSWORD")
-if not _raw_admin_pw:
-    _raw_admin_pw = secrets.token_urlsafe(16)
-    import sys
-    print("=" * 60, file=sys.stderr)
-    print("[AUTH] DEFAULT_ADMIN_PASSWORD 环境变量未设置。", file=sys.stderr)
-    print(f"[AUTH] 已生成随机管理员密码（仅显示一次）: {_raw_admin_pw}", file=sys.stderr)
-    print("[AUTH] 请立即修改此密码或设置 DEFAULT_ADMIN_PASSWORD 环境变量", file=sys.stderr)
-    print("=" * 60, file=sys.stderr)
-DEFAULT_ADMIN_PASSWORD = _raw_admin_pw
-
 
 # ═══════════════════════════════════════════════════════════════
 # PostgreSQL Backend (required — no SQLite fallback)
@@ -76,22 +49,28 @@ from raganything.services.pg_auth_repo import (  # noqa: E402 — intentional la
     pg_revoke_token,
     pg_revoke_refresh_family,
     pg_register_refresh_family,
+    pg_rotate_refresh_token,
     # Audit log
     pg_audit_log,
     pg_query_audit_logs,
-    # Constants (persisted to PG settings table at startup)
+    # Constants supplied by the process environment at startup
     SECRET_KEY as _PG_SECRET_KEY,
     REFRESH_SECRET_KEY as _PG_REFRESH_SECRET_KEY,
+    JWT_EXPIRY_HOURS,
+    REFRESH_EXPIRY_DAYS,
+    ALGORITHM,
     SERVER_START_ID as _PG_SERVER_START_ID,
     DEFAULT_ADMIN_USERNAME as _PG_DEFAULT_ADMIN_USERNAME,
     DEFAULT_ADMIN_PASSWORD as _PG_DEFAULT_ADMIN_PASSWORD,
+    production_configuration_errors,
+    validate_production_configuration,
+    public_registration_enabled,
     # Password hashing (delegated — pg_auth_repo also uses passlib/bcrypt)
     verify_password as _pg_verify_password,
 )
 
-# Re-sync constants from PG (pg_auth_repo.init_db() persists them to settings table
-# and updates its own globals; we mirror them here so JWT sign/verify use the
-# persisted values shared across workers).
+# Mirror the repository's environment-derived constants so JWT sign/verify use
+# the configured process values shared by every deployed worker.
 SECRET_KEY = _PG_SECRET_KEY
 REFRESH_SECRET_KEY = _PG_REFRESH_SECRET_KEY
 SERVER_START_ID = _PG_SERVER_START_ID
@@ -120,8 +99,16 @@ async def revoke_token(jti: str, expires_at, family_id: str | None = None):
 async def revoke_refresh_family(family_id: str):
     await pg_revoke_refresh_family(family_id)
 
-async def register_refresh_family(family_id: str, jti: str):
-    await pg_register_refresh_family(family_id, jti)
+async def register_refresh_family(family_id: str, jti: str, expires_at=None):
+    await pg_register_refresh_family(family_id, jti, expires_at)
+
+
+async def rotate_refresh_token(
+    family_id: str, old_jti: str, new_jti: str, new_expires_at,
+) -> bool:
+    return await pg_rotate_refresh_token(
+        family_id, old_jti, new_jti, new_expires_at,
+    )
 
 
 # ── Audit Log (async wrappers around PG functions) ──────────
@@ -153,7 +140,13 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_token(user_id: int, username: str, is_admin: bool, role: dict | None = None) -> str:
+def create_token(
+    user_id: int,
+    username: str,
+    is_admin: bool,
+    role: dict | None = None,
+    session_generation: int = 0,
+) -> str:
     """Issue a JWT access token. Authority (is_admin) is NOT embedded —
     it is derived server-side from the RBAC role on every request.
     Role information (name + permissions) is embedded for client-side display only."""
@@ -163,6 +156,7 @@ def create_token(user_id: int, username: str, is_admin: bool, role: dict | None 
         "role": role.get("name") if role else ("super_admin" if is_admin else DEFAULT_ROLE_NAME),
         "permissions": role.get("permissions") if role else [],
         "sid": SERVER_START_ID,
+        "sg": int(session_generation),
         "jti": uuid.uuid4().hex,
         "type": "access",
         "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS),
@@ -184,7 +178,14 @@ def decode_token(token: str) -> dict | None:
         return None
 
 
-def create_refresh_token(user_id: int, username: str, is_admin: bool, role: dict | None = None) -> str:
+def create_refresh_token(
+    user_id: int,
+    username: str,
+    is_admin: bool,
+    role: dict | None = None,
+    session_generation: int = 0,
+    family_id: str | None = None,
+) -> str:
     """Issue a JWT refresh token (7-day expiry). Authority is NOT embedded."""
     payload = {
         "user_id": user_id,
@@ -193,8 +194,9 @@ def create_refresh_token(user_id: int, username: str, is_admin: bool, role: dict
         "permissions": role.get("permissions") if role else [],
         "type": "refresh",
         "sid": SERVER_START_ID,
+        "sg": int(session_generation),
         "jti": uuid.uuid4().hex,
-        "rfam": uuid.uuid4().hex,
+        "rfam": family_id or uuid.uuid4().hex,
         "exp": datetime.utcnow() + timedelta(days=REFRESH_EXPIRY_DAYS),
         "iat": datetime.utcnow(),
     }

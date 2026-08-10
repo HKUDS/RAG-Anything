@@ -473,18 +473,8 @@ class ChunkProcessorMixin:
                 )
 
             elif content_type == "video":
-                video_path = original_item.get("video_path", "")
-                duration = original_item.get("duration", 0)
-                frame_count = original_item.get("frame_count", "unknown")
-
-                return PROMPTS["video_chunk"].format(
-                    video_path=video_path,
-                    duration=str(duration),
-                    frame_count=str(frame_count),
-                    transcript_summary=description[:200] + "..."
-                    if len(description) > 200
-                    else description,
-                    enhanced_caption=description,
+                raise RuntimeError(
+                    "Whole-video chunks are retired; video content must use v2 semantic segments"
                 )
 
             else:  # generic or unknown types

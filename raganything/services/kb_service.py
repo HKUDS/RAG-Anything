@@ -159,7 +159,7 @@ class KBCache:
         self._instance_keys: dict[str, KBInstanceKey] = {}
         self._pinned: set[str] = set()
         self._query_leases: dict[_LeaseIdentity, int] = {}
-        self._retiring: dict[_LeaseIdentity, tuple[str, RAGAnything]] = {}
+        self._retiring: dict[_LeaseIdentity, tuple[str, RAGAnything, bool]] = {}
         self._query_tasks: dict[str, set[asyncio.Task[Any]]] = {}
         self._deleting: set[str] = set()
         self._eviction_lock = asyncio.Lock()
@@ -277,8 +277,14 @@ class KBCache:
         await self._evict_one(name)
         return True
 
-    async def retire(self, name: str, instance: RAGAnything | None = None) -> bool:
-        """Remove a core from new acquisition and finalize it after its lease."""
+    async def retire(
+        self,
+        name: str,
+        instance: RAGAnything | None = None,
+        *,
+        persist_vector_stores: bool = True,
+    ) -> bool:
+        """Remove a core and finalize it, optionally preserving Worker files."""
         active = self._store.get(name)
         target = instance or active
         if target is None:
@@ -289,9 +295,11 @@ class KBCache:
             self._instance_keys.pop(name, None)
         identity = self._lease_identity(target)
         if self._query_leases.get(identity, 0):
-            self._retiring[identity] = (name, target)
+            self._retiring[identity] = (name, target, persist_vector_stores)
             return True
-        await self._finalize_once(name, target)
+        await self._finalize_once(
+            name, target, persist_vector_stores=persist_vector_stores,
+        )
         return True
 
     async def clear(self) -> None:
@@ -339,7 +347,12 @@ class KBCache:
             self._query_leases.pop(identity, None)
             retiring = self._retiring.pop(identity, None)
             if retiring is not None:
-                await self._finalize_once(*retiring)
+                retired_name, retired_instance, persist_vector_stores = retiring
+                await self._finalize_once(
+                    retired_name,
+                    retired_instance,
+                    persist_vector_stores=persist_vector_stores,
+                )
         else:
             self._query_leases[identity] = count - 1
         task = asyncio.current_task()
@@ -419,12 +432,23 @@ class KBCache:
         self._cache_time.pop(name, None)
         self.evictions += 1
 
-    async def _finalize_once(self, name: str, instance: RAGAnything) -> None:
+    async def _finalize_once(
+        self,
+        name: str,
+        instance: RAGAnything,
+        *,
+        persist_vector_stores: bool = True,
+    ) -> None:
         if getattr(instance, "_query_core_finalized", False):
             return
         setattr(instance, "_query_core_finalized", True)
         try:
-            await instance.finalize_storages()
+            if persist_vector_stores:
+                # Preserve compatibility with test doubles and older cores;
+                # the default finalization behavior is unchanged.
+                await instance.finalize_storages()
+            else:
+                await instance.finalize_storages(persist_vector_stores=False)
         except Exception as exc:
             kb_logger.warning(
                 "[KB-CACHE] finalize_storages failed for retired core %s: %s",
@@ -466,7 +490,7 @@ class KBCache:
         deadline = time.monotonic() + timeout
         while self._query_leases.get(self._lease_identity(self._store.get(name)), 0) or any(
             self._query_leases.get(self._lease_identity(instance), 0)
-            for retired_name, instance in list(self._retiring.values())
+            for retired_name, instance, _persist_vector_stores in list(self._retiring.values())
             if retired_name == name
         ):
             if time.monotonic() >= deadline:
@@ -1023,6 +1047,22 @@ _kb_worker_procs: dict[str, list] = {}
 _active_upload_execution: dict[str, asyncio.Task] = {}
 _upload_cancellation_tasks: dict[str, asyncio.Task] = {}
 _UPLOAD_CANCELLATION_WORKER_WAIT_SECONDS = 10.0
+# Claim/lease heartbeats tolerate a temporarily unreachable PostgreSQL by
+# counting consecutive failures instead of cancelling on the first one.
+# 12 x 15s ~= 3 minutes, below the 5-minute durable stale-claim reset in
+# resume_queued_upload_tasks so a recovered claim cannot race a new one.
+UPLOAD_CLAIM_HEARTBEAT_INTERVAL_SECONDS = 15
+UPLOAD_CLAIM_DB_GRACE_SECONDS = 180
+UPLOAD_CLAIM_HEARTBEAT_MAX_CONSECUTIVE_FAILURES = (
+    UPLOAD_CLAIM_DB_GRACE_SECONDS // UPLOAD_CLAIM_HEARTBEAT_INTERVAL_SECONDS
+)
+_CLAIM_HEARTBEAT_MAX_CONSECUTIVE_FAILURES = UPLOAD_CLAIM_HEARTBEAT_MAX_CONSECUTIVE_FAILURES
+UPLOAD_CLAIM_STALE_RESET_SECONDS = 300
+if (
+    UPLOAD_CLAIM_DB_GRACE_SECONDS + UPLOAD_CLAIM_HEARTBEAT_INTERVAL_SECONDS
+    >= UPLOAD_CLAIM_STALE_RESET_SECONDS
+):
+    raise RuntimeError("Upload claim stale reset must exceed DB grace plus heartbeat interval")
 
 _WORKER_NUMERIC_THREAD_ENV = (
     "OPENBLAS_NUM_THREADS",
@@ -1447,8 +1487,11 @@ async def pg_update_upload_status_by_task_id(
                 raise
         return None
     except Exception:
+        # A missing RETURNING row is the only ``None`` result and means the
+        # owner/generation predicate did not match.  Connectivity failures
+        # must remain exceptions so callers cannot misreport claim loss.
         kb_logger.warning("PG uploaded_files task update failed", exc_info=True)
-        return None
+        raise
 
 
 async def pg_get_upload_by_task_id(
@@ -1501,7 +1544,10 @@ async def pg_get_upload_by_task_id(
                         continue
                     raise
         return _serialize_upload_row(row) if row else None
-    except Exception:
+    except Exception as exc:
+        from raganything.services.pg_state_repo import is_transient_pg_connection_error
+        if is_transient_pg_connection_error(exc):
+            raise
         kb_logger.warning("PG uploaded_files lookup failed", exc_info=True)
         return None
 
@@ -2925,6 +2971,17 @@ async def cleanup_kb_resources(name: str) -> None:
                         )
                 except Exception:
                     pass
+            # Clean video asset/segment rows for this KB.  These tables key by
+            # kb_name (not workspace), so the LIGHTRAG% sweep above misses them.
+            try:
+                await conn.execute(
+                    "DELETE FROM video_segments WHERE kb_name=$1", name,
+                )
+                await conn.execute(
+                    "DELETE FROM video_assets WHERE kb_name=$1", name,
+                )
+            except Exception:
+                pass
             # Clean uploaded_files for this KB
             try:
                 await conn.execute(
@@ -3156,7 +3213,7 @@ async def create_rag(
     embedding_batch_size = _env_int("EMBEDDING_BATCH_SIZE", 10, max_val=10)
 
     def _get_embedding_func_for_chunk(texts: list[str]) -> list[list[float]]:
-        return embedding_func.func(texts, model=EMB_MODEL)
+        return embedding_func.func(texts)
 
     async def _get_llm_func_for_chunk(prompt: str, system_prompt: str = "",
                                        history_messages=None, **kw):
@@ -3196,6 +3253,8 @@ async def create_rag(
         enable_table_processing=task_ingestion.get("enable_table", os.getenv("ENABLE_TABLE_PROCESSING", "true").lower() == "true"),
         enable_equation_processing=task_ingestion.get("enable_equation", os.getenv("ENABLE_EQUATION_PROCESSING", "true").lower() == "true"),
         enable_video_processing=task_ingestion.get("enable_video", os.getenv("ENABLE_VIDEO_PROCESSING", "false").lower() == "true"),
+        video_index_profile_version=str(task_ingestion.get("video_index_profile_version") or "v2"),
+        parsers_by_type=task_ingestion.get("parsers_by_type") or {},
         entity_types=task_ingestion.get("entity_types", os.getenv("ENTITY_TYPES", "")),
         entity_extraction_min_degree=task_ingestion.get("minimum_relation_degree", int(os.getenv("ENTITY_EXTRACTION_MIN_DEGREE", "0"))),
     )
@@ -3475,6 +3534,91 @@ async def _persist_failed_doc_status(
             exc_info=True,
         )
         return None
+
+
+async def _persist_hnsw_terminal_doc_status(
+    kb_name: str,
+    filename: str,
+    error_message: str,
+    task_id: str,
+    file_hash: str,
+    chunking_strategy: str,
+) -> None:
+    """Record a graph-index terminal failure without generic timeout recovery."""
+    try:
+        statuses = await _load_doc_status_json(kb_name)
+        matched = False
+        search_name = os.path.basename(filename)
+        for info in (statuses or {}).values():
+            if not isinstance(info, dict):
+                continue
+            metadata = info.get("metadata")
+            metadata = dict(metadata) if isinstance(metadata, dict) else {}
+            markers = {
+                str(value)
+                for value in (info.get("track_id"), metadata.get("task_id"))
+                if value
+            }
+            stored_hash = str(metadata.get("file_hash") or "")
+            stored_name = os.path.basename(str(info.get("file_path") or ""))
+            same_name = stored_name == search_name or (
+                stored_name.endswith("_" + search_name)
+                and len(stored_name) - len(search_name) == 9
+            )
+            if not same_name or task_id not in markers or (file_hash and stored_hash != file_hash):
+                continue
+            matched = True
+            info["status"] = "failed"
+            info["error_msg"] = error_message[:2000]
+            metadata.update({
+                "failure_code": "graph_index_hnsw_memory_exhausted",
+                "failure_stage": "graph_index",
+                "graph_status": "failed",
+                "retryable": False,
+                "cleanup_pending": True,
+                "residual_data": True,
+                "last_error": error_message[:4000],
+                "task_id": task_id,
+                "file_hash": file_hash,
+            })
+            if chunking_strategy:
+                metadata["chunking_strategy"] = chunking_strategy
+            info["metadata"] = metadata
+
+        if not matched:
+            doc_id = "doc-hnsw-" + hashlib.sha256(
+                f"{kb_name}:{task_id}:{file_hash}".encode("utf-8")
+            ).hexdigest()
+            statuses = dict(statuses or {})
+            statuses[doc_id] = {
+                "content_summary": "",
+                "content_length": 0,
+                "file_path": filename,
+                "status": "failed",
+                "chunks_count": 0,
+                "chunks_list": [],
+                "error_msg": error_message[:2000],
+                "track_id": task_id,
+                "metadata": {
+                    "failure_code": "graph_index_hnsw_memory_exhausted",
+                    "failure_stage": "graph_index",
+                    "graph_status": "failed",
+                    "retryable": False,
+                    "cleanup_pending": True,
+                    "residual_data": True,
+                    "last_error": error_message[:4000],
+                    "task_id": task_id,
+                    "file_hash": file_hash,
+                    "chunking_strategy": chunking_strategy,
+                },
+            }
+        await _save_doc_status_json(kb_name, statuses)
+    except Exception:
+        kb_logger.warning(
+            "[HNSW] Failed to persist graph-index terminal doc status: task=%s",
+            task_id,
+            exc_info=True,
+        )
 
 
 async def _fix_stuck_doc_status(
@@ -4460,7 +4604,7 @@ async def _resolve_uploaded_document_id(
     # The subprocess owns the durable write. The cached server instance may
     # still hold finalized PG storage, so invalidate it once before reloading.
     if kb_name in kb_instances:
-        await kb_instances.retire(kb_name)
+        await kb_instances.retire(kb_name, persist_vector_stores=False)
         kb_logger.info(
             "[KB] 清除 Worker 前缓存实例: %s（重新读取文档状态）", kb_name,
         )
@@ -5130,6 +5274,21 @@ async def _process_uploaded_file(
                 max_elapsed=max_elapsed_sec,
                 started_at=worker_started_at,
             )
+        except asyncio.CancelledError:
+            # The claim/lease heartbeat declared this upload lost or the
+            # process is shutting down. Stop the worker subprocess so its OS
+            # file lock is released and no orphaned worker keeps writing.
+            try:
+                await _stop_cancelled_upload_worker(proc, task_id)
+            finally:
+                for stream_task in (stdout_task, stderr_task):
+                    stream_task.cancel()
+                await asyncio.gather(stdout_task, stderr_task, return_exceptions=True)
+                try:
+                    _kb_worker_procs.setdefault(kb_name, []).remove((proc, task_id))
+                except ValueError:
+                    pass
+            raise
         except asyncio.TimeoutError:
             elapsed_sec = max(0.0, time.monotonic() - worker_started_at)
             timeout_kind = worker_progress_state.get("watchdog_timeout", "idle")
@@ -5394,6 +5553,53 @@ async def _process_uploaded_file(
             )
             return
 
+        if (
+            isinstance(e, WorkerProcessError)
+            and e.failure_code == "graph_index_hnsw_memory_exhausted"
+        ):
+            from raganything.services.upload_retry import terminalize_hnsw_memory_failure
+
+            terminal_job = await terminalize_hnsw_memory_failure(
+                task_id=task_id,
+                kb_name=kb_name,
+                file_path=file_path,
+                filename=filename,
+                file_hash=file_hash or "",
+                user_id=user_id,
+                error=str(e),
+                chunking_strategy=actual_strategy,
+                retry_job_id=retry_job_id,
+                lease_token=retry_lease_token,
+                claim_owner=claim_owner,
+                claim_generation=claim_generation,
+            )
+            if terminal_job is not None:
+                await _persist_hnsw_terminal_doc_status(
+                    kb_name, filename, str(e), task_id, file_hash or "", actual_strategy,
+                )
+                task = processing_tasks.setdefault(task_id, {"id": task_id})
+                task.update({
+                    "status": "failed",
+                    "retryable": False,
+                    "failure_stage": "graph_index",
+                    "next_retry_at": None,
+                    "error": str(e),
+                    "error_message": str(e),
+                })
+                await add_event(
+                    "upload_error", file=filename, task_id=task_id, error=str(e),
+                    failure_stage="graph_index", failure_code=e.failure_code,
+                    retryable=False, user_id=user_id,
+                )
+            else:
+                kb_logger.info(
+                    "Ignoring stale HNSW terminalization: task=%s retry_job=%s",
+                    task_id, retry_job_id,
+                )
+            if file_hash is not None:
+                _unregister_processing_file(kb_name, file_hash)
+            return
+
         if isinstance(e, WorkerProcessError) and e.stage in {"embedding", "vlm_ocr"}:
             try:
                 residual_doc_id = await _resolve_uploaded_document_id(
@@ -5516,6 +5722,32 @@ async def _process_uploaded_file(
                 _unregister_processing_file(kb_name, file_hash)
             return
 
+        if isinstance(e, WorkerProcessError) and e.stage == "video_profile":
+            from raganything.services.state_service import fail_task
+
+            upload_row = await pg_update_upload_status_by_task_id(
+                task_id,
+                "failed",
+                kb_name=kb_name,
+                error_message=str(e),
+                claim_owner=claim_owner,
+                claim_generation=claim_generation,
+            )
+            if claim_owner is None or upload_row is not None:
+                await fail_task(
+                    task_id,
+                    str(e),
+                    failure_stage="video_profile",
+                    retryable=False,
+                )
+                await add_event(
+                    "upload_error", file=filename, task_id=task_id,
+                    error=str(e), failure_stage="video_profile", user_id=user_id,
+                )
+            if file_hash is not None:
+                _unregister_processing_file(kb_name, file_hash)
+            return
+
         await _finalize_failed_upload(
             task_id,
             kb_name,
@@ -5530,6 +5762,81 @@ async def _process_uploaded_file(
     finally:
         if worker_slot_acquired and worker_slot is not None:
             worker_slot.release()
+
+
+_TRANSIENT_UPLOAD_ERROR_MESSAGES = (
+    "upload_claim_lost",
+    "upload_claim_db_grace_exhausted",
+    "kb_mutation_lease_lost",
+)
+
+
+def _is_transient_upload_failure(exc: BaseException) -> bool:
+    """Classify failures caused by a temporarily unreachable PostgreSQL."""
+    if str(exc) in _TRANSIENT_UPLOAD_ERROR_MESSAGES:
+        return True
+    from raganything.services.pg_state_repo import is_transient_pg_connection_error
+
+    return is_transient_pg_connection_error(exc)
+
+
+async def _recover_transient_upload_failure(
+    task_info: dict[str, Any],
+    upload_record: dict[str, Any] | None,
+    claim_owner: str | None,
+    claim_generation: int | None,
+    exc: BaseException,
+) -> None:
+    """Stop any zombie worker and durably re-queue a transient DB failure."""
+    task_id = str(task_info.get("task_id") or "")
+    kb_name = str(task_info.get("kb_name") or "")
+    filename = str(task_info.get("filename") or "")
+    for proc, running_task_id in list(_kb_worker_procs.get(kb_name, [])):
+        if str(running_task_id) != task_id or getattr(proc, "returncode", None) is not None:
+            continue
+        try:
+            await _stop_cancelled_upload_worker(proc, task_id)
+        except Exception:
+            kb_logger.warning(
+                "Failed to stop worker after transient failure: task=%s", task_id,
+                exc_info=True,
+            )
+        try:
+            _kb_worker_procs.setdefault(kb_name, []).remove((proc, task_id))
+        except ValueError:
+            pass
+    message = str(exc)
+    stage = "claim_lost" if message == "upload_claim_lost" else "db_unavailable"
+    root_type = "ClaimLost" if stage == "claim_lost" else "TransientInfra"
+    try:
+        from raganything.services.upload_retry import schedule_upload_retry
+
+        retry_job = await schedule_upload_retry(
+            task_id=task_id,
+            kb_name=kb_name,
+            file_path=str(task_info.get("file_path") or ""),
+            filename=filename,
+            file_hash=str((upload_record or {}).get("file_hash") or ""),
+            user_id=int(task_info.get("user_id") or 0),
+            stage=stage,
+            root_type=root_type,
+            error=message,
+            chunking_strategy=str(task_info.get("chunking_strategy") or ""),
+            claim_owner=claim_owner,
+            claim_generation=claim_generation,
+        )
+        if retry_job is not None:
+            kb_logger.info(
+                "[QUEUE] 瞬时故障已入重试: task=%s file=%s stage=%s",
+                task_id, filename, stage,
+            )
+    except Exception:
+        kb_logger.warning(
+            "Transient upload failure could not be scheduled for retry; "
+            "durable stale-claim recovery remains the backstop: task=%s",
+            task_id,
+            exc_info=True,
+        )
 
 
 # ── Per-KB Queue Drain ────────────────────────────────────
@@ -5583,11 +5890,22 @@ async def _drain_kb_queue(kb_name: str) -> None:
             claim_owner = ""
             claim_generation: int | None = None
             if task_id:
-                upload_record = await pg_get_upload_by_task_id(
-                    task_id,
-                    kb_name=kb_name,
-                    is_admin=True,
-                )
+                try:
+                    upload_record = await pg_get_upload_by_task_id(
+                        task_id,
+                        kb_name=kb_name,
+                        is_admin=True,
+                    )
+                except Exception as exc:
+                    # A failed lookup must remain durable work for the queue
+                    # scanner; never drop the in-memory item as claim loss.
+                    _queued_task_ids.discard(task_id)
+                    if _is_transient_upload_failure(exc):
+                        await _recover_transient_upload_failure(
+                            task_info, None, None, None, exc,
+                        )
+                        continue
+                    raise
                 if upload_record is None:
                     _queued_task_ids.discard(task_id)
                     kb_logger.error(
@@ -5605,21 +5923,43 @@ async def _drain_kb_queue(kb_name: str) -> None:
                     continue
                 if upload_record and upload_record.get("status") == "queued":
                     claim_owner = f"upload:{os.getpid()}:{uuid.uuid4()}"
-                    claim_generation = await pg_claim_upload_task(
-                        task_id, kb_name, claim_owner
-                    )
-                    if claim_generation is None:
-                        refreshed = await pg_get_upload_by_task_id(
-                            task_id,
-                            kb_name=kb_name,
-                            is_admin=True,
+                    try:
+                        claim_generation = await pg_claim_upload_task(
+                            task_id, kb_name, claim_owner
                         )
+                    except Exception as exc:
+                        _queued_task_ids.discard(task_id)
+                        if _is_transient_upload_failure(exc):
+                            await _recover_transient_upload_failure(
+                                task_info, upload_record, claim_owner, None, exc,
+                            )
+                            continue
+                        raise
+                    if claim_generation is None:
+                        # The successful UPDATE 0 already fences this local
+                        # dispatcher.  Release the in-memory dedup marker
+                        # before the diagnostic refresh so a refresh outage
+                        # cannot strand durable queued work.
+                        _queued_task_ids.discard(task_id)
+                        try:
+                            refreshed = await pg_get_upload_by_task_id(
+                                task_id,
+                                kb_name=kb_name,
+                                is_admin=True,
+                            )
+                        except Exception as exc:
+                            if _is_transient_upload_failure(exc):
+                                kb_logger.info(
+                                    "[QUEUE] Claim status refresh unavailable; durable scanner will retry: task=%s",
+                                    task_id,
+                                )
+                                continue
+                            raise
                         if refreshed and refreshed.get("status") == "deleted":
                             _unregister_processing_file(kb_name, refreshed.get("file_hash", ""))
                             kb_logger.info(
                                 f"[QUEUE] 浠诲姟鍦ㄨ皟搴﹀墠宸茶鍒犻櫎: task={task_id} kb={kb_name}"
                             )
-                        _queued_task_ids.discard(task_id)
                         kb_logger.info(
                             "[QUEUE] Claim lost task=%s status=%s kb=%s",
                             task_id,
@@ -5676,31 +6016,56 @@ async def _drain_kb_queue(kb_name: str) -> None:
                 if task_id:
                     _active_upload_execution[task_id] = processing_task
                 claim_lost = asyncio.Event()
+                claim_grace_exhausted = asyncio.Event()
+                heartbeat_error: BaseException | None = None
 
                 async def heartbeat_claim() -> None:
+                    nonlocal heartbeat_error
                     if not task_id or claim_generation is None:
                         return
+                    consecutive_failures = 0
                     try:
                         while True:
-                            await asyncio.sleep(15)
-                            if not await pg_heartbeat_upload_claim(
-                                task_id, kb_name, claim_owner, claim_generation
-                            ):
+                            await asyncio.sleep(UPLOAD_CLAIM_HEARTBEAT_INTERVAL_SECONDS)
+                            try:
+                                alive = await pg_heartbeat_upload_claim(
+                                    task_id, kb_name, claim_owner, claim_generation
+                                )
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception as exc:
+                                from raganything.services.pg_state_repo import is_transient_pg_connection_error
+                                if not is_transient_pg_connection_error(exc):
+                                    heartbeat_error = exc
+                                    processing_task.cancel()
+                                    return
+                                consecutive_failures += 1
+                                if consecutive_failures >= _CLAIM_HEARTBEAT_MAX_CONSECUTIVE_FAILURES:
+                                    claim_grace_exhausted.set()
+                                    processing_task.cancel()
+                                    return
+                                continue
+                            if not alive:
                                 claim_lost.set()
                                 processing_task.cancel()
                                 return
+                            consecutive_failures = 0
                     except asyncio.CancelledError:
                         raise
-                    except Exception:
-                        claim_lost.set()
+                    except Exception as exc:
+                        heartbeat_error = exc
                         processing_task.cancel()
 
                 claim_heartbeat = asyncio.create_task(heartbeat_claim())
                 try:
                     await processing_task
                 except asyncio.CancelledError as exc:
+                    if heartbeat_error is not None:
+                        raise heartbeat_error
                     if claim_lost.is_set():
                         raise RuntimeError("upload_claim_lost") from exc
+                    if claim_grace_exhausted.is_set():
+                        raise RuntimeError("upload_claim_db_grace_exhausted") from exc
                     raise
                 finally:
                     if task_id:
@@ -5713,6 +6078,14 @@ async def _drain_kb_queue(kb_name: str) -> None:
                     f"[QUEUE] 文件处理失败 (继续队列): "
                     f"file={task_info.get('filename', '?')} error={exc}"
                 )
+                if task_id and _is_transient_upload_failure(exc):
+                    await _recover_transient_upload_failure(
+                        task_info,
+                        upload_record,
+                        claim_owner or None,
+                        claim_generation,
+                        exc,
+                    )
 
             # Pre-fetch next task to avoid the unreliable queue.empty() race.
             # If nothing arrives within 1.0s, the drain exits cleanly.
@@ -5824,13 +6197,29 @@ async def resume_queued_upload_tasks() -> int:
 
 
 async def durable_upload_queue_loop(interval_seconds: float = 5.0) -> None:
+    backoff = float(interval_seconds)
+    failures = 0
     while True:
         try:
             await resume_queued_upload_tasks()
         except asyncio.CancelledError:
             raise
         except Exception:
-            kb_logger.warning("Durable upload queue scan failed", exc_info=True)
+            failures += 1
+            if failures == 1:
+                kb_logger.warning("Durable upload queue scan failed", exc_info=True)
+            else:
+                kb_logger.warning(
+                    "Durable upload queue scan still unavailable: attempt=%s retry_in=%ss",
+                    failures, backoff,
+                )
+            await asyncio.sleep(backoff)
+            backoff = min(backoff * 2, 60.0)
+            continue
+        if failures:
+            kb_logger.info("Durable upload queue scan recovered after %s failures", failures)
+            failures = 0
+        backoff = float(interval_seconds)
         await asyncio.sleep(interval_seconds)
 
 

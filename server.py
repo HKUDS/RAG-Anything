@@ -233,7 +233,7 @@ apply_sensitive_log_filter()
 # ── 多知识库管理 ──────────────────────────────────
 # 共享状态从 services 层导入，保持模块级别名向后兼容
 from raganything.services.kb_service import (
-    kb_instances, get_kb, create_rag as create_rag,
+    kb_instances, create_rag as create_rag,
     load_kb_meta, save_kb_meta, kb_dir as kb_dir,
     infer_entity_type as infer_entity_type,
     _build_citation_block as _build_citation_block,
@@ -421,8 +421,10 @@ async def startup():
     await start_upload_retry_runner()
     # 启动磁盘空间监控（Prometheus 指标 + 阈值告警）
     asyncio.create_task(_disk_monitor_loop(DISK_CHECK_INTERVAL))
-    # 预加载默认知识库
-    await get_kb("default")
+    # Default KB/LightRAG is initialized lazily on the first query or upload.
+    # Tokenizer/model initialization is heavyweight and may fail under
+    # temporary memory or provider-cache pressure; it must never take the
+    # authentication/API startup path down with it.
     server_logger.info(f"RAG-Anything 服务器已启动，智能体: {len(agents)}个, 知识库: {list(meta.keys())}")
 
 @app.on_event("shutdown")

@@ -9,9 +9,11 @@ class _Core:
 
     def __init__(self):
         self.finalize_calls = 0
+        self.finalize_kwargs = []
 
-    async def finalize_storages(self):
+    async def finalize_storages(self, **kwargs):
         self.finalize_calls += 1
+        self.finalize_kwargs.append(kwargs)
 
 
 def _key(revision: str) -> KBInstanceKey:
@@ -55,6 +57,28 @@ async def test_deletion_gate_rejects_new_leases_and_waits_for_active_lease():
     await cache.release_query_lease("kb", core)
     assert await cache.wait_for_no_query_leases("kb", 0.1)
     cache.cancel_deletion("kb")
+
+
+@pytest.mark.asyncio
+async def test_worker_cache_retirement_discards_file_vdb_persistence():
+    cache = KBCache(max_size=1)
+    core = _Core()
+    await cache.put_and_evict("kb", core, 1.0, key=_key("revision-1"))
+
+    await cache.retire("kb", persist_vector_stores=False)
+
+    assert core.finalize_kwargs == [{"persist_vector_stores": False}]
+
+
+@pytest.mark.asyncio
+async def test_normal_cache_retirement_keeps_default_persistence():
+    cache = KBCache(max_size=1)
+    core = _Core()
+    await cache.put_and_evict("kb", core, 1.0, key=_key("revision-1"))
+
+    await cache.retire("kb")
+
+    assert core.finalize_kwargs == [{}]
 
 
 @pytest.mark.asyncio

@@ -7,8 +7,12 @@ function compareByName(left, right) {
   return String(left.name || '').localeCompare(String(right.name || ''), 'zh-CN')
 }
 
+export function getKnowledgeBaseUpdateTimestamp(kb) {
+  return kb.last_updated_at || kb.last_content_updated_at || kb.created || ''
+}
+
 function getTimestamp(kb) {
-  const timestamp = Date.parse(kb.last_content_updated_at || kb.created || '')
+  const timestamp = Date.parse(getKnowledgeBaseUpdateTimestamp(kb))
   return Number.isFinite(timestamp) ? timestamp : null
 }
 

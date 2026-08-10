@@ -25,6 +25,7 @@ Duration Enforcement:
 """
 
 import os
+import time
 import re
 import json
 import base64
@@ -40,6 +41,37 @@ from lightrag.lightrag import LightRAG
 
 from raganything.modalprocessors import BaseModalProcessor, ContextExtractor
 from raganything.prompt import PROMPTS
+
+
+class VideoProcessingError(RuntimeError):
+    """A bounded, retryable video-ingestion failure safe for Worker output."""
+
+    def __init__(self, failure_code: str, message: str = "") -> None:
+        self.failure_code = failure_code
+        super().__init__(message or failure_code)
+
+
+def _probe_error(code: str, detail: str = "") -> VideoProcessingError:
+    """Never include the upload path or unbounded tool output in task errors."""
+    return VideoProcessingError(code, f"{code}: {str(detail)[:240]}" if detail else code)
+
+
+_CHINESE_TEXT = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _has_chinese_summary(value: object) -> bool:
+    """Require enough Chinese prose before a segment becomes searchable."""
+    return len(_CHINESE_TEXT.findall(str(value or ""))) >= 2
+
+
+def _format_metrics_line(fields: dict[str, object]) -> str:
+    """Format structured key=value metrics fields for stable log parsing."""
+    return " ".join(f"{key}={value}" for key, value in fields.items())
+
+
+def _elapsed_ms(start: float) -> float:
+    """Return elapsed milliseconds since a ``time.perf_counter()`` start."""
+    return max(0.0, (time.perf_counter() - start) * 1000.0)
 
 # ── Utility helpers ────────────────────────────────────────────────────────
 
@@ -199,6 +231,28 @@ def validate_video_file(video_path: str) -> Dict[str, Any]:
         return {"valid": False, "error": metadata["error"], "metadata": metadata}
 
     return {"valid": True, "metadata": metadata}
+
+
+def probe_video_for_indexing(video_path: str) -> Dict[str, Any]:
+    """Fail closed before indexing a v2 video upload."""
+    if not _check_ffprobe_available():
+        raise _probe_error("video_ffprobe_unavailable")
+    if not _check_ffmpeg_available():
+        raise _probe_error("video_ffmpeg_unavailable")
+    result = validate_video_file(video_path)
+    if not result.get("valid"):
+        message = str(result.get("error") or "invalid video")
+        code = "video_probe_timeout" if "timed out" in message.lower() else "video_probe_invalid"
+        raise _probe_error(code, message)
+    metadata = result.get("metadata") or {}
+    if (
+        float(metadata.get("duration") or 0) <= 0
+        or float(metadata.get("fps") or 0) <= 0
+        or int(metadata.get("width") or 0) <= 0
+        or int(metadata.get("height") or 0) <= 0
+    ):
+        raise _probe_error("video_probe_invalid_metadata")
+    return metadata
 
 
 def check_video_skippable(video_path: str, config: Any = None) -> Tuple:
@@ -558,6 +612,7 @@ class AudioTranscriber:
         self.model_size = model_size
         self.timeout = timeout
         self._model = None
+        self.last_segments: list[dict[str, Any]] = []
 
     def _load_model(self):
         """Lazy-load the Whisper model."""
@@ -647,6 +702,15 @@ class AudioTranscriber:
             )
 
             transcript = result.get("text", "").strip()
+            self.last_segments = [
+                {
+                    "start": float(seg.get("start", 0) or 0),
+                    "end": float(seg.get("end", 0) or 0),
+                    "text": str(seg.get("text", "")).strip(),
+                }
+                for seg in (result.get("segments") or [])
+                if str(seg.get("text", "")).strip()
+            ]
             detected_lang = result.get("language", "unknown")
             logger.info(
                 f"Transcription complete: {len(transcript)} chars, "
@@ -660,6 +724,7 @@ class AudioTranscriber:
             return ""
         except Exception as e:
             logger.error(f"Transcription failed: {e}")
+            self.last_segments = []
             return ""
         finally:
             # Clean up temporary audio file
@@ -689,6 +754,7 @@ class VideoModalProcessor(BaseModalProcessor):
         audio_transcriber: AudioTranscriber = None,
         scene_detector: SceneDetector = None,
         video_frame_concurrent: int = 3,
+        video_segment_concurrent: int = 2,
         enable_frame_cache: bool = True,
         config = None,
     ):
@@ -702,6 +768,7 @@ class VideoModalProcessor(BaseModalProcessor):
             audio_transcriber: Optional pre-configured AudioTranscriber (None = no audio)
             scene_detector: Optional pre-configured SceneDetector
             video_frame_concurrent: Max concurrent frame VLM calls (default 3)
+            video_segment_concurrent: Max concurrent v2 segments per video (default 2)
             enable_frame_cache: Whether to cache frame descriptions (default True)
             config: Optional RAGAnythingConfig for duration/transcript/whisper settings
         """
@@ -716,9 +783,18 @@ class VideoModalProcessor(BaseModalProcessor):
         self._max_duration = int(getattr(config, "video_max_duration", 3600) or 3600)
         self._max_transcript_tokens = int(getattr(config, "max_transcript_tokens", 4000) or 4000)
         self._whisper_model_size = str(getattr(config, "whisper_model_size", "small") or "small")
+        self._video_index_profile_version = str(
+            getattr(config, "video_index_profile_version", "v2") or "v2"
+        )
 
         # Frame concurrency control (isolated from image processing semaphore)
         self._frame_semaphore = asyncio.Semaphore(video_frame_concurrent)
+
+        # Per-video segment concurrency: each segment runs one VLM description
+        # plus entity extraction; effective extraction concurrency is bounded by
+        # segment_concurrent * llm_model_max_async.
+        self._video_segment_concurrent = max(1, int(video_segment_concurrent))
+        self._segment_semaphore = asyncio.Semaphore(self._video_segment_concurrent)
 
         # Frame description cache
         self._enable_frame_cache = enable_frame_cache
@@ -779,13 +855,30 @@ class VideoModalProcessor(BaseModalProcessor):
             return ""
 
     def _encode_image_to_base64(self, image_path: str) -> str:
-        """Encode image to base64 for VLM API calls."""
-        try:
-            with open(image_path, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode("utf-8")
-        except Exception as e:
-            logger.error(f"Failed to encode image {image_path}: {e}")
-            return ""
+        """Encode a freshly extracted frame, tolerating short-lived file locks."""
+        failure = ""
+        for attempt in range(3):
+            try:
+                with open(image_path, "rb") as image_file:
+                    image_bytes = image_file.read()
+                if image_bytes:
+                    return base64.b64encode(image_bytes).decode("utf-8")
+                failure = "empty_file"
+            except OSError as exc:
+                failure = type(exc).__name__
+            except Exception as exc:
+                failure = type(exc).__name__
+                break
+            if attempt < 2:
+                time.sleep(0.1 * (attempt + 1))
+
+        # Do not log an upload path: it is server-side-only metadata.  The
+        # stable error below is surfaced by the Worker as a retryable failure.
+        logger.warning(
+            "Unable to encode extracted video frame after retries: reason=%s",
+            failure or "unknown",
+        )
+        return ""
 
     def _truncate_transcript(self, text: str, max_tokens: int) -> str:
         """Truncate transcript to max_tokens at the nearest sentence boundary.
@@ -929,9 +1022,11 @@ class VideoModalProcessor(BaseModalProcessor):
 
             # Transcribe audio (if audio_transcriber is available)
             transcript = ""
+            transcript_segments: list[dict[str, Any]] = []
             if self.audio_transcriber and self._whisper_available:
                 try:
                     transcript = self.audio_transcriber.transcribe(str(video_path_obj))
+                    transcript_segments = list(getattr(self.audio_transcriber, "last_segments", []) or [])
                 except Exception as e:
                     logger.warning(f"Audio transcription failed (continuing without): {e}")
 
@@ -1031,6 +1126,10 @@ class VideoModalProcessor(BaseModalProcessor):
             if isinstance(entity_info, dict):
                 entity_info["analysis_source"] = "model"
                 entity_info["non_indexable"] = False
+                entity_info["video_duration"] = duration
+                entity_info["video_fps"] = metadata.get("fps", 0)
+                entity_info["video_frame_count"] = len(frames)
+                entity_info["transcript_segments"] = transcript_segments
 
             # Clean up temp frames
             try:
@@ -1056,6 +1155,534 @@ class VideoModalProcessor(BaseModalProcessor):
             }
             return "[Video processing unavailable]", fallback_entity
 
+    def _local_transcript(self, asr_segments: list[dict[str, Any]], start_ms: int, end_ms: int) -> str:
+        return " ".join(
+            str(item.get("text") or "").strip()
+            for item in asr_segments
+            if float(item.get("end") or 0) * 1000 > start_ms
+            and float(item.get("start") or 0) * 1000 < end_ms
+            and str(item.get("text") or "").strip()
+        ).strip()
+
+    async def _ensure_chinese_segment_summary(self, summary: object) -> str:
+        """Translate one non-Chinese model response once or fail before indexing."""
+        value = str(summary or "").strip()
+        if _has_chinese_summary(value):
+            return value[:2000]
+
+        translated = await self._call_modal_caption(
+            "请将以下教学视频片段摘要改写为简体中文。"
+            "只返回中文摘要，不要保留英文标题、标签或字段名；"
+            "型号、数字和单位可以保留。\n"
+            f"待改写摘要：{value}",
+            system_prompt="你是中文教学视频分析助手。所有输出必须使用简体中文。",
+        )
+        translated = str(translated or "").strip()
+        if not _has_chinese_summary(translated):
+            raise _probe_error("video_segment_summary_not_chinese")
+        return translated[:2000]
+
+    async def _describe_segment_frames(
+        self, frames: list[dict[str, Any]], transcript: str, start_ms: int, end_ms: int
+    ) -> tuple[str, list[dict[str, Any]]]:
+        """Describe only a segment's representative frames; frame paths stay local."""
+        if not frames:
+            raise _probe_error("video_frame_extraction_empty")
+        picks = [frames[0], frames[len(frames) // 2], frames[-1]]
+        selected: list[dict[str, Any]] = []
+        for frame in picks:
+            if frame not in selected:
+                selected.append(frame)
+
+        async def describe(frame: dict[str, Any]) -> str:
+            async with self._frame_semaphore:
+                image_data = self._encode_image_to_base64(frame["path"])
+                if not image_data:
+                    return ""
+                prompt = (
+                    "请用中文分析教学视频中的这一帧，只返回 JSON："
+                    '{"detailed_description":"画面中的操作、器材、读数和安全要点"}。\n'
+                    f"所属视频片段：{start_ms}ms-{end_ms}ms\n"
+                    f"画面时间：{float(frame['timestamp']):.1f} 秒\n"
+                    "描述必须使用中文，不要使用英文标签或文件路径。"
+                )
+                response = await self._call_modal_caption(
+                    prompt,
+                    image_data=image_data,
+                    system_prompt="你是教学视频画面分析助手。所有输出必须使用中文。",
+                )
+                parsed = self._robust_json_parse(response)
+                return str(parsed.get("detailed_description") or response).strip()[:900]
+
+        descriptions = await asyncio.gather(*(describe(frame) for frame in selected))
+        usable = [description for description in descriptions if description]
+        if not usable:
+            raise _probe_error("video_frame_encode_failed")
+        local_prompt = (
+            "请将以下教学视频片段归纳为一个中文操作步骤。"
+            "必须说明操作、器材或对象、读数（如有）、安全注意事项和可见依据。"
+            "仅输出中文摘要，不要使用英文标题、标签或字段名。\n"
+            f"时间范围：{start_ms}ms-{end_ms}ms\n"
+            f"本段转写：{transcript or '无'}\n"
+            f"画面观察：{' '.join(usable)}"
+        )
+        summary = await self._call_modal_caption(
+            local_prompt,
+            system_prompt="你是中文教学视频分析助手。所有输出必须使用中文。",
+        )
+        frame_refs = [
+            {"timestamp_ms": round(float(frame["timestamp"]) * 1000), "index": int(frame["index"])}
+            for frame in selected
+        ]
+        return await self._ensure_chinese_segment_summary(summary), frame_refs
+
+    async def _process_v2_segments(
+        self, modal_content, content_type: str, file_path: str, entity_name: str,
+        item_info: Dict[str, Any], batch_mode: bool, doc_id: str, chunk_order_index: int,
+    ):
+        if isinstance(modal_content, str):
+            try:
+                content_data = json.loads(modal_content)
+            except json.JSONDecodeError:
+                content_data = {"video_path": modal_content}
+        else:
+            content_data = modal_content or {}
+        video_path = str(content_data.get("video_path") or "")
+        if not video_path:
+            raise _probe_error("video_source_unavailable")
+        _v2_start = time.perf_counter()
+        probe_start = time.perf_counter()
+        metadata = probe_video_for_indexing(video_path)
+        duration = float(metadata["duration"])
+        if duration > self._max_duration:
+            raise _probe_error("video_duration_exceeded")
+
+        workspace = str(getattr(self.lightrag, "workspace", "")).replace("\\", "/")
+        kb_name = "default" if workspace == "./rag_storage" else workspace.rsplit("_", 1)[-1]
+        parent_name = entity_name or Path(video_path).stem
+
+        # A retried task may carry artifacts from an attempt that was killed
+        # before its compensation cleanup ran.  Remove them up front so the
+        # deterministic segment rows and chunks are inserted exactly once.
+        await self._preclean_v2_segment_artifacts(doc_id, kb_name, parent_name)
+
+        frame_dir = ""
+        frames: list[dict[str, Any]] = []
+        pending_chunk_ids: list[str] = []
+        pending_node_names: list[str] = []
+        chunk_ids: list[str] = []
+        results: list[Any] = []
+        segment_content_length = 0
+        # Per-stage timing in milliseconds; emitted as structured log lines
+        # so long videos can be profiled without touching document metadata.
+        stage_timings: dict[str, float] = {"probe_ms": _elapsed_ms(probe_start)}
+        segment_metrics: list[dict[str, float]] = []
+        try:
+            _stage_start = time.perf_counter()
+            frame_dir = tempfile.mkdtemp(prefix="rag_video_frames_")
+            frames = self.frame_extractor.extract_frames(video_path, output_dir=frame_dir)
+            stage_timings["frames_ms"] = _elapsed_ms(_stage_start)
+            if not frames:
+                raise _probe_error("video_frame_extraction_empty")
+            transcript = ""
+            asr_segments: list[dict[str, Any]] = []
+            _stage_start = time.perf_counter()
+            if self.audio_transcriber and self._whisper_available and metadata.get("has_audio"):
+                transcript = self.audio_transcriber.transcribe(video_path)
+                asr_segments = list(getattr(self.audio_transcriber, "last_segments", []) or [])
+            stage_timings["asr_ms"] = _elapsed_ms(_stage_start)
+            _stage_start = time.perf_counter()
+            scene_boundaries = []
+            if self.scene_detector:
+                for scene in self.scene_detector.detect_scenes(video_path):
+                    value = scene.get("end_time")
+                    if isinstance(value, (int, float)):
+                        scene_boundaries.append(float(value))
+            stage_timings["scene_ms"] = _elapsed_ms(_stage_start)
+
+            from raganything.video_segments import plan_segments, segment_id, source_sha256
+            segments = plan_segments(duration, asr_segments=asr_segments, scene_boundaries=scene_boundaries)
+            source_hash = source_sha256(video_path)
+            media_id = f"video-{source_hash[:32]}"
+            from raganything.processor.chunk_processor import compute_chunk_id
+            from raganything.services.video_segments import upsert_video_asset, upsert_video_segment
+            await upsert_video_asset({
+                "media_id": media_id, "kb_name": kb_name, "document_id": doc_id,
+                "source_sha256": source_hash, "original_name": Path(video_path).name,
+                "server_path": video_path, "duration_ms": round(duration * 1000),
+                "fps": metadata["fps"], "has_audio": metadata.get("has_audio", False),
+                "profile_version": self._video_index_profile_version,
+            })
+
+            async def _process_one_segment(offset: int, segment: Any) -> dict[str, Any]:
+                """Describe, persist, and extract one independent segment.
+
+                Runs under the per-video segment semaphore so model-endpoint
+                concurrency stays bounded.  Only computes and mutates
+                in-memory storages; PostgreSQL rows and deterministic result
+                ordering are applied by the caller after every segment
+                finishes, so completion order never changes persisted order.
+                """
+                async with self._segment_semaphore:
+                    seg_timings: dict[str, float] = {}
+                    local_frames = [
+                        frame for frame in frames
+                        if segment.start_ms <= float(frame["timestamp"]) * 1000 <= segment.end_ms
+                    ]
+                    local_text = segment.transcript or self._local_transcript(
+                        asr_segments, segment.start_ms, segment.end_ms
+                    )
+                    _seg_start = time.perf_counter()
+                    visual_summary, frame_refs = await self._describe_segment_frames(
+                        local_frames or frames, local_text, segment.start_ms, segment.end_ms
+                    )
+                    seg_timings["describe_ms"] = _elapsed_ms(_seg_start)
+                    chunk_text = (
+                        f"视频片段：{segment.index + 1}/{len(segments)}\n"
+                        f"时间范围：{segment.start_ms}ms-{segment.end_ms}ms\n"
+                        f"媒体标识：{media_id}\n"
+                        f"操作摘要：{visual_summary}"
+                    )[:8000]
+                    segment_entity_name = f"{parent_name} 第{segment.index + 1}段"
+                    segment_info = {
+                        "entity_name": segment_entity_name,
+                        "entity_type": "video_segment",
+                        "summary": visual_summary,
+                        "parent_video": parent_name,
+                        "segment_index": segment.index,
+                        "start_ms": segment.start_ms,
+                        "end_ms": segment.end_ms,
+                        "media_id": media_id,
+                    }
+                    chunk_id = compute_chunk_id(chunk_text)
+                    pending_chunk_ids.append(chunk_id)
+                    pending_node_names.append(segment_entity_name)
+                    _seg_start = time.perf_counter()
+                    _chunk, persisted, _early_results = await self._create_entity_and_chunk(
+                        chunk_text, segment_info, file_path, batch_mode,
+                        doc_id, chunk_order_index + offset,
+                        defer_flush=True, defer_extraction=True,
+                    )
+                    seg_timings["create_ms"] = _elapsed_ms(_seg_start)
+                    persisted_chunk_id = persisted.get("chunk_id")
+                    if not persisted_chunk_id:
+                        raise _probe_error("video_segment_chunk_missing")
+                    if persisted_chunk_id != chunk_id:
+                        pending_chunk_ids.append(persisted_chunk_id)
+                        chunk_id = persisted_chunk_id
+                    _seg_start = time.perf_counter()
+                    chunk_results = await self._process_chunk_for_extraction(
+                        chunk_id, segment_entity_name, batch_mode
+                    ) or []
+                    seg_timings["extract_ms"] = _elapsed_ms(_seg_start)
+                    logger.info(
+                        "video_v2_segment_metrics doc_id=%s index=%d "
+                        "describe_ms=%.0f create_ms=%.0f extract_ms=%.0f",
+                        doc_id, segment.index,
+                        seg_timings["describe_ms"],
+                        seg_timings["create_ms"],
+                        seg_timings["extract_ms"],
+                    )
+                    segment_metrics.append(seg_timings)
+                    return {
+                        "offset": offset,
+                        "chunk_id": chunk_id,
+                        "chunk_results": chunk_results or [],
+                        "visual_summary": visual_summary,
+                        "frame_refs": frame_refs,
+                        "local_text": local_text,
+                        "content_length": len(chunk_text),
+                    }
+
+            _segments_start = time.perf_counter()
+            gathered = await asyncio.gather(
+                *(_process_one_segment(offset, segment)
+                  for offset, segment in enumerate(segments))
+            )
+            stage_timings["segments_ms"] = _elapsed_ms(_segments_start)
+            stage_timings["describe_ms"] = sum(
+                (metrics.get("describe_ms", 0.0) for metrics in segment_metrics), 0.0
+            )
+            stage_timings["extract_ms"] = sum(
+                (metrics.get("extract_ms", 0.0) for metrics in segment_metrics), 0.0
+            )
+
+            # Deterministic write phase: PostgreSQL rows, chunk ids, extraction
+            # results, and the character-count summary follow segment order
+            # regardless of which segment finished first.
+            _pg_start = time.perf_counter()
+            by_offset = {item["offset"]: item for item in gathered}
+            for offset, segment in enumerate(segments):
+                item = by_offset[offset]
+                segment_content_length += item["content_length"]
+                await upsert_video_segment({
+                    "segment_id": segment_id(source_hash, segment.start_ms, segment.end_ms, self._video_index_profile_version),
+                    "media_id": media_id, "kb_name": kb_name, "document_id": doc_id,
+                    "segment_index": segment.index, "start_ms": segment.start_ms, "end_ms": segment.end_ms,
+                    "transcript_text": item["local_text"], "visual_summary": item["visual_summary"],
+                    "frame_refs": item["frame_refs"], "chunk_id": item["chunk_id"], "source_sha256": source_hash,
+                    "profile_version": self._video_index_profile_version,
+                })
+                chunk_ids.append(item["chunk_id"])
+                results.extend(item["chunk_results"])
+            stage_timings["pg_ms"] = _elapsed_ms(_pg_start)
+
+            # The parent is graph-only manifest data: it must not create a
+            # competing full-video text/vector chunk.  Each segment remains
+            # independently searchable and has an explicit belongs_to edge.
+            parent_node = {
+                "entity_id": parent_name,
+                "entity_type": "video",
+                "description": f"视频清单，包含 {len(chunk_ids)} 个语义片段",
+                "source_id": chunk_ids[0] if chunk_ids else "",
+                "created_at": int(time.time()),
+            }
+            pending_node_names.append(parent_name)
+            await self.knowledge_graph_inst.upsert_node(parent_name, parent_node)
+            for offset, chunk_id in enumerate(chunk_ids):
+                segment_name = f"{parent_name} 第{offset + 1}段"
+                await self.knowledge_graph_inst.upsert_edge(
+                    segment_name,
+                    parent_name,
+                    {
+                        "description": f"{segment_name} 属于 {parent_name}",
+                        "keywords": "belongs_to,video_segment",
+                        "source_id": chunk_id,
+                        "weight": 10.0,
+                        "file_path": file_path,
+                    },
+                )
+
+            # Video segments bypass the normal text-chunk writer. Keep the
+            # document summary in sync so list views do not report a completed
+            # v2 video as having zero characters.
+            current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
+            if current_doc_status:
+                existing_metadata = current_doc_status.get("metadata") or {}
+                metadata = (
+                    dict(existing_metadata)
+                    if isinstance(existing_metadata, dict)
+                    else {}
+                )
+                try:
+                    existing_length = int(current_doc_status.get("content_length") or 0)
+                except (TypeError, ValueError):
+                    existing_length = 0
+                try:
+                    previous_video_length = int(metadata.get("video_content_length") or 0)
+                except (TypeError, ValueError):
+                    previous_video_length = 0
+                # Preserve ordinary text length in mixed documents and make
+                # retries replace, rather than add, the previous video total.
+                text_length = max(0, existing_length - previous_video_length)
+                metadata["video_content_length"] = segment_content_length
+                await self.lightrag.doc_status.upsert({
+                    doc_id: {
+                        **current_doc_status,
+                        "content_length": text_length + segment_content_length,
+                        "metadata": metadata,
+                    }
+                })
+                await self.lightrag.doc_status.index_done_callback()
+        except Exception:
+            # A v2 video is an atomic indexing unit.  Remove every partial
+            # LightRAG artifact before the Worker marks the task retryable so
+            # the same deterministic segment IDs can be inserted on retry.
+            logger.info(
+                "video_v2_metrics %s",
+                _format_metrics_line({
+                    "doc_id": doc_id,
+                    "failed": "true",
+                    "segments_completed": len(segment_metrics),
+                    "total_ms": round(_elapsed_ms(_v2_start), 1),
+                    "probe_ms": round(stage_timings.get("probe_ms", 0.0), 1),
+                    "frames_ms": round(stage_timings.get("frames_ms", 0.0), 1),
+                    "asr_ms": round(stage_timings.get("asr_ms", 0.0), 1),
+                    "scene_ms": round(stage_timings.get("scene_ms", 0.0), 1),
+                }),
+            )
+            await self._cleanup_v2_segment_artifacts(
+                doc_id=doc_id, kb_name=kb_name,
+                chunk_ids=pending_chunk_ids, node_names=pending_node_names,
+            )
+            raise
+        finally:
+            if frame_dir and os.path.isdir(frame_dir):
+                import shutil
+                shutil.rmtree(frame_dir, ignore_errors=True)
+        logger.info(
+            "video_v2_metrics %s",
+            _format_metrics_line({
+                "doc_id": doc_id,
+                "segments": len(segments),
+                "concurrent": getattr(self, "_video_segment_concurrent", 2),
+                "total_ms": round(_elapsed_ms(_v2_start), 1),
+                "probe_ms": round(stage_timings.get("probe_ms", 0.0), 1),
+                "frames_ms": round(stage_timings.get("frames_ms", 0.0), 1),
+                "asr_ms": round(stage_timings.get("asr_ms", 0.0), 1),
+                "scene_ms": round(stage_timings.get("scene_ms", 0.0), 1),
+                "describe_ms": round(stage_timings.get("describe_ms", 0.0), 1),
+                "extract_ms": round(stage_timings.get("extract_ms", 0.0), 1),
+                "pg_ms": round(stage_timings.get("pg_ms", 0.0), 1),
+            }),
+        )
+        return (
+            f"视频清单：{parent_name}（共 {len(segments)} 个片段）",
+            {"entity_name": parent_name, "entity_type": "video", "chunk_id": chunk_ids[0] if chunk_ids else None,
+             "chunk_ids": chunk_ids, "non_indexable": True, "media_id": media_id},
+            results,
+        )
+
+    async def _preclean_v2_segment_artifacts(
+        self, doc_id: str, kb_name: str, parent_name: str
+    ) -> None:
+        """Remove artifacts a killed earlier attempt left for the same document.
+
+        A retry can start only after a failed attempt; when that attempt was
+        killed before its compensation cleanup ran, its deterministic segment
+        rows, chunks, and graph nodes may still exist.  Cleaning them up front
+        keeps the retry idempotent: the same rows are upserted exactly once
+        and no stale chunk/vector/entity remains searchable.
+        """
+        try:
+            from raganything.services.video_segments import list_video_segments
+            rows = await list_video_segments(kb_name, doc_id)
+        except Exception:
+            logger.exception("v2 segment pre-clean list failed for document")
+            return
+        chunk_ids = [str(row.get("chunk_id")) for row in rows if row.get("chunk_id")]
+        node_names: set[str] = set()
+        if rows:
+            node_names.add(parent_name)
+        for row in rows:
+            try:
+                segment_index = int(row.get("segment_index"))
+            except (TypeError, ValueError):
+                continue
+            node_names.add(f"{parent_name} 第{segment_index + 1}段")
+            # Releases before Chinese localization used this graph node name.
+            # Include it during pre-clean so a retry cannot leave stale nodes.
+            node_names.add(f"{parent_name} segment {segment_index + 1}")
+        if chunk_ids or node_names:
+            await self._cleanup_v2_segment_artifacts(
+                doc_id=doc_id, kb_name=kb_name,
+                chunk_ids=chunk_ids, node_names=sorted(node_names),
+            )
+
+    async def _cleanup_v2_segment_artifacts(
+        self, *, doc_id: str, kb_name: str,
+        chunk_ids: list[str], node_names: list[str],
+    ) -> None:
+        """Compensate every partial artifact a failed v2 segment run persisted.
+
+        ``adelete_by_doc_id`` cannot cover these artifacts: segment chunks are
+        not declared in ``doc_status.chunks_list`` until the segment loop has
+        fully succeeded, and batch mode skips ``full_entities``/``full_relations``
+        tracking.  Delete them explicitly so a Worker retry can insert the
+        same deterministic segment rows exactly once.
+        """
+        chunk_ids = [str(chunk_id) for chunk_id in chunk_ids if chunk_id]
+        node_names = [str(name) for name in dict.fromkeys(node_names) if name]
+        if chunk_ids:
+            try:
+                if getattr(self.lightrag, "chunks_vdb", None) is not None:
+                    await self.lightrag.chunks_vdb.delete(chunk_ids)
+            except Exception:
+                logger.exception("v2 segment vector cleanup failed for document")
+            try:
+                if getattr(self.lightrag, "text_chunks", None) is not None:
+                    await self.lightrag.text_chunks.delete(chunk_ids)
+            except Exception:
+                logger.exception("v2 segment chunk cleanup failed for document")
+            await self._remove_v2_chunk_ids_from_doc_status(doc_id, chunk_ids)
+        if node_names:
+            await self._remove_v2_segment_graph_artifacts(node_names)
+        try:
+            from raganything.services.video_segments import delete_video_segments
+            await delete_video_segments(kb_name, doc_id)
+        except Exception:
+            logger.exception("v2 segment catalog cleanup failed for document")
+        try:
+            if hasattr(self.lightrag, "_insert_done"):
+                await self.lightrag._insert_done()
+        except Exception:
+            logger.exception("v2 segment cleanup persistence failed for document")
+
+    async def _remove_v2_chunk_ids_from_doc_status(
+        self, doc_id: str, chunk_ids: list[str]
+    ) -> None:
+        """Drop retried segment chunks from doc_status so BM25/vector rebuilds
+        and ``adelete_by_doc_id`` never see stale searchable entries."""
+        doc_status = getattr(self.lightrag, "doc_status", None)
+        if doc_status is None:
+            return
+        try:
+            current = await doc_status.get_by_id(doc_id)
+        except Exception:
+            logger.exception("v2 segment doc_status read failed for document")
+            return
+        if not isinstance(current, dict):
+            return
+        remove = set(chunk_ids)
+        chunks_list = [str(value) for value in current.get("chunks_list") or [] if value]
+        remaining = [chunk_id for chunk_id in chunks_list if chunk_id not in remove]
+        if remaining == chunks_list:
+            return
+        try:
+            await doc_status.upsert({
+                doc_id: {
+                    **current,
+                    "chunks_list": remaining,
+                    "chunks_count": len(remaining),
+                    "updated_at": current.get("updated_at"),
+                }
+            })
+            if hasattr(doc_status, "index_done_callback"):
+                await doc_status.index_done_callback()
+        except Exception:
+            logger.exception("v2 segment doc_status cleanup failed for document")
+
+    async def _remove_v2_segment_graph_artifacts(self, node_names: list[str]) -> None:
+        """Remove v2 segment nodes, their incident edges, and all related
+        entity/relationship vectors and tracking storage."""
+        lightrag = self.lightrag
+        graph = getattr(lightrag, "chunk_entity_relation_graph", None)
+        edge_pairs: list[tuple[str, str]] = []
+        try:
+            if graph is not None and hasattr(graph, "get_nodes_edges_batch"):
+                nodes_edges = await graph.get_nodes_edges_batch(node_names)
+                seen: set[tuple[str, str]] = set()
+                for edges in (nodes_edges or {}).values():
+                    for src, tgt in edges or []:
+                        pair = tuple(sorted((str(src), str(tgt))))
+                        if pair not in seen:
+                            seen.add(pair)
+                            edge_pairs.append(pair)
+            if edge_pairs and getattr(lightrag, "relationships_vdb", None) is not None:
+                rel_ids = []
+                for src, tgt in edge_pairs:
+                    rel_ids.append(compute_mdhash_id(src + tgt, prefix="rel-"))
+                    rel_ids.append(compute_mdhash_id(tgt + src, prefix="rel-"))
+                await lightrag.relationships_vdb.delete(rel_ids)
+            if edge_pairs and graph is not None and hasattr(graph, "remove_edges"):
+                await graph.remove_edges(edge_pairs)
+            if graph is not None and hasattr(graph, "remove_nodes"):
+                await graph.remove_nodes(node_names)
+            if getattr(lightrag, "entities_vdb", None) is not None:
+                entity_ids = [compute_mdhash_id(name, prefix="ent-") for name in node_names]
+                await lightrag.entities_vdb.delete(entity_ids)
+            entity_chunks = getattr(lightrag, "entity_chunks", None)
+            if entity_chunks is not None:
+                await entity_chunks.delete(node_names)
+            if edge_pairs:
+                from lightrag.utils import make_relation_chunk_key
+                relation_chunks = getattr(lightrag, "relation_chunks", None)
+                if relation_chunks is not None:
+                    await relation_chunks.delete([
+                        make_relation_chunk_key(src, tgt) for src, tgt in edge_pairs
+                    ])
+        except Exception:
+            logger.exception("v2 segment graph cleanup failed for document")
     async def process_multimodal_content(
         self,
         modal_content,
@@ -1082,58 +1709,10 @@ class VideoModalProcessor(BaseModalProcessor):
         Returns:
             Tuple of (description, entity_info)
         """
-        try:
-            # Generate description and entity info
-            enhanced_caption, entity_info = await self.generate_description_only(
-                modal_content, content_type, item_info, entity_name
-            )
-
-            # Parse video content for building complete chunk
-            if isinstance(modal_content, str):
-                try:
-                    content_data = json.loads(modal_content)
-                except json.JSONDecodeError:
-                    content_data = {"video_path": modal_content}
-            else:
-                content_data = modal_content
-
-            video_path = content_data.get("video_path", "")
-
-            # Get metadata for chunk
-            validation = validate_video_file(video_path) if video_path else {"valid": False}
-            metadata = validation.get("metadata", {}) if validation.get("valid") else {}
-            duration = metadata.get("duration", 0)
-            frame_count = metadata.get("fps", 0)
-
-            # Build complete video chunk
-            modal_chunk = PROMPTS["video_chunk"].format(
-                video_path=video_path or "unknown",
-                duration=f"{duration:.1f}",
-                frame_count=str(int(frame_count * duration)) if frame_count > 0 else "unknown",
-                transcript_summary=(enhanced_caption[:200] + "...")
-                if len(enhanced_caption) > 200
-                else enhanced_caption,
-                enhanced_caption=enhanced_caption,
-            )
-
-            return await self._create_entity_and_chunk(
-                modal_chunk,
-                entity_info,
-                file_path,
-                batch_mode,
-                doc_id,
-                chunk_order_index,
-            )
-
-        except Exception as e:
-            logger.error(f"Error processing video content: {e}")
-            fallback_entity = {
-                "entity_name": entity_name
-                or f"video_{compute_mdhash_id(str(modal_content))}",
-                "entity_type": "video",
-                "summary": f"Video content: {str(modal_content)[:100]}",
-            }
-            return f"[Video processing error: {e}]", fallback_entity
+        return await self._process_v2_segments(
+            modal_content, content_type, file_path, entity_name, item_info,
+            batch_mode, doc_id, chunk_order_index,
+        )
 
     def _parse_video_response(
         self, response: str, entity_name: str = None

@@ -64,18 +64,21 @@ extras_require = {
     "text": ["reportlab>=4.0.0"],  # For text file to PDF conversion (TXT, MD)
     "office": [],  # Office document processing requires LibreOffice (external program)
     "paddleocr": [
-        "paddleocr>=2.7.0",
+        "paddleocr==2.9.1",
+        "paddlepaddle==2.6.2",
         "pypdfium2>=4.25.0",
     ],  # PaddleOCR parser for scanned PDFs
     "opendataloader": ["opendataloader-pdf==2.5.0"],
     "all": [
         "Pillow>=10.0.0",
         "reportlab>=4.0.0",
-        "paddleocr>=2.7.0",
+        "paddleocr==2.9.1",
+        "paddlepaddle==2.6.2",
         "pypdfium2>=4.25.0",
         "markdown>=3.4.0",
         "weasyprint>=60.0",
         "pygments>=2.10.0",
+        "opendataloader-pdf==2.5.0",
     ],  # All optional features
     "markdown": [
         "markdown>=3.4.0",

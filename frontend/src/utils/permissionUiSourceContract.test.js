@@ -81,10 +81,36 @@ test('stale write handlers fail closed after live permission revocation', () => 
   assert.match(chat, /if \(!canEditMessages\) return/)
 })
 
+test('resource pages do not mount an empty grid beside their empty state', () => {
+  const knowledge = source('../pages/KnowledgePage.jsx')
+  const agents = source('../pages/AgentsPage.jsx')
+
+  assert.match(knowledge, /!kbsLoaded \? \([\s\S]*?\) : paginatedKBs\.length > 0 \? \([\s\S]*?<KBSelector/)
+  assert.match(knowledge, /: \([\s\S]*?<div className="empty-state resource-empty-state">/)
+  assert.match(knowledge, /kbs\.length === 0 && !loadError/)
+  assert.match(knowledge, /kbs\.length === 0 && loadError/)
+
+  assert.match(agents, /agentsLoading \? \([\s\S]*?\) : paginatedAgents\.length > 0 \? \([\s\S]*?<div ref=\{gridRef\}/)
+  assert.match(agents, /: \([\s\S]*?<div className="empty-state resource-empty-state">/)
+  assert.match(agents, /agents\.length === 0/)
+  assert.match(agents, /没有找到匹配的智能体/)
+})
+
 test('App routes and copy are capability-aware', () => {
   const app = source('../App.jsx')
   assert.match(app, /path="\/knowledge" element=\{<ProtectedRoute requiredPermission="kb:read"/)
   assert.match(app, /path="\/autorepair\/agent" element=\{<ProtectedRoute requiredPermission="autorepair:write"/)
   assert.match(app, /policy\.canWriteAgents \? '可配置' : '可使用'/)
   assert.match(app, /policy\.canWriteSettings \? '可配置' : '可查看'/)
+})
+
+test('preferences use the server projection before requesting task settings', () => {
+  const preferences = source('../pages/PreferencesPage.jsx')
+  assert.match(preferences, /visiblePreferenceSections\(settings\.available_sections, hasPermission\)/)
+  assert.match(preferences, /shouldLoadSettingsOptions\(visiblePreferenceSections/)
+  assert.doesNotMatch(preferences, /api\.listModelProfiles\(/)
+  assert.match(preferences, /visibleSections\.includes\('models'\)/)
+  assert.match(preferences, /recoverPreferenceSection\(window\.location\.hash, visibleSections\)/)
+  assert.match(preferences, /error\.status === 403[\s\S]*?await loadSettingsProjection\(\)/)
+  assert.match(preferences, /setDrafts\(settings\.stored \|\| \{\}\)/)
 })

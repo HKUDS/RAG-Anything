@@ -11,9 +11,10 @@ import hashlib
 import json
 import logging
 import os
+import time
 import uuid
-from dataclasses import asdict, dataclass, replace
-from typing import Any, Awaitable, Callable, Literal, TypeVar
+from dataclasses import asdict, dataclass, field, replace
+from typing import Any, Awaitable, Callable, Collection, Literal, TypeVar
 
 from raganything.services.pg_state_repo import get_pg_pool
 
@@ -21,6 +22,12 @@ logger = logging.getLogger(__name__)
 
 Section = Literal["models", "ingestion", "retrieval", "runtime"]
 SECTIONS: tuple[Section, ...] = ("models", "ingestion", "retrieval", "runtime")
+SECTION_PERMISSIONS: dict[Section, str] = {
+    "models": "agent:write",
+    "ingestion": "kb:write",
+    "retrieval": "kb:write",
+    "runtime": "kb:write",
+}
 _Result = TypeVar("_Result")
 
 DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
@@ -29,6 +36,7 @@ DEFAULT_SETTINGS: dict[str, dict[str, Any]] = {
         "parser": "docling", "chunking_strategy": "recursive", "chunk_size": 800,
         "enable_image": True, "enable_table": True, "enable_equation": True,
         "enable_video": False, "entity_types": [], "minimum_relation_degree": 0,
+        "parsers_by_type": {},
     },
     "retrieval": {
         "preset": "balanced", "rrf_k": 60, "bm25_top_k": 50, "vector_top_k": 100,
@@ -47,6 +55,24 @@ RETRIEVAL_PRESETS: dict[str, dict[str, Any]] = {
 }
 
 ALLOWED_FIELDS: dict[str, set[str]] = {key: set(value) for key, value in DEFAULT_SETTINGS.items()}
+
+# Per-file-type parser override keys and the genuine capability matrix for
+# every bundled parser.  Ids outside the matrix are custom parsers: they are
+# allowed for every type so PATCH validation never blocks extensions.
+PARSER_TYPES: tuple[str, ...] = ("pdf", "office", "image")
+PARSER_SUPPORTED_TYPES: dict[str, tuple[str, ...]] = {
+    "docling": ("pdf", "office"),
+    "mineru": ("pdf", "office", "image"),
+    "marker": ("pdf", "office", "image"),
+    "paddleocr": ("pdf", "office", "image"),
+    "opendataloader": ("pdf",),
+}
+
+
+def _parser_supported_types(parser_id: str) -> tuple[str, ...]:
+    """Return the file types a parser supports; unknown ids pass all types."""
+    return PARSER_SUPPORTED_TYPES.get(parser_id, PARSER_TYPES)
+
 
 # Platform policy deliberately uses a small, closed JSON schema.  Keeping this
 # separate from the generic ``settings`` table prevents deployment credentials
@@ -93,6 +119,8 @@ class ProcessingTaskSettings:
     enable_video: bool
     entity_types: tuple[str, ...]
     minimum_relation_degree: int
+    parsers_by_type: dict[str, str] = field(default_factory=dict)
+    video_index_profile_version: str = "v2"
 
 
 @dataclass(frozen=True)
@@ -143,6 +171,83 @@ class ResolvedUserSettings:
 
 def _copy(value: Any) -> Any:
     return json.loads(json.dumps(value))
+
+
+def available_sections(permissions: Collection[str] | None = None) -> tuple[Section, ...]:
+    """Return task-setting sections permitted by a live permission set.
+
+    ``None`` preserves the unrestricted service behavior used by internal
+    maintenance callers; authenticated HTTP/request boundaries pass a concrete
+    set so permission loss masks only the user-stored layer.
+    """
+    if permissions is None:
+        return SECTIONS
+    granted = set(permissions)
+    return tuple(section for section in SECTIONS if SECTION_PERMISSIONS[section] in granted)
+
+
+async def available_sections_for_user(user_id: int) -> tuple[Section, ...]:
+    """Resolve setting capabilities from the current authoritative role."""
+    from raganything.services.auth import has_permission
+
+    permissions = [
+        permission for permission in set(SECTION_PERMISSIONS.values())
+        if await has_permission(int(user_id), permission)
+    ]
+    return available_sections(permissions)
+
+
+def resolved_sections(permitted_sections: Collection[str] | None) -> tuple[Section, ...]:
+    """Return the known task sections from an already-resolved projection.
+
+    Callers resolve capabilities once (``available_sections`` / the router
+    helper) and pass the resulting section names downstream; re-running
+    ``available_sections`` here would misinterpret section names as
+    permission strings and silently drop every section.  ``None`` preserves
+    the unrestricted service behavior used by internal maintenance callers.
+    """
+    if permitted_sections is None:
+        return SECTIONS
+    allowed = set(permitted_sections)
+    return tuple(section for section in SECTIONS if section in allowed)
+
+
+def _project_sections(values: dict[str, Any], sections: Collection[str]) -> dict[str, Any]:
+    allowed = set(sections)
+    return {section: _copy(value) for section, value in values.items() if section in allowed}
+
+
+def project_settings_options(options: dict[str, Any], sections: Collection[str]) -> dict[str, Any]:
+    """Remove settings choices that belong to sections the caller cannot use."""
+    allowed_sections = tuple(section for section in SECTIONS if section in set(sections))
+    result = _copy(options)
+    result["sections"] = {
+        section: result.get("sections", {}).get(section, [])
+        for section in allowed_sections
+    }
+    allowed = result.get("allowed", {})
+    limits = result.get("limits", {})
+    permitted_allowed = set()
+    permitted_limits = set()
+    if "models" in allowed_sections:
+        permitted_allowed.update(("llm_profile_ids", "vlm_profile_ids"))
+    if "ingestion" in allowed_sections:
+        permitted_allowed.update(("parsers", "chunking_strategies"))
+    if "retrieval" in allowed_sections:
+        permitted_allowed.add("bm25_tokenizers")
+        permitted_limits.update(("bm25_top_k", "vector_top_k", "graph_top_k", "graph_depth"))
+    if "runtime" in allowed_sections:
+        permitted_limits.update(("personal_concurrency", "llm_timeout"))
+    result["allowed"] = {key: value for key, value in allowed.items() if key in permitted_allowed}
+    result["limits"] = {key: value for key, value in limits.items() if key in permitted_limits}
+    if "retrieval" not in allowed_sections:
+        result.pop("presets", None)
+        result.pop("preset_values", None)
+        result.pop("channels", None)
+    if "ingestion" not in allowed_sections:
+        result.pop("parsers", None)
+        result.pop("chunking_strategies", None)
+    return result
 
 
 def _json_object(value: Any) -> dict[str, Any]:
@@ -222,6 +327,31 @@ def _legacy_environment_settings() -> dict[str, dict[str, Any]]:
     return legacy
 
 
+def _normalize_parsers_by_type(parsers_by_type: Any) -> dict[str, Any]:
+    """Return the per-type parser map without empty-string override keys.
+
+    Empty-string values mean 'follow the global parser' and must never be
+    persisted or resolved; a non-object legacy value safely falls back to an
+    empty map so a corrupt row cannot break every settings read.
+    """
+    if not isinstance(parsers_by_type, dict):
+        return {}
+    return {
+        key: value.strip()
+        for key, value in parsers_by_type.items()
+        if isinstance(value, str) and value.strip()
+    }
+
+
+def _normalize_section_values(section: str, values: dict[str, Any]) -> dict[str, Any]:
+    """Return normalized values for persistence without mutating the input."""
+    if section != "ingestion" or "parsers_by_type" not in values:
+        return values
+    normalized = dict(values)
+    normalized["parsers_by_type"] = _normalize_parsers_by_type(normalized["parsers_by_type"])
+    return normalized
+
+
 def _validate_section(section: str, values: dict[str, Any] | None) -> None:
     if section not in SECTIONS:
         raise ValueError("unknown settings section")
@@ -249,6 +379,19 @@ def _validate_section(section: str, values: dict[str, Any] | None) -> None:
         raise ValueError("entity_types must be a list of non-empty strings")
     if "chunk_size" in values and (not _is_int(values["chunk_size"]) or values["chunk_size"] < 64):
         raise ValueError("chunk_size must be an integer >= 64")
+    if "parsers_by_type" in values:
+        parsers_by_type = values["parsers_by_type"]
+        if not isinstance(parsers_by_type, dict):
+            raise ValueError("parsers_by_type must be an object")
+        for type_key, parser_id in parsers_by_type.items():
+            if type_key not in PARSER_TYPES:
+                raise ValueError(f"unknown parser type: {type_key}")
+            if not isinstance(parser_id, str):
+                raise ValueError("parsers_by_type values must be strings")
+            if parser_id and not parser_id.strip():
+                raise ValueError("parsers_by_type values must be a parser id")
+            if parser_id and type_key not in _parser_supported_types(parser_id.strip()):
+                raise ValueError(f"parser {parser_id} does not support type {type_key}")
     for key in ("rrf_k", "bm25_top_k", "vector_top_k", "graph_top_k", "graph_depth", "llm_timeout", "personal_concurrency", "minimum_relation_degree"):
         if key in values and (not _is_int(values[key]) or values[key] < 0):
             raise ValueError(f"{key} must be a non-negative integer")
@@ -402,6 +545,13 @@ def _validate_section_against_platform_policy(
         if permitted and values[field] not in permitted:
             raise ValueError(f"{field} is not permitted by platform policy")
 
+    if section == "ingestion" and "parsers_by_type" in values:
+        permitted = allowed.get("parsers", [])
+        if permitted:
+            for type_key, parser_id in values["parsers_by_type"].items():
+                if parser_id and parser_id not in permitted:
+                    raise ValueError(f"parsers_by_type.{type_key} is not permitted by platform policy")
+
     if section != "models":
         return
     try:
@@ -425,6 +575,7 @@ def resolve_settings(
     platform: dict[str, Any] | None,
     revision: int,
     resource_settings: dict[str, Any] | None = None,
+    knowledge_base_settings: dict[str, Any] | None = None,
     request_overrides: dict[str, Any] | None = None,
     index_constraints: dict[str, Any] | None = None,
 ) -> tuple[ResolvedUserSettings, dict[str, dict[str, str]], dict[str, dict[str, Any]]]:
@@ -440,6 +591,7 @@ def resolve_settings(
         (platform.get("defaults", {}), "platform_default"),
         (resource_settings or {}, "resource_setting"),
         (stored or {}, "user_setting"),
+        (knowledge_base_settings or {}, "knowledge_base_setting"),
         (request_overrides or {}, "request_selection"),
     ):
         for section in SECTIONS:
@@ -455,10 +607,52 @@ def resolve_settings(
                     effective[section][key] = value
                     sources[section][key] = source
             for key, value in values.items():
+                if section == "ingestion" and key == "parsers_by_type":
+                    value = _normalize_parsers_by_type(value)
+                    merged = dict(effective[section].get(key) or {})
+                    merged.update(value)
+                    effective[section][key] = merged
+                    sources[section][key] = source
+                    continue
                 effective[section][key] = value
                 sources[section][key] = source
 
     constraints: dict[str, dict[str, Any]] = {}
+    allowed = _safe_platform_policy(platform)["allowed"]
+    ingestion_allowed = {
+        "parser": allowed.get("parsers", []),
+        "chunking_strategy": allowed.get("chunking_strategies", []),
+    }
+    for field, permitted in ingestion_allowed.items():
+        selected = effective["ingestion"].get(field)
+        if permitted and selected not in permitted:
+            platform_default = ((platform.get("defaults") or {}).get("ingestion") or {}).get(field)
+            fallback = platform_default if platform_default in permitted else permitted[0]
+            constraints.setdefault("ingestion", {})[field] = {
+                "requested": selected,
+                "allowed": permitted,
+            }
+            effective["ingestion"][field] = fallback
+            sources["ingestion"][field] = "platform_allow_list"
+    permitted_parsers = allowed.get("parsers", [])
+    if permitted_parsers:
+        parser_overrides = effective["ingestion"].get("parsers_by_type") or {}
+        invalid_overrides = {
+            type_key: parser_id
+            for type_key, parser_id in parser_overrides.items()
+            if parser_id not in permitted_parsers
+        }
+        if invalid_overrides:
+            constraints.setdefault("ingestion", {})["parsers_by_type"] = {
+                "requested": invalid_overrides,
+                "allowed": permitted_parsers,
+            }
+            effective["ingestion"]["parsers_by_type"] = {
+                type_key: parser_id
+                for type_key, parser_id in parser_overrides.items()
+                if parser_id in permitted_parsers
+            }
+            sources["ingestion"]["parsers_by_type"] = "platform_allow_list"
     for section in SECTIONS:
         values = (index_constraints or {}).get(section)
         if not isinstance(values, dict):
@@ -520,22 +714,33 @@ async def _platform_row() -> tuple[dict[str, Any], int]:
     return (_safe_platform_policy(_json_object(row["settings"]) if row else {}), int(row["revision"] if row else 0))
 
 
-async def get_user_settings(user_id: int) -> dict[str, Any]:
+async def get_user_settings(user_id: int, *, permitted_sections: Collection[str] | None = None) -> dict[str, Any]:
     pool = get_pg_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow("SELECT settings, revision FROM user_settings WHERE user_id=$1", user_id)
     stored, revision = ((_json_object(row["settings"]) if row else {}), int(row["revision"] if row else 0))
     platform, _ = await _platform_row()
     resolved, sources, constraints = resolve_settings(stored=stored, platform=platform, revision=revision)
-    return {"revision": revision, "stored": stored, "effective": resolved.snapshot(), "sources": sources, "constraints": constraints, "fingerprint": resolved.fingerprint}
+    sections = resolved_sections(permitted_sections)
+    return {
+        "revision": revision,
+        "stored": _project_sections(stored, sections),
+        "effective": _project_sections(resolved.snapshot(), sections),
+        "sources": _project_sections(sources, sections),
+        "constraints": _project_sections(constraints, sections),
+        "fingerprint": resolved.fingerprint,
+        "available_sections": list(sections),
+    }
 
 
 async def resolve_user_settings_for_task(
     user_id: int,
     *,
     resource_settings: dict[str, Any] | None = None,
+    knowledge_base_settings: dict[str, Any] | None = None,
     request_overrides: dict[str, Any] | None = None,
     index_constraints: dict[str, Any] | None = None,
+    permitted_sections: Collection[str] | None = None,
 ) -> ResolvedUserSettings:
     """Resolve once for enqueue boundaries; workers subsequently use snapshots."""
     pool = get_pg_pool()
@@ -543,6 +748,7 @@ async def resolve_user_settings_for_task(
         row = await conn.fetchrow("SELECT settings, revision FROM user_settings WHERE user_id=$1", user_id)
     stored, revision = ((_json_object(row["settings"]) if row else {}), int(row["revision"] if row else 0))
     platform, _ = await _platform_row()
+    stored = _project_sections(stored, resolved_sections(permitted_sections))
     for section, values in (request_overrides or {}).items():
         _validate_section(section, values)
         _validate_section_against_platform_policy(section, values, platform)
@@ -551,6 +757,7 @@ async def resolve_user_settings_for_task(
         platform=platform,
         revision=revision,
         resource_settings=resource_settings,
+        knowledge_base_settings=knowledge_base_settings,
         request_overrides=request_overrides,
         index_constraints=index_constraints,
     )
@@ -596,6 +803,11 @@ def with_task_ingestion_overrides(
         if value is not None:
             ingestion_values[field] = bool(value)
 
+    # This marker is persisted on every new task snapshot.  The Worker accepts
+    # only an explicit v2 marker for a video, so old/malformed snapshots never
+    # silently run under a different processor.
+    ingestion_values["video_index_profile_version"] = "v2"
+
     ingestion_values["entity_types"] = tuple(ingestion_values["entity_types"])
     ingestion = ProcessingTaskSettings(**ingestion_values)
     effective = {
@@ -634,7 +846,7 @@ async def patch_user_settings(user_id: int, section: Section, values: dict[str, 
             if values is None:
                 next_settings.pop(section, None)
             else:
-                next_settings[section] = values
+                next_settings[section] = _normalize_section_values(section, values)
             next_revision = revision + 1
             await conn.execute(
                 "INSERT INTO user_settings(user_id,settings,revision) VALUES($1,$2::jsonb,$3) "
@@ -682,9 +894,69 @@ async def put_platform_settings(settings: dict[str, Any], expected_revision: int
     }
 
 
-def settings_options(platform: dict[str, Any] | None = None) -> dict[str, Any]:
+# In-process TTL cache for parser installation probes.  Probing can spawn a
+# subprocess or re-import heavy libraries, so avoid re-running it on every
+# options request; failures are recorded as unavailable instead of 500s.
+_PARSER_PROBE_TTL_SECONDS = 60.0
+_parser_availability_cache: dict[str, tuple[float, bool]] = {}
+
+
+def _probe_parser_available(parser_id: str) -> bool:
+    """Return whether a parser is installed, never raising for the caller."""
+    from raganything.parser import get_parser
+
+    try:
+        return bool(get_parser(parser_id).check_installation())
+    except Exception:
+        logger.exception("parser installation probe failed for %s", parser_id)
+        return False
+
+
+def _parser_catalog() -> list[dict[str, Any]]:
+    """Return the supported parser catalog with installation availability."""
+    from raganything.parser import SUPPORTED_PARSERS
+
+    now = time.monotonic()
+    result = []
+    for parser_id in SUPPORTED_PARSERS:
+        cached = _parser_availability_cache.get(parser_id)
+        if cached is not None and now - cached[0] < _PARSER_PROBE_TTL_SECONDS:
+            available = cached[1]
+        else:
+            available = _probe_parser_available(parser_id)
+            _parser_availability_cache[parser_id] = (now, available)
+        result.append({
+            "id": parser_id,
+            "name": parser_id,
+            "available": available,
+            "supported_types": list(_parser_supported_types(parser_id)),
+        })
+    return result
+
+
+def _chunking_strategy_catalog() -> list[dict[str, Any]]:
+    """Return the supported chunking strategy catalog with metadata."""
+    from raganything.chunking import STRATEGY_META
+
+    return [
+        {
+            "id": strategy_id,
+            "name": meta.get("name", strategy_id),
+            "description": meta.get("description", ""),
+            "cost": meta.get("cost", ""),
+            "cost_level": meta.get("cost_level", ""),
+        }
+        for strategy_id, meta in STRATEGY_META.items()
+    ]
+
+
+def settings_options(
+    platform: dict[str, Any] | None = None,
+    *,
+    include_ingestion_catalogs: bool = True,
+) -> dict[str, Any]:
     policy = _safe_platform_policy(platform)
-    return {
+    result = {
         "sections": {section: sorted(fields) for section, fields in ALLOWED_FIELDS.items()},
         "presets": ["balanced", "precise", "broad", "custom"],
         "preset_values": RETRIEVAL_PRESETS,
@@ -692,6 +964,10 @@ def settings_options(platform: dict[str, Any] | None = None) -> dict[str, Any]:
         "allowed": policy["allowed"],
         "limits": policy["limits"],
     }
+    if include_ingestion_catalogs:
+        result["parsers"] = _parser_catalog()
+        result["chunking_strategies"] = _chunking_strategy_catalog()
+    return result
 
 
 async def create_task_settings_snapshot(task_id: str, user_id: int, resolved: ResolvedUserSettings) -> None:

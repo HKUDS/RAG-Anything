@@ -160,7 +160,7 @@ export default function AgentsPage({ onToast }) {
       resizeObserver?.disconnect()
       window.removeEventListener('resize', updateGridColumns)
     }
-  }, [])
+  }, [agentsLoading, agents.length, search, page, pageSize, sortField, sortDirection])
   useEffect(() => {
     if (!showModal) return
 
@@ -416,33 +416,36 @@ export default function AgentsPage({ onToast }) {
         </div>
 
         {/* 智能体卡片 */}
-        <div ref={gridRef} className={agentGridClassName} style={agentGridStyle} aria-busy={agentsLoading || undefined}>
-          {agentsLoading
-            ? [1, 2, 3, 4].map(item => (
-                <div key={item} className="directory-card resource-card resource-card-agent" aria-hidden="true">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="directory-icon resource-card-agent-icon">
-                        <div className="skeleton h-6 w-6" />
-                      </div>
-                      <div className="min-w-0 flex-1 space-y-2">
-                        <div className="skeleton h-4 w-2/3" />
-                        <div className="skeleton h-3 w-1/3" />
-                      </div>
+        {agentsLoading ? (
+          <div ref={gridRef} className="resource-grid resource-grid-agents" aria-busy="true">
+            {[1, 2, 3, 4].map(item => (
+              <div key={item} className="directory-card resource-card resource-card-agent" aria-hidden="true">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="directory-icon resource-card-agent-icon">
+                      <div className="skeleton h-6 w-6" />
+                    </div>
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="skeleton h-4 w-2/3" />
+                      <div className="skeleton h-3 w-1/3" />
                     </div>
                   </div>
-                  <div className="mt-4 space-y-2">
-                    <div className="skeleton h-3 w-full" />
-                    <div className="skeleton h-3 w-4/5" />
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-1.5">
-                    <div className="skeleton h-5 w-16" />
-                    <div className="skeleton h-5 w-20" />
-                    <div className="skeleton h-5 w-16" />
-                  </div>
                 </div>
-              ))
-            : paginatedAgents.map(agent => (
+                <div className="mt-4 space-y-2">
+                  <div className="skeleton h-3 w-full" />
+                  <div className="skeleton h-3 w-4/5" />
+                </div>
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  <div className="skeleton h-5 w-16" />
+                  <div className="skeleton h-5 w-20" />
+                  <div className="skeleton h-5 w-16" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : paginatedAgents.length > 0 ? (
+          <div ref={gridRef} className={agentGridClassName} style={agentGridStyle}>
+            {paginatedAgents.map(agent => (
             <div
               key={agent.id}
               className="directory-card resource-card resource-card-agent group cursor-pointer"
@@ -501,8 +504,26 @@ export default function AgentsPage({ onToast }) {
                 <MessageSquare size={13} /> 开始对话
               </button>
             </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <div className="empty-state resource-empty-state">
+            {agents.length === 0 ? (
+              <>
+                <div className="empty-state-icon"><Bot size={48} className="text-cloud-400" /></div>
+                <p className="empty-state-title">这里还没有智能体</p>
+                <p className="empty-state-desc">当前暂无可用智能体。</p>
+                {canWrite && <button onClick={openCreate} className="btn-primary mt-6">创建第一个智能体</button>}
+              </>
+            ) : (
+              <>
+                <div className="empty-state-icon"><Search size={40} className="text-cloud-400" /></div>
+                <p className="empty-state-title">没有找到匹配的智能体</p>
+                <p className="empty-state-desc">试试更短的关键词，或者搜索名称、知识库与模型字段</p>
+              </>
+            )}
+          </div>
+        )}
 
         {sortedAgents.length > 0 && (
           <Pagination
@@ -515,22 +536,6 @@ export default function AgentsPage({ onToast }) {
           />
         )}
 
-        {!agentsLoading && agents.length === 0 && (
-          <div className="empty-state resource-empty-state">
-            <div className="empty-state-icon"><Bot size={48} className="text-cloud-400" /></div>
-            <p className="empty-state-title">这里还没有智能体</p>
-            <p className="empty-state-desc">当前暂无可用智能体。</p>
-            {canWrite && <button onClick={openCreate} className="btn-primary mt-6">创建第一个智能体</button>}
-          </div>
-        )}
-
-        {agents.length > 0 && filteredAgents.length === 0 && (
-          <div className="empty-state resource-empty-state">
-            <div className="empty-state-icon"><Search size={40} className="text-cloud-400" /></div>
-            <p className="empty-state-title">没有找到匹配的智能体</p>
-            <p className="empty-state-desc">试试更短的关键词，或者搜索名称、知识库与模型字段</p>
-          </div>
-        )}
       </section>
 
       {/* 创建/编辑弹窗 */}
@@ -786,7 +791,7 @@ export default function AgentsPage({ onToast }) {
       {/* 删除确认 */}
       <AnimatePresence>
         {deleteConfirm && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-sky-900/25 dark:bg-black/40 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除智能体">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 dark:bg-black/40 backdrop-blur-sm" onClick={() => setDeleteConfirm(null)} role="dialog" aria-modal="true" aria-label="确认删除智能体">
             <motion.div
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}

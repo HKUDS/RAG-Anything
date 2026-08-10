@@ -2,15 +2,35 @@ huggingface_hub
 # Auth: bcrypt pinned <4.1.0 — 4.1+ removed __about__ which passlib 1.7.4 requires
 bcrypt<4.1.0
 # LightRAG packages
-lightrag-hku
+lightrag-hku==1.4.16
 # MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
 mineru[core]
 # Default DOCX and office-document parser used by the ingestion worker.
 docling>=2.0,<3.0
+# Optional parsers included in the production image so parser availability is
+# stable across hosts. PaddleOCR requires both its Python package and runtime.
+paddlepaddle==2.6.2
+paddleocr==2.9.1
+opendataloader-pdf==2.5.0
 # PDF embedded-image fallback used when the primary parser cannot start
 pypdf>=3.9.0
 # Observability: Prometheus metrics endpoint (pinned <8 for starlette 0.x compat)
 prometheus-fastapi-instrumentator<8
+# Rate limiting
+slowapi>=0.1.9,<0.2
+# JWT auth
+PyJWT>=2.8,<3.0
+# Password hashing
+passlib>=1.7.4,<1.8
+# Office/PDF/UI runtime deps
+python-docx>=1.1,<2.0
+pypdfium2>=4.30,<5.0
+Markdown>=3.4,<4.0
+beautifulsoup4>=4.12,<5.0
+# Async HTTP / process metrics
+aiohttp>=3.9,<4.0
+psutil>=5.9
+reportlab>=4.0,<5.0
 # RRF Hybrid Search: BM25 keyword index + Chinese tokenization
 rank-bm25
 jieba

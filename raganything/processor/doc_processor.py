@@ -58,12 +58,47 @@ class DocProcessorMixin:
         """Return True when *parser_name* declares PDF coverage support."""
         return parser_name.strip().lower() in self._PARSERS_WITH_PDF_COVERAGE
 
+    def _file_type_for_path(self, file_path: Path | str) -> str:
+        """Map a file extension to a dispatch type.
+
+        Returns ``pdf``, ``office``, ``image``, ``video``, or ``generic``
+        for the extension mapping used by per-file-type parser dispatch.
+        """
+        suffix = Path(file_path).suffix.lower()
+        if suffix == ".pdf":
+            return "pdf"
+        if suffix in {
+            ".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx",
+            ".html", ".htm", ".xhtml",
+        }:
+            return "office"
+        if suffix in {
+            ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".tif", ".gif", ".webp",
+        }:
+            return "image"
+        if suffix in {".mp4", ".avi", ".mov", ".mkv", ".webm"}:
+            return "video"
+        return "generic"
+
     def _effective_parser_name(self, file_path: Path | str) -> str:
-        """Return the only parser name allowed for this file's lifecycle."""
+        """Return the only parser name allowed for this file's lifecycle.
+
+        Precedence: user per-type override (pdf/office/image) wins, then the
+        deployment ``PDF_PARSER`` override applies only to ``pdf``, and the
+        global parser is the final default.  ``video``/``generic`` files
+        never use a per-type override.
+        """
         path = Path(file_path)
+        file_type = self._file_type_for_path(path)
         global_parser = str(getattr(self.config, "parser", "")).strip().lower()
+        per_type_overrides = getattr(self.config, "parsers_by_type", None) or {}
+        override = ""
+        if file_type in {"pdf", "office", "image"} and isinstance(per_type_overrides, dict):
+            override = str(per_type_overrides.get(file_type, "")).strip().lower()
+        if override:
+            return override
         pdf_override = str(getattr(self.config, "pdf_parser", "")).strip().lower()
-        if path.suffix.lower() == ".pdf" and pdf_override:
+        if file_type == "pdf" and pdf_override:
             return pdf_override
         return global_parser
 
@@ -542,126 +577,132 @@ class DocProcessorMixin:
 
         # Choose appropriate parsing method based on file extension
         ext = file_path.suffix.lower()
+        file_type = self._file_type_for_path(file_path)
 
-        if effective_parser == "opendataloader" and ext != ".pdf":
-            raise ValueError("OpenDataLoader may only be selected through PDF_PARSER for PDF files")
-
-        try:
-            doc_parser = getattr(self, "doc_parser", None)
-            if doc_parser is None or getattr(self, "_cached_parser_name", "") != effective_parser:
-                doc_parser = get_parser(effective_parser)
-                self.doc_parser = doc_parser
-                self._cached_parser_name = effective_parser
-
-            # Log parser and method information
+        if file_type == "video":
+            # Videos bypass parser instantiation and the OpenDataLoader guard
+            # under every parser configuration - route straight to the
+            # multimodal video processor.
             self.logger.info(
-                f"Using {effective_parser} parser with method: {parse_method}"
+                f"Detected video file: {file_path}, routing to video processor..."
             )
+            content_list = [{
+                "type": "video",
+                "video_path": str(file_path),
+            }]
+        elif effective_parser == "opendataloader" and file_type != "pdf":
+            raise ValueError(
+                "OpenDataLoader supports PDF files only; "
+                "select a different parser for this file type"
+            )
+        else:
+            try:
+                doc_parser = getattr(self, "doc_parser", None)
+                if doc_parser is None or getattr(self, "_cached_parser_name", "") != effective_parser:
+                    doc_parser = get_parser(effective_parser)
+                    self.doc_parser = doc_parser
+                    self._cached_parser_name = effective_parser
 
-            if ext in [".pdf"]:
-                self.logger.info("Detected PDF file, using parser for PDF...")
-                content_list = await asyncio.to_thread(
-                    doc_parser.parse_pdf,
-                    pdf_path=file_path,
-                    output_dir=output_dir,
-                    method=parse_method,
-                    **kwargs,
+                # Log parser and method information
+                self.logger.info(
+                    f"Using {effective_parser} parser with method: {parse_method}"
                 )
-            elif ext in [
-                ".jpg",
-                ".jpeg",
-                ".png",
-                ".bmp",
-                ".tiff",
-                ".tif",
-                ".gif",
-                ".webp",
-            ]:
-                self.logger.info("Detected image file, using parser for images...")
-                try:
+
+                if ext in [".pdf"]:
+                    self.logger.info("Detected PDF file, using parser for PDF...")
                     content_list = await asyncio.to_thread(
-                        doc_parser.parse_image,
-                        image_path=file_path,
+                        doc_parser.parse_pdf,
+                        pdf_path=file_path,
+                        output_dir=output_dir,
+                        method=parse_method,
+                        **kwargs,
+                    )
+                elif ext in [
+                    ".jpg",
+                    ".jpeg",
+                    ".png",
+                    ".bmp",
+                    ".tiff",
+                    ".tif",
+                    ".gif",
+                    ".webp",
+                ]:
+                    self.logger.info("Detected image file, using parser for images...")
+                    try:
+                        content_list = await asyncio.to_thread(
+                            doc_parser.parse_image,
+                            image_path=file_path,
+                            output_dir=output_dir,
+                            **kwargs,
+                        )
+                    except NotImplementedError:
+                        if effective_parser == "opendataloader":
+                            raise
+                        # Fallback to MinerU for image parsing if current parser doesn't support it
+                        self.logger.warning(
+                            f"{self.config.parser} parser doesn't support image parsing, falling back to MinerU"
+                        )
+                        content_list = await asyncio.to_thread(
+                            MineruParser().parse_image,
+                            image_path=file_path,
+                            output_dir=output_dir,
+                            **kwargs,
+                        )
+                elif ext in [
+                    ".doc",
+                    ".docx",
+                    ".ppt",
+                    ".pptx",
+                    ".xls",
+                    ".xlsx",
+                    ".html",
+                    ".htm",
+                    ".xhtml",
+                ]:
+                    self.logger.info(
+                        "Detected Office or HTML document, using parser for Office/HTML..."
+                    )
+                    content_list = await asyncio.to_thread(
+                        doc_parser.parse_office_doc,
+                        doc_path=file_path,
                         output_dir=output_dir,
                         **kwargs,
                     )
-                except NotImplementedError:
-                    if effective_parser == "opendataloader":
-                        raise
-                    # Fallback to MinerU for image parsing if current parser doesn't support it
-                    self.logger.warning(
-                        f"{self.config.parser} parser doesn't support image parsing, falling back to MinerU"
+                else:
+                    # For other or unknown formats, use generic parser
+                    self.logger.info(
+                        f"Using generic parser for {ext} file (method={parse_method})..."
                     )
                     content_list = await asyncio.to_thread(
-                        MineruParser().parse_image,
-                        image_path=file_path,
+                        doc_parser.parse_document,
+                        file_path=file_path,
+                        method=parse_method,
                         output_dir=output_dir,
                         **kwargs,
                     )
-            elif ext in [
-                ".doc",
-                ".docx",
-                ".ppt",
-                ".pptx",
-                ".xls",
-                ".xlsx",
-                ".html",
-                ".htm",
-                ".xhtml",
-            ]:
-                self.logger.info(
-                    "Detected Office or HTML document, using parser for Office/HTML..."
-                )
-                content_list = await asyncio.to_thread(
-                    doc_parser.parse_office_doc,
-                    doc_path=file_path,
-                    output_dir=output_dir,
-                    **kwargs,
-                )
-            elif ext in [".mp4", ".avi", ".mov", ".mkv", ".webm"]:
-                # Video files: create a simple content list for multimodal processing
-                self.logger.info(
-                    f"Detected video file: {file_path}, routing to video processor..."
-                )
-                content_list = [{
-                    "type": "video",
-                    "video_path": str(file_path),
-                }]
-            else:
-                # For other or unknown formats, use generic parser
-                self.logger.info(
-                    f"Using generic parser for {ext} file (method={parse_method})..."
-                )
-                content_list = await asyncio.to_thread(
-                    doc_parser.parse_document,
-                    file_path=file_path,
-                    method=parse_method,
-                    output_dir=output_dir,
-                    **kwargs,
-                )
 
-        except MineruExecutionError as e:
-            self.logger.error(f"Mineru command failed: {e}")
-            if callback_manager is not None:
-                callback_manager.dispatch(
-                    "on_parse_error",
-                    file_path=callback_file,
-                    error=e,
-                    parser=effective_parser,
+            except MineruExecutionError as e:
+                self.logger.error(f"Mineru command failed: {e}")
+                if callback_manager is not None:
+                    callback_manager.dispatch(
+                        "on_parse_error",
+                        file_path=callback_file,
+                        error=e,
+                        parser=effective_parser,
+                    )
+                raise
+            except Exception as e:
+                self.logger.error(
+                    f"Error during parsing with {effective_parser} parser: {str(e)}"
                 )
-            raise
-        except Exception as e:
-            self.logger.error(
-                f"Error during parsing with {effective_parser} parser: {str(e)}"
-            )
-            if callback_manager is not None:
-                callback_manager.dispatch(
-                    "on_parse_error",
-                    file_path=callback_file,
-                    error=e,
-                    parser=effective_parser,
-                )
-            raise
+                if callback_manager is not None:
+                    callback_manager.dispatch(
+                        "on_parse_error",
+                        file_path=callback_file,
+                        error=e,
+                        parser=effective_parser,
+                    )
+                raise
 
         page_coverage = getattr(content_list, "page_coverage", None)
         if self._requires_pdf_page_coverage(file_path):
@@ -1066,6 +1107,7 @@ class DocProcessorMixin:
         doc_id: str | None = None,
         scheme_name: str | None = None,
         parser: str | None = None,
+        parsers_by_type: dict | None = None,
         **kwargs,
     ):
         """
@@ -1079,6 +1121,9 @@ class DocProcessorMixin:
             split_by_character: Optional character to split the text by
             split_by_character_only: If True, split only by the specified character
             doc_id: Optional document ID, if not provided will be generated from content
+            parser: Optional parser override written into config.parser
+            parsers_by_type: Optional per-file-type parser overrides written
+                into config.parsers_by_type when not None
             **kwargs: Additional parameters for parser (e.g., lang, device, start_page, end_page, formula, table, backend, source)
         """
         # Use full path or basename based on config
@@ -1130,6 +1175,8 @@ class DocProcessorMixin:
 
         if parser:
             self.config.parser = parser
+        if parsers_by_type is not None:
+            self.config.parsers_by_type = parsers_by_type
 
         try:
             # Ensure LightRAG is initialized before accessing its storages

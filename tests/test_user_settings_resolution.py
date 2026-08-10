@@ -141,6 +141,40 @@ def test_full_precedence_applies_request_then_index_and_hard_limits(monkeypatch)
     }
 
 
+def test_knowledge_base_ingestion_settings_override_personal_but_not_request():
+    resolved, sources, _ = resolve_settings(
+        stored={"ingestion": {"parser": "docling", "chunk_size": 400, "parsers_by_type": {"office": "docling"}}},
+        platform=None,
+        knowledge_base_settings={"ingestion": {"parser": "mineru", "chunk_size": 800, "parsers_by_type": {"pdf": "mineru"}}},
+        request_overrides={"ingestion": {"chunk_size": 900}},
+        revision=1,
+    )
+
+    assert resolved.ingestion.parser == "mineru"
+    assert resolved.ingestion.chunk_size == 900
+    assert resolved.ingestion.parsers_by_type == {"office": "docling", "pdf": "mineru"}
+    assert sources["ingestion"]["parser"] == "knowledge_base_setting"
+    assert sources["ingestion"]["chunk_size"] == "request_selection"
+
+
+def test_platform_allow_list_constrains_previously_saved_kb_ingestion_values():
+    resolved, sources, constraints = resolve_settings(
+        stored={"ingestion": {"parser": "docling", "parsers_by_type": {"office": "docling"}}},
+        platform={
+            "defaults": {"ingestion": {"parser": "mineru", "chunking_strategy": "recursive"}},
+            "allowed": {"parsers": ["mineru"], "chunking_strategies": ["recursive"]},
+        },
+        knowledge_base_settings={"ingestion": {"parser": "docling", "parsers_by_type": {"pdf": "docling"}}},
+        revision=1,
+    )
+
+    assert resolved.ingestion.parser == "mineru"
+    assert resolved.ingestion.parsers_by_type == {}
+    assert sources["ingestion"]["parser"] == "platform_allow_list"
+    assert sources["ingestion"]["parsers_by_type"] == "platform_allow_list"
+    assert constraints["ingestion"]["parser"]["requested"] == "docling"
+
+
 def test_retrieval_presets_expand_per_layer_before_explicit_fields_and_limits():
     resolved, sources, constraints = resolve_settings(
         stored={"retrieval": {"preset": "precise", "vector_top_k": 71}},
@@ -180,15 +214,180 @@ def test_legacy_environment_is_the_lowest_precedence_layer(monkeypatch):
 
     assert legacy.runtime.personal_concurrency == 9
     assert legacy_sources["runtime"]["personal_concurrency"] == "legacy_environment"
-    assert platform.runtime.personal_concurrency == 8
-    assert platform_sources["runtime"]["personal_concurrency"] == "platform_default"
+def test_ingestion_parsers_by_type_defaults_to_empty_map():
+    resolved, _, _ = resolve_settings(stored=None, platform=None, revision=1)
+
+    assert resolved.ingestion.parsers_by_type == {}
 
 
-def test_options_expose_fields_but_no_deployment_secrets():
+def test_parser_supported_types_matrix():
+    assert user_settings._parser_supported_types("docling") == ("pdf", "office")
+    assert user_settings._parser_supported_types("mineru") == ("pdf", "office", "image")
+    assert user_settings._parser_supported_types("marker") == ("pdf", "office", "image")
+    assert user_settings._parser_supported_types("paddleocr") == ("pdf", "office", "image")
+    assert user_settings._parser_supported_types("opendataloader") == ("pdf",)
+    assert user_settings._parser_supported_types("custom-parser") == ("pdf", "office", "image")
+
+
+def test_parsers_by_type_validation_rejects_unsupported_combinations():
+    with pytest.raises(ValueError, match="does not support type"):
+        user_settings._validate_section("ingestion", {"parsers_by_type": {"image": "docling"}})
+    with pytest.raises(ValueError, match="does not support type"):
+        user_settings._validate_section("ingestion", {"parsers_by_type": {"office": "opendataloader"}})
+    with pytest.raises(ValueError, match="unknown parser type"):
+        user_settings._validate_section("ingestion", {"parsers_by_type": {"video": "docling"}})
+    with pytest.raises(ValueError, match="values must be strings"):
+        user_settings._validate_section("ingestion", {"parsers_by_type": {"pdf": 42}})
+    with pytest.raises(ValueError, match="must be an object"):
+        user_settings._validate_section("ingestion", {"parsers_by_type": []})
+
+    user_settings._validate_section("ingestion", {"parsers_by_type": {"pdf": ""}})
+    user_settings._validate_section("ingestion", {"parsers_by_type": {"image": "custom-parser"}})
+
+
+def test_parsers_by_type_is_filtered_by_platform_allow_list():
+    with pytest.raises(ValueError, match="not permitted by platform policy"):
+        user_settings._validate_section_against_platform_policy(
+            "ingestion",
+            {"parsers_by_type": {"pdf": "docling"}},
+            {"allowed": {"parsers": ["mineru"]}},
+        )
+
+    user_settings._validate_section_against_platform_policy(
+        "ingestion",
+        {"parsers_by_type": {"pdf": "docling", "office": ""}},
+        {"allowed": {"parsers": ["docling"]}},
+    )
+    user_settings._validate_section_against_platform_policy(
+        "ingestion",
+        {"parsers_by_type": {"pdf": "mineru"}},
+        {"allowed": {"parsers": []}},
+    )
+
+
+def test_parsers_by_type_normalization_drops_empty_strings():
+    assert user_settings._normalize_parsers_by_type(
+        {"pdf": "", "office": "docling", "image": ""}
+    ) == {"office": "docling"}
+    assert user_settings._normalize_parsers_by_type({}) == {}
+    assert user_settings._normalize_parsers_by_type(None) == {}
+
+    resolved, _, _ = resolve_settings(
+        stored={"ingestion": {"parsers_by_type": {"pdf": "", "office": "docling"}}},
+        platform=None,
+        revision=1,
+    )
+    assert resolved.ingestion.parsers_by_type == {"office": "docling"}
+
+
+def test_legacy_ingestion_row_merges_empty_parsers_by_type_default():
+    resolved, _, _ = resolve_settings(
+        stored={"ingestion": {"parser": "mineru", "chunking_strategy": "sentence"}},
+        platform=None,
+        revision=1,
+    )
+
+    assert resolved.ingestion.parser == "mineru"
+    assert resolved.ingestion.chunking_strategy == "sentence"
+    assert resolved.ingestion.parsers_by_type == {}
+
+
+@pytest.mark.asyncio
+async def test_ingestion_patch_strips_empty_parsers_by_type_keys(monkeypatch):
+    state = {"settings": None, "revision": 0}
+
+    class Transaction:
+        def __init__(self, conn):
+            self.conn = conn
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class Connection:
+        def transaction(self):
+            return Transaction(self)
+
+        async def execute(self, sql, *args):
+            if "pg_advisory_xact_lock" in sql:
+                return "SELECT 1"
+            if sql.startswith("INSERT INTO user_settings"):
+                state["settings"] = json.loads(args[1])
+                state["revision"] = args[2]
+                return "INSERT 0 1"
+            raise AssertionError(sql)
+
+        async def fetchrow(self, sql, *_args):
+            if sql.startswith("SELECT settings, revision FROM user_settings"):
+                if state["settings"] is None:
+                    return None
+                return {"settings": json.dumps(state["settings"]), "revision": state["revision"]}
+            raise AssertionError(sql)
+
+    class Acquire:
+        async def __aenter__(self):
+            return Connection()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class Pool:
+        def acquire(self):
+            return Acquire()
+
+    monkeypatch.setattr(user_settings, "get_pg_pool", lambda: Pool())
+    monkeypatch.setattr(user_settings, "_platform_row", lambda: _resolved(({}, 0)))
+    async def _current_settings(_user_id):
+        return {"revision": 1}
+
+    monkeypatch.setattr(user_settings, "get_user_settings", _current_settings)
+
+    await user_settings.patch_user_settings(
+        7,
+        "ingestion",
+        {"parsers_by_type": {"pdf": "", "office": "docling"}},
+        0,
+    )
+
+    assert state["settings"]["ingestion"]["parsers_by_type"] == {"office": "docling"}
+
+
+def _fake_parser_catalog():
+    return [
+        {"id": "mineru", "name": "mineru", "available": True, "supported_types": ["pdf", "office", "image"]},
+        {"id": "docling", "name": "docling", "available": True, "supported_types": ["pdf", "office"]},
+        {"id": "paddleocr", "name": "paddleocr", "available": False, "supported_types": ["pdf", "office", "image"]},
+        {"id": "marker", "name": "marker", "available": False, "supported_types": ["pdf", "office", "image"]},
+        {"id": "opendataloader", "name": "opendataloader", "available": False, "supported_types": ["pdf"]},
+    ]
+
+
+def _fake_strategy_catalog():
+    return [
+        {"id": "fixed_size", "name": "fixed_size", "description": "", "cost": "", "cost_level": "free"},
+        {"id": "recursive", "name": "recursive", "description": "", "cost": "", "cost_level": "free"},
+        {"id": "sentence", "name": "sentence", "description": "", "cost": "", "cost_level": "free"},
+        {"id": "structure", "name": "structure", "description": "", "cost": "", "cost_level": "free"},
+        {"id": "semantic", "name": "semantic", "description": "", "cost": "", "cost_level": "medium"},
+        {"id": "agentic", "name": "agentic", "description": "", "cost": "", "cost_level": "high"},
+    ]
+
+
+def test_options_expose_fields_but_no_deployment_secrets(monkeypatch):
+    monkeypatch.setattr(user_settings, "_parser_catalog", _fake_parser_catalog)
+    monkeypatch.setattr(user_settings, "_chunking_strategy_catalog", _fake_strategy_catalog)
     options = settings_options()
 
     assert set(options["sections"]) == {"models", "ingestion", "retrieval", "runtime"}
     assert options["preset_values"]["precise"]["vector_top_k"] == 60
+    assert {item["id"] for item in options["parsers"]} == {
+        "mineru", "docling", "paddleocr", "marker", "opendataloader",
+    }
+    assert {item["id"] for item in options["chunking_strategies"]} == {
+        "fixed_size", "recursive", "sentence", "structure", "semantic", "agentic",
+    }
     rendered = str(options)
     assert "api_key" not in rendered
     assert "base_url" not in rendered
@@ -209,6 +408,7 @@ def test_upload_overrides_are_captured_in_an_immutable_task_snapshot():
     assert task_settings.ingestion.chunking_strategy == "sentence"
     assert task_settings.ingestion.enable_image is False
     assert task_settings.ingestion.enable_video is True
+    assert task_settings.ingestion.video_index_profile_version == "v2"
     assert task_settings.revision == 3
     assert task_settings.fingerprint != resolved.fingerprint
     assert with_task_ingestion_overrides(
@@ -217,6 +417,11 @@ def test_upload_overrides_are_captured_in_an_immutable_task_snapshot():
         enable_image=False,
         enable_video=True,
     ).fingerprint == task_settings.fingerprint
+    assert with_task_ingestion_overrides(
+        resolved,
+        enable_image=True,
+        enable_video=False,
+    ).ingestion.video_index_profile_version == "v2"
 
 
 def test_resolved_task_snapshot_includes_public_model_fingerprints():
@@ -263,7 +468,17 @@ def test_platform_policy_validates_allowed_model_ids(monkeypatch):
         validate_platform_policy({"allowed": {"llm_profile_ids": ["not-configured"]}})
 
 
-def test_platform_options_drop_legacy_secret_fields():
+def test_settings_options_can_skip_ingestion_catalogs(monkeypatch):
+    monkeypatch.setattr(user_settings, "_parser_catalog", _fake_parser_catalog)
+    monkeypatch.setattr(user_settings, "_chunking_strategy_catalog", _fake_strategy_catalog)
+    options = settings_options(include_ingestion_catalogs=False)
+    assert "parsers" not in options
+    assert "chunking_strategies" not in options
+
+
+def test_platform_options_drop_legacy_secret_fields(monkeypatch):
+    monkeypatch.setattr(user_settings, "_parser_catalog", _fake_parser_catalog)
+    monkeypatch.setattr(user_settings, "_chunking_strategy_catalog", _fake_strategy_catalog)
     options = settings_options({
         "defaults": {"runtime": {"personal_concurrency": 7, "base_url": "https://provider.invalid"}},
         "limits": {"personal_concurrency": 7},

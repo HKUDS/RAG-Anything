@@ -13,6 +13,21 @@ from raganything.services.pg_state_repo import get_pg_pool
 
 logger = logging.getLogger(__name__)
 _Result = TypeVar("_Result")
+KB_MUTATION_LEASE_TTL_SECONDS = 300
+KB_MUTATION_HEARTBEAT_INTERVAL_SECONDS = 15
+KB_MUTATION_DB_GRACE_SECONDS = 180
+# Heartbeats tolerate a temporarily unreachable PostgreSQL by counting
+# consecutive failures (12 x 15s ~= 3 minutes) instead of cancelling on the
+# first connection error. A reachable-but-lost lease (UPDATE 0) still
+# cancels immediately.
+_MUTATION_HEARTBEAT_MAX_CONSECUTIVE_FAILURES = (
+    KB_MUTATION_DB_GRACE_SECONDS // KB_MUTATION_HEARTBEAT_INTERVAL_SECONDS
+)
+if (
+    KB_MUTATION_DB_GRACE_SECONDS + KB_MUTATION_HEARTBEAT_INTERVAL_SECONDS
+    >= KB_MUTATION_LEASE_TTL_SECONDS
+):
+    raise RuntimeError("KB mutation lease TTL must exceed DB grace plus heartbeat interval")
 
 
 async def acquire_kb_mutation_lease(
@@ -21,7 +36,7 @@ async def acquire_kb_mutation_lease(
     owner: str,
     *,
     mutation_kind: str,
-    ttl_seconds: int = 45,
+    ttl_seconds: int = KB_MUTATION_LEASE_TTL_SECONDS,
 ) -> str:
     """Acquire a durable mutation lease or fail if visual reindexing is active."""
     lease_id = str(uuid.uuid4())
@@ -59,7 +74,7 @@ async def heartbeat_kb_mutation_lease(
     lease_id: str,
     owner: str,
     *,
-    ttl_seconds: int = 45,
+    ttl_seconds: int = KB_MUTATION_LEASE_TTL_SECONDS,
 ) -> bool:
     result = await get_pg_pool().execute(
         "UPDATE kb_mutation_leases SET heartbeat_at=NOW(),"
@@ -101,18 +116,39 @@ async def run_kb_mutation_with_lease(
         return await operation()
     operation_task = asyncio.create_task(operation(), name=f"kb-mutation-{task_id}")
     lease_lost = asyncio.Event()
+    heartbeat_error: BaseException | None = None
 
     async def heartbeat() -> None:
+        nonlocal heartbeat_error
+        consecutive_failures = 0
         try:
             while True:
-                await asyncio.sleep(15)
-                if not await heartbeat_kb_mutation_lease(lease_id, owner):
+                await asyncio.sleep(KB_MUTATION_HEARTBEAT_INTERVAL_SECONDS)
+                try:
+                    alive = await heartbeat_kb_mutation_lease(lease_id, owner)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    from raganything.services.pg_state_repo import is_transient_pg_connection_error
+                    if not is_transient_pg_connection_error(exc):
+                        heartbeat_error = exc
+                        operation_task.cancel()
+                        return
+                    consecutive_failures += 1
+                    if consecutive_failures >= _MUTATION_HEARTBEAT_MAX_CONSECUTIVE_FAILURES:
+                        lease_lost.set()
+                        operation_task.cancel()
+                        return
+                    continue
+                if not alive:
                     lease_lost.set()
                     operation_task.cancel()
                     return
+                consecutive_failures = 0
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as exc:
+            heartbeat_error = exc
             lease_lost.set()
             operation_task.cancel()
             logger.warning("KB mutation heartbeat failed for task=%s", task_id, exc_info=True)
@@ -122,6 +158,8 @@ async def run_kb_mutation_with_lease(
         try:
             return await operation_task
         except asyncio.CancelledError as exc:
+            if heartbeat_error is not None:
+                raise heartbeat_error
             if lease_lost.is_set():
                 raise RuntimeError("kb_mutation_lease_lost") from exc
             raise

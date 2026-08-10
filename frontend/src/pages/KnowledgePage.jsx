@@ -1,12 +1,14 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { Plus, Layers, Trash2, Clock, Database, FileText, CircleDot, X, Search, UserRound } from 'lucide-react'
+import { Plus, Layers, Trash2, Clock, Database, FileText, CircleDot, X, Search, UserRound, Pencil } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useNavigate } from 'react-router-dom'
 import { api, setCurrentKB, getCurrentKB } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 import Pagination from '../components/Pagination'
 import ResourceSortControl from '../components/ResourceSortControl'
-import { sortKnowledgeBases } from '../utils/kbSorting'
+import KnowledgeBaseEditorDrawer from '../components/KnowledgeBaseEditorDrawer'
+import { getKnowledgeBaseUpdateTimestamp, sortKnowledgeBases } from '../utils/kbSorting'
+import { canEditKnowledgeBase } from '../utils/knowledgeBaseEditor'
 import { clampPage, getStoredPageSize, getTotalPages, storePageSize } from '../utils/pagination'
 import { formatDate } from '../utils/dateFormat'
 
@@ -35,7 +37,7 @@ function shouldReplaceStats(currentStats, incomingStats) {
 }
 
 // ====================== 知识库选择器（卡片网格） ======================
-function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, onDelete, deletingKB, gridRef, reserveRows = false, canDelete = false }) {
+function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, onDelete, onEdit, deletingKB, gridRef, reserveRows = false, canDelete = false }) {
   const [showDelete, setShowDelete] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const gridClassName = reserveRows
@@ -64,6 +66,7 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, onDelete, deletingKB, 
         const entityCount = Number(stats?.entities || 0)
         const hasStats = stats !== undefined
         const isUnavailable = stats?.unavailable === true
+        const canEdit = canEditKnowledgeBase(kb)
 
         return (
           <article
@@ -117,7 +120,7 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, onDelete, deletingKB, 
             <div className="directory-footer resource-card-kb-footer text-2xs text-ink-muted">
               <span className="resource-card-kb-meta" title="更新时间">
                 <Clock size={11} />
-                <span>更新 {formatDate(kb.last_content_updated_at || kb.created) || '暂无日期'}</span>
+                <span>更新 {formatDate(getKnowledgeBaseUpdateTimestamp(kb)) || '暂无日期'}</span>
               </span>
               {kb.owner_username && (
                 <span className="resource-card-kb-owner" title={`所有者：${kb.owner_username}`}>
@@ -127,13 +130,29 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, onDelete, deletingKB, 
               )}
             </div>
 
+            {canEdit && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onEdit(kb)
+                }}
+                onKeyDown={e => e.stopPropagation()}
+                className="absolute right-2 top-2 z-10 inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg text-ink-muted transition-colors hover:bg-sky-50 hover:text-sky-700"
+                title="编辑知识库"
+                aria-label={`编辑 ${kb.label || kb.name}`}
+              >
+                <Pencil size={15} aria-hidden="true" />
+              </button>
+            )}
+
             {canDelete && kb.name !== 'default' && (
               <button
                 type="button"
                 onClick={(e) => handleDeleteClick(e, kb)}
                 onKeyDown={e => e.stopPropagation()}
                 disabled={deletingKB}
-                className="resource-card-kb-delete absolute opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity rounded-lg text-ink-muted hover:text-rose-500 hover:bg-rose-50"
+                className="resource-card-kb-delete absolute z-10 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity rounded-lg text-ink-muted hover:text-rose-500 hover:bg-rose-50"
                 title="删除知识库"
                 aria-label={`删除 ${kb.label || kb.name}`}
               >
@@ -151,7 +170,7 @@ function KBSelector({ kbs, kbStats, onSwitch, onPrefetch, onDelete, deletingKB, 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-sky-900/20"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/20"
             onClick={() => { setShowDelete(false); setDeleteTarget(null) }}
             role="dialog"
             aria-modal="true"
@@ -192,6 +211,7 @@ export default function KnowledgePage() {
   const [kbsLoaded, setKbsLoaded] = useState(false)
   const [deletingKB, setDeletingKB] = useState(false)
   const [showCreate, setShowCreate] = useState(false)
+  const [editingKB, setEditingKB] = useState(null)
   const [newKBName, setNewKBName] = useState('')
   const [toast, setToast] = useState(null)
   const [kbStats, setKbStats] = useState({})
@@ -408,6 +428,15 @@ export default function KnowledgePage() {
     setDeletingKB(false)
   }, [canDeleteKB, loadKBs])
 
+  const handleEditorSaved = useCallback((updated) => {
+    if (updated?.name) {
+      setKBs((current) => current.map((kb) => kb.name === updated.name
+        ? { ...kb, ...updated, label: updated.label || updated.display_name || kb.label }
+        : kb))
+    }
+    loadKBs()
+  }, [loadKBs])
+
   const normalizedSearch = search.trim().toLowerCase()
   const filteredKBs = useMemo(() => kbs.filter(kb => {
     if (!normalizedSearch) return true
@@ -526,18 +555,48 @@ export default function KnowledgePage() {
               </div>
             ))}
           </div>
+        ) : paginatedKBs.length > 0 ? (
+          <KBSelector
+            kbs={paginatedKBs}
+            kbStats={kbStats}
+            onSwitch={switchKB}
+            onPrefetch={prefetchKB}
+            onDelete={deleteKB}
+            onEdit={setEditingKB}
+            deletingKB={deletingKB}
+            canDelete={canDeleteKB}
+            gridRef={gridRef}
+            reserveRows
+          />
         ) : (
-        <KBSelector
-          kbs={paginatedKBs}
-          kbStats={kbStats}
-          onSwitch={switchKB}
-          onPrefetch={prefetchKB}
-          onDelete={deleteKB}
-          deletingKB={deletingKB}
-          canDelete={canDeleteKB}
-          gridRef={gridRef}
-          reserveRows={paginatedKBs.length > 0}
-        />
+          <div className="empty-state resource-empty-state">
+            {kbs.length === 0 && !loadError ? (
+              <>
+                <Layers size={48} className="mx-auto mb-4 text-cloud-400" />
+                <p className="text-ink-muted text-sm mb-2">还没有知识库</p>
+                {canCreateKB && (
+                  <button onClick={openCreateModal} className="btn-primary text-sm">
+                    <Plus size={16} /> 新建知识库
+                  </button>
+                )}
+              </>
+            ) : kbs.length === 0 && loadError ? (
+              <>
+                <Database size={48} className="mx-auto mb-4 text-cloud-400" />
+                <p className="text-ink-primary text-sm font-medium mb-2">知识库列表加载失败</p>
+                <p className="text-ink-muted text-sm mb-4">请稍后重试，或确认后端服务已经正常启动。</p>
+                <button type="button" onClick={loadKBs} className="btn-secondary text-sm">
+                  重新加载
+                </button>
+              </>
+            ) : (
+              <>
+                <Search size={40} className="mx-auto mb-4 text-cloud-400" />
+                <p className="text-ink-primary text-sm font-medium mb-2">没有找到匹配的知识库</p>
+                <p className="text-ink-muted text-sm">试试搜索名称、拥有者，或者文档与实体数量</p>
+              </>
+            )}
+          </div>
         )}
 
         {sortedKBs.length > 0 && (
@@ -560,38 +619,18 @@ export default function KnowledgePage() {
           </div>
         )}
 
-        {/* 尚未加载知识库时的空状态 */}
-        {kbsLoaded && kbs.length === 0 && !loadError && (
-          <div className="empty-state resource-empty-state">
-            <Layers size={48} className="mx-auto mb-4 text-cloud-400" />
-            <p className="text-ink-muted text-sm mb-2">还没有知识库</p>
-            {canCreateKB && (
-              <button onClick={openCreateModal} className="btn-primary text-sm">
-                <Plus size={16} /> 新建知识库
-              </button>
-            )}
-          </div>
-        )}
-
-        {kbsLoaded && kbs.length === 0 && loadError && (
-          <div className="empty-state resource-empty-state">
-            <Database size={48} className="mx-auto mb-4 text-cloud-400" />
-            <p className="text-ink-primary text-sm font-medium mb-2">知识库列表加载失败</p>
-            <p className="text-ink-muted text-sm mb-4">请稍后重试，或确认后端服务已经正常启动。</p>
-            <button type="button" onClick={loadKBs} className="btn-secondary text-sm">
-              重新加载
-            </button>
-          </div>
-        )}
-
-        {kbs.length > 0 && filteredKBs.length === 0 && (
-          <div className="empty-state resource-empty-state">
-            <Search size={40} className="mx-auto mb-4 text-cloud-400" />
-            <p className="text-ink-primary text-sm font-medium mb-2">没有找到匹配的知识库</p>
-            <p className="text-ink-muted text-sm">试试搜索名称、拥有者，或者文档与实体数量</p>
-          </div>
-        )}
       </section>
+
+      <AnimatePresence>
+        {editingKB && (
+          <KnowledgeBaseEditorDrawer
+            kb={editingKB}
+            isOpen
+            onRequestClose={() => setEditingKB(null)}
+            onSaved={handleEditorSaved}
+          />
+        )}
+      </AnimatePresence>
 
       {/* 创建知识库弹窗 */}
       <AnimatePresence>
@@ -600,7 +639,7 @@ export default function KnowledgePage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-sky-900/20"
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/20"
             onClick={closeCreateModal}
             role="dialog"
             aria-modal="true"

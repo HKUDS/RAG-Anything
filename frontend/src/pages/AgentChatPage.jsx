@@ -11,6 +11,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { api, streamSSE } from '../utils/api'
 import { useAuth } from '../context/AuthContext'
 import { ControlledMediaImage } from '../components/ControlledMedia'
+import VideoSegmentPlayer from '../components/VideoSegmentPlayer'
 
 // ── 模式定义 ───────────────────────────────────────────
 const RETRIEVAL_MODES = [
@@ -453,6 +454,7 @@ export default function AgentChatPage({ onToast }) {
             m.id === msgId ? {
               ...m, done: true, thinkingDone: true, elapsed,
               images: images || [],
+              citations: event.citations || [],
               image_description: event.image_description || m.image_description || null,
               similar_images: event.similar_images || [],
             } : m
@@ -468,8 +470,15 @@ export default function AgentChatPage({ onToast }) {
           api.getConversation(agentId, threadId).then(r => {
             if (r.thread?.messages) {
               const mapped = mapThreadMessages(threadId, r.thread.messages)
-              setMessages(mapped)
-              cleanupMessageBlobUrls(mapped)
+              setMessages(previous => {
+                const streamed = previous.find(message => message.id === msgId)
+                const lastAssistant = [...mapped].reverse().find(message => message.role === 'assistant')
+                const next = streamed?.citations?.length && lastAssistant
+                  ? mapped.map(message => message === lastAssistant ? { ...message, citations: streamed.citations } : message)
+                  : mapped
+                cleanupMessageBlobUrls(next)
+                return next
+              })
             }
           }).catch(() => {})
         }
@@ -1210,6 +1219,22 @@ export default function AgentChatPage({ onToast }) {
 
                       {/* ── 来源引用 ──────────────────── */}
                       {/* 相似图片（视觉检索） */}
+                      {m.citations?.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-cloud-200 dark:border-sky-800/30 space-y-3">
+                          {m.citations.map(citation => (
+                            <VideoSegmentPlayer
+                              key={`${citation.media_kb}-${citation.media_id}`}
+                              segments={(citation.video_segments || []).map(segment => ({
+                                ...segment,
+                                media_id: citation.media_id,
+                                media_kb: citation.media_kb,
+                                media_url: citation.media_url,
+                                document_name: citation.document_name,
+                              }))}
+                            />
+                          ))}
+                        </div>
+                      )}
                       {m.similar_images && m.similar_images.length > 0 && (
                         <div className="mt-3 pt-3 border-t border-cloud-200 dark:border-sky-800/30">
                           <p className="text-2xs font-medium text-ink-muted dark:text-cloud-500 mb-2 flex items-center gap-1">

@@ -250,6 +250,100 @@ async def pg_save_kb_meta(name: str, meta: dict[str, Any]) -> None:
         )
 
 
+async def pg_update_kb_ingestion_defaults(
+    name: str,
+    values: dict[str, Any],
+    expected_revision: int,
+) -> tuple[dict[str, Any], int] | None:
+    """Atomically replace the sparse KB ingestion layer without touching other extra keys.
+
+    Returns ``None`` for a stale revision and raises ``KeyError`` for a missing KB.
+    """
+    import json
+
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "SELECT extra FROM kb_metadata WHERE name=$1 FOR UPDATE", name
+            )
+            if row is None:
+                raise KeyError(name)
+            extra = row["extra"] or {}
+            if isinstance(extra, str):
+                extra = json.loads(extra)
+            if not isinstance(extra, dict):
+                extra = {}
+            revision = int(extra.get("ingestion_defaults_revision", 0) or 0)
+            if revision != expected_revision:
+                return None
+            if values:
+                extra["ingestion_defaults"] = values
+            else:
+                extra.pop("ingestion_defaults", None)
+            revision += 1
+            extra["ingestion_defaults_revision"] = revision
+            await conn.execute(
+                "UPDATE kb_metadata SET extra=$2::jsonb, updated_at=NOW() WHERE name=$1",
+                name, json.dumps(extra, ensure_ascii=False),
+            )
+    return values, revision
+
+
+async def pg_update_kb_display_name(
+    name: str,
+    display_name: str,
+    expected_updated_at: str,
+) -> dict[str, Any] | None:
+    """Update presentation metadata while preserving the KB's stable name.
+
+    The ``None`` result is an optimistic-lock conflict.  A missing KB raises
+    ``KeyError`` so the HTTP boundary can return a distinct not-found result.
+    """
+    if not isinstance(display_name, str) or not display_name.strip():
+        raise ValueError("display name must not be empty")
+    normalized_name = display_name.strip()
+    if len(normalized_name) > 500:
+        raise ValueError("display name must not exceed 500 characters")
+    try:
+        expected = _as_utc(
+            datetime.fromisoformat(expected_updated_at.replace("Z", "+00:00"))
+        )
+    except (AttributeError, TypeError, ValueError) as exc:
+        raise ValueError("expected_updated_at must be an ISO-8601 timestamp") from exc
+
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            current = await conn.fetchrow(
+                """SELECT updated_at FROM kb_metadata WHERE name = $1 FOR UPDATE""",
+                name,
+            )
+            if current is None:
+                raise KeyError(name)
+            if _as_utc(current["updated_at"]) != expected:
+                return None
+            row = await conn.fetchrow(
+                """
+                UPDATE kb_metadata SET display_name = $2, updated_at = NOW()
+                WHERE name = $1
+                RETURNING name, display_name, domain, description,
+                          owner_id, owner_username, status, document_count,
+                          extra, created_at, updated_at
+                """,
+                name,
+                normalized_name,
+            )
+
+    result = dict(row)
+    for field in ("created_at", "updated_at"):
+        if isinstance(result.get(field), datetime):
+            result[field] = result[field].isoformat()
+    result["internal_name"] = result.pop("name")
+    result["label"] = result.pop("display_name")
+    return result
+
+
 async def pg_save_all_kb_meta(meta: dict[str, Any]) -> None:
     """Save the entire KB metadata dict to PG (full replace).
 

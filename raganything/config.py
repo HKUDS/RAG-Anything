@@ -35,6 +35,13 @@ class RAGAnythingConfig:
     the global ``parser``.  An empty value preserves the global default
     for all formats."""
 
+    parsers_by_type: dict = field(default_factory=dict)
+    """Per-file-type parser overrides keyed by ``pdf`` / ``office`` / ``image``.
+    Values are parser ids; an empty map (default) follows the global
+    ``parser`` for every type, with the optional PDF-only ``pdf_parser``
+    override still applying to PDFs. ``video`` and ``generic`` files never
+    use a per-type override."""
+
     # Entity Extraction Configuration
     # ---
     entity_types: str = field(default=get_env_value("ENTITY_TYPES", "", str))
@@ -95,6 +102,9 @@ class RAGAnythingConfig:
         default=get_env_value("ENABLE_VIDEO_PROCESSING", False, bool)
     )
     """Enable video content processing. Defaults to False due to heavy optional dependencies (ffmpeg, opencv, whisper)."""
+
+    video_index_profile_version: str = field(default="v2")
+    """Immutable v2-only upload-snapshot marker for video indexing."""
 
     # Vision Embedding Configuration (doubao-embedding-vision)
     # ---
@@ -171,6 +181,15 @@ class RAGAnythingConfig:
         default=get_env_value("VIDEO_FRAME_CONCURRENT", 3, int)
     )
     """Maximum number of concurrent frame VLM analysis calls per video. Default 3."""
+
+    video_segment_concurrent: int = field(
+        default=get_env_value("VIDEO_SEGMENT_CONCURRENT", 2, int)
+    )
+    """Maximum number of v2 video segments processed concurrently per video.
+
+    Default 2.  Effective entity-extraction concurrency is bounded by
+    ``video_segment_concurrent * llm_model_max_async``.
+    """
 
     enable_frame_cache: bool = field(
         default=get_env_value("ENABLE_FRAME_CACHE", True, bool)
@@ -329,6 +348,22 @@ class RAGAnythingConfig:
                 UserWarning, stacklevel=2,
             )
             self.video_max_duration = 86400
+
+        # ── video_segment_concurrent 边界验证 ────────────────────
+        _max_segment_concurrent = 4
+        if self.video_segment_concurrent < 1:
+            _w.warn(
+                f"VIDEO_SEGMENT_CONCURRENT={self.video_segment_concurrent} < 1，已钳制为 1",
+                UserWarning, stacklevel=2,
+            )
+            self.video_segment_concurrent = 1
+        elif self.video_segment_concurrent > _max_segment_concurrent:
+            _w.warn(
+                f"VIDEO_SEGMENT_CONCURRENT={self.video_segment_concurrent} "
+                f"超过上限 {_max_segment_concurrent}，已钳制为 {_max_segment_concurrent}",
+                UserWarning, stacklevel=2,
+            )
+            self.video_segment_concurrent = _max_segment_concurrent
 
     @property
     def mineru_parse_method(self) -> str:

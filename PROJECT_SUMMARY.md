@@ -6,7 +6,7 @@
 
 | 项目 | 当前值 |
 |---|---|
-| 最后核验日期 | 2026-08-06（Asia/Shanghai） |
+| 最后核验日期 | 2026-08-10（Asia/Shanghai） |
 | 核验分支 | `feature/custom-enhancements` |
 | 基准提交 | `52e0482714de` |
 | 工作区状态 | **有未提交改动**；“进行中”内容不得视为已交付 |
@@ -71,6 +71,7 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 
 ### 进行中
 
+- **知识库成员与显示名称管理**：`manage-kb-members-and-display-name` 已在未提交工作区实现。授权行新增 `read|operate`（历史具备 `kb:write` 的成员回填为 `operate`），`kb:manage` 只授予 super_admin/dept_admin/teacher；super_admin 管理全部、dept_admin 仅自有或获授权 KB、teacher 仅自有 KB，assistant/student 不可管理成员。所有 KB 内容写入口同时要求 `operate` 范围与既有全局写权限；显示名称以 `kb_metadata.display_name` 的 `updated_at` 乐观锁更新，稳定 KB 名/工作区/索引/文档/授权关系不变。`/kb/list` 返回后端 capability，KB 页面抽屉支持改名与成员授权；管理员用户编辑中的 `allowed_kbs` 写入已拒绝。聚焦后端 42 通过、前端单测 166 通过、构建/编译/strict/diff 通过；真实 PostgreSQL 迁移及五角色浏览器验收待具备受控数据库和服务环境后执行。
 - **按文件类型解析器覆盖**：`parser-per-type-overrides` + `collapse-parser-per-type-options` 已实现未提交，详见 2026-08-04 记录；per-type 解析器优先级、前端按类型三行下拉与折叠摘要已就位。
 - **个人设置中心与平台设置策略**：`redesign-personal-settings-center` 规格已归档，实现仍在未提交工作区。`/preferences` 统一“个人设置”，具备独立分区保存、存储值/生效值/来源/约束展示、可执行检索预设和移动端锚点；`/admin/platform` 管理默认值、允许范围和硬上限。
 - **分级个人设置权限投影**：`enforce-personal-settings-capabilities` 已实现未提交。实时权限控制分区与 API；降级的新任务继承默认，旧快照不变。
@@ -246,6 +247,8 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 
 | 日期 | 任务/change | 类型 | 结果 | 影响范围 | 验证 | 经验/风险 |
 |---|---|---|---|---|---|---|
+| 2026-08-10 | 项目开发看板更新 | 项目管理/无应用行为变更 | 看板改为当前交付的五模块、六阶段；14 项本地已实现任务默认勾选为“实现完成”，外部验收保留在备注。 | `项目管理看板.html`、项目总结 | 任务/依赖/状态/默认勾选、内嵌 JS 语法、版本化存储迁移校验；看板定向 diff check 通过 | “实现完成”不代表 PG/Worker/浏览器/云端或生产验收；旧浏览器 key/hash 保留但不加载。 |
+| 2026-08-07 | `manage-kb-members-and-display-name` | 功能/OpenSpec、进行中 | KB 成员授权由旧用户编辑器迁移至 KB 级 API/抽屉；grant 区分只读/可操作，改名仅写显示名称并由元数据版本拒绝并发覆盖；五级角色按 scope + 全局能力双重校验。 | 迁移 033/034、RBAC/认证仓库、KB 路由与写入口、KnowledgePage/API、用户编辑器、聚焦测试 | 后端 42、前端 166、Vite build、py_compile、OpenSpec strict、作用域 diff 通过；迁移 runner 本机无 PostgreSQL 凭据无法读取状态 | 未执行真实 PG fresh/upgrade/repeat/failure、旧会话撤权 HTTP 与五角色浏览器/375px 实测；部署前需已验证备份后执行受控迁移。 |
 | 2026-08-06 | `optimize-video-index-throughput` | 性能/OpenSpec、进行中 | v2 视频分段阶段耗时指标（探测/抽帧/ASR/场景/VLM/抽取/PG/总耗时，含失败 `failed=true`）；`VIDEO_SEGMENT_CONCURRENT`（默认 2、上限 4）受控并发处理独立片段；并发结果按 `segment.index` 归位，PG/`chunk_ids`/`chunk_results` 确定性顺序；`_create_entity_and_chunk` 新增 `defer_flush`/`defer_extraction`（默认行为不变），v2 延迟到整文档 `_insert_done()` 落盘。 | 视频处理器、modalprocessors/base、config、env.example、相关 tests | 聚焦 104 通过、2 跳过；`py_compile`、OpenSpec strict、`git diff --check` 通过 | 评审/测试子代理曾因项目铁律递归派生子代理失控，已中断并由协调者自审补位；`test_callbacks.py::test_process_document_emits_callbacks` 为既有 doc_processor PDF 路径失败，与本次无关；真实 Worker/PG 时长收益与检索验收待部署验证。 |
 | 2026-08-06 | 上传/分页 | UI | 上传折叠；10条/页、分页居中。 | 详情 | 单测/构建 | UI |
 | 2026-08-06 | v2 视频帧/批量反馈 | Bug/OpenSpec、进行中 | 帧短暂不可读重试；持续失败为可重试 `video_frame_encode_failed`，Worker 不再经 Docling/OCR 兜底或误报完成；批量注册失败返回逐文件错误；已启用只读上传监控。 | 视频、Worker、上传 | 聚焦 151 通过、2 跳过；编译、strict、总结、diff 通过 | 重启后生效；未改写历史任务，真实 Worker/PG 新上传待验收。 |
@@ -349,5 +352,103 @@ RAG-Anything 是面向教育和专业实训场景的多模态知识库与智能�
 - 新增一次性运维脚本 `scripts/purge_legacy_embedding_vectors.py`：`--dry-run` 大小写不敏感发现 legacy 与全部 suffixed 向量表（information_schema + workspace 列），输出行数基线与孤儿行清单；`--apply` 必须通过 `--backup-dir` 门禁（dump 非空且精确匹配 `COPY public.<表>`），单事务内取 workspace 级 advisory lock，以 `./rag_storage` 为权威身份并逐字段交叉校验运行时 env，逐 workspace `FOR UPDATE` 冲突校验（INSERTED/EXISTED），DELETE 后逐表校验 0 行；suffixed 孤儿行需 `--force`；幂等；退出码 0/2/1；错误输出 DSN 脱敏。
 - 本地 PG 16 已执行：三张 legacy 表与身份表备份到仓库外目录（行数 4047/19124/48290 与基线一致），`--apply` 将 7 个 workspace 全部注册（hash 639985a6…）并删除 71461 行，逐表校验 0 残留。
 - 回归：`create_rag` + `_ensure_lightrag_initialized` 对 视频/odl解析 均 `{'success': True}`（此前 28ms 内 `embedding_legacy_storage_incompatible` 拦截）；server 启动探针 `/api/live` 返回 `{"status":"live"}`，启动日志 0 次 `embedding_legacy_storage_incompatible`、0 次 `PG doc_status instance unavailable`。
-- 剩余验收（端到端 MP4 上传 + 智能体 SSE 查询）需外网 LLM/Embedding 可达环境（沙箱 DashScope 不可达）；空 legacy 表保留且无害（守卫按行数判定 0），新上传将写入 `..._openai_compa_639985a6e4b87473_1024d` 后缀表。
+- 端到端验收（2026-08-06 用户本机完成）：重建视频 KB 并上传 `1、规范停放车辆.mp4`（13.8MB），任务 `completed`；产出 2 个中文分段（`video_segments` 含中文 `transcript_text`/`visual_summary`），向量写入新后缀表 `..._openai_compa_639985a6e4b87473_1024d`（chunks=2 / entity=31 / relation=64），`doc_status=processed`；智能体查询返回带引用答案并落库（1 会话 2 消息），全程无 `embedding_legacy_storage_incompatible`。空 legacy 表保留且无害（守卫按行数判定 0）。
+- 环境经验（本机 Windows）：视频处理硬依赖系统 PATH 中的 ffmpeg/ffprobe（`raganything/video_processor/__init__.py` 裸调、无 `FFPROBE_PATH` 配置入口、无启动预检），缺失时上传报 `video_ffprobe_unavailable`（可重试但环境缺失无法自愈）；修复为 `winget install --id Gyan.FFmpeg -e` 后必须从新终端重启 server/worker 使 PATH 生效。另：Embedding（DashScope）`model_preflight` 20s 超时曾因网络瞬断出现，网络恢复后重试即过，非代码问题。
 - 检查：29 项脚本自检 + 60 项相关 focused 测试（identity/upload-retry/kb-mutation/migration）、`py_compile`、OpenSpec strict、`git diff --check` 全部通过。
+## 17. 2026-08-06 前端遮罩去蓝化（neutralize-overlay-backdrops）
+
+- 全站弹窗/抽屉遮罩蓝色调改为等透明度中性黑：JSX 遮罩 `bg-sky-900/20|25` -> `bg-black/20|25`（KnowledgePage 删除/新建知识库、AgentsPage 删除智能体、WorkflowPage 确认/加载、KnowledgeDetailPage 图谱三弹窗，共 8 处）；index.css 中 `.agent-config-overlay`/`.side-drawer-layer`/`.user-dialog-layer`/`.user-dialog-layer--confirmation` 的 navy rgba 背景及 `.agent-config-overlay::after` 浅色渐变改为 `rgba(0,0,0,...)`。
+- 保留模糊：集中式 blur 规则选择器同步换为 `bg-black/*` 变体，`blur(8px)` 不变；agent-config 自身规则 blur 不变；侧边抽屉/用户弹窗原本无模糊，未新增。
+- 验证：OpenSpec propose 2 专家评审、apply 3 专家（执行/审查/测试）全部通过；前端单测 157/157、`npm run build` 通过、dist 产物与 src 残留搜索干净、`git diff --check` 通过。纯前端视觉改动，无 API/后端/数据库变更。
+## 17. 2026-08-06 火山引擎 ECS 部署任务（运维，无代码改动）
+
+- 目标：部署到 115.190.170.186（root）。沙箱外联 SSH 的自动审批服务持续返回评审模型配置错误，无法从本环境直连；改为交付离线部署包由用户在服务器执行。
+- 产物（均不在仓库内）：C:\Users\98014\.codex\visualizations\2026\08\06\019fd5fb-16da-72a3-8ed4-de1569dbe3b7\volcano_deploy\bundle\（源码包 ag-anything-src.tar.gz、deploy_server.sh 一键脚本、env.custom 由本机 .env 导出、README）。
+- 部署要点：RAGANYTHING_ENV=production；DATABASE_URL host 用 compose 服务名 postgres；MIGRATION_BACKUP_ACKNOWLEDGED=true 迁移闸门；生产校验要求 JWT/管理密码/DATABASE_URL 与视觉目录 pi_key_env。手册见 deploy/volcano-engine-docker.md。
+- 本次仅运维准备，未改动运行代码/配置/迁移；应用行为无持久变化。
+## 18. 2026-08-06 部署修复：补充缺失运行依赖 slowapi
+
+- 现象：服务器镜像构建/迁移成功，但 aganything-app 崩溃循环 ModuleNotFoundError: No module named 'slowapi'（server.py:30 使用 slowapi 限流）。
+- 根因：slowapi 是运行时依赖，但 equirements.txt 与 pyproject.toml 均未声明（本地 venv 为手工安装）。
+- 处置：equirements.txt 与 pyproject.toml [project].dependencies 均补充 slowapi>=0.1.9,<0.2；服务器侧用 docker commit 在现有镜像内补装（避免 40 分钟全量重装），后续重建镜像将自带该依赖。
+## 19. 2026-08-06 部署修复：requirements 缺失运行时依赖（slowapi/jwt 等）
+
+- 现象：镜像构建与迁移成功，但 app 逐模块 ModuleNotFoundError（先是 slowapi，后是 jwt/passlib 等）。
+- 根因：equirements.txt/pyproject.toml 仅声明少量包，运行时（server.py + raganything/）还依赖 PyJWT、passlib、python-docx、pypdfium2、aiohttp、Markdown、psutil、reportlab、beautifulsoup4 等，本地 venv 系历史手工安装。
+- 处置：补齐 equirements.txt 与 pyproject.toml dependencies；服务器侧一次性补装缺失包并 docker commit 镜像（docker-compose.override.yml 固定 entrypoint 规避镜像 CMD 污染）。
+- 说明：weasyprint/paddleocr/whisper/marker/opendataloader 均为惰性或受保护导入，未列入必装；后续重新构建镜像将自带全部依赖。
+## 20. 2026-08-06 部署完成：火山引擎 ECS 已上线（115.190.170.186）
+
+- 状态：docker compose 全栈运行，/api/health 200，Application startup complete；migrate 应用 35 个迁移，默认管理员已创建（凭据在服务器 /root/rag-anything-credentials.txt）。
+- 关键处置：镜像缺依赖逐项补装并 commit（slowapi/PyJWT/passlib/python-docx/pypdfium2/aiohttp/Markdown/psutil/reportlab/beautifulsoup4），docker-compose.override.yml 固定 entrypoint: ["python","server.py"]；管理员密码改为符合策略的随机串。
+- 已知降级：postgres 为基础 postgres:16-alpine（无 pgvector/AGE），向量存储 NanoVectorDB、图谱 NetworkX；如需 HNSW/AGE 需换带扩展的镜像并重建。
+- 交付物：deploy/volcano-engine-docker.md 部署手册；部署包位于可视化目录 olcano_deploy/bundle/（含 env.custom 真实密钥，建议部署完成后删除本地副本）。
+## 21. 2026-08-06 管理员密码重置（运维）
+
+- 按用户要求重置服务器管理员密码：登录接口疑似命中锁定/限流，改用应用自身 passlib/bcrypt 直接更新 users 表（同时清除 ailed_login_attempts/locked_until、must_change_password=0）。
+- 验证：POST /api/auth/login 返回 ccess_token，角色 super_admin。.env 与 /root/rag-anything-credentials.txt 已同步。
+- 无代码改动；密码值不记录于本文件。
+
+## 22. 2026-08-07 云服务器开发与环境差异排查（运维，无代码改动）
+
+- 解析器便携化实现进行中：默认 Docker 镜像声明 PaddlePaddle、PaddleOCR、OpenDataLoader、Java 17 及本机依赖；Marker 因 `Pillow<11` 与主 MinerU 环境冲突，保持独立 Worker。主应用经内部、路径白名单限制的 Marker 服务调用，不暴露宿主机端口。
+- Hugging Face、PaddleOCR、PaddleX 和 Marker/Surya/Torch 缓存均为宿主机挂载；`scripts/export_parser_images_and_caches.sh` 导出三张镜像和模型缓存，`deploy/parser-runtime-migration.md` 约束新服务器恢复和数据库备份边界。聚焦 Marker/Paddle/解析器测试 39 通过、`py_compile` 和定向 `git diff --check` 通过；本机 Docker Engine 与 lockfile 联网解析不可用，镜像构建/导出和真实 PDF 容器验收仍待云端执行。
+- 115.190.170.186 已作为生产 Compose 主机运行；日常开发应在本地功能分支完成并经 Git 发布，服务器只执行受控拉取、构建、迁移和重启，禁止在运行中的容器内直接编辑代码或安装依赖。
+- 服务器访问应改为独立的非 root 运维用户和 SSH 密钥；root 密码登录在密钥验证成功后关闭。公网仅保留 22、80、443，继续禁止暴露 8000、5432、6379。
+- 含迁移的更新必须先备份 PostgreSQL，再运行 migrate 服务；生产 .env 和卷数据不进入 Git 或同步包。未改动代码、运行配置、迁移或应用行为。
+- 云端现象与本地不一致时，先保留请求 ID、时间窗、版本/镜像摘要、`docker compose config`、依赖/环境变量键名和健康状态；以隔离 staging 按同一提交和脱敏配置复现。按版本、配置、依赖/镜像、数据库迁移和数据、外部模型/网络、CPU/内存/文件系统逐层收敛；修复须先在 staging 验收，生产只发布已验证提交。
+- 2026-08-07 上传任务 `2902b27d-a0fd-44d4-bdc8-f5fbe7f88386` 的附带日志显示 API/PG/LLM 预检均通过，但 Docling 在解析 PDF 时反复尝试下载 Hugging Face `docling-project/docling-layout-heron@main`，页面 OCR 报 `LocalEntryNotFoundError`；日志截断于下载阶段，尚无最终任务状态。判定为云端网络或 Hugging Face 缓存/挂载问题，非上传接口故障；未改运行代码或服务器配置。
+
+## 23. 2026-08-07 持久登录修复与启动故障隔离
+
+- 原始登录故障证据：`server.py` 启动同步调用默认 KB，LightRAG 初始化 `o200k_base.tiktoken` 时触发 `MemoryError`，连带 FastAPI lifespan 失败，导致登录接口不可用。
+- 修复：启动阶段移除默认 KB/LightRAG 预热，RAG KB 改为首次查询或上传按需初始化；初始化失败只影响对应 KB，不再拖垮认证/API 启动。
+- PostgreSQL refresh token 改为持久化 family 轮转：活动 JTI 显式写入 `revoked_at=NULL`；family advisory lock 下原子消费旧 token、注册新 token；旧 token 重放会撤销整个 family；登录、refresh、改密均返回完整用户和可立即使用的新 token 对。
+- 前端会话持久化：启动恢复先校验 `/auth/me`，401/403 才 single-flight refresh；网络/5xx 保留 refresh 凭据待下次重试；API 请求遇到一次 401 会刷新并重放原请求，只有 refresh 明确 401/403 才清理会话；改密后保存服务端返回的新 token 对。
+- 验证：`.venv` 后端聚焦测试 21 passed；前端 `npm run test:unit` 162 passed；真实 PostgreSQL HTTP 集成覆盖登录、连续 refresh、旧 token 重放 401、family 撤销和 `/auth/me`；`py_compile` 与本次作用域 `git diff --check` 通过。前端 `npm run build` 在受管环境中无输出挂起并超时，不能作为构建通过证据；完整仓库 diff 检查仍受既有 `PROJECT_SUMMARY.md:344` 尾随空白影响。
+
+## 24. 2026-08-07 云端解析器镜像与缓存持久化验收
+
+- 云端 `/opt/rag-anything` 已构建并切换 `raganything-app:parsers`、`raganything-marker:parsers`、`raganything-nginx:parsers` 三张镜像；Marker 容器通过健康检查，主应用最终为 `healthy`，PostgreSQL/Redis 保持运行，Nginx 已启动。
+- 主应用镜像内已确认 `paddleocr==2.9.1` 与 `opendataloader-pdf==2.5.0`；独立 Marker 镜像内 `marker`、Torch 和 Pillow 均可导入。Marker 使用独立容器以隔离 `Pillow<11` 与主应用依赖。
+- Compose 将 Hugging Face、PaddleOCR、PaddleX、Marker/Surya/Torch 缓存分别挂载到 `/opt/rag-anything/models/` 下；Docling Heron 模型已通过固定 revision 写入 Hugging Face 宿主机缓存（约 164 MB、16 个文件）。
+- 完整备份包位于服务器 `deploy-artifacts/parser-runtime-20260807T085439Z/`：镜像归档约 7.49 GB，模型缓存归档约 159 MB；两项 `sha256sum -c` 均为 `OK`。真实 PDF 端到端解析 smoke 尚未在本次记录中完成。
+
+## 25. 2026-08-07 后台多模态异常不再被错误标记为完成
+
+- 2026-08-08 后续：云端日志确认 LightRAG 同时将 `./rag_storage_1` 用作 `working_dir` 与 `workspace`，因此 NanoVectorDB 实际文件为 `./rag_storage_1/rag_storage_1/vdb_chunks.json`。`document_quality.evaluate_content_readiness()` 现同时检查直接和嵌套路径并合并匹配 ID；新增回归后上传重试与标签测试共 58 通过，编译和本次 `git diff --check` 通过。云端尚未部署验收，且 `asyncpg.exceptions.ConnectionDoesNotExistError` 仍需用重新上传任务确认不会阻断实际向量写入。
+
+- 云端 PDF 任务的 OpenDataLoader 解析已完成，但多模态后台写入出现 `asyncpg.exceptions.ConnectionDoesNotExistError`；旧任务注册回调会先把已失败任务从 pending 集合移除，却未读取异常，Worker 随后错误地完成收尾，留下文本块存在而向量块为零，自动标签只能拒绝该文档。
+- 修复：已完成任务回调会消费并缓冲非取消异常；Worker 在等待循环开始、pending 为空返回前和已完成任务 gather 后消费该缓冲，任何后台写入失败都会终止 Worker，而不会写出假完成状态。已增加“任务在 drain 前失败且离开 pending 集合”回归测试。
+- 本地验证：`tests/test_process_worker_lifecycle.py` 与 `tests/test_insert_content_list.py` 共 21 项通过；`process_worker.py`、`raganything/processor/batch_processor.py` 和包导出均通过 `py_compile`。待将这三个运行文件重新构建并部署云端 app 后，对失败 PDF 重新处理以生成向量；仅重试标签无法修复零向量文档。
+- 部署阻塞修复：云端重建 app 时 `COPY . .` 曾尝试复制 `deploy-artifacts/` 内约 7.49 GB 的镜像归档并报 `no space left on device`；`.dockerignore` 已排除该目录，归档保留在宿主机且不会再进入 Docker build context。
+- NanoVectorDB 标签门禁修复：云端 PostgreSQL 未安装 pgvector，KB `1` 使用 `./rag_storage_1/vdb_chunks.json`；原检查在 PG 向量表缺失时回退读取默认 `WORKING_DIR` 的 `./rag_storage/vdb_chunks.json`，导致已写入的非默认 KB 向量被误计为 0 并使自动标签失败。回退路径现按 KB 后缀推导；相关上传重试与标签测试 57 项通过，待重新构建 app 并在云端复验。
+- 2026-08-09 embedding-cache loop safety: the async embedding wrapper now awaits cache I/O on the worker event loop and never moves the shared asyncpg pool to a thread-local loop. Read failures become cache misses and write/clear failures are no-ops with once-per-operation redacted diagnostics; synchronous cache methods remain safe no-ops. Local validation: 62 focused tests, `py_compile`, scoped `git diff --check`, and OpenSpec strict validation passed. Cloud acceptance remains pending: rebuild/restart `app`, upload a new small PDF, verify non-empty nested `vdb_chunks.json`, `vector_count > 0`, successful automatic tagging, and no relevant `ConnectionDoesNotExistError`. Existing zero-vector documents require re-upload or explicit reprocessing. The vision embedding HTTP 401 remains a separate credential configuration issue.
+
+## 26. 2026-08-10 OpenSpec 与子代理存储边界澄清（无行为变更）
+
+- OpenSpec/OPSX 提案与其 `proposal.md`、`design.md`、`tasks.md`、delta specs 位于仓库 `openspec/changes/`，提交后可由其他分支/克隆共享；未提交内容只属于当前工作区。
+- 本项目 `.agents/skills/` 是项目级技能；用户级技能位于 `C:\Users\98014\.agents\skills\` 或 `C:\Users\98014\.codex\skills\`。子代理是当前任务的临时运行时上下文，不是可跨项目调用的持久资源；其代码编辑会即时出现在共享工作区，消息/会话记录不等同于项目能力。
+- 仅将无项目状态、无敏感信息且跨仓库成立的通用技能、模板和个人工作规则放入用户级目录；OpenSpec 变更、项目规则/总结、部署与运行配置、迁移、凭据和服务器信息必须留在仓库或受控的密钥存储中。
+
+## 27. 2026-08-10 NanoVectorDB Worker persistence hardening
+
+- Production diagnosis found successful parsing, text insertion, embedding preflight, and graph extraction while the KB-specific `vdb_chunks.json` still contained an empty 49-byte NanoVectorDB payload. The stale local `storage_updated` flag caused NanoVectorDB to reload the older on-disk snapshot during Worker finalization and discard newly generated in-memory vectors.
+- `harden-nanovectordb-worker-persistence` adds a Worker-only finalization mode. While the existing KB processing lock is held, it clears that stale flag only for `entities_vdb`, `relationships_vdb`, and `chunks_vdb`; a callback returning `False` raises the bounded `nanovectordb_persist_failed:<store>` failure. Normal application finalization keeps its prior behavior.
+- The Worker uses this mode both for normal graph completion and failure cleanup. Callback exceptions propagate, so the Worker cannot report graph-building done after failed vector persistence.
+- Local evidence: focused upload-retry and Worker-lifecycle tests passed (39), `py_compile`, scoped `git diff --check`, and `openspec validate harden-nanovectordb-worker-persistence --strict` passed. Cloud acceptance remains required: rebuild/restart `app`, upload a new small text PDF to KB `3`, then verify the nested `vdb_chunks.json` is non-empty, readiness has `vector_count > 0`, automatic tagging succeeds, and no relevant Worker persistence error occurs. Existing zero-vector documents still require re-upload or explicit reprocessing.
+
+- 2026-08-10 deletion concurrency: LightRAG labels an acquired single-document pipeline as `Single document deletion`, but its concurrent-entry guard only accepts job names beginning with `Deleting`. The knowledge router now serializes `adelete_by_doc_id()` per KB before entering that vendor pipeline. Delete lifecycle tests passed (21); cloud acceptance requires deleting one failed legacy document from the UI after the next app rebuild.
+
+## 28. 2026-08-10 用户级 OpenSpec/OPSX 技能同步（无应用行为变化）
+
+- 已将 10 个无项目状态的 OpenSpec/OPSX 流程技能从项目 `.agents/skills/` 复制到用户级 `C:\Users\98014\.agents\skills\`，项目副本仍为唯一维护源；逐项 `SKILL.md` SHA-256、frontmatter 名称和唯一性均已核验，`openspec --version` 为 `1.4.1`。
+- 用户级 `C:\Users\98014\.codex\AGENTS.md` 由空文件填充为最小通用安全/验证规则，不含本项目路径、RBAC、部署、迁移、凭据或强制 OpenSpec/多代理流程；未全局化依赖项目相对路径的 `impeccable`。本次未改动应用代码、配置、迁移或运行行为。
+## 29. 2026-08-10 Worker 后 NanoVectorDB 快照覆盖修复（待云端验收）
+
+- 云端复验确认 KB `3` 的嵌套 `vdb_chunks.json` 仍为 49 字节空快照；服务端 Worker 后 retire 旧缓存实例会覆盖 Worker 已写向量。
+- `RAGAnything.finalize_storages()` 支持 `persist_vector_stores=False`；仅 Worker 后缓存失效跳过三个 file-backed VDB 回调，普通淘汰和关闭保持默认持久化。
+- 本地定向验证：持久化/Worker 生命周期 40 passed，缓存回归 12 passed，`py_compile`、`git diff --check` 和 OpenSpec strict validation 通过。云端仍须重建 app、上传新 PDF，并确认嵌套向量文件非空、`vector_count > 0`、自动标签成功。
+## 30. 2026-08-10 Worker 后缓存失效修复验收边界
+
+`persist_vector_stores=False` 仅用于 Worker 写入后的旧缓存释放；普通缓存淘汰继续持久化向量。40 项 Worker/持久化测试与 12 项缓存回归通过，云端需重建 app 并重新上传新 PDF 验收。

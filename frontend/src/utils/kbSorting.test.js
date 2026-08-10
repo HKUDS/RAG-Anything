@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { sortKnowledgeBases } from './kbSorting.js'
+import { getKnowledgeBaseUpdateTimestamp, sortKnowledgeBases } from './kbSorting.js'
 
 const knowledgeBases = [
   {
@@ -56,4 +56,17 @@ test('sorts by content update time with creation time fallback and unknown value
     sortKnowledgeBases(withUnknownTime, {}, 'updated', 'asc').map(kb => kb.name),
     ['charlie', 'alpha', 'bravo', 'delta']
   )
+})
+
+test('prefers the canonical update timestamp before legacy and creation fallbacks', () => {
+  assert.equal(getKnowledgeBaseUpdateTimestamp({
+    last_updated_at: '2026-08-05T08:00:00Z',
+    last_content_updated_at: '2026-08-01T08:00:00Z',
+    created: '2026-07-01T08:00:00Z',
+  }), '2026-08-05T08:00:00Z')
+  assert.equal(getKnowledgeBaseUpdateTimestamp({
+    last_content_updated_at: '2026-08-01T08:00:00Z',
+    created: '2026-07-01T08:00:00Z',
+  }), '2026-08-01T08:00:00Z')
+  assert.equal(getKnowledgeBaseUpdateTimestamp({ created: '2026-07-01T08:00:00Z' }), '2026-07-01T08:00:00Z')
 })

@@ -159,6 +159,22 @@ class TestSeparateContent:
         assert text == ""
         assert len(multimodal) == 2
 
+    def test_video_only_content_does_not_create_page_marker_text(self):
+        text, multimodal = separate_content([
+            {"type": "video", "video_path": "/private/lesson.mp4", "page_idx": 0},
+        ])
+        assert text == ""
+        assert multimodal[0]["type"] == "video"
+
+    def test_text_and_video_preserve_text_without_indexing_video_path(self):
+        text, multimodal = separate_content([
+            {"type": "text", "text": "课程正文", "page_idx": 0},
+            {"type": "video", "video_path": "/private/lesson.mp4", "page_idx": 0},
+        ])
+        assert "课程正文" in text
+        assert "/private/lesson.mp4" not in text
+        assert [item["type"] for item in multimodal] == ["video"]
+
     def test_mixed_content(self):
         content = [
             {"type": "text", "text": "Introduction"},

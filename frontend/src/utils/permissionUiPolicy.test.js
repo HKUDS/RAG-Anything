@@ -34,25 +34,33 @@ test('five built-in role permission sets expose only their actual UI capabilitie
 
   const student = createPermissionUiPolicy(permissions(roles.student))
   assert.equal(student.canWriteKnowledge, false)
+  assert.equal(student.canDeleteKnowledge, false)
   assert.equal(student.canWriteAgents, false)
+  assert.equal(student.canDeleteAgents, false)
   assert.equal(student.canWriteAutoRepair, false)
 
   const assistant = createPermissionUiPolicy(permissions(roles.assistant))
   assert.equal(assistant.canWriteKnowledge, true)
+  assert.equal(assistant.canDeleteKnowledge, false)
   assert.equal(assistant.canWriteGraph, true)
   assert.equal(assistant.canWriteAgents, false)
+  assert.equal(assistant.canDeleteAgents, false)
 
   const teacher = createPermissionUiPolicy(permissions(roles.teacher))
+  assert.equal(teacher.canDeleteKnowledge, false)
   assert.equal(teacher.canWriteAgents, true)
   assert.equal(teacher.canDeleteAgents, false)
   assert.equal(teacher.canWriteWorkflow, false)
 
   const deptAdmin = createPermissionUiPolicy(permissions(roles.dept_admin))
+  assert.equal(deptAdmin.canDeleteKnowledge, true)
+  assert.equal(deptAdmin.canDeleteAgents, true)
   assert.equal(deptAdmin.canWriteWorkflow, true)
   assert.equal(deptAdmin.canWriteSettings, false)
 
   const superAdmin = createPermissionUiPolicy(permissions(roles.super_admin))
   assert.equal(superAdmin.canDeleteKnowledge, true)
+  assert.equal(superAdmin.canDeleteAgents, true)
   assert.equal(superAdmin.canMaintainMonitor, true)
   assert.equal(superAdmin.canWriteSettings, true)
 })

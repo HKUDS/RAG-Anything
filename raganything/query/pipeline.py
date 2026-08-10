@@ -574,6 +574,16 @@ class QueryMixin:
                     )
                 except Exception:
                     source_infos = {}
+                try:
+                    from raganything.services.video_segments import list_video_segments_for_chunks
+                    workspace = str(getattr(self.lightrag, "workspace", ""))
+                    video_kb = "default" if workspace.replace("\\", "/") == "./rag_storage" else workspace.rsplit("_", 1)[-1]
+                    video_segments = await await_before_deadline(
+                        list_video_segments_for_chunks(video_kb, chunk_ids),
+                        post_retrieval_deadline,
+                    )
+                except Exception:
+                    video_segments = {}
                 context_parts = []
                 doc_name_counts: dict[str, int] = {}
                 for chunk in chunks[:15]:
@@ -586,6 +596,13 @@ class QueryMixin:
                         source_name if count == 0 else f"{source_name} (片段{count + 1})"
                     )
                     context_parts.append(f"[来源 {source_label}]\n{chunk.content}")
+                for segment in video_segments.values():
+                    context_parts.append(
+                        "[VIDEO_SEGMENT "
+                        f"segment_id={segment['segment_id']} media_id={segment['media_id']} "
+                        f"start_ms={segment['start_ms']} end_ms={segment['end_ms']} "
+                        f"document_id={segment['document_id']}]"
+                    )
                 context = "\n\n".join(context_parts)
                 self.logger.info("RRF query completed (context-only mode)")
                 if callback_manager is not None:

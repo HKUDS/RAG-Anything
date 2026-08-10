@@ -911,11 +911,33 @@ async def document_tagging_loop(interval_seconds: int = 3) -> None:
 
     next_reconcile = 0.0
     loop = asyncio.get_running_loop()
+    terminal_backoff = float(interval_seconds)
+    claim_backoff = float(interval_seconds)
+    terminal_failures = 0
+    claim_failures = 0
     while True:
         try:
             await reconcile_terminal_tag_uploads()
+            if terminal_failures:
+                logger.info(
+                    "Terminal tag upload reconciliation recovered after %s failures",
+                    terminal_failures,
+                )
+                terminal_failures = 0
+            terminal_backoff = float(interval_seconds)
         except Exception:
-            logger.warning("Terminal tag upload reconciliation failed", exc_info=True)
+            terminal_failures += 1
+            if terminal_failures == 1:
+                logger.warning("Terminal tag upload reconciliation failed", exc_info=True)
+            else:
+                logger.warning(
+                    "Terminal tag upload reconciliation still unavailable: attempt=%s retry_in=%ss",
+                    terminal_failures,
+                    terminal_backoff,
+                )
+            await asyncio.sleep(terminal_backoff)
+            terminal_backoff = min(terminal_backoff * 2, 60.0)
+            continue
         if not automatic_tagging_enabled():
             await asyncio.sleep(interval_seconds)
             continue
@@ -935,9 +957,22 @@ async def document_tagging_loop(interval_seconds: int = 3) -> None:
         try:
             job = await claim_due_tag_job()
         except Exception:
-            logger.warning("Unable to claim automatic tag job", exc_info=True)
-            await asyncio.sleep(interval_seconds)
+            claim_failures += 1
+            if claim_failures == 1:
+                logger.warning("Unable to claim automatic tag job", exc_info=True)
+            else:
+                logger.warning(
+                    "Automatic tag claim still unavailable: attempt=%s retry_in=%ss",
+                    claim_failures,
+                    claim_backoff,
+                )
+            await asyncio.sleep(claim_backoff)
+            claim_backoff = min(claim_backoff * 2, 60.0)
             continue
+        if claim_failures:
+            logger.info("Automatic tag claim recovered after %s failures", claim_failures)
+            claim_failures = 0
+        claim_backoff = float(interval_seconds)
         if job is None:
             await asyncio.sleep(interval_seconds)
             continue

@@ -111,6 +111,27 @@ MONITOR_EVENTS_MAX_ROWS = int(os.getenv("MONITOR_EVENTS_MAX_ROWS", "5000"))
 _pool: Optional[asyncpg.Pool] = None
 
 
+def is_transient_pg_connection_error(exc: BaseException) -> bool:
+    """Return whether *exc* means PostgreSQL connectivity is uncertain.
+
+    Claim-aware callers must distinguish this from a successful ``UPDATE 0``.
+    Keep the classification here so all repositories agree on asyncpg and
+    socket-level disconnects (including Windows ``WinError 64``).
+    """
+    if isinstance(exc, OSError):
+        return True
+    transient_types = (
+        asyncpg.InterfaceError,
+        asyncpg.exceptions.PostgresConnectionError,
+        asyncpg.exceptions.ConnectionDoesNotExistError,
+        asyncpg.exceptions.ConnectionFailureError,
+        asyncpg.exceptions.CannotConnectNowError,
+        asyncpg.exceptions.ClientCannotConnectError,
+        asyncpg.exceptions.ConnectionRejectionError,
+    )
+    return isinstance(exc, transient_types)
+
+
 async def init_pg_pool(
     dsn: str = "",
     *,
@@ -146,12 +167,31 @@ async def init_pg_pool(
         port = _m.group(2) if _m and _m.group(2) else '5432'
         database = _m.group(3) if _m else '?'
 
-    _pool = await asyncpg.create_pool(
-        dsn=dsn,
-        min_size=min_size,
-        max_size=max_size,
-        command_timeout=command_timeout,
-    )
+    import asyncio
+    last_error = None
+    for attempt in range(3):
+        try:
+            _pool = await asyncpg.create_pool(
+                dsn=dsn,
+                min_size=min_size,
+                max_size=max_size,
+                timeout=10,
+                command_timeout=command_timeout,
+                max_inactive_connection_lifetime=300,
+            )
+            last_error = None
+            break
+        except Exception as exc:
+            if not is_transient_pg_connection_error(exc):
+                raise
+            last_error = exc
+            if attempt < 2:
+                logger.warning(
+                    "PG pool init attempt %d/3 failed: %s", attempt + 1, exc
+                )
+                await asyncio.sleep(5)
+    if last_error is not None:
+        raise last_error
     logger.info(f"PG pool initialized: min={min_size}, max={max_size}, dsn=***@{host}:{port}/{database}")
 
     # Verify tables exist (lightweight health check)

@@ -1,3 +1,4 @@
+import asyncio
 from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, Mock
@@ -103,6 +104,37 @@ def _install_query_cache(monkeypatch):
 
     monkeypatch.setattr(query_cache, "get_query_cache", lambda: cache)
     return cache
+
+
+@pytest.mark.asyncio
+async def test_lightrag_document_deletion_is_serialized_per_kb(monkeypatch):
+    class ConcurrentLightRAG:
+        def __init__(self):
+            self.doc_status = _Store()
+            self.active = 0
+            self.max_active = 0
+            self.deleted = []
+
+        async def adelete_by_doc_id(self, doc_id, delete_llm_cache=True):
+            assert delete_llm_cache is True
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+            await asyncio.sleep(0.01)
+            self.deleted.append(doc_id)
+            self.active -= 1
+            return _Result("success")
+
+    monkeypatch.setattr(knowledge, "_document_delete_locks", {})
+    lightrag = ConcurrentLightRAG()
+
+    first, second = await asyncio.gather(
+        knowledge._delete_lightrag_document(lightrag, "demo", "doc-one"),
+        knowledge._delete_lightrag_document(lightrag, "demo", "doc-two"),
+    )
+
+    assert [first.status, second.status] == ["success", "success"]
+    assert lightrag.max_active == 1
+    assert lightrag.deleted == ["doc-one", "doc-two"]
 
 
 @pytest.mark.asyncio

@@ -14,5 +14,10 @@ rag_storage_*/*
 .env
 .env.*
 !.env.example
+models/huggingface
+models/paddle
+models/paddlex
+models/marker
+deploy-artifacts/
 *.log
 temp_docx

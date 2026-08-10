@@ -344,15 +344,6 @@ PROMPTS_ZH["generic_chunk"] = """{content_type}内容分析：
 
 分析：{enhanced_caption}"""
 
-PROMPTS_ZH["video_chunk"] = """视频内容分析：
-- 视频路径：{video_path}
-- 时长：{duration}秒
-- 估计帧数：{frame_count}
-
-转录预览：{transcript_summary}
-
-综合视频分析：{enhanced_caption}"""
-
 # Query-related prompts
 PROMPTS_ZH["QUERY_IMAGE_DESCRIPTION"] = (
     "请简要描述这张图片的主要内容、关键元素和重要信息。"

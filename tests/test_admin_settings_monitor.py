@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
+from starlette.responses import Response
 
 from raganything.routers import admin
 from raganything.query_cache import get_query_cache
@@ -218,7 +219,9 @@ async def test_reload_kb_clears_cache_and_logs_event(monkeypatch):
             return None
 
     class FakeCache(dict):
-        pass
+        async def retire(self, kb_name):
+            item = self.pop(kb_name)
+            await item.finalize_storages()
 
     fake_cache = FakeCache({"course-a": FakeKB()})
     add_event_mock = AsyncMock()
@@ -268,6 +271,26 @@ async def test_health_contract(monkeypatch):
     assert result["components"]["active_kb"] == "course-a"
     assert result["components"]["kb_count"] == 1
     assert result["components"]["monitor_logs"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_live_and_ready_contract_sanitizes_dependency_failures(monkeypatch):
+    async def broken_kb_meta():
+        raise RuntimeError("postgresql://user:secret@host/db")
+
+    monkeypatch.setattr(admin.shared, "load_kb_meta", broken_kb_meta)
+    monkeypatch.setattr(
+        "raganything.services.pg_state_repo.get_pg_pool",
+        lambda: (_ for _ in ()).throw(RuntimeError("database password=secret")),
+    )
+
+    assert await admin.live() == {"status": "live"}
+    ready_response = Response()
+    ready_payload = await admin.ready(ready_response)
+    assert ready_response.status_code == 503
+    assert ready_payload["status"] == "not_ready"
+    assert ready_payload["components"]["auth_db"] == "error"
+    assert "secret" not in str(ready_payload)
 
 
 @pytest.mark.asyncio

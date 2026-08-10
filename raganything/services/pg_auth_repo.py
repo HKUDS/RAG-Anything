@@ -75,9 +75,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import secrets
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 import asyncpg
@@ -92,12 +91,18 @@ from raganything.permissions import (
 
 logger = logging.getLogger("rag_server.pg_auth")
 
+
+class AccountLifecycleConflict(ValueError):
+    """A lifecycle mutation would violate an account safety invariant."""
+
 # ── Password Hashing ───────────────────────────────────────
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # ── JWT Configuration ──────────────────────────────────────
-SECRET_KEY = os.getenv("JWT_SECRET") or secrets.token_hex(32)
-REFRESH_SECRET_KEY = os.getenv("JWT_REFRESH_SECRET") or secrets.token_hex(32)
+SECRET_KEY = os.getenv("JWT_SECRET", "development-jwt-secret-not-for-production").strip()
+REFRESH_SECRET_KEY = os.getenv(
+    "JWT_REFRESH_SECRET", "development-refresh-secret-not-for-production"
+).strip()
 JWT_EXPIRY_HOURS = int(os.getenv("JWT_EXPIRY_HOURS", "1"))
 REFRESH_EXPIRY_DAYS = int(os.getenv("REFRESH_EXPIRY_DAYS", "7"))
 ALGORITHM = "HS256"
@@ -108,17 +113,50 @@ MAX_FAILED_ATTEMPTS = int(os.getenv("MAX_FAILED_LOGIN_ATTEMPTS", "5"))
 LOCKOUT_DURATION_MINUTES = int(os.getenv("LOGIN_LOCKOUT_MINUTES", "15"))
 
 # ── Default Admin ──────────────────────────────────────────
-DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
-_raw_admin_pw = os.getenv("DEFAULT_ADMIN_PASSWORD")
-if not _raw_admin_pw:
-    _raw_admin_pw = secrets.token_urlsafe(16)
-    import sys
-    print("=" * 60, file=sys.stderr)
-    print("[PG-AUTH] DEFAULT_ADMIN_PASSWORD 环境变量未设置。", file=sys.stderr)
-    print(f"[PG-AUTH] 已生成随机管理员密码（仅显示一次）: {_raw_admin_pw}", file=sys.stderr)
-    print("[PG-AUTH] 请立即修改此密码或设置 DEFAULT_ADMIN_PASSWORD 环境变量", file=sys.stderr)
-    print("=" * 60, file=sys.stderr)
-DEFAULT_ADMIN_PASSWORD = _raw_admin_pw
+DEFAULT_ADMIN_USERNAME = os.getenv("DEFAULT_ADMIN_USERNAME", "admin").strip() or "admin"
+DEFAULT_ADMIN_PASSWORD = os.getenv("DEFAULT_ADMIN_PASSWORD", "").strip()
+
+
+def _is_production(environment: dict[str, str] | None = None) -> bool:
+    values = environment if environment is not None else os.environ
+    return values.get("RAGANYTHING_ENV", "development").strip().lower() == "production"
+
+
+def production_configuration_errors(
+    environment: dict[str, str] | None = None,
+) -> tuple[str, ...]:
+    """Return missing production configuration names without revealing values."""
+    values = environment if environment is not None else os.environ
+    missing = [
+        name for name in ("JWT_SECRET", "JWT_REFRESH_SECRET", "DEFAULT_ADMIN_PASSWORD")
+        if not values.get(name, "").strip()
+    ]
+    if not values.get("DATABASE_URL", "").strip():
+        structured = ("POSTGRES_USER", "POSTGRES_PASSWORD", "POSTGRES_HOST", "POSTGRES_PORT")
+        missing.extend(name for name in structured if not values.get(name, "").strip())
+        if not (values.get("POSTGRES_DATABASE", "").strip() or values.get("POSTGRES_DB", "").strip()):
+            missing.append("POSTGRES_DATABASE")
+    if values.get("ALLOW_PUBLIC_REGISTRATION", "false").strip().lower() in {"1", "true", "yes", "on"}:
+        missing.append("ALLOW_PUBLIC_REGISTRATION")
+    try:
+        from raganything.services.vision_models import load_catalog
+        for entry in load_catalog().values():
+            if entry.api_key_env and not values.get(entry.api_key_env, "").strip():
+                missing.append(entry.api_key_env)
+    except Exception:
+        pass
+    return tuple(dict.fromkeys(missing))
+
+
+def validate_production_configuration() -> None:
+    if _is_production():
+        missing = production_configuration_errors()
+        if missing:
+            raise RuntimeError("missing required production configuration: " + ", ".join(missing))
+
+
+def public_registration_enabled() -> bool:
+    return not _is_production() and os.getenv("ALLOW_PUBLIC_REGISTRATION", "false").strip().lower() in {"1", "true", "yes", "on"}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -137,8 +175,10 @@ def _set_pool(pool: asyncpg.Pool) -> None:
 
 def _get_pool() -> asyncpg.Pool:
     """Get the shared pool, raising if not initialized."""
-    if _pool_ref is None:
-        # Fallback: try importing from pg_state_repo
+    if _pool_ref is None or _pool_ref.is_closing():
+        # A closed pool is stale (e.g. an integration suite re-created the
+        # state-repo pool after a teardown).  Re-sync from pg_state_repo so
+        # callers never acquire from a dead pool.
         try:
             from raganything.services.pg_state_repo import get_pg_pool
             _set_pool(get_pg_pool())
@@ -182,6 +222,7 @@ async def init_db() -> None:
     preventing stale permissions when new resources (e.g. autorepair)
     are added to role definitions after initial role creation.
     """
+    validate_production_configuration()
     pool = _get_pool()
     async with pool.acquire() as conn:
         # Default roles (ON CONFLICT DO UPDATE ensures idempotence + permission refresh)
@@ -205,46 +246,6 @@ async def init_db() -> None:
                 """,
                 role_name, role_cfg["desc"], json.dumps(role_cfg["perms"]),
             )
-
-        # Persist/load JWT keys
-        global SECRET_KEY, REFRESH_SECRET_KEY
-        if not os.getenv("JWT_SECRET"):
-            row = await conn.fetchrow(
-                "SELECT value FROM settings WHERE key = 'jwt_secret'"
-            )
-            if row:
-                SECRET_KEY = row["value"]
-            else:
-                await conn.execute(
-                    "INSERT INTO settings (key, value) VALUES ('jwt_secret', $1)"
-                    " ON CONFLICT (key) DO NOTHING",
-                    SECRET_KEY,
-                )
-                # Re-read for multi-worker consistency
-                row = await conn.fetchrow(
-                    "SELECT value FROM settings WHERE key = 'jwt_secret'"
-                )
-                if row:
-                    SECRET_KEY = row["value"]
-
-        if not os.getenv("JWT_REFRESH_SECRET"):
-            row = await conn.fetchrow(
-                "SELECT value FROM settings WHERE key = 'jwt_refresh_secret'"
-            )
-            if row:
-                REFRESH_SECRET_KEY = row["value"]
-            else:
-                await conn.execute(
-                    "INSERT INTO settings (key, value) VALUES ('jwt_refresh_secret', $1)"
-                    " ON CONFLICT (key) DO NOTHING",
-                    REFRESH_SECRET_KEY,
-                )
-                # Re-read for multi-worker consistency
-                row = await conn.fetchrow(
-                    "SELECT value FROM settings WHERE key = 'jwt_refresh_secret'"
-                )
-                if row:
-                    REFRESH_SECRET_KEY = row["value"]
 
         # Persist/load SERVER_START_ID
         global SERVER_START_ID
@@ -279,16 +280,14 @@ async def init_db() -> None:
     # Ensure default admin exists
     admin = await get_user_by_username(DEFAULT_ADMIN_USERNAME)
     if not admin:
+        if not DEFAULT_ADMIN_PASSWORD:
+            raise RuntimeError("DEFAULT_ADMIN_PASSWORD is required to bootstrap an administrator")
         super_admin_role = await get_role_by_name("super_admin")
         await create_user(DEFAULT_ADMIN_USERNAME, DEFAULT_ADMIN_PASSWORD,
                           role_id=super_admin_role["id"] if super_admin_role else None,
                           must_change_password=True,
                           actor_role_name="super_admin")
-        print(f"[PG-AUTH] 默认管理员已创建: {DEFAULT_ADMIN_USERNAME} (首次登录需修改密码)")
-    else:
-        print(f"[PG-AUTH] 管理员账号已存在: {DEFAULT_ADMIN_USERNAME}")
-
-    logger.info("PostgreSQL auth initialized")
+    logger.info("PostgreSQL authentication initialized")
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -301,7 +300,7 @@ async def get_user_by_username(username: str) -> dict | None:
         row = await conn.fetchrow(
             "SELECT * FROM users WHERE username = $1", username
         )
-        return dict(row) if row else None
+        return await _attach_allowed_kbs(conn, dict(row)) if row else None
 
 
 async def get_user_by_id(user_id: int) -> dict | None:
@@ -310,7 +309,316 @@ async def get_user_by_id(user_id: int) -> dict | None:
         row = await conn.fetchrow(
             "SELECT * FROM users WHERE id = $1", user_id
         )
-        return dict(row) if row else None
+        return await _attach_allowed_kbs(conn, dict(row)) if row else None
+
+
+async def _attach_allowed_kbs(conn: asyncpg.Connection, user: dict) -> dict:
+    """Project durable KB scope into the sanitized user representation."""
+    rows = await conn.fetch(
+        "SELECT kb_name, access_level FROM kb_access_grants WHERE user_id = $1 ORDER BY kb_name",
+        user["id"],
+    )
+    user["allowed_kbs"] = [row["kb_name"] for row in rows]
+    user["kb_access_levels"] = {
+        row["kb_name"]: row.get("access_level") or "read" for row in rows
+    }
+    return user
+
+
+_KB_MEMBER_ACCESS_LEVELS = {"read", "operate"}
+
+
+def _role_has_permission(role: dict, permission: str) -> bool:
+    """Check a locked role record without opening another connection."""
+    if role.get("role_name") == "super_admin" or role.get("name") == "super_admin":
+        return True
+    permissions = role.get("permissions") or []
+    if isinstance(permissions, str):
+        try:
+            permissions = json.loads(permissions)
+        except (json.JSONDecodeError, TypeError):
+            permissions = []
+    return permission in permissions if isinstance(permissions, list) else False
+
+
+def _normalize_member_access_level(access_level: str) -> str:
+    if not isinstance(access_level, str):
+        raise ValueError("knowledge-base member access level must be read or operate")
+    normalized = access_level.strip().lower()
+    if normalized not in _KB_MEMBER_ACCESS_LEVELS:
+        raise ValueError("knowledge-base member access level must be read or operate")
+    return normalized
+
+
+async def pg_list_kb_members(kb_name: str) -> list[dict[str, Any]]:
+    """Return KB member grants with their current account state."""
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT g.user_id AS id, u.username, r.name AS role_name,
+                   u.is_active, u.archived_at, u.session_generation,
+                   g.access_level, g.granted_by, g.granted_at,
+                   grantor.username AS granted_by_username
+            FROM kb_access_grants g
+            JOIN users u ON u.id = g.user_id
+            JOIN roles r ON r.id = u.role_id
+            LEFT JOIN users grantor ON grantor.id = g.granted_by
+            WHERE g.kb_name = $1
+            ORDER BY g.granted_at ASC, u.id ASC
+            """,
+            kb_name,
+        )
+    members: list[dict[str, Any]] = []
+    for row in rows:
+        member = dict(row)
+        if isinstance(member.get("granted_at"), datetime):
+            member["granted_at"] = member["granted_at"].isoformat()
+        member["effective_access"] = member.get("access_level", "read")
+        member["is_owner"] = False
+        member["removable"] = True
+        member["revision"] = int(member.get("session_generation", 0) or 0)
+        members.append(member)
+    return members
+
+
+async def _member_actor_role(conn: asyncpg.Connection, actor_id: int) -> dict:
+    actor = await conn.fetchrow(
+        """
+        SELECT u.id, u.is_active, u.archived_at, r.name AS role_name, r.permissions
+        FROM users u
+        JOIN roles r ON r.id = u.role_id
+        WHERE u.id = $1
+        FOR UPDATE
+        """,
+        actor_id,
+    )
+    if actor is None or not actor["is_active"] or actor["archived_at"] is not None:
+        raise ValueError("member manager account is unavailable")
+    return dict(actor)
+
+
+async def _lock_member_mutation_context(
+    conn: asyncpg.Connection,
+    *,
+    kb_name: str,
+    actor_id: int,
+    target_user_id: int,
+) -> tuple[dict, dict, dict]:
+    """Serialize same-KB mutations before locking the actor and target."""
+    kb = await conn.fetchrow(
+        "SELECT name, owner_id FROM kb_metadata WHERE name = $1 FOR UPDATE",
+        kb_name,
+    )
+    if kb is None:
+        raise KeyError(kb_name)
+    actor = await _member_actor_role(conn, actor_id)
+    target = await conn.fetchrow(
+        """
+        SELECT u.id, u.username, u.is_active, u.archived_at, u.session_generation,
+               r.name AS role_name, r.permissions
+        FROM users u
+        JOIN roles r ON r.id = u.role_id
+        WHERE u.id = $1
+        FOR UPDATE
+        """,
+        target_user_id,
+    )
+    if target is None:
+        raise ValueError("knowledge-base member target does not exist")
+    target_data = dict(target)
+    if not target_data["is_active"] or target_data["archived_at"] is not None:
+        raise ValueError("knowledge-base member target is unavailable")
+    if target_data["id"] == kb["owner_id"]:
+        raise ValueError("knowledge-base owner cannot receive a member grant")
+    if target_data["role_name"] == "super_admin":
+        raise ValueError("super_admin cannot receive a redundant member grant")
+    if not can_assign_role(actor["role_name"], target_data["role_name"]):
+        raise PermissionError("cannot grant knowledge-base access to a more privileged user")
+    return dict(kb), actor, target_data
+
+
+async def pg_search_kb_member_candidates(
+    kb_name: str,
+    query: str,
+    *,
+    actor_id: int,
+    page: int = 1,
+    page_size: int = 20,
+) -> dict[str, Any]:
+    """Search eligible users without exposing an unbounded user directory."""
+    normalized_query = query.strip() if isinstance(query, str) else ""
+    if len(normalized_query) < 2:
+        raise ValueError("member search query must contain at least two characters")
+    if page < 1 or page_size < 1 or page_size > 50:
+        raise ValueError("invalid member search pagination")
+
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        actor = await _member_actor_role(conn, actor_id)
+        eligible_roles = [
+            role_name for role_name in DEFAULT_ROLES
+            if role_name != "super_admin" and can_assign_role(actor["role_name"], role_name)
+        ]
+        if not eligible_roles:
+            return {"items": [], "total": 0, "page": page, "page_size": page_size, "total_pages": 1}
+        base_query = """
+            FROM users u
+            JOIN roles r ON r.id = u.role_id
+            WHERE u.is_active = 1
+              AND u.archived_at IS NULL
+              AND r.name = ANY($1::text[])
+              AND u.username ILIKE '%' || $2 || '%'
+              AND u.id <> (SELECT owner_id FROM kb_metadata WHERE name = $3)
+              AND NOT EXISTS (
+                  SELECT 1 FROM kb_access_grants g
+                  WHERE g.kb_name = $3 AND g.user_id = u.id
+              )
+        """
+        total = await conn.fetchval("SELECT COUNT(*) " + base_query, eligible_roles, normalized_query, kb_name)
+        offset = (page - 1) * page_size
+        rows = await conn.fetch(
+            "SELECT u.id, u.username, r.name AS role_name " + base_query
+            + " ORDER BY u.username ASC, u.id ASC LIMIT $4 OFFSET $5",
+            eligible_roles,
+            normalized_query,
+            kb_name,
+            page_size,
+            offset,
+        )
+    total = int(total or 0)
+    return {
+        "items": [dict(row) for row in rows],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": max(1, (total + page_size - 1) // page_size),
+    }
+
+
+async def pg_upsert_kb_member_grant(
+    kb_name: str,
+    target_user_id: int,
+    access_level: str,
+    *,
+    actor_id: int,
+) -> dict[str, Any]:
+    """Create or change one grant, audit it, and invalidate the target session."""
+    normalized_level = _normalize_member_access_level(access_level)
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            _kb, actor, target = await _lock_member_mutation_context(
+                conn, kb_name=kb_name, actor_id=actor_id, target_user_id=target_user_id,
+            )
+            if normalized_level == "operate" and not _role_has_permission(target, "kb:write"):
+                raise ValueError("operate access requires the target role to have kb:write")
+            existing = await conn.fetchrow(
+                """SELECT access_level FROM kb_access_grants
+                   WHERE kb_name = $1 AND user_id = $2 FOR UPDATE""",
+                kb_name,
+                target_user_id,
+            )
+            if existing is not None and existing["access_level"] == normalized_level:
+                raise ValueError("knowledge-base member already has this access level")
+            result = await conn.fetchrow(
+                """
+                INSERT INTO kb_access_grants (kb_name, user_id, access_level, granted_by)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (kb_name, user_id) DO UPDATE SET
+                    access_level = EXCLUDED.access_level,
+                    granted_by = EXCLUDED.granted_by,
+                    granted_at = NOW()
+                RETURNING access_level, granted_by, granted_at
+                """,
+                kb_name,
+                target_user_id,
+                normalized_level,
+                actor_id,
+            )
+            await conn.execute(
+                """UPDATE users SET session_generation = session_generation + 1,
+                   updated_at = NOW() WHERE id = $1""",
+                target_user_id,
+            )
+            await conn.execute(
+                """INSERT INTO audit_logs (actor_id, action, target_user_id, details)
+                   VALUES ($1, $2, $3, $4::jsonb)""",
+                actor_id,
+                "kb.member_grant.upserted",
+                target_user_id,
+                json.dumps({
+                    "kb": kb_name,
+                    "access_level": normalized_level,
+                    "previous_access_level": existing["access_level"] if existing else None,
+                    "actor_role": actor["role_name"],
+                }, ensure_ascii=False),
+            )
+    grant = dict(result)
+    if isinstance(grant.get("granted_at"), datetime):
+        grant["granted_at"] = grant["granted_at"].isoformat()
+    return {
+        "id": target["id"],
+        "username": target["username"],
+        "role_name": target["role_name"],
+        "is_active": bool(target["is_active"]),
+        "archived_at": target["archived_at"],
+        "session_generation": int(target["session_generation"]) + 1,
+        "revision": int(target["session_generation"]) + 1,
+        "access_level": grant["access_level"],
+        "effective_access": grant["access_level"],
+        "granted_by": grant["granted_by"],
+        "granted_at": grant["granted_at"],
+        "is_owner": False,
+        "removable": True,
+    }
+
+
+async def pg_revoke_kb_member_grant(
+    kb_name: str,
+    target_user_id: int,
+    *,
+    actor_id: int,
+) -> None:
+    """Revoke one grant, audit it, and invalidate the target session."""
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            _kb, actor, _target = await _lock_member_mutation_context(
+                conn, kb_name=kb_name, actor_id=actor_id, target_user_id=target_user_id,
+            )
+            existing = await conn.fetchrow(
+                """SELECT access_level FROM kb_access_grants
+                   WHERE kb_name = $1 AND user_id = $2 FOR UPDATE""",
+                kb_name,
+                target_user_id,
+            )
+            if existing is None:
+                raise ValueError("knowledge-base member grant does not exist")
+            removed = await conn.fetchrow(
+                """DELETE FROM kb_access_grants
+                   WHERE kb_name = $1 AND user_id = $2
+                   RETURNING access_level""",
+                kb_name,
+                target_user_id,
+            )
+            await conn.execute(
+                """UPDATE users SET session_generation = session_generation + 1,
+                   updated_at = NOW() WHERE id = $1""",
+                target_user_id,
+            )
+            await conn.execute(
+                """INSERT INTO audit_logs (actor_id, action, target_user_id, details)
+                   VALUES ($1, $2, $3, $4::jsonb)""",
+                actor_id,
+                "kb.member_grant.revoked",
+                target_user_id,
+                json.dumps({
+                    "kb": kb_name,
+                    "access_level": removed["access_level"],
+                    "actor_role": actor["role_name"],
+                }, ensure_ascii=False),
+            )
 
 
 async def create_user(username: str, password: str, role_id: int | None = None,
@@ -385,84 +693,130 @@ async def create_user(username: str, password: str, role_id: int | None = None,
     return _sanitize_user(dict(row))
 
 
-async def update_user(user_id: int, data: dict, actor_role_name: str | None = None) -> dict | None:
+async def update_user(
+    user_id: int,
+    data: dict,
+    actor_role_name: str | None = None,
+    actor_id: int | None = None,
+) -> dict | None:
     allowed_fields = {"username", "role_id", "is_active", "must_change_password"}
-    security_sensitive_fields = {"password_hash", "failed_login_attempts",
-                                  "locked_until", "created_at", "updated_at"}
-
-    rejected = {k for k in data if k in security_sensitive_fields}
+    protected_fields = {"password_hash", "failed_login_attempts", "locked_until", "created_at", "updated_at"}
+    rejected = {key for key in data if key in protected_fields}
     if rejected:
-        logger.warning(
-            "[SECURITY] update_user(id=%d) received rejected fields: %s",
-            user_id, rejected,
-        )
-        raise ValueError(f"不允许直接修改以下字段: {', '.join(sorted(rejected))}")
-
-    unrecognized = {k for k in data if k not in allowed_fields
-                    and k not in security_sensitive_fields
-                    and k != "password"}
-    if unrecognized:
-        logger.warning(
-            "[SECURITY] update_user(id=%d) ignoring unrecognized fields: %s",
-            user_id, unrecognized,
-        )
-
-    updates = {k: v for k, v in data.items() if k in allowed_fields}
-
-    if "password" in data and data["password"]:
+        raise ValueError("direct mutation of protected account fields is not allowed")
+    if "allowed_kbs" in data:
+        raise ValueError("knowledge-base grants must be managed through the knowledge-base member APIs")
+    updates = {key: value for key, value in data.items() if key in allowed_fields}
+    if data.get("password"):
         updates["password_hash"] = pwd_context.hash(data["password"])
-
     if not updates:
         return await get_user_by_id(user_id)
 
-    updates["updated_at"] = datetime.utcnow()
-
-    set_clause = ", ".join(f"{k} = ${i+1}" for i, k in enumerate(updates))
-    values = list(updates.values()) + [user_id]
-
     pool = _get_pool()
     async with pool.acquire() as conn:
-        if "role_id" in updates:
-            # An explicit role change must be authorized by the acting role.
-            if actor_role_name is None:
-                raise ValueError("修改角色时必须提供 actor_role_name")
-            role_row = await conn.fetchrow(
-                "SELECT id, name FROM roles WHERE id = $1 AND name = ANY($2::text[])",
-                updates["role_id"],
-                list(DEFAULT_ROLES),
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", "users:super-admin-quorum")
+            target = await conn.fetchrow(
+                """SELECT u.is_active, u.archived_at, r.name AS role_name
+                   FROM users u JOIN roles r ON r.id = u.role_id
+                   WHERE u.id = $1 FOR UPDATE""", user_id,
             )
-            if not role_row:
-                raise ValueError(f"角色 ID {updates['role_id']} 不存在或不可分配")
-            if not can_assign_role(actor_role_name, role_row["name"]):
-                raise PermissionError(
-                    f"无权将角色修改为 '{role_row['name']}': 目标角色等级高于操作者"
+            if not target:
+                return None
+            requested_role_name = target["role_name"]
+            if "role_id" in updates:
+                if actor_role_name is None:
+                    raise ValueError("actor_role_name is required for role changes")
+                role_row = await conn.fetchrow(
+                    "SELECT id, name FROM roles WHERE id = $1 AND name = ANY($2::text[])",
+                    updates["role_id"], list(DEFAULT_ROLES),
                 )
-        try:
-            await conn.execute(
-                f"UPDATE users SET {set_clause} WHERE id = ${len(values)}",
-                *values,
+                if not role_row:
+                    raise ValueError("requested role is not assignable")
+                requested_role_name = role_row["name"]
+                if not can_assign_role(actor_role_name, requested_role_name):
+                    raise PermissionError("cannot assign a role more privileged than the actor")
+            removes_final_admin = (
+                target["role_name"] == "super_admin" and target["is_active"]
+                and target["archived_at"] is None
+                and (updates.get("is_active") in (0, False) or requested_role_name != "super_admin")
             )
-        except asyncpg.UniqueViolationError as e:
-            raise ValueError(f"更新失败: {e}")
+            if removes_final_admin:
+                active_admins = await conn.fetchval(
+                    """SELECT count(*) FROM users u JOIN roles r ON r.id = u.role_id
+                       WHERE r.name = 'super_admin' AND u.is_active = 1 AND u.archived_at IS NULL"""
+                )
+                if int(active_admins or 0) <= 1:
+                    raise AccountLifecycleConflict("the final active super_admin cannot be disabled or demoted")
 
+            if {"password_hash", "is_active", "role_id"}.intersection(updates):
+                updates["session_generation"] = True
+            updates["updated_at"] = datetime.utcnow()
+            assignments, values = [], []
+            for key, value in updates.items():
+                if key == "session_generation":
+                    assignments.append("session_generation = session_generation + 1")
+                else:
+                    values.append(value)
+                    assignments.append(f"{key} = ${len(values)}")
+            values.append(user_id)
+            if assignments:
+                try:
+                    await conn.execute(
+                        f"UPDATE users SET {', '.join(assignments)} WHERE id = ${len(values)}", *values
+                    )
+                except asyncpg.UniqueViolationError as exc:
+                    raise ValueError("username is already in use") from exc
     return await get_user_by_id(user_id)
 
 
-async def delete_user(user_id: int) -> bool:
+async def delete_user(
+    user_id: int, *, archived_by: int | None = None, archive_reason: str | None = None
+) -> bool:
+    """Archive an account; this name remains for DELETE-route compatibility."""
     pool = _get_pool()
     async with pool.acquire() as conn:
-        result = await conn.execute(
-            "DELETE FROM users WHERE id = $1", user_id
-        )
-    deleted = result != "DELETE 0"
-    return deleted
+        async with conn.transaction():
+            await conn.execute("SELECT pg_advisory_xact_lock(hashtext($1))", "users:super-admin-quorum")
+            target = await conn.fetchrow(
+                """SELECT u.is_active, u.archived_at, r.name AS role_name
+                   FROM users u JOIN roles r ON r.id = u.role_id
+                   WHERE u.id = $1 FOR UPDATE""", user_id,
+            )
+            if not target:
+                return False
+            if target["archived_at"] is not None:
+                return True
+            if target["role_name"] == "super_admin" and target["is_active"]:
+                active_admins = await conn.fetchval(
+                    """SELECT count(*) FROM users u JOIN roles r ON r.id = u.role_id
+                       WHERE r.name = 'super_admin' AND u.is_active = 1 AND u.archived_at IS NULL"""
+                )
+                if int(active_admins or 0) <= 1:
+                    raise AccountLifecycleConflict("the final active super_admin cannot be archived")
+            await conn.execute(
+                """UPDATE users SET is_active = 0, archived_at = NOW(), archived_by = $1,
+                   archive_reason = $2, session_generation = session_generation + 1,
+                   updated_at = NOW() WHERE id = $3""", archived_by, archive_reason, user_id,
+            )
+    return True
 
 
 async def list_users() -> list[dict]:
     pool = _get_pool()
     async with pool.acquire() as conn:
         rows = await conn.fetch("SELECT * FROM users ORDER BY id")
-    return [_sanitize_user(dict(r)) for r in rows]
+        grants = await conn.fetch(
+            "SELECT user_id, array_agg(kb_name ORDER BY kb_name) AS kb_names "
+            "FROM kb_access_grants GROUP BY user_id"
+        )
+    grants_by_user = {row["user_id"]: list(row["kb_names"]) for row in grants}
+    users = []
+    for row in rows:
+        user = dict(row)
+        user["allowed_kbs"] = grants_by_user.get(user["id"], [])
+        users.append(_sanitize_user(user))
+    return users
 
 
 async def update_last_login_at(user_id: int) -> None:
@@ -614,13 +968,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_token(user_id: int, username: str, is_admin: bool, role: dict | None = None) -> str:
+def create_token(user_id: int, username: str, is_admin: bool, role: dict | None = None, session_generation: int = 0) -> str:
     payload = {
         "user_id": user_id,
         "username": username,
         "role": role.get("name") if role else ("super_admin" if is_admin else DEFAULT_ROLE_NAME),
         "permissions": role.get("permissions") if role else [],
         "sid": SERVER_START_ID,
+        "sg": int(session_generation),
         "jti": uuid.uuid4().hex,
         "type": "access",
         "exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRY_HOURS),
@@ -641,7 +996,14 @@ def decode_token(token: str) -> dict | None:
         return None
 
 
-def create_refresh_token(user_id: int, username: str, is_admin: bool, role: dict | None = None) -> str:
+def create_refresh_token(
+    user_id: int,
+    username: str,
+    is_admin: bool,
+    role: dict | None = None,
+    session_generation: int = 0,
+    family_id: str | None = None,
+) -> str:
     payload = {
         "user_id": user_id,
         "username": username,
@@ -649,8 +1011,9 @@ def create_refresh_token(user_id: int, username: str, is_admin: bool, role: dict
         "permissions": role.get("permissions") if role else [],
         "type": "refresh",
         "sid": SERVER_START_ID,
+        "sg": int(session_generation),
         "jti": uuid.uuid4().hex,
-        "rfam": uuid.uuid4().hex,
+        "rfam": family_id or uuid.uuid4().hex,
         "exp": datetime.utcnow() + timedelta(days=REFRESH_EXPIRY_DAYS),
         "iat": datetime.utcnow(),
     }
@@ -687,8 +1050,8 @@ async def pg_revoke_token(
     async with pool.acquire() as conn:
         await conn.execute(
             """
-            INSERT INTO token_revocations (jti, expires_at, family_id)
-            VALUES ($1, $2, $3)
+            INSERT INTO token_revocations (jti, expires_at, family_id, revoked_at)
+            VALUES ($1, $2, $3, NOW())
             ON CONFLICT (jti) DO UPDATE SET
                 expires_at = EXCLUDED.expires_at,
                 family_id = COALESCE(EXCLUDED.family_id, token_revocations.family_id),
@@ -707,7 +1070,10 @@ async def pg_is_token_revoked(jti: str) -> bool:
     pool = _get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT 1 FROM token_revocations WHERE jti = $1 AND expires_at > NOW()",
+            """
+            SELECT 1 FROM token_revocations
+            WHERE jti = $1 AND expires_at > NOW() AND revoked_at IS NOT NULL
+            """,
             jti,
         )
         return row is not None
@@ -716,8 +1082,9 @@ async def pg_is_token_revoked(jti: str) -> bool:
 async def pg_revoke_refresh_family(family_id: str) -> int:
     """Revoke all tokens in a refresh token family. Replaces TokenBlacklist.revoke_refresh_family().
 
-    Sets expires_at far in the future for all tokens in the family to ensure
-    they remain revoked indefinitely (effectively permanent revocation).
+    Marks every currently active token in the family as revoked. The
+    ``revoked_at`` predicate keeps this operation idempotent while the
+    family-level advisory lock serializes it with refresh rotation.
 
     Returns the count of tokens revoked.
     """
@@ -725,40 +1092,103 @@ async def pg_revoke_refresh_family(family_id: str) -> int:
         return 0
     pool = _get_pool()
     async with pool.acquire() as conn:
-        result = await conn.execute(
-            """
-            UPDATE token_revocations
-            SET expires_at = '9999-12-31 23:59:59+00'::TIMESTAMPTZ,
-                revoked_at = NOW()
-            WHERE family_id = $1
-            """,
-            family_id,
-        )
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext($1))", family_id,
+            )
+            result = await conn.execute(
+                """
+                UPDATE token_revocations
+                SET revoked_at = NOW()
+                WHERE family_id = $1 AND revoked_at IS NULL
+                """,
+                family_id,
+            )
         # Also mark all tokens with this family_id that aren't yet in the table
         revoked_count = int(result.split()[-1]) if result else 0
         return revoked_count
 
 
-async def pg_register_refresh_family(family_id: str, jti: str) -> None:
-    """Register a JTI into a refresh token family. Replaces TokenBlacklist.register_refresh_family().
-
-    Updates the existing token_revocations row (if any) to set its family_id,
-    or creates a placeholder row. The actual revocation happens later via
-    pg_revoke_token or pg_revoke_refresh_family.
-    """
+async def pg_register_refresh_family(
+    family_id: str,
+    jti: str,
+    expires_at: datetime | None = None,
+) -> None:
+    """Register an active refresh JTI without marking it revoked."""
     if not family_id or not jti:
         return
+    expires_at = expires_at or (
+        datetime.now(timezone.utc) + timedelta(days=REFRESH_EXPIRY_DAYS)
+    )
     pool = _get_pool()
     async with pool.acquire() as conn:
-        await conn.execute(
+        inserted = await conn.fetchrow(
             """
-            INSERT INTO token_revocations (jti, expires_at, family_id)
-            VALUES ($1, NOW() + INTERVAL '30 days', $2)
-            ON CONFLICT (jti) DO UPDATE SET
-                family_id = EXCLUDED.family_id
+            INSERT INTO token_revocations (jti, expires_at, family_id, revoked_at)
+            VALUES ($1, $2, $3, NULL)
+            ON CONFLICT (jti) DO NOTHING
+            RETURNING jti
             """,
-            jti, family_id,
+            jti, expires_at, family_id,
         )
+        if not inserted:
+            raise RuntimeError("refresh token JTI collision")
+
+
+async def pg_rotate_refresh_token(
+    family_id: str,
+    old_jti: str,
+    new_jti: str,
+    new_expires_at: datetime,
+) -> bool:
+    """Atomically consume one refresh token and register its successor.
+
+    A family-level advisory lock makes concurrent refresh requests deterministic:
+    the first request rotates successfully, while a replay revokes the complete
+    family before returning failure.
+    """
+    if not family_id or not old_jti or not new_jti:
+        return False
+    pool = _get_pool()
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext($1))", family_id,
+            )
+            consumed = await conn.fetchrow(
+                """
+                UPDATE token_revocations
+                SET revoked_at = NOW()
+                WHERE jti = $1 AND family_id = $2
+                  AND revoked_at IS NULL AND expires_at > NOW()
+                RETURNING jti
+                """,
+                old_jti, family_id,
+            )
+            if not consumed:
+                await conn.execute(
+                    "UPDATE token_revocations SET revoked_at = NOW() "
+                    "WHERE family_id = $1 AND revoked_at IS NULL",
+                    family_id,
+                )
+                return False
+            inserted = await conn.fetchrow(
+                """
+                INSERT INTO token_revocations (jti, expires_at, family_id, revoked_at)
+                VALUES ($1, $2, $3, NULL)
+                ON CONFLICT (jti) DO NOTHING
+                RETURNING jti
+                """,
+                new_jti, new_expires_at, family_id,
+            )
+            if not inserted:
+                await conn.execute(
+                    "UPDATE token_revocations SET revoked_at = NOW() "
+                    "WHERE family_id = $1 AND revoked_at IS NULL",
+                    family_id,
+                )
+                return False
+            return True
 
 
 async def pg_cleanup_expired_tokens() -> int:

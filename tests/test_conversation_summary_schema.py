@@ -8,6 +8,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 MIGRATION_PATH = ROOT / "migrations" / "027_agent_conversation_summary_columns.sql"
 PG_SETUP_PATH = ROOT / "scripts" / "pg_setup.py"
+MANIFEST_PATH = ROOT / "migrations" / "migration_manifest.json"
 
 
 def test_summary_repair_migration_is_idempotent_and_preserves_data():
@@ -22,17 +23,25 @@ def test_summary_repair_migration_is_idempotent_and_preserves_data():
     assert normalized.count("IF NOT EXISTS") == 3
 
 
-def test_pg_setup_runs_migrations_024_through_027_in_order():
-    source = PG_SETUP_PATH.read_text(encoding="utf-8")
+def test_manifest_covers_migrations_024_through_027_and_setup_delegates_to_runner():
+    import json
+
+    manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
     migration_names = [
         "024_upload_task_cancellation.sql",
         "025_remove_user_email.sql",
         "026_kb_updated_at_semantics.sql",
         "027_agent_conversation_summary_columns.sql",
     ]
-    positions = [source.index(f'"migrations" / "{name}"') for name in migration_names]
+    positions = [
+        next(item["sequence"] for item in manifest["migrations"] if item["id"] == name)
+        for name in migration_names
+    ]
 
     assert positions == sorted(positions)
+    source = PG_SETUP_PATH.read_text(encoding="utf-8")
+    assert "runner.apply(backup_acknowledged=True)" in source
+    assert "migration_files =" not in source
 
 
 class _SummaryPool:

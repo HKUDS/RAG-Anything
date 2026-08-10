@@ -8,6 +8,8 @@ import hashlib
 import subprocess
 import tempfile
 import threading
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Union
 
@@ -74,6 +76,66 @@ class MarkerParser(Parser):
         self._model_dict: Any = None
         self._converter_cache: Dict[Tuple, Any] = {}
         self._converter_cache_lock = threading.Lock()
+
+    @staticmethod
+    def _remote_service_url() -> str:
+        """Return the configured isolated Marker worker endpoint, if any."""
+        return os.environ.get("MARKER_SERVICE_URL", "").rstrip("/")
+
+    def _parse_via_service(
+        self,
+        input_path: Union[str, Path],
+        output_dir: Optional[str],
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        """Call the Marker worker using paths from the shared Docker volumes."""
+        source = Path(input_path)
+        if not source.is_file():
+            raise FileNotFoundError(f"File does not exist: {source}")
+        # The Marker worker receives uploads as read-only volumes.  A caller
+        # without an explicit output directory must therefore use the shared
+        # output volume instead of writing beside the source file.
+        configured_output_dir = output_dir or os.environ.get(
+            "MARKER_SHARED_OUTPUT_DIR", "/app/output"
+        )
+        base_output_dir = self._unique_output_dir(configured_output_dir, source)
+        base_output_dir.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(
+            {
+                "input_path": str(source.resolve()),
+                "output_dir": str(base_output_dir.resolve()),
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self._remote_service_url()}/v1/parse",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        timeout = float(os.environ.get("MARKER_SERVICE_TIMEOUT_SECONDS", "1800"))
+        try:
+            with urllib.request.urlopen(request, timeout=timeout) as response:
+                body = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")[:1000]
+            raise RuntimeError(f"Marker worker rejected the parse request: {detail}") from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError("Marker worker is unavailable") from exc
+        if not isinstance(body, dict) or not isinstance(body.get("content_list"), list):
+            raise RuntimeError("Marker worker returned an invalid parse result")
+        return body["content_list"]
+
+    def _service_is_healthy(self) -> bool:
+        service_url = self._remote_service_url()
+        if not service_url:
+            return False
+        request = urllib.request.Request(f"{service_url}/healthz", method="GET")
+        try:
+            with urllib.request.urlopen(request, timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            return bool(payload.get("status") == "ok")
+        except (urllib.error.URLError, urllib.error.HTTPError, ValueError, OSError):
+            return False
 
     # ------------------------------------------------------------------
     # Installation guard
@@ -480,6 +542,8 @@ class MarkerParser(Parser):
         Returns:
             List of content dicts in RAGAnything standard format.
         """
+        if self._remote_service_url():
+            return self._parse_via_service(pdf_path, output_dir, **kwargs)
         try:
             pdf_path = Path(pdf_path)
             if not pdf_path.exists():
@@ -536,6 +600,8 @@ class MarkerParser(Parser):
         Marker's ``PdfConverter`` can accept image files directly and will
         apply the Surya OCR pipeline.
         """
+        if self._remote_service_url():
+            return self._parse_via_service(image_path, output_dir, **kwargs)
         try:
             image_path = Path(image_path)
             if not image_path.exists():
@@ -570,6 +636,8 @@ class MarkerParser(Parser):
         Legacy ``.doc`` (binary OLE) falls back to LibreOffice → PDF
         conversion since marker-pdf cannot handle the binary format.
         """
+        if self._remote_service_url():
+            return self._parse_via_service(doc_path, output_dir, **kwargs)
         try:
             doc_path = Path(doc_path)
             if not doc_path.exists():
@@ -618,6 +686,8 @@ class MarkerParser(Parser):
         Dispatches to the appropriate method by extension.  EPUB files are
         handled natively when ``marker-pdf[full]`` is installed.
         """
+        if self._remote_service_url():
+            return self._parse_via_service(file_path, output_dir, **kwargs)
         downloaded_temp_file = None
         try:
             if self._is_url(file_path):
@@ -676,6 +746,8 @@ class MarkerParser(Parser):
         imported, ``False`` otherwise.  Does **not** trigger Surya model
         download.
         """
+        if self._remote_service_url():
+            return self._service_is_healthy()
         try:
             from marker.converters.pdf import PdfConverter  # noqa: F401
             return True

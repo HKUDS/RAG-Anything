@@ -229,3 +229,23 @@ async def test_stale_upload_owner_cannot_write_terminal_status(monkeypatch, term
     assert stale is None
     assert current["status"] == terminal_status
     assert all("processing_owner" in query and "processing_generation" in query for query, _ in calls)
+
+
+@pytest.mark.asyncio
+async def test_upload_status_update_propagates_postgres_connection_errors(monkeypatch):
+    class Pool:
+        async def fetchrow(self, *_args, **_kwargs):
+            raise ConnectionResetError("WinError 64")
+
+    monkeypatch.setattr("raganything.services.pg_state_repo.get_pg_pool", lambda: Pool())
+    monkeypatch.setattr(kb_service, "_uploaded_files_has_error_message", True)
+    monkeypatch.setattr(kb_service, "_uploaded_files_has_terminal_metadata", True)
+
+    with pytest.raises(ConnectionResetError, match="WinError 64"):
+        await kb_service.pg_update_upload_status_by_task_id(
+            "task-1",
+            "completed",
+            kb_name="demo",
+            claim_owner="owner-a",
+            claim_generation=4,
+        )
