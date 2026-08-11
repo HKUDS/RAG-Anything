@@ -6292,7 +6292,7 @@ async def _get_kb_doc_list(kb: str) -> str:
                         for ds in store._data.values():
                             fp = ds.get('file_path', '')
                             if fp:
-                                doc_names.add(display_document_name(fp)
+                                doc_names.add(display_document_name(fp))
             except Exception:
                 pass
 
