@@ -2135,6 +2135,9 @@ class ProcessorMixin:
             - page_idx represents the page number where the content appears (0-based indexing)
             - Items are processed in the order they appear in the list
         """
+        if len(content_list) == 0:
+            raise ValueError("content_list cannot be empty")
+
         callback_manager = getattr(self, "callback_manager", None)
         doc_start_time = time.time()
 
