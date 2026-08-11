@@ -34,6 +34,7 @@ import subprocess
 import tempfile
 import threading
 import logging
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -410,25 +411,7 @@ class Parser:
                 raise ValueError(f"Unsupported text format: {text_path.suffix}")
 
             # Read the text content
-            try:
-                with open(text_path, "r", encoding="utf-8") as f:
-                    text_content = f.read()
-            except UnicodeDecodeError:
-                # Try with different encodings
-                for encoding in ["gbk", "latin-1", "cp1252"]:
-                    try:
-                        with open(text_path, "r", encoding=encoding) as f:
-                            text_content = f.read()
-                        cls.logger.info(
-                            f"Successfully read file with {encoding} encoding"
-                        )
-                        break
-                    except UnicodeDecodeError:
-                        continue
-                else:
-                    raise RuntimeError(
-                        f"Could not decode text file {text_path.name} with any supported encoding"
-                    )
+            text_content = cls._read_text_with_fallback(text_path)
 
             # Prepare output directory
             if output_dir:
@@ -649,6 +632,113 @@ class Parser:
         text = re.sub(r"~~(.*?)~~", r"<strike>\1</strike>", text)
 
         return text
+
+    @classmethod
+    def _read_text_with_fallback(cls, text_path: Path) -> str:
+        """
+        Read a text file, trying UTF-8 first and falling back to common
+        legacy encodings. utf-8-sig also strips a UTF-8 BOM if present.
+        """
+        try:
+            with open(text_path, "r", encoding="utf-8-sig") as f:
+                return f.read()
+        except UnicodeDecodeError:
+            for encoding in ["gbk", "latin-1", "cp1252"]:
+                try:
+                    with open(text_path, "r", encoding=encoding) as f:
+                        content = f.read()
+                    cls.logger.info(f"Successfully read file with {encoding} encoding")
+                    return content
+                except UnicodeDecodeError:
+                    continue
+            raise RuntimeError(
+                f"Could not decode text file {text_path.name} with any supported encoding"
+            )
+
+    @classmethod
+    def _text_to_content_blocks(
+        cls, text_content: str, is_markdown: bool
+    ) -> List[Dict[str, Any]]:
+        """
+        Split raw text into MinerU-style content blocks.
+
+        Paragraphs are delimited by blank lines; in markdown, an ATX heading
+        (`# ...`) becomes its own block carrying `text_level`, matching how
+        MinerU marks headings in its content list.
+        """
+        # Normalize line endings up front so CRLF/CR input behaves the same
+        # as LF however the text arrived (text-mode file reads translate
+        # these already; raw strings passed directly have not been).
+        lines = text_content.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+        blocks: List[Dict[str, Any]] = []
+        paragraph: List[str] = []
+
+        def flush() -> None:
+            if paragraph:
+                blocks.append(
+                    {"type": "text", "text": "\n".join(paragraph), "page_idx": 0}
+                )
+                paragraph.clear()
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                flush()
+                continue
+            if is_markdown:
+                heading = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+                if heading:
+                    flush()
+                    blocks.append(
+                        {
+                            "type": "text",
+                            "text": heading.group(2).strip(),
+                            "text_level": len(heading.group(1)),
+                            "page_idx": 0,
+                        }
+                    )
+                    continue
+            paragraph.append(line.rstrip())
+        flush()
+
+        return blocks
+
+    def parse_text_file(
+        self,
+        text_path: Union[str, Path],
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        """
+        Parse a plain text or markdown file directly into content blocks.
+
+        The content is already text, so no rendering or OCR is involved:
+        historically these files were rendered to PDF with ReportLab and
+        re-parsed with the OCR pipeline, which was slower and exposed them
+        to PDF-rendering failure modes (#24, #226, #316, #331).
+
+        Args:
+            text_path: Path to the text file (.txt, .md)
+            output_dir: Accepted for signature compatibility; no artifacts
+                        are written since no conversion takes place
+            lang: Accepted for signature compatibility; no OCR is involved
+            **kwargs: Accepted for signature compatibility
+
+        Returns:
+            List[Dict[str, Any]]: List of content blocks
+        """
+        text_path = Path(text_path)
+        if not text_path.exists():
+            raise FileNotFoundError(f"Text file does not exist: {text_path}")
+        if text_path.suffix.lower() not in self.TEXT_FORMATS:
+            raise ValueError(f"Unsupported text format: {text_path.suffix}")
+
+        text_content = self._read_text_with_fallback(text_path)
+        return self._text_to_content_blocks(
+            text_content, is_markdown=text_path.suffix.lower() == ".md"
+        )
 
     def parse_pdf(
         self,
@@ -1468,40 +1558,6 @@ class MineruParser(Parser):
 
         except Exception as e:
             self.logger.error(f"Error in parse_office_doc: {str(e)}")
-            raise
-
-    def parse_text_file(
-        self,
-        text_path: Union[str, Path],
-        output_dir: Optional[str] = None,
-        lang: Optional[str] = None,
-        **kwargs,
-    ) -> List[Dict[str, Any]]:
-        """
-        Parse text file by first converting to PDF, then parsing with MinerU 2.0
-
-        Supported formats: .txt, .md
-
-        Args:
-            text_path: Path to the text file (.txt, .md)
-            output_dir: Output directory path
-            lang: Document language for OCR optimization
-            **kwargs: Additional parameters for mineru command
-
-        Returns:
-            List[Dict[str, Any]]: List of content blocks
-        """
-        try:
-            # Convert text file to PDF using base class method
-            pdf_path = self.convert_text_to_pdf(text_path, output_dir)
-
-            # Parse the converted PDF
-            return self.parse_pdf(
-                pdf_path=pdf_path, output_dir=output_dir, lang=lang, **kwargs
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error in parse_text_file: {str(e)}")
             raise
 
     def parse_document(
@@ -2456,18 +2512,6 @@ class PaddleOCRParser(Parser):
         **kwargs,
     ) -> List[Dict[str, Any]]:
         pdf_path = self.convert_office_to_pdf(doc_path, output_dir)
-        return self.parse_pdf(
-            pdf_path=pdf_path, output_dir=output_dir, lang=lang, **kwargs
-        )
-
-    def parse_text_file(
-        self,
-        text_path: Union[str, Path],
-        output_dir: Optional[str] = None,
-        lang: Optional[str] = None,
-        **kwargs,
-    ) -> List[Dict[str, Any]]:
-        pdf_path = self.convert_text_to_pdf(text_path, output_dir)
         return self.parse_pdf(
             pdf_path=pdf_path, output_dir=output_dir, lang=lang, **kwargs
         )
