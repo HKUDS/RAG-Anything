@@ -280,6 +280,7 @@ class Parser:
                 commands_to_try = cls._libreoffice_command_candidates()
 
                 conversion_successful = False
+                timed_out_cmd = None
                 last_cmd = commands_to_try[-1]
                 for cmd in commands_to_try:
                     is_last = cmd == last_cmd
@@ -294,11 +295,18 @@ class Parser:
                             str(doc_path),
                         ]
 
-                        # Prepare conversion subprocess parameters
+                        # Prepare conversion subprocess parameters.
+                        # The timeout must cover a real deck on a busy CPU: a
+                        # 7.4 MB PPTX measured 4 minutes under soffice on this
+                        # host, and the previous hardcoded 60s killed it midway
+                        # — after which the generic RuntimeError below claimed
+                        # LibreOffice was not installed at all.
                         convert_subprocess_kwargs = {
                             "capture_output": True,
                             "text": True,
-                            "timeout": 60,  # 60 second timeout
+                            "timeout": int(
+                                os.getenv("LIBREOFFICE_CONVERT_TIMEOUT", "600")
+                            ),
                             "encoding": "utf-8",
                             "errors": "ignore",
                         }
@@ -336,6 +344,10 @@ class Parser:
                                 f"trying next candidate"
                             )
                     except subprocess.TimeoutExpired:
+                        # Recorded, not just logged: "timed out" and "not
+                        # installed" need different fixes, and the final error
+                        # must say which happened.
+                        timed_out_cmd = cmd
                         cls.logger.warning(f"LibreOffice command '{cmd}' timed out")
                     except Exception as e:
                         cls.logger.error(
@@ -343,6 +355,14 @@ class Parser:
                         )
 
                 if not conversion_successful:
+                    if timed_out_cmd is not None:
+                        raise RuntimeError(
+                            f"LibreOffice conversion of {doc_path.name} timed out after "
+                            f"{convert_subprocess_kwargs['timeout']}s. LibreOffice IS "
+                            f"installed ('{timed_out_cmd}' started); the document is "
+                            "large or the host is busy. Raise LIBREOFFICE_CONVERT_TIMEOUT "
+                            "or convert the document to PDF manually."
+                        )
                     raise RuntimeError(
                         f"LibreOffice conversion failed for {doc_path.name}. "
                         f"Please ensure LibreOffice is installed:\n"
