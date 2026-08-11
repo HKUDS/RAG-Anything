@@ -803,45 +803,12 @@ class ProcessorMixin:
                 self.logger.debug("Exception details:", exc_info=True)
                 continue
 
-        # Update doc_status to include multimodal chunks in the standard chunks_list
+        # Update doc_status to include multimodal chunks in the standard
+        # chunks_list (same merge semantics as the batch type-aware path)
         if multimodal_chunk_ids:
-            try:
-                # Get current document status
-                current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
-
-                if current_doc_status:
-                    existing_chunks_list = current_doc_status.get("chunks_list", [])
-                    existing_chunks_count = current_doc_status.get("chunks_count", 0)
-
-                    # Add multimodal chunks to the standard chunks_list
-                    updated_chunks_list = existing_chunks_list + multimodal_chunk_ids
-                    updated_chunks_count = existing_chunks_count + len(
-                        multimodal_chunk_ids
-                    )
-
-                    # Update document status with integrated chunk list
-                    await self.lightrag.doc_status.upsert(
-                        {
-                            doc_id: {
-                                **current_doc_status,  # Keep existing fields
-                                "chunks_list": updated_chunks_list,  # Integrated chunks list
-                                "chunks_count": updated_chunks_count,  # Updated total count
-                                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                            }
-                        }
-                    )
-
-                    # Ensure doc_status update is persisted to disk
-                    await self.lightrag.doc_status.index_done_callback()
-
-                    self.logger.info(
-                        f"Updated doc_status with {len(multimodal_chunk_ids)} multimodal chunks integrated into chunks_list"
-                    )
-
-            except Exception as e:
-                self.logger.warning(
-                    f"Error updating doc_status with multimodal chunks: {e}"
-                )
+            await self._update_doc_status_with_chunks_type_aware(
+                doc_id, multimodal_chunk_ids
+            )
 
         # Batch merge all multimodal content results (similar to text content processing)
         if all_chunk_results:
@@ -1498,38 +1465,59 @@ class ProcessorMixin:
     async def _update_doc_status_with_chunks_type_aware(
         self, doc_id: str, chunk_ids: List[str]
     ):
-        """Update document status with multimodal chunks"""
+        """Merge multimodal chunk ids into the document's chunks_list."""
         try:
             # Get current document status
             current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
 
-            if current_doc_status:
-                existing_chunks_list = current_doc_status.get("chunks_list", [])
-                existing_chunks_count = current_doc_status.get("chunks_count", 0)
+            if not current_doc_status:
+                # An absent record is a linkage failure worth surfacing:
+                # every consumer that enumerates the document's chunks via
+                # chunks_list will silently orphan these (#332).
+                self.logger.warning(
+                    f"doc_status record {doc_id} not found; "
+                    f"{len(chunk_ids)} multimodal chunk(s) will be missing "
+                    "from its chunks_list"
+                )
+                return
 
-                # Add multimodal chunks to the standard chunks_list
-                updated_chunks_list = existing_chunks_list + chunk_ids
-                updated_chunks_count = existing_chunks_count + len(chunk_ids)
+            existing_chunks_list = current_doc_status.get("chunks_list", [])
+            existing_chunks_count = current_doc_status.get("chunks_count", 0)
 
-                # Update document status with integrated chunk list
-                await self.lightrag.doc_status.upsert(
-                    {
-                        doc_id: {
-                            **current_doc_status,  # Keep existing fields
-                            "chunks_list": updated_chunks_list,  # Integrated chunks list
-                            "chunks_count": updated_chunks_count,  # Updated total count
-                            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                        }
+            # Merge rather than append: chunk ids are content-hashed, so
+            # reprocessing the same multimodal content produces the same ids
+            # and a blind append would duplicate them in chunks_list.
+            already_listed = set(existing_chunks_list)
+            new_chunk_ids = [cid for cid in chunk_ids if cid not in already_listed]
+            if not new_chunk_ids:
+                self.logger.debug(
+                    f"All {len(chunk_ids)} multimodal chunks already listed "
+                    f"in doc_status for {doc_id}"
+                )
+                return
+
+            updated_chunks_list = existing_chunks_list + new_chunk_ids
+            updated_chunks_count = existing_chunks_count + len(new_chunk_ids)
+
+            # Update document status with integrated chunk list
+            await self.lightrag.doc_status.upsert(
+                {
+                    doc_id: {
+                        **current_doc_status,  # Keep existing fields
+                        "chunks_list": updated_chunks_list,  # Integrated chunks list
+                        "chunks_count": updated_chunks_count,  # Updated total count
+                        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                     }
-                )
+                }
+            )
 
-                # Ensure doc_status update is persisted to disk
-                await self.lightrag.doc_status.index_done_callback()
+            # Ensure doc_status update is persisted to disk
+            await self.lightrag.doc_status.index_done_callback()
 
-                self.logger.info(
-                    f"Updated doc_status: added {len(chunk_ids)} multimodal chunks to standard chunks_list "
-                    f"(total chunks: {updated_chunks_count})"
-                )
+            self.logger.info(
+                f"Updated doc_status: added {len(new_chunk_ids)} multimodal chunks to standard chunks_list "
+                f"(total chunks: {updated_chunks_count})"
+            )
 
         except Exception as e:
             self.logger.warning(
