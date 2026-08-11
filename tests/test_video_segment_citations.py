@@ -48,6 +48,16 @@ def test_agent_video_marker_becomes_path_free_citation():
     assert "C:" not in serialized
 
 
+def test_video_citation_hides_staged_filename_prefix():
+    citation = merge_video_segment_citations([{
+        "segment_id": "s-1", "segment_index": 0, "start_ms": 0, "end_ms": 1000,
+        "document_id": "doc-1", "document_name": "0fb7375fdfa54875b2ed60d479aed21a_battery.mp4",
+        "media_id": "m-1", "media_kb": "kb-a",
+    }])[0]
+
+    assert citation["document_name"] == "battery.mp4"
+
+
 def test_video_citation_enrichment_preserves_ordinary_citations():
     citations = enrich_video_segment_citations([
         {"source": "manual.pdf", "content": "ordinary source"},

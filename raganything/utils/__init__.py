@@ -57,6 +57,11 @@ from raganything.utils._quality import (  # noqa: F401 — re-export
     validate_and_suggest,
 )
 
+from raganything.utils.document_names import (
+    display_document_name,
+    normalize_citation_document_names,
+)
+
 __all__ = [
     # Beijing time
     "beijing_now",
@@ -91,4 +96,7 @@ __all__ = [
     "detect_document_language",
     "is_likely_scanned",
     "validate_and_suggest",
+    # User-facing document names
+    "display_document_name",
+    "normalize_citation_document_names",
 ]

@@ -31,12 +31,15 @@ class _Store:
 @pytest.mark.asyncio
 async def test_tag_scope_reads_and_formats_only_allowed_chunks():
     store = _Store()
+    store.records["tagged-a"]["file_path"] = "0fb7375fdfa54875b2ed60d479aed21a_course-a.pdf"
     instance = SimpleNamespace(lightrag=SimpleNamespace(text_chunks=store), embedding_func=None)
     scope = TagScope(tag_id=9, tag_name="课程设计", chunk_ids=("tagged-a", "tagged-b"))
 
     context = await retrieve_tag_scoped_context(instance, scope, "课程设计如何评分", top_k=2)
 
     assert store.requested_ids == ["tagged-a", "tagged-b"]
+    assert "course-a.pdf" in context
+    assert "0fb7375fdfa54875b2ed60d479aed21a" not in context
     assert "检索范围仅限标签：课程设计" in context
     assert "课程设计包括需求分析" in context
     assert "绝不能进入" not in context

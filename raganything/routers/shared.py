@@ -31,6 +31,7 @@ import time
 from pathlib import Path
 from raganything.services.runtime_settings import bootstrap_runtime_settings
 from raganything.services.odl_media_delivery import validate_legacy_media_path
+from raganything.utils import display_document_name
 
 from dotenv import load_dotenv
 load_dotenv(dotenv_path=".env", override=False)
@@ -444,7 +445,7 @@ def _build_backfill_context(scored_texts: list, max_chars: int = 4800) -> tuple:
     for chunk_id, (full_text, score) in sorted_entries:
         doc_name, content = full_text.split("\t", 1) if "\t" in full_text else ("未知文档", full_text)
         chunk_count += 1
-        source_label = f"{doc_name} (回填片段{chunk_count})"
+        source_label = f"{display_document_name(doc_name)} (回填片段{chunk_count})"
         block = f"[来源 {source_label}]\n{content}"
         if total_chars + len(block) > max_chars and formatted:
             break

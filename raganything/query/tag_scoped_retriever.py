@@ -6,13 +6,13 @@ import asyncio
 import math
 import os
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 import jieba
 
 from raganything.services.kb_tag_repo import get_tag_assignments
 from raganything.services.query_execution import await_before_deadline
+from raganything.utils import display_document_name
 
 _SEMANTIC_CANDIDATE_LIMIT = int(os.getenv("TAG_SCOPE_SEMANTIC_CANDIDATES", "48"))
 
@@ -95,7 +95,7 @@ async def _retrieve_tag_scoped_context_unbounded(
         tokens = int(chunk.get("tokens") or max(1, len(content) // 2))
         if len(sections) > 1 and used_tokens + tokens > token_budget:
             break
-        filename = Path(str(chunk.get("file_path") or "未命名文档")).name
+        filename = display_document_name(chunk.get("file_path"), default="未命名文档")
         order = chunk.get("chunk_order_index")
         position = f"，切块 {int(order) + 1}" if isinstance(order, int) or str(order).isdigit() else ""
         sections.append(f"[来源：{filename}{position}]\n{content}")

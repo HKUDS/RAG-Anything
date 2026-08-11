@@ -185,4 +185,35 @@ class TestDownloadTokenAuth:
                     current_user=mock_user,
                 )
 
+
+@pytest.mark.asyncio
+async def test_download_resolution_uses_clean_name_but_keeps_staged_file(monkeypatch, tmp_path):
+    from raganything.routers import knowledge
+
+    prefix = "0fb7375fdfa54875b2ed60d479aed21a"
+    staged_file = tmp_path / f"{prefix}_battery.mp4"
+    staged_file.write_bytes(b"video")
+
+    class Connection:
+        async def fetchrow(self, *_args):
+            return {"file_path": staged_file.name, "status": "completed"}
+
+    class Acquire:
+        async def __aenter__(self):
+            return Connection()
+
+        async def __aexit__(self, *_args):
+            return None
+
+    class Pool:
+        def acquire(self):
+            return Acquire()
+
+    monkeypatch.setattr("raganything.services.pg_state_repo.get_pg_pool", lambda: Pool())
+    monkeypatch.setattr(knowledge, "_find_upload_file", lambda _path: staged_file)
+
+    resolved = await knowledge._resolve_download_file("test-kb", "doc-1")
+
+    assert resolved == (staged_file.resolve(), "battery.mp4")
+
         assert exc_info.value.status_code == 404

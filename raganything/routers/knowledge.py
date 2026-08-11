@@ -77,7 +77,7 @@ from raganything.permissions import Permission
 from raganything.services.auth import audit_log, has_permission as _auth_has_permission
 from raganything.processor.chunk_processor import compute_chunk_id
 from raganything.chunking import build_chunking_func, STRATEGY_META as CHUNKING_STRATEGY_META
-from raganything.utils import is_multimodal_processed
+from raganything.utils import display_document_name, is_multimodal_processed
 from raganything.services.document_tagging import (
     enqueue_document_tagging,
     wait_for_document_tagging,
@@ -1603,12 +1603,8 @@ _HASH_PREFIX_RE = re.compile(r'^(?:[0-9a-f]{8}|[0-9a-f]{32})_(.+)$')
 
 
 def _strip_hash_prefix(filename: str) -> str:
-    """Strip legacy hash or task ID prefixes from staged upload filenames.
-
-    Returns the original filename unchanged if no hash prefix is found.
-    """
-    m = _HASH_PREFIX_RE.match(filename)
-    return m.group(1) if m else filename
+    """Strip legacy hash or task ID prefixes from staged upload filenames."""
+    return display_document_name(filename)
 
 
 def _resolve_chunking_strategy(requested_strategy: str) -> str:
@@ -1998,7 +1994,7 @@ async def list_documents(kb: str = Depends(verify_kb_access), current_user: dict
                 docs.append({
                     "id": tid or "",
                     "full_id": tid or "",
-                    "file": fn,
+                    "file": display_document_name(fn),
                     "status": upload_task_status or task.get("status") or "processing",
                     "raw_status": upload_task_status or task.get("status") or "processing",
                     "health": upload_task_status or task.get("status") or "processing",
@@ -3948,7 +3944,7 @@ async def _resolve_download_file(kb: str, doc_id: str) -> tuple[Path, str] | Non
     if real_path is None:
         return None
 
-    display_name = Path(stored_path).name
+    display_name = display_document_name(stored_path)
     return real_path.resolve(), display_name
 
 

@@ -59,7 +59,7 @@ from raganything.chunking import (
     make_semantic_chunking,
     make_agentic_chunking,
 )
-from raganything.utils import is_multimodal_processed
+from raganything.utils import display_document_name, is_multimodal_processed
 
 # ── Configuration ─────────────────────────────────────────
 API_KEY = os.getenv("LLM_BINDING_API_KEY")
@@ -6250,7 +6250,7 @@ def _build_citation_block(ctx: str, answer: str) -> str:
 
     seen_docs: set[str] = set()
     for m in _re.finditer(r'\[来源\s*([^\]]+?)\]', ctx):
-        name = m.group(1).strip()
+        name = display_document_name(m.group(1).strip())
         if name and not name.isdigit():
             seen_docs.add(name)
 
@@ -6283,7 +6283,7 @@ async def _get_kb_doc_list(kb: str) -> str:
             for info in instance._chunk_source_cache.values():
                 name = info.get('document_name', '')
                 if name and name != 'unknown':
-                    doc_names.add(name)
+                    doc_names.add(display_document_name(name))
         if not doc_names and instance.lightrag:
             try:
                 store = instance.lightrag.doc_status
@@ -6292,7 +6292,7 @@ async def _get_kb_doc_list(kb: str) -> str:
                         for ds in store._data.values():
                             fp = ds.get('file_path', '')
                             if fp:
-                                doc_names.add(fp)
+                                doc_names.add(display_document_name(fp)
             except Exception:
                 pass
 

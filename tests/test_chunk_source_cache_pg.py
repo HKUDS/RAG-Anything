@@ -150,7 +150,7 @@ async def test_pg_rebuild_honors_use_full_path():
 
     assert processor._chunk_source_cache["chunk-a"] == {
         "file_path": "/data/manual.pdf",
-        "document_name": "/data/manual.pdf",
+        "document_name": "manual.pdf",
     }
 
 

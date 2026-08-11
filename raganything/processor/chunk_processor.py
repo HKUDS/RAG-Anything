@@ -24,6 +24,7 @@ from raganything.utils import (
     get_equation_text_and_format,
     get_table_body,
     normalize_caption_list,
+    display_document_name,
 )
 import asyncio
 from lightrag.utils import compute_mdhash_id
@@ -132,7 +133,7 @@ class ChunkProcessorMixin:
         # Instance-level initialization (not class-level — avoids cross-instance leakage)
         if not hasattr(self, '_chunk_source_cache'):
             self._chunk_source_cache = {}
-        document_name = self._get_file_reference(file_path)
+        document_name = display_document_name(file_path)
         for chunk_id in chunk_ids:
             self._chunk_source_cache[chunk_id] = {
                 "file_path": file_path,
@@ -212,7 +213,7 @@ class ChunkProcessorMixin:
                     chunks_list = []
                 if not file_path or not chunks_list:
                     continue
-                document_name = self._get_file_reference(file_path)
+                document_name = display_document_name(file_path)
                 for chunk_id in chunks_list:
                     # Only fill missing mappings — never overwrite processing-time
                     # registrations made by _register_chunk_sources.
@@ -242,7 +243,7 @@ class ChunkProcessorMixin:
                 file_path = status.get("file_path", "")
                 chunks_list = status.get("chunks_list", [])
                 if file_path and chunks_list:
-                    document_name = self._get_file_reference(file_path)
+                    document_name = display_document_name(file_path)
                     for chunk_id in chunks_list:
                         if chunk_id not in self._chunk_source_cache:
                             self._chunk_source_cache[chunk_id] = {

@@ -22,6 +22,7 @@ from raganything.agentic_rag.tool_base import Tool
 from raganything.query.tag_scoped_retriever import TagScope, retrieve_tag_scoped_context
 from raganything.services.query_execution import await_before_deadline
 from raganything.services.query_timing import QueryTiming
+from raganything.utils import display_document_name
 
 
 class SearchTool(Tool):
@@ -312,7 +313,7 @@ class DatabaseQueryTool(Tool):
             sorted_docs = sorted(rows, key=lambda r: r.get("updated_at") or "", reverse=True)
             lines.append("- 最近文档:")
             for r in sorted_docs[:5]:
-                fname = r.get("file_path", "?") or "?"
+                fname = display_document_name(r.get("file_path"), default="?")
                 st = r.get("status", "?") or "?"
                 chunks = r.get("chunks_count", 0) or 0
                 lines.append(f"  - {fname} [{st}, {chunks} chunks]")

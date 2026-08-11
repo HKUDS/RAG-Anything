@@ -42,8 +42,10 @@ DEGRADED_CONTEXT_HINT = (
 )
 from raganything.citation_parser import has_citations
 from raganything.utils import (
+    display_document_name,
     get_processor_for_type,
     encode_image_to_base64,
+    normalize_citation_document_names,
     validate_image_file,
 )
 from raganything.services.query_execution import await_before_deadline
@@ -182,10 +184,10 @@ class QueryMixin:
             The original answer, supplemented answer, or answer with a warning note.
         """
         if not self.config.enforce_citation:
-            return answer
+            return normalize_citation_document_names(answer)
 
         if has_citations(answer):
-            return answer
+            return normalize_citation_document_names(answer)
 
         self.logger.warning(
             "Answer missing [来源 N] citation markers (enforce_citation=True)."
@@ -222,7 +224,7 @@ class QueryMixin:
                 merged = answer.rstrip() + "\n\n" + supplement.strip()
                 if has_citations(merged):
                     self.logger.info("Citation supplementation successful.")
-                    return merged
+                    return normalize_citation_document_names(merged)
 
             # Supplementation failed — append visible note
             self.logger.warning("Citation supplementation did not produce valid citations.")
@@ -589,7 +591,9 @@ class QueryMixin:
                 for chunk in chunks[:15]:
                     info = source_infos.get(chunk.chunk_id, {})
                     document_name = chunk.document_name or info.get("document_name")
-                    source_name = document_name or f"未知文档-{chunk.chunk_id[:8]}"
+                    source_name = display_document_name(
+                        document_name, default=f"未知文档-{chunk.chunk_id[:8]}"
+                    )
                     count = doc_name_counts.get(source_name, 0)
                     doc_name_counts[source_name] = count + 1
                     source_label = (
@@ -661,7 +665,9 @@ class QueryMixin:
             doc_name_counts: dict[str, int] = {}
             context_parts = []
             for chunk in chunks[:15]:  # top-15 for context window
-                doc_name = chunk.document_name or f"未知文档-{chunk.chunk_id[:8]}"
+                doc_name = display_document_name(
+                    chunk.document_name, default=f"未知文档-{chunk.chunk_id[:8]}"
+                )
                 # Deduplicate: append number suffix if same doc name appears multiple times
                 count = doc_name_counts.get(doc_name, 0)
                 doc_name_counts[doc_name] = count + 1
@@ -910,7 +916,9 @@ class QueryMixin:
             info = source_infos.get(chunk.chunk_id, {})
             chunk.file_path = chunk.file_path or info.get("file_path")
             chunk.document_name = chunk.document_name or info.get("document_name")
-            doc_name = chunk.document_name or f"未知文档-{chunk.chunk_id[:8]}"
+            doc_name = display_document_name(
+                chunk.document_name, default=f"未知文档-{chunk.chunk_id[:8]}"
+            )
 
             paths = item.get("paths", [])
             paths_str = ""

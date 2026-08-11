@@ -13,6 +13,7 @@ import logging
 from raganything.citation_parser import (
     extract_citations as _base_extract_citations,
 )
+from raganything.utils import display_document_name
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,28 @@ class SourceTracer:
         seen = set()
 
         for cit in citations:
-            idx = cit["index"] - 1
-            if idx < 0 or idx >= len(source_docs):
-                continue
-
-            doc = source_docs[idx]
-            doc_id = doc.get("id", doc.get("title", str(idx)))
+            raw_index = cit.get("index")
+            citation_name = display_document_name(cit.get("document_name") or raw_index)
+            if isinstance(raw_index, int):
+                idx = raw_index - 1
+                if idx < 0 or idx >= len(source_docs):
+                    continue
+                doc = source_docs[idx]
+            else:
+                doc = next(
+                    (
+                        candidate for candidate in source_docs
+                        if display_document_name(
+                            candidate.get("document_name")
+                            or candidate.get("title")
+                            or candidate.get("source")
+                        ) == citation_name
+                    ),
+                    None,
+                )
+                if doc is None:
+                    continue
+            doc_id = doc.get("id", doc.get("title", str(raw_index)))
 
             if doc_id in seen:
                 continue
@@ -66,6 +83,9 @@ class SourceTracer:
                 "url": doc.get("url", doc.get("file_path", cit.get("file_path", ""))),
                 "ingested_at": doc.get("ingested_at", doc.get("created_at", "")),
             }
+            enriched["source_title"] = display_document_name(
+                enriched["source_title"]
+            )
             result.append(enriched)
 
         return result

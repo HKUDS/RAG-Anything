@@ -8,6 +8,7 @@ from typing import Any
 from urllib.parse import quote, urlencode
 
 from raganything.services.pg_state_repo import get_pg_pool
+from raganything.utils import display_document_name
 
 
 async def upsert_video_asset(asset: dict[str, Any]) -> None:
@@ -97,7 +98,7 @@ async def list_video_segments_for_chunks(
             "document_id": str(row["document_id"]),
             "media_id": str(row["media_id"]),
             "media_kb": kb_name,
-            "document_name": str(row["original_name"] or ""),
+            "document_name": display_document_name(row["original_name"]),
         }
         for row in rows if row.get("chunk_id")
     }
@@ -129,7 +130,9 @@ def merge_video_segment_citations(segments: list[dict[str, Any]]) -> list[dict[s
         if ranges:
             citations.append({
                 "document_id": ordered[0]["document_id"],
-                "document_name": ordered[0].get("document_name") or "video",
+                "document_name": display_document_name(
+                    ordered[0].get("document_name"), default="video"
+                ),
                 "media_id": media_id, "media_kb": media_kb,
                 "media_url": controlled_video_media_url(media_id, media_kb),
                 "video_segment": ranges[0], "video_segments": ranges,

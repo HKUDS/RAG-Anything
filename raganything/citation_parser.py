@@ -14,6 +14,8 @@ import re
 import logging
 from typing import List, Dict, Optional
 
+from raganything.utils import display_document_name
+
 logger = logging.getLogger(__name__)
 
 # 来源引用标记模式 — 匹配 [来源 文档名]（文档名引用）或 [来源 N]（数字兼容）
@@ -115,7 +117,7 @@ def extract_citation_names(text: str) -> List[str]:
     """
     names = set()
     for m in CITATION_PATTERN.finditer(text):
-        name = m.group(1).strip()
+        name = display_document_name(m.group(1).strip())
         if name:
             names.add(name)
     for m in CITATION_PATTERN_EN.finditer(text):
@@ -135,7 +137,7 @@ def extract_citation_indices(text: str) -> List[int]:
     """
     indices = set()
     for m in CITATION_PATTERN.finditer(text):
-        name = m.group(1).strip()
+        name = display_document_name(m.group(1).strip())
         if name.isdigit():
             indices.add(int(name))
     for m in CITATION_PATTERN_EN.finditer(text):
@@ -268,7 +270,7 @@ def parse_citation_block(text: str) -> List[Dict[str, any]]:
 
     # Strategy 1: New v5 format — [来源 文档名] — "原文..."
     for m in CITATION_ENTRY_V5.finditer(block_text):
-        name = m.group(1).strip()
+        name = display_document_name(m.group(1).strip())
         citations.append({
             "index": name,
             "document_name": name,
@@ -280,7 +282,7 @@ def parse_citation_block(text: str) -> List[Dict[str, any]]:
         for m in CITATION_ENTRY_PATTERN.finditer(block_text):
             citations.append({
                 "index": int(m.group(1)),
-                "document_name": m.group(2).strip(),
+                "document_name": display_document_name(m.group(2).strip()),
                 "excerpt": m.group(3).strip(),
             })
 
@@ -292,7 +294,7 @@ def parse_citation_block(text: str) -> List[Dict[str, any]]:
             excerpt = re.sub(r'[\s,，。.!！?？;；]+$', '', excerpt)
             citations.append({
                 "index": int(m.group(1)),
-                "document_name": m.group(2).strip(),
+                "document_name": display_document_name(m.group(2).strip()),
                 "excerpt": excerpt,
             })
 
@@ -339,11 +341,22 @@ def extract_citations(
         # Enrich with file_path from source_docs if available
         if source_docs:
             for cit in block_citations:
-                idx = cit["index"] - 1
+                idx = cit["index"] - 1 if isinstance(cit["index"], int) else -1
                 if 0 <= idx < len(source_docs):
                     cit["file_path"] = source_docs[idx].get("file_path")
-                else:
-                    cit["file_path"] = None
+                    continue
+                source_doc = next(
+                    (
+                        doc for doc in source_docs
+                        if display_document_name(
+                            doc.get("document_name")
+                            or doc.get("title")
+                            or doc.get("source")
+                        ) == cit["document_name"]
+                    ),
+                    None,
+                )
+                cit["file_path"] = source_doc.get("file_path") if source_doc else None
         result["sources"] = block_citations
     else:
         # Strategy 2: Extract inline citations, build from context
@@ -360,7 +373,7 @@ def extract_citations(
         for doc_name in sorted(set(doc_names)):
             citation = {
                 "index": doc_name,
-                "document_name": doc_name,
+                "document_name": display_document_name(doc_name),
                 "excerpt": None,
                 "file_path": None,
             }
@@ -392,6 +405,9 @@ def extract_citations(
                 citation["document_name"] = doc.get(
                     "document_name",
                     doc.get("title", doc.get("source", f"来源 {ref_idx}")),
+                )
+                citation["document_name"] = display_document_name(
+                    citation["document_name"], default=str(ref_idx)
                 )
                 citation["file_path"] = doc.get("file_path")
                 excerpt = doc.get("content", doc.get("text", ""))
