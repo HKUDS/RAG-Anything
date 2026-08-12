@@ -1749,14 +1749,54 @@ class ProcessorMixin:
                         doc_id=doc_id,
                     )
                 insert_start = time.time()
-                await insert_text_content(
-                    self.lightrag,
-                    input=text_content,
-                    file_paths=file_name,
-                    split_by_character=split_by_character,
-                    split_by_character_only=split_by_character_only,
-                    ids=doc_id,
-                )
+                inserted_via_sidecar = False
+                # Page-provenance path (#330): route the text through
+                # LightRAG's sidecar pipeline so chunks keep block-level page
+                # positions. Only when opted in, no custom split is requested
+                # (the P chunker owns splitting), and the installed lightrag
+                # ships the sidecar subsystem; any failure falls back to the
+                # plain insertion below.
+                if (
+                    getattr(self.config, "preserve_page_provenance", False)
+                    and split_by_character is None
+                ):
+                    from raganything.sidecar_ingest import (
+                        insert_text_with_sidecar,
+                        sidecar_available,
+                    )
+
+                    if sidecar_available():
+                        try:
+                            await insert_text_with_sidecar(
+                                self.lightrag,
+                                content_list=content_list,
+                                doc_id=doc_id,
+                                file_name=file_name,
+                                document_name=Path(file_path).name,
+                                sidecar_parent_dir=output_dir,
+                            )
+                            inserted_via_sidecar = True
+                        except Exception as sidecar_exc:
+                            self.logger.warning(
+                                "Sidecar insertion failed for "
+                                f"{file_path} ({sidecar_exc}); falling back "
+                                "to plain text insertion"
+                            )
+                    else:
+                        self.logger.info(
+                            "preserve_page_provenance is set but the "
+                            "installed lightrag lacks the sidecar pipeline; "
+                            "using plain text insertion"
+                        )
+                if not inserted_via_sidecar:
+                    await insert_text_content(
+                        self.lightrag,
+                        input=text_content,
+                        file_paths=file_name,
+                        split_by_character=split_by_character,
+                        split_by_character_only=split_by_character_only,
+                        ids=doc_id,
+                    )
                 await self._upsert_doc_status(
                     doc_id,
                     file_name,
