@@ -1975,6 +1975,10 @@ class ProcessorMixin:
                     error_message = "\n".join(str(m) for m in e.error_msg)
                 else:
                     error_message = str(e.error_msg)
+                # Surface remediation advice for recognized MinerU failures in the
+                # persisted doc status, not just in the logs.
+                if getattr(e, "hint", None):
+                    error_message = f"{error_message}\n\n{e.hint}"
                 await self.lightrag.doc_status.upsert(
                     {
                         doc_pre_id: {
