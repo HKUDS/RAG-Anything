@@ -437,6 +437,8 @@ def get_processor_for_type(modal_processors: Dict[str, Any], content_type: str):
         return modal_processors.get("table")
     elif content_type == "equation":
         return modal_processors.get("equation")
+    elif content_type == "video" and "video" in modal_processors:
+        return modal_processors.get("video")
     else:
         # For other types, use generic processor
         return modal_processors.get("generic")
@@ -462,6 +464,12 @@ def get_processor_supports(proc_type: str) -> List[str]:
             "Variable identification",
             "Formula meaning explanation",
             "Formula entity extraction",
+        ],
+        "video": [
+            "Video understanding (TwelveLabs Pegasus)",
+            "Transcript / description generation",
+            "Multimodal video embeddings (TwelveLabs Marengo, 512-dim)",
+            "Video entity extraction",
         ],
         "generic": [
             "General content analysis",
