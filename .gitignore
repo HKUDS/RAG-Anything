@@ -44,9 +44,12 @@ temp/
 # Framework-specific files
 local_neo4jWorkDir/
 neo4jWorkDir/
+node_modules/
+*.tsbuildinfo
 
 # Data & Storage
 inputs/
+studio_data/
 rag_storage*/
 examples/input/
 examples/output/
@@ -57,6 +60,14 @@ output*/
 TODO.md
 ignore_this.txt
 *.ignore.*
+
+# Personal notes & study materials (circuit-domain branch artifacts)
+.codex
+experiment_data/
+RAG-Anything_Study_Plan.md
+docs/Circuit*.md
+docs/*系统*.md
+docs/*基准*.md
 
 # Project-specific files
 dickens*/
@@ -70,6 +81,8 @@ tiktoken_cache/
 
 # unit-test files
 test_*
+!tests/studio/
+!tests/studio/test_studio_core.py
 
 # Cline files
 memory-bank/
