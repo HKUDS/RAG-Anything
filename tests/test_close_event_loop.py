@@ -15,11 +15,15 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # ── Replicate the close() logic under test ──────────────────────────────
 
 
-def _close_impl(finalize_coro_factory):
+def _close_impl(finalize_coro_factory, *, warnings=None):
     """The fixed close() logic extracted for unit testing.
+
+    When a loop is already running, finalization is skipped (no fire-and-forget
+    create_task). Callers should await finalize_storages() explicitly.
 
     Args:
         finalize_coro_factory: callable that returns a coroutine (or None)
+        warnings: optional list to append warning messages (simulates logger)
     """
 
     try:
@@ -29,15 +33,22 @@ def _close_impl(finalize_coro_factory):
             loop = None
 
         if loop is not None and loop.is_running():
-            loop.create_task(finalize_coro_factory())
-        else:
-            if loop is not None:
-                try:
-                    loop.close()
-                except Exception:
-                    pass
-                asyncio.set_event_loop(None)
-            asyncio.run(finalize_coro_factory())
+            if warnings is not None:
+                warnings.append("skipping automatic finalization")
+            return
+
+        try:
+            stale = asyncio.get_event_loop()
+        except RuntimeError:
+            stale = None
+        if stale is not None:
+            try:
+                if not stale.is_closed():
+                    stale.close()
+            except Exception:
+                pass
+            asyncio.set_event_loop(None)
+        asyncio.run(finalize_coro_factory())
     except Exception:
         pass
 
@@ -72,20 +83,22 @@ class TestCloseEventLoop:
         _close_impl(finalize)
         assert called["n"] == 1
 
-    def test_inside_running_loop(self):
-        """Should schedule cleanup as a task when inside a running loop."""
+    def test_inside_running_loop_skips_fire_and_forget(self):
+        """Should not schedule fire-and-forget finalization inside a running loop."""
         called = {"n": 0}
+        warnings: list[str] = []
 
         async def finalize():
             called["n"] += 1
 
         async def run_test():
-            _close_impl(finalize)
+            _close_impl(finalize, warnings=warnings)
             await asyncio.sleep(0.05)
             return called["n"]
 
         count = asyncio.run(run_test())
-        assert count == 1
+        assert count == 0
+        assert warnings and "skipping automatic finalization" in warnings[0]
 
     def test_finalize_raises(self):
         """Should silently handle exceptions during finalize."""

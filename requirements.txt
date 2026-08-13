@@ -1,10 +1,12 @@
 huggingface_hub
 # LightRAG packages
-lightrag-hku
+lightrag-hku<1.5
 # MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
 mineru[core]
 # Progress bars for batch processing
 tqdm
+# Required at import time by raganything.raganything (load_dotenv)
+python-dotenv
 # Note: Optional dependencies are now defined in setup.py extras_require:
 # - [image]: Pillow>=10.0.0 (for BMP, TIFF, GIF, WebP format conversion)
 # - [text]: reportlab>=4.0.0 (for TXT, MD to PDF conversion)

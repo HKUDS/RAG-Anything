@@ -9,15 +9,10 @@ This script integrates:
 
 import os
 from typing import Dict, Any, Optional, Callable
-import sys
 import asyncio
 import atexit
 from dataclasses import dataclass, field
-from pathlib import Path
 from dotenv import load_dotenv
-
-# Add project root directory to Python path
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # Load environment variables from .env file BEFORE importing LightRAG
 # This is critical for TIKTOKEN_CACHE_DIR to work properly in offline environments
@@ -141,42 +136,60 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         self.logger.info(f"  Max concurrent files: {self.config.max_concurrent_files}")
 
     def close(self):
-        """Cleanup resources when object is destroyed.
+        """Best-effort cleanup registered with ``atexit``.
 
-        Handles three common scenarios:
-        1. Inside a running async context (e.g., FastAPI shutdown) -> schedule task
-        2. No event loop in thread (typical atexit) -> create one with asyncio.run()
-        3. Event loop exists but is closed/closing (atexit race) -> create new loop
+        Prefer awaiting ``finalize_storages()`` explicitly in application code
+        (especially async servers). Behavior:
+
+        1. No running event loop (typical atexit) → run finalization with
+           ``asyncio.run()``.
+        2. A running event loop is active → do **not** schedule a fire-and-forget
+           task; log a warning and return. Call ``await finalize_storages()``
+           during graceful shutdown instead.
         """
         try:
-            import asyncio
-
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
                 loop = None
 
             if loop is not None and loop.is_running():
-                # Case 1: We're inside a running event loop, schedule cleanup task
-                loop.create_task(self.finalize_storages())
-            else:
-                # Case 2/3: No running loop. Clean up any stale loop reference
-                # so asyncio.run() can create a fresh one (Python 3.10+ raises
-                # RuntimeError if a loop is already set for the thread).
-                if loop is not None:
-                    try:
-                        loop.close()
-                    except Exception:
-                        pass
-                    asyncio.set_event_loop(None)
-                asyncio.run(self.finalize_storages())
-        except Exception:
-            # Silently ignore during interpreter shutdown - the event loop and
-            # resources are being torn down anyway, and printing may fail if
-            # stdout/stderr are already closed. This avoids the noisy
-            # "There is no current event loop in thread 'MainThread'" warning
-            # that confused users (#135).
-            pass
+                # Avoid fire-and-forget create_task: it may never complete during
+                # interpreter/app shutdown and can race teardown.
+                self.logger.warning(
+                    "RAGAnything.close() called while an event loop is running; "
+                    "skipping automatic finalization. Await finalize_storages() "
+                    "explicitly before shutdown."
+                )
+                return
+
+            # No running loop. Clear any stale loop reference so asyncio.run()
+            # can create a fresh one (Python 3.10+ raises RuntimeError if a
+            # loop is already set for the thread).
+            try:
+                stale = asyncio.get_event_loop()
+            except RuntimeError:
+                stale = None
+            if stale is not None:
+                try:
+                    if not stale.is_closed():
+                        stale.close()
+                except Exception:
+                    pass
+                asyncio.set_event_loop(None)
+            asyncio.run(self.finalize_storages())
+        except Exception as exc:
+            # Best-effort log, then ignore during interpreter shutdown — the
+            # event loop and resources are being torn down, and printing may
+            # fail if stdout/stderr are already closed (#135).
+            try:
+                self.logger.debug(
+                    "RAGAnything.close() suppressed error during cleanup: %s",
+                    exc,
+                    exc_info=True,
+                )
+            except Exception:
+                pass
 
     def _create_context_config(self) -> ContextConfig:
         """Create context configuration from RAGAnything config"""
@@ -429,7 +442,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         Example usage:
             try:
                 rag_anything = RAGAnything(...)
-                await rag_anything.process_file("document.pdf")
+                await rag_anything.process_document_complete("document.pdf")
                 # ... other operations ...
             finally:
                 # Always finalize storages to clean up resources
@@ -437,8 +450,10 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                     await rag_anything.finalize_storages()
 
         Note:
-            - This method is automatically called in __del__ when the object is destroyed
-            - Manual calling is recommended in production environments
+            - Prefer calling this explicitly on shutdown (required when an event
+              loop is already running; see ``close()``).
+            - ``atexit`` may call ``close()``, which runs this only when no loop
+              is running — it is not invoked via ``__del__``.
             - All finalization tasks run concurrently for better performance
         """
         try:
