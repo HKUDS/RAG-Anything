@@ -40,6 +40,7 @@ import urllib.request
 import shutil
 from pathlib import Path
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -48,6 +49,9 @@ from typing import (
     Any,
     Iterator,
 )
+
+if TYPE_CHECKING:
+    from PIL import Image
 
 from raganything.asset_urls import attach_public_media_urls
 
