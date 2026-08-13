@@ -1877,7 +1877,10 @@ class ProcessorMixin:
                     "multimodal_content": [],
                     "scheme_name": scheme_name,
                     "content_length": 0,
-                    "created_at": "",
+                    # A real timestamp, never "": storage backends that map
+                    # created_at as a date reject an empty string, and the
+                    # rejected upsert is silently dropped (#328).
+                    "created_at": self._current_doc_status_timestamp(),
                     "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                     "file_path": file_name,
                 }
@@ -1934,8 +1937,12 @@ class ProcessorMixin:
                             "multimodal_content": [],
                             "scheme_name": scheme_name,
                             "content_length": 0,
-                            "created_at": "",
-                            "updated_at": "",
+                            # A real timestamp, never "": storage backends
+                            # that map created_at as a date reject an empty
+                            # string, and the rejected upsert is silently
+                            # dropped (#328).
+                            "created_at": self._current_doc_status_timestamp(),
+                            "updated_at": self._current_doc_status_timestamp(),
                             "file_path": file_name,
                         }
                     }
@@ -2010,16 +2017,22 @@ class ProcessorMixin:
             if doc_id is None:
                 doc_id = content_based_doc_id
 
-            await self._upsert_doc_status(
-                doc_id,
-                file_name,
-                scheme_name=scheme_name,
-                status=DocStatus.HANDLING,
-                error_msg="",
-            )
-
             # Step 2: Separate text and multimodal content
             text_content, multimodal_items = separate_content(content_list)
+
+            # LightRAG creates the initial doc_status entry during text
+            # insertion. Pre-registering the same doc_id here makes LightRAG
+            # treat a fresh document insert as a duplicate and skip indexing
+            # entirely, so only create the record up front for multimodal-only
+            # content that will not reach ainsert().
+            if not text_content.strip():
+                await self._upsert_doc_status(
+                    doc_id,
+                    file_name,
+                    scheme_name=scheme_name,
+                    status=DocStatus.HANDLING,
+                    error_msg="",
+                )
 
             # Step 2.5: Set content source for context extraction in multimodal processing
             if hasattr(self, "set_content_source_for_context") and multimodal_items:
