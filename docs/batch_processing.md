@@ -131,6 +131,9 @@ python -m raganything.batch_parser examples/sample_docs/ --parser paddleocr --me
 # Without progress bar
 python -m raganything.batch_parser examples/sample_docs/ --output ./output --no-progress
 
+# Only process files directly inside the specified directories
+python -m raganything.batch_parser examples/sample_docs/ --output ./output --no-recursive
+
 # Dry run (list supported files without processing)
 python -m raganything.batch_parser examples/sample_docs/ --output ./output --dry-run
 

@@ -22,7 +22,7 @@ class FakeParser:
         return [{"type": "text", "text": Path(file_path).read_text()}]
 
 
-def _make_batch_parser(monkeypatch):
+def _load_batch_parser_module(monkeypatch):
     fake_parser = FakeParser()
     repo_root = Path(__file__).parents[1]
 
@@ -43,6 +43,12 @@ def _make_batch_parser(monkeypatch):
     monkeypatch.setitem(sys.modules, "raganything.batch_parser", batch_parser_module)
     spec.loader.exec_module(batch_parser_module)
 
+    return batch_parser_module, fake_parser
+
+
+def _make_batch_parser(monkeypatch):
+    batch_parser_module, fake_parser = _load_batch_parser_module(monkeypatch)
+
     batch_parser = batch_parser_module.BatchParser(
         parser_type="fake",
         max_workers=1,
@@ -50,6 +56,44 @@ def _make_batch_parser(monkeypatch):
         skip_installation_check=True,
     )
     return batch_parser, fake_parser
+
+
+def test_cli_can_disable_recursive_scan(monkeypatch, tmp_path):
+    batch_parser_module, _ = _load_batch_parser_module(monkeypatch)
+    captured = {}
+
+    class FakeResult:
+        successful_files = []
+        failed_files = []
+        skipped_files = []
+
+        @staticmethod
+        def summary():
+            return "Batch processing results"
+
+    class FakeBatchParser:
+        def __init__(self, **kwargs):
+            pass
+
+        def process_batch(self, **kwargs):
+            captured.update(kwargs)
+            return FakeResult()
+
+    monkeypatch.setattr(batch_parser_module, "BatchParser", FakeBatchParser)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "raganything.batch_parser",
+            str(tmp_path / "docs"),
+            "--output",
+            str(tmp_path / "output"),
+            "--no-recursive",
+        ],
+    )
+
+    assert batch_parser_module.main() == 0
+    assert captured["recursive"] is False
 
 
 def test_incremental_batch_skips_unchanged_files(monkeypatch, tmp_path):

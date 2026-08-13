@@ -604,9 +604,9 @@ def main():
     )
     parser.add_argument(
         "--recursive",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
-        help="Search directories recursively",
+        help="Search directories recursively (use --no-recursive to disable)",
     )
     parser.add_argument(
         "--timeout", type=int, default=300, help="Timeout per file (seconds)"
