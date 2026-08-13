@@ -747,6 +747,9 @@ class ProcessorMixin:
         existing_chunks_count = (
             existing_doc_status.get("chunks_count", 0) if existing_doc_status else 0
         )
+        # Running order index; advanced per produced chunk so multi-window items
+        # (long audio/video) don't collide with subsequent items.
+        next_order = existing_chunks_count
 
         for i, item in enumerate(multimodal_items):
             try:
@@ -778,17 +781,23 @@ class ProcessorMixin:
                         item_info=item_info,  # Pass item info for context extraction
                         batch_mode=True,
                         doc_id=doc_id,  # Pass doc_id for proper association
-                        chunk_order_index=existing_chunks_count
-                        + i,  # Proper order index
+                        chunk_order_index=next_order,  # Running order index
                     )
 
                     # Collect chunk results for batch processing
                     all_chunk_results.extend(chunk_results)
 
-                    # Extract chunk ID from the entity_info (actual chunk_id created by processor)
-                    if entity_info and "chunk_id" in entity_info:
-                        chunk_id = entity_info["chunk_id"]
-                        multimodal_chunk_ids.append(chunk_id)
+                    # Register every chunk id created (an item may yield several,
+                    # e.g. long audio/video split into windows) and advance the
+                    # running order index past all of them.
+                    if entity_info and entity_info.get("chunk_ids"):
+                        item_chunk_ids = entity_info["chunk_ids"]
+                    elif entity_info and "chunk_id" in entity_info:
+                        item_chunk_ids = [entity_info["chunk_id"]]
+                    else:
+                        item_chunk_ids = []
+                    multimodal_chunk_ids.extend(item_chunk_ids)
+                    next_order += max(1, len(item_chunk_ids))
 
                     self.logger.info(
                         f"{content_type} processing complete: {entity_info.get('entity_name', 'Unknown')}"
@@ -944,11 +953,10 @@ class ProcessorMixin:
                         "type": content_type,
                     }
 
-                    # Call the correct processor's description generation method
-                    (
-                        description,
-                        entity_info,
-                    ) = await processor.generate_description_only(
+                    # Call the processor's section generator. Most items map to a
+                    # single section; long audio/video may produce several ordered
+                    # sections (windows), each becoming its own chunk.
+                    sections = await processor.generate_chunk_sections(
                         modal_content=item,
                         content_type=content_type,
                         item_info=item_info,
@@ -967,17 +975,29 @@ class ProcessorMixin:
                                 f"Multimodal chunk generation progress: {completed_count}/{total_items} ({progress_percent:.1f}%)"
                             )
 
-                    return {
-                        "index": index,
-                        "content_type": content_type,
-                        "description": description,
-                        "entity_info": entity_info,
-                        "original_item": item,
-                        "item_info": item_info,
-                        "chunk_order_index": existing_chunks_count + index,
-                        "processor": processor,  # Keep reference to the processor used
-                        "file_path": file_path,  # Add file_path to the result
-                    }
+                    # One data dict per section. chunk_order_index is assigned
+                    # after gather (a single item can yield multiple chunks).
+                    section_results = []
+                    for section in sections:
+                        window_meta = section.get("window_meta")
+                        section_item = (
+                            {**item, "_window_meta": window_meta}
+                            if window_meta
+                            else item
+                        )
+                        section_results.append(
+                            {
+                                "index": index,
+                                "content_type": content_type,
+                                "description": section["description"],
+                                "entity_info": section["entity_info"],
+                                "original_item": section_item,
+                                "item_info": item_info,
+                                "processor": processor,
+                                "file_path": file_path,
+                            }
+                        )
+                    return section_results
 
                 except Exception as e:
                     # Update progress even on error (non-blocking)
@@ -1007,14 +1027,21 @@ class ProcessorMixin:
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Filter successful results
+        # Filter successful results and flatten sections (one item -> N sections).
+        # Sections are kept in original item order, then audio/video windows in
+        # their natural order, so a running counter yields correct chunk ordering.
         multimodal_data_list = []
+        running_offset = 0
         for result in results:
             if isinstance(result, Exception):
                 self.logger.error(f"Task failed: {result}")
                 continue
-            if result is not None:
-                multimodal_data_list.append(result)
+            if not result:
+                continue
+            for data in result:
+                data["chunk_order_index"] = existing_chunks_count + running_offset
+                running_offset += 1
+                multimodal_data_list.append(data)
 
         if not multimodal_data_list:
             self.logger.warning("No valid multimodal descriptions generated")
@@ -1106,6 +1133,13 @@ class ProcessorMixin:
         )
         return chunks
 
+    @staticmethod
+    def _format_window_part(window_meta: Optional[Dict[str, Any]]) -> str:
+        """Render the ' — part k/N' suffix for a windowed media chunk, if any."""
+        if not window_meta:
+            return ""
+        return f" — part {window_meta['part']}/{window_meta['total']}"
+
     def _apply_chunk_template(
         self, content_type: str, original_item: Dict[str, Any], description: str
     ) -> str:
@@ -1176,6 +1210,30 @@ class ProcessorMixin:
                     equation_text=equation_text,
                     equation_format=equation_format,
                     enhanced_caption=description,
+                )
+
+            elif content_type == "audio":
+                audio_path = original_item.get(
+                    "audio_path", original_item.get("img_path", "")
+                )
+                part = self._format_window_part(original_item.get("_window_meta"))
+
+                return (
+                    f"[Audio Content]{part}\n"
+                    f"Source: {audio_path}\n"
+                    f"Transcription:\n{description}"
+                )
+
+            elif content_type == "video":
+                video_path = original_item.get(
+                    "video_path", original_item.get("img_path", "")
+                )
+                part = self._format_window_part(original_item.get("_window_meta"))
+
+                return (
+                    f"[Video Content]{part}\n"
+                    f"Source: {video_path}\n"
+                    f"Analysis:\n{description}"
                 )
 
             else:  # generic or unknown types

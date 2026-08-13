@@ -51,6 +51,18 @@ class RAGAnythingConfig:
     )
     """Enable equation content processing."""
 
+    enable_audio_processing: bool = field(
+        default=get_env_value("ENABLE_AUDIO_PROCESSING", False, bool)
+    )
+    """Enable audio content processing. Requires optional 'audio' dependencies
+    (``pip install raganything[audio]``); disabled by default."""
+
+    enable_video_processing: bool = field(
+        default=get_env_value("ENABLE_VIDEO_PROCESSING", False, bool)
+    )
+    """Enable video content processing. Requires optional 'video' dependencies
+    (``pip install raganything[video]``); disabled by default."""
+
     # Batch Processing Configuration
     # ---
     max_concurrent_files: int = field(
@@ -63,7 +75,7 @@ class RAGAnythingConfig:
             x.strip()
             for x in get_env_value(
                 "SUPPORTED_FILE_EXTENSIONS",
-                ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md",
+                ".pdf,.jpg,.jpeg,.png,.bmp,.tiff,.tif,.gif,.webp,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.txt,.md,.mp3,.wav,.flac,.m4a,.ogg,.wma,.aac,.opus,.mp4,.mov,.webm,.avi,.mkv,.flv,.wmv,.m4v",
                 str,
             ).split(",")
         ]
