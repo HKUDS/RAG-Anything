@@ -70,7 +70,7 @@
 
 ## 🎉 新闻
 - [X] [2026.06]🎯📢 🎉 [LightRAG](https://github.com/HKUDS/LightRAG) 通过原生集成 RAG-Anything 实现多模态 RAG。
-- [X] [2025.10]🎯📢 🚀 我们已发布 [RAG-Anything] 的技术报告（http://arxiv.org/abs/2510.12323），立即访问以了解我们的最新研究成果。
+- [X] [2025.10]🎯📢 🚀 我们已发布 [RAG-Anything] 的技术报告（[http://arxiv.org/abs/2510.12323](http://arxiv.org/abs/2510.12323)），立即访问以了解我们的最新研究成果。
 - [X] [2025.08.12]🎯📢 🔍 RAGAnything 现在支持 **VLM增强查询** 模式！当文档包含图片时，系统可以自动将图片与文本上下文一起直接传递给VLM进行综合多模态分析。
 - [X] [2025.07.05]🎯📢 RAGAnything 新增[上下文配置模块](docs/context_aware_processing.md)，支持为多模态内容处理添加相关上下文信息。
 - [X] [2025.07.04]🎯📢 RAGAnything 现在支持多模态内容查询，实现了集成文本、图像、表格和公式处理的增强检索生成功能。
