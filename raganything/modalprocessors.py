@@ -960,15 +960,7 @@ class ImageModalProcessor(BaseModalProcessor):
 
         except Exception as e:
             logger.error(f"Error generating image description: {e}")
-            # Fallback processing
-            fallback_entity = {
-                "entity_name": entity_name
-                if entity_name
-                else f"image_{compute_mdhash_id(str(modal_content))}",
-                "entity_type": "image",
-                "summary": f"Image content: {str(modal_content)[:100]}",
-            }
-            return str(modal_content), fallback_entity
+            raise
 
     async def process_multimodal_content(
         self,
@@ -1160,15 +1152,7 @@ class TableModalProcessor(BaseModalProcessor):
 
         except Exception as e:
             logger.error(f"Error generating table description: {e}")
-            # Fallback processing
-            fallback_entity = {
-                "entity_name": entity_name
-                if entity_name
-                else f"table_{compute_mdhash_id(str(modal_content))}",
-                "entity_type": "table",
-                "summary": f"Table content: {str(modal_content)[:100]}",
-            }
-            return str(modal_content), fallback_entity
+            raise
 
     async def process_multimodal_content(
         self,
@@ -1348,15 +1332,7 @@ class EquationModalProcessor(BaseModalProcessor):
 
         except Exception as e:
             logger.error(f"Error generating equation description: {e}")
-            # Fallback processing
-            fallback_entity = {
-                "entity_name": entity_name
-                if entity_name
-                else f"equation_{compute_mdhash_id(str(modal_content))}",
-                "entity_type": "equation",
-                "summary": f"Equation content: {str(modal_content)[:100]}",
-            }
-            return str(modal_content), fallback_entity
+            raise
 
     async def process_multimodal_content(
         self,
@@ -1522,15 +1498,7 @@ class GenericModalProcessor(BaseModalProcessor):
 
         except Exception as e:
             logger.error(f"Error generating {content_type} description: {e}")
-            # Fallback processing
-            fallback_entity = {
-                "entity_name": entity_name
-                if entity_name
-                else f"{content_type}_{compute_mdhash_id(str(modal_content))}",
-                "entity_type": content_type,
-                "summary": f"{content_type} content: {str(modal_content)[:100]}",
-            }
-            return str(modal_content), fallback_entity
+            raise
 
     async def process_multimodal_content(
         self,
