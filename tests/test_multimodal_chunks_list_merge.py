@@ -11,6 +11,8 @@ import asyncio
 import sys
 import types
 
+import pytest
+
 
 class RecordingLogger:
     def __init__(self):
@@ -134,14 +136,14 @@ def test_partial_overlap_appends_only_missing_ids():
     assert record["chunks_count"] == 3
 
 
-def test_missing_record_warns_instead_of_silently_skipping():
+def test_missing_record_fails_instead_of_silently_skipping():
     processor = DummyProcessor()
 
-    asyncio.run(
-        processor._update_doc_status_with_chunks_type_aware("doc-absent", ["chunk-m1"])
-    )
+    with pytest.raises(RuntimeError, match="doc_status record doc-absent not found"):
+        asyncio.run(
+            processor._update_doc_status_with_chunks_type_aware(
+                "doc-absent", ["chunk-m1"]
+            )
+        )
 
     assert processor.lightrag.doc_status.records == {}
-    assert any(
-        "doc-absent" in message for message in processor.logger.warnings
-    ), processor.logger.warnings
