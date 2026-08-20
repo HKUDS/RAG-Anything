@@ -741,6 +741,8 @@ class ProcessorMixin:
         # Collect all chunk results for batch processing (similar to text content processing)
         all_chunk_results = []
         multimodal_chunk_ids = []
+        processing_failures = []
+        successful_count = 0
 
         # Get current text chunks count to set proper order indexes for multimodal chunks
         existing_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
@@ -758,50 +760,66 @@ class ProcessorMixin:
                 # Select appropriate processor
                 processor = get_processor_for_type(self.modal_processors, content_type)
 
-                if processor:
-                    # Prepare item info for context extraction
-                    item_info = {
-                        "page_idx": item.get("page_idx", 0),
-                        "index": item.get("_content_list_index", i),
-                        "type": content_type,
-                    }
-
-                    # Process content and get chunk results instead of immediately merging
-                    (
-                        enhanced_caption,
-                        entity_info,
-                        chunk_results,
-                    ) = await processor.process_multimodal_content(
-                        modal_content=item,
-                        content_type=content_type,
-                        file_path=file_name,
-                        item_info=item_info,  # Pass item info for context extraction
-                        batch_mode=True,
-                        doc_id=doc_id,  # Pass doc_id for proper association
-                        chunk_order_index=existing_chunks_count
-                        + i,  # Proper order index
+                if not processor:
+                    raise RuntimeError(
+                        f"No multimodal processor found for type: {content_type}"
                     )
 
-                    # Collect chunk results for batch processing
-                    all_chunk_results.extend(chunk_results)
+                # Prepare item info for context extraction
+                item_info = {
+                    "page_idx": item.get("page_idx", 0),
+                    "index": item.get("_content_list_index", i),
+                    "type": content_type,
+                }
 
-                    # Extract chunk ID from the entity_info (actual chunk_id created by processor)
-                    if entity_info and "chunk_id" in entity_info:
-                        chunk_id = entity_info["chunk_id"]
-                        multimodal_chunk_ids.append(chunk_id)
+                # Process content and get chunk results instead of immediately merging
+                (
+                    enhanced_caption,
+                    entity_info,
+                    chunk_results,
+                ) = await processor.process_multimodal_content(
+                    modal_content=item,
+                    content_type=content_type,
+                    file_path=file_name,
+                    item_info=item_info,  # Pass item info for context extraction
+                    batch_mode=True,
+                    doc_id=doc_id,  # Pass doc_id for proper association
+                    chunk_order_index=existing_chunks_count + i,  # Proper order index
+                )
 
-                    self.logger.info(
-                        f"{content_type} processing complete: {entity_info.get('entity_name', 'Unknown')}"
+                if chunk_results is None:
+                    raise RuntimeError(
+                        f"{content_type} processor returned no chunk results"
                     )
-                else:
-                    self.logger.warning(
-                        f"No suitable processor found for {content_type} type content"
-                    )
 
-            except Exception as e:
-                self.logger.error(f"Error processing multimodal content: {str(e)}")
+                # Collect chunk results for batch processing
+                all_chunk_results.extend(chunk_results)
+
+                # Extract chunk ID from the entity_info (actual chunk_id created by processor)
+                if entity_info and "chunk_id" in entity_info:
+                    chunk_id = entity_info["chunk_id"]
+                    multimodal_chunk_ids.append(chunk_id)
+
+                successful_count += 1
+                self.logger.info(
+                    f"{content_type} processing complete: {entity_info.get('entity_name', 'Unknown')}"
+                )
+
+            except Exception as exc:
+                processing_failures.append(exc)
+                self.logger.error("Error processing multimodal content item")
                 self.logger.debug("Exception details:", exc_info=True)
                 continue
+
+        if processing_failures:
+            self.logger.error(
+                "Incomplete individual multimodal batch: "
+                f"{successful_count}/{len(multimodal_items)} succeeded"
+            )
+            raise RuntimeError(
+                "Individual multimodal processing failed closed: "
+                f"{successful_count}/{len(multimodal_items)} succeeded"
+            ) from processing_failures[0]
 
         # Update doc_status to include multimodal chunks in the standard
         # chunks_list (same merge semantics as the batch type-aware path)
