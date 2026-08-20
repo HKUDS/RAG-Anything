@@ -655,25 +655,20 @@ class ProcessorMixin:
                     doc_id, existing_doc_status
                 )
 
-                if multimodal_processed:
+                doc_status = existing_doc_status.get("status", "")
+                if doc_status == DocStatus.PROCESSED and multimodal_processed:
                     self.logger.info(
-                        f"Document {doc_id} multimodal content is already processed"
+                        f"Document {doc_id} is fully processed (text + multimodal)"
                     )
                     return
 
                 # Even if status is DocStatus.PROCESSED (text processing done),
                 # we still need to process multimodal content if not yet done
-                doc_status = existing_doc_status.get("status", "")
-                if doc_status == DocStatus.PROCESSED and not multimodal_processed:
+                if doc_status == DocStatus.PROCESSED:
                     self.logger.info(
                         f"Document {doc_id} text processing is complete, but multimodal content still needs processing"
                     )
                     # Continue with multimodal processing
-                elif doc_status == DocStatus.PROCESSED and multimodal_processed:
-                    self.logger.info(
-                        f"Document {doc_id} is fully processed (text + multimodal)"
-                    )
-                    return
 
         except Exception as e:
             self.logger.error(f"Error checking document status for {doc_id}: {e}")
@@ -859,9 +854,11 @@ class ProcessorMixin:
         # Get existing chunks count for proper order indexing. A status read
         # failure must stop the pipeline instead of silently changing indexes.
         existing_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
-        existing_chunks_count = (
-            existing_doc_status.get("chunks_count", 0) if existing_doc_status else 0
-        )
+        if not existing_doc_status:
+            raise RuntimeError(
+                f"doc_status record {doc_id} not found; cannot process multimodal content"
+            )
+        existing_chunks_count = existing_doc_status.get("chunks_count", 0)
 
         # Use LightRAG's concurrency control
         semaphore = asyncio.Semaphore(getattr(self.lightrag, "max_parallel_insert", 2))
@@ -870,6 +867,8 @@ class ProcessorMixin:
         total_items = len(multimodal_items)
         completed_count = 0
         progress_lock = asyncio.Lock()
+        description_failed = asyncio.Event()
+        first_description_failure = None
 
         # Log processing start
         self.logger.info(f"Starting to process {total_items} multimodal content items")
@@ -879,9 +878,14 @@ class ProcessorMixin:
             item: Dict[str, Any], index: int, file_path: str
         ):
             """Process single item using the correct processor for its type"""
-            nonlocal completed_count
+            nonlocal completed_count, first_description_failure
             async with semaphore:
                 try:
+                    if description_failed.is_set():
+                        raise RuntimeError(
+                            "Skipped multimodal description after an earlier failure"
+                        )
+
                     content_type = item.get("type", "unknown")
 
                     # Select the correct processor based on content type
@@ -922,6 +926,11 @@ class ProcessorMixin:
                         "processor": processor,  # Keep reference to the processor used
                         "file_path": file_path,  # Add file_path to the result
                     }
+                except Exception as exc:
+                    if first_description_failure is None:
+                        first_description_failure = exc
+                    description_failed.set()
+                    raise
                 finally:
                     # Update progress for both successful and failed tasks.
                     async with progress_lock:
@@ -943,24 +952,49 @@ class ProcessorMixin:
             for i, item in enumerate(multimodal_items)
         ]
 
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        multimodal_data_list = []
+        pending_tasks = set(tasks)
+        try:
+            while pending_tasks:
+                done_tasks, pending_tasks = await asyncio.wait(
+                    pending_tasks,
+                    return_when=asyncio.FIRST_EXCEPTION,
+                )
+                for task in done_tasks:
+                    try:
+                        result = task.result()
+                    except Exception:
+                        continue
+                    multimodal_data_list.append(result)
 
-        failures = [result for result in results if isinstance(result, Exception)]
-        multimodal_data_list = [
-            result for result in results if not isinstance(result, Exception)
-        ]
+                if first_description_failure is not None:
+                    for task in pending_tasks:
+                        task.cancel()
+                    if pending_tasks:
+                        await asyncio.gather(*pending_tasks, return_exceptions=True)
+                    break
+        except BaseException:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
-        if failures or len(multimodal_data_list) != total_items:
+        if (
+            first_description_failure is not None
+            or len(multimodal_data_list) != total_items
+        ):
             successful_count = len(multimodal_data_list)
             self.logger.error(
                 "Incomplete multimodal description batch: "
                 f"{successful_count}/{total_items} succeeded"
             )
-            first_failure = failures[0] if failures else None
             raise RuntimeError(
                 "Multimodal description batch failed closed: "
                 f"{successful_count}/{total_items} succeeded"
-            ) from first_failure
+            ) from first_description_failure
+
+        multimodal_data_list.sort(key=lambda result: result["index"])
 
         self.logger.info(
             f"Generated descriptions for {len(multimodal_data_list)}/{len(multimodal_items)} multimodal items using correct processors"
@@ -1505,6 +1539,7 @@ class ProcessorMixin:
             raise RuntimeError(
                 f"doc_status record {doc_id} not found; cannot mark multimodal complete"
             )
+        previous_doc_status = dict(current_doc_status)
 
         final_status = current_doc_status.get("status") or DocStatus.PROCESSED
         if final_status != DocStatus.FAILED:
@@ -1515,27 +1550,56 @@ class ProcessorMixin:
             "multimodal_processed": True,
             "updated_at": self._current_doc_status_timestamp(),
         }
+        compatibility_status = await self._get_multimodal_status_record(doc_id)
+        previous_compatibility_status = (
+            dict(compatibility_status) if compatibility_status is not None else None
+        )
+        used_compatibility_cache = False
         try:
-            await self.lightrag.doc_status.upsert({doc_id: update_payload})
-        except Exception as exc:
-            # Older LightRAG versions reject unknown doc_status fields such as
-            # multimodal_processed. Only that explicit schema mismatch is safe
-            # to route through the compatibility status cache.
-            if "multimodal_processed" not in str(exc):
-                raise
-            self.logger.debug(
-                "Falling back to schema-compatible doc_status update for %s: %s",
-                doc_id,
-                exc,
-            )
-            fallback_payload = {
-                **current_doc_status,
-                "status": final_status,
-                "updated_at": self._current_doc_status_timestamp(),
-            }
-            await self.lightrag.doc_status.upsert({doc_id: fallback_payload})
-            await self._set_multimodal_status_record(doc_id, True)
-        await self.lightrag.doc_status.index_done_callback()
+            try:
+                await self.lightrag.doc_status.upsert({doc_id: update_payload})
+            except Exception as exc:
+                # Older LightRAG versions reject unknown doc_status fields such as
+                # multimodal_processed. Only that explicit schema mismatch is safe
+                # to route through the compatibility status cache.
+                if "multimodal_processed" not in str(exc):
+                    raise
+                used_compatibility_cache = True
+                self.logger.debug(
+                    "Falling back to schema-compatible doc_status update for %s",
+                    doc_id,
+                )
+                fallback_payload = {
+                    **current_doc_status,
+                    "status": final_status,
+                    "updated_at": self._current_doc_status_timestamp(),
+                }
+                await self.lightrag.doc_status.upsert({doc_id: fallback_payload})
+
+            await self.lightrag.doc_status.index_done_callback()
+            if used_compatibility_cache:
+                await self._set_multimodal_status_record(doc_id, True)
+        except Exception:
+            try:
+                await self.lightrag.doc_status.upsert({doc_id: previous_doc_status})
+                await self.lightrag.doc_status.index_done_callback()
+            except Exception:
+                self.logger.error(
+                    "Failed to restore doc_status after completion persistence failure"
+                )
+
+            if used_compatibility_cache:
+                previous_processed = bool(
+                    previous_compatibility_status
+                    and previous_compatibility_status.get("multimodal_processed", False)
+                )
+                try:
+                    await self._set_multimodal_status_record(doc_id, previous_processed)
+                except Exception:
+                    self.logger.error(
+                        "Failed to restore compatibility completion status"
+                    )
+            raise
         self.logger.debug(
             f"Marked multimodal content processing as complete for document {doc_id}"
         )
