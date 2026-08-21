@@ -51,6 +51,16 @@ class RAGAnythingConfig:
     )
     """Enable equation content processing."""
 
+    preserve_page_provenance: bool = field(
+        default=get_env_value("PRESERVE_PAGE_PROVENANCE", False, bool)
+    )
+    """Insert text through LightRAG's sidecar pipeline so text chunks keep
+    block-level page provenance (``sidecar.refs`` joinable to page numbers
+    and bounding boxes — see issue #330). Requires a lightrag-hku build with
+    the sidecar subsystem and changes how text is chunked (paragraph-semantic
+    instead of fixed-token); falls back to plain insertion when unavailable
+    or when a custom ``split_by_character`` is requested."""
+
     # Batch Processing Configuration
     # ---
     max_concurrent_files: int = field(
