@@ -120,7 +120,7 @@ class TestRAGAnythingConfig:
 
 class TestSeparateContent:
     def test_empty_list(self):
-        text, multimodal = separate_content([])
+        text, page_texts, multimodal = separate_content([])
         assert text == ""
         assert multimodal == []
 
@@ -129,7 +129,7 @@ class TestSeparateContent:
             {"type": "text", "text": "Hello world"},
             {"type": "text", "text": "Second paragraph"},
         ]
-        text, multimodal = separate_content(content)
+        text, page_texts, multimodal = separate_content(content)
         assert "Hello world" in text
         assert "Second paragraph" in text
         assert multimodal == []
@@ -139,7 +139,7 @@ class TestSeparateContent:
             {"type": "image", "img_path": "/path/to/image.png"},
             {"type": "table", "table_body": "col1|col2"},
         ]
-        text, multimodal = separate_content(content)
+        text, page_texts, multimodal = separate_content(content)
         assert text == ""
         assert len(multimodal) == 2
         assert multimodal[0]["type"] == "image"
@@ -153,7 +153,7 @@ class TestSeparateContent:
             {"type": "table", "table_body": "data"},
             {"type": "equation", "text": "E=mc^2"},
         ]
-        text, multimodal = separate_content(content)
+        text, page_texts, multimodal = separate_content(content)
         assert "Introduction" in text
         assert "Discussion" in text
         assert len(multimodal) == 3
@@ -164,13 +164,13 @@ class TestSeparateContent:
             {"type": "text", "text": "Valid text"},
             {"type": "text", "text": "\n\t"},
         ]
-        text, multimodal = separate_content(content)
+        text, page_texts, multimodal = separate_content(content)
         assert "Valid text" in text
         assert "   " not in text.split("\n\n")
 
     def test_missing_type_defaults_to_text(self):
         content = [{"text": "no type field"}]
-        text, multimodal = separate_content(content)
+        text, page_texts, multimodal = separate_content(content)
         assert "no type field" in text
 
 
