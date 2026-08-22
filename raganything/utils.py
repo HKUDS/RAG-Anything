@@ -169,20 +169,38 @@ def extract_neighbor_text_from_content_list(
     return " ".join(parts)
 
 
+# Minimum size (characters) for a page-run of text before it is split off.
+# Consecutive pages shorter than this are merged into one run so page
+# boundaries survive downstream token-chunking without producing many tiny,
+# low-context chunks.
+MIN_PAGE_RUN_CHARS = 512
+
+
 def separate_content(
     content_list: List[Dict[str, Any]],
-) -> Tuple[str, List[Dict[str, Any]]]:
+) -> Tuple[str, List[str], List[Dict[str, Any]]]:
     """
-    Separate text content and multimodal content
+    Separate text content and multimodal content, preserving page boundaries.
 
     Args:
         content_list: Content list from MinerU parsing
 
     Returns:
-        (text_content, multimodal_items): Pure text content and multimodal items list
+        (text_content, page_texts, multimodal_items):
+            text_content: all text blocks joined into one flat string
+            page_texts: text grouped per page-run. Consecutive pages are
+                merged into a run when they are short, so each run is at least
+                ``MIN_PAGE_RUN_CHARS`` characters (unless a single page is
+                larger) and never mixes non-adjacent pages.
+            multimodal_items: multimodal items list
     """
     text_parts = []
     multimodal_items = []
+
+    # Group text blocks by page so page boundaries can survive chunking.
+    # Text without a page_idx falls back to a single bucket.
+    page_blocks: Dict[Any, List[str]] = {}
+    page_order: List[Any] = []
 
     for index, item in enumerate(content_list):
         content_type = item.get("type", "text")
@@ -192,6 +210,11 @@ def separate_content(
             text = str(item.get("text", "") or "")
             if text.strip():
                 text_parts.append(text)
+                page_idx = item.get("page_idx", -1)
+                if page_idx not in page_blocks:
+                    page_blocks[page_idx] = []
+                    page_order.append(page_idx)
+                page_blocks[page_idx].append(text)
         else:
             # Multimodal content (image, table, equation, etc.)
             multimodal_item = dict(item)
@@ -207,11 +230,31 @@ def separate_content(
                 )
             multimodal_items.append(multimodal_item)
 
-    # Merge all text content
+    # Merge all text content (kept for backward-compatible flat use)
     text_content = "\n\n".join(text_parts)
+
+    # Group consecutive pages into page-runs: pages are accumulated until the
+    # run reaches MIN_PAGE_RUN_CHARS, at which point it is split off. This
+    # keeps page boundaries intact (a run never mixes non-adjacent pages)
+    # while avoiding tiny, low-context chunks for very short pages.
+    page_texts: List[str] = []
+    run_parts: List[str] = []
+    run_len = 0
+    for page_idx in page_order:
+        page_text = "\n\n".join(page_blocks[page_idx])
+        if run_parts and run_len >= MIN_PAGE_RUN_CHARS:
+            page_texts.append("\n\n".join(run_parts))
+            run_parts = [page_text]
+            run_len = len(page_text)
+        else:
+            run_parts.append(page_text)
+            run_len += len(page_text)
+    if run_parts:
+        page_texts.append("\n\n".join(run_parts))
 
     logger.info("Content separation complete:")
     logger.info(f"  - Text content length: {len(text_content)} characters")
+    logger.info(f"  - Page-run count: {len(page_texts)}")
     logger.info(f"  - Multimodal items count: {len(multimodal_items)}")
 
     # Count multimodal types
@@ -223,7 +266,7 @@ def separate_content(
     if modal_types:
         logger.info(f"  - Multimodal type distribution: {modal_types}")
 
-    return text_content, multimodal_items
+    return text_content, page_texts, multimodal_items
 
 
 def encode_image_to_base64(image_path: str) -> str:

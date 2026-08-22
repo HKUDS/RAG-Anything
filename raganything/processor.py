@@ -1703,7 +1703,7 @@ class ProcessorMixin:
                 doc_id = content_based_doc_id
 
             # Step 2: Separate text and multimodal content
-            text_content, multimodal_items = separate_content(content_list)
+            text_content, page_texts, multimodal_items = separate_content(content_list)
 
             # LightRAG creates the initial doc_status entry during text insertion.
             # Pre-registering the same doc_id here makes LightRAG treat a fresh
@@ -1739,11 +1739,11 @@ class ProcessorMixin:
                 insert_start = time.time()
                 await insert_text_content(
                     self.lightrag,
-                    input=text_content,
-                    file_paths=file_name,
+                    input=page_texts,
+                    file_paths=[file_name] * len(page_texts),
                     split_by_character=split_by_character,
                     split_by_character_only=split_by_character_only,
-                    ids=doc_id,
+                    ids=[f"{doc_id}#p{i}" for i in range(len(page_texts))],
                 )
                 await self._upsert_doc_status(
                     doc_id,
@@ -2010,7 +2010,7 @@ class ProcessorMixin:
                 doc_id = content_based_doc_id
 
             # Step 2: Separate text and multimodal content
-            text_content, multimodal_items = separate_content(content_list)
+            text_content, page_texts, multimodal_items = separate_content(content_list)
 
             # LightRAG creates the initial doc_status entry during text
             # insertion. Pre-registering the same doc_id here makes LightRAG
@@ -2039,12 +2039,12 @@ class ProcessorMixin:
             if text_content.strip():
                 await insert_text_content_with_multimodal_content(
                     self.lightrag,
-                    input=text_content,
+                    input=page_texts,
                     multimodal_content=multimodal_items,
-                    file_paths=file_name,
+                    file_paths=[file_name] * len(page_texts),
                     split_by_character=split_by_character,
                     split_by_character_only=split_by_character_only,
-                    ids=doc_id,
+                    ids=[f"{doc_id}#p{i}" for i in range(len(page_texts))],
                     scheme_name=scheme_name,
                 )
 
@@ -2182,7 +2182,7 @@ class ProcessorMixin:
                 self.logger.info(f"  - {block_type}: {count}")
 
         # Step 1: Separate text and multimodal content
-        text_content, multimodal_items = separate_content(content_list)
+        text_content, page_texts, multimodal_items = separate_content(content_list)
 
         # LightRAG creates the initial doc_status entry during text insertion.
         # Pre-registering the same doc_id here makes LightRAG treat a fresh
@@ -2217,11 +2217,11 @@ class ProcessorMixin:
             insert_start = time.time()
             await insert_text_content(
                 self.lightrag,
-                input=text_content,
-                file_paths=file_ref,
+                input=page_texts,
+                file_paths=[file_ref] * len(page_texts),
                 split_by_character=split_by_character,
                 split_by_character_only=split_by_character_only,
-                ids=doc_id,
+                ids=[f"{doc_id}#p{i}" for i in range(len(page_texts))],
             )
             await self._upsert_doc_status(
                 doc_id,

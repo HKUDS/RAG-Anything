@@ -85,7 +85,7 @@ extract_neighbor_text_from_content_list = (
 
 class ContentListAliasHandlingTests(unittest.TestCase):
     def test_separate_content_ignores_null_text_values(self):
-        text, multimodal = separate_content(
+        text, page_texts, multimodal = separate_content(
             [
                 {"type": "text", "text": None},
                 {"type": "text", "text": "kept"},
@@ -93,6 +93,7 @@ class ContentListAliasHandlingTests(unittest.TestCase):
         )
 
         self.assertEqual(text, "kept")
+        self.assertEqual(page_texts, ["kept"])
         self.assertEqual(multimodal, [])
 
     def test_separate_content_preserves_original_content_list_index(self):
@@ -103,7 +104,7 @@ class ContentListAliasHandlingTests(unittest.TestCase):
             {"type": "table", "table_body": "| A | B |"},
         ]
 
-        _, multimodal = separate_content(content)
+        _, _, multimodal = separate_content(content)
 
         self.assertEqual([item["_content_list_index"] for item in multimodal], [1, 3])
         self.assertNotIn("_content_list_index", content[1])
@@ -174,7 +175,7 @@ class ContentListAliasHandlingTests(unittest.TestCase):
             {"type": "text", "text": "discussion after image"},
         ]
 
-        _, multimodal = separate_content(content)
+        _, _, multimodal = separate_content(content)
         image_item = multimodal[0]
 
         self.assertEqual(
@@ -208,6 +209,76 @@ class ContentListAliasHandlingTests(unittest.TestCase):
         content = [{"type": "text", "text": "1 Intro", "text_level": 1}]
         self.assertEqual(extract_section_path_from_content_list(content, -1), "")
         self.assertEqual(extract_neighbor_text_from_content_list(content, 99), "")
+
+
+class SeparateContentPageGroupingTests(unittest.TestCase):
+    """#330: text must retain page boundaries through chunking.
+
+    ``separate_content`` returns per-page text runs so that page provenance
+    survives downstream token-chunking. Very short consecutive pages are merged
+    into a single run to avoid tiny, low-context chunks, but a run never mixes
+    non-adjacent pages.
+    """
+
+    def test_short_consecutive_pages_merged_into_one_run(self):
+        content = [
+            {"type": "text", "text": "tiny page A", "page_idx": 0},
+            {"type": "text", "text": "tiny page B", "page_idx": 1},
+        ]
+        _, page_texts, _ = separate_content(content)
+
+        self.assertEqual(len(page_texts), 1)
+        self.assertIn("tiny page A", page_texts[0])
+        self.assertIn("tiny page B", page_texts[0])
+
+    def test_big_page_starts_its_own_run(self):
+        content = [
+            {"type": "text", "text": "A" * 600, "page_idx": 0},
+            {"type": "text", "text": "B" * 600, "page_idx": 1},
+        ]
+        _, page_texts, _ = separate_content(content)
+
+        self.assertEqual(len(page_texts), 2)
+        self.assertIn("A" * 600, page_texts[0])
+        self.assertNotIn("B", page_texts[0])
+        self.assertIn("B" * 600, page_texts[1])
+
+    def test_runs_are_contiguous_page_ranges(self):
+        # A large page is its own run; the following short page merges with the
+        # next large page rather than bleeding into page 0's run.
+        content = [
+            {"type": "text", "text": "P0" * 300, "page_idx": 0},
+            {"type": "text", "text": "P1 short", "page_idx": 1},
+            {"type": "text", "text": "P2" * 300, "page_idx": 2},
+        ]
+        _, page_texts, _ = separate_content(content)
+
+        self.assertEqual(len(page_texts), 2)
+        self.assertIn("P1 short", page_texts[1])
+        self.assertNotIn("P1 short", page_texts[0])
+        # page 1 and 2 share a run; page 0 is alone
+        self.assertNotIn("P2", page_texts[0])
+
+    def test_flat_text_is_concatenation_of_page_runs(self):
+        content = [
+            {"type": "text", "text": "alpha", "page_idx": 0},
+            {"type": "text", "text": "beta", "page_idx": 1},
+        ]
+        text, page_texts, _ = separate_content(content)
+
+        self.assertEqual(text, "alpha\n\nbeta")
+        self.assertEqual("\n\n".join(page_texts), text)
+
+    def test_text_without_page_idx_falls_back_to_single_bucket(self):
+        content = [
+            {"type": "text", "text": "no page A"},
+            {"type": "text", "text": "no page B"},
+        ]
+        _, page_texts, _ = separate_content(content)
+
+        self.assertEqual(len(page_texts), 1)
+        self.assertIn("no page A", page_texts[0])
+        self.assertIn("no page B", page_texts[0])
 
 
 if __name__ == "__main__":
