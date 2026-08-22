@@ -263,6 +263,25 @@ def build_content_list_from_text(
     return content_list
 
 
+def _read_text_file_robust(file_path: Path) -> str:
+    """Read a text file, falling back across common encodings.
+
+    Mirrors the encoding fallback used by the ReportLab text-to-PDF path so the
+    direct path does not regress on non-UTF-8 (e.g. GBK) text files.
+    """
+    try:
+        return Path(file_path).read_text(encoding="utf-8")
+    except UnicodeDecodeError:
+        for encoding in ["gbk", "latin-1", "cp1252"]:
+            try:
+                return Path(file_path).read_text(encoding=encoding)
+            except UnicodeDecodeError:
+                continue
+        raise RuntimeError(
+            f"Could not decode text file {file_path.name} with any supported encoding"
+        )
+
+
 def build_content_list_from_text_file(
     file_path: Path,
     page_idx: int = 0,
@@ -270,8 +289,9 @@ def build_content_list_from_text_file(
     """
     Read a plain text / markdown file and build its content list directly.
 
-    Reading is UTF-8 with invalid bytes replaced, so CJK and other non-ASCII
-    text survives without the PDF-rendering failure modes.
+    Reading tries UTF-8 first and falls back to GBK / latin-1 / cp1252 (the
+    same fallback the text-to-PDF path uses), so CJK and other non-ASCII text
+    survives without the PDF-rendering failure modes.
 
     Args:
         file_path: Path to the ``.txt`` / ``.md`` file.
@@ -280,7 +300,7 @@ def build_content_list_from_text_file(
     Returns:
         A content list built from the file's paragraphs.
     """
-    text = Path(file_path).read_text(encoding="utf-8", errors="replace")
+    text = _read_text_file_robust(file_path)
     return build_content_list_from_text(text, page_idx=page_idx)
 
 

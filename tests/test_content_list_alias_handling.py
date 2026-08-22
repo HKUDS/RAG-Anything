@@ -271,6 +271,29 @@ class TestBuildContentListFromText(unittest.TestCase):
         self.assertEqual(content[0]["text"], "# Title")
         self.assertEqual(content[1]["text"], "Body paragraph with 中文。")
 
+    def test_read_gbk_encoded_file(self):
+        # GBK is a common encoding for Chinese text files on Windows; the
+        # reader must fall back to it when UTF-8 decoding fails (matching the
+        # ReportLab text-to-PDF path).
+        import tempfile
+
+        text = "第一段中文。\n\n第二段中文。"
+        with tempfile.NamedTemporaryFile(
+            mode="wb", suffix=".txt", delete=False
+        ) as f:
+            f.write(text.encode("gbk"))
+            path = f.name
+        try:
+            content = build_content_list_from_text_file(path)
+        finally:
+            import os
+
+            os.unlink(path)
+
+        self.assertEqual(len(content), 2)
+        self.assertEqual(content[0]["text"], "第一段中文。")
+        self.assertEqual(content[1]["text"], "第二段中文。")
+
 
 if __name__ == "__main__":
     unittest.main()
