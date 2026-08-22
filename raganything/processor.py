@@ -19,6 +19,7 @@ from raganything.utils import (
     separate_content,
     insert_text_content,
     insert_text_content_with_multimodal_content,
+    build_content_list_from_text_file,
     get_processor_for_type,
     format_table_body,
     get_equation_text_and_format,
@@ -507,6 +508,15 @@ class ProcessorMixin:
                         output_dir=output_dir,
                         **kwargs,
                     )
+            elif ext in [".txt", ".md"]:
+                self.logger.info(
+                    "Detected plain text/markdown file, building content list "
+                    "directly (bypassing the text->PDF->OCR round trip)..."
+                )
+                content_list = await asyncio.to_thread(
+                    build_content_list_from_text_file,
+                    file_path,
+                )
             elif ext in [
                 ".doc",
                 ".docx",

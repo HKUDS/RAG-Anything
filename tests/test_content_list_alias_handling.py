@@ -75,6 +75,8 @@ get_equation_text_and_format = utils_module.get_equation_text_and_format
 get_table_body = utils_module.get_table_body
 normalize_caption_list = utils_module.normalize_caption_list
 separate_content = utils_module.separate_content
+build_content_list_from_text = utils_module.build_content_list_from_text
+build_content_list_from_text_file = utils_module.build_content_list_from_text_file
 extract_section_path_from_content_list = (
     utils_module.extract_section_path_from_content_list
 )
@@ -208,6 +210,66 @@ class ContentListAliasHandlingTests(unittest.TestCase):
         content = [{"type": "text", "text": "1 Intro", "text_level": 1}]
         self.assertEqual(extract_section_path_from_content_list(content, -1), "")
         self.assertEqual(extract_neighbor_text_from_content_list(content, 99), "")
+
+
+class TestBuildContentListFromText(unittest.TestCase):
+    """#331: .txt/.md are built directly into a content list, no PDF round trip."""
+
+    def test_paragraphs_split_on_blank_lines(self):
+        text = "First paragraph.\n\nSecond paragraph.\n\nThird."
+        content = build_content_list_from_text(text)
+
+        self.assertEqual(len(content), 3)
+        self.assertEqual(content[0]["type"], "text")
+        self.assertEqual(content[0]["text"], "First paragraph.")
+        self.assertEqual(content[1]["text"], "Second paragraph.")
+        self.assertEqual(content[2]["text"], "Third.")
+        # every block carries the synthetic page index
+        for block in content:
+            self.assertEqual(block["page_idx"], 0)
+
+    def test_blank_and_whitespace_only_paragraphs_ignored(self):
+        text = "Para one.\n\n   \n\nPara two.\n\n\n\nPara three."
+        content = build_content_list_from_text(text)
+
+        self.assertEqual(
+            [c["text"] for c in content], ["Para one.", "Para two.", "Para three."]
+        )
+
+    def test_empty_text_returns_empty_list(self):
+        self.assertEqual(build_content_list_from_text(""), [])
+        self.assertEqual(build_content_list_from_text("\n\n  \n"), [])
+
+    def test_cjk_text_preserved(self):
+        text = "第一段中文内容。\n\n第二段中文内容。"
+        content = build_content_list_from_text(text)
+
+        self.assertEqual(len(content), 2)
+        self.assertEqual(content[0]["text"], "第一段中文内容。")
+        self.assertEqual(content[1]["text"], "第二段中文内容。")
+
+    def test_custom_page_idx_stamped(self):
+        content = build_content_list_from_text("Hello", page_idx=7)
+        self.assertEqual(content[0]["page_idx"], 7)
+
+    def test_read_from_file_utf8(self):
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".md", encoding="utf-8", delete=False
+        ) as f:
+            f.write("# Title\n\nBody paragraph with 中文。")
+            path = f.name
+        try:
+            content = build_content_list_from_text_file(path)
+        finally:
+            import os
+
+            os.unlink(path)
+
+        self.assertEqual(len(content), 2)
+        self.assertEqual(content[0]["text"], "# Title")
+        self.assertEqual(content[1]["text"], "Body paragraph with 中文。")
 
 
 if __name__ == "__main__":

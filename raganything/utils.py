@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import inspect
+import re
 from typing import Dict, List, Any, Tuple
 from pathlib import Path
 from lightrag.utils import logger
@@ -224,6 +225,63 @@ def separate_content(
         logger.info(f"  - Multimodal type distribution: {modal_types}")
 
     return text_content, multimodal_items
+
+
+def build_content_list_from_text(
+    text: str,
+    page_idx: int = 0,
+) -> List[Dict[str, Any]]:
+    """
+    Build a content list directly from plain text or markdown.
+
+    Paragraphs are split on blank lines; each non-empty paragraph becomes a
+    ``text`` content block. This bypasses the text->PDF->OCR round trip that
+    is otherwise used for ``.txt`` / ``.md`` files, which is slower and
+    introduces fidelity bugs (e.g. CJK font rendering, markdown escaping).
+
+    Args:
+        text: Raw text / markdown content.
+        page_idx: ``page_idx`` stamped on every block (plain text has no page
+            concept, so a single synthetic page is used).
+
+    Returns:
+        A list of ``{"type": "text", "text": ..., "page_idx": ...}`` blocks.
+    """
+    content_list: List[Dict[str, Any]] = []
+    # Split on one or more blank lines (paragraph boundary).
+    paragraphs = re.split(r"\n\s*\n", text)
+    for para in paragraphs:
+        stripped = para.strip()
+        if stripped:
+            content_list.append(
+                {
+                    "type": "text",
+                    "text": stripped,
+                    "page_idx": page_idx,
+                }
+            )
+    return content_list
+
+
+def build_content_list_from_text_file(
+    file_path: Path,
+    page_idx: int = 0,
+) -> List[Dict[str, Any]]:
+    """
+    Read a plain text / markdown file and build its content list directly.
+
+    Reading is UTF-8 with invalid bytes replaced, so CJK and other non-ASCII
+    text survives without the PDF-rendering failure modes.
+
+    Args:
+        file_path: Path to the ``.txt`` / ``.md`` file.
+        page_idx: Synthetic page index stamped on every block.
+
+    Returns:
+        A content list built from the file's paragraphs.
+    """
+    text = Path(file_path).read_text(encoding="utf-8", errors="replace")
+    return build_content_list_from_text(text, page_idx=page_idx)
 
 
 def encode_image_to_base64(image_path: str) -> str:
