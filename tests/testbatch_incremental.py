@@ -279,6 +279,45 @@ def test_filter_supported_files_deduplicates_overlapping_inputs(monkeypatch, tmp
     assert sorted(result) == sorted([str(first_doc), str(second_doc)])
 
 
+def test_batch_isolates_same_name_files(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    batch_parser.max_workers = 2
+
+    first_doc = tmp_path / "source_a" / "report.txt"
+    second_doc = tmp_path / "source_b" / "report.txt"
+    first_doc.parent.mkdir()
+    second_doc.parent.mkdir()
+    first_doc.write_text("from source A", encoding="utf-8")
+    second_doc.write_text("from source B", encoding="utf-8")
+
+    output_dirs = {}
+
+    def parse_document(file_path, output_dir, method="auto", **kwargs):
+        output_dirs[file_path] = output_dir
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        (output_path / "source.txt").write_text(
+            Path(file_path).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        fake_parser.processed_files.append(file_path)
+        return [{"type": "text", "text": "parsed"}]
+
+    fake_parser.parse_document = parse_document
+
+    result = batch_parser.process_batch(
+        [str(first_doc), str(second_doc)], str(tmp_path / "out")
+    )
+
+    assert sorted(result.successful_files) == sorted([str(first_doc), str(second_doc)])
+    assert output_dirs[str(first_doc)] != output_dirs[str(second_doc)]
+    assert (Path(output_dirs[str(first_doc)]) / "source.txt").read_text(
+        encoding="utf-8"
+    ) == "from source A"
+    assert (Path(output_dirs[str(second_doc)]) / "source.txt").read_text(
+        encoding="utf-8"
+    ) == "from source B"
+
+
 def test_timeout_is_applied_per_file_not_to_entire_batch(monkeypatch, tmp_path):
     batch_parser, fake_parser = _make_batch_parser(monkeypatch)
     docs_dir, first_doc, second_doc = _seed_two_docs(tmp_path)
