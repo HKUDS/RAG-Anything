@@ -54,6 +54,10 @@ if TYPE_CHECKING:
     from PIL import Image
 
 from raganything.asset_urls import attach_public_media_urls
+from raganything.mineru_content import (
+    MineruContentListV2Error,
+    convert_mineru_content_list_v2,
+)
 
 _IS_WINDOWS: bool = platform.system() == "Windows"
 
@@ -1169,8 +1173,135 @@ class MineruParser(Parser):
             raise RuntimeError(error_message) from e
 
     @classmethod
+    def _find_mineru_output_files(
+        cls, output_dir: Path, file_stem: str, method: str
+    ) -> Tuple[Path, Path, Optional[Path], Path, bool]:
+        """Locate MinerU outputs, preferring the structured v2 content list."""
+        output_dir = Path(output_dir)
+        file_stem_subdir = output_dir / file_stem
+
+        search_dirs = [output_dir]
+        if file_stem_subdir.is_dir():
+            method_dir = file_stem_subdir / method
+            nested_dirs = sorted(
+                (path for path in file_stem_subdir.iterdir() if path.is_dir()),
+                key=lambda path: path.name,
+            )
+            # Prefer the requested backend directory, then inspect any actual
+            # directory emitted by newer MinerU backends.
+            search_dirs.extend(
+                path
+                for path in [method_dir, file_stem_subdir, *nested_dirs]
+                if path not in search_dirs
+            )
+
+        # Keep all candidates instead of resolving each filename independently.
+        # MinerU bundles can contain the exact legacy file and a generic v2 file
+        # side by side, in which case v2 must win. Conversely, a generic file in
+        # a shared output root must not shadow an exact artifact in the
+        # document-scoped `<output>/<stem>/...` tree.
+        candidate_specs = (
+            ("v2", True, f"{file_stem}_content_list_v2.json"),
+            ("v2", False, "content_list_v2.json"),
+            ("legacy", True, f"{file_stem}_content_list.json"),
+            ("legacy", False, "content_list.json"),
+        )
+        candidates = []
+        seen_paths = set()
+        for directory_index, directory in enumerate(search_dirs):
+            for content_version, is_exact, filename in candidate_specs:
+                candidate = directory / filename
+                if not candidate.is_file() or candidate in seen_paths:
+                    continue
+                seen_paths.add(candidate)
+                is_document_scoped = (
+                    file_stem_subdir.is_dir()
+                    and candidate.parent.is_relative_to(file_stem_subdir)
+                )
+                candidates.append(
+                    {
+                        "path": candidate,
+                        "version": content_version,
+                        "is_exact": is_exact,
+                        "is_document_scoped": is_document_scoped,
+                        "directory_index": directory_index,
+                    }
+                )
+
+        def candidate_key(
+            candidate: Dict[str, Any],
+        ) -> Tuple[int, int, int, int]:
+            """Rank candidates by bundle scope, schema version, and specificity."""
+            return (
+                int(candidate["is_document_scoped"]),
+                int(candidate["version"] == "v2"),
+                int(candidate["is_exact"]),
+                -candidate["directory_index"],
+            )
+
+        selected_candidate = max(candidates, key=candidate_key, default=None)
+        v2_candidate = (
+            selected_candidate
+            if selected_candidate is not None and selected_candidate["version"] == "v2"
+            else None
+        )
+        v2_file = v2_candidate["path"] if v2_candidate is not None else None
+
+        legacy_candidates = [
+            candidate for candidate in candidates if candidate["version"] == "legacy"
+        ]
+        if v2_candidate is not None:
+            # A legacy companion in the same directory is the safest fallback
+            # (and handles generic/exact pairs produced by one MinerU run).
+            legacy_file_candidate = max(
+                legacy_candidates,
+                key=lambda candidate: (
+                    int(candidate["path"].parent == v2_candidate["path"].parent),
+                    *candidate_key(candidate),
+                ),
+                default=None,
+            )
+        else:
+            legacy_file_candidate = selected_candidate
+        legacy_file = (
+            legacy_file_candidate["path"]
+            if legacy_file_candidate is not None
+            and legacy_file_candidate["version"] == "legacy"
+            else None
+        )
+
+        selected_file = v2_file or legacy_file
+
+        if selected_file is None:
+            fallback_dir = (
+                file_stem_subdir / method if file_stem_subdir.is_dir() else output_dir
+            )
+            selected_file = fallback_dir / f"{file_stem}_content_list.json"
+            images_base_dir = fallback_dir
+        else:
+            images_base_dir = selected_file.parent
+
+        markdown_file = selected_file.parent / f"{file_stem}.md"
+        if not markdown_file.is_file():
+            full_markdown_file = selected_file.parent / "full.md"
+            if full_markdown_file.is_file():
+                markdown_file = full_markdown_file
+
+        return (
+            markdown_file,
+            selected_file,
+            legacy_file if v2_file is not None else None,
+            images_base_dir,
+            v2_file is not None,
+        )
+
+    @classmethod
     def _read_output_files(
-        cls, output_dir: Path, file_stem: str, method: str = "auto"
+        cls,
+        output_dir: Path,
+        file_stem: str,
+        method: str = "auto",
+        include_layout_blocks: bool = False,
     ) -> Tuple[List[Dict[str, Any]], str]:
         """
         Read the output files generated by mineru
@@ -1179,82 +1310,134 @@ class MineruParser(Parser):
             output_dir: Output directory
             file_stem: File name without extension
             method: Parsing method (used as fallback if subdirectory scan fails)
+            include_layout_blocks: Keep v2 page headers, footers, page numbers,
+                aside text, and page footnotes when true.
 
         Returns:
             Tuple containing (content list JSON, Markdown text)
         """
-        # Look for the generated files
-        md_file = output_dir / f"{file_stem}.md"
-        json_file = output_dir / f"{file_stem}_content_list.json"
-        images_base_dir = output_dir  # Base directory for images
+        (
+            md_file,
+            json_file,
+            legacy_json_file,
+            images_base_dir,
+            is_v2,
+        ) = cls._find_mineru_output_files(output_dir, file_stem, method)
 
-        file_stem_subdir = output_dir / file_stem
-        if file_stem_subdir.is_dir():
-            # Scan for actual output subdirectory instead of assuming method name
-            found = False
-            for subdir in file_stem_subdir.iterdir():
-                if not subdir.is_dir():
-                    continue
-                # Check if this subdirectory contains the expected JSON output file
-                candidate_json = subdir / f"{file_stem}_content_list.json"
-                if candidate_json.exists():
-                    # Found the actual output directory
-                    md_file = subdir / f"{file_stem}.md"
-                    json_file = candidate_json
-                    images_base_dir = subdir
-                    found = True
-                    cls.logger.info(
-                        f"Found MinerU output in subdirectory: {subdir.name}"
+        if is_v2:
+            cls.logger.info(f"Using MinerU structured content list: {json_file}")
+        elif not json_file.is_file():
+            cls.logger.debug(
+                f"No MinerU content list found, checked output directory: {json_file}"
+            )
+
+        def read_markdown(path: Path) -> str:
+            if not path.is_file():
+                return ""
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except OSError as e:
+                cls.logger.warning(f"Could not read markdown file {path}: {e}")
+                return ""
+
+        # Read markdown content. If v2 later falls back to a legacy file in a
+        # different directory, this value is refreshed alongside the content list.
+        md_content = read_markdown(md_file)
+
+        # Read JSON content list. A malformed or empty v2 file should not make
+        # otherwise usable legacy MinerU output unreadable.
+        content_list: List[Dict[str, Any]] = []
+        content_file_used = json_file
+        if json_file.is_file():
+            try:
+
+                def load_json(path: Path) -> Any:
+                    with open(path, "r", encoding="utf-8") as f:
+                        return json.load(f)
+
+                try:
+                    raw_content = load_json(json_file)
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                    if (
+                        not is_v2
+                        or legacy_json_file is None
+                        or not legacy_json_file.is_file()
+                    ):
+                        raise
+                    cls.logger.warning(
+                        f"Could not read MinerU v2 content list {json_file}: {error}"
                     )
-                    break
+                    raw_content = load_json(legacy_json_file)
+                    content_file_used = legacy_json_file
+                    images_base_dir = legacy_json_file.parent
+                    is_v2 = False
+                    fallback_md = legacy_json_file.parent / f"{file_stem}.md"
+                    if not fallback_md.is_file():
+                        fallback_md = legacy_json_file.parent / "full.md"
+                    if fallback_md.is_file():
+                        md_file = fallback_md
+                        md_content = read_markdown(md_file)
+                    cls.logger.info(
+                        f"Falling back to legacy MinerU content list: {legacy_json_file}"
+                    )
 
-            # Fallback to method-based path if scanning didn't find output
-            if not found:
-                cls.logger.debug(
-                    f"No output found by scanning, falling back to method-based path: {method}"
-                )
-                md_file = file_stem_subdir / method / f"{file_stem}.md"
-                json_file = file_stem_subdir / method / f"{file_stem}_content_list.json"
-                images_base_dir = file_stem_subdir / method
+                if is_v2:
+                    try:
+                        content_list = convert_mineru_content_list_v2(
+                            raw_content,
+                            include_layout_blocks=include_layout_blocks,
+                        )
+                    except MineruContentListV2Error as error:
+                        cls.logger.warning(
+                            f"Could not parse MinerU v2 content list {json_file}: {error}"
+                        )
+                        content_list = []
 
-        # Read markdown content
-        md_content = ""
-        if md_file.exists():
-            try:
-                with open(md_file, "r", encoding="utf-8") as f:
-                    md_content = f.read()
-            except Exception as e:
-                cls.logger.warning(f"Could not read markdown file {md_file}: {e}")
+                    # A valid v2 file containing only filtered layout blocks is
+                    # not useful to ingestion either, so use legacy output when
+                    # it is available.
+                    if (
+                        not content_list
+                        and legacy_json_file is not None
+                        and legacy_json_file.is_file()
+                    ):
+                        raw_content = load_json(legacy_json_file)
+                        content_list = raw_content
+                        content_file_used = legacy_json_file
+                        images_base_dir = legacy_json_file.parent
+                        fallback_md = legacy_json_file.parent / f"{file_stem}.md"
+                        if not fallback_md.is_file():
+                            fallback_md = legacy_json_file.parent / "full.md"
+                        if fallback_md.is_file():
+                            md_file = fallback_md
+                            md_content = read_markdown(md_file)
+                        cls.logger.info(
+                            f"Falling back to legacy MinerU content list: {legacy_json_file}"
+                        )
+                else:
+                    content_list = raw_content
 
-        # Read JSON content list
-        content_list = []
-        if json_file.exists():
-            try:
-                with open(json_file, "r", encoding="utf-8") as f:
-                    content_list = json.load(f)
+                if not isinstance(content_list, list):
+                    raise ValueError("MinerU content list must be a JSON array")
 
-                # Normalize MinerU 2.0 field names to expected names for backward compatibility.
-                # MinerU 2.0 renamed: img_caption -> image_caption, img_footnote -> image_footnote
-                # The codebase primarily uses image_caption/image_footnote with img_caption/img_footnote
-                # as fallback, but we ensure both fields exist so downstream code works regardless.
-                _FIELD_ALIASES = {
-                    # MinerU 1.x name -> MinerU 2.0 name (canonical)
+                # Normalize MinerU field aliases to the names expected by the
+                # existing modal processors.
+                field_aliases = {
                     "img_caption": "image_caption",
                     "img_footnote": "image_footnote",
                 }
                 for item in content_list:
                     if isinstance(item, dict):
-                        for old_name, new_name in _FIELD_ALIASES.items():
-                            # If only the old field exists, copy it to the new field name
+                        for old_name, new_name in field_aliases.items():
                             if old_name in item and new_name not in item:
                                 item[new_name] = item[old_name]
-                            # If only the new field exists, copy it to the old field name (for any legacy code)
                             elif new_name in item and old_name not in item:
                                 item[old_name] = item[new_name]
 
-                # Always fix relative paths in content_list to absolute paths
+                # Always fix relative paths in content_list to absolute paths.
                 cls.logger.info(
-                    f"Fixing image paths in {json_file} with base directory: {images_base_dir}"
+                    f"Fixing image paths in {content_file_used} with base directory: {images_base_dir}"
                 )
                 for item in content_list:
                     if isinstance(item, dict):
@@ -1269,13 +1452,13 @@ class MineruParser(Parser):
                                     images_base_dir / img_path
                                 ).resolve()
 
-                                # Security check: ensure the image path is within the base directory
+                                # Security check: ensure the image path is within the base directory.
                                 resolved_base = images_base_dir.resolve()
                                 if not absolute_img_path.is_relative_to(resolved_base):
                                     cls.logger.warning(
                                         f"Potential path traversal detected in {field_name}: {img_path}. Skipping."
                                     )
-                                    item[field_name] = ""  # Clear unsafe path
+                                    item[field_name] = ""
                                     continue
 
                                 item[field_name] = str(absolute_img_path)
@@ -1293,6 +1476,7 @@ class MineruParser(Parser):
         output_dir: Optional[str] = None,
         method: str = "auto",
         lang: Optional[str] = None,
+        include_layout_blocks: bool = False,
         **kwargs,
     ) -> List[Dict[str, Any]]:
         """
@@ -1303,6 +1487,8 @@ class MineruParser(Parser):
             output_dir: Output directory path
             method: Parsing method (auto, txt, ocr)
             lang: Document language for OCR optimization
+            include_layout_blocks: Keep MinerU v2 page-level layout blocks
+                such as headers and page numbers.
             **kwargs: Additional parameters for mineru command
 
         Returns:
@@ -1355,7 +1541,10 @@ class MineruParser(Parser):
                     method = "hybrid_auto"
 
                 content_list, _ = self._read_output_files(
-                    base_output_dir, file_stem, method=method
+                    base_output_dir,
+                    file_stem,
+                    method=method,
+                    include_layout_blocks=include_layout_blocks,
                 )
                 return content_list
             finally:
@@ -1372,6 +1561,7 @@ class MineruParser(Parser):
         image_path: Union[str, Path],
         output_dir: Optional[str] = None,
         lang: Optional[str] = None,
+        include_layout_blocks: bool = False,
         **kwargs,
     ) -> List[Dict[str, Any]]:
         """
@@ -1384,6 +1574,8 @@ class MineruParser(Parser):
             image_path: Path to the image file
             output_dir: Output directory path
             lang: Document language for OCR optimization
+            include_layout_blocks: Keep MinerU v2 page-level layout blocks
+                such as headers and page numbers.
             **kwargs: Additional parameters for mineru command
 
         Returns:
@@ -1487,7 +1679,10 @@ class MineruParser(Parser):
 
                 # Read the generated output files
                 content_list, _ = self._read_output_files(
-                    base_output_dir, file_stem, method="ocr"
+                    base_output_dir,
+                    file_stem,
+                    method="ocr",
+                    include_layout_blocks=include_layout_blocks,
                 )
                 return content_list
 
