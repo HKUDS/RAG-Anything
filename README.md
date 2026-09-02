@@ -1219,7 +1219,7 @@ Different content types require specific optional dependencies:
 
 - **Office Documents** (.doc, .docx, .ppt, .pptx, .xls, .xlsx): Install [LibreOffice](https://www.libreoffice.org/download/download/)
 - **Extended Image Formats** (.bmp, .tiff, .gif, .webp): Install with `pip install raganything[image]`
-- **Text Files** (.txt, .md): Install with `pip install raganything[text]`
+- **Text Files** (.txt, .md): Install with `pip install raganything[text]`. Parsed directly (no PDF/OCR round trip); markdown image references (`![alt](path)`) that point to readable local files become image blocks and flow through the same multimodal pipeline as images extracted from PDFs — URLs and missing files stay as plain text
 - **PaddleOCR Parser** (`parser="paddleocr"`): Install with `pip install raganything[paddleocr]`, then install `paddlepaddle` for your platform
 
 > **📋 Quick Install**: Use `pip install raganything[all]` to enable all format support (Python dependencies only - LibreOffice still needs separate installation)
