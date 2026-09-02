@@ -739,16 +739,61 @@ class Parser:
                 f"Could not decode text file {text_path.name} with any supported encoding"
             )
 
+    _MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
+
+    @classmethod
+    def _resolve_md_image(
+        cls, target: str, source_dir: Optional[Path]
+    ) -> Optional[Tuple[str, List[str]]]:
+        """Resolve one markdown image target to (img_path, extra_captions).
+
+        Returns None when the reference cannot become an image block — a URL,
+        a missing file, or an unreadable target — in which case the literal
+        markdown text is preserved, matching what the old PDF round trip
+        produced (it rendered the syntax as plain text and embedded nothing).
+        """
+        inner = target.strip()
+        captions: List[str] = []
+        # optional title: ![alt](path "title")
+        title = re.search(r'\s+"([^"]*)"\s*$', inner)
+        if title:
+            captions.append(title.group(1))
+            inner = inner[: title.start()].strip()
+        # angle-bracketed targets: ![alt](<path with spaces>)
+        if inner.startswith("<") and inner.endswith(">"):
+            inner = inner[1:-1].strip()
+        if not inner or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", inner):
+            return None
+        path = Path(inner)
+        if not path.is_absolute():
+            if source_dir is None:
+                return None
+            path = source_dir / path
+        try:
+            if not path.is_file():
+                return None
+        except OSError:
+            return None
+        return str(path.resolve()), captions
+
     @classmethod
     def _text_to_content_blocks(
-        cls, text_content: str, is_markdown: bool
+        cls,
+        text_content: str,
+        is_markdown: bool,
+        source_dir: Optional[Path] = None,
     ) -> List[Dict[str, Any]]:
         """
         Split raw text into MinerU-style content blocks.
 
         Paragraphs are delimited by blank lines; in markdown, an ATX heading
-        (`# ...`) becomes its own block carrying `text_level`, matching how
-        MinerU marks headings in its content list.
+        (`# ...`) becomes its own block carrying `text_level`, and an inline
+        image reference (``![alt](path)``) whose target is a readable local
+        file becomes an image block shaped exactly like MinerU's
+        (``img_path``/``img_caption``/``img_footnote``/``page_idx``), so it
+        flows into the same multimodal pipeline as images extracted from
+        PDFs. URLs and missing files stay literal text. Content inside
+        fenced code blocks (``` or ~~~) is never interpreted.
         """
         # Normalize line endings up front so CRLF/CR input behaves the same
         # as LF however the text arrived (text-mode file reads translate
@@ -757,6 +802,7 @@ class Parser:
 
         blocks: List[Dict[str, Any]] = []
         paragraph: List[str] = []
+        pending_images: List[Dict[str, Any]] = []
 
         def flush() -> None:
             if paragraph:
@@ -764,9 +810,27 @@ class Parser:
                     {"type": "text", "text": "\n".join(paragraph), "page_idx": 0}
                 )
                 paragraph.clear()
+            if pending_images:
+                blocks.extend(pending_images)
+                pending_images.clear()
 
+        in_fence = False
+        fence_marker = ""
         for line in lines:
             stripped = line.strip()
+            if is_markdown:
+                fence = re.match(r"^(`{3,}|~{3,})", stripped)
+                if fence:
+                    if not in_fence:
+                        in_fence = True
+                        fence_marker = fence.group(1)[0] * 3
+                    elif stripped.startswith(fence_marker):
+                        in_fence = False
+                    paragraph.append(line.rstrip())
+                    continue
+                if in_fence:
+                    paragraph.append(line.rstrip())
+                    continue
             if not stripped:
                 flush()
                 continue
@@ -783,6 +847,42 @@ class Parser:
                         }
                     )
                     continue
+                if cls._MD_IMAGE_RE.search(stripped):
+                    # A line that is nothing but image reference(s) becomes
+                    # image block(s) in place; a reference inside a sentence
+                    # keeps the sentence (alt text substituted in) and emits
+                    # the image block after the enclosing paragraph.
+                    standalone = not cls._MD_IMAGE_RE.sub("", stripped).strip()
+                    line_images: List[Dict[str, Any]] = []
+
+                    def replace(match: "re.Match[str]") -> str:
+                        alt = match.group(1).strip()
+                        resolved = cls._resolve_md_image(match.group(2), source_dir)
+                        if resolved is None:
+                            return match.group(0)  # keep literal text
+                        img_path, extra = resolved
+                        line_images.append(
+                            {
+                                "type": "image",
+                                "img_path": img_path,
+                                "img_caption": ([alt] if alt else []) + extra,
+                                "img_footnote": [],
+                                "page_idx": 0,
+                            }
+                        )
+                        return "" if standalone else alt
+
+                    remainder = cls._MD_IMAGE_RE.sub(replace, stripped).strip()
+                    if line_images:
+                        if standalone:
+                            flush()
+                            blocks.extend(line_images)
+                            if remainder:  # unresolvable refs stay as text
+                                paragraph.append(remainder)
+                        else:
+                            paragraph.append(remainder)
+                            pending_images.extend(line_images)
+                        continue
             paragraph.append(line.rstrip())
         flush()
 
@@ -821,7 +921,9 @@ class Parser:
 
         text_content = self._read_text_with_fallback(text_path)
         return self._text_to_content_blocks(
-            text_content, is_markdown=text_path.suffix.lower() == ".md"
+            text_content,
+            is_markdown=text_path.suffix.lower() == ".md",
+            source_dir=text_path.parent,
         )
 
     def parse_pdf(

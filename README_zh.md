@@ -1158,7 +1158,7 @@ MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并�
 
 - **Office文档** (.doc, .docx, .ppt, .pptx, .xls, .xlsx): 安装并配置 [LibreOffice](https://www.libreoffice.org/download/download/)
 - **扩展图像格式** (.bmp, .tiff, .gif, .webp): 使用 `pip install raganything[image]` 安装
-- **文本文件** (.txt, .md): 使用 `pip install raganything[text]` 安装
+- **文本文件** (.txt, .md): 使用 `pip install raganything[text]` 安装。直接解析，不再经过 PDF/OCR 中转；markdown 中指向本地可读文件的图片引用（`![alt](path)`）会生成图像块，与 PDF 中提取的图片走同一条多模态管线——URL 与不存在的文件保持为纯文本
 
 > **📋 快速安装**: 使用 `pip install raganything[all]` 启用所有格式支持（仅Python依赖 - LibreOffice仍需单独安装）
 
