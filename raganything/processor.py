@@ -29,6 +29,13 @@ import asyncio
 from lightrag.utils import compute_mdhash_id
 
 
+AUDIO_FILE_EXTENSIONS = frozenset(
+    {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".wma", ".aac", ".opus"}
+)
+VIDEO_FILE_EXTENSIONS = frozenset(
+    {".mp4", ".mov", ".webm", ".avi", ".mkv", ".flv", ".wmv", ".m4v"}
+)
+
 _PARSER_CACHE_KWARGS = frozenset(
     {
         "lang",
@@ -470,6 +477,26 @@ class ProcessorMixin:
                     method=parse_method,
                     **kwargs,
                 )
+            elif ext in AUDIO_FILE_EXTENSIONS or ext in VIDEO_FILE_EXTENSIONS:
+                # Media files need no document parser: they become a single
+                # audio/video content item and are handled by the modal
+                # processors (faster-whisper / SceneDetect+VLM) downstream.
+                # media_sha256 ties the content-based doc_id to the file
+                # bytes, so replacing the file re-ingests it as new content.
+                kind = "audio" if ext in AUDIO_FILE_EXTENSIONS else "video"
+                self.logger.info(
+                    f"Detected {kind} file; building {kind} content item "
+                    "(no document parser involved)..."
+                )
+                content_list = [
+                    {
+                        "type": kind,
+                        f"{kind}_path": str(file_path.absolute()),
+                        f"{kind}_caption": [],
+                        "page_idx": 0,
+                        "media_sha256": self._file_content_fingerprint(file_path),
+                    }
+                ]
             elif ext in [
                 ".jpg",
                 ".jpeg",
