@@ -472,6 +472,63 @@ class BaseModalProcessor:
         # Subclasses must implement this method
         raise NotImplementedError("Subclasses must implement this method")
 
+    async def generate_chunk_sections(
+        self,
+        modal_content,
+        content_type: str,
+        item_info: Dict[str, Any] = None,
+        entity_name: str = None,
+    ) -> List[Dict[str, Any]]:
+        """Generate one or more chunk sections for a single modal item.
+
+        This is the 1->N counterpart of :meth:`generate_description_only`. Most
+        processors map one item to exactly one chunk, so the default simply wraps
+        ``generate_description_only`` in a single-element list. Processors that may
+        emit several ordered chunks for one item (e.g. long audio/video split into
+        time windows) override this to return multiple sections.
+
+        Each section is a dict with keys:
+            - ``description``: the section text
+            - ``entity_info``: the entity dict for this section
+            - ``window_meta``: optional ``{"start", "end", "part", "total"}`` used
+              by the chunk template / entity naming; ``None`` for single-section items.
+
+        Returns:
+            List of section dicts (at least one element).
+        """
+        description, entity_info = await self.generate_description_only(
+            modal_content, content_type, item_info, entity_name
+        )
+        return [
+            {
+                "description": description,
+                "entity_info": entity_info,
+                "window_meta": None,
+            }
+        ]
+
+    def _count_tokens(self, text: str) -> int:
+        """Best-effort token count, falling back to a char-based estimate."""
+        if self.tokenizer is not None:
+            try:
+                return len(self.tokenizer.encode(text))
+            except Exception:
+                pass
+        # Rough fallback (~4 chars/token) when no tokenizer is available
+        return max(1, len(text) // 4)
+
+    def _chunk_token_budget(self, default: int = 1200) -> int:
+        """Token budget per modal chunk, derived from LightRAG's chunk size."""
+        try:
+            value = self.global_config.get("chunk_token_size", default)
+        except AttributeError:
+            value = default
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            value = default
+        return value if value > 0 else default
+
     async def _create_entity_and_chunk(
         self,
         modal_chunk: str,
