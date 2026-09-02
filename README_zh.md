@@ -1160,7 +1160,7 @@ MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并�
 
 - **Office文档** (.doc, .docx, .ppt, .pptx, .xls, .xlsx): 安装并配置 [LibreOffice](https://www.libreoffice.org/download/download/)
 - **扩展图像格式** (.bmp, .tiff, .gif, .webp): 使用 `pip install raganything[image]` 安装
-- **音频** (.mp3, .wav, .flac, .m4a, .ogg): 使用 `pip install raganything[audio]` 安装，并设置 `enable_audio_processing=True`（环境变量 `ENABLE_AUDIO_PROCESSING`）；由 faster-whisper 本地转写（`WHISPER_MODEL` 选模型），长音频自动切分为有序分块
+- **音频** (.mp3, .wav, .flac, .m4a, .ogg): 使用 `pip install raganything[audio]` 安装，并设置 `enable_audio_processing=True`（环境变量 `ENABLE_AUDIO_PROCESSING`）；由 faster-whisper 本地转写（`WHISPER_MODEL` 选模型；默认 `base`，中文等非拉丁语音建议 `medium` 及以上并设置 `WHISPER_LANGUAGE=zh`，小模型会写错专有名词），长音频自动切分为有序分块
 - **视频** (.mp4, .mov, .webm, .avi, .mkv): 使用 `pip install raganything[video]` 安装（另需系统 ffmpeg），并设置 `enable_video_processing=True`（环境变量 `ENABLE_VIDEO_PROCESSING`）；双通道处理：SceneDetect 场景切分 + 关键帧 VLM 描述 + 音轨转写，按时间戳合并。媒体文件可以直接传给 `process_document_complete()` / 文件夹批处理，也可以作为 content list 项插入
 - **文本文件** (.txt, .md): 使用 `pip install raganything[text]` 安装。直接解析，不再经过 PDF/OCR 中转；markdown 中指向本地可读文件的图片引用（`![alt](path)`）会生成图像块，与 PDF 中提取的图片走同一条多模态管线——URL 与不存在的文件保持为纯文本
 
