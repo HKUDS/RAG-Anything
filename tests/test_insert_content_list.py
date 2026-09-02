@@ -4,6 +4,8 @@ import asyncio
 import sys
 import types
 
+import pytest
+
 
 class FakeLogger:
     def info(self, *args, **kwargs):
@@ -101,6 +103,7 @@ class FakeLightRAG:
 class DummyProcessor(ProcessorMixin):
     def __init__(self):
         self.events = []
+        self.init_calls = 0
         self.lightrag = FakeLightRAG(self.events)
         self.logger = FakeLogger()
         self.config = SimpleNamespace(
@@ -114,6 +117,7 @@ class DummyProcessor(ProcessorMixin):
         self.parsed_content_list = []
 
     async def _ensure_lightrag_initialized(self):
+        self.init_calls += 1
         return {"success": True}
 
     async def parse_document(
@@ -126,6 +130,17 @@ class DummyProcessor(ProcessorMixin):
 
     async def _process_multimodal_content(self, multimodal_items, file_ref, doc_id):
         self.events.append(("multimodal", doc_id, file_ref))
+
+
+def test_insert_content_list_rejects_empty_list_before_side_effects():
+    processor = DummyProcessor()
+
+    with pytest.raises(ValueError, match="content_list cannot be empty"):
+        asyncio.run(processor.insert_content_list([], file_path="/tmp/source.pdf"))
+
+    assert processor.init_calls == 0
+    assert processor.events == []
+    assert processor.lightrag.doc_status.records == {}
 
 
 def test_insert_content_list_defers_status_until_after_text_insert():
