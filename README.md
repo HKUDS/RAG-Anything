@@ -983,6 +983,8 @@ The `content_list` should follow the standard format with each item being a dict
 - **Table content**: `{"type": "table", "table_body": "markdown table", "table_caption": ["caption"], "table_footnote": ["note"], "page_idx": 2}`
 - **Equation content**: `{"type": "equation", "latex": "LaTeX formula", "text": "description", "page_idx": 3}`
 - **Generic content**: `{"type": "custom_type", "content": "any content", "page_idx": 4}`
+- **Audio content**: `{"type": "audio", "audio_path": "/absolute/path/to/talk.wav", "audio_caption": ["caption"], "page_idx": 5}` — transcribed locally with faster-whisper (timestamped segments); long recordings are windowed into ordered chunks
+- **Video content**: `{"type": "video", "video_path": "/absolute/path/to/demo.mp4", "video_caption": ["caption"], "page_idx": 6}` — SceneDetect scene boundaries + keyframe VLM description + audio-track transcription, merged by timestamp
 
 **Important Notes:**
 - **`img_path`**: Must be an absolute path to the image file (e.g., `/home/user/images/chart.jpg` or `C:\Users\user\images\chart.jpg`)
@@ -1219,6 +1221,8 @@ Different content types require specific optional dependencies:
 
 - **Office Documents** (.doc, .docx, .ppt, .pptx, .xls, .xlsx): Install [LibreOffice](https://www.libreoffice.org/download/download/)
 - **Extended Image Formats** (.bmp, .tiff, .gif, .webp): Install with `pip install raganything[image]`
+- **Audio** (.mp3, .wav, .flac, .m4a, .ogg): Install with `pip install raganything[audio]` and set `enable_audio_processing=True` (env `ENABLE_AUDIO_PROCESSING`); local transcription via faster-whisper, model picked by `WHISPER_MODEL`
+- **Video** (.mp4, .mov, .webm, .avi, .mkv): Install with `pip install raganything[video]` (also needs ffmpeg on PATH) and set `enable_video_processing=True` (env `ENABLE_VIDEO_PROCESSING`); dual-channel: SceneDetect + keyframe VLM description + audio-track transcription
 - **Text Files** (.txt, .md): Install with `pip install raganything[text]`. Parsed directly (no PDF/OCR round trip); markdown image references (`![alt](path)`) that point to readable local files become image blocks and flow through the same multimodal pipeline as images extracted from PDFs — URLs and missing files stay as plain text
 - **PaddleOCR Parser** (`parser="paddleocr"`): Install with `pip install raganything[paddleocr]`, then install `paddlepaddle` for your platform
 
