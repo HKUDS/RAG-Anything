@@ -605,6 +605,7 @@ class ProcessorMixin:
         doc_id: str,
         pipeline_status: Optional[Any] = None,
         pipeline_status_lock: Optional[Any] = None,
+        force_reprocess: bool = False,
     ):
         """
         Process multimodal content (using specialized processors)
@@ -615,6 +616,13 @@ class ProcessorMixin:
             doc_id: Document ID for proper chunk association
             pipeline_status: Pipeline status object
             pipeline_status_lock: Pipeline status lock
+            force_reprocess: If True, bypass the "already processed" short-circuit
+                and re-run multimodal processing even if doc_status/compatibility
+                cache report it as complete. Defaults to False, which preserves
+                the original skip-if-already-processed behavior. Useful when the
+                underlying graph/vector storage backend was swapped (see
+                https://github.com/HKUDS/RAG-Anything/issues/154) and multimodal
+                entities/relations need to be re-written into the new backend.
         """
 
         if not multimodal_items:
@@ -640,37 +648,43 @@ class ProcessorMixin:
             return
 
         # Check multimodal processing status - handle LightRAG's early DocStatus.PROCESSED marking
-        try:
-            existing_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
-            if existing_doc_status:
-                # Check if multimodal content is already processed
-                multimodal_processed = await self._get_multimodal_processed_flag(
-                    doc_id, existing_doc_status
-                )
-
-                if multimodal_processed:
-                    self.logger.info(
-                        f"Document {doc_id} multimodal content is already processed"
+        # (skipped entirely when force_reprocess=True, e.g. after switching storage backends)
+        if force_reprocess:
+            self.logger.info(
+                f"force_reprocess=True: bypassing already-processed check for document {doc_id}"
+            )
+        else:
+            try:
+                existing_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
+                if existing_doc_status:
+                    # Check if multimodal content is already processed
+                    multimodal_processed = await self._get_multimodal_processed_flag(
+                        doc_id, existing_doc_status
                     )
-                    return
 
-                # Even if status is DocStatus.PROCESSED (text processing done),
-                # we still need to process multimodal content if not yet done
-                doc_status = existing_doc_status.get("status", "")
-                if doc_status == DocStatus.PROCESSED and not multimodal_processed:
-                    self.logger.info(
-                        f"Document {doc_id} text processing is complete, but multimodal content still needs processing"
-                    )
-                    # Continue with multimodal processing
-                elif doc_status == DocStatus.PROCESSED and multimodal_processed:
-                    self.logger.info(
-                        f"Document {doc_id} is fully processed (text + multimodal)"
-                    )
-                    return
+                    if multimodal_processed:
+                        self.logger.info(
+                            f"Document {doc_id} multimodal content is already processed"
+                        )
+                        return
 
-        except Exception as e:
-            self.logger.debug(f"Error checking document status for {doc_id}: {e}")
-            # Continue with processing if cache check fails
+                    # Even if status is DocStatus.PROCESSED (text processing done),
+                    # we still need to process multimodal content if not yet done
+                    doc_status = existing_doc_status.get("status", "")
+                    if doc_status == DocStatus.PROCESSED and not multimodal_processed:
+                        self.logger.info(
+                            f"Document {doc_id} text processing is complete, but multimodal content still needs processing"
+                        )
+                        # Continue with multimodal processing
+                    elif doc_status == DocStatus.PROCESSED and multimodal_processed:
+                        self.logger.info(
+                            f"Document {doc_id} is fully processed (text + multimodal)"
+                        )
+                        return
+
+            except Exception as e:
+                self.logger.debug(f"Error checking document status for {doc_id}: {e}")
+                # Continue with processing if cache check fails
 
         # Use ProcessorMixin's own batch processing that can handle multiple content types
         log_message = "Starting multimodal content processing..."
@@ -1647,6 +1661,7 @@ class ProcessorMixin:
         split_by_character_only: bool = False,
         doc_id: str | None = None,
         file_name: str | None = None,
+        force_multimodal_reprocess: bool = False,
         **kwargs,
     ):
         """
@@ -1660,6 +1675,14 @@ class ProcessorMixin:
             split_by_character: Optional character to split the text by
             split_by_character_only: If True, split only by the specified character
             doc_id: Optional document ID, if not provided will be generated from content
+            force_multimodal_reprocess: If True, re-run multimodal (image/table/equation)
+                processing even if this document was already marked as fully
+                processed. Defaults to False (original behavior: already-processed
+                documents are skipped). This is useful after switching to a new
+                graph/vector storage backend, since a fresh backend will not yet
+                contain the multimodal entities/relations that were written to the
+                previous one (see https://github.com/HKUDS/RAG-Anything/issues/154).
+                Text content is unaffected by this flag.
             **kwargs: Additional parameters for parser (e.g., lang, device,
                 start_page, end_page, formula, table, backend, source,
                 include_layout_blocks)
@@ -1761,7 +1784,10 @@ class ProcessorMixin:
             stage = "multimodal"
             if multimodal_items:
                 await self._process_multimodal_content(
-                    multimodal_items, file_name, doc_id
+                    multimodal_items,
+                    file_name,
+                    doc_id,
+                    force_reprocess=force_multimodal_reprocess,
                 )
             else:
                 # If no multimodal content, mark multimodal processing as complete
@@ -2110,6 +2136,7 @@ class ProcessorMixin:
         split_by_character_only: bool = False,
         doc_id: str | None = None,
         display_stats: bool = None,
+        force_multimodal_reprocess: bool = False,
     ):
         """
         Insert content list directly without document parsing
@@ -2130,6 +2157,14 @@ class ProcessorMixin:
             split_by_character_only: If True, split only by the specified character
             doc_id: Optional document ID, if not provided will be generated from content
             display_stats: Whether to display content statistics (defaults to config.display_content_stats)
+            force_multimodal_reprocess: If True, re-run multimodal (image/table/equation)
+                processing even if this document was already marked as fully
+                processed. Defaults to False (original behavior: already-processed
+                documents are skipped). This is useful after switching to a new
+                graph/vector storage backend, since a fresh backend will not yet
+                contain the multimodal entities/relations that were written to the
+                previous one (see https://github.com/HKUDS/RAG-Anything/issues/154).
+                Text content is unaffected by this flag.
 
         Note:
             - img_path must be an absolute path to the image file
@@ -2242,7 +2277,12 @@ class ProcessorMixin:
 
         # Step 3: Process multimodal content (using specialized processors)
         if multimodal_items:
-            await self._process_multimodal_content(multimodal_items, file_ref, doc_id)
+            await self._process_multimodal_content(
+                multimodal_items,
+                file_ref,
+                doc_id,
+                force_reprocess=force_multimodal_reprocess,
+            )
         else:
             # If no multimodal content, mark multimodal processing as complete
             # This ensures the document status properly reflects completion of all processing

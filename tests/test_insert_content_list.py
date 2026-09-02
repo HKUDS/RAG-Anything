@@ -128,7 +128,9 @@ class DummyProcessor(ProcessorMixin):
     def _generate_content_based_doc_id(self, content_list):
         return "doc-content-list"
 
-    async def _process_multimodal_content(self, multimodal_items, file_ref, doc_id):
+    async def _process_multimodal_content(
+        self, multimodal_items, file_ref, doc_id, **kwargs
+    ):
         self.events.append(("multimodal", doc_id, file_ref))
 
 
