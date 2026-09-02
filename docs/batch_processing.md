@@ -12,6 +12,7 @@ The batch processing feature allows you to process multiple documents concurrent
 - **Progress Tracking**: Real-time progress bars with `tqdm`
 - **Error Handling**: Comprehensive error reporting and recovery
 - **Flexible Input**: Support for files, directories, and recursive search
+- **Collision-safe Outputs**: Isolated output directories for same-name files
 - **Dry Run**: Preview which files would be processed without running parsers
 - **Configurable Workers**: Adjustable number of parallel workers
 - **Installation Check Bypass**: Optional skip for environments with package conflicts
@@ -58,6 +59,19 @@ print(result.summary())
 print(f"Success rate: {result.success_rate:.1f}%")
 print(f"Processing time: {result.processing_time:.2f} seconds")
 ```
+
+### Output Layout
+
+Each input file is assigned a deterministic subdirectory under `output_dir`:
+
+```
+<output_dir>/<file-stem>_<path-hash>/
+```
+
+The readable file stem is combined with a short hash of the resolved input path.
+This keeps parser artifacts from being overwritten when different directories
+contain files with the same name, and gives repeated runs for the same input a
+stable output location.
 
 ### Asynchronous Batch Processing
 
@@ -130,6 +144,9 @@ python -m raganything.batch_parser examples/sample_docs/ --parser paddleocr --me
 
 # Without progress bar
 python -m raganything.batch_parser examples/sample_docs/ --output ./output --no-progress
+
+# Only process files directly inside the specified directories
+python -m raganything.batch_parser examples/sample_docs/ --output ./output --no-recursive
 
 # Dry run (list supported files without processing)
 python -m raganything.batch_parser examples/sample_docs/ --output ./output --dry-run

@@ -189,9 +189,10 @@ class BatchParser:
         try:
             start_time = time.time()
 
-            # Create file-specific output directory
-            file_name = Path(file_path).stem
-            file_output_dir = Path(output_dir) / file_name
+            # Create a deterministic, file-specific output directory. The path
+            # suffix prevents two inputs with the same name from sharing parser
+            # artifacts when a batch output directory is reused.
+            file_output_dir = self._file_output_dir(output_dir, file_path)
             file_output_dir.mkdir(parents=True, exist_ok=True)
 
             # Parse the document
@@ -215,6 +216,18 @@ class BatchParser:
             error_msg = f"Failed to process {file_path}: {str(e)}"
             self.logger.error(error_msg)
             return False, file_path, error_msg
+
+    @staticmethod
+    def _file_output_dir(output_dir: str, file_path: str) -> Path:
+        """Return a deterministic output directory unique to ``file_path``.
+
+        The basename remains readable while a short hash of the resolved path
+        provides isolation for files with the same stem. This mirrors the
+        collision-avoidance convention used by the built-in parsers.
+        """
+        resolved_path = Path(file_path).resolve()
+        path_hash = hashlib.md5(str(resolved_path).encode("utf-8")).hexdigest()[:8]
+        return Path(output_dir) / f"{resolved_path.stem}_{path_hash}"
 
     @staticmethod
     def _manifest_path(output_dir: str) -> Path:
@@ -604,9 +617,9 @@ def main():
     )
     parser.add_argument(
         "--recursive",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
-        help="Search directories recursively",
+        help="Search directories recursively (use --no-recursive to disable)",
     )
     parser.add_argument(
         "--timeout", type=int, default=300, help="Timeout per file (seconds)"

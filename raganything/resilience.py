@@ -117,14 +117,12 @@ def retry(
                             exc,
                         )
                         raise
-                    delay = min(
-                        base_delay * (exponential_base ** (attempt - 1)),
-                        max_delay,
-                    )
+                    delay = base_delay * (exponential_base ** (attempt - 1))
                     if jitter:
                         import random
 
                         delay *= 1.0 + random.uniform(0, 0.5)
+                    delay = min(delay, max_delay)
                     if on_retry is not None:
                         on_retry(exc, attempt, delay)
                     logger.warning(
@@ -202,14 +200,12 @@ def async_retry(
                             exc,
                         )
                         raise
-                    delay = min(
-                        base_delay * (exponential_base ** (attempt - 1)),
-                        max_delay,
-                    )
+                    delay = base_delay * (exponential_base ** (attempt - 1))
                     if jitter:
                         import random
 
                         delay *= 1.0 + random.uniform(0, 0.5)
+                    delay = min(delay, max_delay)
                     if on_retry is not None:
                         result = on_retry(exc, attempt, delay)
                         if asyncio.iscoroutine(result):

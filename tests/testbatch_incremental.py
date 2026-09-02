@@ -22,7 +22,7 @@ class FakeParser:
         return [{"type": "text", "text": Path(file_path).read_text()}]
 
 
-def _make_batch_parser(monkeypatch):
+def _load_batch_parser_module(monkeypatch):
     fake_parser = FakeParser()
     repo_root = Path(__file__).parents[1]
 
@@ -43,6 +43,12 @@ def _make_batch_parser(monkeypatch):
     monkeypatch.setitem(sys.modules, "raganything.batch_parser", batch_parser_module)
     spec.loader.exec_module(batch_parser_module)
 
+    return batch_parser_module, fake_parser
+
+
+def _make_batch_parser(monkeypatch):
+    batch_parser_module, fake_parser = _load_batch_parser_module(monkeypatch)
+
     batch_parser = batch_parser_module.BatchParser(
         parser_type="fake",
         max_workers=1,
@@ -50,6 +56,44 @@ def _make_batch_parser(monkeypatch):
         skip_installation_check=True,
     )
     return batch_parser, fake_parser
+
+
+def test_cli_can_disable_recursive_scan(monkeypatch, tmp_path):
+    batch_parser_module, _ = _load_batch_parser_module(monkeypatch)
+    captured = {}
+
+    class FakeResult:
+        successful_files = []
+        failed_files = []
+        skipped_files = []
+
+        @staticmethod
+        def summary():
+            return "Batch processing results"
+
+    class FakeBatchParser:
+        def __init__(self, **kwargs):
+            pass
+
+        def process_batch(self, **kwargs):
+            captured.update(kwargs)
+            return FakeResult()
+
+    monkeypatch.setattr(batch_parser_module, "BatchParser", FakeBatchParser)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "raganything.batch_parser",
+            str(tmp_path / "docs"),
+            "--output",
+            str(tmp_path / "output"),
+            "--no-recursive",
+        ],
+    )
+
+    assert batch_parser_module.main() == 0
+    assert captured["recursive"] is False
 
 
 def test_incremental_batch_skips_unchanged_files(monkeypatch, tmp_path):
@@ -233,6 +277,45 @@ def test_filter_supported_files_deduplicates_overlapping_inputs(monkeypatch, tmp
     # docs_dir (listed twice) overlaps with first_doc; dedup keeps each file
     # exactly once. Compare sorted since directory glob order is not defined.
     assert sorted(result) == sorted([str(first_doc), str(second_doc)])
+
+
+def test_batch_isolates_same_name_files(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    batch_parser.max_workers = 2
+
+    first_doc = tmp_path / "source_a" / "report.txt"
+    second_doc = tmp_path / "source_b" / "report.txt"
+    first_doc.parent.mkdir()
+    second_doc.parent.mkdir()
+    first_doc.write_text("from source A", encoding="utf-8")
+    second_doc.write_text("from source B", encoding="utf-8")
+
+    output_dirs = {}
+
+    def parse_document(file_path, output_dir, method="auto", **kwargs):
+        output_dirs[file_path] = output_dir
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+        (output_path / "source.txt").write_text(
+            Path(file_path).read_text(encoding="utf-8"), encoding="utf-8"
+        )
+        fake_parser.processed_files.append(file_path)
+        return [{"type": "text", "text": "parsed"}]
+
+    fake_parser.parse_document = parse_document
+
+    result = batch_parser.process_batch(
+        [str(first_doc), str(second_doc)], str(tmp_path / "out")
+    )
+
+    assert sorted(result.successful_files) == sorted([str(first_doc), str(second_doc)])
+    assert output_dirs[str(first_doc)] != output_dirs[str(second_doc)]
+    assert (Path(output_dirs[str(first_doc)]) / "source.txt").read_text(
+        encoding="utf-8"
+    ) == "from source A"
+    assert (Path(output_dirs[str(second_doc)]) / "source.txt").read_text(
+        encoding="utf-8"
+    ) == "from source B"
 
 
 def test_timeout_is_applied_per_file_not_to_entire_batch(monkeypatch, tmp_path):

@@ -2,6 +2,7 @@
 
 import pytest
 
+import raganything.resilience as resilience_module
 from raganything.resilience import CircuitBreaker, async_retry, retry
 
 
@@ -91,6 +92,31 @@ class TestSyncRetry:
         assert retries_seen[0] == ("OSError", 1)
         assert retries_seen[1] == ("OSError", 2)
 
+    def test_jitter_respects_max_delay(self, monkeypatch):
+        call_count = 0
+        retry_delays = []
+
+        monkeypatch.setattr("random.uniform", lambda *_args: 0.5)
+        monkeypatch.setattr(resilience_module.time, "sleep", lambda _delay: None)
+
+        @retry(
+            max_attempts=2,
+            base_delay=2.0,
+            max_delay=1.0,
+            jitter=True,
+            retryable_exceptions=[ConnectionError],
+            on_retry=lambda _exc, _attempt, delay: retry_delays.append(delay),
+        )
+        def flaky_func():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ConnectionError("transient")
+            return "recovered"
+
+        assert flaky_func() == "recovered"
+        assert retry_delays == [1.0]
+
 
 class TestAsyncRetry:
     @pytest.mark.asyncio
@@ -137,6 +163,35 @@ class TestAsyncRetry:
 
         with pytest.raises(TimeoutError, match="permanent"):
             await always_fail()
+
+    @pytest.mark.asyncio
+    async def test_jitter_respects_max_delay(self, monkeypatch):
+        call_count = 0
+        retry_delays = []
+
+        async def no_sleep(_delay):
+            return None
+
+        monkeypatch.setattr("random.uniform", lambda *_args: 0.5)
+        monkeypatch.setattr(resilience_module.asyncio, "sleep", no_sleep)
+
+        @async_retry(
+            max_attempts=2,
+            base_delay=2.0,
+            max_delay=1.0,
+            jitter=True,
+            retryable_exceptions=[ConnectionError],
+            on_retry=lambda _exc, _attempt, delay: retry_delays.append(delay),
+        )
+        async def flaky_func():
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise ConnectionError("transient")
+            return "recovered"
+
+        assert await flaky_func() == "recovered"
+        assert retry_delays == [1.0]
 
 
 class TestRetryParameterValidation:

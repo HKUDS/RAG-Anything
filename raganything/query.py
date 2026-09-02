@@ -23,6 +23,39 @@ from raganything.utils import (
 class QueryMixin:
     """QueryMixin class containing query functionality for RAGAnything"""
 
+    @staticmethod
+    def _fingerprint_local_file(file_path: str) -> str | None:
+        """Return a content fingerprint for a readable local file."""
+        try:
+            path = Path(file_path).expanduser()
+            if not path.is_file():
+                return None
+
+            digest = hashlib.sha256()
+            with path.open("rb") as file:
+                for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            return digest.hexdigest()
+        except (OSError, RuntimeError):
+            return None
+
+    @staticmethod
+    def _normalize_query_options(options: Dict[str, Any]) -> Dict[str, Any]:
+        """Make query options cache-safe without dropping result-affecting values."""
+        normalized = dict(options)
+        model_func = normalized.get("model_func")
+        if model_func is not None:
+            normalized["model_func"] = {
+                "module": getattr(
+                    model_func, "__module__", type(model_func).__module__
+                ),
+                "qualname": getattr(
+                    model_func, "__qualname__", type(model_func).__qualname__
+                ),
+                "identity": id(model_func),
+            }
+        return normalized
+
     def _generate_multimodal_cache_key(
         self, query: str, multimodal_content: List[Dict[str, Any]], mode: str, **kwargs
     ) -> str:
@@ -51,13 +84,20 @@ class QueryMixin:
                 if isinstance(item, dict):
                     normalized_item = {}
                     for key, value in item.items():
-                        # For file paths, use basename to make cache more portable
+                        # File contents affect the answer, so use their digest instead
+                        # of the basename. Same-named files may contain different media.
                         if key in [
                             "img_path",
                             "image_path",
                             "file_path",
                         ] and isinstance(value, str):
-                            normalized_item[key] = Path(value).name
+                            file_fingerprint = self._fingerprint_local_file(value)
+                            if file_fingerprint is not None:
+                                normalized_item[f"{key}_sha256"] = file_fingerprint
+                            else:
+                                # Preserve the complete value for unavailable local
+                                # paths and URLs so equal basenames cannot collide.
+                                normalized_item[key] = value
                         # For large content, create a hash instead of storing directly
                         elif (
                             key in ["table_data", "table_body"]
@@ -75,23 +115,9 @@ class QueryMixin:
 
         cache_data["multimodal_content"] = normalized_content
 
-        # Add relevant kwargs to cache data
-        relevant_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k
-            in [
-                "stream",
-                "response_type",
-                "top_k",
-                "max_tokens",
-                "temperature",
-                "system_prompt",
-                # "only_need_context",
-                # "only_need_prompt",
-            ]
-        }
-        cache_data.update(relevant_kwargs)
+        # Every forwarded query option can affect retrieval or generation.
+        # Keep them nested so they cannot overwrite the core cache fields.
+        cache_data["query_options"] = self._normalize_query_options(kwargs)
 
         # Generate hash from the cache data
         cache_str = json.dumps(cache_data, sort_keys=True, ensure_ascii=False)

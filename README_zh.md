@@ -70,7 +70,7 @@
 
 ## 🎉 新闻
 - [X] [2026.06]🎯📢 🎉 [LightRAG](https://github.com/HKUDS/LightRAG) 通过原生集成 RAG-Anything 实现多模态 RAG。
-- [X] [2025.10]🎯📢 🚀 我们已发布 [RAG-Anything] 的技术报告（http://arxiv.org/abs/2510.12323），立即访问以了解我们的最新研究成果。
+- [X] [2025.10]🎯📢 🚀 我们已发布 [RAG-Anything] 的技术报告（[http://arxiv.org/abs/2510.12323](http://arxiv.org/abs/2510.12323)），立即访问以了解我们的最新研究成果。
 - [X] [2025.08.12]🎯📢 🔍 RAGAnything 现在支持 **VLM增强查询** 模式！当文档包含图片时，系统可以自动将图片与文本上下文一起直接传递给VLM进行综合多模态分析。
 - [X] [2025.07.05]🎯📢 RAGAnything 新增[上下文配置模块](docs/context_aware_processing.md)，支持为多模态内容处理添加相关上下文信息。
 - [X] [2025.07.04]🎯📢 RAGAnything 现在支持多模态内容查询，实现了集成文本、图像、表格和公式处理的增强检索生成功能。
@@ -571,6 +571,8 @@ await rag.process_folder_complete(
     max_workers=4
 )
 ```
+
+使用增强批量解析器 `BatchParser` 时，每个输入文件都会在 `output_dir` 下分配独立的输出目录，格式为 `<文件名>_<路径哈希>/`。路径哈希取自输入文件的绝对路径，因此不同目录中的同名文件不会共享批处理输出目录；同一个文件重复处理时也会使用稳定的位置。
 
 #### 4. 自定义模态处理器
 
@@ -1123,6 +1125,7 @@ await rag.process_document_complete(
     backend="pipeline",          # 解析后端：pipeline|hybrid-auto-engine|hybrid-http-client|vlm-auto-engine|vlm-http-client
     source="huggingface",        # 模型源："huggingface", "modelscope", "local"
     # vlm_url="http://127.0.0.1:3000" # 当backend=vlm-http-client时，需指定服务地址
+    include_layout_blocks=False,  # 仅在确有需要时保留 MinerU v2 的页眉、页脚和页码
 
     # RAGAnything标准参数
     display_stats=True,          # 显示内容统计信息
@@ -1132,6 +1135,22 @@ await rag.process_document_complete(
 ```
 
 > **注意**：MinerU 2.0不再使用 `magic-pdf.json` 配置文件。所有设置现在通过命令行参数或函数参数传递。RAG-Anything现在支持多种文档解析器 - 你可以根据需要在MinerU和Docling之间选择。
+
+#### MinerU 3.x Content List v2
+
+当 MinerU 3.x 产出 `*_content_list_v2.json` 或 `content_list_v2.json` 时，RAG-Anything 会优先读取它们，而不是旧的扁平 content list。文件发现遵循确定性优先级：文档专属目录优先于共享根目录；同一 bundle 内 v2 优先于 legacy，同一 schema 内精确文件名优先于 generic 文件名。v2 按页分组的结构会被转换为现有的扁平 `content_list` 契约，同时保留页码、边界框、锚点、标题层级、视觉元数据、标题说明和脚注。算法块会兼容归一为 `type="code", sub_type="algorithm"`。
+
+默认会排除页眉、页脚、页码、旁注和页脚注，避免重复版面噪声进入语义检索或图谱构建。只有这些信息确实有业务意义时，才开启 `include_layout_blocks=True`：
+
+```python
+await rag.process_document_complete(
+    file_path="document.pdf",
+    parser="mineru",
+    include_layout_blocks=True,
+)
+```
+
+MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并跳过未来的未知块；当 v2 文件损坏、结构无效，或没有生成任何可支持的语义块且存在旧版文件时，会自动回退到 legacy content list。
 
 ### 处理要求
 
@@ -1228,22 +1247,6 @@ await rag.process_document_complete(
       </td>
     </tr>
   </table>
-</div>
-
----
-
-## ⭐ Star History
-
-*社区增长轨迹*
-
-<div align="center">
-  <a href="https://star-history.com/#HKUDS/RAG-Anything&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=HKUDS/RAG-Anything&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=HKUDS/RAG-Anything&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=HKUDS/RAG-Anything&type=Date" style="border-radius: 15px; box-shadow: 0 0 30px rgba(0, 217, 255, 0.3);" />
-    </picture>
-  </a>
 </div>
 
 ---
