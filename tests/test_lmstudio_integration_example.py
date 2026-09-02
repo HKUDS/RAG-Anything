@@ -38,7 +38,9 @@ def _load_example(monkeypatch):
         / "examples"
         / "lmstudio_integration_example.py"
     )
-    spec = importlib.util.spec_from_file_location("lmstudio_integration_example", module_path)
+    spec = importlib.util.spec_from_file_location(
+        "lmstudio_integration_example", module_path
+    )
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
