@@ -1222,7 +1222,7 @@ Different content types require specific optional dependencies:
 - **Office Documents** (.doc, .docx, .ppt, .pptx, .xls, .xlsx): Install [LibreOffice](https://www.libreoffice.org/download/download/)
 - **Extended Image Formats** (.bmp, .tiff, .gif, .webp): Install with `pip install raganything[image]`
 - **Audio** (.mp3, .wav, .flac, .m4a, .ogg): Install with `pip install raganything[audio]` and set `enable_audio_processing=True` (env `ENABLE_AUDIO_PROCESSING`); local transcription via faster-whisper, model picked by `WHISPER_MODEL`
-- **Video** (.mp4, .mov, .webm, .avi, .mkv): Install with `pip install raganything[video]` (also needs ffmpeg on PATH) and set `enable_video_processing=True` (env `ENABLE_VIDEO_PROCESSING`); dual-channel: SceneDetect + keyframe VLM description + audio-track transcription
+- **Video** (.mp4, .mov, .webm, .avi, .mkv): Install with `pip install raganything[video]` (also needs ffmpeg on PATH) and set `enable_video_processing=True` (env `ENABLE_VIDEO_PROCESSING`); dual-channel: SceneDetect + keyframe VLM description + audio-track transcription. Media files can be passed directly to `process_document_complete()` / folder batches, or inserted as content-list items
 - **Text Files** (.txt, .md): Install with `pip install raganything[text]`. Parsed directly (no PDF/OCR round trip); markdown image references (`![alt](path)`) that point to readable local files become image blocks and flow through the same multimodal pipeline as images extracted from PDFs — URLs and missing files stay as plain text
 - **PaddleOCR Parser** (`parser="paddleocr"`): Install with `pip install raganything[paddleocr]`, then install `paddlepaddle` for your platform
 
