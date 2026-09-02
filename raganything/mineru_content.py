@@ -8,6 +8,8 @@ so it can be tested without installing or running MinerU.
 
 from __future__ import annotations
 
+import posixpath
+
 import logging
 from collections.abc import Mapping
 from typing import Any
@@ -494,7 +496,13 @@ def _source_path(source: Any) -> str:
     if isinstance(source, Mapping):
         source = source.get("path", source.get("source", source.get("url", "")))
     if isinstance(source, str):
-        return source.strip()
+        source = source.strip()
+        # A path with an empty basename (e.g. "images/") would resolve to a
+        # directory downstream and surface as a misleading per-item
+        # description error; treat it as no source.
+        if posixpath.basename(source.replace("\\", "/")) in ("", ".", ".."):
+            return ""
+        return source
     return ""
 
 
