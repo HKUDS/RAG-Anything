@@ -1098,6 +1098,7 @@ await rag.process_document_complete(
     backend="pipeline",          # 解析后端：pipeline|hybrid-auto-engine|hybrid-http-client|vlm-auto-engine|vlm-http-client
     source="huggingface",        # 模型源："huggingface", "modelscope", "local"
     # vlm_url="http://127.0.0.1:3000" # 当backend=vlm-http-client时，需指定服务地址
+    include_layout_blocks=False,  # 仅在确有需要时保留 MinerU v2 的页眉、页脚和页码
 
     # RAGAnything标准参数
     display_stats=True,          # 显示内容统计信息
@@ -1107,6 +1108,22 @@ await rag.process_document_complete(
 ```
 
 > **注意**：MinerU 2.0不再使用 `magic-pdf.json` 配置文件。所有设置现在通过命令行参数或函数参数传递。RAG-Anything现在支持多种文档解析器 - 你可以根据需要在MinerU和Docling之间选择。
+
+#### MinerU 3.x Content List v2
+
+当 MinerU 3.x 产出 `*_content_list_v2.json` 或 `content_list_v2.json` 时，RAG-Anything 会优先读取它们，而不是旧的扁平 content list。文件发现遵循确定性优先级：文档专属目录优先于共享根目录；同一 bundle 内 v2 优先于 legacy，同一 schema 内精确文件名优先于 generic 文件名。v2 按页分组的结构会被转换为现有的扁平 `content_list` 契约，同时保留页码、边界框、锚点、标题层级、视觉元数据、标题说明和脚注。算法块会兼容归一为 `type="code", sub_type="algorithm"`。
+
+默认会排除页眉、页脚、页码、旁注和页脚注，避免重复版面噪声进入语义检索或图谱构建。只有这些信息确实有业务意义时，才开启 `include_layout_blocks=True`：
+
+```python
+await rag.process_document_complete(
+    file_path="document.pdf",
+    parser="mineru",
+    include_layout_blocks=True,
+)
+```
+
+MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并跳过未来的未知块；当 v2 文件损坏、结构无效，或没有生成任何可支持的语义块且存在旧版文件时，会自动回退到 legacy content list。
 
 ### 处理要求
 

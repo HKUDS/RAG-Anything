@@ -29,8 +29,33 @@ import asyncio
 from lightrag.utils import compute_mdhash_id
 
 
+_PARSER_CACHE_KWARGS = frozenset(
+    {
+        "lang",
+        "device",
+        "start_page",
+        "end_page",
+        "formula",
+        "table",
+        "backend",
+        "source",
+        "include_layout_blocks",
+    }
+)
+
+
 class ProcessorMixin:
     """ProcessorMixin class containing document processing functionality for RAGAnything"""
+
+    @staticmethod
+    def _relevant_parser_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Return parser options that change the persisted parse result."""
+        return {
+            key: value
+            for key, value in kwargs.items()
+            if key in _PARSER_CACHE_KWARGS
+            and not (key == "include_layout_blocks" and not value)
+        }
 
     def _get_file_reference(self, file_path: str) -> str:
         """
@@ -74,22 +99,7 @@ class ProcessorMixin:
         }
 
         # Add relevant kwargs to config
-        relevant_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k
-            in [
-                "lang",
-                "device",
-                "start_page",
-                "end_page",
-                "formula",
-                "table",
-                "backend",
-                "source",
-            ]
-        }
-        config_dict.update(relevant_kwargs)
+        config_dict.update(self._relevant_parser_kwargs(kwargs))
 
         # Generate hash from config
         config_str = json.dumps(config_dict, sort_keys=True)
@@ -277,22 +287,7 @@ class ProcessorMixin:
             }
 
             # Add relevant kwargs to current config
-            relevant_kwargs = {
-                k: v
-                for k, v in kwargs.items()
-                if k
-                in [
-                    "lang",
-                    "device",
-                    "start_page",
-                    "end_page",
-                    "formula",
-                    "table",
-                    "backend",
-                    "source",
-                ]
-            }
-            current_config.update(relevant_kwargs)
+            current_config.update(self._relevant_parser_kwargs(kwargs))
 
             if cached_config != current_config:
                 self.logger.debug(f"Cache invalid - config changed: {cache_key}")
@@ -351,22 +346,7 @@ class ProcessorMixin:
             }
 
             # Add relevant kwargs to config
-            relevant_kwargs = {
-                k: v
-                for k, v in kwargs.items()
-                if k
-                in [
-                    "lang",
-                    "device",
-                    "start_page",
-                    "end_page",
-                    "formula",
-                    "table",
-                    "backend",
-                    "source",
-                ]
-            }
-            parse_config.update(relevant_kwargs)
+            parse_config.update(self._relevant_parser_kwargs(kwargs))
 
             cache_data = {
                 cache_key: {
@@ -401,7 +381,9 @@ class ProcessorMixin:
             output_dir: Output directory (defaults to config.parser_output_dir)
             parse_method: Parse method (defaults to config.parse_method)
             display_stats: Whether to display content statistics (defaults to config.display_content_stats)
-            **kwargs: Additional parameters for parser (e.g., lang, device, start_page, end_page, formula, table, backend, source)
+            **kwargs: Additional parameters for parser (e.g., lang, device,
+                start_page, end_page, formula, table, backend, source,
+                include_layout_blocks)
 
         Returns:
             tuple[List[Dict[str, Any]], str]: (content_list, doc_id)
@@ -1668,7 +1650,9 @@ class ProcessorMixin:
             split_by_character: Optional character to split the text by
             split_by_character_only: If True, split only by the specified character
             doc_id: Optional document ID, if not provided will be generated from content
-            **kwargs: Additional parameters for parser (e.g., lang, device, start_page, end_page, formula, table, backend, source)
+            **kwargs: Additional parameters for parser (e.g., lang, device,
+                start_page, end_page, formula, table, backend, source,
+                include_layout_blocks)
         """
         callback_manager = getattr(self, "callback_manager", None)
         doc_start_time = time.time()
@@ -1835,7 +1819,9 @@ class ProcessorMixin:
             split_by_character: Optional character to split the text by
             split_by_character_only: If True, split only by the specified character
             doc_id: Optional document ID, if not provided will be generated from content
-            **kwargs: Additional parameters for parser (e.g., lang, device, start_page, end_page, formula, table, backend, source)
+            **kwargs: Additional parameters for parser (e.g., lang, device,
+                start_page, end_page, formula, table, backend, source,
+                include_layout_blocks)
         """
         # Use full path or basename based on config
         file_name = self._get_file_reference(file_path)
