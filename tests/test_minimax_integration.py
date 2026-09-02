@@ -79,7 +79,7 @@ def _load_example(extra_env=None):
     env = {
         "MINIMAX_API_KEY": "test-key",
         "MINIMAX_BASE_URL": "https://api.minimax.io/v1",
-        "MINIMAX_LLM_MODEL": "MiniMax-M2.7",
+        "MINIMAX_LLM_MODEL": "MiniMax-M3",
         "EMBEDDING_BINDING_HOST": "https://api.openai.com/v1",
         "EMBEDDING_BINDING_API_KEY": "test-embed-key",
         "EMBEDDING_MODEL": "text-embedding-3-small",
@@ -124,7 +124,7 @@ class TestMiniMaxConstants:
             k: v
             for k, v in {
                 "MINIMAX_API_KEY": "test-key",
-                "MINIMAX_LLM_MODEL": "MiniMax-M2.7",
+                "MINIMAX_LLM_MODEL": "MiniMax-M3",
                 "EMBEDDING_BINDING_HOST": "https://api.openai.com/v1",
                 "EMBEDDING_BINDING_API_KEY": "test-embed-key",
                 "EMBEDDING_MODEL": "text-embedding-3-small",
@@ -149,7 +149,7 @@ class TestMiniMaxConstants:
         }
         with patch.dict(os.environ, env, clear=True):
             mod, _ = _load_example()
-        assert mod.MINIMAX_LLM_MODEL == "MiniMax-M2.7"
+        assert mod.MINIMAX_LLM_MODEL == "MiniMax-M3"
 
     def test_custom_model_env(self):
         mod, _ = _load_example({"MINIMAX_LLM_MODEL": "MiniMax-M2.7-highspeed"})
@@ -311,7 +311,7 @@ class TestMiniMaxLLMFunc:
 
         mod.openai_complete_if_cache = mock_complete
         await mod.minimax_llm_model_func("test")
-        assert captured["model"] == "MiniMax-M2.7"
+        assert captured["model"] == "MiniMax-M3"
 
     @pytest.mark.asyncio
     async def test_system_prompt_passed_through(self):
@@ -375,7 +375,7 @@ class TestMiniMaxRAGIntegration:
     def test_default_model_name(self):
         mod, _ = _load_example()
         integration = mod.MiniMaxRAGIntegration()
-        assert integration.model_name == "MiniMax-M2.7"
+        assert integration.model_name == "MiniMax-M3"
 
     def test_default_base_url(self):
         mod, _ = _load_example()

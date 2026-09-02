@@ -81,14 +81,20 @@ class BatchMixin:
         if not folder_path_obj.exists():
             raise FileNotFoundError(f"Folder not found: {folder_path}")
 
-        # Collect files based on supported extensions
-        files_to_process = []
-        for file_ext in file_extensions:
-            if recursive:
-                pattern = f"**/*{file_ext}"
-            else:
-                pattern = f"*{file_ext}"
-            files_to_process.extend(folder_path_obj.glob(pattern))
+        # Collect files once and compare normalized suffixes so discovery is
+        # case-insensitive on every platform.
+        normalized_extensions = {
+            ext.lower() if ext.startswith(".") else f".{ext.lower()}"
+            for ext in file_extensions
+        }
+        candidates = (
+            folder_path_obj.rglob("*") if recursive else folder_path_obj.glob("*")
+        )
+        files_to_process = [
+            path
+            for path in candidates
+            if path.is_file() and path.suffix.lower() in normalized_extensions
+        ]
 
         if not files_to_process:
             self.logger.warning(f"No supported files found in {folder_path}")
@@ -182,6 +188,7 @@ class BatchMixin:
         max_workers: Optional[int] = None,
         recursive: Optional[bool] = None,
         show_progress: bool = True,
+        incremental: bool = False,
         **kwargs,
     ) -> BatchProcessingResult:
         """
@@ -194,6 +201,7 @@ class BatchMixin:
             max_workers: Maximum number of workers for parallel processing
             recursive: Whether to process directories recursively
             show_progress: Whether to show progress bar
+            incremental: Whether to skip files unchanged since the last successful batch run
             **kwargs: Additional arguments passed to the parser
 
         Returns:
@@ -223,6 +231,7 @@ class BatchMixin:
             output_dir=output_dir,
             parse_method=parse_method,
             recursive=recursive,
+            incremental=incremental,
             **kwargs,
         )
 
@@ -234,6 +243,7 @@ class BatchMixin:
         max_workers: Optional[int] = None,
         recursive: Optional[bool] = None,
         show_progress: bool = True,
+        incremental: bool = False,
         **kwargs,
     ) -> BatchProcessingResult:
         """
@@ -246,6 +256,7 @@ class BatchMixin:
             max_workers: Maximum number of workers for parallel processing
             recursive: Whether to process directories recursively
             show_progress: Whether to show progress bar
+            incremental: Whether to skip files unchanged since the last successful batch run
             **kwargs: Additional arguments passed to the parser
 
         Returns:
@@ -275,13 +286,18 @@ class BatchMixin:
             output_dir=output_dir,
             parse_method=parse_method,
             recursive=recursive,
+            incremental=incremental,
             **kwargs,
         )
 
     def get_supported_file_extensions(self) -> List[str]:
         """Get list of supported file extensions for batch processing"""
-        batch_parser = BatchParser(parser_type=self.config.parser)
-        return batch_parser.get_supported_extensions()
+        try:
+            batch_parser = BatchParser(parser_type=self.config.parser)
+            return batch_parser.get_supported_extensions()
+        except Exception:
+            self.logger.exception("Failed to get list of supported file extensions")
+            return []
 
     def filter_supported_files(
         self, file_paths: List[str], recursive: Optional[bool] = None
@@ -310,6 +326,7 @@ class BatchMixin:
         max_workers: Optional[int] = None,
         recursive: Optional[bool] = None,
         show_progress: bool = True,
+        incremental: bool = False,
         **kwargs,
     ) -> Dict[str, Any]:
         """
@@ -326,6 +343,7 @@ class BatchMixin:
             max_workers: Maximum number of workers for parallel processing
             recursive: Whether to process directories recursively
             show_progress: Whether to show progress bar
+            incremental: Whether to skip files unchanged since the last successful batch run
             **kwargs: Additional arguments passed to the parser
 
         Returns:
@@ -361,6 +379,7 @@ class BatchMixin:
             max_workers=max_workers,
             recursive=recursive,
             show_progress=show_progress,
+            incremental=incremental,
             **kwargs,
         )
 

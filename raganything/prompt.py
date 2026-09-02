@@ -88,12 +88,13 @@ PROMPTS[
 
 {{
     "detailed_description": "A comprehensive and detailed visual description of the image following these guidelines:
-    - Describe the overall composition and layout
-    - Identify all objects, people, text, and visual elements
-    - Explain relationships between elements
-    - Note colors, lighting, and visual style
-    - Describe any actions or activities shown
-    - Include technical details if relevant (charts, diagrams, etc.)
+    - Describe the overall composition, layout, and structure
+    - Transcribe ALL text labels verbatim (titles, annotations, axis labels, node names, edge labels, legends, etc.)
+    - For diagrams/charts/flowcharts/UML: enumerate every node, edge, relationship type, and connection direction; preserve structural topology
+    - For photographs/illustrations: identify all objects, people, text, and visual elements; describe actions and scene
+    - Explain relationships and connections between elements
+    - Note colors, visual style, and layout patterns where relevant
+    - Include technical details if relevant (equations, measurements, data values, etc.)
     - Always use specific names instead of pronouns",
     "entity_info": {{
         "entity_name": "{entity_name}",
@@ -118,12 +119,13 @@ PROMPTS[
 
 {{
     "detailed_description": "A comprehensive and detailed visual description of the image following these guidelines:
-    - Describe the overall composition and layout
-    - Identify all objects, people, text, and visual elements
-    - Explain relationships between elements and how they relate to the surrounding context
-    - Note colors, lighting, and visual style
-    - Describe any actions or activities shown
-    - Include technical details if relevant (charts, diagrams, etc.)
+    - Describe the overall composition, layout, and structure
+    - Transcribe ALL text labels verbatim (titles, annotations, axis labels, node names, edge labels, legends, etc.)
+    - For diagrams/charts/flowcharts/UML: enumerate every node, edge, relationship type, and connection direction; preserve structural topology
+    - For photographs/illustrations: identify all objects, people, text, and visual elements; describe actions and scene
+    - Explain relationships and connections between elements and how they relate to the surrounding context
+    - Note colors, visual style, and layout patterns where relevant
+    - Include technical details if relevant (equations, measurements, data values, etc.)
     - Reference connections to the surrounding content when relevant
     - Always use specific names instead of pronouns",
     "entity_info": {{

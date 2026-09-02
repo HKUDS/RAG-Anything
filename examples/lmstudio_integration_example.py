@@ -28,13 +28,13 @@ from typing import List, Dict, Optional
 from dotenv import load_dotenv
 from openai import AsyncOpenAI
 
-# Load environment variables
-load_dotenv()
-
 # RAG-Anything imports
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.utils import EmbeddingFunc
 from lightrag.llm.openai import openai_complete_if_cache
+
+# Load environment variables
+load_dotenv()
 
 LM_BASE_URL = os.getenv("LLM_BINDING_HOST", "http://localhost:1234/v1")
 LM_API_KEY = os.getenv("LLM_BINDING_API_KEY", "lm-studio")
@@ -101,10 +101,21 @@ class LMStudioRAGIntegration:
 
     async def test_connection(self) -> bool:
         """Test LM Studio connection."""
+        client = None
         try:
             print(f"🔌 Testing LM Studio connection at: {self.base_url}")
             client = AsyncOpenAI(base_url=self.base_url, api_key=self.api_key)
-            models = await client.models.list()
+            try:
+                models = await client.models.list()
+            except Exception as e:
+                # Some OpenAI-compatible servers, including older LM Studio
+                # versions, do not expose a working /models endpoint. The
+                # chat completion check below is the authoritative health
+                # check for this example.
+                print(f"⚠️ Model discovery unavailable: {str(e)}")
+                print("💡 Continuing; chat completion will verify the server.")
+                return True
+
             print(f"✅ Connected successfully! Found {len(models.data)} models")
 
             # Show available models
@@ -126,10 +137,8 @@ class LMStudioRAGIntegration:
             print(f"4. Verify server address: {self.base_url}")
             return False
         finally:
-            try:
+            if client is not None:
                 await client.close()
-            except Exception:
-                pass
 
     async def test_chat_completion(self) -> bool:
         """Test basic chat functionality."""

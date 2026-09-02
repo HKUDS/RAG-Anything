@@ -16,6 +16,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +60,8 @@ def public_url_for_local_path(
         rel = abs_path.relative_to(root)
     except (ValueError, OSError, RuntimeError):
         return None
-    return f"{base_url.rstrip('/')}/{rel.as_posix()}"
+    encoded_path = quote(rel.as_posix(), safe="/")
+    return f"{base_url.rstrip('/')}/{encoded_path}"
 
 
 def attach_public_media_urls(item: dict) -> None:

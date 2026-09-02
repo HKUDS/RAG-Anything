@@ -392,7 +392,11 @@ class BaseModalProcessor:
         # Use LightRAG's configuration and functions
         self.embedding_func = lightrag.embedding_func
         self.llm_model_func = lightrag.llm_model_func
-        self.global_config = asdict(lightrag)
+        build_global_config = getattr(lightrag, "_build_global_config", None)
+        if callable(build_global_config):
+            self.global_config = build_global_config()
+        else:
+            self.global_config = asdict(lightrag)
         self.hashing_kv = lightrag.llm_response_cache
         self.tokenizer = lightrag.tokenizer
 

@@ -2,7 +2,9 @@ huggingface_hub
 # LightRAG packages
 lightrag-hku
 # MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
-mineru[core]
+# >=3.4.1: earlier versions iterate pdftext's PageChars return value directly and
+# crash with "TypeError: 'PageChars' object is not iterable" against pdftext>=0.7
+mineru[core]>=3.4.1
 # Progress bars for batch processing
 tqdm
 # Note: Optional dependencies are now defined in setup.py extras_require:

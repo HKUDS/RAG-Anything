@@ -52,7 +52,7 @@ load_dotenv()
 # MiniMax configuration
 MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimax.io/v1")
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
-MINIMAX_LLM_MODEL = os.getenv("MINIMAX_LLM_MODEL", "MiniMax-M2.7")
+MINIMAX_LLM_MODEL = os.getenv("MINIMAX_LLM_MODEL", "MiniMax-M3")
 
 # Embedding configuration (MiniMax does not provide an embedding model;
 # configure a separate embedding service below)
@@ -257,14 +257,15 @@ class MiniMaxRAGIntegration:
                     "This integration connects MiniMax's powerful language models "
                     "with RAG-Anything's multimodal document processing pipeline.\n\n"
                     "Key features:\n"
-                    "- MiniMax-M2.7: Peak Performance. Ultimate Value. Master the Complex.\n"
-                    "- MiniMax-M2.7-highspeed: Same performance, faster and more agile.\n"
+                    "- MiniMax-M3: The latest flagship model and current default.\n"
+                    "- MiniMax-M2.7: Previous generation, available as alternative.\n"
+                    "- MiniMax-M2.7-highspeed: Same as M2.7, faster and more agile.\n"
                     "- OpenAI-compatible API — no SDK changes required.\n"
                     "- Supports text, table, and equation modalities.\n\n"
                     "Configuration:\n"
                     "  MINIMAX_API_KEY=your-api-key\n"
                     "  MINIMAX_BASE_URL=https://api.minimax.io/v1  (default)\n"
-                    "  MINIMAX_LLM_MODEL=MiniMax-M2.7  (default)\n"
+                    "  MINIMAX_LLM_MODEL=MiniMax-M3  (default)\n"
                 ),
                 "page_idx": 0,
             }

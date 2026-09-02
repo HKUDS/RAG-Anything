@@ -189,7 +189,7 @@ def separate_content(
 
         if content_type == "text":
             # Text content
-            text = item.get("text", "")
+            text = str(item.get("text", "") or "")
             if text.strip():
                 text_parts.append(text)
         else:

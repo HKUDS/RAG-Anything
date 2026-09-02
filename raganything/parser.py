@@ -34,12 +34,14 @@ import subprocess
 import tempfile
 import threading
 import logging
+import re
 import time
 import urllib.parse
 import urllib.request
 import shutil
 from pathlib import Path
 from typing import (
+    TYPE_CHECKING,
     Dict,
     List,
     Optional,
@@ -49,20 +51,74 @@ from typing import (
     Iterator,
 )
 
+if TYPE_CHECKING:
+    from PIL import Image
+
 from raganything.asset_urls import attach_public_media_urls
+from raganything.mineru_content import (
+    MineruContentListV2Error,
+    convert_mineru_content_list_v2,
+)
 
 _IS_WINDOWS: bool = platform.system() == "Windows"
+
+
+# Known MinerU failure signatures mapped to actionable remediation advice.
+#
+# MinerU runs as a subprocess, so a broken dependency inside its own environment
+# surfaces here only as an opaque traceback line. Each entry maps a substring of
+# MinerU's stderr to a hint explaining what the user actually has to fix.
+_MINERU_KNOWN_FAILURES: Tuple[Tuple[str, str], ...] = (
+    (
+        "'PageChars' object is not iterable",
+        "This is a MinerU/pdftext version incompatibility, not a problem with your document.\n"
+        "pdftext 0.7 changed its character-extraction API, and MinerU only handles the new\n"
+        "'PageChars' return type from version 3.4.1 onward. Fix it by upgrading MinerU:\n"
+        '    pip install -U "mineru[core]>=3.4.1"\n'
+        "or, if you must stay on an older MinerU, pin the previous pdftext release:\n"
+        '    pip install "pdftext==0.6.3"\n'
+        "Office documents (.xls, .xlsx, .doc, .docx, .ppt, .pptx) trigger this most often\n"
+        "because they are converted to text-based PDFs, which always take MinerU's pdftext\n"
+        "path. As an immediate workaround for those formats, the Docling parser reads them\n"
+        'natively without going through MinerU: RAGAnythingConfig(parser="docling").',
+    ),
+)
+
+
+def _diagnose_mineru_failure(error_msg: Any) -> Optional[str]:
+    """
+    Match MinerU's captured error output against known failure signatures.
+
+    Args:
+        error_msg: The error output collected from MinerU (a list of lines or a string)
+
+    Returns:
+        Optional[str]: Remediation advice, or None if the failure is not recognized
+    """
+    if isinstance(error_msg, (list, tuple)):
+        haystack = "\n".join(str(line) for line in error_msg)
+    else:
+        haystack = str(error_msg)
+
+    for signature, hint in _MINERU_KNOWN_FAILURES:
+        if signature in haystack:
+            return hint
+    return None
 
 
 class MineruExecutionError(Exception):
     """catch mineru error"""
 
-    def __init__(self, return_code, error_msg):
+    def __init__(self, return_code, error_msg, hint: Optional[str] = None):
         self.return_code = return_code
         self.error_msg = error_msg
-        super().__init__(
-            f"Mineru command failed with return code {return_code}: {error_msg}"
-        )
+        # Recognize known dependency/environment failures so that users get an
+        # actionable message instead of a raw MinerU traceback line.
+        self.hint = hint if hint is not None else _diagnose_mineru_failure(error_msg)
+        message = f"Mineru command failed with return code {return_code}: {error_msg}"
+        if self.hint:
+            message = f"{message}\n\n{self.hint}"
+        super().__init__(message)
 
 
 class Parser:
@@ -191,6 +247,51 @@ class Parser:
         return Path(base_dir) / f"{stem}_{path_hash}"
 
     @classmethod
+    def _libreoffice_command_candidates(cls) -> List[str]:
+        """Return LibreOffice executable candidates for office conversion.
+
+        On Windows the ``libreoffice``/``soffice`` commands are frequently not
+        on PATH even when LibreOffice is installed, so we also probe the
+        ``.exe`` names and the standard ``Program Files`` install locations.
+        """
+        command_names = ["libreoffice", "soffice"]
+        candidates: List[str] = []
+
+        for command_name in command_names:
+            resolved = shutil.which(command_name)
+            if resolved:
+                candidates.append(resolved)
+            candidates.append(command_name)
+
+        if _IS_WINDOWS:
+            for command_name in ["soffice.exe", "libreoffice.exe"]:
+                resolved = shutil.which(command_name)
+                if resolved:
+                    candidates.append(resolved)
+                candidates.append(command_name)
+
+            for env_name in ("PROGRAMFILES", "PROGRAMFILES(X86)"):
+                program_files = os.environ.get(env_name)
+                if not program_files:
+                    continue
+
+                libreoffice_program = Path(program_files) / "LibreOffice" / "program"
+                for exe_name in ("soffice.exe", "libreoffice.exe"):
+                    exe_path = libreoffice_program / exe_name
+                    if exe_path.exists():
+                        candidates.append(str(exe_path))
+
+        deduped: List[str] = []
+        seen = set()
+        for candidate in candidates:
+            normalized = os.path.normcase(candidate)
+            if normalized not in seen:
+                seen.add(normalized)
+                deduped.append(candidate)
+
+        return deduped
+
+    @classmethod
     def convert_office_to_pdf(
         cls, doc_path: Union[str, Path], output_dir: Optional[str] = None
     ) -> Path:
@@ -230,11 +331,12 @@ class Parser:
                     f"Converting {doc_path.name} to PDF using LibreOffice..."
                 )
 
-                # Prepare subprocess parameters to hide console window on Windows
-                # Try LibreOffice commands in order of preference
-                commands_to_try = ["libreoffice", "soffice"]
+                # Try LibreOffice commands in order of preference, including
+                # Windows .exe names and standard install locations.
+                commands_to_try = cls._libreoffice_command_candidates()
 
                 conversion_successful = False
+                timed_out_cmd = None
                 last_cmd = commands_to_try[-1]
                 for cmd in commands_to_try:
                     is_last = cmd == last_cmd
@@ -249,11 +351,18 @@ class Parser:
                             str(doc_path),
                         ]
 
-                        # Prepare conversion subprocess parameters
+                        # Prepare conversion subprocess parameters.
+                        # The timeout must cover a real deck on a busy CPU: a
+                        # 7.4 MB PPTX measured 4 minutes under soffice on this
+                        # host, and the previous hardcoded 60s killed it midway
+                        # — after which the generic RuntimeError below claimed
+                        # LibreOffice was not installed at all.
                         convert_subprocess_kwargs = {
                             "capture_output": True,
                             "text": True,
-                            "timeout": 60,  # 60 second timeout
+                            "timeout": int(
+                                os.getenv("LIBREOFFICE_CONVERT_TIMEOUT", "600")
+                            ),
                             "encoding": "utf-8",
                             "errors": "ignore",
                         }
@@ -291,6 +400,10 @@ class Parser:
                                 f"trying next candidate"
                             )
                     except subprocess.TimeoutExpired:
+                        # Recorded, not just logged: "timed out" and "not
+                        # installed" need different fixes, and the final error
+                        # must say which happened.
+                        timed_out_cmd = cmd
                         cls.logger.warning(f"LibreOffice command '{cmd}' timed out")
                     except Exception as e:
                         cls.logger.error(
@@ -298,6 +411,14 @@ class Parser:
                         )
 
                 if not conversion_successful:
+                    if timed_out_cmd is not None:
+                        raise RuntimeError(
+                            f"LibreOffice conversion of {doc_path.name} timed out after "
+                            f"{convert_subprocess_kwargs['timeout']}s. LibreOffice IS "
+                            f"installed ('{timed_out_cmd}' started); the document is "
+                            "large or the host is busy. Raise LIBREOFFICE_CONVERT_TIMEOUT "
+                            "or convert the document to PDF manually."
+                        )
                     raise RuntimeError(
                         f"LibreOffice conversion failed for {doc_path.name}. "
                         f"Please ensure LibreOffice is installed:\n"
@@ -365,25 +486,7 @@ class Parser:
                 raise ValueError(f"Unsupported text format: {text_path.suffix}")
 
             # Read the text content
-            try:
-                with open(text_path, "r", encoding="utf-8") as f:
-                    text_content = f.read()
-            except UnicodeDecodeError:
-                # Try with different encodings
-                for encoding in ["gbk", "latin-1", "cp1252"]:
-                    try:
-                        with open(text_path, "r", encoding=encoding) as f:
-                            text_content = f.read()
-                        cls.logger.info(
-                            f"Successfully read file with {encoding} encoding"
-                        )
-                        break
-                    except UnicodeDecodeError:
-                        continue
-                else:
-                    raise RuntimeError(
-                        f"Could not decode text file {text_path.name} with any supported encoding"
-                    )
+            text_content = cls._read_text_with_fallback(text_path)
 
             # Prepare output directory
             if output_dir:
@@ -471,7 +574,7 @@ class Parser:
 
                 # Handle markdown or plain text
                 if text_path.suffix.lower() == ".md":
-                    # Handle markdown content - simplified implementation
+                    # ReportLab Paragraph requires escaped markup; reuse inline helper.
                     lines = text_content.split("\n")
                     for line in lines:
                         line = line.strip()
@@ -491,10 +594,19 @@ class Parser:
                                     spaceAfter=8,
                                     spaceBefore=16 if level <= 2 else 12,
                                 )
-                                story.append(Paragraph(header_text, header_style))
+                                story.append(
+                                    Paragraph(
+                                        cls._process_inline_markdown(header_text),
+                                        header_style,
+                                    )
+                                )
                         else:
                             # Regular text
-                            story.append(Paragraph(line, normal_style))
+                            story.append(
+                                Paragraph(
+                                    cls._process_inline_markdown(line), normal_style
+                                )
+                            )
                             story.append(Spacer(1, 6))
                 else:
                     # Handle plain text files (.txt)
@@ -595,7 +707,7 @@ class Parser:
         # Links: [text](url) - convert to text with URL annotation
         def link_replacer(match):
             link_text = match.group(1)
-            url = match.group(2)
+            url = match.group(2).replace('"', "&quot;")
             return f'<link href="{url}" color="blue"><u>{link_text}</u></link>'
 
         text = re.sub(r"\[([^\]]+?)\]\(([^)]+?)\)", link_replacer, text)
@@ -604,6 +716,113 @@ class Parser:
         text = re.sub(r"~~(.*?)~~", r"<strike>\1</strike>", text)
 
         return text
+
+    @classmethod
+    def _read_text_with_fallback(cls, text_path: Path) -> str:
+        """
+        Read a text file, trying UTF-8 first and falling back to common
+        legacy encodings. utf-8-sig also strips a UTF-8 BOM if present.
+        """
+        try:
+            with open(text_path, "r", encoding="utf-8-sig") as f:
+                return f.read()
+        except UnicodeDecodeError:
+            for encoding in ["gbk", "latin-1", "cp1252"]:
+                try:
+                    with open(text_path, "r", encoding=encoding) as f:
+                        content = f.read()
+                    cls.logger.info(f"Successfully read file with {encoding} encoding")
+                    return content
+                except UnicodeDecodeError:
+                    continue
+            raise RuntimeError(
+                f"Could not decode text file {text_path.name} with any supported encoding"
+            )
+
+    @classmethod
+    def _text_to_content_blocks(
+        cls, text_content: str, is_markdown: bool
+    ) -> List[Dict[str, Any]]:
+        """
+        Split raw text into MinerU-style content blocks.
+
+        Paragraphs are delimited by blank lines; in markdown, an ATX heading
+        (`# ...`) becomes its own block carrying `text_level`, matching how
+        MinerU marks headings in its content list.
+        """
+        # Normalize line endings up front so CRLF/CR input behaves the same
+        # as LF however the text arrived (text-mode file reads translate
+        # these already; raw strings passed directly have not been).
+        lines = text_content.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+
+        blocks: List[Dict[str, Any]] = []
+        paragraph: List[str] = []
+
+        def flush() -> None:
+            if paragraph:
+                blocks.append(
+                    {"type": "text", "text": "\n".join(paragraph), "page_idx": 0}
+                )
+                paragraph.clear()
+
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                flush()
+                continue
+            if is_markdown:
+                heading = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+                if heading:
+                    flush()
+                    blocks.append(
+                        {
+                            "type": "text",
+                            "text": heading.group(2).strip(),
+                            "text_level": len(heading.group(1)),
+                            "page_idx": 0,
+                        }
+                    )
+                    continue
+            paragraph.append(line.rstrip())
+        flush()
+
+        return blocks
+
+    def parse_text_file(
+        self,
+        text_path: Union[str, Path],
+        output_dir: Optional[str] = None,
+        lang: Optional[str] = None,
+        **kwargs,
+    ) -> List[Dict[str, Any]]:
+        """
+        Parse a plain text or markdown file directly into content blocks.
+
+        The content is already text, so no rendering or OCR is involved:
+        historically these files were rendered to PDF with ReportLab and
+        re-parsed with the OCR pipeline, which was slower and exposed them
+        to PDF-rendering failure modes (#24, #226, #316, #331).
+
+        Args:
+            text_path: Path to the text file (.txt, .md)
+            output_dir: Accepted for signature compatibility; no artifacts
+                        are written since no conversion takes place
+            lang: Accepted for signature compatibility; no OCR is involved
+            **kwargs: Accepted for signature compatibility
+
+        Returns:
+            List[Dict[str, Any]]: List of content blocks
+        """
+        text_path = Path(text_path)
+        if not text_path.exists():
+            raise FileNotFoundError(f"Text file does not exist: {text_path}")
+        if text_path.suffix.lower() not in self.TEXT_FORMATS:
+            raise ValueError(f"Unsupported text format: {text_path.suffix}")
+
+        text_content = self._read_text_with_fallback(text_path)
+        return self._text_to_content_blocks(
+            text_content, is_markdown=text_path.suffix.lower() == ".md"
+        )
 
     def parse_pdf(
         self,
@@ -709,6 +928,99 @@ class MineruParser(Parser):
     def __init__(self) -> None:
         """Initialize MineruParser"""
         super().__init__()
+
+    @classmethod
+    def _prepare_image_for_mineru(cls, img: "Image.Image") -> "Image.Image":
+        """Normalize image modes before writing PNG for MinerU.
+
+        RGBA/LA/P are composited onto white using the alpha channel. LA must be
+        converted to RGBA first; pasting LA without a mask drops transparency.
+        """
+        from PIL import Image
+
+        if img.mode in ("RGBA", "LA", "P"):
+            if img.mode in ("P", "LA"):
+                img = img.convert("RGBA")
+            background = Image.new("RGB", img.size, (255, 255, 255))
+            background.paste(img, mask=img.split()[-1])
+            return background
+        if img.mode not in ("RGB", "L"):
+            return img.convert("RGB")
+        return img
+
+    @classmethod
+    def _is_mineru_unsafe_windows_path(cls, path: Union[str, Path]) -> bool:
+        if not _IS_WINDOWS:
+            return False
+
+        path = Path(path)
+        path_text = str(path)
+        try:
+            path_text.encode("ascii")
+        except UnicodeEncodeError:
+            return True
+
+        return any(
+            part.endswith((" ", ".")) for part in path.parts
+        ) or path.stem.endswith((" ", "."))
+
+    @classmethod
+    def _mineru_safe_path_hash(cls, path: Union[str, Path]) -> str:
+        path_text = str(Path(path).resolve())
+        return hashlib.md5(path_text.encode("utf-8")).hexdigest()[:10]
+
+    @classmethod
+    def _prepare_mineru_paths(
+        cls,
+        input_path: Union[str, Path],
+        output_dir: Union[str, Path],
+        hash_path: Optional[Union[str, Path]] = None,
+    ) -> Tuple[Path, Path, str, Optional[Path]]:
+        input_path = Path(input_path)
+        output_dir = Path(output_dir)
+        hash_source = Path(hash_path) if hash_path is not None else input_path
+
+        input_is_unsafe = cls._is_mineru_unsafe_windows_path(input_path)
+        output_is_unsafe = cls._is_mineru_unsafe_windows_path(output_dir)
+        if not input_is_unsafe and not output_is_unsafe:
+            return input_path, output_dir, input_path.stem, None
+
+        path_hash = cls._mineru_safe_path_hash(hash_source)
+        temp_dir = Path(tempfile.mkdtemp(prefix="raganything_mineru_"))
+
+        mineru_input_path = input_path
+        if input_is_unsafe:
+            suffix = input_path.suffix.lower()
+            mineru_input_path = temp_dir / f"input_{path_hash}{suffix}"
+            shutil.copy2(input_path, mineru_input_path)
+
+        mineru_output_dir = output_dir
+        if output_is_unsafe:
+            mineru_output_dir = temp_dir / f"mineru_{path_hash}"
+            mineru_output_dir.mkdir(parents=True, exist_ok=True)
+
+        return mineru_input_path, mineru_output_dir, mineru_input_path.stem, temp_dir
+
+    @classmethod
+    def _copy_mineru_output_tree(cls, source_dir: Path, target_dir: Path) -> None:
+        if source_dir == target_dir:
+            return
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        if not source_dir.exists():
+            return
+
+        for item in source_dir.iterdir():
+            target = target_dir / item.name
+            if item.is_dir():
+                shutil.copytree(item, target, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, target)
+
+    @classmethod
+    def _cleanup_mineru_temp_dir(cls, temp_dir: Optional[Path]) -> None:
+        if temp_dir is not None and temp_dir.exists():
+            shutil.rmtree(temp_dir, ignore_errors=True)
 
     @classmethod
     def _run_mineru_command(
@@ -935,7 +1247,10 @@ class MineruParser(Parser):
 
             if return_code != 0 or error_lines:
                 cls.logger.info("[MinerU] Command executed failed")
-                raise MineruExecutionError(return_code, error_lines)
+                hint = _diagnose_mineru_failure(error_lines)
+                if hint:
+                    cls.logger.error(f"[MinerU] {hint}")
+                raise MineruExecutionError(return_code, error_lines, hint=hint)
             else:
                 cls.logger.info("[MinerU] Command executed successfully")
 
@@ -957,8 +1272,135 @@ class MineruParser(Parser):
             raise RuntimeError(error_message) from e
 
     @classmethod
+    def _find_mineru_output_files(
+        cls, output_dir: Path, file_stem: str, method: str
+    ) -> Tuple[Path, Path, Optional[Path], Path, bool]:
+        """Locate MinerU outputs, preferring the structured v2 content list."""
+        output_dir = Path(output_dir)
+        file_stem_subdir = output_dir / file_stem
+
+        search_dirs = [output_dir]
+        if file_stem_subdir.is_dir():
+            method_dir = file_stem_subdir / method
+            nested_dirs = sorted(
+                (path for path in file_stem_subdir.iterdir() if path.is_dir()),
+                key=lambda path: path.name,
+            )
+            # Prefer the requested backend directory, then inspect any actual
+            # directory emitted by newer MinerU backends.
+            search_dirs.extend(
+                path
+                for path in [method_dir, file_stem_subdir, *nested_dirs]
+                if path not in search_dirs
+            )
+
+        # Keep all candidates instead of resolving each filename independently.
+        # MinerU bundles can contain the exact legacy file and a generic v2 file
+        # side by side, in which case v2 must win. Conversely, a generic file in
+        # a shared output root must not shadow an exact artifact in the
+        # document-scoped `<output>/<stem>/...` tree.
+        candidate_specs = (
+            ("v2", True, f"{file_stem}_content_list_v2.json"),
+            ("v2", False, "content_list_v2.json"),
+            ("legacy", True, f"{file_stem}_content_list.json"),
+            ("legacy", False, "content_list.json"),
+        )
+        candidates = []
+        seen_paths = set()
+        for directory_index, directory in enumerate(search_dirs):
+            for content_version, is_exact, filename in candidate_specs:
+                candidate = directory / filename
+                if not candidate.is_file() or candidate in seen_paths:
+                    continue
+                seen_paths.add(candidate)
+                is_document_scoped = (
+                    file_stem_subdir.is_dir()
+                    and candidate.parent.is_relative_to(file_stem_subdir)
+                )
+                candidates.append(
+                    {
+                        "path": candidate,
+                        "version": content_version,
+                        "is_exact": is_exact,
+                        "is_document_scoped": is_document_scoped,
+                        "directory_index": directory_index,
+                    }
+                )
+
+        def candidate_key(
+            candidate: Dict[str, Any],
+        ) -> Tuple[int, int, int, int]:
+            """Rank candidates by bundle scope, schema version, and specificity."""
+            return (
+                int(candidate["is_document_scoped"]),
+                int(candidate["version"] == "v2"),
+                int(candidate["is_exact"]),
+                -candidate["directory_index"],
+            )
+
+        selected_candidate = max(candidates, key=candidate_key, default=None)
+        v2_candidate = (
+            selected_candidate
+            if selected_candidate is not None and selected_candidate["version"] == "v2"
+            else None
+        )
+        v2_file = v2_candidate["path"] if v2_candidate is not None else None
+
+        legacy_candidates = [
+            candidate for candidate in candidates if candidate["version"] == "legacy"
+        ]
+        if v2_candidate is not None:
+            # A legacy companion in the same directory is the safest fallback
+            # (and handles generic/exact pairs produced by one MinerU run).
+            legacy_file_candidate = max(
+                legacy_candidates,
+                key=lambda candidate: (
+                    int(candidate["path"].parent == v2_candidate["path"].parent),
+                    *candidate_key(candidate),
+                ),
+                default=None,
+            )
+        else:
+            legacy_file_candidate = selected_candidate
+        legacy_file = (
+            legacy_file_candidate["path"]
+            if legacy_file_candidate is not None
+            and legacy_file_candidate["version"] == "legacy"
+            else None
+        )
+
+        selected_file = v2_file or legacy_file
+
+        if selected_file is None:
+            fallback_dir = (
+                file_stem_subdir / method if file_stem_subdir.is_dir() else output_dir
+            )
+            selected_file = fallback_dir / f"{file_stem}_content_list.json"
+            images_base_dir = fallback_dir
+        else:
+            images_base_dir = selected_file.parent
+
+        markdown_file = selected_file.parent / f"{file_stem}.md"
+        if not markdown_file.is_file():
+            full_markdown_file = selected_file.parent / "full.md"
+            if full_markdown_file.is_file():
+                markdown_file = full_markdown_file
+
+        return (
+            markdown_file,
+            selected_file,
+            legacy_file if v2_file is not None else None,
+            images_base_dir,
+            v2_file is not None,
+        )
+
+    @classmethod
     def _read_output_files(
-        cls, output_dir: Path, file_stem: str, method: str = "auto"
+        cls,
+        output_dir: Path,
+        file_stem: str,
+        method: str = "auto",
+        include_layout_blocks: bool = False,
     ) -> Tuple[List[Dict[str, Any]], str]:
         """
         Read the output files generated by mineru
@@ -967,82 +1409,134 @@ class MineruParser(Parser):
             output_dir: Output directory
             file_stem: File name without extension
             method: Parsing method (used as fallback if subdirectory scan fails)
+            include_layout_blocks: Keep v2 page headers, footers, page numbers,
+                aside text, and page footnotes when true.
 
         Returns:
             Tuple containing (content list JSON, Markdown text)
         """
-        # Look for the generated files
-        md_file = output_dir / f"{file_stem}.md"
-        json_file = output_dir / f"{file_stem}_content_list.json"
-        images_base_dir = output_dir  # Base directory for images
+        (
+            md_file,
+            json_file,
+            legacy_json_file,
+            images_base_dir,
+            is_v2,
+        ) = cls._find_mineru_output_files(output_dir, file_stem, method)
 
-        file_stem_subdir = output_dir / file_stem
-        if file_stem_subdir.is_dir():
-            # Scan for actual output subdirectory instead of assuming method name
-            found = False
-            for subdir in file_stem_subdir.iterdir():
-                if not subdir.is_dir():
-                    continue
-                # Check if this subdirectory contains the expected JSON output file
-                candidate_json = subdir / f"{file_stem}_content_list.json"
-                if candidate_json.exists():
-                    # Found the actual output directory
-                    md_file = subdir / f"{file_stem}.md"
-                    json_file = candidate_json
-                    images_base_dir = subdir
-                    found = True
-                    cls.logger.info(
-                        f"Found MinerU output in subdirectory: {subdir.name}"
+        if is_v2:
+            cls.logger.info(f"Using MinerU structured content list: {json_file}")
+        elif not json_file.is_file():
+            cls.logger.debug(
+                f"No MinerU content list found, checked output directory: {json_file}"
+            )
+
+        def read_markdown(path: Path) -> str:
+            if not path.is_file():
+                return ""
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    return f.read()
+            except OSError as e:
+                cls.logger.warning(f"Could not read markdown file {path}: {e}")
+                return ""
+
+        # Read markdown content. If v2 later falls back to a legacy file in a
+        # different directory, this value is refreshed alongside the content list.
+        md_content = read_markdown(md_file)
+
+        # Read JSON content list. A malformed or empty v2 file should not make
+        # otherwise usable legacy MinerU output unreadable.
+        content_list: List[Dict[str, Any]] = []
+        content_file_used = json_file
+        if json_file.is_file():
+            try:
+
+                def load_json(path: Path) -> Any:
+                    with open(path, "r", encoding="utf-8") as f:
+                        return json.load(f)
+
+                try:
+                    raw_content = load_json(json_file)
+                except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+                    if (
+                        not is_v2
+                        or legacy_json_file is None
+                        or not legacy_json_file.is_file()
+                    ):
+                        raise
+                    cls.logger.warning(
+                        f"Could not read MinerU v2 content list {json_file}: {error}"
                     )
-                    break
+                    raw_content = load_json(legacy_json_file)
+                    content_file_used = legacy_json_file
+                    images_base_dir = legacy_json_file.parent
+                    is_v2 = False
+                    fallback_md = legacy_json_file.parent / f"{file_stem}.md"
+                    if not fallback_md.is_file():
+                        fallback_md = legacy_json_file.parent / "full.md"
+                    if fallback_md.is_file():
+                        md_file = fallback_md
+                        md_content = read_markdown(md_file)
+                    cls.logger.info(
+                        f"Falling back to legacy MinerU content list: {legacy_json_file}"
+                    )
 
-            # Fallback to method-based path if scanning didn't find output
-            if not found:
-                cls.logger.debug(
-                    f"No output found by scanning, falling back to method-based path: {method}"
-                )
-                md_file = file_stem_subdir / method / f"{file_stem}.md"
-                json_file = file_stem_subdir / method / f"{file_stem}_content_list.json"
-                images_base_dir = file_stem_subdir / method
+                if is_v2:
+                    try:
+                        content_list = convert_mineru_content_list_v2(
+                            raw_content,
+                            include_layout_blocks=include_layout_blocks,
+                        )
+                    except MineruContentListV2Error as error:
+                        cls.logger.warning(
+                            f"Could not parse MinerU v2 content list {json_file}: {error}"
+                        )
+                        content_list = []
 
-        # Read markdown content
-        md_content = ""
-        if md_file.exists():
-            try:
-                with open(md_file, "r", encoding="utf-8") as f:
-                    md_content = f.read()
-            except Exception as e:
-                cls.logger.warning(f"Could not read markdown file {md_file}: {e}")
+                    # A valid v2 file containing only filtered layout blocks is
+                    # not useful to ingestion either, so use legacy output when
+                    # it is available.
+                    if (
+                        not content_list
+                        and legacy_json_file is not None
+                        and legacy_json_file.is_file()
+                    ):
+                        raw_content = load_json(legacy_json_file)
+                        content_list = raw_content
+                        content_file_used = legacy_json_file
+                        images_base_dir = legacy_json_file.parent
+                        fallback_md = legacy_json_file.parent / f"{file_stem}.md"
+                        if not fallback_md.is_file():
+                            fallback_md = legacy_json_file.parent / "full.md"
+                        if fallback_md.is_file():
+                            md_file = fallback_md
+                            md_content = read_markdown(md_file)
+                        cls.logger.info(
+                            f"Falling back to legacy MinerU content list: {legacy_json_file}"
+                        )
+                else:
+                    content_list = raw_content
 
-        # Read JSON content list
-        content_list = []
-        if json_file.exists():
-            try:
-                with open(json_file, "r", encoding="utf-8") as f:
-                    content_list = json.load(f)
+                if not isinstance(content_list, list):
+                    raise ValueError("MinerU content list must be a JSON array")
 
-                # Normalize MinerU 2.0 field names to expected names for backward compatibility.
-                # MinerU 2.0 renamed: img_caption -> image_caption, img_footnote -> image_footnote
-                # The codebase primarily uses image_caption/image_footnote with img_caption/img_footnote
-                # as fallback, but we ensure both fields exist so downstream code works regardless.
-                _FIELD_ALIASES = {
-                    # MinerU 1.x name -> MinerU 2.0 name (canonical)
+                # Normalize MinerU field aliases to the names expected by the
+                # existing modal processors.
+                field_aliases = {
                     "img_caption": "image_caption",
                     "img_footnote": "image_footnote",
                 }
                 for item in content_list:
                     if isinstance(item, dict):
-                        for old_name, new_name in _FIELD_ALIASES.items():
-                            # If only the old field exists, copy it to the new field name
+                        for old_name, new_name in field_aliases.items():
                             if old_name in item and new_name not in item:
                                 item[new_name] = item[old_name]
-                            # If only the new field exists, copy it to the old field name (for any legacy code)
                             elif new_name in item and old_name not in item:
                                 item[old_name] = item[new_name]
 
-                # Always fix relative paths in content_list to absolute paths
+                # Always fix relative paths in content_list to absolute paths.
                 cls.logger.info(
-                    f"Fixing image paths in {json_file} with base directory: {images_base_dir}"
+                    f"Fixing image paths in {content_file_used} with base directory: {images_base_dir}"
                 )
                 for item in content_list:
                     if isinstance(item, dict):
@@ -1057,13 +1551,13 @@ class MineruParser(Parser):
                                     images_base_dir / img_path
                                 ).resolve()
 
-                                # Security check: ensure the image path is within the base directory
+                                # Security check: ensure the image path is within the base directory.
                                 resolved_base = images_base_dir.resolve()
                                 if not absolute_img_path.is_relative_to(resolved_base):
                                     cls.logger.warning(
                                         f"Potential path traversal detected in {field_name}: {img_path}. Skipping."
                                     )
-                                    item[field_name] = ""  # Clear unsafe path
+                                    item[field_name] = ""
                                     continue
 
                                 item[field_name] = str(absolute_img_path)
@@ -1081,6 +1575,7 @@ class MineruParser(Parser):
         output_dir: Optional[str] = None,
         method: str = "auto",
         lang: Optional[str] = None,
+        include_layout_blocks: bool = False,
         **kwargs,
     ) -> List[Dict[str, Any]]:
         """
@@ -1091,6 +1586,8 @@ class MineruParser(Parser):
             output_dir: Output directory path
             method: Parsing method (auto, txt, ocr)
             lang: Document language for OCR optimization
+            include_layout_blocks: Keep MinerU v2 page-level layout blocks
+                such as headers and page numbers.
             **kwargs: Additional parameters for mineru command
 
         Returns:
@@ -1102,8 +1599,6 @@ class MineruParser(Parser):
             if not pdf_path.exists():
                 raise FileNotFoundError(f"PDF file does not exist: {pdf_path}")
 
-            name_without_suff = pdf_path.stem
-
             # Prepare output directory — use unique subdirectory to prevent
             # same-name file collisions when output_dir is shared (#51)
             if output_dir:
@@ -1113,34 +1608,46 @@ class MineruParser(Parser):
 
             base_output_dir.mkdir(parents=True, exist_ok=True)
 
-            # Run mineru command
-            self._run_mineru_command(
-                input_path=pdf_path,
-                output_dir=base_output_dir,
-                method=method,
-                lang=lang,
-                **kwargs,
+            mineru_input_path, mineru_output_dir, file_stem, temp_dir = (
+                self._prepare_mineru_paths(pdf_path, base_output_dir)
             )
 
-            # Read the generated output files
-            # Map backend to expected output directory name for better compatibility
-            # MinerU 2.7.0+ uses different directory names based on backend:
-            # - pipeline -> auto/
-            # - vlm-* -> vlm/
-            # - hybrid-* -> hybrid_auto/
-            # Note: _read_output_files() will scan subdirectories automatically,
-            # so this mapping is just for optimization and fallback
-            # Use `or ""` to handle both missing keys and explicit None values
-            backend = kwargs.get("backend") or ""
-            if backend.startswith("vlm-"):
-                method = "vlm"
-            elif backend.startswith("hybrid-"):
-                method = "hybrid_auto"
+            try:
+                # Run mineru command
+                self._run_mineru_command(
+                    input_path=mineru_input_path,
+                    output_dir=mineru_output_dir,
+                    method=method,
+                    lang=lang,
+                    **kwargs,
+                )
 
-            content_list, _ = self._read_output_files(
-                base_output_dir, name_without_suff, method=method
-            )
-            return content_list
+                self._copy_mineru_output_tree(mineru_output_dir, base_output_dir)
+
+                # Read the generated output files
+                # Map backend to expected output directory name for better compatibility
+                # MinerU 2.7.0+ uses different directory names based on backend:
+                # - pipeline -> auto/
+                # - vlm-* -> vlm/
+                # - hybrid-* -> hybrid_auto/
+                # Note: _read_output_files() will scan subdirectories automatically,
+                # so this mapping is just for optimization and fallback
+                # Use `or ""` to handle both missing keys and explicit None values
+                backend = kwargs.get("backend") or ""
+                if backend.startswith("vlm-"):
+                    method = "vlm"
+                elif backend.startswith("hybrid-"):
+                    method = "hybrid_auto"
+
+                content_list, _ = self._read_output_files(
+                    base_output_dir,
+                    file_stem,
+                    method=method,
+                    include_layout_blocks=include_layout_blocks,
+                )
+                return content_list
+            finally:
+                self._cleanup_mineru_temp_dir(temp_dir)
 
         except MineruExecutionError:
             raise
@@ -1153,6 +1660,7 @@ class MineruParser(Parser):
         image_path: Union[str, Path],
         output_dir: Optional[str] = None,
         lang: Optional[str] = None,
+        include_layout_blocks: bool = False,
         **kwargs,
     ) -> List[Dict[str, Any]]:
         """
@@ -1165,6 +1673,8 @@ class MineruParser(Parser):
             image_path: Path to the image file
             output_dir: Output directory path
             lang: Document language for OCR optimization
+            include_layout_blocks: Keep MinerU v2 page-level layout blocks
+                such as headers and page numbers.
             **kwargs: Additional parameters for mineru command
 
         Returns:
@@ -1222,24 +1732,7 @@ class MineruParser(Parser):
                 try:
                     # Open and convert image
                     with Image.open(image_path) as img:
-                        # Handle different image modes
-                        if img.mode in ("RGBA", "LA", "P"):
-                            # For images with transparency or palette, convert to RGB first
-                            if img.mode == "P":
-                                img = img.convert("RGBA")
-
-                            # Create white background for transparent images
-                            background = Image.new("RGB", img.size, (255, 255, 255))
-                            if img.mode == "RGBA":
-                                background.paste(
-                                    img, mask=img.split()[-1]
-                                )  # Use alpha channel as mask
-                            else:
-                                background.paste(img)
-                            img = background
-                        elif img.mode not in ("RGB", "L"):
-                            # Convert other modes to RGB
-                            img = img.convert("RGB")
+                        img = self._prepare_image_for_mineru(img)
 
                         # Save as PNG
                         img.save(temp_converted_file, "PNG", optimize=True)
@@ -1256,8 +1749,6 @@ class MineruParser(Parser):
                         f"Failed to convert image {image_path.name}: {str(e)}"
                     )
 
-            name_without_suff = image_path.stem
-
             # Prepare output directory — use unique subdirectory to prevent
             # same-name file collisions when output_dir is shared (#51)
             if output_dir:
@@ -1267,19 +1758,30 @@ class MineruParser(Parser):
 
             base_output_dir.mkdir(parents=True, exist_ok=True)
 
+            mineru_input_path, mineru_output_dir, file_stem, mineru_temp_dir = (
+                self._prepare_mineru_paths(
+                    actual_image_path, base_output_dir, hash_path=image_path
+                )
+            )
+
             try:
                 # Run mineru command (images are processed with OCR method)
                 self._run_mineru_command(
-                    input_path=actual_image_path,
-                    output_dir=base_output_dir,
+                    input_path=mineru_input_path,
+                    output_dir=mineru_output_dir,
                     method="ocr",  # Images require OCR method
                     lang=lang,
                     **kwargs,
                 )
 
+                self._copy_mineru_output_tree(mineru_output_dir, base_output_dir)
+
                 # Read the generated output files
                 content_list, _ = self._read_output_files(
-                    base_output_dir, name_without_suff, method="ocr"
+                    base_output_dir,
+                    file_stem,
+                    method="ocr",
+                    include_layout_blocks=include_layout_blocks,
                 )
                 return content_list
 
@@ -1287,6 +1789,8 @@ class MineruParser(Parser):
                 raise
 
             finally:
+                self._cleanup_mineru_temp_dir(mineru_temp_dir)
+
                 # Clean up temporary converted file if it was created
                 if temp_converted_file and temp_converted_file.exists():
                     try:
@@ -1334,40 +1838,6 @@ class MineruParser(Parser):
 
         except Exception as e:
             self.logger.error(f"Error in parse_office_doc: {str(e)}")
-            raise
-
-    def parse_text_file(
-        self,
-        text_path: Union[str, Path],
-        output_dir: Optional[str] = None,
-        lang: Optional[str] = None,
-        **kwargs,
-    ) -> List[Dict[str, Any]]:
-        """
-        Parse text file by first converting to PDF, then parsing with MinerU 2.0
-
-        Supported formats: .txt, .md
-
-        Args:
-            text_path: Path to the text file (.txt, .md)
-            output_dir: Output directory path
-            lang: Document language for OCR optimization
-            **kwargs: Additional parameters for mineru command
-
-        Returns:
-            List[Dict[str, Any]]: List of content blocks
-        """
-        try:
-            # Convert text file to PDF using base class method
-            pdf_path = self.convert_text_to_pdf(text_path, output_dir)
-
-            # Parse the converted PDF
-            return self.parse_pdf(
-                pdf_path=pdf_path, output_dir=output_dir, lang=lang, **kwargs
-            )
-
-        except Exception as e:
-            self.logger.error(f"Error in parse_text_file: {str(e)}")
             raise
 
     def parse_document(
@@ -2322,18 +2792,6 @@ class PaddleOCRParser(Parser):
         **kwargs,
     ) -> List[Dict[str, Any]]:
         pdf_path = self.convert_office_to_pdf(doc_path, output_dir)
-        return self.parse_pdf(
-            pdf_path=pdf_path, output_dir=output_dir, lang=lang, **kwargs
-        )
-
-    def parse_text_file(
-        self,
-        text_path: Union[str, Path],
-        output_dir: Optional[str] = None,
-        lang: Optional[str] = None,
-        **kwargs,
-    ) -> List[Dict[str, Any]]:
-        pdf_path = self.convert_text_to_pdf(text_path, output_dir)
         return self.parse_pdf(
             pdf_path=pdf_path, output_dir=output_dir, lang=lang, **kwargs
         )

@@ -84,6 +84,17 @@ extract_neighbor_text_from_content_list = (
 
 
 class ContentListAliasHandlingTests(unittest.TestCase):
+    def test_separate_content_ignores_null_text_values(self):
+        text, multimodal = separate_content(
+            [
+                {"type": "text", "text": None},
+                {"type": "text", "text": "kept"},
+            ]
+        )
+
+        self.assertEqual(text, "kept")
+        self.assertEqual(multimodal, [])
+
     def test_separate_content_preserves_original_content_list_index(self):
         content = [
             {"type": "text", "text": "Before"},
