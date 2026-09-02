@@ -1153,6 +1153,7 @@ await rag.process_document_complete(
     backend="pipeline",          # Parsing backend: pipeline|hybrid-auto-engine|hybrid-http-client|vlm-auto-engine|vlm-http-client.
     source="huggingface",        # Model source: "huggingface", "modelscope", "local"
     # vlm_url="http://127.0.0.1:3000" # Service address when using backend=vlm-http-client
+    include_layout_blocks=False,  # Keep MinerU v2 headers, footers, and page numbers only when needed
 
     # Standard RAGAnything parameters
     display_stats=True,          # Display content statistics
@@ -1162,6 +1163,22 @@ await rag.process_document_complete(
 ```
 
 > **Note**: MinerU 2.0 no longer uses the `magic-pdf.json` configuration file. All settings are now passed as command-line parameters or function arguments. RAG-Anything supports multiple document parsers, including MinerU, Docling, and PaddleOCR.
+
+#### MinerU 3.x Content List v2
+
+RAG-Anything natively reads MinerU 3.x `*_content_list_v2.json` and `content_list_v2.json` outputs when they are available, ahead of the legacy flat content list. Document-scoped output directories are preferred over shared roots; within one bundle, v2 is preferred over legacy and exact stem filenames are preferred over generic filenames. The v2 page-grouped representation is converted to the existing flat `content_list` contract while preserving page indexes, bounding boxes, anchors, heading levels, visual metadata, captions, and footnotes. Algorithm blocks use the compatible `type="code", sub_type="algorithm"` representation.
+
+Page headers, footers, page numbers, aside text, and page footnotes are excluded by default so repeated layout artifacts do not enter semantic retrieval or graph construction. Set `include_layout_blocks=True` only when those blocks are meaningful for your use case:
+
+```python
+await rag.process_document_complete(
+    file_path="document.pdf",
+    parser="mineru",
+    include_layout_blocks=True,
+)
+```
+
+MinerU marks v2 as an evolving output schema. RAG-Anything skips unknown future block types with a warning, but falls back to the legacy content list when a v2 file is malformed, structurally invalid, or yields no supported semantic blocks and a legacy file is present.
 
 ### Processing Requirements
 
@@ -1261,22 +1278,6 @@ If you find RAG-Anything useful in your research, please cite our paper:
       </td>
     </tr>
   </table>
-</div>
-
----
-
-## ⭐ Star History
-
-*Community Growth Trajectory*
-
-<div align="center">
-  <a href="https://star-history.com/#HKUDS/RAG-Anything&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=HKUDS/RAG-Anything&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=HKUDS/RAG-Anything&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=HKUDS/RAG-Anything&type=Date" style="border-radius: 15px; box-shadow: 0 0 30px rgba(0, 217, 255, 0.3);" />
-    </picture>
-  </a>
 </div>
 
 ---

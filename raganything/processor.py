@@ -29,8 +29,33 @@ import asyncio
 from lightrag.utils import compute_mdhash_id
 
 
+_PARSER_CACHE_KWARGS = frozenset(
+    {
+        "lang",
+        "device",
+        "start_page",
+        "end_page",
+        "formula",
+        "table",
+        "backend",
+        "source",
+        "include_layout_blocks",
+    }
+)
+
+
 class ProcessorMixin:
     """ProcessorMixin class containing document processing functionality for RAGAnything"""
+
+    @staticmethod
+    def _relevant_parser_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """Return parser options that change the persisted parse result."""
+        return {
+            key: value
+            for key, value in kwargs.items()
+            if key in _PARSER_CACHE_KWARGS
+            and not (key == "include_layout_blocks" and not value)
+        }
 
     @staticmethod
     def _file_content_fingerprint(file_path: Path) -> str:
@@ -84,22 +109,7 @@ class ProcessorMixin:
         }
 
         # Add relevant kwargs to config
-        relevant_kwargs = {
-            k: v
-            for k, v in kwargs.items()
-            if k
-            in [
-                "lang",
-                "device",
-                "start_page",
-                "end_page",
-                "formula",
-                "table",
-                "backend",
-                "source",
-            ]
-        }
-        config_dict.update(relevant_kwargs)
+        config_dict.update(self._relevant_parser_kwargs(kwargs))
 
         # Generate hash from config
         config_str = json.dumps(config_dict, sort_keys=True)
@@ -287,22 +297,7 @@ class ProcessorMixin:
             }
 
             # Add relevant kwargs to current config
-            relevant_kwargs = {
-                k: v
-                for k, v in kwargs.items()
-                if k
-                in [
-                    "lang",
-                    "device",
-                    "start_page",
-                    "end_page",
-                    "formula",
-                    "table",
-                    "backend",
-                    "source",
-                ]
-            }
-            current_config.update(relevant_kwargs)
+            current_config.update(self._relevant_parser_kwargs(kwargs))
 
             if cached_config != current_config:
                 self.logger.debug(f"Cache invalid - config changed: {cache_key}")
@@ -361,22 +356,7 @@ class ProcessorMixin:
             }
 
             # Add relevant kwargs to config
-            relevant_kwargs = {
-                k: v
-                for k, v in kwargs.items()
-                if k
-                in [
-                    "lang",
-                    "device",
-                    "start_page",
-                    "end_page",
-                    "formula",
-                    "table",
-                    "backend",
-                    "source",
-                ]
-            }
-            parse_config.update(relevant_kwargs)
+            parse_config.update(self._relevant_parser_kwargs(kwargs))
 
             cache_data = {
                 cache_key: {
@@ -411,7 +391,9 @@ class ProcessorMixin:
             output_dir: Output directory (defaults to config.parser_output_dir)
             parse_method: Parse method (defaults to config.parse_method)
             display_stats: Whether to display content statistics (defaults to config.display_content_stats)
-            **kwargs: Additional parameters for parser (e.g., lang, device, start_page, end_page, formula, table, backend, source)
+            **kwargs: Additional parameters for parser (e.g., lang, device,
+                start_page, end_page, formula, table, backend, source,
+                include_layout_blocks)
 
         Returns:
             tuple[List[Dict[str, Any]], str]: (content_list, doc_id)
@@ -813,45 +795,12 @@ class ProcessorMixin:
                 self.logger.debug("Exception details:", exc_info=True)
                 continue
 
-        # Update doc_status to include multimodal chunks in the standard chunks_list
+        # Update doc_status to include multimodal chunks in the standard
+        # chunks_list (same merge semantics as the batch type-aware path)
         if multimodal_chunk_ids:
-            try:
-                # Get current document status
-                current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
-
-                if current_doc_status:
-                    existing_chunks_list = current_doc_status.get("chunks_list", [])
-                    existing_chunks_count = current_doc_status.get("chunks_count", 0)
-
-                    # Add multimodal chunks to the standard chunks_list
-                    updated_chunks_list = existing_chunks_list + multimodal_chunk_ids
-                    updated_chunks_count = existing_chunks_count + len(
-                        multimodal_chunk_ids
-                    )
-
-                    # Update document status with integrated chunk list
-                    await self.lightrag.doc_status.upsert(
-                        {
-                            doc_id: {
-                                **current_doc_status,  # Keep existing fields
-                                "chunks_list": updated_chunks_list,  # Integrated chunks list
-                                "chunks_count": updated_chunks_count,  # Updated total count
-                                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                            }
-                        }
-                    )
-
-                    # Ensure doc_status update is persisted to disk
-                    await self.lightrag.doc_status.index_done_callback()
-
-                    self.logger.info(
-                        f"Updated doc_status with {len(multimodal_chunk_ids)} multimodal chunks integrated into chunks_list"
-                    )
-
-            except Exception as e:
-                self.logger.warning(
-                    f"Error updating doc_status with multimodal chunks: {e}"
-                )
+            await self._update_doc_status_with_chunks_type_aware(
+                doc_id, multimodal_chunk_ids
+            )
 
         # Batch merge all multimodal content results (similar to text content processing)
         if all_chunk_results:
@@ -1508,38 +1457,59 @@ class ProcessorMixin:
     async def _update_doc_status_with_chunks_type_aware(
         self, doc_id: str, chunk_ids: List[str]
     ):
-        """Update document status with multimodal chunks"""
+        """Merge multimodal chunk ids into the document's chunks_list."""
         try:
             # Get current document status
             current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
 
-            if current_doc_status:
-                existing_chunks_list = current_doc_status.get("chunks_list", [])
-                existing_chunks_count = current_doc_status.get("chunks_count", 0)
+            if not current_doc_status:
+                # An absent record is a linkage failure worth surfacing:
+                # every consumer that enumerates the document's chunks via
+                # chunks_list will silently orphan these (#332).
+                self.logger.warning(
+                    f"doc_status record {doc_id} not found; "
+                    f"{len(chunk_ids)} multimodal chunk(s) will be missing "
+                    "from its chunks_list"
+                )
+                return
 
-                # Add multimodal chunks to the standard chunks_list
-                updated_chunks_list = existing_chunks_list + chunk_ids
-                updated_chunks_count = existing_chunks_count + len(chunk_ids)
+            existing_chunks_list = current_doc_status.get("chunks_list", [])
+            existing_chunks_count = current_doc_status.get("chunks_count", 0)
 
-                # Update document status with integrated chunk list
-                await self.lightrag.doc_status.upsert(
-                    {
-                        doc_id: {
-                            **current_doc_status,  # Keep existing fields
-                            "chunks_list": updated_chunks_list,  # Integrated chunks list
-                            "chunks_count": updated_chunks_count,  # Updated total count
-                            "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                        }
+            # Merge rather than append: chunk ids are content-hashed, so
+            # reprocessing the same multimodal content produces the same ids
+            # and a blind append would duplicate them in chunks_list.
+            already_listed = set(existing_chunks_list)
+            new_chunk_ids = [cid for cid in chunk_ids if cid not in already_listed]
+            if not new_chunk_ids:
+                self.logger.debug(
+                    f"All {len(chunk_ids)} multimodal chunks already listed "
+                    f"in doc_status for {doc_id}"
+                )
+                return
+
+            updated_chunks_list = existing_chunks_list + new_chunk_ids
+            updated_chunks_count = existing_chunks_count + len(new_chunk_ids)
+
+            # Update document status with integrated chunk list
+            await self.lightrag.doc_status.upsert(
+                {
+                    doc_id: {
+                        **current_doc_status,  # Keep existing fields
+                        "chunks_list": updated_chunks_list,  # Integrated chunks list
+                        "chunks_count": updated_chunks_count,  # Updated total count
+                        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                     }
-                )
+                }
+            )
 
-                # Ensure doc_status update is persisted to disk
-                await self.lightrag.doc_status.index_done_callback()
+            # Ensure doc_status update is persisted to disk
+            await self.lightrag.doc_status.index_done_callback()
 
-                self.logger.info(
-                    f"Updated doc_status: added {len(chunk_ids)} multimodal chunks to standard chunks_list "
-                    f"(total chunks: {updated_chunks_count})"
-                )
+            self.logger.info(
+                f"Updated doc_status: added {len(new_chunk_ids)} multimodal chunks to standard chunks_list "
+                f"(total chunks: {updated_chunks_count})"
+            )
 
         except Exception as e:
             self.logger.warning(
@@ -1690,7 +1660,9 @@ class ProcessorMixin:
             split_by_character: Optional character to split the text by
             split_by_character_only: If True, split only by the specified character
             doc_id: Optional document ID, if not provided will be generated from content
-            **kwargs: Additional parameters for parser (e.g., lang, device, start_page, end_page, formula, table, backend, source)
+            **kwargs: Additional parameters for parser (e.g., lang, device,
+                start_page, end_page, formula, table, backend, source,
+                include_layout_blocks)
         """
         callback_manager = getattr(self, "callback_manager", None)
         doc_start_time = time.time()
@@ -1857,7 +1829,9 @@ class ProcessorMixin:
             split_by_character: Optional character to split the text by
             split_by_character_only: If True, split only by the specified character
             doc_id: Optional document ID, if not provided will be generated from content
-            **kwargs: Additional parameters for parser (e.g., lang, device, start_page, end_page, formula, table, backend, source)
+            **kwargs: Additional parameters for parser (e.g., lang, device,
+                start_page, end_page, formula, table, backend, source,
+                include_layout_blocks)
         """
         # Use full path or basename based on config
         file_name = self._get_file_reference(file_path)
@@ -1887,7 +1861,10 @@ class ProcessorMixin:
                     "multimodal_content": [],
                     "scheme_name": scheme_name,
                     "content_length": 0,
-                    "created_at": "",
+                    # A real timestamp, never "": storage backends that map
+                    # created_at as a date reject an empty string, and the
+                    # rejected upsert is silently dropped (#328).
+                    "created_at": self._current_doc_status_timestamp(),
                     "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                     "file_path": file_name,
                 }
@@ -1944,8 +1921,12 @@ class ProcessorMixin:
                             "multimodal_content": [],
                             "scheme_name": scheme_name,
                             "content_length": 0,
-                            "created_at": "",
-                            "updated_at": "",
+                            # A real timestamp, never "": storage backends
+                            # that map created_at as a date reject an empty
+                            # string, and the rejected upsert is silently
+                            # dropped (#328).
+                            "created_at": self._current_doc_status_timestamp(),
+                            "updated_at": self._current_doc_status_timestamp(),
                             "file_path": file_name,
                         }
                     }
@@ -1990,6 +1971,10 @@ class ProcessorMixin:
                     error_message = "\n".join(str(m) for m in e.error_msg)
                 else:
                     error_message = str(e.error_msg)
+                # Surface remediation advice for recognized MinerU failures in the
+                # persisted doc status, not just in the logs.
+                if getattr(e, "hint", None):
+                    error_message = f"{error_message}\n\n{e.hint}"
                 await self.lightrag.doc_status.upsert(
                     {
                         doc_pre_id: {
@@ -2020,16 +2005,22 @@ class ProcessorMixin:
             if doc_id is None:
                 doc_id = content_based_doc_id
 
-            await self._upsert_doc_status(
-                doc_id,
-                file_name,
-                scheme_name=scheme_name,
-                status=DocStatus.HANDLING,
-                error_msg="",
-            )
-
             # Step 2: Separate text and multimodal content
             text_content, multimodal_items = separate_content(content_list)
+
+            # LightRAG creates the initial doc_status entry during text
+            # insertion. Pre-registering the same doc_id here makes LightRAG
+            # treat a fresh document insert as a duplicate and skip indexing
+            # entirely, so only create the record up front for multimodal-only
+            # content that will not reach ainsert().
+            if not text_content.strip():
+                await self._upsert_doc_status(
+                    doc_id,
+                    file_name,
+                    scheme_name=scheme_name,
+                    status=DocStatus.HANDLING,
+                    error_msg="",
+                )
 
             # Step 2.5: Set content source for context extraction in multimodal processing
             if hasattr(self, "set_content_source_for_context") and multimodal_items:
