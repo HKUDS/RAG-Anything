@@ -823,8 +823,12 @@ class Parser:
                 if fence:
                     if not in_fence:
                         in_fence = True
-                        fence_marker = fence.group(1)[0] * 3
-                    elif stripped.startswith(fence_marker):
+                        fence_marker = fence.group(1)
+                    elif (
+                        stripped.startswith(fence_marker) and stripped == fence.group()
+                    ):
+                        # A closer must use the same marker, be at least as long,
+                        # and have no trailing info string or other content.
                         in_fence = False
                     paragraph.append(line.rstrip())
                     continue
