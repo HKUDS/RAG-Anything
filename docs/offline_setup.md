@@ -76,3 +76,9 @@ When this environment variable is set, `tiktoken` will look for its model files 
     ```
 
 By following these steps, you can eliminate the network dependency and run the `RAG-Anything` project successfully in a fully offline environment.
+
+## Containers
+
+The images in `docker/` populate the tiktoken cache during the build and bake
+in the MinerU weights, so a container built with the default arguments is
+already offline-capable. See [docker.md](docker.md).

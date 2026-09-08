@@ -296,6 +296,21 @@ uv sync --extra image --extra text  # Specific extras
 uv sync --all-extras                 # All optional features
 ```
 
+#### Option 3: Run in a Container
+
+```bash
+# Build the CPU image from the repository root
+docker build -f docker/Dockerfile -t raganything:cpu .
+
+# Verify the runtime dependencies inside the container
+docker run --rm raganything:cpu check
+```
+
+The image bundles MinerU and its models, LibreOffice, ffmpeg and the other
+external dependencies, so nothing has to be installed on the host. A CUDA
+image and a Compose file are provided alongside it. See
+[docs/docker.md](docs/docker.md) for build arguments, volumes and persistence.
+
 #### Optional Dependencies
 
 - **`[image]`** - Enables processing of BMP, TIFF, GIF, WebP image formats (requires Pillow)
