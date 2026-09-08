@@ -1,0 +1,13 @@
+.git/
+.github/
+**/__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+*.env*
+rag_storage*/
+output*/
+tiktoken_cache/
+docs/
+reproduce/

@@ -1,0 +1,42 @@
+# Build context is the repository root, so the working tree is what gets
+# installed. Run these commands from the repository root:
+#
+#   docker compose -f docker/compose.yaml build
+#   docker compose -f docker/compose.yaml run --rm raganything check
+
+services:
+  raganything:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      args:
+        EXTRAS: all
+        BAKE_MODELS: "1"
+        WITH_OFFICE: "1"
+        WITH_MEDIA: "1"
+        # On Linux, set these to your own ids if you swap the named volume
+        # below for a bind mount, otherwise the mount is not writable.
+        PUID: "10001"
+        PGID: "10001"
+    image: raganything:cpu
+    env_file:
+      - path: ../.env
+        required: false
+    environment:
+      MINERU_DEVICE_MODE: cpu
+      MINERU_MODEL_SOURCE: local
+      OUTPUT_DIR: /data/output
+      WORKING_DIR: /data/rag_storage
+    volumes:
+      # /data/input        documents to process
+      # /data/output       MinerU artefacts: markdown, json, page images
+      # /data/rag_storage  LightRAG knowledge graph, vectors and caches
+      - raganything-data:/data
+      # Bind mount alternative, if you want the files on the host:
+      # - ../data:/data
+    stdin_open: true
+    tty: true
+    command: ["check"]
+
+volumes:
+  raganything-data:
