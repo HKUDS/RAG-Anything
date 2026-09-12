@@ -119,3 +119,60 @@ class TestNoPdfRoundTrip:
     def test_missing_file_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             MineruParser().parse_text_file(tmp_path / "absent.txt")
+
+
+class TestMarkdownImageTargets:
+    @pytest.mark.parametrize(
+        "filename,target",
+        [
+            ("figure 1.png", "figure%201.png"),
+            ("图表.png", "%E5%9B%BE%E8%A1%A8.png"),
+            ("100%.png", "100%25.png"),
+            ("figure#1.png", "figure%231.png"),
+            ("figure%20literal.png", "figure%2520literal.png"),
+            ("plot+1.png", "plot+1.png"),
+            ("plain.png", "plain.png"),
+            ("figure 1.png", "<figure%201.png>"),
+        ],
+    )
+    def test_local_image_targets_resolve_to_file(self, tmp_path, filename, target):
+        image = tmp_path / filename
+        image.touch()
+        document = tmp_path / "doc.md"
+        document.write_text(f'![Figure]({target} "Figure%20title")\n', encoding="utf-8")
+
+        assert MineruParser().parse_text_file(document) == [
+            {
+                "type": "image",
+                "img_path": str(image.resolve()),
+                "img_caption": ["Figure", "Figure%20title"],
+                "img_footnote": [],
+                "page_idx": 0,
+            }
+        ]
+
+    def test_absolute_encoded_image_target_is_not_joined_to_source_dir(self, tmp_path):
+        image = tmp_path / "figure 1.png"
+        image.touch()
+        source_dir = tmp_path / "docs"
+        source_dir.mkdir()
+        document = source_dir / "doc.md"
+        target = image.as_posix().replace(" ", "%20")
+        document.write_text(f"![Figure]({target})", encoding="utf-8")
+
+        blocks = MineruParser().parse_text_file(document)
+
+        assert blocks[0]["type"] == "image"
+        assert blocks[0]["img_path"] == str(image.resolve())
+
+    @pytest.mark.parametrize(
+        "target", ["missing%20image.png", "https://example.com/figure%201.png"]
+    )
+    def test_unresolved_image_targets_remain_literal(self, tmp_path, target):
+        text = f"![Figure]({target})"
+        document = tmp_path / "doc.md"
+        document.write_text(text, encoding="utf-8")
+
+        assert MineruParser().parse_text_file(document) == [
+            {"type": "text", "text": text, "page_idx": 0}
+        ]

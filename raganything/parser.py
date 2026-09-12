@@ -764,7 +764,8 @@ class Parser:
             inner = inner[1:-1].strip()
         if not inner or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", inner):
             return None
-        path = Path(inner)
+        # Decode URL escapes once; '+' is a literal character in URL paths.
+        path = Path(urllib.parse.unquote(inner))
         if not path.is_absolute():
             if source_dir is None:
                 return None
