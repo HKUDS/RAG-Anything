@@ -40,6 +40,7 @@ Example
 from __future__ import annotations
 
 import logging
+import re
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
@@ -392,9 +393,22 @@ def _escape_text(text: str) -> str:
     if not text:
         return ""
     out = []
-    for ch in text:
+    for index, ch in enumerate(text):
         replacement = _SYMBOL_TO_LATEX.get(ch)
         out.append(replacement if replacement is not None else ch)
+        if (
+            replacement is not None
+            and replacement[-1].isalpha()
+            and (
+                index + 1 == len(text)
+                or re.match(r"[A-Za-z]", text[index + 1 : index + 2])
+            )
+        ):
+            # A control word consumes following ASCII letters: without the
+            # separator, a≤b becomes the unrelated command "\\leqb". At a text
+            # node's end, the next node may begin with a variable too. Terminate
+            # only generated commands so literal LaTeX split over runs is kept.
+            out.append(" ")
     return "".join(out)
 
 
