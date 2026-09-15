@@ -764,18 +764,24 @@ class Parser:
             inner = inner[1:-1].strip()
         if not inner or re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", inner):
             return None
-        # Decode URL escapes once; '+' is a literal character in URL paths.
-        path = Path(urllib.parse.unquote(inner))
-        if not path.is_absolute():
-            if source_dir is None:
-                return None
-            path = source_dir / path
-        try:
-            if not path.is_file():
-                return None
-        except OSError:
-            return None
-        return str(path.resolve()), captions
+        # Decode URL escapes once ('+' is a literal character in URL paths),
+        # but fall back to the verbatim target when the decoded form does not
+        # exist: a file literally named "a%2Bb.png" referenced verbatim must
+        # keep resolving, as it did before decoding was introduced.
+        decoded = urllib.parse.unquote(inner)
+        candidates = [decoded] if decoded == inner else [decoded, inner]
+        for candidate in candidates:
+            path = Path(candidate)
+            if not path.is_absolute():
+                if source_dir is None:
+                    return None
+                path = source_dir / path
+            try:
+                if path.is_file():
+                    return str(path.resolve()), captions
+            except OSError:
+                continue
+        return None
 
     @classmethod
     def _text_to_content_blocks(

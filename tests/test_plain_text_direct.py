@@ -188,6 +188,8 @@ class TestMarkdownImageTargets:
             ("100%.png", "100%25.png"),
             ("figure#1.png", "figure%231.png"),
             ("figure%20literal.png", "figure%2520literal.png"),
+            ("a%2Bb.png", "a%2Bb.png"),
+            ("figure%20literal.png", "figure%20literal.png"),
             ("plot+1.png", "plot+1.png"),
             ("plain.png", "plain.png"),
             ("figure 1.png", "<figure%201.png>"),
