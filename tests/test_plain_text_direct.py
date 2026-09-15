@@ -77,6 +77,64 @@ class TestTextToContentBlocks:
         assert MineruParser().parse_text_file(f) == []
 
 
+class TestMarkdownCodeFences:
+    @pytest.mark.parametrize(
+        "opening,non_closing",
+        [
+            ("````", "```"),
+            ("~~~~", "~~~"),
+            ("```", "```python"),
+            ("~~~", "~~~python"),
+            ("```", "~~~"),
+            ("~~~", "```"),
+        ],
+    )
+    def test_non_closing_fence_keeps_headings_and_images_literal(
+        self, tmp_path, opening, non_closing
+    ):
+        # Image resolution checks existence; no image decoding is needed here.
+        image = tmp_path / "diagram.png"
+        image.touch()
+        code = (
+            f"{opening}markdown\n{non_closing}\n"
+            f"# Example heading\n\n![Example](diagram.png)\n{opening}"
+        )
+        f = tmp_path / "doc.md"
+        f.write_text(f"{code}\n\n# Real heading\n\n![Real](diagram.png)\n")
+
+        blocks = MineruParser().parse_text_file(f)
+
+        assert blocks == [
+            {"type": "text", "text": code, "page_idx": 0},
+            {"type": "text", "text": "Real heading", "text_level": 1, "page_idx": 0},
+            {
+                "type": "image",
+                "img_path": str(image.resolve()),
+                "img_caption": ["Real"],
+                "img_footnote": [],
+                "page_idx": 0,
+            },
+        ]
+
+    @pytest.mark.parametrize("marker", ["`", "~"])
+    def test_longer_closing_fence_with_whitespace_is_accepted(self, marker):
+        code = f"{marker * 4}markdown\n# Literal\n  {marker * 5}"
+        blocks = Parser._text_to_content_blocks(
+            f"{code} \t\n# Heading", is_markdown=True
+        )
+        assert blocks == [
+            {"type": "text", "text": code, "page_idx": 0},
+            {"type": "text", "text": "Heading", "text_level": 1, "page_idx": 0},
+        ]
+
+    @pytest.mark.parametrize("marker", ["`", "~"])
+    def test_shorter_fence_does_not_close_unterminated_block(self, marker):
+        code = f"{marker * 4}markdown\n{marker * 3}\n# Still literal"
+        assert Parser._text_to_content_blocks(code, is_markdown=True) == [
+            {"type": "text", "text": code, "page_idx": 0}
+        ]
+
+
 class TestEncodingHandling:
     def test_gbk_fallback(self, tmp_path):
         f = tmp_path / "doc.txt"

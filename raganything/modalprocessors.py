@@ -800,7 +800,7 @@ class BaseModalProcessor:
         chunk_vdb_data = {
             chunk_id: {
                 "content": chunk_data["content"],
-                "full_doc_id": chunk_id,
+                "full_doc_id": chunk_data.get("full_doc_id", chunk_id),
                 "tokens": chunk_data["tokens"],
                 "chunk_order_index": chunk_data["chunk_order_index"],
                 "file_path": chunk_data["file_path"],
