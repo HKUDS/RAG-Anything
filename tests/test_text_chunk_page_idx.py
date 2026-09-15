@@ -99,8 +99,16 @@ class ChunkRecordingLightRAG:
         self.text_chunks = InMemoryJsonStorage()
         self.inserted_inputs = []
 
-    async def ainsert(self, *, input, file_paths=None, split_by_character=None,
-                      split_by_character_only=False, ids=None, **kwargs):
+    async def ainsert(
+        self,
+        *,
+        input,
+        file_paths=None,
+        split_by_character=None,
+        split_by_character_only=False,
+        ids=None,
+        **kwargs,
+    ):
         self.inserted_inputs.append(input)
         chunking_result = self.chunking_func(
             None,
@@ -123,9 +131,14 @@ class ChunkRecordingLightRAG:
             }
 
 
-def split_on_blank_lines(tokenizer, content, split_by_character=None,
-                         split_by_character_only=False, chunk_overlap_token_size=100,
-                         chunk_token_size=1200):
+def split_on_blank_lines(
+    tokenizer,
+    content,
+    split_by_character=None,
+    split_by_character_only=False,
+    chunk_overlap_token_size=100,
+    chunk_token_size=1200,
+):
     """Deterministic stand-in for chunking_by_token_size: one chunk per block."""
     return [
         {"tokens": 1, "content": part.strip(), "chunk_order_index": index}
@@ -168,7 +181,9 @@ def _make_processor(raganything_modules, lightrag, tmp_path):
     async def fake_ensure_lightrag_initialized():
         return {"success": True}
 
-    async def fake_parse_document(file_path, output_dir, parse_method, display_stats, **kwargs):
+    async def fake_parse_document(
+        file_path, output_dir, parse_method, display_stats, **kwargs
+    ):
         return (list(THREE_PAGE_CONTENT_LIST), "doc-generated")
 
     processor._ensure_lightrag_initialized = fake_ensure_lightrag_initialized
@@ -193,9 +208,7 @@ async def test_process_document_complete_annotates_text_chunks_with_page_idx(
 
     chunks = lightrag.text_chunks.records
     assert chunks, "expected text chunks to be stored"
-    pages_by_content = {
-        row["content"]: row.get("page_idx") for row in chunks.values()
-    }
+    pages_by_content = {row["content"]: row.get("page_idx") for row in chunks.values()}
     assert pages_by_content["Intro on page zero."] == 0
     assert pages_by_content["Body paragraph on page one."] == 1
     assert pages_by_content["More body on page one."] == 1
@@ -251,7 +264,9 @@ async def test_blocks_without_page_idx_leave_chunks_unannotated(
         {"type": "text", "text": "Still no page.", "page_idx": "zero"},
     ]
 
-    async def fake_parse_document(file_path, output_dir, parse_method, display_stats, **kwargs):
+    async def fake_parse_document(
+        file_path, output_dir, parse_method, display_stats, **kwargs
+    ):
         return (list(content_list), "doc-generated")
 
     lightrag = ChunkRecordingLightRAG(split_on_blank_lines)

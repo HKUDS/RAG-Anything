@@ -181,9 +181,7 @@ class ProcessorMixin:
         original_chunking_func = getattr(self.lightrag, "chunking_func", None)
 
         def annotate_chunking_func(tokenizer, content, *args, **kwargs):
-            result = original_chunking_func(
-                tokenizer, content, *args, **kwargs
-            )
+            result = original_chunking_func(tokenizer, content, *args, **kwargs)
 
             def finish(chunk_list):
                 try:
@@ -207,6 +205,7 @@ class ProcessorMixin:
                 return chunk_list
 
             if hasattr(result, "__await__"):
+
                 async def async_annotated():
                     return finish(await result)
 
@@ -2380,8 +2379,8 @@ class ProcessorMixin:
                 self.logger.info(f"  - {block_type}: {count}")
 
         # Step 1: Separate text and multimodal content
-        text_content, multimodal_items, page_intervals = (
-            separate_content_with_page_map(content_list)
+        text_content, multimodal_items, page_intervals = separate_content_with_page_map(
+            content_list
         )
 
         # LightRAG creates the initial doc_status entry during text insertion.
