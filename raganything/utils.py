@@ -169,20 +169,24 @@ def extract_neighbor_text_from_content_list(
     return " ".join(parts)
 
 
-def separate_content(
+def separate_content_with_page_map(
     content_list: List[Dict[str, Any]],
-) -> Tuple[str, List[Dict[str, Any]]]:
+) -> Tuple[str, List[Dict[str, Any]], List[Tuple[int, int, int]]]:
     """
-    Separate text content and multimodal content
+    Separate text content, multimodal content, and per-block page provenance.
 
-    Args:
-        content_list: Content list from MinerU parsing
+    Behaves exactly like :func:`separate_content` but additionally returns a
+    page map: non-overlapping ``(start, end, page_idx)`` character intervals
+    (into the returned ``text_content``) covering every text block that had a
+    ``page_idx``. Blocks without ``page_idx`` (or with non-int values) are
+    skipped so callers never see a wrong page attribution.
 
     Returns:
-        (text_content, multimodal_items): Pure text content and multimodal items list
+        (text_content, multimodal_items, page_intervals)
     """
     text_parts = []
     multimodal_items = []
+    page_intervals: List[Tuple[int, int, int]] = []
 
     for index, item in enumerate(content_list):
         content_type = item.get("type", "text")
@@ -191,7 +195,12 @@ def separate_content(
             # Text content
             text = str(item.get("text", "") or "")
             if text.strip():
+                start = len("\n\n".join(text_parts)) + (2 if text_parts else 0)
                 text_parts.append(text)
+                end = start + len(text)
+                page_idx = item.get("page_idx")
+                if isinstance(page_idx, int) and not isinstance(page_idx, bool):
+                    page_intervals.append((start, end, page_idx))
         else:
             # Multimodal content (image, table, equation, etc.)
             multimodal_item = dict(item)
@@ -223,6 +232,80 @@ def separate_content(
     if modal_types:
         logger.info(f"  - Multimodal type distribution: {modal_types}")
 
+    return text_content, multimodal_items, page_intervals
+
+
+def annotate_chunks_with_page_idx(
+    chunks: List[Dict[str, Any]],
+    text_content: str,
+    page_intervals: List[Tuple[int, int, int]],
+    logger: Any = None,
+) -> List[Dict[str, Any]]:
+    """
+    Annotate chunks produced from ``text_content`` with their source page.
+
+    Each chunk's ``content`` is located in ``text_content`` (LightRAG chunks
+    are decodes of contiguous token slices, so they are substrings of the
+    source, modulo stripping) and mapped to the overlapping page interval.
+    Chunks fully inside one interval get its ``page_idx``; chunks spanning
+    several get the first page as ``page_idx`` plus the last as
+    ``page_idx_end``. Chunks that cannot be located are left untouched, and
+    a warning is logged — annotation must never break ingestion.
+
+    Returns the same list of chunk dicts (mutated in place for reuse by
+    chunking-func wrappers, which must return the list they built).
+    """
+    if not page_intervals:
+        return chunks
+
+    log = logger
+    missed = 0
+    for chunk in chunks:
+        content = chunk.get("content")
+        if not isinstance(content, str) or not content:
+            continue
+        offset = text_content.find(content)
+        if offset < 0:
+            missed += 1
+            if log is not None:
+                log.warning(
+                    "page_idx annotation: chunk content not found in source "
+                    "text; leaving chunk without page_idx"
+                )
+            continue
+        chunk_end = offset + len(content)
+        pages = sorted(
+            {
+                page
+                for start, end, page in page_intervals
+                if start < chunk_end and offset < end
+            }
+        )
+        if pages:
+            chunk["page_idx"] = pages[0]
+            if len(pages) > 1:
+                chunk["page_idx_end"] = pages[-1]
+    if missed and log is not None:
+        log.warning(
+            f"page_idx annotation: {missed} chunk(s) could not be located in "
+            "the source text and carry no page_idx"
+        )
+    return chunks
+
+
+def separate_content(
+    content_list: List[Dict[str, Any]],
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Separate text content and multimodal content
+
+    Args:
+        content_list: Content list from MinerU parsing
+
+    Returns:
+        (text_content, multimodal_items): Pure text content and multimodal items list
+    """
+    text_content, multimodal_items, _ = separate_content_with_page_map(content_list)
     return text_content, multimodal_items
 
 

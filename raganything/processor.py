@@ -16,7 +16,7 @@ from pathlib import Path
 from raganything.base import DocStatus
 from raganything.parser import MineruParser, MineruExecutionError, get_parser
 from raganything.utils import (
-    separate_content,
+    separate_content_with_page_map,
     insert_text_content,
     insert_text_content_with_multimodal_content,
     get_processor_for_type,
@@ -24,6 +24,7 @@ from raganything.utils import (
     get_equation_text_and_format,
     get_table_body,
     normalize_caption_list,
+    annotate_chunks_with_page_idx,
 )
 import asyncio
 from lightrag.utils import compute_mdhash_id
@@ -161,6 +162,58 @@ class ProcessorMixin:
         await self.lightrag.doc_status.upsert({doc_id: doc_status_payload})
         await self.lightrag.doc_status.index_done_callback()
         return await self.lightrag.doc_status.get_by_id(doc_id) or doc_status_payload
+
+    def _make_page_annotating_chunking_wrapper(
+        self,
+        text_content: str,
+        page_intervals: List[Tuple[int, int, int]],
+    ):
+        """Wrap LightRAG's chunking func so text chunks carry ``page_idx``.
+
+        LightRAG (>= 1.4) spreads every dict returned by ``chunking_func``
+        into the stored chunk row, and supports both sync and async custom
+        implementations of it. The wrapper delegates to the instance's
+        configured chunking func unchanged, then annotates the chunks with
+        their source page derived from ``page_intervals``. Annotation never
+        raises: on any error the original chunk list is returned as-is, so
+        page provenance cannot break ingestion (#330).
+        """
+        original_chunking_func = getattr(self.lightrag, "chunking_func", None)
+
+        def annotate_chunking_func(tokenizer, content, *args, **kwargs):
+            result = original_chunking_func(
+                tokenizer, content, *args, **kwargs
+            )
+
+            def finish(chunk_list):
+                try:
+                    if content == text_content:
+                        annotate_chunks_with_page_idx(
+                            chunk_list,
+                            text_content,
+                            page_intervals,
+                            logger=self.logger,
+                        )
+                    else:
+                        self.logger.debug(
+                            "page_idx annotation skipped: chunking called for "
+                            "different content than the current document"
+                        )
+                except Exception as exc:
+                    self.logger.warning(
+                        f"page_idx annotation failed; chunks stored without "
+                        f"page provenance: {exc}"
+                    )
+                return chunk_list
+
+            if hasattr(result, "__await__"):
+                async def async_annotated():
+                    return finish(await result)
+
+                return async_annotated()
+            return finish(result)
+
+        return annotate_chunking_func, original_chunking_func
 
     async def _upsert_doc_status(
         self,
@@ -1805,7 +1858,9 @@ class ProcessorMixin:
                 doc_id = content_based_doc_id
 
             # Step 2: Separate text and multimodal content
-            text_content, multimodal_items = separate_content(content_list)
+            text_content, multimodal_items, page_intervals = (
+                separate_content_with_page_map(content_list)
+            )
 
             # LightRAG creates the initial doc_status entry during text insertion.
             # Pre-registering the same doc_id here makes LightRAG treat a fresh
@@ -1839,14 +1894,25 @@ class ProcessorMixin:
                         doc_id=doc_id,
                     )
                 insert_start = time.time()
-                await insert_text_content(
-                    self.lightrag,
-                    input=text_content,
-                    file_paths=file_name,
-                    split_by_character=split_by_character,
-                    split_by_character_only=split_by_character_only,
-                    ids=doc_id,
+                annotate_chunking, original_chunking = (
+                    self._make_page_annotating_chunking_wrapper(
+                        text_content, page_intervals
+                    )
                 )
+                try:
+                    if original_chunking is not None:
+                        self.lightrag.chunking_func = annotate_chunking
+                    await insert_text_content(
+                        self.lightrag,
+                        input=text_content,
+                        file_paths=file_name,
+                        split_by_character=split_by_character,
+                        split_by_character_only=split_by_character_only,
+                        ids=doc_id,
+                    )
+                finally:
+                    if original_chunking is not None:
+                        self.lightrag.chunking_func = original_chunking
                 await self._upsert_doc_status(
                     doc_id,
                     file_name,
@@ -2117,7 +2183,9 @@ class ProcessorMixin:
                 doc_id = content_based_doc_id
 
             # Step 2: Separate text and multimodal content
-            text_content, multimodal_items = separate_content(content_list)
+            text_content, multimodal_items, page_intervals = (
+                separate_content_with_page_map(content_list)
+            )
 
             # LightRAG creates the initial doc_status entry during text
             # insertion. Pre-registering the same doc_id here makes LightRAG
@@ -2144,16 +2212,27 @@ class ProcessorMixin:
 
             # Step 3: Insert pure text content and multimodal content with all parameters
             if text_content.strip():
-                await insert_text_content_with_multimodal_content(
-                    self.lightrag,
-                    input=text_content,
-                    multimodal_content=multimodal_items,
-                    file_paths=file_name,
-                    split_by_character=split_by_character,
-                    split_by_character_only=split_by_character_only,
-                    ids=doc_id,
-                    scheme_name=scheme_name,
+                annotate_chunking, original_chunking = (
+                    self._make_page_annotating_chunking_wrapper(
+                        text_content, page_intervals
+                    )
                 )
+                try:
+                    if original_chunking is not None:
+                        self.lightrag.chunking_func = annotate_chunking
+                    await insert_text_content_with_multimodal_content(
+                        self.lightrag,
+                        input=text_content,
+                        multimodal_content=multimodal_items,
+                        file_paths=file_name,
+                        split_by_character=split_by_character,
+                        split_by_character_only=split_by_character_only,
+                        ids=doc_id,
+                        scheme_name=scheme_name,
+                    )
+                finally:
+                    if original_chunking is not None:
+                        self.lightrag.chunking_func = original_chunking
 
             self.logger.info(f"Document {file_path} processing completed successfully")
             return True
@@ -2301,7 +2380,9 @@ class ProcessorMixin:
                 self.logger.info(f"  - {block_type}: {count}")
 
         # Step 1: Separate text and multimodal content
-        text_content, multimodal_items = separate_content(content_list)
+        text_content, multimodal_items, page_intervals = (
+            separate_content_with_page_map(content_list)
+        )
 
         # LightRAG creates the initial doc_status entry during text insertion.
         # Pre-registering the same doc_id here makes LightRAG treat a fresh
@@ -2334,14 +2415,25 @@ class ProcessorMixin:
                     doc_id=doc_id,
                 )
             insert_start = time.time()
-            await insert_text_content(
-                self.lightrag,
-                input=text_content,
-                file_paths=file_ref,
-                split_by_character=split_by_character,
-                split_by_character_only=split_by_character_only,
-                ids=doc_id,
+            annotate_chunking, original_chunking = (
+                self._make_page_annotating_chunking_wrapper(
+                    text_content, page_intervals
+                )
             )
+            try:
+                if original_chunking is not None:
+                    self.lightrag.chunking_func = annotate_chunking
+                await insert_text_content(
+                    self.lightrag,
+                    input=text_content,
+                    file_paths=file_ref,
+                    split_by_character=split_by_character,
+                    split_by_character_only=split_by_character_only,
+                    ids=doc_id,
+                )
+            finally:
+                if original_chunking is not None:
+                    self.lightrag.chunking_func = original_chunking
             await self._upsert_doc_status(
                 doc_id,
                 file_ref,
