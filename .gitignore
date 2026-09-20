@@ -68,8 +68,8 @@ lightrag-dev/
 gui/
 tiktoken_cache/
 
-# unit-test files
-test_*
+# Root-level unit-test scratch files; anchored so tests/*.py stay visible
+/test_*
 
 # Cline files
 memory-bank/
