@@ -32,6 +32,7 @@ from raganything.config import RAGAnythingConfig
 from raganything.query import QueryMixin
 from raganything.processor import ProcessorMixin
 from raganything.batch import BatchMixin
+from raganything.chunk_updates import ChunkUpdateMixin
 from raganything.utils import get_processor_supports
 from raganything.parser import MineruParser, SUPPORTED_PARSERS, get_parser
 from raganything.callbacks import CallbackManager
@@ -61,7 +62,7 @@ from raganything.modalprocessors_video import (
 
 
 @dataclass
-class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
+class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin, ChunkUpdateMixin):
     """Multimodal Document Processing Pipeline - Complete document parsing and insertion pipeline"""
 
     # Core Components
