@@ -199,6 +199,47 @@ PARSER_OUTPUT_DIR=./parsed_output
 - **timeout_per_file**: Timeout per file in seconds (default: `300`)
 - **skip_installation_check**: Skip parser installation check (default: `False`)
 
+### Multimodal ingestion concurrency
+
+Parsing workers and multimodal ingestion have separate limits:
+
+- `BatchParser.max_workers` controls parallel file parsing. Increasing it does not
+  increase image-description concurrency inside one document.
+- `LightRAG.max_parallel_insert` also limits concurrent multimodal item section
+  generation in RAG-Anything's type-aware batch path, reached by
+  `insert_content_list()` and `process_document_complete()`. This includes image
+  descriptions. The limit is taken from the LightRAG instance; RAG-Anything falls
+  back to `2` only when that attribute is absent.
+- `llm_model_max_async` controls LightRAG's wrapped LLM calls. Increasing it alone
+  does not raise the multimodal item limit, and a separately supplied
+  `vision_model_func` is not necessarily covered by that LLM wrapper.
+
+When RAG-Anything creates LightRAG, set the item limit through `lightrag_kwargs`
+(alongside your existing model and embedding configuration):
+
+```python
+rag = RAGAnything(
+    llm_model_func=llm_model_func,
+    vision_model_func=vision_model_func,
+    embedding_func=embedding_func,
+    lightrag_kwargs={"max_parallel_insert": 4},
+)
+```
+
+If you supply `RAGAnything(lightrag=existing_lightrag, ...)`, configure
+`max_parallel_insert` on that LightRAG instance instead; `lightrag_kwargs` does not
+reconfigure an existing instance. LightRAG 1.4.16 defaults this setting to `2`,
+with an environment override via `MAX_PARALLEL_INSERT`; check your installed
+LightRAG version and effective instance value. Use a positive integer.
+
+The semaphore is created **per multimodal batch call**, not globally or per
+RAG-Anything instance. Concurrent calls can therefore exceed this limit in
+aggregate. It covers item section generation, not the subsequent entity
+extraction and graph merge stages. Those stages can make additional LLM calls,
+so this setting neither reduces call count nor guarantees one call per image or
+a particular speedup. Tune conservatively against provider rate limits and
+measure both call counts and stage timings on a small representative document.
+
 ## Supported File Types
 
 - **PDF files**: `.pdf`

@@ -58,6 +58,7 @@ It is meant to stay small and easy to maintain (see discussion in [#207](https:/
 
 - [#48](https://github.com/HKUDS/RAG-Anything/issues/48) style: large PDFs and OCR are inherently heavy—batch size and hardware matter.
 - Distinguish **slow but progressing** from a **hang** (then check subprocess timeouts, MinerU/Docling logs, and disk space).
+- For image-heavy ingestion, check `rag.lightrag.max_parallel_insert` after initialization: it also limits concurrent multimodal item generation within each batch call. Raising `llm_model_max_async` alone does not raise this limit. See [multimodal ingestion concurrency](batch_processing.md#multimodal-ingestion-concurrency) for configuration and scope; extraction and graph merging can add further LLM calls.
 
 ---
 
