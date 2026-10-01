@@ -43,7 +43,9 @@ def _load_batch_method():
 
 def _make_processor(generate, limit):
     lightrag = SimpleNamespace(
-        doc_status=SimpleNamespace(get_by_id=AsyncMock(return_value={"chunks_count": 2}))
+        doc_status=SimpleNamespace(
+            get_by_id=AsyncMock(return_value={"chunks_count": 2})
+        )
     )
     if limit is not None:
         lightrag.max_parallel_insert = limit
