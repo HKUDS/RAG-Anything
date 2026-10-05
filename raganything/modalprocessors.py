@@ -230,12 +230,14 @@ class ContextExtractor:
             return text
 
         elif item_type == "image" and self.config.include_captions:
-            captions = item.get("image_caption", item.get("img_caption", []))
+            captions = normalize_caption_list(
+                item.get("image_caption", item.get("img_caption"))
+            )
             if captions:
                 return f"[Image: {', '.join(captions)}]"
 
         elif item_type == "table" and self.config.include_captions:
-            captions = item.get("table_caption", [])
+            captions = normalize_caption_list(item.get("table_caption"))
             if captions:
                 return f"[Table: {', '.join(captions)}]"
 
@@ -1055,11 +1057,11 @@ class ImageModalProcessor(BaseModalProcessor):
                 content_data = modal_content
 
             image_path = content_data.get("img_path", "")
-            captions = content_data.get(
-                "image_caption", content_data.get("img_caption", [])
+            captions = normalize_caption_list(
+                content_data.get("image_caption", content_data.get("img_caption"))
             )
-            footnotes = content_data.get(
-                "image_footnote", content_data.get("img_footnote", [])
+            footnotes = normalize_caption_list(
+                content_data.get("image_footnote", content_data.get("img_footnote"))
             )
             section_path = content_data.get("_section_path", "")
             neighbor_text = content_data.get("_neighbor_text", "")

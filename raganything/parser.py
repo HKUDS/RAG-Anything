@@ -39,6 +39,7 @@ import time
 import urllib.parse
 import urllib.request
 import shutil
+from bisect import bisect_left
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -739,7 +740,50 @@ class Parser:
                 f"Could not decode text file {text_path.name} with any supported encoding"
             )
 
-    _MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
+    # The destination is either <angle-bracketed>, where it may contain spaces and
+    # parentheses (`<Screenshot (1).png>`), or bare, where parentheses must be
+    # balanced one level deep (`image(1).png`), as CommonMark allows. An optional
+    # "title" may follow either form.
+    # Alt text is kept to one line: the scanner below runs on multi-line
+    # paragraphs while replacement works per line, so a match crossing a
+    # newline would skip a real image on the next line, and an unbounded
+    # alt group made scanning quadratic on lines with an unclosed '['.
+    _MD_IMAGE_RE = re.compile(
+        r"!\[([^\]\n]*)\]\((\s*<[^>\n]*>[^()\n]*|(?:[^()\n]|\([^()\n]*\))*)\)"
+    )
+
+    @classmethod
+    def _markdown_image_matches(cls, text: str) -> Iterator["re.Match[str]"]:
+        """Find image references outside escaped punctuation and code spans."""
+        backticks: Dict[int, List[int]] = {}
+        for marker in re.finditer(r"`+", text):
+            backticks.setdefault(len(marker.group()), []).append(marker.start())
+
+        cursor = 0
+        while cursor < len(text):
+            if text[cursor] == "\\":
+                cursor += 2
+                continue
+            if text[cursor] == "`":
+                end = cursor + 1
+                while end < len(text) and text[end] == "`":
+                    end += 1
+                length = end - cursor
+                closers = backticks.get(length, [])
+                closing_index = bisect_left(closers, end)
+                # Unmatched backticks are literal text, not an open code span.
+                cursor = (
+                    closers[closing_index] + length
+                    if closing_index < len(closers)
+                    else end
+                )
+                continue
+            match = cls._MD_IMAGE_RE.match(text, cursor)
+            if match:
+                yield match
+                cursor = match.end()
+            else:
+                cursor += 1
 
     @classmethod
     def _resolve_md_image(
@@ -799,8 +843,8 @@ class Parser:
         file becomes an image block shaped exactly like MinerU's
         (``img_path``/``img_caption``/``img_footnote``/``page_idx``), so it
         flows into the same multimodal pipeline as images extracted from
-        PDFs. URLs and missing files stay literal text. Content inside
-        fenced code blocks (``` or ~~~) is never interpreted.
+        PDFs. URLs and missing files stay literal text. Fenced code blocks
+        (``` or ~~~), inline code, and escaped image references stay literal.
         """
         # Normalize line endings up front so CRLF/CR input behaves the same
         # as LF however the text arrived (text-mode file reads translate
@@ -823,7 +867,10 @@ class Parser:
 
         in_fence = False
         fence_marker = ""
-        for line in lines:
+        inline_end = 0
+        inline_offset = 0
+        image_starts: set[int] = set()
+        for index, line in enumerate(lines):
             stripped = line.strip()
             if is_markdown:
                 fence = re.match(r"^(`{3,}|~{3,})", stripped)
@@ -858,15 +905,43 @@ class Parser:
                         }
                     )
                     continue
-                if cls._MD_IMAGE_RE.search(stripped):
+                if index >= inline_end:
+                    # Code spans may wrap across lines, but not block boundaries.
+                    inline_end = index + 1
+                    while inline_end < len(lines):
+                        following = lines[inline_end].strip()
+                        if not following or re.match(
+                            r"^(?:#{1,6}\s+|`{3,}|~{3,})", following
+                        ):
+                            break
+                        inline_end += 1
+                    inline_text = "\n".join(lines[index:inline_end])
+                    image_starts = {
+                        match.start()
+                        for match in cls._markdown_image_matches(inline_text)
+                    }
+                    inline_offset = 0
+                offset = inline_offset + len(line) - len(line.lstrip())
+                inline_offset += len(line) + 1
+                matches = {
+                    match.start()
+                    for match in cls._MD_IMAGE_RE.finditer(stripped)
+                    if offset + match.start() in image_starts
+                }
+                if matches:
                     # A line that is nothing but image reference(s) becomes
                     # image block(s) in place; a reference inside a sentence
                     # keeps the sentence (alt text substituted in) and emits
                     # the image block after the enclosing paragraph.
-                    standalone = not cls._MD_IMAGE_RE.sub("", stripped).strip()
+                    standalone = not cls._MD_IMAGE_RE.sub(
+                        lambda match: "" if match.start() in matches else match.group(),
+                        stripped,
+                    ).strip()
                     line_images: List[Dict[str, Any]] = []
 
                     def replace(match: "re.Match[str]") -> str:
+                        if match.start() not in matches:
+                            return match.group()
                         alt = match.group(1).strip()
                         resolved = cls._resolve_md_image(match.group(2), source_dir)
                         if resolved is None:
@@ -2429,6 +2504,17 @@ class DoclingParser(Parser):
     def read_from_block(
         self, block, type: str, output_dir: Path, cnt: int, num: str
     ) -> Dict[str, Any]:
+        # Docling provenance uses one-based source pages. Block counts are
+        # unrelated to pagination, including for nested groups or long pages.
+        # A multi-page item is anchored to its first source page; unpaginated
+        # formats retain the content-list convention of page_idx=0.
+        page_idx = 0
+        for provenance in block.get("prov") or []:
+            page_no = provenance.get("page_no")
+            if isinstance(page_no, int) and page_no > 0:
+                page_idx = page_no - 1
+                break
+
         if type == "texts":
             if block["label"] == "formula":
                 return {
@@ -2436,13 +2522,13 @@ class DoclingParser(Parser):
                     "img_path": "",
                     "text": block["orig"],
                     "text_format": "unknown",
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
             else:
                 return {
                     "type": "text",
                     "text": block["orig"],
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
         elif type == "pictures":
             try:
@@ -2462,14 +2548,14 @@ class DoclingParser(Parser):
                     "img_path": str(image_path.resolve()),  # Convert to absolute path
                     "image_caption": block.get("caption", ""),
                     "image_footnote": block.get("footnote", ""),
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
             except Exception as e:
                 self.logger.warning(f"Failed to process image {num}: {e}")
                 return {
                     "type": "text",
                     "text": f"[Image processing failed: {block.get('caption', '')}]",
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
         else:
             try:
@@ -2479,14 +2565,14 @@ class DoclingParser(Parser):
                     "table_caption": block.get("caption", ""),
                     "table_footnote": block.get("footnote", ""),
                     "table_body": block.get("data", []),
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
             except Exception as e:
                 self.logger.warning(f"Failed to process table {num}: {e}")
                 return {
                     "type": "text",
                     "text": f"[Table processing failed: {block.get('caption', '')}]",
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
 
     def parse_office_doc(
