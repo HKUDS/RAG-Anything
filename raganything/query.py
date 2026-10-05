@@ -280,19 +280,25 @@ class QueryMixin:
                 query, mode=mode, system_prompt=system_prompt, **kwargs
             )
 
+        # Streaming results are single-use async iterators; never cache them as full answers.
+        use_cache = not kwargs.get("stream", False)
+
         # Generate cache key for multimodal query
-        cache_key = self._generate_multimodal_cache_key(
-            query,
-            multimodal_content,
-            mode,
-            system_prompt=system_prompt,
-            **kwargs,
-        )
+        cache_key = None
+        if use_cache:
+            cache_key = self._generate_multimodal_cache_key(
+                query,
+                multimodal_content,
+                mode,
+                system_prompt=system_prompt,
+                **kwargs,
+            )
 
         # Check cache if available and enabled
         cached_result = None
         if (
-            hasattr(self, "lightrag")
+            use_cache
+            and hasattr(self, "lightrag")
             and self.lightrag
             and hasattr(self.lightrag, "llm_response_cache")
             and self.lightrag.llm_response_cache
@@ -330,7 +336,9 @@ class QueryMixin:
 
         # Save to cache if available and enabled
         if (
-            hasattr(self, "lightrag")
+            isinstance(result, str)
+            and use_cache
+            and hasattr(self, "lightrag")
             and self.lightrag
             and hasattr(self.lightrag, "llm_response_cache")
             and self.lightrag.llm_response_cache
@@ -359,7 +367,8 @@ class QueryMixin:
 
         # Ensure cache is persisted to disk
         if (
-            hasattr(self, "lightrag")
+            use_cache
+            and hasattr(self, "lightrag")
             and self.lightrag
             and hasattr(self.lightrag, "llm_response_cache")
             and self.lightrag.llm_response_cache
@@ -409,12 +418,20 @@ class QueryMixin:
 
         self.logger.info(f"Executing VLM enhanced query: {query[:100]}...")
 
+        query_param = QueryParam(mode=mode, **kwargs)
+        # Retrieval-only requests must return LightRAG's result without image
+        # processing or answer generation, even when VLM enhancement is enabled.
+        if query_param.only_need_context or query_param.only_need_prompt:
+            return await self.lightrag.aquery(
+                query, param=query_param, system_prompt=system_prompt
+            )
+
         # Clear previous image cache
         if hasattr(self, "_current_images_base64"):
             delattr(self, "_current_images_base64")
 
         # 1. Get original retrieval prompt (without generating final answer)
-        query_param = QueryParam(mode=mode, only_need_prompt=True, **kwargs)
+        query_param.only_need_prompt = True
         raw_prompt = await self.lightrag.aquery(query, param=query_param)
 
         self.logger.debug("Retrieved raw prompt from LightRAG")

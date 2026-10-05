@@ -536,7 +536,7 @@ async def process_multimodal_content():
         "image_footnote": ["Data collected in 2024"]
     }
 
-    description, entity_info = await image_processor.process_multimodal_content(
+    description, entity_info, _ = await image_processor.process_multimodal_content(
         modal_content=image_content,
         content_type="image",
         file_path="research_paper.pdf",
@@ -568,7 +568,7 @@ async def process_multimodal_content():
         "table_footnote": ["Results on test dataset"]
     }
 
-    description, entity_info = await table_processor.process_multimodal_content(
+    description, entity_info, _ = await table_processor.process_multimodal_content(
         modal_content=table_content,
         content_type="table",
         file_path="research_paper.pdf",

@@ -267,7 +267,7 @@ class CircuitBreaker:
         self._state: str = "closed"  # closed | open | half-open
         # Concurrency control for half-open single-flight behaviour
         self._lock = threading.Lock()
-        self._trial_in_flight: bool = False
+        self._trial_in_flight: object | None = None
 
     @property
     def state(self) -> str:
@@ -283,7 +283,7 @@ class CircuitBreaker:
         with self._lock:
             self._failure_count = 0
             self._state = "closed"
-            self._trial_in_flight = False
+            self._trial_in_flight = None
 
     def record_failure(self) -> None:
         """Record a failed call, potentially opening the breaker."""
@@ -305,20 +305,22 @@ class CircuitBreaker:
             self._last_failure_time = now
             if self._failure_count >= self.failure_threshold:
                 self._state = "open"
-                self._trial_in_flight = False
+                self._trial_in_flight = None
                 logger.warning(
                     "Circuit breaker '%s' opened after %d failures",
                     self.name,
                     self._failure_count,
                 )
 
-    def _acquire_permission(self) -> None:
+    def _acquire_permission(self) -> object | None:
         """Check and update state before executing a protected call.
 
         - If the breaker is open and reset_timeout has not elapsed, raise.
         - If the breaker moves to half-open, allow exactly one in-flight
           trial call and reject additional concurrent calls.
         - If the breaker is closed, allow the call.
+
+        Return an ownership token for a half-open trial, otherwise ``None``.
         """
         with self._lock:
             # Transition open -> half-open if timeout has elapsed.
@@ -339,8 +341,9 @@ class CircuitBreaker:
                         f"Circuit breaker '{self.name}' is half-open — trial in progress"
                     )
                 # Mark that a trial call is now in-flight.
-                self._trial_in_flight = True
-                return
+                trial = object()
+                self._trial_in_flight = trial
+                return trial
 
             # closed: allow call as normal.
             return
@@ -350,7 +353,7 @@ class CircuitBreaker:
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            self._acquire_permission()
+            trial = self._acquire_permission()
             try:
                 result = func(*args, **kwargs)
                 self.record_success()
@@ -365,8 +368,8 @@ class CircuitBreaker:
                 # upstream instability. We still need to clear the half-open
                 # trial gate so that future calls are not permanently blocked.
                 with self._lock:
-                    if self._state == "half-open":
-                        self._trial_in_flight = False
+                    if trial is not None and self._trial_in_flight is trial:
+                        self._trial_in_flight = None
                 raise
 
         return wrapper  # type: ignore[return-value]
@@ -376,7 +379,7 @@ class CircuitBreaker:
 
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            self._acquire_permission()
+            trial = self._acquire_permission()
             try:
                 result = await func(*args, **kwargs)
                 self.record_success()
@@ -384,10 +387,12 @@ class CircuitBreaker:
             except tuple(self._failure_exceptions):
                 self.record_failure()
                 raise
-            except Exception:
+            except BaseException:
+                # Cancellation also needs to release the half-open trial slot.
+                # Propagate it without counting an upstream failure.
                 with self._lock:
-                    if self._state == "half-open":
-                        self._trial_in_flight = False
+                    if trial is not None and self._trial_in_flight is trial:
+                        self._trial_in_flight = None
                 raise
 
         return wrapper  # type: ignore[return-value]

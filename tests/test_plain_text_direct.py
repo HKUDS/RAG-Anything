@@ -5,6 +5,7 @@ rendered to PDF with ReportLab and re-parsed with the OCR pipeline.
 """
 
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -181,6 +182,84 @@ class TestNoPdfRoundTrip:
 
 class TestMarkdownImageTargets:
     @pytest.mark.parametrize(
+        "text",
+        [
+            "`![literal](local.png)`",
+            "``a ` ![literal](local.png)``",
+            "`example\n![literal](local.png)\ncontinued`",
+            r"\![literal](local.png)",
+            r"\\\![literal](local.png)",
+            r"`a \![literal](local.png)`",
+            r"\``![literal](local.png)`",
+            r"\\`![literal](local.png)`",
+            "  `example\n\t![literal](local.png)\ncontinued`",
+        ],
+    )
+    def test_literal_image_syntax_stays_text(self, tmp_path, text):
+        (tmp_path / "local.png").touch()
+        document = tmp_path / "doc.md"
+        document.write_text(text, encoding="utf-8")
+
+        assert MineruParser().parse_text_file(document) == [
+            {"type": "text", "text": text, "page_idx": 0}
+        ]
+
+    @pytest.mark.parametrize(
+        "prefix",
+        ["`unclosed ", r"\`escaped ", r"\\", "``unclosed ` ", r"`a \` "],
+    )
+    def test_unmatched_or_escaped_backticks_do_not_hide_images(self, tmp_path, prefix):
+        image = tmp_path / "local.png"
+        image.touch()
+        document = tmp_path / "doc.md"
+        document.write_text(f"{prefix}![Real](local.png)", encoding="utf-8")
+
+        blocks = MineruParser().parse_text_file(document)
+        assert blocks[0]["text"] == f"{prefix}Real"
+        assert blocks[1]["type"] == "image"
+        assert blocks[1]["img_path"] == str(image.resolve())
+
+    def test_real_image_next_to_code_and_escaped_reference(self, tmp_path):
+        image = tmp_path / "local.png"
+        image.touch()
+        document = tmp_path / "doc.md"
+        text = r"`![code](local.png)` \![escaped](local.png) and ![Real](local.png)"
+        document.write_text(text, encoding="utf-8")
+
+        blocks = MineruParser().parse_text_file(document)
+        assert (
+            blocks[0]["text"] == r"`![code](local.png)` \![escaped](local.png) and Real"
+        )
+        assert [b["img_caption"] for b in blocks if b["type"] == "image"] == [["Real"]]
+
+    def test_multiline_code_keeps_real_images_before_and_after_it(self, tmp_path):
+        (tmp_path / "local.png").touch()
+        document = tmp_path / "doc.md"
+        document.write_text(
+            "![Before](local.png) `example\n  ![code](local.png)\n"
+            "end` ![After](local.png)",
+            encoding="utf-8",
+        )
+
+        blocks = MineruParser().parse_text_file(document)
+        assert blocks[0]["text"] == "Before `example\n  ![code](local.png)\nend` After"
+        assert [b["img_caption"] for b in blocks if b["type"] == "image"] == [
+            ["Before"],
+            ["After"],
+        ]
+
+    @pytest.mark.parametrize("boundary", ["\n\n", "\n# Heading\n", "\n```\nx\n```\n"])
+    def test_code_spans_do_not_cross_block_boundaries(self, tmp_path, boundary):
+        (tmp_path / "local.png").touch()
+        document = tmp_path / "doc.md"
+        document.write_text(
+            f"`unclosed{boundary}![Real](local.png) `", encoding="utf-8"
+        )
+
+        blocks = MineruParser().parse_text_file(document)
+        assert [b["img_caption"] for b in blocks if b["type"] == "image"] == [["Real"]]
+
+    @pytest.mark.parametrize(
         "filename,target",
         [
             ("figure 1.png", "figure%201.png"),
@@ -193,6 +272,9 @@ class TestMarkdownImageTargets:
             ("plot+1.png", "plot+1.png"),
             ("plain.png", "plain.png"),
             ("figure 1.png", "<figure%201.png>"),
+            ("Screenshot (1).png", "<Screenshot (1).png>"),
+            ("image(1).png", "image(1).png"),
+            ("figure (1).png", "figure%20(1).png"),
         ],
     )
     def test_local_image_targets_resolve_to_file(self, tmp_path, filename, target):
@@ -225,8 +307,45 @@ class TestMarkdownImageTargets:
         assert blocks[0]["type"] == "image"
         assert blocks[0]["img_path"] == str(image.resolve())
 
+    def test_parenthesized_target_inside_a_sentence(self, tmp_path):
+        # The destination ends at its own closing parenthesis, so text in
+        # parentheses later on the same line is not swallowed into it.
+        image = tmp_path / "image(1).png"
+        image.touch()
+        document = tmp_path / "doc.md"
+        document.write_text(
+            "See ![plot](image(1).png) (details below).", encoding="utf-8"
+        )
+
+        assert MineruParser().parse_text_file(document) == [
+            {"type": "text", "text": "See plot (details below).", "page_idx": 0},
+            {
+                "type": "image",
+                "img_path": str(image.resolve()),
+                "img_caption": ["plot"],
+                "img_footnote": [],
+                "page_idx": 0,
+            },
+        ]
+
+    def test_title_with_parentheses(self, tmp_path):
+        image = tmp_path / "plot.png"
+        image.touch()
+        document = tmp_path / "doc.md"
+        document.write_text('![plot](plot.png "Figure (a)")', encoding="utf-8")
+
+        blocks = MineruParser().parse_text_file(document)
+
+        assert blocks[0]["img_path"] == str(image.resolve())
+        assert blocks[0]["img_caption"] == ["plot", "Figure (a)"]
+
     @pytest.mark.parametrize(
-        "target", ["missing%20image.png", "https://example.com/figure%201.png"]
+        "target",
+        [
+            "missing%20image.png",
+            "https://example.com/figure%201.png",
+            "<missing (1).png>",
+        ],
     )
     def test_unresolved_image_targets_remain_literal(self, tmp_path, target):
         text = f"![Figure]({target})"
@@ -236,3 +355,27 @@ class TestMarkdownImageTargets:
         assert MineruParser().parse_text_file(document) == [
             {"type": "text", "text": text, "page_idx": 0}
         ]
+
+
+class TestMarkdownImageAltIsSingleLine:
+    """Alt text never spans lines, so scanning stays linear and per-line."""
+
+    def test_unclosed_alt_does_not_swallow_next_line_image(self, tmp_path):
+        (tmp_path / "real.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        md = tmp_path / "doc.md"
+        md.write_text("intro ![broken alt\n![real](real.png) after\n", encoding="utf-8")
+
+        blocks = MineruParser().parse_text_file(md)
+
+        images = [b for b in blocks if b["type"] == "image"]
+        assert [img["img_caption"] for img in images] == [["real"]]
+
+    def test_unclosed_alt_on_many_lines_stays_fast(self, tmp_path):
+        md = tmp_path / "pathological.md"
+        md.write_text("![a\n" * 10000, encoding="utf-8")
+
+        start = time.perf_counter()
+        MineruParser().parse_text_file(md)
+
+        # Quadratic scanning took seconds here; linear scanning takes ~10 ms.
+        assert time.perf_counter() - start < 1.0

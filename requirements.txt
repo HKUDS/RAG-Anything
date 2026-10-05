@@ -1,6 +1,9 @@
 huggingface_hub
 # LightRAG packages
-lightrag-hku
+# <1.5 is permanent: RAG-Anything was merged upstream into LightRAG 1.5+, and
+# this line's multimodal extraction is incompatible with 1.5 (role_llm_funcs).
+# Keep in sync with pyproject.toml, which is what published wheels use.
+lightrag-hku<1.5
 # MinerU 2.0 packages (replaces magic-pdf) - handles PDF parsing with multiple backends
 # >=3.4.1: earlier versions iterate pdftext's PageChars return value directly and
 # crash with "TypeError: 'PageChars' object is not iterable" against pdftext>=0.7
