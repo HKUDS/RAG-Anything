@@ -275,6 +275,17 @@ guarantees one call per image or a particular speedup. Tune conservatively
 against provider rate limits and measure both call counts and stage timings on
 a small representative document.
 
+Text indexing goes through LightRAG's single document pipeline per workspace. A
+file whose text arrives while a pipeline run is busy is queued and indexed by
+that run (queued files fetched together are indexed in parallel, up to
+`max_parallel_insert`), using the `split_by_character` settings of the insert
+that started the run; RAG-Anything waits for its text before going on to the
+file's multimodal content. If LightRAG fails a file's text (for example, the LLM
+is unavailable) and no run is left to retry it, `process_document_complete()` and
+`insert_content_list()` raise and the document stays `failed` in `doc_status`;
+LightRAG retries failed documents on its next pipeline run, such as when the file
+is processed again.
+
 ## Supported File Types
 
 - **PDF files**: `.pdf`
