@@ -158,6 +158,31 @@ class ProcessorMixin:
         await self.lightrag.doc_status.index_done_callback()
         return await self.lightrag.doc_status.get_by_id(doc_id) or doc_status_payload
 
+    async def _drop_placeholder_doc_status(self, doc_id: str) -> None:
+        """Remove a doc_status record for ``doc_id`` whose text LightRAG never stored.
+
+        LightRAG drops an insert whose doc_id doc_status already holds, and it
+        never retries a FAILED record without stored text. Such a record is
+        RAG-Anything's own (LightRAG stores the text before the status), e.g.
+        FAILED after a parse error; left in place it would block this
+        document's text for good.
+        """
+        if not await self.lightrag.doc_status.get_by_id(doc_id):
+            return
+        if not await self.lightrag.full_docs.get_by_id(doc_id):
+            await self.lightrag.doc_status.delete([doc_id])
+
+    async def _lightrag_pipeline_status(self) -> Dict[str, Any]:
+        """LightRAG's shared pipeline status for this workspace, or ``{}``."""
+        try:
+            from lightrag.kg.shared_storage import get_namespace_data
+
+            return await get_namespace_data(
+                "pipeline_status", workspace=getattr(self.lightrag, "workspace", None)
+            )
+        except Exception:
+            return {}
+
     async def _wait_for_text_processing(
         self,
         doc_id: str,
@@ -167,19 +192,20 @@ class ProcessorMixin:
         """Return once LightRAG has finished processing the text of ``doc_id``.
 
         When another insert's pipeline run is busy, ``ainsert`` only enqueues
-        the document and returns; that run chunks it later. LightRAG only
-        picks up PENDING, PROCESSING and FAILED documents, so writing
-        RAG-Anything's own statuses before then (HANDLING, later PROCESSED)
-        took the text out of the queue for good. While the document is
-        pending or processing, the pipeline is nudged — a busy run just
-        records the request, an idle one (its run ended or died) processes
-        the queue here — and polled.
+        the document (and asks that run to come back for it) and returns.
+        LightRAG only picks up PENDING, PROCESSING and FAILED documents, so
+        writing RAG-Anything's own statuses before then (HANDLING, later
+        PROCESSED) took the text out of the queue for good. So this polls
+        while a run is busy, and when the pipeline is idle with the document
+        still queued (a run ended without reaching it) runs the pipeline
+        itself — unless the last run was cancelled.
 
-        Raises if LightRAG marked the text FAILED, so the failure is reported
-        rather than hidden behind a later PROCESSED; LightRAG retries FAILED
-        documents on its next pipeline run.
+        Raises if the text ends up FAILED with no run left to retry it, so the
+        failure is reported rather than hidden behind a later PROCESSED;
+        LightRAG retries FAILED documents on its next pipeline run.
         """
         waiting = (DocStatus.PENDING, DocStatus.PROCESSING)
+        pipeline = await self._lightrag_pipeline_status()
         record = await self.lightrag.doc_status.get_by_id(doc_id)
         if record and record.get("status") in waiting:
             self.logger.info(
@@ -188,15 +214,29 @@ class ProcessorMixin:
             )
         delay = 0.2
         next_report = time.monotonic() + 300
-        while record and record.get("status") in waiting:
-            await self.lightrag.apipeline_process_enqueue_documents(
-                split_by_character, split_by_character_only
-            )
-            record = await self.lightrag.doc_status.get_by_id(doc_id)
-            if record and record.get("status") in waiting:
+        while record:
+            status = record.get("status")
+            busy = bool(pipeline.get("busy"))
+            # A busy run retries a FAILED document if it was asked to come
+            # back (this insert's ainsert asked).
+            if status not in waiting and not (status == DocStatus.FAILED and busy):
+                break
+            if busy:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2, 2.0)
-                record = await self.lightrag.doc_status.get_by_id(doc_id)
+            elif any(
+                "Pipeline cancelled by user" in str(message)
+                for message in pipeline.get("history_messages") or []
+            ):
+                raise RuntimeError(
+                    f"LightRAG's pipeline was cancelled before the text of "
+                    f"{doc_id} was processed"
+                )
+            else:
+                await self.lightrag.apipeline_process_enqueue_documents(
+                    split_by_character, split_by_character_only
+                )
+            record = await self.lightrag.doc_status.get_by_id(doc_id)
             if time.monotonic() >= next_report:
                 next_report += 300
                 self.logger.warning(
@@ -204,10 +244,9 @@ class ProcessorMixin:
                     f"(status: {record.get('status') if record else None})"
                 )
         if record and record.get("status") == DocStatus.FAILED:
-            raise RuntimeError(
-                f"LightRAG failed to process the text of {doc_id}: "
-                f"{record.get('error_msg') or 'unknown error'}"
-            )
+            prefix = f"LightRAG failed to process the text of {doc_id}: "
+            error = record.get("error_msg") or "unknown error"
+            raise RuntimeError(error if error.startswith(prefix) else prefix + error)
 
     async def _annotate_text_chunk_pages(
         self,
@@ -2024,6 +2063,7 @@ class ProcessorMixin:
                         doc_id=doc_id,
                     )
                 insert_start = time.time()
+                await self._drop_placeholder_doc_status(doc_id)
                 track_id = await insert_text_content(
                     self.lightrag,
                     input=text_content,
@@ -2342,6 +2382,7 @@ class ProcessorMixin:
 
             # Step 3: Insert pure text content and multimodal content with all parameters
             if text_content.strip():
+                await self._drop_placeholder_doc_status(doc_id)
                 track_id = await insert_text_content_with_multimodal_content(
                     self.lightrag,
                     input=text_content,
@@ -2542,6 +2583,7 @@ class ProcessorMixin:
                     doc_id=doc_id,
                 )
             insert_start = time.time()
+            await self._drop_placeholder_doc_status(doc_id)
             track_id = await insert_text_content(
                 self.lightrag,
                 input=text_content,
