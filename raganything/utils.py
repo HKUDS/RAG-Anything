@@ -6,9 +6,10 @@ Contains helper functions for content separation, text insertion, and other util
 
 from __future__ import annotations
 
+import bisect
 import base64
 import inspect
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 from lightrag.utils import logger
 
@@ -169,20 +170,25 @@ def extract_neighbor_text_from_content_list(
     return " ".join(parts)
 
 
-def separate_content(
+def separate_content_with_page_map(
     content_list: List[Dict[str, Any]],
-) -> Tuple[str, List[Dict[str, Any]]]:
+) -> Tuple[str, List[Dict[str, Any]], List[Tuple[int, int, Optional[int]]]]:
     """
-    Separate text content and multimodal content
+    Separate text content, multimodal content, and per-block page provenance.
 
-    Args:
-        content_list: Content list from MinerU parsing
+    Behaves exactly like :func:`separate_content` but additionally returns
+    non-overlapping ``(start, end, page_idx)`` character intervals (into the
+    returned ``text_content``) for every non-empty text block, in document
+    order. ``page_idx`` is ``None`` for blocks without a usable int page, so
+    later stages can step over them instead of guessing.
 
     Returns:
-        (text_content, multimodal_items): Pure text content and multimodal items list
+        (text_content, multimodal_items, page_intervals)
     """
     text_parts = []
     multimodal_items = []
+    page_intervals: List[Tuple[int, int, Optional[int]]] = []
+    text_length = 0
 
     for index, item in enumerate(content_list):
         content_type = item.get("type", "text")
@@ -191,7 +197,14 @@ def separate_content(
             # Text content
             text = str(item.get("text", "") or "")
             if text.strip():
+                start = text_length + (2 if text_parts else 0)
                 text_parts.append(text)
+                end = start + len(text)
+                text_length = end
+                page_idx = item.get("page_idx")
+                if not isinstance(page_idx, int) or isinstance(page_idx, bool):
+                    page_idx = None
+                page_intervals.append((start, end, page_idx))
         else:
             # Multimodal content (image, table, equation, etc.)
             multimodal_item = dict(item)
@@ -223,6 +236,258 @@ def separate_content(
     if modal_types:
         logger.info(f"  - Multimodal type distribution: {modal_types}")
 
+    return text_content, multimodal_items, page_intervals
+
+
+def build_sanitized_page_map(
+    text_content: str,
+    page_intervals: List[Tuple[int, int, Optional[int]]],
+) -> Tuple[str, List[Tuple[int, int, int]]]:
+    """
+    Re-express page intervals in the coordinates LightRAG actually chunks.
+
+    LightRAG stores and chunks ``sanitize_text_for_encoding(text)``, not the
+    raw text: it strips the ends, unescapes HTML entities and removes control
+    and surrogate characters, all of which shift character offsets. Each
+    block's own sanitized text is a contiguous substring of the sanitized
+    document (the transformations never cross the ``"\n\n"`` separators), so
+    blocks are located in document order with a forward cursor — repeated
+    text such as a per-page footer maps to its own occurrence, not the first.
+
+    Returns ``(sanitized_text, intervals)`` with intervals into
+    ``sanitized_text``. Blocks that cannot be located are skipped rather than
+    guessed.
+    """
+    from lightrag.utils import sanitize_text_for_encoding
+
+    sanitized = sanitize_text_for_encoding(text_content)
+    intervals: List[Tuple[int, int, int]] = []
+    cursor = 0
+    for start, end, page_idx in page_intervals:
+        core = sanitize_text_for_encoding(text_content[start:end])
+        if not core:
+            continue
+        position = sanitized.find(core, cursor)
+        if position < 0:
+            continue
+        # Unpaginated blocks still advance the cursor, so a later block whose
+        # text also occurs inside them cannot be placed there.
+        cursor = position + len(core)
+        if page_idx is not None:
+            intervals.append((position, position + len(core), page_idx))
+    return sanitized, intervals
+
+
+# Tokens of context decoded around a stride boundary. A multi-byte
+# character spans at most 4 bytes and every token covers at least one, so 8
+# tokens always contain whatever character a boundary cuts through.
+_BOUNDARY_CONTEXT_TOKENS = 8
+
+
+def _stripped_span(text: str, offset: int) -> Optional[Tuple[int, int]]:
+    """Span of ``text`` (found at ``offset``) without its edge whitespace."""
+    lead = len(text) - len(text.lstrip())
+    end = len(text.rstrip())
+    if lead >= end:
+        return None
+    return offset + lead, offset + end
+
+
+def _token_window_spans(
+    tokenizer: Any, text: str, size: int, step: int
+) -> Optional[List[Tuple[str, Optional[Tuple[int, int]]]]]:
+    """Replay LightRAG's token windows over ``text`` with exact positions.
+
+    For each window returns ``(decoded_window, span)``: ``span`` is where
+    the window's text sits in ``text``, without edge whitespace and without
+    the fragments of multi-byte characters cut at either end (``None`` if
+    nothing is left). The character offset of token ``t`` is
+    ``len(decode(tokens[:t]))`` — a cut multi-byte character decodes to one
+    U+FFFD standing in its slot. That is computed incrementally from short
+    overlapping decodes (the effect of a cut at ``a`` is identical in
+    ``decode(tokens[a:x])`` for any ``x`` past the cut character), so the
+    whole replay is linear.
+
+    Exact for byte-level tokenizers whose decoder is local (tiktoken, byte
+    BPE). A decoder that normalises text or adds or drops characters between
+    tokens fails the round-trip, cut or per-window checks and returns
+    ``None``. One that replaces a whole invalid byte run (HF ``ByteFallback``)
+    can pass them where the text itself holds U+FFFD; the span may then take
+    in neighbouring U+FFFD, which never crosses into another block because
+    the ``"\n\n"`` between blocks cannot match them.
+    """
+    tokens = tokenizer.encode(text)
+    if tokenizer.decode(tokens) != text:
+        return None
+    context = _BOUNDARY_CONTEXT_TOKENS
+
+    def decoded_length(begin: int, finish: int) -> int:
+        return len(tokenizer.decode(tokens[max(begin, 0) : finish]))
+
+    def cut_fragments(boundary: int) -> int:
+        """Extra characters decoding splits at ``boundary`` creates: 0 when
+        it falls between characters, else the U+FFFD standing in for the
+        cut character's continuation bytes."""
+        if boundary <= 0 or boundary >= len(tokens):
+            return 0
+        return (
+            decoded_length(boundary - context, boundary)
+            + decoded_length(boundary, boundary + context)
+            - decoded_length(boundary - context, boundary + context)
+        )
+
+    windows: List[Tuple[str, Optional[Tuple[int, int]]]] = []
+    offset = 0  # len(decode(tokens[:start]))
+    previous = 0
+    for start in range(0, len(tokens), step):
+        if start > previous:
+            anchor = max(0, previous - context)
+            offset += decoded_length(anchor, start) - decoded_length(anchor, previous)
+        previous = start
+        raw = tokenizer.decode(tokens[start : start + size])
+        # A character cut at the start leaves leading U+FFFD (its
+        # continuation bytes) with no slot of their own in the source; one
+        # cut at the end leaves a single U+FFFD (its leading bytes) in its
+        # slot. Neither is text the chunk actually covers.
+        stray = cut_fragments(start)
+        end_fragments = cut_fragments(start + size)
+        if (
+            stray < 0
+            or end_fragments < 0
+            or raw[:stray] != "\ufffd" * min(stray, len(raw))
+        ):
+            return None
+        cut_end = 1 if end_fragments else 0
+        if stray >= len(raw):
+            body = ""  # the window lies inside the one character cut at start
+        else:
+            if cut_end and not raw.endswith("\ufffd"):
+                return None
+            body = raw[stray : len(raw) - cut_end]
+            if not text.startswith(body, offset):
+                return None
+        windows.append((raw, _stripped_span(body, offset)))
+    return windows
+
+
+def replay_chunk_spans(
+    tokenizer: Any,
+    content: str,
+    chunks: List[Dict[str, Any]],
+    split_by_character: Optional[str],
+    split_by_character_only: bool,
+    chunk_overlap_token_size: int,
+    chunk_token_size: int,
+) -> Optional[List[List[Tuple[int, int]]]]:
+    """
+    Positions of the chunks LightRAG's ``chunking_by_token_size`` produced.
+
+    The chunker is deterministic, so instead of searching for chunk text
+    (which is ambiguous wherever text repeats) its geometry is replayed:
+    ``split_by_character`` pieces sit at exact offsets in ``content``, and
+    token windows — the whole text, or a piece too long for one chunk —
+    start every ``chunk_token_size - chunk_overlap_token_size`` tokens.
+    Positions are computed, never searched for, and the replay is checked
+    against both the source text and what the chunker returned; any
+    disagreement returns ``None`` and nothing is annotated.
+
+    Returns, per chunk, a list holding the ``(start, end)`` span of the
+    source text it covers (edge whitespace and fragments of cut multi-byte
+    characters excluded), or an empty list when nothing is left.
+    """
+    step = chunk_token_size - chunk_overlap_token_size
+    if step <= 0:
+        return None
+    replayed: List[Tuple[str, List[int]]] = []
+    if split_by_character:
+        offset = 0
+        for piece in content.split(split_by_character):
+            base = offset
+            offset += len(piece) + len(split_by_character)
+            if split_by_character_only or (
+                len(tokenizer.encode(piece)) <= chunk_token_size
+            ):
+                replayed.append((piece, _stripped_span(piece, base)))
+                continue
+            windows = _token_window_spans(tokenizer, piece, chunk_token_size, step)
+            if windows is None:
+                return None
+            replayed.extend(
+                (raw, span and (base + span[0], base + span[1]))
+                for raw, span in windows
+            )
+    else:
+        windows = _token_window_spans(tokenizer, content, chunk_token_size, step)
+        if windows is None:
+            return None
+        replayed = windows
+
+    if len(replayed) != len(chunks):
+        return None
+    spans: List[List[Tuple[int, int]]] = []
+    for chunk, (raw, span) in zip(chunks, replayed):
+        if raw.strip() != chunk.get("content"):
+            return None
+        spans.append([span] if span is not None else [])
+    return spans
+
+
+def annotate_chunks_with_page_idx(
+    chunks: List[Dict[str, Any]],
+    chunk_spans: List[List[Tuple[int, int]]],
+    page_intervals: List[Tuple[int, int, int]],
+) -> List[Dict[str, Any]]:
+    """
+    Annotate chunks with the pages their spans overlap.
+
+    ``chunk_spans`` holds candidate spans per chunk (see
+    :func:`replay_chunk_spans`), in the same coordinates as
+    ``page_intervals`` (see :func:`build_sanitized_page_map`). A chunk is
+    annotated only when every candidate yields the same pages — so an
+    ambiguous position never produces a guess. Chunks inside one interval
+    get its ``page_idx``; chunks spanning several get the lowest page as
+    ``page_idx`` and the highest as ``page_idx_end``. Returns the same list.
+    """
+    if not page_intervals:
+        return chunks
+    interval_ends = [end for _, end, _ in page_intervals]
+
+    def pages_for(span: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        start, end = span
+        pages = []
+        index = bisect.bisect_right(interval_ends, start)
+        while index < len(page_intervals) and page_intervals[index][0] < end:
+            pages.append(page_intervals[index][2])
+            index += 1
+        return (min(pages), max(pages)) if pages else None
+
+    for chunk, candidates in zip(chunks, chunk_spans):
+        labels = {pages_for(span) for span in candidates}
+        if len(labels) != 1:
+            continue
+        label = labels.pop()
+        if label is None:
+            continue
+        first, last = label
+        chunk["page_idx"] = first
+        if last != first:
+            chunk["page_idx_end"] = last
+    return chunks
+
+
+def separate_content(
+    content_list: List[Dict[str, Any]],
+) -> Tuple[str, List[Dict[str, Any]]]:
+    """
+    Separate text content and multimodal content
+
+    Args:
+        content_list: Content list from MinerU parsing
+
+    Returns:
+        (text_content, multimodal_items): Pure text content and multimodal items list
+    """
+    text_content, multimodal_items, _ = separate_content_with_page_map(content_list)
     return text_content, multimodal_items
 
 
@@ -333,11 +598,14 @@ async def insert_text_content(
         split_by_character is None, this parameter is ignored.
         ids: single string of the document ID or list of unique document IDs, if not provided, MD5 hash IDs will be generated
         file_paths: single string of the file path or list of file paths, used for citation
+
+    Returns:
+        Whatever ``ainsert`` returns: the insert's track_id on LightRAG 1.4.x.
     """
     logger.info("Starting text content insertion into LightRAG...")
 
     # Use LightRAG's insert method with all parameters
-    await lightrag.ainsert(
+    track_id = await lightrag.ainsert(
         input=input,
         file_paths=file_paths,
         split_by_character=split_by_character,
@@ -346,6 +614,7 @@ async def insert_text_content(
     )
 
     logger.info("Text content insertion complete")
+    return track_id
 
 
 async def insert_text_content_with_multimodal_content(
@@ -414,9 +683,10 @@ async def insert_text_content_with_multimodal_content(
             "continuing without it for compatibility"
         )
 
-    await lightrag.ainsert(**insert_kwargs)
+    track_id = await lightrag.ainsert(**insert_kwargs)
 
     logger.info("Text content insertion complete")
+    return track_id
 
 
 def get_processor_for_type(modal_processors: Dict[str, Any], content_type: str):

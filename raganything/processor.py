@@ -16,7 +16,7 @@ from pathlib import Path
 from raganything.base import DocStatus
 from raganything.parser import MineruParser, MineruExecutionError, get_parser
 from raganything.utils import (
-    separate_content,
+    separate_content_with_page_map,
     insert_text_content,
     insert_text_content_with_multimodal_content,
     get_processor_for_type,
@@ -24,6 +24,9 @@ from raganything.utils import (
     get_equation_text_and_format,
     get_table_body,
     normalize_caption_list,
+    annotate_chunks_with_page_idx,
+    build_sanitized_page_map,
+    replay_chunk_spans,
 )
 from raganything.parse_options import (
     PARSER_CACHE_KWARGS as _PARSER_CACHE_KWARGS,  # noqa: F401
@@ -39,6 +42,14 @@ AUDIO_FILE_EXTENSIONS = frozenset(
 VIDEO_FILE_EXTENSIONS = frozenset(
     {".mp4", ".mov", ".webm", ".avi", ".mkv", ".flv", ".wmv", ".m4v"}
 )
+
+
+def _is_lightrag_token_chunker(func) -> bool:
+    try:
+        from lightrag.operate import chunking_by_token_size
+    except ImportError:  # pragma: no cover - lightrag always provides it
+        return False
+    return func is chunking_by_token_size
 
 
 class ProcessorMixin:
@@ -146,6 +157,142 @@ class ProcessorMixin:
         await self.lightrag.doc_status.upsert({doc_id: doc_status_payload})
         await self.lightrag.doc_status.index_done_callback()
         return await self.lightrag.doc_status.get_by_id(doc_id) or doc_status_payload
+
+    async def _annotate_text_chunk_pages(
+        self,
+        doc_id: str,
+        track_id: Optional[str],
+        text_content: str,
+        page_intervals: List[Tuple[int, int, Optional[int]]],
+        split_by_character: Optional[str],
+        split_by_character_only: bool,
+    ) -> None:
+        """Give the text chunks LightRAG stored for ``doc_id`` their pages (#330).
+
+        Runs once the text insert has returned, and only if the stored
+        document is the one this insert enqueued (its ``track_id``, which
+        ``ainsert`` returns) and LightRAG has processed it. An insert whose
+        doc_id LightRAG already knew — from earlier, or from a concurrent
+        insert of the same content — was dropped and changes nothing.
+
+        LightRAG keys chunk rows by content, so only rows that still belong
+        to this document are touched — a chunk shared with another document
+        never gets this one's pages — and on those rows any page the replay
+        cannot vouch for is cleared, so on backends that merge updates
+        (MongoDB ``$set``) a previous owner's pages do not survive this
+        step. (They do survive a re-store this step never sees, e.g. by a
+        document that failed or was inserted through LightRAG directly.)
+        Never raises: page provenance must not break ingestion.
+        """
+        try:
+            lightrag = self.lightrag
+            record = await lightrag.doc_status.get_by_id(doc_id)
+            if (
+                not track_id
+                or not record
+                or record.get("track_id") != track_id
+                or record.get("status") != DocStatus.PROCESSED
+            ):
+                # Dropped as a duplicate, queued behind a busy pipeline, or
+                # failed.
+                return
+            chunk_ids = list(dict.fromkeys(record.get("chunks_list") or []))
+            if not chunk_ids:
+                return
+            labels = await self._text_chunk_page_labels(
+                doc_id,
+                text_content,
+                page_intervals,
+                split_by_character,
+                split_by_character_only,
+                set(chunk_ids),
+            )
+            rows = await lightrag.text_chunks.get_by_ids(chunk_ids)
+            updates = {}
+            for chunk_id, row in zip(chunk_ids, rows):
+                if not row or row.get("full_doc_id") != doc_id:
+                    continue
+                pages = labels.get(chunk_id, (None, None))
+                fields = {
+                    key: value
+                    for key, value in zip(("page_idx", "page_idx_end"), pages)
+                    if row.get(key) != value
+                }
+                if fields:
+                    updates[chunk_id] = {**row, **fields}
+            if updates:
+                await lightrag.text_chunks.upsert(updates)
+                await lightrag.text_chunks.index_done_callback()
+        except Exception as exc:
+            self.logger.warning(
+                f"page_idx annotation failed; chunks stored without page "
+                f"provenance: {exc}"
+            )
+
+    async def _text_chunk_page_labels(
+        self,
+        doc_id: str,
+        text_content: str,
+        page_intervals: List[Tuple[int, int, Optional[int]]],
+        split_by_character: Optional[str],
+        split_by_character_only: bool,
+        recorded_ids: set,
+    ) -> Dict[str, Tuple[Optional[int], Optional[int]]]:
+        """``(page_idx, page_idx_end)`` per chunk id of the stored document.
+
+        The chunks are recomputed with LightRAG's own chunker and settings
+        and accepted only if they are exactly the chunks LightRAG recorded;
+        positions come from replaying the chunker (see
+        :func:`replay_chunk_spans`), never from searching for chunk text.
+        Returns ``{}`` whenever that cannot be established.
+        """
+        lightrag = self.lightrag
+        if all(page is None for _, _, page in page_intervals):
+            return {}
+        if not _is_lightrag_token_chunker(getattr(lightrag, "chunking_func", None)):
+            return {}
+        sanitized, intervals = build_sanitized_page_map(text_content, page_intervals)
+        stored = await lightrag.full_docs.get_by_id(doc_id)
+        if not intervals or not stored or stored.get("content") != sanitized:
+            return {}
+
+        from lightrag.operate import chunking_by_token_size
+
+        settings = (
+            split_by_character,
+            split_by_character_only,
+            lightrag.chunk_overlap_token_size,
+            lightrag.chunk_token_size,
+        )
+        chunks = chunking_by_token_size(lightrag.tokenizer, sanitized, *settings)
+        chunk_ids = [
+            compute_mdhash_id(chunk["content"], prefix="chunk-") for chunk in chunks
+        ]
+        if set(chunk_ids) != recorded_ids:
+            # Chunked with other settings, e.g. in another caller's pipeline
+            # run.
+            return {}
+        spans = replay_chunk_spans(lightrag.tokenizer, sanitized, chunks, *settings)
+        if spans is None:
+            self.logger.warning(
+                "page_idx annotation skipped: could not reproduce how the "
+                "document was chunked"
+            )
+            return {}
+        annotate_chunks_with_page_idx(chunks, spans, intervals)
+
+        # Identical chunks of one document share a row: it gets pages only
+        # if every occurrence agrees.
+        found: Dict[str, set] = {}
+        for chunk_id, chunk in zip(chunk_ids, chunks):
+            found.setdefault(chunk_id, set()).add(
+                (chunk.get("page_idx"), chunk.get("page_idx_end"))
+            )
+        return {
+            chunk_id: next(iter(pages))
+            for chunk_id, pages in found.items()
+            if len(pages) == 1
+        }
 
     async def _upsert_doc_status(
         self,
@@ -1790,7 +1937,9 @@ class ProcessorMixin:
                 doc_id = content_based_doc_id
 
             # Step 2: Separate text and multimodal content
-            text_content, multimodal_items = separate_content(content_list)
+            text_content, multimodal_items, page_intervals = (
+                separate_content_with_page_map(content_list)
+            )
 
             # LightRAG creates the initial doc_status entry during text insertion.
             # Pre-registering the same doc_id here makes LightRAG treat a fresh
@@ -1824,13 +1973,21 @@ class ProcessorMixin:
                         doc_id=doc_id,
                     )
                 insert_start = time.time()
-                await insert_text_content(
+                track_id = await insert_text_content(
                     self.lightrag,
                     input=text_content,
                     file_paths=file_name,
                     split_by_character=split_by_character,
                     split_by_character_only=split_by_character_only,
                     ids=doc_id,
+                )
+                await self._annotate_text_chunk_pages(
+                    doc_id,
+                    track_id,
+                    text_content,
+                    page_intervals,
+                    split_by_character,
+                    split_by_character_only,
                 )
                 await self._upsert_doc_status(
                     doc_id,
@@ -2102,7 +2259,9 @@ class ProcessorMixin:
                 doc_id = content_based_doc_id
 
             # Step 2: Separate text and multimodal content
-            text_content, multimodal_items = separate_content(content_list)
+            text_content, multimodal_items, page_intervals = (
+                separate_content_with_page_map(content_list)
+            )
 
             # LightRAG creates the initial doc_status entry during text
             # insertion. Pre-registering the same doc_id here makes LightRAG
@@ -2129,7 +2288,7 @@ class ProcessorMixin:
 
             # Step 3: Insert pure text content and multimodal content with all parameters
             if text_content.strip():
-                await insert_text_content_with_multimodal_content(
+                track_id = await insert_text_content_with_multimodal_content(
                     self.lightrag,
                     input=text_content,
                     multimodal_content=multimodal_items,
@@ -2138,6 +2297,14 @@ class ProcessorMixin:
                     split_by_character_only=split_by_character_only,
                     ids=doc_id,
                     scheme_name=scheme_name,
+                )
+                await self._annotate_text_chunk_pages(
+                    doc_id,
+                    track_id,
+                    text_content,
+                    page_intervals,
+                    split_by_character,
+                    split_by_character_only,
                 )
 
             self.logger.info(f"Document {file_path} processing completed successfully")
@@ -2286,7 +2453,9 @@ class ProcessorMixin:
                 self.logger.info(f"  - {block_type}: {count}")
 
         # Step 1: Separate text and multimodal content
-        text_content, multimodal_items = separate_content(content_list)
+        text_content, multimodal_items, page_intervals = separate_content_with_page_map(
+            content_list
+        )
 
         # LightRAG creates the initial doc_status entry during text insertion.
         # Pre-registering the same doc_id here makes LightRAG treat a fresh
@@ -2319,13 +2488,21 @@ class ProcessorMixin:
                     doc_id=doc_id,
                 )
             insert_start = time.time()
-            await insert_text_content(
+            track_id = await insert_text_content(
                 self.lightrag,
                 input=text_content,
                 file_paths=file_ref,
                 split_by_character=split_by_character,
                 split_by_character_only=split_by_character_only,
                 ids=doc_id,
+            )
+            await self._annotate_text_chunk_pages(
+                doc_id,
+                track_id,
+                text_content,
+                page_intervals,
+                split_by_character,
+                split_by_character_only,
             )
             await self._upsert_doc_status(
                 doc_id,

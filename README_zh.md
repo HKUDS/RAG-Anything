@@ -970,6 +970,7 @@ if __name__ == "__main__":
 **重要说明：**
 - **`img_path`**: 必须是图像文件的绝对路径（例如：`/home/user/images/chart.jpg` 或 `C:\Users\user\images\chart.jpg`）
 - **`page_idx`**: 表示内容在原始文档中出现的页码（从0开始的索引）
+- **文本块页码**: 文本块会先拼接再由 LightRAG 切分；LightRAG 处理完该文档后，其每个文本 chunk 会标注来源块的 `page_idx`（跨页时另有 `page_idx_end`）。位置通过重放 LightRAG 默认切块器得出，从不按 chunk 文本搜索：`split_by_character` 切出的片段对任何 tokenizer 都能定位，token 窗口则要求 tokenizer 能逐位置无损解码（LightRAG 默认的 tiktoken 满足）。无法确定时 chunk 宁可不带 `page_idx` 也不猜测：自定义 `chunking_func` 或其他 tokenizer、文档仍排在其他插入之后或已被 LightRAG 登记（重复插入或失败重试）、chunk 文本在其他页重复出现。LightRAG 对相同 chunk 文本只存一条记录，因此多个文档共享的 chunk 带的是其 `full_doc_id` 所指文档的页码（在 MongoDB 等合并式更新的后端上，若 chunk 被一个未标注页码的文档重新写入，可能保留前一个文档的页码）。这些字段是 `text_chunks` 记录上的额外字段：默认的 JSON KV 存储及其他无固定 schema 的后端会保留，PostgreSQL 等固定 schema 的后端可能会丢弃
 - **内容顺序**: 项目按照在列表中出现的顺序进行处理
 
 此方法在以下情况下特别有用：
