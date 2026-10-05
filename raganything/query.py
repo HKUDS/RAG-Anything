@@ -280,19 +280,25 @@ class QueryMixin:
                 query, mode=mode, system_prompt=system_prompt, **kwargs
             )
 
+        # Streaming results are single-use async iterators; never cache them as full answers.
+        use_cache = not kwargs.get("stream", False)
+
         # Generate cache key for multimodal query
-        cache_key = self._generate_multimodal_cache_key(
-            query,
-            multimodal_content,
-            mode,
-            system_prompt=system_prompt,
-            **kwargs,
-        )
+        cache_key = None
+        if use_cache:
+            cache_key = self._generate_multimodal_cache_key(
+                query,
+                multimodal_content,
+                mode,
+                system_prompt=system_prompt,
+                **kwargs,
+            )
 
         # Check cache if available and enabled
         cached_result = None
         if (
-            hasattr(self, "lightrag")
+            use_cache
+            and hasattr(self, "lightrag")
             and self.lightrag
             and hasattr(self.lightrag, "llm_response_cache")
             and self.lightrag.llm_response_cache
@@ -330,7 +336,9 @@ class QueryMixin:
 
         # Save to cache if available and enabled
         if (
-            hasattr(self, "lightrag")
+            isinstance(result, str)
+            and use_cache
+            and hasattr(self, "lightrag")
             and self.lightrag
             and hasattr(self.lightrag, "llm_response_cache")
             and self.lightrag.llm_response_cache
@@ -359,7 +367,8 @@ class QueryMixin:
 
         # Ensure cache is persisted to disk
         if (
-            hasattr(self, "lightrag")
+            use_cache
+            and hasattr(self, "lightrag")
             and self.lightrag
             and hasattr(self.lightrag, "llm_response_cache")
             and self.lightrag.llm_response_cache
