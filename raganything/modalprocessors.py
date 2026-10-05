@@ -13,7 +13,7 @@ import re
 import json
 import time
 import base64
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -539,7 +539,7 @@ class BaseModalProcessor:
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], Optional[List[Any]]]:
         """Create entity and text chunk"""
         # Create chunk
         chunk_id = compute_mdhash_id(str(modal_chunk), prefix="chunk-")
@@ -1039,7 +1039,7 @@ class ImageModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process image content with context support"""
         try:
             # Generate description and entity info
@@ -1094,7 +1094,7 @@ class ImageModalProcessor(BaseModalProcessor):
                 "entity_type": "image",
                 "summary": f"Image content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_response(
         self, response: str, entity_name: str = None
@@ -1239,7 +1239,7 @@ class TableModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process table content with context support"""
         try:
             # Generate description and entity info
@@ -1289,7 +1289,7 @@ class TableModalProcessor(BaseModalProcessor):
                 "entity_type": "table",
                 "summary": f"Table content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_table_response(
         self, response: str, entity_name: str = None
@@ -1427,7 +1427,7 @@ class EquationModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process equation content with context support"""
         try:
             # Generate description and entity info
@@ -1472,7 +1472,7 @@ class EquationModalProcessor(BaseModalProcessor):
                 "entity_type": "equation",
                 "summary": f"Equation content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_equation_response(
         self, response: str, entity_name: str = None
@@ -1601,7 +1601,7 @@ class GenericModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process generic modal content with context support"""
         try:
             # Generate description and entity info
@@ -1635,7 +1635,7 @@ class GenericModalProcessor(BaseModalProcessor):
                 "entity_type": content_type,
                 "summary": f"{content_type} content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_generic_response(
         self, response: str, entity_name: str = None, content_type: str = "content"
