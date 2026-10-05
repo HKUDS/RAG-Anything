@@ -45,7 +45,8 @@ VIDEO_FILE_EXTENSIONS = frozenset(
 )
 
 
-# Marks a text registered by two pending documents with different pagination.
+# Marks a text registered by two pending documents with different pagination
+# (or one with and one without pages); such text is never annotated.
 _AMBIGUOUS_PAGE_MAP: List[Tuple[int, int, int]] = []
 
 
@@ -177,7 +178,6 @@ class ProcessorMixin:
         text_content: str,
         page_intervals: List[Tuple[int, int, Optional[int]]],
         doc_id: Optional[str] = None,
-        file_path: Optional[str] = None,
     ) -> None:
         """Arrange for the text chunks of ``text_content`` to carry ``page_idx``.
 
@@ -191,7 +191,12 @@ class ProcessorMixin:
         page provenance must not break ingestion (#330).
         """
         try:
-            if doc_id and await self._doc_text_will_not_be_chunked(doc_id, file_path):
+            if doc_id and await self.lightrag.doc_status.get_by_id(doc_id):
+                # LightRAG drops an insert whose doc_id it already knows. It
+                # may still re-chunk the text it stored back then (a FAILED
+                # document), but nothing guarantees that is this text, so
+                # such a retry is stored without page_idx rather than risk
+                # another document's pages.
                 return
             # No awaits from here on: reading chunking_func, installing the
             # wrapper and registering must not interleave with a concurrent
@@ -235,21 +240,6 @@ class ProcessorMixin:
                 f"page_idx annotation disabled for this document: {exc}"
             )
 
-    async def _doc_text_will_not_be_chunked(
-        self, doc_id: str, file_path: Optional[str]
-    ) -> bool:
-        """True when LightRAG will not chunk this insert's text as this doc.
-
-        LightRAG drops an insert whose doc_id it already knows; it may still
-        re-chunk the text it stored earlier (a FAILED document), which is
-        this document's text only if that record came from the same file.
-        """
-        record = await self.lightrag.doc_status.get_by_id(doc_id)
-        if not record:
-            return False
-        recorded_path = record.get("file_path") if isinstance(record, dict) else None
-        return not (file_path and recorded_path == file_path)
-
     def _wrap_chunking_func(self, chunking_func, registry: "OrderedDict"):
         """Wrap LightRAG's chunker so chunks of registered texts get ``page_idx``.
 
@@ -267,8 +257,13 @@ class ProcessorMixin:
 
         def annotating_chunking_func(tokenizer, content, *args, **kwargs):
             chunks = chunking_func(tokenizer, content, *args, **kwargs)
-            intervals = registry.pop(_page_map_key(content), None)
-            if not intervals or intervals is _AMBIGUOUS_PAGE_MAP:
+            key = _page_map_key(content)
+            # An ambiguity marker stays until evicted: any later document
+            # with this text could be the other one, too.
+            if registry.get(key) is _AMBIGUOUS_PAGE_MAP:
+                return chunks
+            intervals = registry.pop(key, None)
+            if not intervals:
                 return chunks
             try:
                 values = dict(zip(parameters, args))
@@ -1979,9 +1974,7 @@ class ProcessorMixin:
                         doc_id=doc_id,
                     )
                 insert_start = time.time()
-                await self._register_page_map(
-                    text_content, page_intervals, doc_id, file_name
-                )
+                await self._register_page_map(text_content, page_intervals, doc_id)
                 await insert_text_content(
                     self.lightrag,
                     input=text_content,
@@ -2289,9 +2282,7 @@ class ProcessorMixin:
 
             # Step 3: Insert pure text content and multimodal content with all parameters
             if text_content.strip():
-                await self._register_page_map(
-                    text_content, page_intervals, doc_id, file_name
-                )
+                await self._register_page_map(text_content, page_intervals, doc_id)
                 await insert_text_content_with_multimodal_content(
                     self.lightrag,
                     input=text_content,
@@ -2484,9 +2475,7 @@ class ProcessorMixin:
                     doc_id=doc_id,
                 )
             insert_start = time.time()
-            await self._register_page_map(
-                text_content, page_intervals, doc_id, file_ref
-            )
+            await self._register_page_map(text_content, page_intervals, doc_id)
             await insert_text_content(
                 self.lightrag,
                 input=text_content,

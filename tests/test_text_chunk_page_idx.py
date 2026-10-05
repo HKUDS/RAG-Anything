@@ -40,55 +40,49 @@ class _ByteTokenizer:
 BYTES = Tokenizer("bytes", _ByteTokenizer())
 
 
-def _trim(text):
-    while True:
-        trimmed = text.strip().strip("�")
-        if trimmed == text:
-            return text
-        text = trimmed
+def _stripped(text, base):
+    lead = len(text) - len(text.lstrip())
+    end = len(text.rstrip())
+    return (base + lead, base + end) if lead < end else None
 
 
 def _reference_spans(text, sep, sep_only, overlap, size):
-    """True start of every chunk's trimmed content, from byte offsets alone."""
+    """True span of every chunk's source text, from byte offsets alone.
 
-    def leading_trim(raw):
-        index = 0
-        while index < len(raw) and (raw[index].isspace() or raw[index] == "\ufffd"):
-            index += 1
-        return index
+    A token window over a UTF-8 byte tokenizer is exactly bytes
+    ``[k * step, k * step + size)``; the source text it covers is the
+    characters lying wholly inside those bytes (a character cut at either
+    end only contributes U+FFFD fragments), minus edge whitespace.
+    """
 
     def windows(piece, base):
         data = piece.encode("utf-8")
-        char_starts = []  # byte offset at which each character starts
+        bounds = []  # (first byte, end byte) of each character
         offset = 0
         for char in piece:
-            char_starts.append(offset)
-            offset += len(char.encode("utf-8"))
+            width = len(char.encode("utf-8"))
+            bounds.append((offset, offset + width))
+            offset += width
         for start in range(0, len(data), size - overlap):
-            raw = data[start : start + size].decode("utf-8", errors="replace")
-            # first character that starts inside the window
-            first = next(
-                (i for i, b in enumerate(char_starts) if b >= start), len(piece)
-            )
-            stray = (char_starts[first] if first < len(piece) else len(data)) - start
-            # each stray continuation byte decodes to one U+FFFD before `first`
-            yield raw, base + first - stray
+            stop = min(start + size, len(data))
+            inside = [i for i, (b, e) in enumerate(bounds) if b >= start and e <= stop]
+            if inside:
+                yield piece[inside[0] : inside[-1] + 1], base + inside[0]
+            else:
+                yield "", base
 
-    starts = []
     pieces = [(text, 0)] if not sep else []
     if sep:
         base = 0
         for piece in text.split(sep):
             pieces.append((piece, base))
             base += len(piece) + len(sep)
+    spans = []
     for piece, base in pieces:
         whole = sep and (sep_only or len(piece.encode("utf-8")) <= size)
-        for raw, raw_start in [(piece, base)] if whole else windows(piece, base):
-            if not _trim(raw):
-                starts.append(None)
-            else:
-                starts.append(raw_start + leading_trim(raw))
-    return starts
+        for covered, start in [(piece, base)] if whole else windows(piece, base):
+            spans.append(_stripped(covered, start))
+    return spans
 
 
 def _document(rng, pieces, pages=4):
@@ -118,7 +112,7 @@ def test_replayed_positions_match_byte_reference(sep, sep_only):
     checked = 0
     for _ in range(300):
         # split_by_character_only rejects any piece longer than one chunk
-        size = rng.randint(200, 400) if sep_only else rng.randint(2, 24)
+        size = rng.randint(200, 400) if sep_only else rng.randint(1, 24)
         overlap = rng.randint(0, size - 1)
         text, _, intervals = separate_content_with_page_map(_document(rng, pieces))
         sanitized, _ = build_sanitized_page_map(text, intervals)
@@ -135,9 +129,64 @@ def test_replayed_positions_match_byte_reference(sep, sep_only):
         )
         assert spans is not None
         reference = _reference_spans(sanitized, sep, sep_only, overlap, size)
-        assert [c[0][0] if c else None for c in spans] == reference
+        assert [c[0] if c else None for c in spans] == reference
         checked += len(chunks)
     assert checked > 500
+
+
+class _WordTokenizer:
+    """Decodes by joining words with spaces, like many WordPiece decoders."""
+
+    def __init__(self):
+        self.words = []
+
+    def encode(self, content):
+        ids = []
+        for word in content.split():
+            if word not in self.words:
+                self.words.append(word)
+            ids.append(self.words.index(word))
+        return ids
+
+    def decode(self, tokens):
+        return " ".join(self.words[t] for t in tokens)
+
+
+class _LowercasingTokenizer(_ByteTokenizer):
+    def decode(self, tokens):
+        return super().decode(tokens).lower()
+
+
+@pytest.mark.parametrize(
+    "tokenizer",
+    [_WordTokenizer(), _LowercasingTokenizer()],
+    ids=["space-joining", "lossy"],
+)
+def test_replay_refuses_tokenizers_that_are_not_byte_exact(tokenizer):
+    """Token-to-character offsets are only exact for byte-level tokenizers;
+    anything else must produce no positions rather than drifting ones."""
+    tokenizer = Tokenizer("t", tokenizer)
+    text = "Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu."
+    chunks = chunking_by_token_size(tokenizer, text, None, False, 1, 3)
+
+    assert len(chunks) > 1
+    assert replay_chunk_spans(tokenizer, text, chunks, None, False, 1, 3) is None
+
+
+def test_genuine_replacement_characters_are_source_text():
+    """Only U+FFFD produced by cutting a character is dropped from a span; a
+    U+FFFD that is in the text itself belongs to its block."""
+    blocks = [
+        {"type": "text", "text": "x" * 28, "page_idx": 0},
+        {"type": "text", "text": "\ufffd\ufffd", "page_idx": 1},
+        {"type": "text", "text": "Page two text.", "page_idx": 2},
+    ]
+
+    # 30-byte windows: the second one starts exactly at the garbled block
+    chunks = _annotate(blocks, size=30, overlap=0)
+
+    assert chunks[1]["content"] == "\ufffd\ufffd\n\nPage two text."
+    assert (chunks[1]["page_idx"], chunks[1]["page_idx_end"]) == (1, 2)
 
 
 def test_replay_refuses_chunks_it_did_not_produce():
@@ -308,9 +357,9 @@ THREE_PAGES = [
 ]
 
 
-async def _register(processor, content_list, doc_id=None, file_path=None):
+async def _register(processor, content_list, doc_id=None):
     text, _, intervals = separate_content_with_page_map(content_list)
-    await processor._register_page_map(text, intervals, doc_id, file_path)
+    await processor._register_page_map(text, intervals, doc_id)
     return text
 
 
@@ -398,28 +447,38 @@ async def test_same_text_without_pages_invalidates_a_pending_map():
 
 
 @pytest.mark.asyncio
-async def test_known_doc_id_from_another_file_is_not_registered():
-    """LightRAG drops an insert whose doc_id it already knows."""
+async def test_ambiguity_outlives_the_first_chunking():
+    """Whichever document is chunked first, a later registration of the same
+    text cannot tell the pending one apart from it."""
     lightrag = _FakeLightRAG()
-    lightrag.doc_status.records["doc-1"] = {"status": "failed", "file_path": "old.pdf"}
     processor = _processor(lightrag)
+    text = await _register(processor, THREE_PAGES)
+    shifted = [dict(block, page_idx=block["page_idx"] + 5) for block in THREE_PAGES]
+    await _register(processor, shifted)
+    lightrag.chunk(text, "\n\n")
 
-    await _register(processor, THREE_PAGES, "doc-1", "new.pdf")
+    await _register(processor, THREE_PAGES)
 
-    assert lightrag.chunking_func is chunking_by_token_size
+    assert all("page_idx" not in c for c in lightrag.chunk(text, "\n\n"))
 
 
+@pytest.mark.parametrize("status", ["processed", "failed", "pending"])
 @pytest.mark.asyncio
-async def test_failed_retry_of_the_same_file_is_registered():
-    """LightRAG re-chunks a FAILED document's stored text, which is this
-    file's text when the record came from the same file."""
+async def test_known_doc_id_is_never_registered(status):
+    """LightRAG drops an insert whose doc_id it already knows, so the map
+    would wait for a chunking that is not this document's — and could be
+    consumed by another document with the same text."""
     lightrag = _FakeLightRAG()
-    lightrag.doc_status.records["doc-1"] = {"status": "failed", "file_path": "a.pdf"}
+    lightrag.doc_status.records["doc-1"] = {"status": status, "file_path": "a.pdf"}
     processor = _processor(lightrag)
+    await _register(processor, THREE_PAGES, "doc-0")  # installs the wrapper
+    lightrag.chunk(separate_content_with_page_map(THREE_PAGES)[0], "\n\n")
+    shifted = [dict(block, page_idx=block["page_idx"] + 5) for block in THREE_PAGES]
 
-    text = await _register(processor, THREE_PAGES, "doc-1", "a.pdf")
+    text = await _register(processor, shifted, "doc-1")
 
-    assert [c["page_idx"] for c in lightrag.chunk(text, "\n\n")] == [0, 1, 2]
+    assert lightrag.chunking_func._raganything_page_maps == {}
+    assert all("page_idx" not in c for c in lightrag.chunk(text, "\n\n"))
 
 
 @pytest.mark.asyncio

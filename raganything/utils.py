@@ -284,45 +284,55 @@ def build_sanitized_page_map(
 _BOUNDARY_CONTEXT_TOKENS = 8
 
 
-def _edge_trim_counts(text: str) -> Tuple[int, int]:
-    """How many characters whitespace/U+FFFD trimming removes from each end."""
-    start, end = 0, len(text)
-    while start < end and (text[start].isspace() or text[start] == "\ufffd"):
-        start += 1
-    while end > start and (text[end - 1].isspace() or text[end - 1] == "\ufffd"):
-        end -= 1
-    return start, len(text) - end
-
-
-def _needle_span(raw: str, raw_start: int) -> Optional[Tuple[int, int]]:
-    """Span of ``raw`` once edge whitespace and U+FFFD are trimmed."""
-    lead, trail = _edge_trim_counts(raw)
-    if lead + trail >= len(raw):
+def _stripped_span(text: str, offset: int) -> Optional[Tuple[int, int]]:
+    """Span of ``text`` (found at ``offset``) without its edge whitespace."""
+    lead = len(text) - len(text.lstrip())
+    end = len(text.rstrip())
+    if lead >= end:
         return None
-    return raw_start + lead, raw_start + len(raw) - trail
+    return offset + lead, offset + end
 
 
-def _token_window_starts(
+def _token_window_spans(
     tokenizer: Any, text: str, size: int, step: int
-) -> Optional[List[Tuple[str, int]]]:
+) -> Optional[List[Tuple[str, Optional[Tuple[int, int]]]]]:
     """Replay LightRAG's token windows over ``text`` with exact positions.
 
-    For each window returns ``(decoded_window, raw_start)``: ``raw_start`` is
-    the offset in ``text`` that index 0 of the decoded window lines up with.
-    The character offset of token ``t`` is ``len(decode(tokens[:t]))`` —
-    a cut multi-byte character decodes to one U+FFFD standing in its slot.
-    That is computed incrementally from short overlapping decodes (the
-    effect of a cut at ``a`` is identical in ``decode(tokens[a:x])`` for any
-    ``x`` past the cut character), so the whole replay is linear. Each window
-    is then checked against the source; any mismatch returns ``None``.
+    For each window returns ``(decoded_window, span)``: ``span`` is where
+    the window's text sits in ``text``, without edge whitespace and without
+    the fragments of multi-byte characters cut at either end (``None`` if
+    nothing is left). The character offset of token ``t`` is
+    ``len(decode(tokens[:t]))`` — a cut multi-byte character decodes to one
+    U+FFFD standing in its slot. That is computed incrementally from short
+    overlapping decodes (the effect of a cut at ``a`` is identical in
+    ``decode(tokens[a:x])`` for any ``x`` past the cut character), so the
+    whole replay is linear.
+
+    This only holds for byte-level tokenizers (tiktoken, byte BPE). Anything
+    else — a decoder that normalises text, adds or drops spaces between
+    tokens — fails the round-trip or per-window checks and returns ``None``.
     """
     tokens = tokenizer.encode(text)
+    if tokenizer.decode(tokens) != text:
+        return None
     context = _BOUNDARY_CONTEXT_TOKENS
 
     def decoded_length(begin: int, finish: int) -> int:
         return len(tokenizer.decode(tokens[max(begin, 0) : finish]))
 
-    windows: List[Tuple[str, int]] = []
+    def cut_fragments(boundary: int) -> int:
+        """Extra characters decoding splits at ``boundary`` creates: 0 when
+        it falls between characters, else the U+FFFD standing in for the
+        cut character's continuation bytes."""
+        if boundary <= 0 or boundary >= len(tokens):
+            return 0
+        return (
+            decoded_length(boundary - context, boundary)
+            + decoded_length(boundary, boundary + context)
+            - decoded_length(boundary - context, boundary + context)
+        )
+
+    windows: List[Tuple[str, Optional[Tuple[int, int]]]] = []
     offset = 0  # len(decode(tokens[:start]))
     previous = 0
     for start in range(0, len(tokens), step):
@@ -331,24 +341,23 @@ def _token_window_starts(
             offset += decoded_length(anchor, start) - decoded_length(anchor, previous)
         previous = start
         raw = tokenizer.decode(tokens[start : start + size])
-        # Continuation bytes of a character cut at `start` decode to extra
-        # leading U+FFFD that have no slot of their own in the source.
-        if start:
-            anchor = max(0, start - context)
-            stray = (
-                decoded_length(anchor, start)
-                + decoded_length(start, start + context)
-                - decoded_length(anchor, start + context)
-            )
-        else:
-            stray = 0
-        raw_start = offset - stray
-        # Everything but a possibly cut final character must match exactly.
-        body_start = offset
-        body = raw[stray : max(stray, len(raw) - 1)]
-        if text[body_start : body_start + len(body)] != body:
+        # A character cut at the start leaves leading U+FFFD (its
+        # continuation bytes) with no slot of their own in the source; one
+        # cut at the end leaves a single U+FFFD (its leading bytes) in its
+        # slot. Neither is text the chunk actually covers.
+        stray = cut_fragments(start)
+        cut_end = 1 if cut_fragments(start + size) else 0
+        if stray < 0 or raw[:stray] != "\ufffd" * min(stray, len(raw)):
             return None
-        windows.append((raw, raw_start))
+        if stray >= len(raw):
+            body = ""  # the window lies inside the one character cut at start
+        else:
+            if cut_end and not raw.endswith("\ufffd"):
+                return None
+            body = raw[stray : len(raw) - cut_end]
+            if not text.startswith(body, offset):
+                return None
+        windows.append((raw, _stripped_span(body, offset)))
     return windows
 
 
@@ -373,8 +382,9 @@ def replay_chunk_spans(
     against both the source text and what the chunker returned; any
     disagreement returns ``None`` and nothing is annotated.
 
-    Returns, per chunk, a list holding the ``(start, end)`` span of its
-    stripped content, or an empty list when the chunk is blank.
+    Returns, per chunk, a list holding the ``(start, end)`` span of the
+    source text it covers (edge whitespace and fragments of cut multi-byte
+    characters excluded), or an empty list when nothing is left.
     """
     step = chunk_token_size - chunk_overlap_token_size
     if step <= 0:
@@ -388,30 +398,28 @@ def replay_chunk_spans(
             if split_by_character_only or (
                 len(tokenizer.encode(piece)) <= chunk_token_size
             ):
-                replayed.append((piece, [base]))
+                replayed.append((piece, _stripped_span(piece, base)))
                 continue
-            windows = _token_window_starts(tokenizer, piece, chunk_token_size, step)
+            windows = _token_window_spans(tokenizer, piece, chunk_token_size, step)
             if windows is None:
                 return None
-            replayed.extend((raw, [base + start]) for raw, start in windows)
+            replayed.extend(
+                (raw, span and (base + span[0], base + span[1]))
+                for raw, span in windows
+            )
     else:
-        windows = _token_window_starts(tokenizer, content, chunk_token_size, step)
+        windows = _token_window_spans(tokenizer, content, chunk_token_size, step)
         if windows is None:
             return None
-        replayed = [(raw, [start]) for raw, start in windows]
+        replayed = windows
 
     if len(replayed) != len(chunks):
         return None
     spans: List[List[Tuple[int, int]]] = []
-    for chunk, (raw, starts) in zip(chunks, replayed):
+    for chunk, (raw, span) in zip(chunks, replayed):
         if raw.strip() != chunk.get("content"):
             return None
-        candidates = []
-        for raw_start in starts:
-            span = _needle_span(raw, raw_start)
-            if span is not None:
-                candidates.append(span)
-        spans.append(candidates)
+        spans.append([span] if span is not None else [])
     return spans
 
 
