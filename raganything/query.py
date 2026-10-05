@@ -280,7 +280,7 @@ class QueryMixin:
                 query, mode=mode, system_prompt=system_prompt, **kwargs
             )
 
-        # 流式结果只能消费一次，不能写入完整答案缓存。
+        # Streaming results are single-use async iterators; never cache them as full answers.
         use_cache = not kwargs.get("stream", False)
 
         # Generate cache key for multimodal query
