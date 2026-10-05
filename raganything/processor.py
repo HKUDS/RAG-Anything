@@ -161,6 +161,7 @@ class ProcessorMixin:
     async def _annotate_text_chunk_pages(
         self,
         doc_id: str,
+        track_id: Optional[str],
         text_content: str,
         page_intervals: List[Tuple[int, int, Optional[int]]],
         split_by_character: Optional[str],
@@ -168,21 +169,32 @@ class ProcessorMixin:
     ) -> None:
         """Give the text chunks LightRAG stored for ``doc_id`` their pages (#330).
 
-        Runs once the text insert has returned and LightRAG has processed
-        the document. LightRAG keys chunk rows by content, so only rows that
-        still belong to this document are touched — a chunk shared with
-        another document never gets this one's pages — and on those rows
-        any page the replay cannot vouch for is cleared, so backends that
-        merge updates (MongoDB ``$set``) do not keep a previous owner's.
-        Callers skip doc_ids LightRAG already knew before the insert: that
-        insert was dropped. Never raises: page provenance must not break
-        ingestion.
+        Runs once the text insert has returned, and only if the stored
+        document is the one this insert enqueued (its ``track_id``, which
+        ``ainsert`` returns) and LightRAG has processed it. An insert whose
+        doc_id LightRAG already knew — from earlier, or from a concurrent
+        insert of the same content — was dropped and changes nothing.
+
+        LightRAG keys chunk rows by content, so only rows that still belong
+        to this document are touched — a chunk shared with another document
+        never gets this one's pages — and on those rows any page the replay
+        cannot vouch for is cleared, so on backends that merge updates
+        (MongoDB ``$set``) a previous owner's pages do not survive this
+        step. (They do survive a re-store this step never sees, e.g. by a
+        document that failed or was inserted through LightRAG directly.)
+        Never raises: page provenance must not break ingestion.
         """
         try:
             lightrag = self.lightrag
             record = await lightrag.doc_status.get_by_id(doc_id)
-            if not record or record.get("status") != DocStatus.PROCESSED:
-                # Queued behind a busy pipeline, or failed.
+            if (
+                not track_id
+                or not record
+                or record.get("track_id") != track_id
+                or record.get("status") != DocStatus.PROCESSED
+            ):
+                # Dropped as a duplicate, queued behind a busy pipeline, or
+                # failed.
                 return
             chunk_ids = list(dict.fromkeys(record.get("chunks_list") or []))
             if not chunk_ids:
@@ -1961,8 +1973,7 @@ class ProcessorMixin:
                         doc_id=doc_id,
                     )
                 insert_start = time.time()
-                known_doc = await self.lightrag.doc_status.get_by_id(doc_id)
-                await insert_text_content(
+                track_id = await insert_text_content(
                     self.lightrag,
                     input=text_content,
                     file_paths=file_name,
@@ -1970,14 +1981,14 @@ class ProcessorMixin:
                     split_by_character_only=split_by_character_only,
                     ids=doc_id,
                 )
-                if not known_doc:
-                    await self._annotate_text_chunk_pages(
-                        doc_id,
-                        text_content,
-                        page_intervals,
-                        split_by_character,
-                        split_by_character_only,
-                    )
+                await self._annotate_text_chunk_pages(
+                    doc_id,
+                    track_id,
+                    text_content,
+                    page_intervals,
+                    split_by_character,
+                    split_by_character_only,
+                )
                 await self._upsert_doc_status(
                     doc_id,
                     file_name,
@@ -2277,8 +2288,7 @@ class ProcessorMixin:
 
             # Step 3: Insert pure text content and multimodal content with all parameters
             if text_content.strip():
-                known_doc = await self.lightrag.doc_status.get_by_id(doc_id)
-                await insert_text_content_with_multimodal_content(
+                track_id = await insert_text_content_with_multimodal_content(
                     self.lightrag,
                     input=text_content,
                     multimodal_content=multimodal_items,
@@ -2288,14 +2298,14 @@ class ProcessorMixin:
                     ids=doc_id,
                     scheme_name=scheme_name,
                 )
-                if not known_doc:
-                    await self._annotate_text_chunk_pages(
-                        doc_id,
-                        text_content,
-                        page_intervals,
-                        split_by_character,
-                        split_by_character_only,
-                    )
+                await self._annotate_text_chunk_pages(
+                    doc_id,
+                    track_id,
+                    text_content,
+                    page_intervals,
+                    split_by_character,
+                    split_by_character_only,
+                )
 
             self.logger.info(f"Document {file_path} processing completed successfully")
             return True
@@ -2478,8 +2488,7 @@ class ProcessorMixin:
                     doc_id=doc_id,
                 )
             insert_start = time.time()
-            known_doc = await self.lightrag.doc_status.get_by_id(doc_id)
-            await insert_text_content(
+            track_id = await insert_text_content(
                 self.lightrag,
                 input=text_content,
                 file_paths=file_ref,
@@ -2487,14 +2496,14 @@ class ProcessorMixin:
                 split_by_character_only=split_by_character_only,
                 ids=doc_id,
             )
-            if not known_doc:
-                await self._annotate_text_chunk_pages(
-                    doc_id,
-                    text_content,
-                    page_intervals,
-                    split_by_character,
-                    split_by_character_only,
-                )
+            await self._annotate_text_chunk_pages(
+                doc_id,
+                track_id,
+                text_content,
+                page_intervals,
+                split_by_character,
+                split_by_character_only,
+            )
             await self._upsert_doc_status(
                 doc_id,
                 file_ref,

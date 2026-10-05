@@ -258,6 +258,42 @@ async def test_real_pipeline_lightrag_retry_of_same_text_gets_no_foreign_pages(
             assert row["page_idx"] >= 10
 
 
+@pytest.mark.asyncio
+async def test_real_pipeline_concurrent_inserts_of_one_doc_id_use_the_stored_ones_pages(
+    make_rag,
+):
+    """Two files with the same text but different pagination get the same
+    content-based doc_id; inserted concurrently, LightRAG keeps one and drops
+    the other. Rows must carry the pages of the file they name."""
+    rag = make_rag()
+    shifted = [dict(item, page_idx=item["page_idx"] + 5) for item in _content_list()]
+    try:
+        await asyncio.gather(
+            rag.insert_content_list(_content_list(), file_path="a.pdf", doc_id="doc-x"),
+            rag.insert_content_list(shifted, file_path="b.pdf", doc_id="doc-x"),
+        )
+    finally:
+        await _close(rag)
+
+    rows = _chunks(rag, "doc-x")
+    assert rows
+    offsets = {"a.pdf": 0, "b.pdf": 5}
+    for row in rows:
+        if row.get("page_idx") is None:
+            continue
+        offset = offsets[row["file_path"]]
+        _assert_pages_cover_markers(
+            [
+                dict(
+                    row,
+                    page_idx=row["page_idx"] - offset,
+                    page_idx_end=row.get("page_idx_end", row["page_idx"]) - offset,
+                )
+            ],
+            MARKERS,
+        )
+
+
 @pytest.mark.parametrize("first_insert_fails", [False, True])
 @pytest.mark.asyncio
 async def test_real_pipeline_known_doc_id_keeps_its_pages(make_rag, first_insert_fails):

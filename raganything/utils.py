@@ -598,11 +598,14 @@ async def insert_text_content(
         split_by_character is None, this parameter is ignored.
         ids: single string of the document ID or list of unique document IDs, if not provided, MD5 hash IDs will be generated
         file_paths: single string of the file path or list of file paths, used for citation
+
+    Returns:
+        Whatever ``ainsert`` returns: the insert's track_id on LightRAG 1.4.x.
     """
     logger.info("Starting text content insertion into LightRAG...")
 
     # Use LightRAG's insert method with all parameters
-    await lightrag.ainsert(
+    track_id = await lightrag.ainsert(
         input=input,
         file_paths=file_paths,
         split_by_character=split_by_character,
@@ -611,6 +614,7 @@ async def insert_text_content(
     )
 
     logger.info("Text content insertion complete")
+    return track_id
 
 
 async def insert_text_content_with_multimodal_content(
@@ -679,9 +683,10 @@ async def insert_text_content_with_multimodal_content(
             "continuing without it for compatibility"
         )
 
-    await lightrag.ainsert(**insert_kwargs)
+    track_id = await lightrag.ainsert(**insert_kwargs)
 
     logger.info("Text content insertion complete")
+    return track_id
 
 
 def get_processor_for_type(modal_processors: Dict[str, Any], content_type: str):

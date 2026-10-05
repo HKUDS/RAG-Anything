@@ -428,7 +428,9 @@ class _FakeLightRAG:
         self.chunking_func = chunking_by_token_size
         self.doc_status, self.full_docs, self.text_chunks = _KV(), _KV(), _KV()
 
-    def store(self, doc_id, text, split_by_character=None, status="processed"):
+    def store(
+        self, doc_id, text, split_by_character=None, status="processed", track_id="t1"
+    ):
         content = sanitize_text_for_encoding(text)
         chunks = self.chunking_func(
             self.tokenizer,
@@ -442,7 +444,11 @@ class _FakeLightRAG:
         for chunk_id, chunk in zip(ids, chunks):
             self.text_chunks.rows[chunk_id] = {**chunk, "full_doc_id": doc_id}
         self.full_docs.rows[doc_id] = {"content": content}
-        self.doc_status.rows[doc_id] = {"status": status, "chunks_list": list(ids)}
+        self.doc_status.rows[doc_id] = {
+            "status": status,
+            "chunks_list": list(ids),
+            "track_id": track_id,
+        }
         return ids
 
 
@@ -470,7 +476,7 @@ async def _ingest(lightrag, content_list, doc_id, split_by_character="\n\n"):
     text, _, intervals = separate_content_with_page_map(content_list)
     ids = lightrag.store(doc_id, text, split_by_character)
     await _processor(lightrag)._annotate_text_chunk_pages(
-        doc_id, text, intervals, split_by_character, False
+        doc_id, "t1", text, intervals, split_by_character, False
     )
     return [lightrag.text_chunks.rows[chunk_id] for chunk_id in ids]
 
@@ -506,7 +512,7 @@ async def test_rows_now_owned_by_another_document_are_left_alone():
     lightrag.text_chunks.rows[ids[1]]["full_doc_id"] = "doc-2"
 
     await _processor(lightrag)._annotate_text_chunk_pages(
-        "doc-1", text, intervals, "\n\n", False
+        "doc-1", "t1", text, intervals, "\n\n", False
     )
 
     rows = [lightrag.text_chunks.rows[i] for i in ids]
@@ -522,7 +528,7 @@ async def test_document_chunked_with_other_settings_is_not_annotated():
     ids = lightrag.store("doc-1", text, split_by_character=None)
 
     await _processor(lightrag)._annotate_text_chunk_pages(
-        "doc-1", text, intervals, "\n\n", False
+        "doc-1", "t1", text, intervals, "\n\n", False
     )
 
     assert all("page_idx" not in lightrag.text_chunks.rows[i] for i in ids)
@@ -538,7 +544,24 @@ async def test_chunks_lightrag_did_not_record_are_not_annotated():
     lightrag.doc_status.rows["doc-1"]["chunks_list"].append("chunk-other")
 
     await _processor(lightrag)._annotate_text_chunk_pages(
-        "doc-1", text, intervals, "\n\n", False
+        "doc-1", "t1", text, intervals, "\n\n", False
+    )
+
+    assert all("page_idx" not in lightrag.text_chunks.rows[i] for i in ids)
+
+
+@pytest.mark.parametrize("track_id", ["t2", None])
+@pytest.mark.asyncio
+async def test_document_enqueued_by_another_insert_is_not_annotated(track_id):
+    """LightRAG dropped this insert (its doc_id was already known, perhaps
+    from a concurrent insert of the same content), or its track_id is
+    unknown: the stored document is not this insert's."""
+    lightrag = _FakeLightRAG()
+    text, _, intervals = separate_content_with_page_map(THREE_PAGES)
+    ids = lightrag.store("doc-1", text, "\n\n", track_id="t1")
+
+    await _processor(lightrag)._annotate_text_chunk_pages(
+        "doc-1", track_id, text, intervals, "\n\n", False
     )
 
     assert all("page_idx" not in lightrag.text_chunks.rows[i] for i in ids)
@@ -552,7 +575,7 @@ async def test_document_not_processed_yet_is_not_annotated(status):
     ids = lightrag.store("doc-1", text, "\n\n", status=status)
 
     await _processor(lightrag)._annotate_text_chunk_pages(
-        "doc-1", text, intervals, "\n\n", False
+        "doc-1", "t1", text, intervals, "\n\n", False
     )
 
     assert all("page_idx" not in lightrag.text_chunks.rows[i] for i in ids)
@@ -566,7 +589,7 @@ async def test_stored_text_from_another_insert_is_not_annotated():
     lightrag.full_docs.rows["doc-1"]["content"] = text.replace("zero", "nil")
 
     await _processor(lightrag)._annotate_text_chunk_pages(
-        "doc-1", text, intervals, "\n\n", False
+        "doc-1", "t1", text, intervals, "\n\n", False
     )
 
     assert all("page_idx" not in lightrag.text_chunks.rows[i] for i in ids)
@@ -600,7 +623,7 @@ async def test_stale_pages_are_overwritten_explicitly():
         lightrag.text_chunks.rows[chunk_id].update(page_idx=7, page_idx_end=9)
 
     await _processor(lightrag)._annotate_text_chunk_pages(
-        "doc-1", text, intervals, "\n\n", False
+        "doc-1", "t1", text, intervals, "\n\n", False
     )
 
     rows = [lightrag.text_chunks.rows[i] for i in ids]
@@ -623,7 +646,7 @@ async def test_rows_the_document_cannot_label_lose_stale_pages():
     lightrag.text_chunks.rows[ids[1]].update(full_doc_id="doc-2", page_idx=4)
 
     await _processor(lightrag)._annotate_text_chunk_pages(
-        "doc-1", text, intervals, "\n\n", False
+        "doc-1", "t1", text, intervals, "\n\n", False
     )
 
     rows = lightrag.text_chunks.rows
