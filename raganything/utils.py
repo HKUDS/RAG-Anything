@@ -6,6 +6,7 @@ Contains helper functions for content separation, text insertion, and other util
 
 from __future__ import annotations
 
+import bisect
 import base64
 import inspect
 from typing import Dict, List, Any, Tuple
@@ -187,6 +188,7 @@ def separate_content_with_page_map(
     text_parts = []
     multimodal_items = []
     page_intervals: List[Tuple[int, int, int]] = []
+    text_length = 0
 
     for index, item in enumerate(content_list):
         content_type = item.get("type", "text")
@@ -195,9 +197,10 @@ def separate_content_with_page_map(
             # Text content
             text = str(item.get("text", "") or "")
             if text.strip():
-                start = len("\n\n".join(text_parts)) + (2 if text_parts else 0)
+                start = text_length + (2 if text_parts else 0)
                 text_parts.append(text)
                 end = start + len(text)
+                text_length = end
                 page_idx = item.get("page_idx")
                 if isinstance(page_idx, int) and not isinstance(page_idx, bool):
                     page_intervals.append((start, end, page_idx))
@@ -235,58 +238,93 @@ def separate_content_with_page_map(
     return text_content, multimodal_items, page_intervals
 
 
+def build_sanitized_page_map(
+    text_content: str,
+    page_intervals: List[Tuple[int, int, int]],
+) -> Tuple[str, List[Tuple[int, int, int]]]:
+    """
+    Re-express page intervals in the coordinates LightRAG actually chunks.
+
+    LightRAG stores and chunks ``sanitize_text_for_encoding(text)``, not the
+    raw text: it strips the ends, unescapes HTML entities and removes control
+    and surrogate characters, all of which shift character offsets. Each
+    block's own sanitized text is a contiguous substring of the sanitized
+    document (the transformations never cross the ``"\n\n"`` separators), so
+    blocks are located in document order with a forward cursor — repeated
+    text such as a per-page footer maps to its own occurrence, not the first.
+
+    Returns ``(sanitized_text, intervals)`` with intervals into
+    ``sanitized_text``. Blocks that cannot be located are skipped rather than
+    guessed.
+    """
+    from lightrag.utils import sanitize_text_for_encoding
+
+    sanitized = sanitize_text_for_encoding(text_content)
+    intervals: List[Tuple[int, int, int]] = []
+    cursor = 0
+    for start, end, page_idx in page_intervals:
+        core = sanitize_text_for_encoding(text_content[start:end])
+        if not core:
+            continue
+        position = sanitized.find(core, cursor)
+        if position < 0:
+            continue
+        intervals.append((position, position + len(core), page_idx))
+        cursor = position + len(core)
+    return sanitized, intervals
+
+
 def annotate_chunks_with_page_idx(
     chunks: List[Dict[str, Any]],
-    text_content: str,
+    sanitized_text: str,
     page_intervals: List[Tuple[int, int, int]],
     logger: Any = None,
 ) -> List[Dict[str, Any]]:
     """
-    Annotate chunks produced from ``text_content`` with their source page.
+    Annotate chunks produced from ``sanitized_text`` with their source page.
 
-    Each chunk's ``content`` is located in ``text_content`` (LightRAG chunks
-    are decodes of contiguous token slices, so they are substrings of the
-    source, modulo stripping) and mapped to the overlapping page interval.
-    Chunks fully inside one interval get its ``page_idx``; chunks spanning
-    several get the first page as ``page_idx`` plus the last as
-    ``page_idx_end``. Chunks that cannot be located are left untouched, and
-    a warning is logged — annotation must never break ingestion.
+    ``page_intervals`` must be in ``sanitized_text`` coordinates (see
+    :func:`build_sanitized_page_map`). LightRAG chunks are decoded, stripped
+    token slices of that text and arrive in document order, so each chunk is
+    searched for forward from the previous chunk's start; a multi-byte
+    character split at a slice edge decodes to U+FFFD, which is trimmed
+    before searching. Chunks inside one interval get its ``page_idx``; chunks
+    spanning several get the first page as ``page_idx`` and the last as
+    ``page_idx_end``. Chunks that cannot be located are left untouched —
+    annotation must never break or mislabel ingestion.
 
-    Returns the same list of chunk dicts (mutated in place for reuse by
-    chunking-func wrappers, which must return the list they built).
+    Returns the same list (mutated in place).
     """
     if not page_intervals:
         return chunks
 
-    log = logger
+    interval_ends = [end for _, end, _ in page_intervals]
+    cursor = 0
     missed = 0
     for chunk in chunks:
         content = chunk.get("content")
-        if not isinstance(content, str) or not content:
+        if not isinstance(content, str):
             continue
-        offset = text_content.find(content)
+        needle = content.strip().strip("\ufffd").strip()
+        if not needle:
+            continue
+        offset = sanitized_text.find(needle, cursor)
         if offset < 0:
             missed += 1
-            if log is not None:
-                log.warning(
-                    "page_idx annotation: chunk content not found in source "
-                    "text; leaving chunk without page_idx"
-                )
             continue
-        chunk_end = offset + len(content)
-        pages = sorted(
-            {
-                page
-                for start, end, page in page_intervals
-                if start < chunk_end and offset < end
-            }
-        )
+        cursor = offset + 1
+        chunk_end = offset + len(needle)
+        pages = []
+        index = bisect.bisect_right(interval_ends, offset)
+        while index < len(page_intervals) and page_intervals[index][0] < chunk_end:
+            pages.append(page_intervals[index][2])
+            index += 1
         if pages:
-            chunk["page_idx"] = pages[0]
-            if len(pages) > 1:
-                chunk["page_idx_end"] = pages[-1]
-    if missed and log is not None:
-        log.warning(
+            chunk["page_idx"] = min(pages)
+            if max(pages) != min(pages):
+                chunk["page_idx_end"] = max(pages)
+    if missed and logger is not None:
+        logger.warning(
             f"page_idx annotation: {missed} chunk(s) could not be located in "
             "the source text and carry no page_idx"
         )

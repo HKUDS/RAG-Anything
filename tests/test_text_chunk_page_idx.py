@@ -14,6 +14,7 @@ import types
 from pathlib import Path
 
 import pytest
+from lightrag.utils import sanitize_text_for_encoding
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -58,6 +59,7 @@ def raganything_modules(monkeypatch):
     fake_lightrag_utils.compute_mdhash_id = (
         lambda value, prefix="": f"{prefix}{abs(hash(value))}"
     )
+    fake_lightrag_utils.sanitize_text_for_encoding = sanitize_text_for_encoding
 
     monkeypatch.setitem(sys.modules, "lightrag", fake_lightrag)
     monkeypatch.setitem(sys.modules, "lightrag.utils", fake_lightrag_utils)
@@ -110,9 +112,10 @@ class ChunkRecordingLightRAG:
         **kwargs,
     ):
         self.inserted_inputs.append(input)
+        # LightRAG stores and chunks sanitize_text_for_encoding(input).
         chunking_result = self.chunking_func(
             None,
-            input,
+            sanitize_text_for_encoding(input),
             split_by_character,
             split_by_character_only,
             100,  # chunk_overlap_token_size
@@ -239,19 +242,109 @@ async def test_chunk_spanning_pages_gets_page_range(raganything_modules, tmp_pat
 
 
 @pytest.mark.asyncio
-async def test_chunking_func_restored_after_insert(raganything_modules, tmp_path):
-    """The wrapper must not leak past the insert it was installed for."""
+async def test_chunking_wrapper_is_installed_once_and_delegates(
+    raganything_modules, tmp_path
+):
+    """One persistent wrapper, shared registry, original chunking output."""
     lightrag = ChunkRecordingLightRAG(split_on_blank_lines)
-    original = lightrag.chunking_func
     processor = _make_processor(raganything_modules, lightrag, tmp_path)
 
     await processor.process_document_complete(
-        file_path=str(tmp_path / "sample.pdf"),
-        doc_id="doc-restore",
-        file_name="sample.pdf",
+        file_path=str(tmp_path / "a.pdf"), doc_id="doc-a", file_name="a.pdf"
+    )
+    wrapper = lightrag.chunking_func
+    await processor.process_document_complete(
+        file_path=str(tmp_path / "b.pdf"), doc_id="doc-b", file_name="b.pdf"
     )
 
-    assert lightrag.chunking_func is original
+    assert lightrag.chunking_func is wrapper
+    assert wrapper._raganything_page_maps == {}  # consumed when chunked
+    contents = sorted(row["content"] for row in lightrag.text_chunks.records.values())
+    expected = sorted(
+        block["text"] for block in THREE_PAGE_CONTENT_LIST for _ in range(2)
+    )
+    assert contents == expected
+
+
+@pytest.mark.asyncio
+async def test_text_changed_by_sanitizing_is_still_annotated(
+    raganything_modules, tmp_path
+):
+    """LightRAG chunks sanitized text (control chars removed, entities
+    unescaped, ends stripped), so offsets into the raw text are wrong."""
+    content_list = [
+        {"type": "text", "text": "  Page zero\x00 with a NUL.  ", "page_idx": 0},
+        {"type": "text", "text": "Page one &amp; an entity.", "page_idx": 1},
+        {"type": "text", "text": "Page two tail.", "page_idx": 2},
+    ]
+
+    async def fake_parse_document(
+        file_path, output_dir, parse_method, display_stats, **kwargs
+    ):
+        return (list(content_list), "doc-generated")
+
+    lightrag = ChunkRecordingLightRAG(split_on_blank_lines)
+    processor = _make_processor(raganything_modules, lightrag, tmp_path)
+    processor.parse_document = fake_parse_document
+
+    await processor.process_document_complete(
+        file_path=str(tmp_path / "s.pdf"), doc_id="doc-s", file_name="s.pdf"
+    )
+
+    pages = {
+        r["content"]: r.get("page_idx") for r in lightrag.text_chunks.records.values()
+    }
+    assert pages == {
+        "Page zero with a NUL.": 0,
+        "Page one & an entity.": 1,
+        "Page two tail.": 2,
+    }
+
+
+def test_repeated_text_maps_to_its_own_occurrence(raganything_modules):
+    """A footer repeated on every page must not all map to its first page."""
+    utils = raganything_modules.utils
+    footer = "Confidential."
+    blocks = [
+        {"type": "text", "text": text, "page_idx": page}
+        for page in range(3)
+        for text in (f"Body {page}.", footer)
+    ]
+    text, _, intervals = utils.separate_content_with_page_map(blocks)
+    sanitized, mapped = utils.build_sanitized_page_map(text, intervals)
+    chunks = [{"content": part} for part in sanitized.split("\n\n")]
+
+    utils.annotate_chunks_with_page_idx(chunks, sanitized, mapped)
+
+    assert [c["page_idx"] for c in chunks] == [0, 0, 1, 1, 2, 2]
+
+
+def test_replacement_chars_at_chunk_edges_are_trimmed(raganything_modules):
+    """Token slices that split a multi-byte character decode to U+FFFD."""
+    utils = raganything_modules.utils
+    blocks = [
+        {"type": "text", "text": "数据经过归一化", "page_idx": 4},
+        {"type": "text", "text": "由分析引擎检测", "page_idx": 5},
+    ]
+    text, _, intervals = utils.separate_content_with_page_map(blocks)
+    sanitized, mapped = utils.build_sanitized_page_map(text, intervals)
+    chunks = [{"content": "\ufffd经过归一\ufffd"}, {"content": "\ufffd分析引擎\ufffd"}]
+
+    utils.annotate_chunks_with_page_idx(chunks, sanitized, mapped)
+
+    assert [c.get("page_idx") for c in chunks] == [4, 5]
+
+
+def test_page_map_registry_is_bounded(raganything_modules, tmp_path):
+    """Maps whose document is never chunked (dedup, failure) cannot pile up."""
+    lightrag = ChunkRecordingLightRAG(split_on_blank_lines)
+    processor = _make_processor(raganything_modules, lightrag, tmp_path)
+    limit = processor._PAGE_MAP_REGISTRY_LIMIT
+
+    for index in range(limit + 5):
+        processor._register_page_map(f"doc {index} text", [(0, 4, 0)])
+
+    assert len(lightrag.chunking_func._raganything_page_maps) == limit
 
 
 @pytest.mark.asyncio
