@@ -218,6 +218,63 @@ OUTPUT_DIR=./parsed_output
 - **timeout_per_file**: Timeout per file in seconds (default: `300`)
 - **skip_installation_check**: Skip parser installation check (default: `False`)
 
+### Multimodal ingestion concurrency
+
+Parsing workers and multimodal ingestion have separate limits:
+
+- `BatchParser.max_workers` controls parallel file parsing. Increasing it does not
+  increase image-description concurrency inside one document.
+- `LightRAG.max_parallel_insert` also limits concurrent multimodal item section
+  generation in RAG-Anything's type-aware batch path, reached by
+  `insert_content_list()` and `process_document_complete()`. This includes image
+  descriptions. The limit is taken from the LightRAG instance; RAG-Anything falls
+  back to `2` only when that attribute is absent.
+- `llm_model_max_async` controls LightRAG's wrapped LLM calls, including the later
+  entity-extraction and graph-merge stages. Multimodal description generation
+  calls the `llm_model_func` or `vision_model_func` supplied to `RAGAnything`
+  directly, outside that wrapper, so `llm_model_max_async` does not throttle
+  those direct calls. An already wrapped model function, including one inherited
+  from an existing LightRAG instance, can still impose its own limit.
+
+When RAG-Anything creates LightRAG, set the item limit through `lightrag_kwargs`
+(alongside your existing model and embedding configuration):
+
+```python
+rag = RAGAnything(
+    llm_model_func=llm_model_func,
+    vision_model_func=vision_model_func,
+    embedding_func=embedding_func,
+    lightrag_kwargs={"max_parallel_insert": 4},
+)
+```
+
+If you supply `RAGAnything(lightrag=existing_lightrag, ...)`, configure
+`max_parallel_insert` on that LightRAG instance instead; `lightrag_kwargs` does not
+reconfigure an existing instance. LightRAG 1.4.16 defaults this setting to `2`,
+with an environment override via `MAX_PARALLEL_INSERT`; check your installed
+LightRAG version and effective instance value. Use a positive integer.
+
+The semaphore is created **per multimodal batch call**, not globally or per
+RAG-Anything instance. The limits can therefore multiply:
+
+- `process_folder_complete()` processes up to `max_workers` files concurrently,
+  defaulting to `MAX_CONCURRENT_FILES` (`config.max_concurrent_files`). Each file
+  has its own multimodal batch semaphore, so concurrent image/table caption calls
+  can reach `MAX_CONCURRENT_FILES × max_parallel_insert` with the default worker
+  setting, or `max_workers × max_parallel_insert` when overridden.
+- Video scene description creates a second semaphore of `max_parallel_insert`
+  for each video. A batch with enough video items and scenes can therefore issue
+  up to `max_parallel_insert²` concurrent VLM calls. Concurrent files can multiply
+  that further.
+
+These bounds assume enough ready work and no additional model/provider limiter.
+The item semaphore covers section generation, not the subsequent entity
+extraction and graph merge stages, which use LightRAG's wrapped LLM. Those stages
+can make additional LLM calls, so this setting neither reduces call count nor
+guarantees one call per image or a particular speedup. Tune conservatively
+against provider rate limits and measure both call counts and stage timings on
+a small representative document.
+
 ## Supported File Types
 
 - **PDF files**: `.pdf`
