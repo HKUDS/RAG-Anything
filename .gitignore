@@ -70,6 +70,8 @@ tiktoken_cache/
 
 # Root-level unit-test scratch files; anchored so tests/*.py stay visible
 /test_*
+# Output dirs written by examples/*_test.py when run from inside examples/
+test_output/
 
 # Cline files
 memory-bank/
