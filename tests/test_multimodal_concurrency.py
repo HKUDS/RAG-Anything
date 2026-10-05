@@ -133,6 +133,8 @@ def test_item_generation_uses_instance_limit_or_missing_attribute_fallback(limit
 
 
 def test_concurrent_batches_on_same_instance_have_independent_limits():
+    # This pins current per-call behavior, not a permanent concurrency guarantee.
+    # Update this expectation if the limiter becomes shared per instance.
     asyncio.run(_check_concurrency(2, calls=2))
 
 
