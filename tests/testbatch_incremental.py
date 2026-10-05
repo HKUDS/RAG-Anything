@@ -530,3 +530,71 @@ def test_failed_reparse_invalidates_previous_configuration(monkeypatch, tmp_path
     )
     assert restored.successful_files == inputs
     assert restored.skipped_files == []
+
+
+@pytest.mark.parametrize(
+    "first_options,second_options",
+    [
+        ({}, {"include_layout_blocks": False}),
+        ({}, {"lang": None}),
+        ({"lang": "en"}, {"lang": "en", "start_page": None}),
+    ],
+)
+def test_incremental_explicit_defaults_do_not_invalidate(
+    monkeypatch, tmp_path, first_options, second_options
+):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("unchanged source", encoding="utf-8")
+    output_dir = str(tmp_path / "out")
+    inputs = [str(document)]
+
+    batch_parser.process_batch(inputs, output_dir, incremental=True, **first_options)
+    fake_parser.processed_files.clear()
+    result = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, **second_options
+    )
+
+    assert result.skipped_files == inputs
+    assert fake_parser.processed_files == []
+
+
+def test_incremental_parser_name_case_does_not_invalidate(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("unchanged source", encoding="utf-8")
+    inputs = [str(document)]
+    output_dir = str(tmp_path / "out")
+    batch_parser.process_batch(inputs, output_dir, incremental=True)
+
+    upper = type(batch_parser)(
+        parser_type=batch_parser.parser_type.upper(),
+        show_progress=False,
+        skip_installation_check=True,
+    )
+    fake_parser.processed_files.clear()
+    result = upper.process_batch(inputs, output_dir, incremental=True)
+
+    assert result.skipped_files == inputs
+    assert fake_parser.processed_files == []
+
+
+def test_incremental_custom_parser_option_change_still_invalidates(
+    monkeypatch, tmp_path
+):
+    # Options outside the built-in set are kept verbatim: a custom parser may
+    # depend on them, so changing one must still force a reparse.
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("unchanged source", encoding="utf-8")
+    inputs = [str(document)]
+    output_dir = str(tmp_path / "out")
+
+    batch_parser.process_batch(inputs, output_dir, incremental=True, custom_mode="a")
+    fake_parser.processed_files.clear()
+    result = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, custom_mode="b"
+    )
+
+    assert result.successful_files == inputs
+    assert fake_parser.processed_files == inputs

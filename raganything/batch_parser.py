@@ -20,6 +20,7 @@ import time
 
 from tqdm import tqdm
 
+from .parse_options import PARSER_CACHE_KWARGS, relevant_parser_kwargs
 from .parser import get_parser
 
 
@@ -377,13 +378,27 @@ class BatchParser:
         return files_to_process, skipped_files, signatures
 
     def _parse_config_signature(self, parse_method: str, kwargs: dict) -> Optional[str]:
-        """Fingerprint parser inputs without persisting credentials in the manifest."""
+        """Fingerprint parser inputs without persisting credentials in the manifest.
+
+        Built-in result-affecting options are normalised exactly as the parse
+        cache normalises them, so an explicit default and an omitted option
+        fingerprint the same; options outside that set are kept verbatim
+        because custom parsers may depend on them. ``None`` means "use the
+        parser default" and is dropped.
+        """
+        present = {key: value for key, value in kwargs.items() if value is not None}
+        normalized = {
+            key: value
+            for key, value in present.items()
+            if key not in PARSER_CACHE_KWARGS
+        }
+        normalized.update(relevant_parser_kwargs(present))
         try:
             config = json.dumps(
                 {
-                    "parser": self.parser_type,
+                    "parser": str(self.parser_type).lower(),
                     "parse_method": parse_method,
-                    "kwargs": kwargs,
+                    "kwargs": normalized,
                 },
                 sort_keys=True,
             )
