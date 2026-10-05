@@ -188,7 +188,7 @@ print(f"Skipped unchanged: {len(result.skipped_files)}")
 MAX_CONCURRENT_FILES=4
 SUPPORTED_FILE_EXTENSIONS=.pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.md
 RECURSIVE_FOLDER_PROCESSING=true
-PARSER_OUTPUT_DIR=./parsed_output
+OUTPUT_DIR=./parsed_output
 ```
 
 ### BatchParser Parameters
@@ -223,6 +223,8 @@ class BatchProcessingResult:
     skipped_files: List[str]         # Unchanged files skipped in incremental mode
 
     def summary(self) -> str:        # Human-readable summary
+
+    @property
     def success_rate(self) -> float: # Success rate as percentage
 ```
 
@@ -307,7 +309,10 @@ batch_parser = BatchParser(parser_type="mineru", max_workers=2)
 The batch processor provides comprehensive error handling:
 
 ```python
-result = batch_parser.process_batch(file_paths=["doc1.pdf", "doc2.docx"])
+result = batch_parser.process_batch(
+    file_paths=["doc1.pdf", "doc2.docx"],
+    output_dir="./batch_output",
+)
 
 # Check for errors
 if result.failed_files:

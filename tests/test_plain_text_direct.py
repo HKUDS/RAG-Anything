@@ -271,6 +271,9 @@ class TestMarkdownImageTargets:
             ("plot+1.png", "plot+1.png"),
             ("plain.png", "plain.png"),
             ("figure 1.png", "<figure%201.png>"),
+            ("Screenshot (1).png", "<Screenshot (1).png>"),
+            ("image(1).png", "image(1).png"),
+            ("figure (1).png", "figure%20(1).png"),
         ],
     )
     def test_local_image_targets_resolve_to_file(self, tmp_path, filename, target):
@@ -303,8 +306,45 @@ class TestMarkdownImageTargets:
         assert blocks[0]["type"] == "image"
         assert blocks[0]["img_path"] == str(image.resolve())
 
+    def test_parenthesized_target_inside_a_sentence(self, tmp_path):
+        # The destination ends at its own closing parenthesis, so text in
+        # parentheses later on the same line is not swallowed into it.
+        image = tmp_path / "image(1).png"
+        image.touch()
+        document = tmp_path / "doc.md"
+        document.write_text(
+            "See ![plot](image(1).png) (details below).", encoding="utf-8"
+        )
+
+        assert MineruParser().parse_text_file(document) == [
+            {"type": "text", "text": "See plot (details below).", "page_idx": 0},
+            {
+                "type": "image",
+                "img_path": str(image.resolve()),
+                "img_caption": ["plot"],
+                "img_footnote": [],
+                "page_idx": 0,
+            },
+        ]
+
+    def test_title_with_parentheses(self, tmp_path):
+        image = tmp_path / "plot.png"
+        image.touch()
+        document = tmp_path / "doc.md"
+        document.write_text('![plot](plot.png "Figure (a)")', encoding="utf-8")
+
+        blocks = MineruParser().parse_text_file(document)
+
+        assert blocks[0]["img_path"] == str(image.resolve())
+        assert blocks[0]["img_caption"] == ["plot", "Figure (a)"]
+
     @pytest.mark.parametrize(
-        "target", ["missing%20image.png", "https://example.com/figure%201.png"]
+        "target",
+        [
+            "missing%20image.png",
+            "https://example.com/figure%201.png",
+            "<missing (1).png>",
+        ],
     )
     def test_unresolved_image_targets_remain_literal(self, tmp_path, target):
         text = f"![Figure]({target})"

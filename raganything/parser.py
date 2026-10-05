@@ -740,7 +740,13 @@ class Parser:
                 f"Could not decode text file {text_path.name} with any supported encoding"
             )
 
-    _MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
+    # The destination is either <angle-bracketed>, where it may contain spaces and
+    # parentheses (`<Screenshot (1).png>`), or bare, where parentheses must be
+    # balanced one level deep (`image(1).png`), as CommonMark allows. An optional
+    # "title" may follow either form.
+    _MD_IMAGE_RE = re.compile(
+        r"!\[([^\]]*)\]\((\s*<[^>\n]*>[^()\n]*|(?:[^()\n]|\([^()\n]*\))*)\)"
+    )
 
     @classmethod
     def _markdown_image_matches(cls, text: str) -> Iterator["re.Match[str]"]:
@@ -2494,6 +2500,17 @@ class DoclingParser(Parser):
     def read_from_block(
         self, block, type: str, output_dir: Path, cnt: int, num: str
     ) -> Dict[str, Any]:
+        # Docling provenance uses one-based source pages. Block counts are
+        # unrelated to pagination, including for nested groups or long pages.
+        # A multi-page item is anchored to its first source page; unpaginated
+        # formats retain the content-list convention of page_idx=0.
+        page_idx = 0
+        for provenance in block.get("prov") or []:
+            page_no = provenance.get("page_no")
+            if isinstance(page_no, int) and page_no > 0:
+                page_idx = page_no - 1
+                break
+
         if type == "texts":
             if block["label"] == "formula":
                 return {
@@ -2501,13 +2518,13 @@ class DoclingParser(Parser):
                     "img_path": "",
                     "text": block["orig"],
                     "text_format": "unknown",
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
             else:
                 return {
                     "type": "text",
                     "text": block["orig"],
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
         elif type == "pictures":
             try:
@@ -2527,14 +2544,14 @@ class DoclingParser(Parser):
                     "img_path": str(image_path.resolve()),  # Convert to absolute path
                     "image_caption": block.get("caption", ""),
                     "image_footnote": block.get("footnote", ""),
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
             except Exception as e:
                 self.logger.warning(f"Failed to process image {num}: {e}")
                 return {
                     "type": "text",
                     "text": f"[Image processing failed: {block.get('caption', '')}]",
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
         else:
             try:
@@ -2544,14 +2561,14 @@ class DoclingParser(Parser):
                     "table_caption": block.get("caption", ""),
                     "table_footnote": block.get("footnote", ""),
                     "table_body": block.get("data", []),
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
             except Exception as e:
                 self.logger.warning(f"Failed to process table {num}: {e}")
                 return {
                     "type": "text",
                     "text": f"[Table processing failed: {block.get('caption', '')}]",
-                    "page_idx": cnt // 10,
+                    "page_idx": page_idx,
                 }
 
     def parse_office_doc(

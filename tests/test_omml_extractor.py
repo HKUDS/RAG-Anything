@@ -215,7 +215,78 @@ class TestOmmlToLatex:
     def test_unicode_symbol_substitution(self):
         # ≤ should map to \leq.
         elem = _wrap_in_omath("<m:r><m:t>a\u2264b</m:t></m:r>")
-        assert omml_to_latex(elem) == r"a\leqb"
+        assert omml_to_latex(elem) == r"a\leq b"
+
+    @pytest.mark.parametrize(
+        "source,expected",
+        [
+            ("x∈R", r"x\in R"),
+            ("∂f", r"\partial f"),
+            ("a×b", r"a\times b"),
+            ("a≤2", r"a\leq2"),
+            ("a≤ b", r"a\leq b"),
+            ("a≤(b)", r"a\leq(b)"),
+            ("√x", r"\sqrt{}x"),
+            (r"\alpha + x", r"\alpha + x"),
+            ("\\alpha\\ ", "\\alpha\\ "),
+        ],
+    )
+    def test_symbol_boundaries_in_one_text_node(self, source, expected):
+        elem = _wrap_in_omath(f"<m:r><m:t>{source}</m:t></m:r>")
+        assert omml_to_latex(elem) == expected
+
+    def test_standalone_symbol(self):
+        elem = _wrap_in_omath("<m:r><m:t>∞</m:t></m:r>")
+        assert omml_to_latex(elem).rstrip() == r"\infty"
+
+    @pytest.mark.parametrize(
+        "inner",
+        [
+            "<m:r><m:t>a≤</m:t></m:r><m:r><m:t>b</m:t></m:r>",
+            "<m:r><m:t>a≤</m:t><m:t>b</m:t></m:r>",
+            "<m:r><m:t>a≤</m:t></m:r><m:box><m:e><m:r><m:t>b</m:t></m:r></m:e></m:box>",
+            "<m:custom><m:r><m:t>a≤</m:t></m:r><m:r><m:t>b</m:t></m:r></m:custom>",
+        ],
+    )
+    def test_symbol_boundaries_between_xml_nodes(self, inner):
+        assert omml_to_latex(_wrap_in_omath(inner)) == r"a\leq b"
+
+    def test_plain_variables_in_separate_runs_stay_adjacent(self):
+        elem = _wrap_in_omath("<m:r><m:t>a</m:t></m:r><m:r><m:t>b</m:t></m:r>")
+        assert omml_to_latex(elem) == "ab"
+
+    @pytest.mark.parametrize("parts", [(r"\al", "pha"), (r"\in", "fty"), ("a", "bc")])
+    def test_literal_latex_split_across_runs_is_preserved(self, parts):
+        elem = _wrap_in_omath(
+            "".join(f"<m:r><m:t>{part}</m:t></m:r>" for part in parts)
+        )
+        assert omml_to_latex(elem) == "".join(parts)
+
+    def test_generated_control_word_at_end_of_nested_expression(self):
+        elem = _wrap_in_omath(
+            "<m:f><m:num><m:r><m:t>∞</m:t></m:r></m:num>"
+            "<m:den><m:r><m:t>x</m:t></m:r></m:den></m:f>"
+        )
+        # A separator before a closing brace is harmless math whitespace.
+        assert omml_to_latex(elem).replace(" ", "") == r"\frac{\infty}{x}"
+
+
+def test_symbol_boundaries_survive_docx_extraction_and_enrichment(tmp_path):
+    source = tmp_path / "relations.docx"
+    source.write_bytes(
+        _make_docx(
+            "<m:oMath><m:r><m:t>x∈</m:t></m:r>" "<m:r><m:t>R</m:t></m:r></m:oMath>"
+        )
+    )
+
+    extracted = extract_omml_equations(source)
+    assert extracted[0]["text"] == r"x\in R"
+    assert extracted[0]["text_format"] == "latex"
+
+    enriched = enrich_content_list_with_docx_equations([], source)
+    assert enriched[0]["text"] == r"x\in R"
+    # Exact-string deduplication must compare against the corrected LaTeX.
+    assert enrich_content_list_with_docx_equations(enriched, source) == enriched
 
 
 class TestRobustness:

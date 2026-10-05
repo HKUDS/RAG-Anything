@@ -408,3 +408,114 @@ class TestCircuitBreaker:
         assert results == ["ok"]
         # The remaining concurrent calls during half-open are rejected.
         assert len(errors) == 4
+
+
+class TestAsyncCircuitBreaker:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("cancel_with_timeout", [False, True])
+    async def test_cancelled_half_open_trial_allows_next_trial(
+        self, cancel_with_timeout
+    ):
+        import asyncio
+
+        cb = CircuitBreaker(failure_threshold=1, reset_timeout=0, name="test")
+        cb.record_failure()
+        started = asyncio.Event()
+
+        @cb.async_call
+        async def blocked_trial():
+            started.set()
+            await asyncio.Event().wait()
+
+        @cb.async_call
+        async def recovered():
+            return "recovered"
+
+        task = asyncio.create_task(blocked_trial())
+        try:
+            await started.wait()
+            with pytest.raises(CircuitBreaker.CircuitBreakerOpen):
+                await recovered()
+        finally:
+            if cancel_with_timeout:
+                with pytest.raises(asyncio.TimeoutError):
+                    await asyncio.wait_for(task, timeout=0)
+            else:
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+
+        # Cancellation must neither count as an upstream failure nor close the
+        # breaker without a successful recovery probe.
+        assert cb.state == "half-open"
+        assert cb._failure_count == 1
+        assert await recovered() == "recovered"
+        assert cb.state == "closed"
+        assert cb._failure_count == 0
+
+    @pytest.mark.asyncio
+    async def test_cancelled_closed_call_does_not_count_as_failure(self):
+        import asyncio
+
+        cb = CircuitBreaker(failure_threshold=2, name="test")
+
+        @cb.async_call
+        async def cancelled():
+            raise asyncio.CancelledError
+
+        with pytest.raises(asyncio.CancelledError):
+            await cancelled()
+
+        assert cb.state == "closed"
+        assert cb._failure_count == 0
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("older_call_is_trial", [False, True])
+    async def test_cancelled_older_call_does_not_release_current_trial(
+        self, older_call_is_trial
+    ):
+        import asyncio
+
+        cb = CircuitBreaker(failure_threshold=1, reset_timeout=0, name="test")
+        started = asyncio.Queue()
+        release = asyncio.Event()
+
+        @cb.async_call
+        async def blocked_call(label):
+            started.put_nowait(label)
+            await release.wait()
+            return label
+
+        @cb.async_call
+        async def extra_call():
+            return "extra"
+
+        if older_call_is_trial:
+            cb.record_failure()
+        older = asyncio.create_task(blocked_call("older"))
+        current = None
+        try:
+            assert await started.get() == "older"
+            # An earlier in-flight call can complete after this call was
+            # admitted, changing the state before a new recovery probe starts.
+            cb.record_success()
+            cb.record_failure()
+            current = asyncio.create_task(blocked_call("current"))
+            assert await started.get() == "current"
+
+            older.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await older
+
+            with pytest.raises(CircuitBreaker.CircuitBreakerOpen):
+                await extra_call()
+
+            release.set()
+            assert await current == "current"
+            assert cb.state == "closed"
+        finally:
+            for task in (older, current):
+                if task is not None and not task.done():
+                    task.cancel()
+                    with pytest.raises(asyncio.CancelledError):
+                        await task
