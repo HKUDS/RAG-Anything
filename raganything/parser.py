@@ -739,7 +739,13 @@ class Parser:
                 f"Could not decode text file {text_path.name} with any supported encoding"
             )
 
-    _MD_IMAGE_RE = re.compile(r"!\[([^\]]*)\]\(([^)]*)\)")
+    # The destination is either <angle-bracketed>, where it may contain spaces and
+    # parentheses (`<Screenshot (1).png>`), or bare, where parentheses must be
+    # balanced one level deep (`image(1).png`), as CommonMark allows. An optional
+    # "title" may follow either form.
+    _MD_IMAGE_RE = re.compile(
+        r"!\[([^\]]*)\]\((\s*<[^>\n]*>[^()\n]*|(?:[^()\n]|\([^()\n]*\))*)\)"
+    )
 
     @classmethod
     def _resolve_md_image(
