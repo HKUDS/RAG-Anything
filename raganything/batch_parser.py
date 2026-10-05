@@ -20,6 +20,7 @@ import time
 
 from tqdm import tqdm
 
+from .parse_options import PARSER_CACHE_KWARGS, relevant_parser_kwargs
 from .parser import get_parser
 
 
@@ -315,7 +316,10 @@ class BatchParser:
         return metadata
 
     def _filter_incremental_files(
-        self, file_paths: List[str], manifest: Dict[str, Dict[str, object]]
+        self,
+        file_paths: List[str],
+        manifest: Dict[str, Dict[str, object]],
+        parse_config: Optional[str],
     ) -> Tuple[List[str], List[str], Dict[str, Dict[str, object]]]:
         """Split files into changed and unchanged groups using manifest metadata."""
         files_to_process = []
@@ -337,11 +341,14 @@ class BatchParser:
 
             manifest_key = metadata["path"]
             previous = manifest.get(manifest_key)
+            metadata["parse_config"] = parse_config
 
             # Fast path: if size and mtime match a previous run, trust the
             # stored signature and skip re-hashing the file entirely.
             if (
                 isinstance(previous, dict)
+                and parse_config is not None
+                and previous.get("parse_config") == parse_config
                 and previous.get("size") == metadata["size"]
                 and previous.get("mtime_ns") == metadata["mtime_ns"]
                 and "md5" in previous
@@ -363,12 +370,46 @@ class BatchParser:
 
             signatures[file_path] = metadata
 
-            if previous == metadata:
+            if parse_config is not None and previous == metadata:
                 skipped_files.append(file_path)
             else:
                 files_to_process.append(file_path)
 
         return files_to_process, skipped_files, signatures
+
+    def _parse_config_signature(self, parse_method: str, kwargs: dict) -> Optional[str]:
+        """Fingerprint parser inputs without persisting credentials in the manifest.
+
+        Built-in result-affecting options are normalised exactly as the parse
+        cache normalises them, so an explicit default and an omitted option
+        fingerprint the same; options outside that set are kept verbatim
+        because custom parsers may depend on them. ``None`` means "use the
+        parser default" and is dropped.
+        """
+        present = {key: value for key, value in kwargs.items() if value is not None}
+        normalized = {
+            key: value
+            for key, value in present.items()
+            if key not in PARSER_CACHE_KWARGS
+        }
+        normalized.update(relevant_parser_kwargs(present))
+        try:
+            config = json.dumps(
+                {
+                    "parser": str(self.parser_type).lower(),
+                    "parse_method": parse_method,
+                    "kwargs": normalized,
+                },
+                sort_keys=True,
+            )
+        except (TypeError, ValueError):
+            # Custom parsers may accept objects that cannot be represented in
+            # JSON. Still run them, but do not trust or record a reusable result.
+            self.logger.warning(
+                "Incremental reuse disabled for non-serializable parser options"
+            )
+            return None
+        return hashlib.sha256(config.encode("utf-8")).hexdigest()
 
     def process_batch(
         self,
@@ -389,8 +430,8 @@ class BatchParser:
             parse_method: Parsing method for all files
             recursive: Whether to search directories recursively
             dry_run: When True, only list files without processing them
-            incremental: When True, skip files whose size, mtime, and md5 match
-                the previous successful batch run in output_dir
+            incremental: When True, skip files whose size, mtime, md5, and parsing
+                configuration match the previous successful batch run in output_dir
             **kwargs: Additional parser arguments
 
         Returns:
@@ -424,9 +465,10 @@ class BatchParser:
         signatures: Dict[str, Dict[str, object]] = {}
         files_to_process = supported_files
         if incremental:
+            parse_config = self._parse_config_signature(parse_method, kwargs)
             manifest = self._load_incremental_manifest(output_dir)
             files_to_process, skipped_files, signatures = (
-                self._filter_incremental_files(supported_files, manifest)
+                self._filter_incremental_files(supported_files, manifest, parse_config)
             )
             self.logger.info(
                 f"Incremental scan: {len(files_to_process)} changed files, "
@@ -519,11 +561,17 @@ class BatchParser:
             if pbar:
                 pbar.close()
 
-        if incremental and successful_files:
+        if incremental and (successful_files or failed_files):
+            # A failed reparse may already have overwritten the old artifacts.
+            # Do not retain an earlier successful configuration for that file.
+            for file_path in failed_files:
+                manifest.pop(str(Path(file_path).resolve()), None)
             for file_path in successful_files:
                 signature = signatures.get(file_path)
-                if signature:
+                if signature and parse_config is not None:
                     manifest[signature["path"]] = signature
+                else:
+                    manifest.pop(str(Path(file_path).resolve()), None)
             self._save_incremental_manifest(output_dir, manifest)
 
         processing_time = time.time() - start_time

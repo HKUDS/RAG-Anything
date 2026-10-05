@@ -1,8 +1,11 @@
 import importlib.util
+import json
 import sys
 import time
 import types
 from pathlib import Path
+
+import pytest
 
 
 class FakeParser:
@@ -338,3 +341,260 @@ def test_timeout_is_applied_per_file_not_to_entire_batch(monkeypatch, tmp_path):
     # have failed here. Compare sorted since glob order is not defined.
     assert sorted(result.successful_files) == sorted([str(first_doc), str(second_doc)])
     assert result.failed_files == []
+
+
+@pytest.mark.parametrize(
+    "first_options,second_options",
+    [
+        ({"parse_method": "auto"}, {"parse_method": "ocr"}),
+        ({"lang": "en"}, {"lang": "ch"}),
+        ({"start_page": 0, "end_page": 1}, {"start_page": 2, "end_page": 3}),
+        ({"include_layout_blocks": False}, {"include_layout_blocks": True}),
+    ],
+)
+def test_incremental_reprocesses_when_parse_options_change(
+    monkeypatch, tmp_path, first_options, second_options
+):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("unchanged source", encoding="utf-8")
+    output_dir = str(tmp_path / "out")
+    inputs = [str(document)]
+
+    batch_parser.process_batch(inputs, output_dir, incremental=True, **first_options)
+    fake_parser.processed_files.clear()
+    result = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, **second_options
+    )
+
+    assert result.successful_files == inputs
+    assert result.skipped_files == []
+    assert fake_parser.processed_files == inputs
+    repeated = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, **second_options
+    )
+    assert repeated.skipped_files == inputs
+
+
+def test_incremental_reprocesses_when_parser_changes(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("unchanged source", encoding="utf-8")
+    inputs = [str(document)]
+    output_dir = str(tmp_path / "out")
+    batch_parser.process_batch(inputs, output_dir, incremental=True)
+
+    # A different parser instance shares the same output directory/manifest.
+    other = type(batch_parser)(
+        parser_type="other", show_progress=False, skip_installation_check=True
+    )
+    fake_parser.processed_files.clear()
+    result = other.process_batch(inputs, output_dir, incremental=True)
+
+    assert result.successful_files == inputs
+    assert fake_parser.processed_files == inputs
+
+
+def test_incremental_legacy_manifest_is_refreshed_once(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("unchanged source", encoding="utf-8")
+    inputs = [str(document)]
+    output_dir = str(tmp_path / "out")
+    signature = batch_parser._file_signature(str(document))
+    batch_parser._save_incremental_manifest(output_dir, {signature["path"]: signature})
+
+    result = batch_parser.process_batch(inputs, output_dir, incremental=True)
+    assert result.successful_files == inputs
+    assert fake_parser.processed_files == inputs
+    assert (
+        batch_parser.process_batch(inputs, output_dir, incremental=True).skipped_files
+        == inputs
+    )
+
+
+def test_incremental_configuration_is_per_file_and_failed_reparse_is_retried(
+    monkeypatch, tmp_path
+):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    _docs_dir, first_doc, second_doc = _seed_two_docs(tmp_path)
+    inputs = [str(first_doc), str(second_doc)]
+    output_dir = str(tmp_path / "out")
+    batch_parser.process_batch(inputs, output_dir, incremental=True, lang="en")
+    original_parse = fake_parser.parse_document
+
+    def fail_second(file_path, **kwargs):
+        if file_path == str(second_doc):
+            raise RuntimeError("temporary parser failure")
+        return original_parse(file_path, **kwargs)
+
+    fake_parser.parse_document = fail_second
+    changed = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, lang="ch"
+    )
+    assert changed.successful_files == [str(first_doc)]
+    assert changed.failed_files == [str(second_doc)]
+
+    fake_parser.parse_document = original_parse
+    retried = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, lang="ch"
+    )
+    assert retried.successful_files == [str(second_doc)]
+    assert retried.skipped_files == [str(first_doc)]
+
+
+def test_incremental_option_order_and_worker_count_do_not_invalidate(
+    monkeypatch, tmp_path
+):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("source", encoding="utf-8")
+    inputs = [str(document)]
+    output_dir = str(tmp_path / "out")
+    batch_parser.process_batch(
+        inputs, output_dir, incremental=True, lang="en", start_page=0
+    )
+    batch_parser.max_workers = 3
+    result = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, start_page=0, lang="en"
+    )
+    assert result.skipped_files == inputs
+    assert fake_parser.processed_files == inputs
+
+
+def test_incremental_dry_run_with_new_options_preserves_manifest(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("source", encoding="utf-8")
+    inputs = [str(document)]
+    output_dir = str(tmp_path / "out")
+    batch_parser.process_batch(inputs, output_dir, incremental=True, lang="en")
+    manifest_path = batch_parser._manifest_path(output_dir)
+    before = manifest_path.read_bytes()
+    result = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, dry_run=True, lang="ch"
+    )
+    assert result.successful_files == inputs
+    assert result.skipped_files == []
+    assert manifest_path.read_bytes() == before
+    assert fake_parser.processed_files == inputs
+
+
+def test_incremental_does_not_persist_raw_parser_options(monkeypatch, tmp_path):
+    batch_parser, _ = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("source", encoding="utf-8")
+    output_dir = str(tmp_path / "out")
+    batch_parser.process_batch(
+        [str(document)], output_dir, incremental=True, api_key="private-test-key"
+    )
+    manifest_text = batch_parser._manifest_path(output_dir).read_text(encoding="utf-8")
+    assert "private-test-key" not in manifest_text
+    assert json.loads(manifest_text)["files"]
+
+
+def test_incremental_custom_option_objects_disable_reuse(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("source", encoding="utf-8")
+    inputs = [str(document)]
+    output_dir = str(tmp_path / "out")
+    custom_option = object()
+    for _ in range(2):
+        result = batch_parser.process_batch(
+            inputs, output_dir, incremental=True, custom_option=custom_option
+        )
+        assert result.successful_files == inputs
+        assert result.skipped_files == []
+    assert fake_parser.processed_files == inputs * 2
+
+
+def test_failed_reparse_invalidates_previous_configuration(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("source", encoding="utf-8")
+    inputs = [str(document)]
+    output_dir = str(tmp_path / "out")
+    batch_parser.process_batch(inputs, output_dir, incremental=True, lang="en")
+    original_parse = fake_parser.parse_document
+
+    def fail_parse(**kwargs):
+        raise RuntimeError("parser failed after overwriting old output")
+
+    fake_parser.parse_document = fail_parse
+    result = batch_parser.process_batch(inputs, output_dir, incremental=True, lang="ch")
+    assert result.failed_files == inputs
+    fake_parser.parse_document = original_parse
+    restored = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, lang="en"
+    )
+    assert restored.successful_files == inputs
+    assert restored.skipped_files == []
+
+
+@pytest.mark.parametrize(
+    "first_options,second_options",
+    [
+        ({}, {"include_layout_blocks": False}),
+        ({}, {"lang": None}),
+        ({"lang": "en"}, {"lang": "en", "start_page": None}),
+    ],
+)
+def test_incremental_explicit_defaults_do_not_invalidate(
+    monkeypatch, tmp_path, first_options, second_options
+):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("unchanged source", encoding="utf-8")
+    output_dir = str(tmp_path / "out")
+    inputs = [str(document)]
+
+    batch_parser.process_batch(inputs, output_dir, incremental=True, **first_options)
+    fake_parser.processed_files.clear()
+    result = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, **second_options
+    )
+
+    assert result.skipped_files == inputs
+    assert fake_parser.processed_files == []
+
+
+def test_incremental_parser_name_case_does_not_invalidate(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("unchanged source", encoding="utf-8")
+    inputs = [str(document)]
+    output_dir = str(tmp_path / "out")
+    batch_parser.process_batch(inputs, output_dir, incremental=True)
+
+    upper = type(batch_parser)(
+        parser_type=batch_parser.parser_type.upper(),
+        show_progress=False,
+        skip_installation_check=True,
+    )
+    fake_parser.processed_files.clear()
+    result = upper.process_batch(inputs, output_dir, incremental=True)
+
+    assert result.skipped_files == inputs
+    assert fake_parser.processed_files == []
+
+
+def test_incremental_custom_parser_option_change_still_invalidates(
+    monkeypatch, tmp_path
+):
+    # Options outside the built-in set are kept verbatim: a custom parser may
+    # depend on them, so changing one must still force a reparse.
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    document = tmp_path / "document.txt"
+    document.write_text("unchanged source", encoding="utf-8")
+    inputs = [str(document)]
+    output_dir = str(tmp_path / "out")
+
+    batch_parser.process_batch(inputs, output_dir, incremental=True, custom_mode="a")
+    fake_parser.processed_files.clear()
+    result = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, custom_mode="b"
+    )
+
+    assert result.successful_files == inputs
+    assert fake_parser.processed_files == inputs

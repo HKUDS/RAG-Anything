@@ -27,6 +27,10 @@ from raganything.utils import (
     annotate_chunks_with_page_idx,
     build_sanitized_page_map,
 )
+from raganything.parse_options import (
+    PARSER_CACHE_KWARGS as _PARSER_CACHE_KWARGS,  # noqa: F401
+    relevant_parser_kwargs,
+)
 import asyncio
 import inspect
 from collections import OrderedDict
@@ -38,20 +42,6 @@ AUDIO_FILE_EXTENSIONS = frozenset(
 )
 VIDEO_FILE_EXTENSIONS = frozenset(
     {".mp4", ".mov", ".webm", ".avi", ".mkv", ".flv", ".wmv", ".m4v"}
-)
-
-_PARSER_CACHE_KWARGS = frozenset(
-    {
-        "lang",
-        "device",
-        "start_page",
-        "end_page",
-        "formula",
-        "table",
-        "backend",
-        "source",
-        "include_layout_blocks",
-    }
 )
 
 
@@ -69,12 +59,7 @@ class ProcessorMixin:
     @staticmethod
     def _relevant_parser_kwargs(kwargs: Dict[str, Any]) -> Dict[str, Any]:
         """Return parser options that change the persisted parse result."""
-        return {
-            key: value
-            for key, value in kwargs.items()
-            if key in _PARSER_CACHE_KWARGS
-            and not (key == "include_layout_blocks" and not value)
-        }
+        return relevant_parser_kwargs(kwargs)
 
     @staticmethod
     def _file_content_fingerprint(file_path: Path) -> str:
