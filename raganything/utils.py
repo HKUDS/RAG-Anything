@@ -9,7 +9,7 @@ from __future__ import annotations
 import bisect
 import base64
 import inspect
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 from lightrag.utils import logger
 
@@ -172,22 +172,22 @@ def extract_neighbor_text_from_content_list(
 
 def separate_content_with_page_map(
     content_list: List[Dict[str, Any]],
-) -> Tuple[str, List[Dict[str, Any]], List[Tuple[int, int, int]]]:
+) -> Tuple[str, List[Dict[str, Any]], List[Tuple[int, int, Optional[int]]]]:
     """
     Separate text content, multimodal content, and per-block page provenance.
 
-    Behaves exactly like :func:`separate_content` but additionally returns a
-    page map: non-overlapping ``(start, end, page_idx)`` character intervals
-    (into the returned ``text_content``) covering every text block that had a
-    ``page_idx``. Blocks without ``page_idx`` (or with non-int values) are
-    skipped so callers never see a wrong page attribution.
+    Behaves exactly like :func:`separate_content` but additionally returns
+    non-overlapping ``(start, end, page_idx)`` character intervals (into the
+    returned ``text_content``) for every non-empty text block, in document
+    order. ``page_idx`` is ``None`` for blocks without a usable int page, so
+    later stages can step over them instead of guessing.
 
     Returns:
         (text_content, multimodal_items, page_intervals)
     """
     text_parts = []
     multimodal_items = []
-    page_intervals: List[Tuple[int, int, int]] = []
+    page_intervals: List[Tuple[int, int, Optional[int]]] = []
     text_length = 0
 
     for index, item in enumerate(content_list):
@@ -202,8 +202,9 @@ def separate_content_with_page_map(
                 end = start + len(text)
                 text_length = end
                 page_idx = item.get("page_idx")
-                if isinstance(page_idx, int) and not isinstance(page_idx, bool):
-                    page_intervals.append((start, end, page_idx))
+                if not isinstance(page_idx, int) or isinstance(page_idx, bool):
+                    page_idx = None
+                page_intervals.append((start, end, page_idx))
         else:
             # Multimodal content (image, table, equation, etc.)
             multimodal_item = dict(item)
@@ -240,7 +241,7 @@ def separate_content_with_page_map(
 
 def build_sanitized_page_map(
     text_content: str,
-    page_intervals: List[Tuple[int, int, int]],
+    page_intervals: List[Tuple[int, int, Optional[int]]],
 ) -> Tuple[str, List[Tuple[int, int, int]]]:
     """
     Re-express page intervals in the coordinates LightRAG actually chunks.
@@ -269,9 +270,129 @@ def build_sanitized_page_map(
         position = sanitized.find(core, cursor)
         if position < 0:
             continue
-        intervals.append((position, position + len(core), page_idx))
+        # Unpaginated blocks still advance the cursor, so a later block whose
+        # text also occurs inside them cannot be placed there.
         cursor = position + len(core)
+        if page_idx is not None:
+            intervals.append((position, position + len(core), page_idx))
     return sanitized, intervals
+
+
+# Extra room around a chunk's expected position: separators, stripped
+# whitespace and U+FFFD edges between consecutive chunks.
+_CHUNK_SEARCH_SLACK = 64
+# A chunker whose output is not verbatim source text would otherwise be
+# searched for on every chunk; give up after this many misses in a row.
+_MAX_CONSECUTIVE_CHUNK_MISSES = 3
+_MAX_CANDIDATES = 64
+
+
+def _trim_edges(text: str) -> str:
+    """Strip whitespace and U+FFFD from both ends until neither remains."""
+    while True:
+        trimmed = text.strip().strip("\ufffd")
+        if trimmed == text:
+            return text
+        text = trimmed
+
+
+def _chunk_needle(chunk: Dict[str, Any]) -> str:
+    content = chunk.get("content")
+    if not isinstance(content, str):
+        return ""
+    return _trim_edges(content)
+
+
+def _occurrences(text: str, needle: str, low: int, high: int) -> List[int]:
+    """Start offsets of ``needle`` lying entirely within ``text[low:high]``."""
+    found: List[int] = []
+    position = text.find(needle, max(low, 0), high)
+    while position >= 0 and len(found) < _MAX_CANDIDATES:
+        found.append(position)
+        position = text.find(needle, position + 1, high)
+    return found
+
+
+def locate_chunk_spans(
+    chunks: List[Dict[str, Any]],
+    text: str,
+    *,
+    mode: str = "unknown",
+    overlap_ratio: float = 0.0,
+) -> List[Optional[Tuple[int, int]]]:
+    """
+    Locate each chunk of ``text`` as a ``(start, end)`` span, or ``None``.
+
+    Chunks are expected in document order. ``mode`` describes how they were
+    produced so that repeated text resolves to the right occurrence:
+
+    - ``"token"``: LightRAG's token chunker — consecutive chunks overlap by
+      ``overlap_ratio`` of a chunk, so a chunk starts near
+      ``prev_start + (prev_end - prev_start) * (1 - overlap_ratio)``; the
+      occurrence nearest that point is chosen, and the final chunk is
+      anchored to the end of the text (a short tail would otherwise match an
+      earlier copy of itself).
+    - ``"split"``: LightRAG's ``split_by_character`` chunker — pieces do not
+      overlap, so the first occurrence at or after the previous chunk's end
+      is chosen.
+    - ``"unknown"``: any other chunker — a chunk is located only when exactly
+      one candidate exists; ambiguity yields ``None`` rather than a guess.
+
+    Every search is confined to a window around the previous chunk, so the
+    cost is linear in the text length.
+    """
+    spans: List[Optional[Tuple[int, int]]] = []
+    previous: Optional[Tuple[int, int]] = None
+    misses = 0
+    last_index = len(chunks) - 1
+    text_tail = _trim_edges(text)
+    tail_end = text.find(text_tail) + len(text_tail) if text_tail else 0
+    for index, chunk in enumerate(chunks):
+        needle = _chunk_needle(chunk)
+        if not needle or misses >= _MAX_CONSECUTIVE_CHUNK_MISSES:
+            spans.append(None)
+            continue
+        if (
+            mode == "token"
+            and index == last_index
+            and text.endswith(needle, 0, tail_end)
+        ):
+            # The token chunker's final window always runs to the end of the
+            # text, so a short tail cannot sit anywhere else.
+            spans.append((tail_end - len(needle), tail_end))
+            continue
+        if previous is None:
+            low, expected = 0, 0
+            high = len(needle) + _CHUNK_SEARCH_SLACK
+        else:
+            prev_start, prev_end = previous
+            low = prev_start + 1
+            high = prev_end + len(needle) + _CHUNK_SEARCH_SLACK
+            expected = prev_start + round((prev_end - prev_start) * (1 - overlap_ratio))
+        high = min(high, len(text))
+
+        position: Optional[int] = None
+        if mode == "split" and previous is not None:
+            found = text.find(needle, max(low, previous[1]), high)
+            position = found if found >= 0 else None
+        if position is None:
+            candidates = _occurrences(text, needle, low, high)
+            if mode in ("token", "split") and candidates:
+                position = min(candidates, key=lambda c: (abs(c - expected), c))
+            elif len(candidates) == 1:
+                position = candidates[0]
+
+        if position is None:
+            misses += 1
+            spans.append(None)
+            if mode == "token" and previous is not None:
+                # keep the window moving with the chunker's stride
+                previous = (expected, expected + len(needle))
+            continue
+        misses = 0
+        previous = (position, position + len(needle))
+        spans.append(previous)
+    return spans
 
 
 def annotate_chunks_with_page_idx(
@@ -279,41 +400,35 @@ def annotate_chunks_with_page_idx(
     sanitized_text: str,
     page_intervals: List[Tuple[int, int, int]],
     logger: Any = None,
+    *,
+    mode: str = "unknown",
+    overlap_ratio: float = 0.0,
 ) -> List[Dict[str, Any]]:
     """
     Annotate chunks produced from ``sanitized_text`` with their source page.
 
     ``page_intervals`` must be in ``sanitized_text`` coordinates (see
-    :func:`build_sanitized_page_map`). LightRAG chunks are decoded, stripped
-    token slices of that text and arrive in document order, so each chunk is
-    searched for forward from the previous chunk's start; a multi-byte
-    character split at a slice edge decodes to U+FFFD, which is trimmed
-    before searching. Chunks inside one interval get its ``page_idx``; chunks
-    spanning several get the first page as ``page_idx`` and the last as
-    ``page_idx_end``. Chunks that cannot be located are left untouched —
-    annotation must never break or mislabel ingestion.
-
-    Returns the same list (mutated in place).
+    :func:`build_sanitized_page_map`); chunks are located with
+    :func:`locate_chunk_spans`. Chunks inside one interval get its
+    ``page_idx``; chunks spanning several get the first page as ``page_idx``
+    and the last as ``page_idx_end``. Chunks that cannot be located with
+    confidence are left untouched — annotation must never break or mislabel
+    ingestion. Returns the same list (mutated in place).
     """
     if not page_intervals:
         return chunks
 
+    spans = locate_chunk_spans(
+        chunks, sanitized_text, mode=mode, overlap_ratio=overlap_ratio
+    )
     interval_ends = [end for _, end, _ in page_intervals]
-    cursor = 0
     missed = 0
-    for chunk in chunks:
-        content = chunk.get("content")
-        if not isinstance(content, str):
+    for chunk, span in zip(chunks, spans):
+        if span is None:
+            if _chunk_needle(chunk):
+                missed += 1
             continue
-        needle = content.strip().strip("\ufffd").strip()
-        if not needle:
-            continue
-        offset = sanitized_text.find(needle, cursor)
-        if offset < 0:
-            missed += 1
-            continue
-        cursor = offset + 1
-        chunk_end = offset + len(needle)
+        offset, chunk_end = span
         pages = []
         index = bisect.bisect_right(interval_ends, offset)
         while index < len(page_intervals) and page_intervals[index][0] < chunk_end:
@@ -325,8 +440,8 @@ def annotate_chunks_with_page_idx(
                 chunk["page_idx_end"] = max(pages)
     if missed and logger is not None:
         logger.warning(
-            f"page_idx annotation: {missed} chunk(s) could not be located in "
-            "the source text and carry no page_idx"
+            f"page_idx annotation: {missed} chunk(s) could not be located with "
+            "confidence and carry no page_idx"
         )
     return chunks
 

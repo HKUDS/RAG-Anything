@@ -10,6 +10,7 @@ one doc_id, one doc_status row, no change to the ingest contract.
 
 import importlib.util
 import sys
+import time
 import types
 from pathlib import Path
 
@@ -314,9 +315,53 @@ def test_repeated_text_maps_to_its_own_occurrence(raganything_modules):
     sanitized, mapped = utils.build_sanitized_page_map(text, intervals)
     chunks = [{"content": part} for part in sanitized.split("\n\n")]
 
-    utils.annotate_chunks_with_page_idx(chunks, sanitized, mapped)
+    utils.annotate_chunks_with_page_idx(chunks, sanitized, mapped, mode="split")
 
     assert [c["page_idx"] for c in chunks] == [0, 0, 1, 1, 2, 2]
+
+
+def test_unknown_chunker_leaves_ambiguous_chunks_unannotated(raganything_modules):
+    """Without knowing how a custom chunker works, a chunk whose text occurs
+    more than once nearby is skipped rather than guessed."""
+    utils = raganything_modules.utils
+    blocks = [
+        {"type": "text", "text": text, "page_idx": page}
+        for page in range(3)
+        for text in (f"Body {page}.", "Confidential.")
+    ]
+    text, _, intervals = utils.separate_content_with_page_map(blocks)
+    sanitized, mapped = utils.build_sanitized_page_map(text, intervals)
+    chunks = [{"content": part} for part in sanitized.split("\n\n")]
+
+    utils.annotate_chunks_with_page_idx(chunks, sanitized, mapped)
+
+    for chunk in chunks:
+        if chunk["content"].startswith("Body"):
+            assert chunk["page_idx"] == int(chunk["content"][5])
+        else:
+            assert chunk.get("page_idx") in (None, *range(3))
+    footers = [c for c in chunks if c["content"] == "Confidential." and "page_idx" in c]
+    for footer in footers:  # whatever is annotated must be its own page
+        position = chunks.index(footer)
+        assert footer["page_idx"] == position // 2
+
+
+def test_unpaginated_block_does_not_capture_a_later_interval(raganything_modules):
+    """A paginated block whose text also occurs inside an earlier
+    unpaginated block must be placed at its own position."""
+    utils = raganything_modules.utils
+    blocks = [
+        {"type": "text", "text": "Cover page.", "page_idx": 0},
+        {"type": "text", "text": "Key finding: Ember Garden hosted shrimp."},
+        {"type": "text", "text": "Ember Garden hosted shrimp.", "page_idx": 4},
+    ]
+    text, _, intervals = utils.separate_content_with_page_map(blocks)
+    sanitized, mapped = utils.build_sanitized_page_map(text, intervals)
+
+    assert [page for _, _, page in mapped] == [0, 4]
+    start, end, _ = mapped[1]
+    assert start == sanitized.rindex("Ember Garden hosted shrimp.")
+    assert sanitized[start:end] == "Ember Garden hosted shrimp."
 
 
 def test_replacement_chars_at_chunk_edges_are_trimmed(raganything_modules):
@@ -335,16 +380,72 @@ def test_replacement_chars_at_chunk_edges_are_trimmed(raganything_modules):
     assert [c.get("page_idx") for c in chunks] == [4, 5]
 
 
-def test_page_map_registry_is_bounded(raganything_modules, tmp_path):
+@pytest.mark.asyncio
+async def test_page_map_registry_is_bounded(raganything_modules, tmp_path):
     """Maps whose document is never chunked (dedup, failure) cannot pile up."""
     lightrag = ChunkRecordingLightRAG(split_on_blank_lines)
     processor = _make_processor(raganything_modules, lightrag, tmp_path)
     limit = processor._PAGE_MAP_REGISTRY_LIMIT
 
     for index in range(limit + 5):
-        processor._register_page_map(f"doc {index} text", [(0, 4, 0)])
+        await processor._register_page_map(f"doc {index} text", [(0, 4, 0)])
 
     assert len(lightrag.chunking_func._raganything_page_maps) == limit
+
+
+@pytest.mark.asyncio
+async def test_identical_text_with_different_pages_is_not_annotated(
+    raganything_modules, tmp_path
+):
+    """Two pending documents with the same text but different pagination:
+    annotating either could use the other's pages, so neither is."""
+    lightrag = ChunkRecordingLightRAG(split_on_blank_lines)
+    processor = _make_processor(raganything_modules, lightrag, tmp_path)
+    text = "Alpha.\n\nBeta."
+
+    await processor._register_page_map(text, [(0, 6, 0), (8, 13, 1)])
+    await processor._register_page_map(text, [(0, 6, 3), (8, 13, 4)])
+    chunks = lightrag.chunking_func(None, text, None, False, 100, 1200)
+
+    assert all("page_idx" not in chunk for chunk in chunks)
+
+
+@pytest.mark.asyncio
+async def test_already_processed_document_is_not_registered(
+    raganything_modules, tmp_path
+):
+    """LightRAG skips a doc_id it has processed; its map would never be used."""
+    lightrag = ChunkRecordingLightRAG(split_on_blank_lines)
+    lightrag.doc_status.records["doc-done"] = {"status": "processed"}
+    processor = _make_processor(raganything_modules, lightrag, tmp_path)
+
+    await processor._register_page_map("Some text.", [(0, 10, 0)], "doc-done")
+
+    assert not hasattr(lightrag.chunking_func, "_raganything_page_maps")
+
+
+@pytest.mark.asyncio
+async def test_wrapper_exposes_the_wrapped_chunker(raganything_modules, tmp_path):
+    lightrag = ChunkRecordingLightRAG(split_on_blank_lines)
+    processor = _make_processor(raganything_modules, lightrag, tmp_path)
+
+    await processor._register_page_map("Some text.", [(0, 10, 0)])
+
+    assert lightrag.chunking_func.__wrapped__ is split_on_blank_lines
+
+
+def test_chunker_that_does_not_emit_source_text_stays_linear(raganything_modules):
+    """A chunker that decorates its chunks is never located; the search must
+    give up instead of rescanning the document for every chunk."""
+    utils = raganything_modules.utils
+    text = "word " * 400_000
+    chunks = [{"content": f"[section {i}] word word"} for i in range(5_000)]
+
+    started = time.perf_counter()
+    utils.annotate_chunks_with_page_idx(chunks, text, [(0, len(text), 0)])
+
+    assert time.perf_counter() - started < 1.0
+    assert all("page_idx" not in chunk for chunk in chunks)
 
 
 @pytest.mark.asyncio

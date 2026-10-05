@@ -61,6 +61,17 @@ def load_project_module(module_name, path):
     return module
 
 
+_STUBBED_MODULES = (
+    "lightrag",
+    "lightrag.utils",
+    "raganything",
+    "raganything.base",
+    "raganything.parser",
+    "raganything.utils",
+    "raganything.processor",
+)
+_saved_modules = {name: sys.modules.get(name) for name in _STUBBED_MODULES}
+
 install_import_stubs()
 utils_module = load_project_module(
     "raganything.utils", PROJECT_ROOT / "raganything" / "utils.py"
@@ -68,6 +79,15 @@ utils_module = load_project_module(
 processor_module = load_project_module(
     "raganything.processor", PROJECT_ROOT / "raganything" / "processor.py"
 )
+
+# The modules under test are bound above. Put sys.modules back so these
+# stubs do not stand in for the real packages in test modules collected
+# later in the same session.
+for _name, _module in _saved_modules.items():
+    if _module is None:
+        sys.modules.pop(_name, None)
+    else:
+        sys.modules[_name] = _module
 
 ProcessorMixin = processor_module.ProcessorMixin
 format_table_body = utils_module.format_table_body

@@ -55,6 +55,14 @@ _PARSER_CACHE_KWARGS = frozenset(
 )
 
 
+# Marks a text registered by two pending documents with different pagination.
+_AMBIGUOUS_PAGE_MAP: List[Tuple[int, int, int]] = []
+
+
+def _page_map_key(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+
+
 class ProcessorMixin:
     """ProcessorMixin class containing document processing functionality for RAGAnything"""
 
@@ -166,13 +174,16 @@ class ProcessorMixin:
         await self.lightrag.doc_status.index_done_callback()
         return await self.lightrag.doc_status.get_by_id(doc_id) or doc_status_payload
 
-    # Upper bound on page maps waiting for LightRAG to chunk their document.
-    # Maps are consumed when the document is chunked; this only caps maps
-    # whose document never reaches chunking (dedup, failed insert).
-    _PAGE_MAP_REGISTRY_LIMIT = 16
+    # Page maps waiting for LightRAG to chunk their document. Entries hold
+    # only intervals (keyed by a hash of the text), so the cap is about
+    # bounding maps of documents that never reach chunking, not memory.
+    _PAGE_MAP_REGISTRY_LIMIT = 256
 
-    def _register_page_map(
-        self, text_content: str, page_intervals: List[Tuple[int, int, int]]
+    async def _register_page_map(
+        self,
+        text_content: str,
+        page_intervals: List[Tuple[int, int, Optional[int]]],
+        doc_id: Optional[str] = None,
     ) -> None:
         """Arrange for the text chunks of ``text_content`` to carry ``page_idx``.
 
@@ -183,9 +194,16 @@ class ProcessorMixin:
         up by the exact text it is asked to chunk. Never raises: page
         provenance must not break ingestion (#330).
         """
-        if not page_intervals:
+        if not any(page is not None for _, _, page in page_intervals):
             return
         try:
+            if doc_id and await self._doc_already_processed(doc_id):
+                # LightRAG will skip this document as a duplicate; a map
+                # registered for it would never be consumed.
+                return
+            # No awaits from here on: reading chunking_func, installing the
+            # wrapper and registering must not interleave with a concurrent
+            # registration, or two wrappers with separate registries race.
             chunking_func = getattr(self.lightrag, "chunking_func", None)
             if chunking_func is None:
                 return
@@ -200,28 +218,78 @@ class ProcessorMixin:
                 self.lightrag.chunking_func = self._wrap_chunking_func(
                     chunking_func, registry
                 )
-            registry[sanitized] = intervals
-            registry.move_to_end(sanitized)
+            key = _page_map_key(sanitized)
+            existing = registry.get(key)
+            if existing is not None and existing != intervals:
+                # Two pending documents with identical text but different
+                # pagination: annotating either could use the other's pages.
+                registry[key] = _AMBIGUOUS_PAGE_MAP
+            else:
+                registry[key] = intervals
+            registry.move_to_end(key)
             while len(registry) > self._PAGE_MAP_REGISTRY_LIMIT:
                 registry.popitem(last=False)
+                self.logger.warning(
+                    "page_idx registry full; the oldest pending document will "
+                    "be stored without page_idx"
+                )
         except Exception as exc:
             self.logger.warning(
                 f"page_idx annotation disabled for this document: {exc}"
             )
 
+    async def _doc_already_processed(self, doc_id: str) -> bool:
+        record = await self.lightrag.doc_status.get_by_id(doc_id)
+        if not record:
+            return False
+        status = record.get("status") if isinstance(record, dict) else None
+        return str(getattr(status, "value", status)).lower() == "processed"
+
     def _wrap_chunking_func(self, chunking_func, registry: "OrderedDict"):
         """Wrap ``chunking_func`` so chunks of registered texts get ``page_idx``.
 
         Supports both sync and async chunking functions, like LightRAG does.
+        For LightRAG's own chunker the call arguments say how chunks were
+        produced, which lets repeated text resolve to the right occurrence;
+        other chunkers are only annotated where a chunk is unambiguous.
         """
         logger = self.logger
+        try:
+            from lightrag.operate import chunking_by_token_size
+        except ImportError:  # pragma: no cover - lightrag always provides it
+            chunking_by_token_size = None
+        known_chunker = chunking_func is chunking_by_token_size
 
-        def finish(content, chunks):
-            intervals = registry.pop(content, None)
-            if intervals:
+        def chunking_mode(args, kwargs):
+            if not known_chunker:
+                return "unknown", 0.0
+            names = (
+                "split_by_character",
+                "split_by_character_only",
+                "chunk_overlap_token_size",
+                "chunk_token_size",
+            )
+            values = dict(zip(names, args))
+            values.update({k: v for k, v in kwargs.items() if k in names})
+            if values.get("split_by_character"):
+                return "split", 0.0
+            size = values.get("chunk_token_size") or 1200
+            overlap = values.get("chunk_overlap_token_size")
+            overlap = 100 if overlap is None else overlap
+            return "token", (overlap / size) if size else 0.0
+
+        def finish(content, chunks, args, kwargs):
+            intervals = registry.pop(_page_map_key(content), None)
+            if intervals and intervals is not _AMBIGUOUS_PAGE_MAP:
                 try:
+                    mode, overlap_ratio = chunking_mode(args, kwargs)
                     annotate_chunks_with_page_idx(
-                        chunks, content, intervals, logger=logger
+                        chunks,
+                        content,
+                        intervals,
+                        logger=logger,
+                        mode=mode,
+                        overlap_ratio=overlap_ratio,
                     )
                 except Exception as exc:
                     logger.warning(
@@ -235,12 +303,13 @@ class ProcessorMixin:
             if inspect.isawaitable(result):
 
                 async def annotated():
-                    return finish(content, await result)
+                    return finish(content, await result, args, kwargs)
 
                 return annotated()
-            return finish(content, result)
+            return finish(content, result, args, kwargs)
 
         annotating_chunking_func._raganything_page_maps = registry
+        annotating_chunking_func.__wrapped__ = chunking_func
         return annotating_chunking_func
 
     async def _upsert_doc_status(
@@ -1922,7 +1991,7 @@ class ProcessorMixin:
                         doc_id=doc_id,
                     )
                 insert_start = time.time()
-                self._register_page_map(text_content, page_intervals)
+                await self._register_page_map(text_content, page_intervals, doc_id)
                 await insert_text_content(
                     self.lightrag,
                     input=text_content,
@@ -2230,7 +2299,7 @@ class ProcessorMixin:
 
             # Step 3: Insert pure text content and multimodal content with all parameters
             if text_content.strip():
-                self._register_page_map(text_content, page_intervals)
+                await self._register_page_map(text_content, page_intervals, doc_id)
                 await insert_text_content_with_multimodal_content(
                     self.lightrag,
                     input=text_content,
@@ -2423,7 +2492,7 @@ class ProcessorMixin:
                     doc_id=doc_id,
                 )
             insert_start = time.time()
-            self._register_page_map(text_content, page_intervals)
+            await self._register_page_map(text_content, page_intervals, doc_id)
             await insert_text_content(
                 self.lightrag,
                 input=text_content,

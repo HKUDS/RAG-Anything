@@ -63,7 +63,7 @@ def make_rag(monkeypatch, tmp_path):
     # insert_content_list never runs MinerU; only the init-time check would.
     monkeypatch.setattr(MineruParser, "check_installation", lambda self: True)
 
-    def build():
+    def build(chunk_token_size=48, chunk_overlap_token_size=8):
         config = RAGAnythingConfig(
             working_dir=str(tmp_path / uuid.uuid4().hex), display_content_stats=False
         )
@@ -75,8 +75,8 @@ def make_rag(monkeypatch, tmp_path):
             ),
             lightrag_kwargs={
                 "tokenizer": Tokenizer("bytes", _ByteTokenizer()),
-                "chunk_token_size": 48,
-                "chunk_overlap_token_size": 8,
+                "chunk_token_size": chunk_token_size,
+                "chunk_overlap_token_size": chunk_overlap_token_size,
                 # shared storage is keyed by workspace, not working_dir
                 "workspace": f"t{uuid.uuid4().hex[:8]}",
             },
@@ -154,3 +154,64 @@ async def test_real_pipeline_annotates_documents_queued_behind_a_busy_pipeline(
     _assert_pages_cover_markers(
         _chunks(rag, "doc-b"), [m.replace("PAGE", "SHEET") for m in MARKERS]
     )
+
+
+@pytest.mark.asyncio
+async def test_real_pipeline_split_heading_keeps_its_own_page(make_rag):
+    """split_by_character pieces do not overlap: a heading whose word also
+    occurs in the previous paragraph must not take that paragraph's page."""
+    rag = make_rag(chunk_token_size=1200, chunk_overlap_token_size=100)
+    try:
+        await rag.insert_content_list(
+            [
+                {
+                    "type": "text",
+                    "text": "The setup is described here; Results follow later.",
+                    "page_idx": 2,
+                },
+                {"type": "text", "text": "Results", "page_idx": 3},
+                {"type": "text", "text": "Yield rose by 4%.", "page_idx": 3},
+            ],
+            file_path="split.pdf",
+            doc_id="doc-split",
+            split_by_character="\n\n",
+        )
+    finally:
+        await _close(rag)
+
+    pages = {c["content"]: c.get("page_idx") for c in _chunks(rag, "doc-split")}
+    assert pages == {
+        "The setup is described here; Results follow later.": 2,
+        "Results": 3,
+        "Yield rose by 4%.": 3,
+    }
+
+
+@pytest.mark.asyncio
+async def test_real_pipeline_short_final_chunk_keeps_its_own_page(make_rag):
+    """The token chunker's short final chunk (here a repeated footer) must not
+    match an earlier copy of its text inside the previous window."""
+    rag = make_rag()
+    footer = "Confidential."
+    try:
+        await rag.insert_content_list(
+            [
+                {"type": "text", "text": "x" * 10, "page_idx": 0},
+                {
+                    "type": "text",
+                    "text": "Body of page two." + "y" * 36,
+                    "page_idx": 2,
+                },
+                {"type": "text", "text": footer, "page_idx": 2},
+                {"type": "text", "text": footer, "page_idx": 3},
+            ],
+            file_path="tail.pdf",
+            doc_id="doc-tail",
+        )
+    finally:
+        await _close(rag)
+
+    chunks = sorted(_chunks(rag, "doc-tail"), key=lambda c: c["chunk_order_index"])
+    assert chunks[-1]["content"] == footer
+    assert chunks[-1]["page_idx"] == 3
+    assert "page_idx_end" not in chunks[-1]
