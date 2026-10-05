@@ -5,6 +5,7 @@ rendered to PDF with ReportLab and re-parsed with the OCR pipeline.
 """
 
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -354,3 +355,27 @@ class TestMarkdownImageTargets:
         assert MineruParser().parse_text_file(document) == [
             {"type": "text", "text": text, "page_idx": 0}
         ]
+
+
+class TestMarkdownImageAltIsSingleLine:
+    """Alt text never spans lines, so scanning stays linear and per-line."""
+
+    def test_unclosed_alt_does_not_swallow_next_line_image(self, tmp_path):
+        (tmp_path / "real.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+        md = tmp_path / "doc.md"
+        md.write_text("intro ![broken alt\n![real](real.png) after\n", encoding="utf-8")
+
+        blocks = MineruParser().parse_text_file(md)
+
+        images = [b for b in blocks if b["type"] == "image"]
+        assert [img["img_caption"] for img in images] == [["real"]]
+
+    def test_unclosed_alt_on_many_lines_stays_fast(self, tmp_path):
+        md = tmp_path / "pathological.md"
+        md.write_text("![a\n" * 10000, encoding="utf-8")
+
+        start = time.perf_counter()
+        MineruParser().parse_text_file(md)
+
+        # Quadratic scanning took seconds here; linear scanning takes ~10 ms.
+        assert time.perf_counter() - start < 1.0

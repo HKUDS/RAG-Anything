@@ -744,8 +744,12 @@ class Parser:
     # parentheses (`<Screenshot (1).png>`), or bare, where parentheses must be
     # balanced one level deep (`image(1).png`), as CommonMark allows. An optional
     # "title" may follow either form.
+    # Alt text is kept to one line: the scanner below runs on multi-line
+    # paragraphs while replacement works per line, so a match crossing a
+    # newline would skip a real image on the next line, and an unbounded
+    # alt group made scanning quadratic on lines with an unclosed '['.
     _MD_IMAGE_RE = re.compile(
-        r"!\[([^\]]*)\]\((\s*<[^>\n]*>[^()\n]*|(?:[^()\n]|\([^()\n]*\))*)\)"
+        r"!\[([^\]\n]*)\]\((\s*<[^>\n]*>[^()\n]*|(?:[^()\n]|\([^()\n]*\))*)\)"
     )
 
     @classmethod
