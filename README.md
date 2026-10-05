@@ -989,7 +989,7 @@ The `content_list` should follow the standard format with each item being a dict
 **Important Notes:**
 - **`img_path`**: Must be an absolute path to the image file (e.g., `/home/user/images/chart.jpg` or `C:\Users\user\images\chart.jpg`)
 - **`page_idx`**: Represents the page number where the content appears in the original document (0-based indexing)
-- **Text chunk pages**: text blocks are joined before LightRAG splits them, and each resulting text chunk is annotated with the `page_idx` of the blocks it came from (plus `page_idx_end` when it spans pages). These are extra fields on the `text_chunks` record: kept by the default JSON KV storage and other schemaless backends, but fixed-schema backends such as PostgreSQL may drop them
+- **Text chunk pages**: text blocks are joined before LightRAG splits them, and each resulting text chunk is annotated with the `page_idx` of the blocks it came from (plus `page_idx_end` when it spans pages). Positions are derived by replaying LightRAG's default chunker, so this applies when `chunking_func` is left at its default; a custom chunker is left untouched and its chunks carry no `page_idx`. These are extra fields on the `text_chunks` record: kept by the default JSON KV storage and other schemaless backends, but fixed-schema backends such as PostgreSQL may drop them
 - **Content ordering**: Items are processed in the order they appear in the list
 
 This method is particularly useful when:

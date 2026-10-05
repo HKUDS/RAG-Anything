@@ -26,13 +26,13 @@ from raganything.utils import (
     normalize_caption_list,
     annotate_chunks_with_page_idx,
     build_sanitized_page_map,
+    replay_chunk_spans,
 )
 from raganything.parse_options import (
     PARSER_CACHE_KWARGS as _PARSER_CACHE_KWARGS,  # noqa: F401
     relevant_parser_kwargs,
 )
 import asyncio
-import inspect
 from collections import OrderedDict
 from lightrag.utils import compute_mdhash_id
 
@@ -47,6 +47,14 @@ VIDEO_FILE_EXTENSIONS = frozenset(
 
 # Marks a text registered by two pending documents with different pagination.
 _AMBIGUOUS_PAGE_MAP: List[Tuple[int, int, int]] = []
+
+
+def _is_lightrag_token_chunker(func) -> bool:
+    try:
+        from lightrag.operate import chunking_by_token_size
+    except ImportError:  # pragma: no cover - lightrag always provides it
+        return False
+    return func is chunking_by_token_size
 
 
 def _page_map_key(text: str) -> str:
@@ -169,6 +177,7 @@ class ProcessorMixin:
         text_content: str,
         page_intervals: List[Tuple[int, int, Optional[int]]],
         doc_id: Optional[str] = None,
+        file_path: Optional[str] = None,
     ) -> None:
         """Arrange for the text chunks of ``text_content`` to carry ``page_idx``.
 
@@ -176,35 +185,38 @@ class ProcessorMixin:
         later, in another caller's pipeline run when the queue is busy — so
         rather than swapping ``chunking_func`` around one insert, a single
         wrapper is installed on the LightRAG instance and looks the page map
-        up by the exact text it is asked to chunk. Never raises: page
-        provenance must not break ingestion (#330).
+        up by the exact text it is asked to chunk. Only LightRAG's own
+        chunker is wrapped: its geometry can be replayed exactly, which is
+        what keeps repeated text from borrowing another page. Never raises:
+        page provenance must not break ingestion (#330).
         """
-        if not any(page is not None for _, _, page in page_intervals):
-            return
         try:
-            if doc_id and await self._doc_already_processed(doc_id):
-                # LightRAG will skip this document as a duplicate; a map
-                # registered for it would never be consumed.
+            if doc_id and await self._doc_text_will_not_be_chunked(doc_id, file_path):
                 return
             # No awaits from here on: reading chunking_func, installing the
             # wrapper and registering must not interleave with a concurrent
             # registration, or two wrappers with separate registries race.
             chunking_func = getattr(self.lightrag, "chunking_func", None)
-            if chunking_func is None:
-                return
-            sanitized, intervals = build_sanitized_page_map(
-                text_content, page_intervals
-            )
-            if not intervals:
-                return
             registry = getattr(chunking_func, "_raganything_page_maps", None)
+            paginated = any(page is not None for _, _, page in page_intervals)
             if registry is None:
+                if not paginated or not _is_lightrag_token_chunker(chunking_func):
+                    return
                 registry = OrderedDict()
                 self.lightrag.chunking_func = self._wrap_chunking_func(
                     chunking_func, registry
                 )
+            sanitized, intervals = build_sanitized_page_map(
+                text_content, page_intervals
+            )
             key = _page_map_key(sanitized)
             existing = registry.get(key)
+            if not intervals:
+                # This document has no pages; make sure a stale map left by a
+                # document with the same text is not applied to it.
+                if existing is not None:
+                    registry[key] = _AMBIGUOUS_PAGE_MAP
+                return
             if existing is not None and existing != intervals:
                 # Two pending documents with identical text but different
                 # pagination: annotating either could use the other's pages.
@@ -223,75 +235,66 @@ class ProcessorMixin:
                 f"page_idx annotation disabled for this document: {exc}"
             )
 
-    async def _doc_already_processed(self, doc_id: str) -> bool:
+    async def _doc_text_will_not_be_chunked(
+        self, doc_id: str, file_path: Optional[str]
+    ) -> bool:
+        """True when LightRAG will not chunk this insert's text as this doc.
+
+        LightRAG drops an insert whose doc_id it already knows; it may still
+        re-chunk the text it stored earlier (a FAILED document), which is
+        this document's text only if that record came from the same file.
+        """
         record = await self.lightrag.doc_status.get_by_id(doc_id)
         if not record:
             return False
-        status = record.get("status") if isinstance(record, dict) else None
-        return str(getattr(status, "value", status)).lower() == "processed"
+        recorded_path = record.get("file_path") if isinstance(record, dict) else None
+        return not (file_path and recorded_path == file_path)
 
     def _wrap_chunking_func(self, chunking_func, registry: "OrderedDict"):
-        """Wrap ``chunking_func`` so chunks of registered texts get ``page_idx``.
+        """Wrap LightRAG's chunker so chunks of registered texts get ``page_idx``.
 
-        Supports both sync and async chunking functions, like LightRAG does.
-        For LightRAG's own chunker the call arguments say how chunks were
-        produced, which lets repeated text resolve to the right occurrence;
-        other chunkers are only annotated where a chunk is unambiguous.
+        Positions come from replaying the chunker with the arguments it was
+        called with (see :func:`replay_chunk_spans`), never from searching
+        for chunk text.
         """
         logger = self.logger
-        try:
-            from lightrag.operate import chunking_by_token_size
-        except ImportError:  # pragma: no cover - lightrag always provides it
-            chunking_by_token_size = None
-        known_chunker = chunking_func is chunking_by_token_size
-
-        def chunking_mode(args, kwargs):
-            if not known_chunker:
-                return "unknown", 0.0
-            names = (
-                "split_by_character",
-                "split_by_character_only",
-                "chunk_overlap_token_size",
-                "chunk_token_size",
-            )
-            values = dict(zip(names, args))
-            values.update({k: v for k, v in kwargs.items() if k in names})
-            if values.get("split_by_character"):
-                return "split", 0.0
-            size = values.get("chunk_token_size") or 1200
-            overlap = values.get("chunk_overlap_token_size")
-            overlap = 100 if overlap is None else overlap
-            return "token", (overlap / size) if size else 0.0
-
-        def finish(content, chunks, args, kwargs):
-            intervals = registry.pop(_page_map_key(content), None)
-            if intervals and intervals is not _AMBIGUOUS_PAGE_MAP:
-                try:
-                    mode, overlap_ratio = chunking_mode(args, kwargs)
-                    annotate_chunks_with_page_idx(
-                        chunks,
-                        content,
-                        intervals,
-                        logger=logger,
-                        mode=mode,
-                        overlap_ratio=overlap_ratio,
-                    )
-                except Exception as exc:
-                    logger.warning(
-                        f"page_idx annotation failed; chunks stored without "
-                        f"page provenance: {exc}"
-                    )
-            return chunks
+        parameters = (
+            "split_by_character",
+            "split_by_character_only",
+            "chunk_overlap_token_size",
+            "chunk_token_size",
+        )
 
         def annotating_chunking_func(tokenizer, content, *args, **kwargs):
-            result = chunking_func(tokenizer, content, *args, **kwargs)
-            if inspect.isawaitable(result):
-
-                async def annotated():
-                    return finish(content, await result, args, kwargs)
-
-                return annotated()
-            return finish(content, result, args, kwargs)
+            chunks = chunking_func(tokenizer, content, *args, **kwargs)
+            intervals = registry.pop(_page_map_key(content), None)
+            if not intervals or intervals is _AMBIGUOUS_PAGE_MAP:
+                return chunks
+            try:
+                values = dict(zip(parameters, args))
+                values.update({k: v for k, v in kwargs.items() if k in parameters})
+                spans = replay_chunk_spans(
+                    tokenizer,
+                    content,
+                    chunks,
+                    values.get("split_by_character"),
+                    bool(values.get("split_by_character_only", False)),
+                    values.get("chunk_overlap_token_size", 100),
+                    values.get("chunk_token_size", 1200),
+                )
+                if spans is None:
+                    logger.warning(
+                        "page_idx annotation skipped: could not reproduce how "
+                        "the document was chunked"
+                    )
+                else:
+                    annotate_chunks_with_page_idx(chunks, spans, intervals)
+            except Exception as exc:
+                logger.warning(
+                    f"page_idx annotation failed; chunks stored without page "
+                    f"provenance: {exc}"
+                )
+            return chunks
 
         annotating_chunking_func._raganything_page_maps = registry
         annotating_chunking_func.__wrapped__ = chunking_func
@@ -1976,7 +1979,9 @@ class ProcessorMixin:
                         doc_id=doc_id,
                     )
                 insert_start = time.time()
-                await self._register_page_map(text_content, page_intervals, doc_id)
+                await self._register_page_map(
+                    text_content, page_intervals, doc_id, file_name
+                )
                 await insert_text_content(
                     self.lightrag,
                     input=text_content,
@@ -2284,7 +2289,9 @@ class ProcessorMixin:
 
             # Step 3: Insert pure text content and multimodal content with all parameters
             if text_content.strip():
-                await self._register_page_map(text_content, page_intervals, doc_id)
+                await self._register_page_map(
+                    text_content, page_intervals, doc_id, file_name
+                )
                 await insert_text_content_with_multimodal_content(
                     self.lightrag,
                     input=text_content,
@@ -2477,7 +2484,9 @@ class ProcessorMixin:
                     doc_id=doc_id,
                 )
             insert_start = time.time()
-            await self._register_page_map(text_content, page_intervals, doc_id)
+            await self._register_page_map(
+                text_content, page_intervals, doc_id, file_ref
+            )
             await insert_text_content(
                 self.lightrag,
                 input=text_content,

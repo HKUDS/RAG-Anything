@@ -278,171 +278,183 @@ def build_sanitized_page_map(
     return sanitized, intervals
 
 
-# Extra room around a chunk's expected position: separators, stripped
-# whitespace and U+FFFD edges between consecutive chunks.
-_CHUNK_SEARCH_SLACK = 64
-# A chunker whose output is not verbatim source text would otherwise be
-# searched for on every chunk; give up after this many misses in a row.
-_MAX_CONSECUTIVE_CHUNK_MISSES = 3
-_MAX_CANDIDATES = 64
+# Tokens of context decoded around a stride boundary. A multi-byte
+# character spans at most 4 bytes and every token covers at least one, so 8
+# tokens always contain whatever character a boundary cuts through.
+_BOUNDARY_CONTEXT_TOKENS = 8
 
 
-def _trim_edges(text: str) -> str:
-    """Strip whitespace and U+FFFD from both ends until neither remains."""
-    while True:
-        trimmed = text.strip().strip("\ufffd")
-        if trimmed == text:
-            return text
-        text = trimmed
+def _edge_trim_counts(text: str) -> Tuple[int, int]:
+    """How many characters whitespace/U+FFFD trimming removes from each end."""
+    start, end = 0, len(text)
+    while start < end and (text[start].isspace() or text[start] == "\ufffd"):
+        start += 1
+    while end > start and (text[end - 1].isspace() or text[end - 1] == "\ufffd"):
+        end -= 1
+    return start, len(text) - end
 
 
-def _chunk_needle(chunk: Dict[str, Any]) -> str:
-    content = chunk.get("content")
-    if not isinstance(content, str):
-        return ""
-    return _trim_edges(content)
+def _needle_span(raw: str, raw_start: int) -> Optional[Tuple[int, int]]:
+    """Span of ``raw`` once edge whitespace and U+FFFD are trimmed."""
+    lead, trail = _edge_trim_counts(raw)
+    if lead + trail >= len(raw):
+        return None
+    return raw_start + lead, raw_start + len(raw) - trail
 
 
-def _occurrences(text: str, needle: str, low: int, high: int) -> List[int]:
-    """Start offsets of ``needle`` lying entirely within ``text[low:high]``."""
-    found: List[int] = []
-    position = text.find(needle, max(low, 0), high)
-    while position >= 0 and len(found) < _MAX_CANDIDATES:
-        found.append(position)
-        position = text.find(needle, position + 1, high)
-    return found
+def _token_window_starts(
+    tokenizer: Any, text: str, size: int, step: int
+) -> Optional[List[Tuple[str, int]]]:
+    """Replay LightRAG's token windows over ``text`` with exact positions.
 
-
-def locate_chunk_spans(
-    chunks: List[Dict[str, Any]],
-    text: str,
-    *,
-    mode: str = "unknown",
-    overlap_ratio: float = 0.0,
-) -> List[Optional[Tuple[int, int]]]:
+    For each window returns ``(decoded_window, raw_start)``: ``raw_start`` is
+    the offset in ``text`` that index 0 of the decoded window lines up with.
+    The character offset of token ``t`` is ``len(decode(tokens[:t]))`` —
+    a cut multi-byte character decodes to one U+FFFD standing in its slot.
+    That is computed incrementally from short overlapping decodes (the
+    effect of a cut at ``a`` is identical in ``decode(tokens[a:x])`` for any
+    ``x`` past the cut character), so the whole replay is linear. Each window
+    is then checked against the source; any mismatch returns ``None``.
     """
-    Locate each chunk of ``text`` as a ``(start, end)`` span, or ``None``.
+    tokens = tokenizer.encode(text)
+    context = _BOUNDARY_CONTEXT_TOKENS
 
-    Chunks are expected in document order. ``mode`` describes how they were
-    produced so that repeated text resolves to the right occurrence:
+    def decoded_length(begin: int, finish: int) -> int:
+        return len(tokenizer.decode(tokens[max(begin, 0) : finish]))
 
-    - ``"token"``: LightRAG's token chunker — consecutive chunks overlap by
-      ``overlap_ratio`` of a chunk, so a chunk starts near
-      ``prev_start + (prev_end - prev_start) * (1 - overlap_ratio)``; the
-      occurrence nearest that point is chosen, and the final chunk is
-      anchored to the end of the text (a short tail would otherwise match an
-      earlier copy of itself).
-    - ``"split"``: LightRAG's ``split_by_character`` chunker — pieces do not
-      overlap, so the first occurrence at or after the previous chunk's end
-      is chosen.
-    - ``"unknown"``: any other chunker — a chunk is located only when exactly
-      one candidate exists; ambiguity yields ``None`` rather than a guess.
-
-    Every search is confined to a window around the previous chunk, so the
-    cost is linear in the text length.
-    """
-    spans: List[Optional[Tuple[int, int]]] = []
-    previous: Optional[Tuple[int, int]] = None
-    misses = 0
-    last_index = len(chunks) - 1
-    text_tail = _trim_edges(text)
-    tail_end = text.find(text_tail) + len(text_tail) if text_tail else 0
-    for index, chunk in enumerate(chunks):
-        needle = _chunk_needle(chunk)
-        if not needle or misses >= _MAX_CONSECUTIVE_CHUNK_MISSES:
-            spans.append(None)
-            continue
-        if (
-            mode == "token"
-            and index == last_index
-            and text.endswith(needle, 0, tail_end)
-        ):
-            # The token chunker's final window always runs to the end of the
-            # text, so a short tail cannot sit anywhere else.
-            spans.append((tail_end - len(needle), tail_end))
-            continue
-        if previous is None:
-            low, expected = 0, 0
-            high = len(needle) + _CHUNK_SEARCH_SLACK
+    windows: List[Tuple[str, int]] = []
+    offset = 0  # len(decode(tokens[:start]))
+    previous = 0
+    for start in range(0, len(tokens), step):
+        if start > previous:
+            anchor = max(0, previous - context)
+            offset += decoded_length(anchor, start) - decoded_length(anchor, previous)
+        previous = start
+        raw = tokenizer.decode(tokens[start : start + size])
+        # Continuation bytes of a character cut at `start` decode to extra
+        # leading U+FFFD that have no slot of their own in the source.
+        if start:
+            anchor = max(0, start - context)
+            stray = (
+                decoded_length(anchor, start)
+                + decoded_length(start, start + context)
+                - decoded_length(anchor, start + context)
+            )
         else:
-            prev_start, prev_end = previous
-            low = prev_start + 1
-            high = prev_end + len(needle) + _CHUNK_SEARCH_SLACK
-            expected = prev_start + round((prev_end - prev_start) * (1 - overlap_ratio))
-        high = min(high, len(text))
+            stray = 0
+        raw_start = offset - stray
+        # Everything but a possibly cut final character must match exactly.
+        body_start = offset
+        body = raw[stray : max(stray, len(raw) - 1)]
+        if text[body_start : body_start + len(body)] != body:
+            return None
+        windows.append((raw, raw_start))
+    return windows
 
-        position: Optional[int] = None
-        if mode == "split" and previous is not None:
-            found = text.find(needle, max(low, previous[1]), high)
-            position = found if found >= 0 else None
-        if position is None:
-            candidates = _occurrences(text, needle, low, high)
-            if mode in ("token", "split") and candidates:
-                position = min(candidates, key=lambda c: (abs(c - expected), c))
-            elif len(candidates) == 1:
-                position = candidates[0]
 
-        if position is None:
-            misses += 1
-            spans.append(None)
-            if mode == "token" and previous is not None:
-                # keep the window moving with the chunker's stride
-                previous = (expected, expected + len(needle))
-            continue
-        misses = 0
-        previous = (position, position + len(needle))
-        spans.append(previous)
+def replay_chunk_spans(
+    tokenizer: Any,
+    content: str,
+    chunks: List[Dict[str, Any]],
+    split_by_character: Optional[str],
+    split_by_character_only: bool,
+    chunk_overlap_token_size: int,
+    chunk_token_size: int,
+) -> Optional[List[List[Tuple[int, int]]]]:
+    """
+    Positions of the chunks LightRAG's ``chunking_by_token_size`` produced.
+
+    The chunker is deterministic, so instead of searching for chunk text
+    (which is ambiguous wherever text repeats) its geometry is replayed:
+    ``split_by_character`` pieces sit at exact offsets in ``content``, and
+    token windows — the whole text, or a piece too long for one chunk —
+    start every ``chunk_token_size - chunk_overlap_token_size`` tokens.
+    Positions are computed, never searched for, and the replay is checked
+    against both the source text and what the chunker returned; any
+    disagreement returns ``None`` and nothing is annotated.
+
+    Returns, per chunk, a list holding the ``(start, end)`` span of its
+    stripped content, or an empty list when the chunk is blank.
+    """
+    step = chunk_token_size - chunk_overlap_token_size
+    if step <= 0:
+        return None
+    replayed: List[Tuple[str, List[int]]] = []
+    if split_by_character:
+        offset = 0
+        for piece in content.split(split_by_character):
+            base = offset
+            offset += len(piece) + len(split_by_character)
+            if split_by_character_only or (
+                len(tokenizer.encode(piece)) <= chunk_token_size
+            ):
+                replayed.append((piece, [base]))
+                continue
+            windows = _token_window_starts(tokenizer, piece, chunk_token_size, step)
+            if windows is None:
+                return None
+            replayed.extend((raw, [base + start]) for raw, start in windows)
+    else:
+        windows = _token_window_starts(tokenizer, content, chunk_token_size, step)
+        if windows is None:
+            return None
+        replayed = [(raw, [start]) for raw, start in windows]
+
+    if len(replayed) != len(chunks):
+        return None
+    spans: List[List[Tuple[int, int]]] = []
+    for chunk, (raw, starts) in zip(chunks, replayed):
+        if raw.strip() != chunk.get("content"):
+            return None
+        candidates = []
+        for raw_start in starts:
+            span = _needle_span(raw, raw_start)
+            if span is not None:
+                candidates.append(span)
+        spans.append(candidates)
     return spans
 
 
 def annotate_chunks_with_page_idx(
     chunks: List[Dict[str, Any]],
-    sanitized_text: str,
+    chunk_spans: List[List[Tuple[int, int]]],
     page_intervals: List[Tuple[int, int, int]],
-    logger: Any = None,
-    *,
-    mode: str = "unknown",
-    overlap_ratio: float = 0.0,
 ) -> List[Dict[str, Any]]:
     """
-    Annotate chunks produced from ``sanitized_text`` with their source page.
+    Annotate chunks with the pages their spans overlap.
 
-    ``page_intervals`` must be in ``sanitized_text`` coordinates (see
-    :func:`build_sanitized_page_map`); chunks are located with
-    :func:`locate_chunk_spans`. Chunks inside one interval get its
-    ``page_idx``; chunks spanning several get the first page as ``page_idx``
-    and the last as ``page_idx_end``. Chunks that cannot be located with
-    confidence are left untouched — annotation must never break or mislabel
-    ingestion. Returns the same list (mutated in place).
+    ``chunk_spans`` holds candidate spans per chunk (see
+    :func:`replay_chunk_spans`), in the same coordinates as
+    ``page_intervals`` (see :func:`build_sanitized_page_map`). A chunk is
+    annotated only when every candidate yields the same pages — so an
+    ambiguous position never produces a guess. Chunks inside one interval
+    get its ``page_idx``; chunks spanning several get the first page as
+    ``page_idx`` and the last as ``page_idx_end``. Returns the same list.
     """
     if not page_intervals:
         return chunks
-
-    spans = locate_chunk_spans(
-        chunks, sanitized_text, mode=mode, overlap_ratio=overlap_ratio
-    )
     interval_ends = [end for _, end, _ in page_intervals]
-    missed = 0
-    for chunk, span in zip(chunks, spans):
-        if span is None:
-            if _chunk_needle(chunk):
-                missed += 1
-            continue
-        offset, chunk_end = span
+
+    def pages_for(span: Tuple[int, int]) -> Optional[Tuple[int, int]]:
+        start, end = span
         pages = []
-        index = bisect.bisect_right(interval_ends, offset)
-        while index < len(page_intervals) and page_intervals[index][0] < chunk_end:
+        index = bisect.bisect_right(interval_ends, start)
+        while index < len(page_intervals) and page_intervals[index][0] < end:
             pages.append(page_intervals[index][2])
             index += 1
-        if pages:
-            chunk["page_idx"] = min(pages)
-            if max(pages) != min(pages):
-                chunk["page_idx_end"] = max(pages)
-    if missed and logger is not None:
-        logger.warning(
-            f"page_idx annotation: {missed} chunk(s) could not be located with "
-            "confidence and carry no page_idx"
-        )
+        return (min(pages), max(pages)) if pages else None
+
+    for chunk, candidates in zip(chunks, chunk_spans):
+        labels = {pages_for(span) for span in candidates}
+        if len(labels) != 1:
+            continue
+        label = labels.pop()
+        if label is None:
+            continue
+        first, last = label
+        chunk["page_idx"] = first
+        if last != first:
+            chunk["page_idx_end"] = last
     return chunks
 
 

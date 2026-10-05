@@ -215,3 +215,66 @@ async def test_real_pipeline_short_final_chunk_keeps_its_own_page(make_rag):
     assert chunks[-1]["content"] == footer
     assert chunks[-1]["page_idx"] == 3
     assert "page_idx_end" not in chunks[-1]
+
+
+@pytest.mark.asyncio
+async def test_real_pipeline_oversized_piece_tail_keeps_its_own_page(make_rag):
+    """With split_by_character (and not _only), a piece longer than one chunk
+    is re-split into overlapping token windows; its short last window must
+    not be matched to a copy of its text in the next block."""
+    rag = make_rag(chunk_token_size=48, chunk_overlap_token_size=8)
+    try:
+        await rag.insert_content_list(
+            [
+                {"type": "text", "text": "A" * 80 + ".", "page_idx": 0},
+                {
+                    "type": "text",
+                    "text": "Results. Mean density peaked.",
+                    "page_idx": 1,
+                },
+            ],
+            file_path="oversized.pdf",
+            doc_id="doc-oversized",
+            split_by_character="\n\n",
+        )
+    finally:
+        await _close(rag)
+
+    chunks = sorted(_chunks(rag, "doc-oversized"), key=lambda c: c["chunk_order_index"])
+    assert [(c["content"][-8:], c.get("page_idx")) for c in chunks] == [
+        ("AAAAAAAA", 0),
+        ("AAAAAAA.", 0),
+        (".", 0),
+        (" peaked.", 1),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_real_pipeline_unlocatable_gap_does_not_shift_pages(make_rag):
+    """A garbled block between pieces (U+FFFD survives sanitizing) must not
+    push the next heading onto the previous paragraph's page."""
+    rag = make_rag(chunk_token_size=1200, chunk_overlap_token_size=100)
+    try:
+        await rag.insert_content_list(
+            [
+                {
+                    "type": "text",
+                    "text": "The sampling design is described under Methods.",
+                    "page_idx": 0,
+                },
+                {"type": "text", "text": "�" * 80, "page_idx": 1},
+                {"type": "text", "text": "Methods", "page_idx": 1},
+                {"type": "text", "text": "Cores were taken every 10 m.", "page_idx": 1},
+            ],
+            file_path="gap.pdf",
+            doc_id="doc-gap",
+            split_by_character="\n\n",
+            split_by_character_only=True,
+        )
+    finally:
+        await _close(rag)
+
+    pages = {c["content"]: c.get("page_idx") for c in _chunks(rag, "doc-gap")}
+    assert pages["The sampling design is described under Methods."] == 0
+    assert pages["Methods"] == 1
+    assert pages["Cores were taken every 10 m."] == 1

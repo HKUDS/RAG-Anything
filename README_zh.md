@@ -970,7 +970,7 @@ if __name__ == "__main__":
 **重要说明：**
 - **`img_path`**: 必须是图像文件的绝对路径（例如：`/home/user/images/chart.jpg` 或 `C:\Users\user\images\chart.jpg`）
 - **`page_idx`**: 表示内容在原始文档中出现的页码（从0开始的索引）
-- **文本块页码**: 文本块会先拼接再由 LightRAG 切分，切出的每个文本 chunk 会标注其来源块的 `page_idx`（跨页时另有 `page_idx_end`）。它们作为额外字段存在 `text_chunks` 记录里：默认的 JSON KV 存储及其他无固定 schema 的后端会保留，PostgreSQL 等固定 schema 的后端可能会丢弃
+- **文本块页码**: 文本块会先拼接再由 LightRAG 切分，切出的每个文本 chunk 会标注其来源块的 `page_idx`（跨页时另有 `page_idx_end`）。位置通过重放 LightRAG 默认切块器计算得出，因此仅在 `chunking_func` 保持默认时生效；自定义切块器不受影响，其 chunk 不带 `page_idx`。它们作为额外字段存在 `text_chunks` 记录里：默认的 JSON KV 存储及其他无固定 schema 的后端会保留，PostgreSQL 等固定 schema 的后端可能会丢弃
 - **内容顺序**: 项目按照在列表中出现的顺序进行处理
 
 此方法在以下情况下特别有用：
