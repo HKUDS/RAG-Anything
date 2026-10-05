@@ -13,7 +13,7 @@ import re
 import json
 import time
 import base64
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -230,12 +230,14 @@ class ContextExtractor:
             return text
 
         elif item_type == "image" and self.config.include_captions:
-            captions = item.get("image_caption", item.get("img_caption", []))
+            captions = normalize_caption_list(
+                item.get("image_caption", item.get("img_caption"))
+            )
             if captions:
                 return f"[Image: {', '.join(captions)}]"
 
         elif item_type == "table" and self.config.include_captions:
-            captions = item.get("table_caption", [])
+            captions = normalize_caption_list(item.get("table_caption"))
             if captions:
                 return f"[Table: {', '.join(captions)}]"
 
@@ -537,7 +539,7 @@ class BaseModalProcessor:
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], Optional[List[Any]]]:
         """Create entity and text chunk"""
         # Create chunk
         chunk_id = compute_mdhash_id(str(modal_chunk), prefix="chunk-")
@@ -1037,7 +1039,7 @@ class ImageModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process image content with context support"""
         try:
             # Generate description and entity info
@@ -1055,11 +1057,11 @@ class ImageModalProcessor(BaseModalProcessor):
                 content_data = modal_content
 
             image_path = content_data.get("img_path", "")
-            captions = content_data.get(
-                "image_caption", content_data.get("img_caption", [])
+            captions = normalize_caption_list(
+                content_data.get("image_caption", content_data.get("img_caption"))
             )
-            footnotes = content_data.get(
-                "image_footnote", content_data.get("img_footnote", [])
+            footnotes = normalize_caption_list(
+                content_data.get("image_footnote", content_data.get("img_footnote"))
             )
             section_path = content_data.get("_section_path", "")
             neighbor_text = content_data.get("_neighbor_text", "")
@@ -1092,7 +1094,7 @@ class ImageModalProcessor(BaseModalProcessor):
                 "entity_type": "image",
                 "summary": f"Image content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_response(
         self, response: str, entity_name: str = None
@@ -1237,7 +1239,7 @@ class TableModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process table content with context support"""
         try:
             # Generate description and entity info
@@ -1287,7 +1289,7 @@ class TableModalProcessor(BaseModalProcessor):
                 "entity_type": "table",
                 "summary": f"Table content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_table_response(
         self, response: str, entity_name: str = None
@@ -1425,7 +1427,7 @@ class EquationModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process equation content with context support"""
         try:
             # Generate description and entity info
@@ -1470,7 +1472,7 @@ class EquationModalProcessor(BaseModalProcessor):
                 "entity_type": "equation",
                 "summary": f"Equation content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_equation_response(
         self, response: str, entity_name: str = None
@@ -1599,7 +1601,7 @@ class GenericModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process generic modal content with context support"""
         try:
             # Generate description and entity info
@@ -1633,7 +1635,7 @@ class GenericModalProcessor(BaseModalProcessor):
                 "entity_type": content_type,
                 "summary": f"{content_type} content: {str(modal_content)[:100]}",
             }
-            return str(modal_content), fallback_entity
+            return str(modal_content), fallback_entity, []
 
     def _parse_generic_response(
         self, response: str, entity_name: str = None, content_type: str = "content"
