@@ -117,12 +117,12 @@ def _chunks(rag, doc_id):
     return [row for row in _all_chunks(rag) if row.get("full_doc_id") == doc_id]
 
 
-def _assert_pages_cover_markers(chunks, markers, every_chunk=True):
+def _assert_pages_cover_markers(chunks, markers):
     assert chunks, "expected text chunks"
     for chunk in chunks:
-        if chunk.get("page_idx") is None:
-            assert not every_chunk, f"chunk not annotated: {chunk['content']!r}"
-            continue
+        assert (
+            chunk.get("page_idx") is not None
+        ), f"chunk not annotated: {chunk['content']!r}"
         low = chunk["page_idx"]
         high = chunk.get("page_idx_end", low)
         for page, marker in enumerate(markers):
@@ -147,10 +147,10 @@ async def test_real_pipeline_annotates_every_text_chunk(make_rag):
 
 
 @pytest.mark.asyncio
-async def test_real_pipeline_concurrent_inserts_never_get_wrong_pages(make_rag):
-    """Concurrent inserts: LightRAG may chunk a queued document in the first
-    caller's pipeline run, after the queued caller's insert returned. That
-    document is left without pages rather than annotated from a guess."""
+async def test_real_pipeline_concurrent_inserts_are_both_annotated(make_rag):
+    """Concurrent inserts: LightRAG chunks a queued document in the first
+    caller's pipeline run; the queued caller waits for it and then annotates
+    its own document."""
     rag = make_rag()
     try:
         await asyncio.gather(
@@ -165,11 +165,8 @@ async def test_real_pipeline_concurrent_inserts_never_get_wrong_pages(make_rag):
         await _close(rag)
 
     sheets = [m.replace("PAGE", "SHEET") for m in MARKERS]
-    a, b = _chunks(rag, "doc-a"), _chunks(rag, "doc-b")
-    _assert_pages_cover_markers(a, MARKERS, every_chunk=False)
-    _assert_pages_cover_markers(b, sheets, every_chunk=False)
-    # whoever ran the pipeline saw its document processed and annotated it
-    assert any(all("page_idx" in c for c in chunks) for chunks in (a, b))
+    _assert_pages_cover_markers(_chunks(rag, "doc-a"), MARKERS)
+    _assert_pages_cover_markers(_chunks(rag, "doc-b"), sheets)
 
 
 @pytest.mark.asyncio
@@ -304,15 +301,23 @@ async def test_real_pipeline_known_doc_id_keeps_its_pages(make_rag, first_insert
     shifted = [dict(item, page_idx=item["page_idx"] + 5) for item in _content_list()]
     try:
         _LLM["fail"] = first_insert_fails
-        await rag.insert_content_list(
-            _content_list(), file_path="a.pdf", doc_id="doc-a"
-        )
+        if first_insert_fails:
+            with pytest.raises(RuntimeError, match="LightRAG failed"):
+                await rag.insert_content_list(
+                    _content_list(), file_path="a.pdf", doc_id="doc-a"
+                )
+        else:
+            await rag.insert_content_list(
+                _content_list(), file_path="a.pdf", doc_id="doc-a"
+            )
         _LLM["fail"] = False
+        # LightRAG drops this insert but retries the failed text it stored.
         await rag.insert_content_list(shifted, file_path="a.pdf", doc_id="doc-a")
     finally:
         await _close(rag)
 
     chunks = _chunks(rag, "doc-a")
+    assert chunks
     if first_insert_fails:
         assert all(c.get("page_idx") is None for c in chunks)
     else:

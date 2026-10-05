@@ -158,6 +158,57 @@ class ProcessorMixin:
         await self.lightrag.doc_status.index_done_callback()
         return await self.lightrag.doc_status.get_by_id(doc_id) or doc_status_payload
 
+    async def _wait_for_text_processing(
+        self,
+        doc_id: str,
+        split_by_character: Optional[str],
+        split_by_character_only: bool,
+    ) -> None:
+        """Return once LightRAG has finished processing the text of ``doc_id``.
+
+        When another insert's pipeline run is busy, ``ainsert`` only enqueues
+        the document and returns; that run chunks it later. LightRAG only
+        picks up PENDING, PROCESSING and FAILED documents, so writing
+        RAG-Anything's own statuses before then (HANDLING, later PROCESSED)
+        took the text out of the queue for good. While the document is
+        pending or processing, the pipeline is nudged — a busy run just
+        records the request, an idle one (its run ended or died) processes
+        the queue here — and polled.
+
+        Raises if LightRAG marked the text FAILED, so the failure is reported
+        rather than hidden behind a later PROCESSED; LightRAG retries FAILED
+        documents on its next pipeline run.
+        """
+        waiting = (DocStatus.PENDING, DocStatus.PROCESSING)
+        record = await self.lightrag.doc_status.get_by_id(doc_id)
+        if record and record.get("status") in waiting:
+            self.logger.info(
+                f"Text of {doc_id} is queued behind another insert; waiting "
+                "for LightRAG to process it"
+            )
+        delay = 0.2
+        next_report = time.monotonic() + 300
+        while record and record.get("status") in waiting:
+            await self.lightrag.apipeline_process_enqueue_documents(
+                split_by_character, split_by_character_only
+            )
+            record = await self.lightrag.doc_status.get_by_id(doc_id)
+            if record and record.get("status") in waiting:
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, 2.0)
+                record = await self.lightrag.doc_status.get_by_id(doc_id)
+            if time.monotonic() >= next_report:
+                next_report += 300
+                self.logger.warning(
+                    f"Still waiting for LightRAG to process the text of {doc_id} "
+                    f"(status: {record.get('status') if record else None})"
+                )
+        if record and record.get("status") == DocStatus.FAILED:
+            raise RuntimeError(
+                f"LightRAG failed to process the text of {doc_id}: "
+                f"{record.get('error_msg') or 'unknown error'}"
+            )
+
     async def _annotate_text_chunk_pages(
         self,
         doc_id: str,
@@ -1981,6 +2032,9 @@ class ProcessorMixin:
                     split_by_character_only=split_by_character_only,
                     ids=doc_id,
                 )
+                await self._wait_for_text_processing(
+                    doc_id, split_by_character, split_by_character_only
+                )
                 await self._annotate_text_chunk_pages(
                     doc_id,
                     track_id,
@@ -2495,6 +2549,9 @@ class ProcessorMixin:
                 split_by_character=split_by_character,
                 split_by_character_only=split_by_character_only,
                 ids=doc_id,
+            )
+            await self._wait_for_text_processing(
+                doc_id, split_by_character, split_by_character_only
             )
             await self._annotate_text_chunk_pages(
                 doc_id,
