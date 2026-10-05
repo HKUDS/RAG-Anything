@@ -409,12 +409,20 @@ class QueryMixin:
 
         self.logger.info(f"Executing VLM enhanced query: {query[:100]}...")
 
+        query_param = QueryParam(mode=mode, **kwargs)
+        # Retrieval-only requests must return LightRAG's result without image
+        # processing or answer generation, even when VLM enhancement is enabled.
+        if query_param.only_need_context or query_param.only_need_prompt:
+            return await self.lightrag.aquery(
+                query, param=query_param, system_prompt=system_prompt
+            )
+
         # Clear previous image cache
         if hasattr(self, "_current_images_base64"):
             delattr(self, "_current_images_base64")
 
         # 1. Get original retrieval prompt (without generating final answer)
-        query_param = QueryParam(mode=mode, only_need_prompt=True, **kwargs)
+        query_param.only_need_prompt = True
         raw_prompt = await self.lightrag.aquery(query, param=query_param)
 
         self.logger.debug("Retrieved raw prompt from LightRAG")
