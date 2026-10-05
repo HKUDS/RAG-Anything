@@ -13,7 +13,7 @@ import re
 import json
 import time
 import base64
-from typing import Dict, Any, Tuple, List
+from typing import Dict, Any, Tuple, List, Optional
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -539,7 +539,7 @@ class BaseModalProcessor:
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
-    ) -> Tuple[str, Dict[str, Any]]:
+    ) -> Tuple[str, Dict[str, Any], Optional[List[Any]]]:
         """Create entity and text chunk"""
         # Create chunk
         chunk_id = compute_mdhash_id(str(modal_chunk), prefix="chunk-")
