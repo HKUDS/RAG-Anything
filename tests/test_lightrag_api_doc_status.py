@@ -15,6 +15,8 @@ import asyncio
 import sys
 import types
 
+import pytest
+
 
 class FakeLogger:
     def info(self, *args, **kwargs):
@@ -63,9 +65,16 @@ except ModuleNotFoundError as exc:
     from raganything.processor import ProcessorMixin  # noqa: E402
 
 
-def _install_fake_shared_storage():
+@pytest.fixture(autouse=True)
+def _fake_shared_storage(monkeypatch):
     """The method imports pipeline-status helpers inside its body; give it
-    an isolated in-memory implementation regardless of what is installed."""
+    an isolated in-memory implementation regardless of what is installed.
+
+    Installed per test through monkeypatch so the real
+    ``lightrag.kg.shared_storage`` is restored afterwards — installing it at
+    import time replaced the real module for the whole pytest session and
+    broke any later test that runs the real LightRAG pipeline.
+    """
     fake = types.ModuleType("lightrag.kg.shared_storage")
     pipeline_status = {"history_messages": []}
 
@@ -77,11 +86,8 @@ def _install_fake_shared_storage():
     fake.get_pipeline_status_lock = lambda: asyncio.Lock()
     fake_kg = types.ModuleType("lightrag.kg")
     fake_kg.shared_storage = fake
-    sys.modules["lightrag.kg"] = fake_kg
-    sys.modules["lightrag.kg.shared_storage"] = fake
-
-
-_install_fake_shared_storage()
+    monkeypatch.setitem(sys.modules, "lightrag.kg", fake_kg)
+    monkeypatch.setitem(sys.modules, "lightrag.kg.shared_storage", fake)
 
 
 class FakeDocStatus:
