@@ -2809,6 +2809,17 @@ class PaddleOCRParser(Parser):
                         else:
                             visit(item)
 
+                # A result's remaining fields describe the OCR operation, not
+                # document text (e.g. input_path, limit_type, and text_type).
+                # Empty recognized-text lists must also stop here so blank
+                # pages do not acquire metadata as content.
+                if (
+                    isinstance(rec_texts, list)
+                    or isinstance(text_value, str)
+                    or isinstance(texts_value, list)
+                ):
+                    return
+
                 # Avoid double-visiting keys we already handled above; this prevents
                 # accidental duplication without content-level deduplication.
                 for key, value in node.items():
