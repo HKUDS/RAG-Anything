@@ -12,12 +12,13 @@ independently from byte offsets (with a UTF-8 byte tokenizer, token window k
 is exactly bytes [k*step, k*step + size) of the text).
 """
 
+import codecs
 import random
 import types
 
 import pytest
 from lightrag.operate import chunking_by_token_size
-from lightrag.utils import Tokenizer, sanitize_text_for_encoding
+from lightrag.utils import Tokenizer, compute_mdhash_id, sanitize_text_for_encoding
 
 from raganything.processor import ProcessorMixin
 from raganything.utils import (
@@ -108,7 +109,19 @@ def _document(rng, pieces, pages=4):
 )
 def test_replayed_positions_match_byte_reference(sep, sep_only):
     rng = random.Random(7)
-    pieces = ["Footer. ", "ab ", "数据 ", "&amp; ", "x", "�", " ", "\x00", "."]
+    pieces = [
+        "Footer. ",
+        "ab ",
+        "数据 ",
+        "😀",
+        "𠀀 ",
+        "&amp; ",
+        "x",
+        "�",
+        " ",
+        "\x00",
+        ".",
+    ]
     checked = 0
     for _ in range(300):
         # split_by_character_only rejects any piece longer than one chunk
@@ -132,6 +145,67 @@ def test_replayed_positions_match_byte_reference(sep, sep_only):
         assert [c[0] if c else None for c in spans] == reference
         checked += len(chunks)
     assert checked > 500
+
+
+@pytest.mark.parametrize("cut", [1, 2, 3])
+def test_four_byte_character_cut_at_a_window_edge(cut):
+    """A 4-byte character cut 1|3, 2|2 or 3|1 at a window boundary: the
+    fragments on both sides are excluded and nothing after them shifts."""
+    text = "x" * (10 - cut) + "\U0001f600" + "y" * 20
+    chunks = chunking_by_token_size(BYTES, text, None, False, 0, 10)
+
+    spans = replay_chunk_spans(BYTES, text, chunks, None, False, 0, 10)
+
+    assert [c[0] if c else None for c in spans] == _reference_spans(
+        text, None, False, 0, 10
+    )
+
+
+codecs.register_error(
+    "per_byte_replace", lambda error: ("\ufffd" * (error.end - error.start), error.end)
+)
+
+
+class _PerByteReplacementTokenizer(_ByteTokenizer):
+    """Replaces every byte of an invalid sequence, so a cut character leaves
+    several U+FFFD instead of one."""
+
+    def decode(self, tokens):
+        return bytes(tokens).decode("utf-8", errors="per_byte_replace")
+
+
+class _QuestionMarkTokenizer(_ByteTokenizer):
+    def decode(self, tokens):
+        return bytes(tokens).decode("utf-8", errors="replace").replace("\ufffd", "?")
+
+
+class _DroppingTokenizer(_ByteTokenizer):
+    def decode(self, tokens):
+        return bytes(tokens).decode("utf-8", errors="ignore")
+
+
+@pytest.mark.parametrize(
+    "decoder,text,size,overlap",
+    [
+        # several U+FFFD for one cut character
+        (_PerByteReplacementTokenizer, "a😀", 3, 0),
+        (_PerByteReplacementTokenizer, "bb数", 4, 0),
+        (_PerByteReplacementTokenizer, "数a", 4, 2),
+        # a cut character rendered as something other than U+FFFD
+        (_QuestionMarkTokenizer, "abc数", 4, 1),
+        # a cut character dropped altogether
+        (_DroppingTokenizer, "abc数", 4, 1),
+    ],
+)
+def test_replay_refuses_decoders_that_mark_cuts_differently(
+    decoder, text, size, overlap
+):
+    tokenizer = Tokenizer("t", decoder())
+    chunks = chunking_by_token_size(tokenizer, text, None, False, overlap, size)
+
+    assert (
+        replay_chunk_spans(tokenizer, text, chunks, None, False, overlap, size) is None
+    )
 
 
 class _WordTokenizer:
@@ -249,6 +323,18 @@ def test_chunk_spanning_pages_records_first_and_last_page():
     assert (chunk["page_idx"], chunk["page_idx_end"]) == (0, 2)
 
 
+def test_pages_out_of_order_give_lowest_and_highest():
+    blocks = [
+        {"type": "text", "text": "Appendix on page three.", "page_idx": 3},
+        {"type": "text", "text": "Note on page one.", "page_idx": 1},
+        {"type": "text", "text": "Remark on page two.", "page_idx": 2},
+    ]
+
+    (chunk,) = _annotate(blocks, size=1200, overlap=100)
+
+    assert (chunk["page_idx"], chunk["page_idx_end"]) == (1, 3)
+
+
 def test_text_changed_by_sanitizing_is_still_annotated():
     """LightRAG chunks sanitized text (control chars removed, entities
     unescaped, ends stripped), so offsets into the raw text would be wrong."""
@@ -307,35 +393,57 @@ def test_separate_content_backcompat_returns_two_values():
 
 
 # --------------------------------------------------------------------------
-# processor: wrapper and registry around LightRAG's chunker
+# processor: annotating the rows LightRAG stored for one document
 # --------------------------------------------------------------------------
 
 
-class _DocStatus:
+class _KV:
     def __init__(self):
-        self.records = {}
+        self.rows = {}
+        self.flushed = 0
 
-    async def get_by_id(self, doc_id):
-        return self.records.get(doc_id)
+    async def get_by_id(self, key):
+        return self.rows.get(key)
+
+    async def get_by_ids(self, keys):
+        return [self.rows.get(key) for key in keys]
+
+    async def upsert(self, data):
+        self.rows.update({key: dict(value) for key, value in data.items()})
+
+    async def index_done_callback(self):
+        self.flushed += 1
 
 
 class _FakeLightRAG:
-    """Calls chunking_func the way LightRAG 1.4.x does: on the sanitized text,
-    with positional split/overlap/size arguments."""
+    """Stores a document the way LightRAG 1.4.x does: the sanitized text in
+    full_docs, one row per distinct chunk content (keyed by its hash) in
+    text_chunks, and the chunk ids in doc_status."""
 
-    def __init__(self, chunking_func=chunking_by_token_size):
-        self.chunking_func = chunking_func
-        self.doc_status = _DocStatus()
+    chunk_token_size = 48
+    chunk_overlap_token_size = 8
+    tokenizer = BYTES
 
-    def chunk(self, text, split_by_character=None, overlap=8, size=48):
-        return self.chunking_func(
-            BYTES,
-            sanitize_text_for_encoding(text),
+    def __init__(self):
+        self.chunking_func = chunking_by_token_size
+        self.doc_status, self.full_docs, self.text_chunks = _KV(), _KV(), _KV()
+
+    def store(self, doc_id, text, split_by_character=None, status="processed"):
+        content = sanitize_text_for_encoding(text)
+        chunks = self.chunking_func(
+            self.tokenizer,
+            content,
             split_by_character,
             False,
-            overlap,
-            size,
+            self.chunk_overlap_token_size,
+            self.chunk_token_size,
         )
+        ids = [compute_mdhash_id(c["content"], prefix="chunk-") for c in chunks]
+        for chunk_id, chunk in zip(ids, chunks):
+            self.text_chunks.rows[chunk_id] = {**chunk, "full_doc_id": doc_id}
+        self.full_docs.rows[doc_id] = {"content": content}
+        self.doc_status.rows[doc_id] = {"status": status, "chunks_list": list(ids)}
+        return ids
 
 
 def _processor(lightrag):
@@ -357,135 +465,195 @@ THREE_PAGES = [
 ]
 
 
-async def _register(processor, content_list, doc_id=None):
+async def _ingest(lightrag, content_list, doc_id, split_by_character="\n\n"):
+    """Store like LightRAG, then run the post-insert annotation."""
     text, _, intervals = separate_content_with_page_map(content_list)
-    await processor._register_page_map(text, intervals, doc_id)
-    return text
-
-
-@pytest.mark.asyncio
-async def test_registered_document_is_annotated_and_map_consumed():
-    lightrag = _FakeLightRAG()
-    processor = _processor(lightrag)
-
-    text = await _register(processor, THREE_PAGES)
-    chunks = lightrag.chunk(text, "\n\n")
-
-    assert [c["page_idx"] for c in chunks] == [0, 1, 2]
-    assert lightrag.chunking_func._raganything_page_maps == {}
-
-
-@pytest.mark.asyncio
-async def test_wrapper_is_installed_once_and_does_not_change_chunks():
-    lightrag = _FakeLightRAG()
-    processor = _processor(lightrag)
-    text = await _register(processor, THREE_PAGES)
-    wrapper = lightrag.chunking_func
-    await _register(processor, THREE_PAGES[:2])
-
-    assert lightrag.chunking_func is wrapper
-    assert wrapper.__wrapped__ is chunking_by_token_size
-    expected = chunking_by_token_size(
-        BYTES, sanitize_text_for_encoding(text), None, False, 8, 48
+    ids = lightrag.store(doc_id, text, split_by_character)
+    await _processor(lightrag)._annotate_text_chunk_pages(
+        doc_id, text, intervals, split_by_character, False
     )
-    produced = [
-        {k: v for k, v in c.items() if k not in ("page_idx", "page_idx_end")}
-        for c in lightrag.chunk(text)
+    return [lightrag.text_chunks.rows[chunk_id] for chunk_id in ids]
+
+
+@pytest.mark.asyncio
+async def test_rows_of_the_document_get_their_pages():
+    lightrag = _FakeLightRAG()
+
+    rows = await _ingest(lightrag, THREE_PAGES, "doc-1")
+
+    assert [r["page_idx"] for r in rows] == [0, 1, 2]
+    assert lightrag.text_chunks.flushed == 1
+
+
+@pytest.mark.asyncio
+async def test_token_windows_are_annotated_too():
+    lightrag = _FakeLightRAG()
+
+    rows = await _ingest(lightrag, THREE_PAGES, "doc-1", split_by_character=None)
+
+    assert len(rows) > 1
+    assert all("page_idx" in r for r in rows)
+    assert rows[0]["page_idx"] == 0 and rows[-1].get("page_idx_end", 2) == 2
+
+
+@pytest.mark.asyncio
+async def test_rows_now_owned_by_another_document_are_left_alone():
+    """LightRAG keys chunk rows by content: a row another document re-stored
+    must not get this document's pages."""
+    lightrag = _FakeLightRAG()
+    text, _, intervals = separate_content_with_page_map(THREE_PAGES)
+    ids = lightrag.store("doc-1", text, "\n\n")
+    lightrag.text_chunks.rows[ids[1]]["full_doc_id"] = "doc-2"
+
+    await _processor(lightrag)._annotate_text_chunk_pages(
+        "doc-1", text, intervals, "\n\n", False
+    )
+
+    rows = [lightrag.text_chunks.rows[i] for i in ids]
+    assert [r.get("page_idx") for r in rows] == [0, None, 2]
+
+
+@pytest.mark.asyncio
+async def test_document_chunked_with_other_settings_is_not_annotated():
+    """A queued document can be chunked in another caller's pipeline run,
+    with that caller's split settings; the replay would not match."""
+    lightrag = _FakeLightRAG()
+    text, _, intervals = separate_content_with_page_map(THREE_PAGES)
+    ids = lightrag.store("doc-1", text, split_by_character=None)
+
+    await _processor(lightrag)._annotate_text_chunk_pages(
+        "doc-1", text, intervals, "\n\n", False
+    )
+
+    assert all("page_idx" not in lightrag.text_chunks.rows[i] for i in ids)
+
+
+@pytest.mark.asyncio
+async def test_chunks_lightrag_did_not_record_are_not_annotated():
+    """The recomputed chunks must be exactly the ones LightRAG recorded for
+    the document."""
+    lightrag = _FakeLightRAG()
+    text, _, intervals = separate_content_with_page_map(THREE_PAGES)
+    ids = lightrag.store("doc-1", text, "\n\n")
+    lightrag.doc_status.rows["doc-1"]["chunks_list"].append("chunk-other")
+
+    await _processor(lightrag)._annotate_text_chunk_pages(
+        "doc-1", text, intervals, "\n\n", False
+    )
+
+    assert all("page_idx" not in lightrag.text_chunks.rows[i] for i in ids)
+
+
+@pytest.mark.parametrize("status", ["pending", "processing", "failed"])
+@pytest.mark.asyncio
+async def test_document_not_processed_yet_is_not_annotated(status):
+    lightrag = _FakeLightRAG()
+    text, _, intervals = separate_content_with_page_map(THREE_PAGES)
+    ids = lightrag.store("doc-1", text, "\n\n", status=status)
+
+    await _processor(lightrag)._annotate_text_chunk_pages(
+        "doc-1", text, intervals, "\n\n", False
+    )
+
+    assert all("page_idx" not in lightrag.text_chunks.rows[i] for i in ids)
+
+
+@pytest.mark.asyncio
+async def test_stored_text_from_another_insert_is_not_annotated():
+    lightrag = _FakeLightRAG()
+    text, _, intervals = separate_content_with_page_map(THREE_PAGES)
+    ids = lightrag.store("doc-1", text, "\n\n")
+    lightrag.full_docs.rows["doc-1"]["content"] = text.replace("zero", "nil")
+
+    await _processor(lightrag)._annotate_text_chunk_pages(
+        "doc-1", text, intervals, "\n\n", False
+    )
+
+    assert all("page_idx" not in lightrag.text_chunks.rows[i] for i in ids)
+
+
+@pytest.mark.asyncio
+async def test_repeated_chunk_on_different_pages_gets_no_page():
+    """Identical chunks of one document share a row; it is labelled only if
+    every occurrence is on the same pages."""
+    lightrag = _FakeLightRAG()
+    blocks = [
+        {"type": "text", "text": text, "page_idx": page}
+        for page in range(2)
+        for text in (f"Body {page}.", "Confidential.")
     ]
-    assert produced == expected
+
+    rows = await _ingest(lightrag, blocks, "doc-1")
+
+    by_content = {r["content"]: r.get("page_idx") for r in rows}
+    assert by_content == {"Body 0.": 0, "Confidential.": None, "Body 1.": 1}
+
+
+@pytest.mark.asyncio
+async def test_stale_pages_are_overwritten_explicitly():
+    """Backends that merge updates (MongoDB $set) keep fields the new row
+    lacks, so a stale page_idx_end must be cleared with an explicit None."""
+    lightrag = _FakeLightRAG()
+    text, _, intervals = separate_content_with_page_map(THREE_PAGES)
+    ids = lightrag.store("doc-1", text, "\n\n")
+    for chunk_id in ids:
+        lightrag.text_chunks.rows[chunk_id].update(page_idx=7, page_idx_end=9)
+
+    await _processor(lightrag)._annotate_text_chunk_pages(
+        "doc-1", text, intervals, "\n\n", False
+    )
+
+    rows = [lightrag.text_chunks.rows[i] for i in ids]
+    assert [(r["page_idx"], r["page_idx_end"]) for r in rows] == [
+        (0, None),
+        (1, None),
+        (2, None),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_rows_the_document_cannot_label_lose_stale_pages():
+    """A document without pages (or that cannot be replayed) now owning a
+    row that still carries a previous owner's pages clears them."""
+    lightrag = _FakeLightRAG()
+    blocks = [dict(block, page_idx=None) for block in THREE_PAGES]
+    text, _, intervals = separate_content_with_page_map(blocks)
+    ids = lightrag.store("doc-1", text, "\n\n")
+    lightrag.text_chunks.rows[ids[0]].update(page_idx=4, page_idx_end=6)
+    lightrag.text_chunks.rows[ids[1]].update(full_doc_id="doc-2", page_idx=4)
+
+    await _processor(lightrag)._annotate_text_chunk_pages(
+        "doc-1", text, intervals, "\n\n", False
+    )
+
+    rows = lightrag.text_chunks.rows
+    assert (rows[ids[0]]["page_idx"], rows[ids[0]]["page_idx_end"]) == (None, None)
+    assert rows[ids[1]]["page_idx"] == 4  # another document's row
 
 
 @pytest.mark.asyncio
 async def test_custom_chunker_is_left_alone():
-    """Only LightRAG's own chunker can be replayed; any other is untouched."""
+    """Only LightRAG's own chunker can be replayed."""
 
     def custom(tokenizer, content, *args):
         return [{"tokens": 1, "content": content, "chunk_order_index": 0}]
 
-    lightrag = _FakeLightRAG(custom)
-    processor = _processor(lightrag)
+    lightrag = _FakeLightRAG()
+    lightrag.chunking_func = custom
 
-    text = await _register(processor, THREE_PAGES)
+    rows = await _ingest(lightrag, THREE_PAGES, "doc-1")
 
-    assert lightrag.chunking_func is custom
-    assert "page_idx" not in lightrag.chunk(text)[0]
+    assert "page_idx" not in rows[0]
+    assert lightrag.text_chunks.flushed == 0
 
 
 @pytest.mark.asyncio
-async def test_page_map_registry_is_bounded():
+async def test_blocks_without_page_idx_write_nothing():
     lightrag = _FakeLightRAG()
-    processor = _processor(lightrag)
-    limit = processor._PAGE_MAP_REGISTRY_LIMIT
 
-    for index in range(limit + 5):
-        await processor._register_page_map(f"doc {index} text", [(0, 10, 0)])
-
-    assert len(lightrag.chunking_func._raganything_page_maps) == limit
-
-
-@pytest.mark.asyncio
-async def test_identical_text_with_different_pages_is_not_annotated():
-    lightrag = _FakeLightRAG()
-    processor = _processor(lightrag)
-    text = await _register(processor, THREE_PAGES)
-    await _register(
-        processor,
-        [dict(block, page_idx=block["page_idx"] + 5) for block in THREE_PAGES],
+    rows = await _ingest(
+        lightrag, [dict(block, page_idx=None) for block in THREE_PAGES], "doc-1"
     )
 
-    assert all("page_idx" not in c for c in lightrag.chunk(text, "\n\n"))
-
-
-@pytest.mark.asyncio
-async def test_same_text_without_pages_invalidates_a_pending_map():
-    lightrag = _FakeLightRAG()
-    processor = _processor(lightrag)
-    text = await _register(processor, THREE_PAGES)
-    await _register(processor, [dict(block, page_idx=None) for block in THREE_PAGES])
-
-    assert all("page_idx" not in c for c in lightrag.chunk(text, "\n\n"))
-
-
-@pytest.mark.asyncio
-async def test_ambiguity_outlives_the_first_chunking():
-    """Whichever document is chunked first, a later registration of the same
-    text cannot tell the pending one apart from it."""
-    lightrag = _FakeLightRAG()
-    processor = _processor(lightrag)
-    text = await _register(processor, THREE_PAGES)
-    shifted = [dict(block, page_idx=block["page_idx"] + 5) for block in THREE_PAGES]
-    await _register(processor, shifted)
-    lightrag.chunk(text, "\n\n")
-
-    await _register(processor, THREE_PAGES)
-
-    assert all("page_idx" not in c for c in lightrag.chunk(text, "\n\n"))
-
-
-@pytest.mark.parametrize("status", ["processed", "failed", "pending"])
-@pytest.mark.asyncio
-async def test_known_doc_id_is_never_registered(status):
-    """LightRAG drops an insert whose doc_id it already knows, so the map
-    would wait for a chunking that is not this document's — and could be
-    consumed by another document with the same text."""
-    lightrag = _FakeLightRAG()
-    lightrag.doc_status.records["doc-1"] = {"status": status, "file_path": "a.pdf"}
-    processor = _processor(lightrag)
-    await _register(processor, THREE_PAGES, "doc-0")  # installs the wrapper
-    lightrag.chunk(separate_content_with_page_map(THREE_PAGES)[0], "\n\n")
-    shifted = [dict(block, page_idx=block["page_idx"] + 5) for block in THREE_PAGES]
-
-    text = await _register(processor, shifted, "doc-1")
-
-    assert lightrag.chunking_func._raganything_page_maps == {}
-    assert all("page_idx" not in c for c in lightrag.chunk(text, "\n\n"))
-
-
-@pytest.mark.asyncio
-async def test_blocks_without_page_idx_install_nothing():
-    lightrag = _FakeLightRAG()
-    processor = _processor(lightrag)
-
-    await _register(processor, [dict(block, page_idx=None) for block in THREE_PAGES])
-
-    assert lightrag.chunking_func is chunking_by_token_size
+    assert all("page_idx" not in r for r in rows)
+    assert lightrag.text_chunks.flushed == 0

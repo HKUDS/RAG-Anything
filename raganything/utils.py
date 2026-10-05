@@ -308,9 +308,13 @@ def _token_window_spans(
     ``decode(tokens[a:x])`` for any ``x`` past the cut character), so the
     whole replay is linear.
 
-    This only holds for byte-level tokenizers (tiktoken, byte BPE). Anything
-    else — a decoder that normalises text, adds or drops spaces between
-    tokens — fails the round-trip or per-window checks and returns ``None``.
+    Exact for byte-level tokenizers whose decoder is local (tiktoken, byte
+    BPE). A decoder that normalises text or adds or drops characters between
+    tokens fails the round-trip, cut or per-window checks and returns
+    ``None``. One that replaces a whole invalid byte run (HF ``ByteFallback``)
+    can pass them where the text itself holds U+FFFD; the span may then take
+    in neighbouring U+FFFD, which never crosses into another block because
+    the ``"\n\n"`` between blocks cannot match them.
     """
     tokens = tokenizer.encode(text)
     if tokenizer.decode(tokens) != text:
@@ -346,9 +350,14 @@ def _token_window_spans(
         # cut at the end leaves a single U+FFFD (its leading bytes) in its
         # slot. Neither is text the chunk actually covers.
         stray = cut_fragments(start)
-        cut_end = 1 if cut_fragments(start + size) else 0
-        if stray < 0 or raw[:stray] != "\ufffd" * min(stray, len(raw)):
+        end_fragments = cut_fragments(start + size)
+        if (
+            stray < 0
+            or end_fragments < 0
+            or raw[:stray] != "\ufffd" * min(stray, len(raw))
+        ):
             return None
+        cut_end = 1 if end_fragments else 0
         if stray >= len(raw):
             body = ""  # the window lies inside the one character cut at start
         else:
@@ -436,8 +445,8 @@ def annotate_chunks_with_page_idx(
     ``page_intervals`` (see :func:`build_sanitized_page_map`). A chunk is
     annotated only when every candidate yields the same pages — so an
     ambiguous position never produces a guess. Chunks inside one interval
-    get its ``page_idx``; chunks spanning several get the first page as
-    ``page_idx`` and the last as ``page_idx_end``. Returns the same list.
+    get its ``page_idx``; chunks spanning several get the lowest page as
+    ``page_idx`` and the highest as ``page_idx_end``. Returns the same list.
     """
     if not page_intervals:
         return chunks

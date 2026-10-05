@@ -33,7 +33,12 @@ class _ByteTokenizer:
         return bytes(tokens).decode("utf-8", errors="replace")
 
 
+_LLM = {"fail": False}
+
+
 async def _no_entities(prompt, system_prompt=None, history_messages=None, **kwargs):
+    if _LLM["fail"]:
+        raise RuntimeError("LLM unavailable")
     return ""
 
 
@@ -62,6 +67,7 @@ def _content_list(marker_prefix="PAGE"):
 def make_rag(monkeypatch, tmp_path):
     # insert_content_list never runs MinerU; only the init-time check would.
     monkeypatch.setattr(MineruParser, "check_installation", lambda self: True)
+    monkeypatch.setitem(_LLM, "fail", False)
 
     def build(chunk_token_size=48, chunk_overlap_token_size=8):
         config = RAGAnythingConfig(
@@ -98,16 +104,25 @@ async def _close(rag):
     await asyncio.gather(*workers, return_exceptions=True)
 
 
+def _all_chunks(rag):
+    paths = Path(rag.config.working_dir).glob("**/kv_store_text_chunks.json")
+    return [
+        row
+        for path in paths
+        for row in json.loads(path.read_text(encoding="utf-8")).values()
+    ]
+
+
 def _chunks(rag, doc_id):
-    path = next(Path(rag.config.working_dir).glob("**/kv_store_text_chunks.json"))
-    rows = json.loads(path.read_text(encoding="utf-8")).values()
-    return [row for row in rows if row.get("full_doc_id") == doc_id]
+    return [row for row in _all_chunks(rag) if row.get("full_doc_id") == doc_id]
 
 
-def _assert_pages_cover_markers(chunks, markers):
+def _assert_pages_cover_markers(chunks, markers, every_chunk=True):
     assert chunks, "expected text chunks"
     for chunk in chunks:
-        assert "page_idx" in chunk, f"chunk not annotated: {chunk['content']!r}"
+        if chunk.get("page_idx") is None:
+            assert not every_chunk, f"chunk not annotated: {chunk['content']!r}"
+            continue
         low = chunk["page_idx"]
         high = chunk.get("page_idx_end", low)
         for page, marker in enumerate(markers):
@@ -132,11 +147,10 @@ async def test_real_pipeline_annotates_every_text_chunk(make_rag):
 
 
 @pytest.mark.asyncio
-async def test_real_pipeline_annotates_documents_queued_behind_a_busy_pipeline(
-    make_rag,
-):
-    """Concurrent inserts: LightRAG queues the second document and chunks it
-    in the first caller's pipeline run, after the second ainsert returned."""
+async def test_real_pipeline_concurrent_inserts_never_get_wrong_pages(make_rag):
+    """Concurrent inserts: LightRAG may chunk a queued document in the first
+    caller's pipeline run, after the queued caller's insert returned. That
+    document is left without pages rather than annotated from a guess."""
     rag = make_rag()
     try:
         await asyncio.gather(
@@ -150,10 +164,123 @@ async def test_real_pipeline_annotates_documents_queued_behind_a_busy_pipeline(
     finally:
         await _close(rag)
 
-    _assert_pages_cover_markers(_chunks(rag, "doc-a"), MARKERS)
+    sheets = [m.replace("PAGE", "SHEET") for m in MARKERS]
+    a, b = _chunks(rag, "doc-a"), _chunks(rag, "doc-b")
+    _assert_pages_cover_markers(a, MARKERS, every_chunk=False)
+    _assert_pages_cover_markers(b, sheets, every_chunk=False)
+    # whoever ran the pipeline saw its document processed and annotated it
+    assert any(all("page_idx" in c for c in chunks) for chunks in (a, b))
+
+
+@pytest.mark.asyncio
+async def test_real_pipeline_document_paths_annotate_chunks(make_rag, monkeypatch):
+    """process_document_complete and the LightRAG-API variant run the same
+    annotation after their text insert."""
+    rag = make_rag()
+    parsed = {}
+
+    async def parse_document(file_path, *args, **kwargs):
+        return parsed[file_path], f"doc-{Path(file_path).stem}"
+
+    monkeypatch.setattr(rag, "parse_document", parse_document)
+    parsed["/in/one.pdf"] = _content_list("PAGE")
+    parsed["/in/two.pdf"] = _content_list("SHEET")
+    try:
+        await rag.process_document_complete("/in/one.pdf")
+        await rag.process_document_complete_lightrag_api("/in/two.pdf")
+    finally:
+        await _close(rag)
+
+    _assert_pages_cover_markers(_chunks(rag, "doc-one"), MARKERS)
     _assert_pages_cover_markers(
-        _chunks(rag, "doc-b"), [m.replace("PAGE", "SHEET") for m in MARKERS]
+        _chunks(rag, "doc-two"), [m.replace("PAGE", "SHEET") for m in MARKERS]
     )
+
+
+@pytest.mark.asyncio
+async def test_real_pipeline_identical_text_takes_the_owning_documents_pages(
+    make_rag,
+):
+    """LightRAG stores one row per chunk content, so two documents with the
+    same text share rows: a row's pages must be those of the document its
+    full_doc_id names."""
+    rag = make_rag()
+    shifted = [dict(item, page_idx=item["page_idx"] + 5) for item in _content_list()]
+    try:
+        await rag.insert_content_list(
+            _content_list(), file_path="a.pdf", doc_id="doc-a"
+        )
+        await rag.insert_content_list(shifted, file_path="b.pdf", doc_id="doc-b")
+    finally:
+        await _close(rag)
+
+    offsets = {"doc-a": 0, "doc-b": 5}
+    rows = _all_chunks(rag)
+    assert rows
+    for row in rows:
+        if row.get("page_idx") is None:
+            continue
+        offset = offsets[row["full_doc_id"]]
+        _assert_pages_cover_markers(
+            [
+                dict(
+                    row,
+                    page_idx=row["page_idx"] - offset,
+                    page_idx_end=row.get("page_idx_end", row["page_idx"]) - offset,
+                )
+            ],
+            MARKERS,
+        )
+
+
+@pytest.mark.asyncio
+async def test_real_pipeline_lightrag_retry_of_same_text_gets_no_foreign_pages(
+    make_rag,
+):
+    """A document LightRAG failed earlier is retried in the next pipeline run
+    alongside a RAG-Anything insert of the same text; only rows owned by the
+    RAG-Anything document may carry its pages."""
+    rag = make_rag()
+    text = "\n\n".join(item["text"] for item in _content_list())
+    shifted = [dict(item, page_idx=item["page_idx"] + 10) for item in _content_list()]
+    try:
+        await rag._ensure_lightrag_initialized()
+        _LLM["fail"] = True
+        await rag.lightrag.ainsert(text, ids="doc-plain", file_paths="plain.txt")
+        _LLM["fail"] = False
+        await rag.insert_content_list(shifted, file_path="b.pdf", doc_id="doc-b")
+    finally:
+        await _close(rag)
+
+    for row in _all_chunks(rag):
+        if row.get("page_idx") is not None:
+            assert row["full_doc_id"] == "doc-b"
+            assert row["page_idx"] >= 10
+
+
+@pytest.mark.parametrize("first_insert_fails", [False, True])
+@pytest.mark.asyncio
+async def test_real_pipeline_known_doc_id_keeps_its_pages(make_rag, first_insert_fails):
+    """LightRAG drops an insert whose doc_id it already knows (it retries a
+    failed one from the text it stored then), so a re-insert's pages are not
+    applied."""
+    rag = make_rag()
+    shifted = [dict(item, page_idx=item["page_idx"] + 5) for item in _content_list()]
+    try:
+        _LLM["fail"] = first_insert_fails
+        await rag.insert_content_list(
+            _content_list(), file_path="a.pdf", doc_id="doc-a"
+        )
+        _LLM["fail"] = False
+        await rag.insert_content_list(shifted, file_path="a.pdf", doc_id="doc-a")
+    finally:
+        await _close(rag)
+
+    chunks = _chunks(rag, "doc-a")
+    if first_insert_fails:
+        assert all(c.get("page_idx") is None for c in chunks)
+    else:
+        _assert_pages_cover_markers(chunks, MARKERS)
 
 
 @pytest.mark.asyncio
