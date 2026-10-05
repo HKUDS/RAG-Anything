@@ -163,9 +163,28 @@ python -m raganything.batch_parser --help
 Use `incremental=True` when repeatedly processing the same folder. RAG-Anything
 stores a manifest at `.raganything_batch_manifest.json` inside the output
 directory and skips files that are unchanged since the last successful run. A
-file is considered unchanged when its size and modification time match the
-manifest; only when those differ is the MD5 hash recomputed and compared, so
-large unchanged files are not re-hashed on every run.
+file is skipped only when both its content and the parsing configuration match
+the manifest:
+
+- **Content** — size and modification time; only when those differ is the MD5
+  hash recomputed and compared, so large unchanged files are not re-hashed on
+  every run.
+- **Parsing configuration** — a SHA-256 digest of the parser name, the
+  `parse_method`, and the parser options. Built-in options that change the
+  parse result (`lang`, `device`, `start_page`, `end_page`, `formula`, `table`,
+  `backend`, `source`, `include_layout_blocks`) are normalised the same way as
+  the parse cache, so passing a default explicitly (for example
+  `include_layout_blocks=False` or `lang=None`) or changing the parser name's
+  case does not trigger a reparse. Any other option is kept verbatim, since a
+  custom parser may depend on it. Worker count, progress display and scan
+  settings are not part of the digest, and raw option values are never written
+  to the manifest.
+
+Changing the parser, `parse_method` or a result-affecting option reparses the
+affected files. After upgrading, manifests written by older versions have no
+configuration digest, so every file is reparsed once. A file whose reparse
+fails is removed from the manifest so the next run retries it, and options that
+cannot be serialised to JSON disable reuse for that run.
 
 ```python
 result = batch_parser.process_batch(
