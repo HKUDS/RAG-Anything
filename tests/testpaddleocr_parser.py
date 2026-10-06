@@ -140,6 +140,58 @@ def test_parse_image_preserves_repeated_ocr_lines(monkeypatch, tmp_path):
     ]
 
 
+@pytest.mark.parametrize("texts", [["Invoice total: $42", "Invoice total: $42"], []])
+@pytest.mark.parametrize("wrapped", [False, True])
+def test_parse_image_excludes_paddleocr_result_metadata(
+    monkeypatch, tmp_path, texts, wrapped
+):
+    parser = PaddleOCRParser()
+    image_path = tmp_path / "invoice.png"
+    image_path.write_bytes(b"image-bytes")
+
+    class FakeOCR:
+        def ocr(self, input_data, cls=True):
+            result = {
+                "input_path": input_data,
+                "page_index": None,
+                "model_settings": {"use_doc_preprocessor": True},
+                "doc_preprocessor_res": {"input_path": input_data, "angle": 0},
+                "text_det_params": {"limit_type": "min"},
+                "text_type": "general",
+                "rec_texts": texts,
+                "rec_scores": [0.99] * len(texts),
+            }
+            return [{"res": result} if wrapped else result]
+
+    monkeypatch.setattr(parser, "_get_ocr", lambda lang=None: FakeOCR())
+
+    assert parser.parse_image(image_path, page_idx=3) == [
+        {"type": "text", "text": text, "page_idx": 3} for text in texts
+    ]
+
+
+@pytest.mark.parametrize(
+    "result, expected",
+    [
+        (" First line ", ["First line"]),
+        (["First line", "Second line"], ["First line", "Second line"]),
+        ({"text": "First line", "input_path": "page.png"}, ["First line"]),
+        ({"texts": ["First line", ""], "text_type": "general"}, ["First line"]),
+        ({"texts": [], "text_type": "general"}, []),
+    ],
+)
+def test_extract_text_lines_preserves_supported_text_results(result, expected):
+    assert PaddleOCRParser()._extract_text_lines(result) == expected
+
+
+def test_extract_text_lines_excludes_metadata_from_to_dict_results():
+    class Result:
+        def to_dict(self):
+            return {"rec_texts": ["Recognized text"], "input_path": "page.png"}
+
+    assert PaddleOCRParser()._extract_text_lines([Result()]) == ["Recognized text"]
+
+
 def test_parse_pdf_assigns_page_index(monkeypatch, tmp_path):
     parser = PaddleOCRParser()
     fake_pdf = tmp_path / "sample.pdf"
