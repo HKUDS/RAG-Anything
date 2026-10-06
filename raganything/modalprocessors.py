@@ -12,7 +12,6 @@ Includes:
 import re
 import json
 import time
-import base64
 from typing import Dict, Any, Tuple, List, Optional
 from pathlib import Path
 from dataclasses import dataclass
@@ -29,6 +28,7 @@ from lightrag.operate import extract_entities, merge_nodes_and_edges
 # Import prompt templates
 from raganything.prompt import PROMPTS
 from raganything.utils import (
+    encode_image_to_base64,
     format_table_body,
     get_equation_text_and_format,
     get_table_body,
@@ -911,14 +911,8 @@ class ImageModalProcessor(BaseModalProcessor):
         super().__init__(lightrag, modal_caption_func, context_extractor)
 
     def _encode_image_to_base64(self, image_path: str) -> str:
-        """Encode image to base64"""
-        try:
-            with open(image_path, "rb") as image_file:
-                encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-            return encoded_string
-        except Exception as e:
-            logger.error(f"Failed to encode image {image_path}: {e}")
-            return ""
+        """Encode image to base64; ``""`` if unreadable or not an image."""
+        return encode_image_to_base64(image_path)
 
     async def generate_description_only(
         self,

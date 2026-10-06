@@ -461,6 +461,8 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+> **Text indexing**: `process_document_complete()` and `insert_content_list()` return only after LightRAG has indexed the document's text; if another insert is running LightRAG's pipeline, they wait for that run to process it. If LightRAG fails the text (for example, the LLM is unavailable) and no run is left to retry it, they raise `RuntimeError` and the document stays `failed` in `doc_status`; LightRAG retries it on its next pipeline run, such as when the file is processed again. See [multimodal ingestion concurrency](docs/batch_processing.md#multimodal-ingestion-concurrency).
+
 #### 2. Direct Multimodal Content Processing
 
 ```python
@@ -1224,7 +1226,7 @@ Different content types require specific optional dependencies:
 - **Extended Image Formats** (.bmp, .tiff, .gif, .webp): Install with `pip install raganything[image]`
 - **Audio** (.mp3, .wav, .flac, .m4a, .ogg): Install with `pip install raganything[audio]` and set `enable_audio_processing=True` (env `ENABLE_AUDIO_PROCESSING`); local transcription via faster-whisper, model picked by `WHISPER_MODEL` (default `base`; for CJK audio use `WHISPER_MODEL=medium` or larger and set `WHISPER_LANGUAGE`, e.g. `zh` — smaller models garble non-Latin proper nouns)
 - **Video** (.mp4, .mov, .webm, .avi, .mkv): Install with `pip install raganything[video]` (also needs ffmpeg on PATH) and set `enable_video_processing=True` (env `ENABLE_VIDEO_PROCESSING`); dual-channel: SceneDetect + keyframe VLM description + audio-track transcription. Media files can be passed directly to `process_document_complete()` / folder batches, or inserted as content-list items
-- **Text Files** (.txt, .md): Install with `pip install raganything[text]`. Parsed directly (no PDF/OCR round trip); markdown image references (`![alt](path)`) that point to readable local files become image blocks and flow through the same multimodal pipeline as images extracted from PDFs — URLs and missing files stay as plain text
+- **Text Files** (.txt, .md): Install with `pip install raganything[text]`. Parsed directly (no PDF/OCR round trip); markdown image references (`![alt](path)`) that point to local image files (an image extension and image file contents) become image blocks and flow through the same multimodal pipeline as images extracted from PDFs — URLs, missing files and other files stay as plain text. Referenced images are sent to the configured vision model wherever they are on disk, so only ingest Markdown whose image references you trust
 - **PaddleOCR Parser** (`parser="paddleocr"`): Install with `pip install raganything[paddleocr]`, then install `paddlepaddle` for your platform
 
 > **📋 Quick Install**: Use `pip install raganything[all]` to enable all format support (Python dependencies only - LibreOffice still needs separate installation)

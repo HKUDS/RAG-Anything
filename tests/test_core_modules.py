@@ -231,11 +231,28 @@ class TestValidateImageFile:
         assert validate_image_file(str(link)) is False
 
     def test_all_valid_extensions(self, tmp_path):
-        extensions = [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp", ".tiff", ".tif"]
-        for ext in extensions:
+        bmp = b"BM" + b"\x00" * 12 + (40).to_bytes(4, "little")
+        signatures = {
+            ".jpg": b"\xff\xd8\xff",
+            ".jpeg": b"\xff\xd8\xff",
+            ".png": b"\x89PNG\r\n\x1a\n",
+            ".gif": b"GIF89a",
+            ".bmp": bmp,
+            ".webp": b"RIFF\x00\x00\x00\x00WEBPVP8 ",
+            ".tiff": b"II*\x00",
+            ".tif": b"MM\x00*",
+        }
+        for ext, signature in signatures.items():
             img = tmp_path / f"test{ext}"
-            img.write_bytes(b"\x00" * 100)
+            img.write_bytes(signature + b"\x00" * 100)
             assert validate_image_file(str(img)) is True, f"Failed for {ext}"
+
+    def test_image_extension_with_other_content_is_rejected(self, tmp_path):
+        """Query-time image paths come from retrieved text; a non-image file
+        named like an image must not be sent to the vision model."""
+        fake = tmp_path / "config.png"
+        fake.write_bytes(b"api_key: secret\n" + b"\x00" * 100)
+        assert validate_image_file(str(fake)) is False
 
 
 # ── Processor Type Mapping Tests ─────────────────────────────────

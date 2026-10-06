@@ -13,6 +13,8 @@ from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 from lightrag.utils import logger
 
+from raganything.image_signature import SIGNATURE_BYTES, looks_like_image
+
 
 def normalize_caption_list(value: Any) -> List[str]:
     """Return captions and footnotes as a clean list of strings."""
@@ -503,11 +505,15 @@ def encode_image_to_base64(image_path: str) -> str:
     """
     try:
         with open(image_path, "rb") as image_file:
-            encoded_string = base64.b64encode(image_file.read()).decode("utf-8")
-        return encoded_string
+            data = image_file.read()
     except Exception as e:
         logger.error(f"Failed to encode image {image_path}: {e}")
         return ""
+    # Check the bytes actually being sent, not an earlier look at the path.
+    if not looks_like_image(data[:SIGNATURE_BYTES]):
+        logger.warning(f"Not sending {image_path} to the vision model: not an image")
+        return ""
+    return base64.b64encode(data).decode("utf-8")
 
 
 def validate_image_file(image_path: str, max_size_mb: int = 50) -> bool:
@@ -569,6 +575,11 @@ def validate_image_file(image_path: str, max_size_mb: int = 50) -> bool:
         if file_size > max_size:
             logger.warning(f"Image file too large ({file_size} bytes): {image_path}")
             return False
+
+        with open(path, "rb") as image_file:
+            if not looks_like_image(image_file.read(SIGNATURE_BYTES)):
+                logger.warning(f"File content is not an image: {image_path}")
+                return False
 
         logger.debug(f"Image validation successful: {image_path}")
         return True

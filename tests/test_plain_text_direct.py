@@ -14,6 +14,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from raganything.parser import MineruParser, PaddleOCRParser, Parser  # noqa: E402
 
+# Image references only become image blocks for real image files.
+PNG = b"\x89PNG\r\n\x1a\n"
+
 
 class TestTextToContentBlocks:
     """The block builder: paragraph splitting, headings, line endings."""
@@ -93,9 +96,9 @@ class TestMarkdownCodeFences:
     def test_non_closing_fence_keeps_headings_and_images_literal(
         self, tmp_path, opening, non_closing
     ):
-        # Image resolution checks existence; no image decoding is needed here.
+        # Only real image files (extension and signature) become image blocks.
         image = tmp_path / "diagram.png"
-        image.touch()
+        image.write_bytes(PNG)
         code = (
             f"{opening}markdown\n{non_closing}\n"
             f"# Example heading\n\n![Example](diagram.png)\n{opening}"
@@ -196,7 +199,7 @@ class TestMarkdownImageTargets:
         ],
     )
     def test_literal_image_syntax_stays_text(self, tmp_path, text):
-        (tmp_path / "local.png").touch()
+        (tmp_path / "local.png").write_bytes(PNG)
         document = tmp_path / "doc.md"
         document.write_text(text, encoding="utf-8")
 
@@ -210,7 +213,7 @@ class TestMarkdownImageTargets:
     )
     def test_unmatched_or_escaped_backticks_do_not_hide_images(self, tmp_path, prefix):
         image = tmp_path / "local.png"
-        image.touch()
+        image.write_bytes(PNG)
         document = tmp_path / "doc.md"
         document.write_text(f"{prefix}![Real](local.png)", encoding="utf-8")
 
@@ -221,7 +224,7 @@ class TestMarkdownImageTargets:
 
     def test_real_image_next_to_code_and_escaped_reference(self, tmp_path):
         image = tmp_path / "local.png"
-        image.touch()
+        image.write_bytes(PNG)
         document = tmp_path / "doc.md"
         text = r"`![code](local.png)` \![escaped](local.png) and ![Real](local.png)"
         document.write_text(text, encoding="utf-8")
@@ -233,7 +236,7 @@ class TestMarkdownImageTargets:
         assert [b["img_caption"] for b in blocks if b["type"] == "image"] == [["Real"]]
 
     def test_multiline_code_keeps_real_images_before_and_after_it(self, tmp_path):
-        (tmp_path / "local.png").touch()
+        (tmp_path / "local.png").write_bytes(PNG)
         document = tmp_path / "doc.md"
         document.write_text(
             "![Before](local.png) `example\n  ![code](local.png)\n"
@@ -250,7 +253,7 @@ class TestMarkdownImageTargets:
 
     @pytest.mark.parametrize("boundary", ["\n\n", "\n# Heading\n", "\n```\nx\n```\n"])
     def test_code_spans_do_not_cross_block_boundaries(self, tmp_path, boundary):
-        (tmp_path / "local.png").touch()
+        (tmp_path / "local.png").write_bytes(PNG)
         document = tmp_path / "doc.md"
         document.write_text(
             f"`unclosed{boundary}![Real](local.png) `", encoding="utf-8"
@@ -279,7 +282,7 @@ class TestMarkdownImageTargets:
     )
     def test_local_image_targets_resolve_to_file(self, tmp_path, filename, target):
         image = tmp_path / filename
-        image.touch()
+        image.write_bytes(PNG)
         document = tmp_path / "doc.md"
         document.write_text(f'![Figure]({target} "Figure%20title")\n', encoding="utf-8")
 
@@ -295,7 +298,7 @@ class TestMarkdownImageTargets:
 
     def test_absolute_encoded_image_target_is_not_joined_to_source_dir(self, tmp_path):
         image = tmp_path / "figure 1.png"
-        image.touch()
+        image.write_bytes(PNG)
         source_dir = tmp_path / "docs"
         source_dir.mkdir()
         document = source_dir / "doc.md"
@@ -311,7 +314,7 @@ class TestMarkdownImageTargets:
         # The destination ends at its own closing parenthesis, so text in
         # parentheses later on the same line is not swallowed into it.
         image = tmp_path / "image(1).png"
-        image.touch()
+        image.write_bytes(PNG)
         document = tmp_path / "doc.md"
         document.write_text(
             "See ![plot](image(1).png) (details below).", encoding="utf-8"
@@ -330,7 +333,7 @@ class TestMarkdownImageTargets:
 
     def test_title_with_parentheses(self, tmp_path):
         image = tmp_path / "plot.png"
-        image.touch()
+        image.write_bytes(PNG)
         document = tmp_path / "doc.md"
         document.write_text('![plot](plot.png "Figure (a)")', encoding="utf-8")
 

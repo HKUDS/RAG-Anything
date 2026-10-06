@@ -284,7 +284,8 @@ file's multimodal content. If LightRAG fails a file's text (for example, the LLM
 is unavailable) and no run is left to retry it, `process_document_complete()` and
 `insert_content_list()` raise and the document stays `failed` in `doc_status`;
 LightRAG retries failed documents on its next pipeline run, such as when the file
-is processed again.
+is processed again. If the last pipeline run was cancelled by the user, they raise
+instead of restarting it.
 
 ## Supported File Types
 
