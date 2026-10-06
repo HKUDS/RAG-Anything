@@ -441,6 +441,8 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
+> **文本索引**：`process_document_complete()` 和 `insert_content_list()` 会在 LightRAG 完成该文档的文本索引后才返回；若另一个插入正在运行 LightRAG 的 pipeline，会等待那次运行处理完它。若 LightRAG 处理文本失败（例如 LLM 不可用）且没有后续运行会重试，则抛出 `RuntimeError`，文档在 `doc_status` 中保持 `failed`；LightRAG 会在下一次 pipeline 运行时（例如再次处理该文件）重试。详见[多模态摄入并发](docs/batch_processing.md#multimodal-ingestion-concurrency)。
+
 #### 2. 直接多模态内容处理
 
 ```python
@@ -1163,7 +1165,7 @@ MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并�
 - **扩展图像格式** (.bmp, .tiff, .gif, .webp): 使用 `pip install raganything[image]` 安装
 - **音频** (.mp3, .wav, .flac, .m4a, .ogg): 使用 `pip install raganything[audio]` 安装，并设置 `enable_audio_processing=True`（环境变量 `ENABLE_AUDIO_PROCESSING`）；由 faster-whisper 本地转写（`WHISPER_MODEL` 选模型；默认 `base`，中文等非拉丁语音建议 `medium` 及以上并设置 `WHISPER_LANGUAGE=zh`，小模型会写错专有名词），长音频自动切分为有序分块
 - **视频** (.mp4, .mov, .webm, .avi, .mkv): 使用 `pip install raganything[video]` 安装（另需系统 ffmpeg），并设置 `enable_video_processing=True`（环境变量 `ENABLE_VIDEO_PROCESSING`）；双通道处理：SceneDetect 场景切分 + 关键帧 VLM 描述 + 音轨转写，按时间戳合并。媒体文件可以直接传给 `process_document_complete()` / 文件夹批处理，也可以作为 content list 项插入
-- **文本文件** (.txt, .md): 使用 `pip install raganything[text]` 安装。直接解析，不再经过 PDF/OCR 中转；markdown 中指向本地可读文件的图片引用（`![alt](path)`）会生成图像块，与 PDF 中提取的图片走同一条多模态管线——URL 与不存在的文件保持为纯文本
+- **文本文件** (.txt, .md): 使用 `pip install raganything[text]` 安装。直接解析，不再经过 PDF/OCR 中转；markdown 中指向本地图片文件（扩展名为图片格式且文件内容确为图片）的引用（`![alt](path)`）会生成图像块，与 PDF 中提取的图片走同一条多模态管线——URL、不存在的文件和其他文件保持为纯文本。被引用的图片无论位于磁盘何处都会发送给配置的视觉模型，因此只摄入图片引用可信的 Markdown
 
 > **📋 快速安装**: 使用 `pip install raganything[all]` 启用所有格式支持（仅Python依赖 - LibreOffice仍需单独安装）
 

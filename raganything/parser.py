@@ -56,6 +56,7 @@ if TYPE_CHECKING:
     from PIL import Image
 
 from raganything.asset_urls import attach_public_media_urls
+from raganything.image_signature import SIGNATURE_BYTES, looks_like_image
 from raganything.mineru_content import (
     MineruContentListV2Error,
     convert_mineru_content_list_v2,
@@ -792,9 +793,10 @@ class Parser:
         """Resolve one markdown image target to (img_path, extra_captions).
 
         Returns None when the reference cannot become an image block — a URL,
-        a missing file, or an unreadable target — in which case the literal
-        markdown text is preserved, matching what the old PDF round trip
-        produced (it rendered the syntax as plain text and embedded nothing).
+        a missing file, an unreadable target, or a file that is not an image
+        (see :meth:`_is_image_file`) — in which case the literal markdown text
+        is preserved, matching what the old PDF round trip produced (it
+        rendered the syntax as plain text and embedded nothing).
         """
         inner = target.strip()
         captions: List[str] = []
@@ -821,11 +823,24 @@ class Parser:
                     return None
                 path = source_dir / path
             try:
-                if path.is_file():
+                if path.is_file() and cls._is_image_file(path):
                     return str(path.resolve()), captions
             except OSError:
                 continue
         return None
+
+    @classmethod
+    def _is_image_file(cls, path: Path) -> bool:
+        """Whether ``path`` is an image by both extension and content.
+
+        An image block's file is base64-encoded and sent to the vision model,
+        so a markdown reference to any other file (``![x](/etc/hosts)``, a
+        key or config renamed ``.png``) must not become one.
+        """
+        if path.suffix.lower() not in cls.IMAGE_FORMATS:
+            return False
+        with open(path, "rb") as handle:
+            return looks_like_image(handle.read(SIGNATURE_BYTES))
 
     @classmethod
     def _text_to_content_blocks(
@@ -839,12 +854,13 @@ class Parser:
 
         Paragraphs are delimited by blank lines; in markdown, an ATX heading
         (`# ...`) becomes its own block carrying `text_level`, and an inline
-        image reference (``![alt](path)``) whose target is a readable local
-        file becomes an image block shaped exactly like MinerU's
-        (``img_path``/``img_caption``/``img_footnote``/``page_idx``), so it
-        flows into the same multimodal pipeline as images extracted from
-        PDFs. URLs and missing files stay literal text. Fenced code blocks
-        (``` or ~~~), inline code, and escaped image references stay literal.
+        image reference (``![alt](path)``) whose target is a local image file
+        (image extension and image content) becomes an image block shaped
+        exactly like MinerU's (``img_path``/``img_caption``/``img_footnote``/
+        ``page_idx``), so it flows into the same multimodal pipeline as images
+        extracted from PDFs. URLs, missing files and non-image files stay
+        literal text. Fenced code blocks (``` or ~~~), inline code, and
+        escaped image references stay literal.
         """
         # Normalize line endings up front so CRLF/CR input behaves the same
         # as LF however the text arrived (text-mode file reads translate

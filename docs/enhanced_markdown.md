@@ -2,7 +2,7 @@
 
 This document describes the enhanced markdown conversion feature for RAG-Anything, which provides high-quality PDF generation from markdown files with multiple backend options and advanced styling.
 
-> **Note**: Since v1.4.0, document **ingestion** no longer converts `.txt`/`.md` to PDF — text files are parsed directly, and markdown image references pointing to readable local files become image blocks in the multimodal pipeline. This converter is for *producing* styled PDF deliverables from markdown, not part of the ingest path.
+> **Note**: Since v1.4.0, document **ingestion** no longer converts `.txt`/`.md` to PDF — text files are parsed directly, and markdown image references pointing to local image files (image extension and contents) become image blocks in the multimodal pipeline; references to any other file stay text. This converter is for *producing* styled PDF deliverables from markdown, not part of the ingest path.
 
 ## Overview
 

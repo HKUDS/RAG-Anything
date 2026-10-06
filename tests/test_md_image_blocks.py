@@ -4,8 +4,9 @@ The old .md -> ReportLab -> PDF -> MinerU round trip was meant to carry
 images into the pipeline but never did: ReportLab rendered ``![alt](path)``
 as literal text and embedded nothing. The direct parser now emits an image
 block shaped exactly like MinerU's for every reference that resolves to a
-readable local file, so markdown images flow into the same multimodal
-pipeline as images extracted from PDFs.
+local image file, so markdown images flow into the same multimodal pipeline
+as images extracted from PDFs. An image block's file is sent to the vision
+model, so only real images (extension and content) qualify.
 """
 
 from pathlib import Path
@@ -144,3 +145,97 @@ def test_txt_files_are_untouched(md_dir):
 def test_raw_string_without_source_dir_keeps_literal():
     blocks = Parser._text_to_content_blocks("![a](rel.png)\n", is_markdown=True)
     assert [b["type"] for b in blocks] == ["text"]
+
+
+# --------------------------------------------------------------------------
+# only real image files become image blocks: an image block's file is
+# base64-encoded and sent to the vision model
+# --------------------------------------------------------------------------
+
+SIGNATURES = {
+    "a.png": b"\x89PNG\r\n\x1a\n",
+    "b.jpg": b"\xff\xd8\xff\xe0",
+    "c.jpeg": b"\xff\xd8\xff\xdb",
+    "d.gif": b"GIF89a",
+    "e.gif": b"GIF87a",
+    "f.bmp": b"BM" + b"\x00" * 12 + (40).to_bytes(4, "little"),
+    "g.tif": b"II*\x00",
+    "h.tiff": b"MM\x00*",
+    "h2.tif": b"II+\x00",  # BigTIFF
+    "h3.tiff": b"MM\x00+",
+    "i.webp": b"RIFF\x00\x00\x00\x00WEBPVP8 ",
+    "J.PNG": b"\x89PNG\r\n\x1a\n",
+    # a mislabelled image is still an image
+    "k.jpg": b"\x89PNG\r\n\x1a\n",
+}
+
+
+@pytest.mark.parametrize("name", sorted(SIGNATURES))
+def test_every_supported_image_format_becomes_a_block(md_dir, name):
+    (md_dir / name).write_bytes(SIGNATURES[name] + b"rest")
+
+    blocks = parse(md_dir, f"![x]({name})\n")
+
+    assert [b["img_path"] for b in blocks_of(blocks, "image")] == [
+        str((md_dir / name).resolve())
+    ]
+
+
+@pytest.mark.parametrize(
+    "name,content",
+    [
+        ("hosts", b"127.0.0.1 localhost\n"),  # no extension
+        ("notes.txt", b"secret-token-123\n"),
+        ("id_rsa.png", b"-----BEGIN OPENSSH PRIVATE KEY-----\n"),  # renamed key
+        ("empty.png", b""),
+        ("tiny.png", b"\x89P"),  # truncated signature
+        ("notes.bmp", b"BMW service notes, VIN 123\n"),  # "BM" alone is not BMP
+        ("riff.webp", b"RIFF\x00\x00\x00\x00WAVE"),  # RIFF but not WebP
+        ("vector.svg", b"<svg xmlns='http://www.w3.org/2000/svg'/>"),
+        ("photo.heic", b"\x89PNG\r\n\x1a\n"),  # extension not supported
+    ],
+)
+def test_non_image_files_stay_literal_text(md_dir, name, content):
+    (md_dir / name).write_bytes(content)
+    src = f"![x]({name})"
+
+    blocks = parse(md_dir, src + "\n")
+
+    assert blocks_of(blocks, "image") == []
+    assert blocks_of(blocks, "text")[0]["text"] == src
+
+
+def test_absolute_and_encoded_references_to_other_files_stay_text(md_dir, tmp_path):
+    secret = tmp_path / "outside" / "config.yaml"
+    secret.parent.mkdir()
+    secret.write_text("api_key: abc\n")
+    refs = [
+        f"![a]({secret})",
+        "![b](../outside/config.yaml)",
+        "![c](../outside/config%2Eyaml)",
+    ]
+    nested = md_dir / "docs"
+    nested.mkdir()
+
+    blocks = parse(nested, "\n\n".join(refs) + "\n")
+
+    assert blocks_of(blocks, "image") == []
+    assert [b["text"] for b in blocks_of(blocks, "text")] == refs
+
+
+def test_encoders_refuse_non_image_content(md_dir):
+    """The read-time check covers paths that bypassed the parser: parse-cache
+    entries written before this check existed, content lists, files swapped
+    after parsing, and query-time image paths."""
+    from raganything.modalprocessors import ImageModalProcessor
+    from raganything.utils import encode_image_to_base64
+
+    fake = md_dir / "cached.png"
+    fake.write_text("api_key: secret\n")
+    real = md_dir / "images" / "arch.png"
+
+    assert encode_image_to_base64(str(fake)) == ""
+    assert encode_image_to_base64(str(real)) != ""
+    processor = ImageModalProcessor.__new__(ImageModalProcessor)
+    assert processor._encode_image_to_base64(str(fake)) == ""
+    assert processor._encode_image_to_base64(str(real)) != ""
