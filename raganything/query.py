@@ -4,6 +4,7 @@ Query functionality for RAGAnything
 Contains all query-related methods for both text and multimodal queries
 """
 
+import base64
 import json
 import hashlib
 import re
@@ -12,6 +13,7 @@ from typing import Dict, List, Any
 from pathlib import Path
 from lightrag import QueryParam
 from lightrag.utils import always_get_an_event_loop
+from raganything.image_signature import SIGNATURE_BYTES, image_mime_type
 from raganything.prompt import PROMPTS
 from raganything.utils import (
     get_processor_for_type,
@@ -794,11 +796,19 @@ class QueryMixin:
 
                     # Insert corresponding image
                     if 0 <= image_num < len(images_base64):
+                        image_data = images_base64[image_num]
+                        # Decode only enough base64 to identify the existing payload.
+                        header_length = ((SIGNATURE_BYTES + 2) // 3) * 4
+                        mime_type = image_mime_type(
+                            base64.b64decode(image_data[:header_length])
+                        )
+                        if mime_type is None:
+                            raise ValueError("Unsupported image format in VLM message")
                         content_parts.append(
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/jpeg;base64,{images_base64[image_num]}"
+                                    "url": f"data:{mime_type};base64,{image_data}"
                                 },
                             }
                         )
