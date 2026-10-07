@@ -9,14 +9,14 @@ never be sent. Kept free of heavy imports because ``parser`` uses it.
 # Leading bytes of the formats in Parser.IMAGE_FORMATS; WebP and BMP are
 # checked separately below.
 _SIGNATURES = (
-    b"\x89PNG\r\n\x1a\n",  # PNG
-    b"\xff\xd8\xff",  # JPEG
-    b"GIF87a",
-    b"GIF89a",
-    b"II*\x00",  # TIFF, little-endian
-    b"MM\x00*",  # TIFF, big-endian
-    b"II+\x00",  # BigTIFF, little-endian
-    b"MM\x00+",  # BigTIFF, big-endian
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"II*\x00", "image/tiff"),  # TIFF, little-endian
+    (b"MM\x00*", "image/tiff"),  # TIFF, big-endian
+    (b"II+\x00", "image/tiff"),  # BigTIFF, little-endian
+    (b"MM\x00+", "image/tiff"),  # BigTIFF, big-endian
 )
 # Sizes of the known BMP DIB headers ("BM" alone is too weak a signature).
 _BMP_DIB_HEADER_SIZES = {12, 40, 52, 56, 64, 108, 124}
@@ -25,14 +25,23 @@ _BMP_DIB_HEADER_SIZES = {12, 40, 52, 56, 64, 108, 124}
 SIGNATURE_BYTES = 18
 
 
-def looks_like_image(head: bytes) -> bool:
-    """Whether ``head`` (a file's first SIGNATURE_BYTES bytes or more) starts
-    a PNG, JPEG, GIF, BMP, TIFF or WebP image."""
+def image_mime_type(head: bytes) -> str | None:
+    """Identify the media type from the first SIGNATURE_BYTES of image data."""
     if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
-        return True
+        return "image/webp"
     if head[:2] == b"BM":
-        return (
+        if (
             len(head) >= 18
             and int.from_bytes(head[14:18], "little") in _BMP_DIB_HEADER_SIZES
-        )
-    return head.startswith(_SIGNATURES)
+        ):
+            return "image/bmp"
+        return None
+    for signature, mime_type in _SIGNATURES:
+        if head.startswith(signature):
+            return mime_type
+    return None
+
+
+def looks_like_image(head: bytes) -> bool:
+    """Whether ``head`` starts a supported image format."""
+    return image_mime_type(head) is not None
