@@ -490,6 +490,20 @@ class BatchParser:
                 skipped_files=skipped_files,
             )
 
+        if not incremental:
+            # These parses overwrite the same artifacts as incremental runs.
+            # Retire their old signatures before any worker can replace output,
+            # including when a parse fails after writing partial results.
+            manifest = self._load_incremental_manifest(output_dir)
+            invalidated = False
+            for file_path in files_to_process:
+                key = str(Path(file_path).resolve())
+                if key in manifest:
+                    del manifest[key]
+                    invalidated = True
+            if invalidated:
+                self._save_incremental_manifest(output_dir, manifest)
+
         # Process files in parallel
         successful_files = []
         failed_files = []

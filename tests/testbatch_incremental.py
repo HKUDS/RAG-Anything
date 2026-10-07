@@ -598,3 +598,78 @@ def test_incremental_custom_parser_option_change_still_invalidates(
 
     assert result.successful_files == inputs
     assert fake_parser.processed_files == inputs
+
+
+@pytest.mark.parametrize("fail_reparse", [False, True])
+def test_non_incremental_reparse_invalidates_old_artifacts(
+    monkeypatch, tmp_path, fail_reparse
+):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    _, first_doc, second_doc = _seed_two_docs(tmp_path)
+    inputs = [str(first_doc), str(second_doc)]
+    output_dir = str(tmp_path / "out")
+
+    def parse_with_artifacts(file_path, output_dir, method="auto", **kwargs):
+        artifact = Path(output_dir) / "result.txt"
+        artifact.write_text(kwargs["lang"], encoding="utf-8")
+        if fail_reparse and kwargs["lang"] == "ch":
+            raise RuntimeError("failed after replacing the artifact")
+        return [{"type": "text", "text": kwargs["lang"]}]
+
+    fake_parser.parse_document = parse_with_artifacts
+    batch_parser.process_batch(inputs, output_dir, incremental=True, lang="en")
+    result = batch_parser.process_batch(
+        [str(first_doc)], output_dir, incremental=False, lang="ch"
+    )
+    assert result.failed_files == ([str(first_doc)] if fail_reparse else [])
+    artifact = batch_parser._file_output_dir(output_dir, str(first_doc)) / "result.txt"
+    assert artifact.read_text(encoding="utf-8") == "ch"
+
+    restored = batch_parser.process_batch(
+        inputs, output_dir, incremental=True, lang="en"
+    )
+    assert restored.successful_files == [str(first_doc)]
+    assert restored.skipped_files == [str(second_doc)]
+    assert artifact.read_text(encoding="utf-8") == "en"
+
+
+def test_non_incremental_dry_run_preserves_manifest(monkeypatch, tmp_path):
+    batch_parser, _ = _make_batch_parser(monkeypatch)
+    _, first_doc, _ = _seed_two_docs(tmp_path)
+    inputs = [str(first_doc)]
+    output_dir = str(tmp_path / "out")
+    batch_parser.process_batch(inputs, output_dir, incremental=True, lang="en")
+    manifest = batch_parser._manifest_path(output_dir)
+    before = manifest.read_bytes()
+    batch_parser.process_batch(
+        inputs, output_dir, incremental=False, dry_run=True, lang="ch"
+    )
+    assert manifest.read_bytes() == before
+    result = batch_parser.process_batch(inputs, output_dir, incremental=True, lang="en")
+    assert result.skipped_files == inputs
+
+
+def test_non_incremental_run_does_not_create_manifest(monkeypatch, tmp_path):
+    batch_parser, _ = _make_batch_parser(monkeypatch)
+    _, first_doc, _ = _seed_two_docs(tmp_path)
+    output_dir = str(tmp_path / "out")
+    result = batch_parser.process_batch([str(first_doc)], output_dir)
+    assert result.successful_files == [str(first_doc)]
+    assert not batch_parser._manifest_path(output_dir).exists()
+
+
+def test_non_incremental_parse_waits_for_manifest_invalidation(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    _, first_doc, _ = _seed_two_docs(tmp_path)
+    inputs = [str(first_doc)]
+    output_dir = str(tmp_path / "out")
+    batch_parser.process_batch(inputs, output_dir, incremental=True)
+    fake_parser.processed_files.clear()
+
+    def fail_save(*args):
+        raise OSError("manifest cannot be replaced")
+
+    monkeypatch.setattr(batch_parser, "_save_incremental_manifest", fail_save)
+    with pytest.raises(OSError, match="manifest cannot be replaced"):
+        batch_parser.process_batch(inputs, output_dir)
+    assert fake_parser.processed_files == []
