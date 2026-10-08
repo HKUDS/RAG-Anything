@@ -388,6 +388,115 @@ class TestDescribeScenesSystemPrompt:
         assert not frame.exists()
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "entrypoint", ["generate_description_only", "generate_chunk_sections"]
+)
+@pytest.mark.parametrize("visual_mode", ["normal", "no_scenes", "frame_failure"])
+async def test_video_preserves_speech_outside_retained_scenes(
+    tmp_path, monkeypatch, entrypoint, visual_mode
+):
+    import sys
+    from types import SimpleNamespace
+
+    processor = VideoModalProcessor(
+        lightrag=_FakeLightRAG(),
+        modal_caption_func=AsyncMock(return_value="slide"),
+        max_scenes=1,
+    )
+    # Preserve short-scene filtering, scene descriptions, merging and window
+    # planning; substitute external scene detection, decoding and ASR only.
+    scenes = [] if visual_mode == "no_scenes" else [(3, 15), (18, 30)]
+    if visual_mode == "no_scenes":
+        processor._detect_scenes = MagicMock(return_value=[])
+    else:
+
+        def timecode(seconds):
+            return SimpleNamespace(get_seconds=lambda: seconds)
+
+        raw_scenes = [(0, 3), (3, 15), (15, 18), (18, 30)]
+        monkeypatch.setitem(
+            sys.modules,
+            "scenedetect",
+            SimpleNamespace(
+                detect=lambda *args, **kwargs: [
+                    (timecode(start), timecode(end)) for start, end in raw_scenes
+                ],
+                ContentDetector=lambda **kwargs: None,
+            ),
+        )
+    processor._extract_frame_at = MagicMock(return_value=None)
+    if visual_mode == "normal":
+
+        def frame_at(path, timestamp):
+            frame = tmp_path / f"{timestamp}.jpg"
+            frame.write_bytes(b"\xff\xd8\xff\xd9")
+            return str(frame)
+
+        processor._extract_frame_at = MagicMock(side_effect=frame_at)
+
+    transcript = [
+        {"start": 0, "end": 2, "text": "opening_fact"},
+        {"start": 5, "end": 10, "text": "scene_fact"},
+        # This is already covered by the first scene. Adding the internal gap
+        # must not repeat its text in a newly inserted audio-only row.
+        {"start": 14, "end": 17, "text": "cross_boundary_fact"},
+        {"start": 15, "end": 17, "text": "internal_fact"},
+        {"start": 32, "end": 34, "text": "trailing_fact"},
+    ]
+    processor._transcribe_audio_track = AsyncMock(return_value=transcript)
+    video_file = tmp_path / "clip.mp4"
+    video_file.write_bytes(b"")
+    result = await getattr(processor, entrypoint)(
+        {"video_path": str(video_file)}, "video"
+    )
+    if entrypoint == "generate_description_only":
+        description, entity = result
+    else:
+        description = "\n".join(section["description"] for section in result)
+    for segment in transcript:
+        assert description.count(segment["text"]) == 1
+    if entrypoint == "generate_description_only":
+        assert "0:34 duration" in entity["summary"]
+    else:
+        # Audio-only coverage participates in ordered section/window metadata.
+        assert result[0]["window_meta"]["start"] == 0
+        assert result[-1]["window_meta"]["end"] == 34
+        assert [s["window_meta"]["start"] for s in result] == sorted(
+            s["window_meta"]["start"] for s in result
+        )
+    assert "[0:00-0:02]" in description
+    assert "[0:32-0:34]" in description
+    assert processor.modal_caption_func.await_count == (
+        len(scenes) if visual_mode == "normal" else 0
+    )
+
+
+def test_audio_only_coverage_keeps_visual_input_and_coalesces_overlapping_speech():
+    visual = [{"start": 5, "end": 10, "visual": "slide"}]
+    audio = [
+        {"start": 0, "end": 2, "text": "first"},
+        {"start": 1, "end": 3, "text": "second"},
+        {"start": 2, "end": 6, "text": "already covered"},
+    ]
+    rows = VideoModalProcessor._add_audio_only_segments(visual, audio)
+    assert rows == [
+        {"start": 0, "end": 3, "visual": "", "audio": "first second"},
+        *visual,
+    ]
+    assert visual == [{"start": 5, "end": 10, "visual": "slide"}]
+    processor = VideoModalProcessor(
+        lightrag=_FakeLightRAG(), modal_caption_func=AsyncMock()
+    )
+    merged = processor._merge_channels(rows, audio)
+    assert merged.count("already covered") == 1
+    assert VideoModalProcessor._add_audio_only_segments(visual, []) == visual
+    assert (
+        VideoModalProcessor._add_audio_only_segments(visual, list(reversed(audio)))
+        == rows
+    )
+
+
 class TestVideoDepsAvailable:
     """Test optional-dependency detection."""
 
