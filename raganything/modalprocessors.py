@@ -27,6 +27,7 @@ from lightrag.operate import extract_entities, merge_nodes_and_edges
 
 # Import prompt templates
 from raganything.prompt import PROMPTS
+from raganything.document_context import get_document_source, set_document_source
 from raganything.utils import (
     encode_image_to_base64,
     format_table_body,
@@ -418,12 +419,16 @@ class BaseModalProcessor:
     def set_content_source(self, content_source: Any, content_format: str = "auto"):
         """Set content source for context extraction
 
+        During document ingestion this source belongs to the current operation
+        and its child tasks. Direct processor use keeps the instance default.
+
         Args:
             content_source: Source content for context extraction
             content_format: Format of content source ("minerU", "text_chunks", "auto")
         """
-        self.content_source = content_source
-        self.content_format = content_format
+        if not set_document_source(self, content_source, content_format):
+            self.content_source = content_source
+            self.content_format = content_format
         logger.info(f"Content source set with format: {content_format}")
 
     def _get_context_for_item(self, item_info: Dict[str, Any]) -> str:
@@ -435,12 +440,16 @@ class BaseModalProcessor:
         Returns:
             Context text for the item
         """
-        if not self.content_source:
+        source = get_document_source(self)
+        content_source, content_format = (
+            source if source is not None else (self.content_source, self.content_format)
+        )
+        if not content_source:
             return ""
 
         try:
             context = self.context_extractor.extract_context(
-                self.content_source, item_info, self.content_format
+                content_source, item_info, content_format
             )
             if context:
                 logger.debug(
