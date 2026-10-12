@@ -53,27 +53,6 @@
 
 ---
 
-<div align="center">
-  <table>
-    <tr>
-      <td style="vertical-align: middle;">
-        <img src="./assets/LiteWrite.png"
-             width="56"
-             height="56"
-             alt="LiteWrite"
-             style="border-radius: 12px;" />
-      </td>
-      <td style="vertical-align: middle; padding-left: 12px;">
-        <a href="https://litewrite.ai">
-          <img src="https://img.shields.io/badge/🚀%20LiteWrite-AI%20Native%20LaTeX%20Editor-ff6b6b?style=for-the-badge&logoColor=white&labelColor=1a1a2e">
-        </a>
-      </td>
-    </tr>
-  </table>
-</div>
-
----
-
 ## 🎉 News
 - [X] [2026.06]🎯📢 🎉 [LightRAG](https://github.com/HKUDS/LightRAG) enables multimodal RAG through native integration of RAG-Anything.
 - [X] [2025.10]🎯📢 🚀 We have released the technical report of [RAG-Anything](http://arxiv.org/abs/2510.12323). Access it now to explore our latest research findings.
