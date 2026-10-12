@@ -36,6 +36,19 @@ from raganything.utils import (
 )
 
 
+def _restore_latex_escapes(value: Any) -> Any:
+    # json.loads turns a single-backslash "\frac" into form feed + "rac" and
+    # "\beta" into backspace + "eta"
+    if isinstance(value, str):
+        value = re.sub(r"\x0c(?=[A-Za-z])", r"\\f", value)
+        return re.sub(r"\x08(?=[A-Za-z])", r"\\b", value)
+    if isinstance(value, dict):
+        return {k: _restore_latex_escapes(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_restore_latex_escapes(v) for v in value]
+    return value
+
+
 @dataclass
 class ContextConfig:
     """Configuration for context extraction"""
@@ -714,9 +727,10 @@ class BaseModalProcessor:
             return None
 
         try:
-            return json.loads(json_str)
+            parsed = json.loads(json_str)
         except (json.JSONDecodeError, ValueError):
             return None
+        return _restore_latex_escapes(parsed)
 
     def _basic_json_cleanup(self, json_str: str) -> str:
         """Basic cleanup for common JSON issues"""
