@@ -8,7 +8,7 @@ import json
 import hashlib
 import re
 import time
-from typing import Dict, List, Any
+from typing import AsyncIterator, Dict, List, Any
 from pathlib import Path
 from lightrag import QueryParam
 from lightrag.utils import always_get_an_event_loop
@@ -127,7 +127,7 @@ class QueryMixin:
 
     async def aquery(
         self, query: str, mode: str = "mix", system_prompt: str | None = None, **kwargs
-    ) -> str:
+    ) -> str | AsyncIterator[str]:
         """
         Pure text query - directly calls LightRAG's query functionality
 
@@ -141,7 +141,7 @@ class QueryMixin:
                   with base64 encoded images for VLM processing.
 
         Returns:
-            str: Query result
+            Query result, or an async iterator when stream=True.
         """
         if self.lightrag is None:
             raise ValueError(
@@ -388,7 +388,7 @@ class QueryMixin:
         system_prompt: str | None = None,
         extra_safe_dirs: List[str] = None,
         **kwargs,
-    ) -> str:
+    ) -> str | AsyncIterator[str]:
         """
         VLM enhanced query - replaces image paths in retrieved context with base64 encoded images for VLM processing
 
@@ -400,7 +400,7 @@ class QueryMixin:
             **kwargs: Other query parameters
 
         Returns:
-            str: VLM query result
+            VLM query result, or an async iterator when stream=True.
         """
         # Ensure VLM is available
         if not hasattr(self, "vision_model_func") or not self.vision_model_func:
@@ -457,7 +457,9 @@ class QueryMixin:
         )
 
         # 4. Call VLM for question answering
-        result = await self._call_vlm_with_multimodal_content(messages)
+        result = await self._call_vlm_with_multimodal_content(
+            messages, stream=query_param.stream
+        )
 
         self.logger.info("VLM enhanced query completed")
         return result
@@ -832,31 +834,36 @@ class QueryMixin:
             },
         ]
 
-    async def _call_vlm_with_multimodal_content(self, messages: List[Dict]) -> str:
+    async def _call_vlm_with_multimodal_content(
+        self, messages: List[Dict], stream: bool = False
+    ) -> str | AsyncIterator[str]:
         """
         Call VLM to process multimodal content
 
         Args:
             messages: VLM message format
+            stream: Request a streaming response from the vision model.
 
         Returns:
-            str: VLM response result
+            VLM response, or an async iterator when streaming is requested.
         """
         try:
             user_message = messages[1]
             content = user_message["content"]
             system_prompt = messages[0]["content"]
+            stream_options = {"stream": True} if stream else {}
 
             if isinstance(content, str):
                 # Pure text mode
                 result = await self.vision_model_func(
-                    content, system_prompt=system_prompt
+                    content, system_prompt=system_prompt, **stream_options
                 )
             else:
                 # Multimodal mode - pass complete messages directly to VLM
                 result = await self.vision_model_func(
                     "",  # Empty prompt since we're using messages format
                     messages=messages,
+                    **stream_options,
                 )
 
             return result
