@@ -17,6 +17,10 @@ from raganything.utils import (
     get_processor_for_type,
     encode_image_to_base64,
     validate_image_file,
+    normalize_caption_list,
+    get_table_body,
+    format_table_body,
+    get_equation_text_and_format,
 )
 
 
@@ -550,8 +554,12 @@ class QueryMixin:
     ) -> str:
         """Generate image description for query"""
         image_path = content.get("img_path")
-        captions = content.get("image_caption", content.get("img_caption", []))
-        footnotes = content.get("image_footnote", content.get("img_footnote", []))
+        captions = normalize_caption_list(
+            content.get("image_caption", content.get("img_caption", []))
+        )
+        footnotes = normalize_caption_list(
+            content.get("image_footnote", content.get("img_footnote", []))
+        )
 
         if image_path and Path(image_path).exists():
             # If image exists, use vision model to generate description
@@ -580,8 +588,8 @@ class QueryMixin:
         self, processor, content: Dict[str, Any]
     ) -> str:
         """Generate table description for query"""
-        table_data = content.get("table_data", "")
-        table_caption = content.get("table_caption", "")
+        table_data = format_table_body(get_table_body(content))
+        table_caption = ", ".join(normalize_caption_list(content.get("table_caption")))
 
         prompt = PROMPTS["QUERY_TABLE_ANALYSIS"].format(
             table_data=table_data, table_caption=table_caption
@@ -597,8 +605,12 @@ class QueryMixin:
         self, processor, content: Dict[str, Any]
     ) -> str:
         """Generate equation description for query"""
-        latex = content.get("latex", "")
-        equation_caption = content.get("equation_caption", "")
+        latex = str(content.get("latex") or "").strip()
+        if not latex:
+            latex, _ = get_equation_text_and_format(content)
+        equation_caption = ", ".join(
+            normalize_caption_list(content.get("equation_caption"))
+        )
 
         prompt = PROMPTS["QUERY_EQUATION_ANALYSIS"].format(
             latex=latex, equation_caption=equation_caption
