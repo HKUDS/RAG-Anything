@@ -419,9 +419,13 @@ class QueryMixin:
         self.logger.info(f"Executing VLM enhanced query: {query[:100]}...")
 
         query_param = QueryParam(mode=mode, **kwargs)
-        # Retrieval-only requests must return LightRAG's result without image
-        # processing or answer generation, even when VLM enhancement is enabled.
-        if query_param.only_need_context or query_param.only_need_prompt:
+        # Bypass and retrieval-only requests must return LightRAG's result
+        # without image processing or additional answer generation.
+        if (
+            query_param.mode == "bypass"
+            or query_param.only_need_context
+            or query_param.only_need_prompt
+        ):
             return await self.lightrag.aquery(
                 query, param=query_param, system_prompt=system_prompt
             )
