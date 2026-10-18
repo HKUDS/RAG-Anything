@@ -194,6 +194,38 @@ class TestOmmlToLatex:
         )
         assert omml_to_latex(elem) == r"\begin{matrix} a & b \\ c & d \end{matrix}"
 
+    def test_equation_array_keeps_rows_apart(self):
+        elem = _wrap_in_omath(
+            "<m:eqArr>"
+            "<m:e><m:r><m:t>x+y=1</m:t></m:r></m:e>"
+            "<m:e><m:r><m:t>x-y=3</m:t></m:r></m:e>"
+            "</m:eqArr>"
+        )
+        assert omml_to_latex(elem) == r"\begin{aligned} x+y=1 \\ x-y=3 \end{aligned}"
+
+    def test_cases_brace_has_no_closing_delimiter(self):
+        elem = _wrap_in_omath(
+            "<m:d>"
+            '<m:dPr><m:begChr m:val="{"/><m:endChr m:val=""/></m:dPr>'
+            "<m:e><m:eqArr>"
+            "<m:e><m:r><m:t>x,&amp;x&gt;0</m:t></m:r></m:e>"
+            "<m:e><m:r><m:t>-x,&amp;x&lt;0</m:t></m:r></m:e>"
+            "</m:eqArr></m:e>"
+            "</m:d>"
+        )
+        assert (
+            omml_to_latex(elem) == r"\{\begin{aligned} x,&x>0 \\ -x,&x<0 \end{aligned}"
+        )
+
+    def test_empty_opening_delimiter_is_omitted(self):
+        elem = _wrap_in_omath(
+            "<m:d>"
+            '<m:dPr><m:begChr m:val=""/><m:endChr m:val="|"/></m:dPr>'
+            "<m:e><m:r><m:t>F(x)</m:t></m:r></m:e>"
+            "</m:d>"
+        )
+        assert omml_to_latex(elem) == "F(x)|"
+
     def test_overline_via_bar(self):
         elem = _wrap_in_omath(
             "<m:bar>"
