@@ -372,7 +372,7 @@ class BatchMixin:
         self.logger.info("Starting batch processing with RAG integration")
 
         # Step 1: Parse documents in batch
-        parse_result = self.process_documents_batch(
+        parse_result = await self.process_documents_batch_async(
             file_paths=file_paths,
             output_dir=output_dir,
             parse_method=parse_method,
