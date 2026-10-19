@@ -800,10 +800,12 @@ class Parser:
         """
         inner = target.strip()
         captions: List[str] = []
-        # optional title: ![alt](path "title")
-        title = re.search(r'\s+"([^"]*)"\s*$', inner)
+        # Optional titles may use double quotes, single quotes, or parentheses.
+        title = re.search(r"""\s+(?:"([^"]*)"|'([^']*)'|\(([^()]*)\))\s*$""", inner)
         if title:
-            captions.append(title.group(1))
+            captions.append(
+                next(value for value in title.groups() if value is not None)
+            )
             inner = inner[: title.start()].strip()
         # angle-bracketed targets: ![alt](<path with spaces>)
         if inner.startswith("<") and inner.endswith(">"):
