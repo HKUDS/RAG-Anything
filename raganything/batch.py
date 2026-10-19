@@ -69,6 +69,8 @@ class BatchMixin:
             recursive = self.config.recursive_folder_processing
         if max_workers is None:
             max_workers = self.config.max_concurrent_files
+        if max_workers < 1:
+            raise ValueError("max_workers must be greater than zero")
 
         init_result = await self._ensure_lightrag_initialized()
         if not init_result or not init_result.get("success"):
