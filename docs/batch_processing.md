@@ -132,6 +132,8 @@ print(f"Processed {result['successful_rag_files']} files with RAG")
 print(f"Total processing time: {result['total_processing_time']:.2f} seconds")
 ```
 
+Pass `dry_run=True` to preview the parse plan without initializing LightRAG or ingesting documents. The selected files remain in `parse_result.successful_files`, while `rag_results` stays empty and both RAG counters are zero.
+
 ### Command Line Interface
 
 ```bash

@@ -385,16 +385,17 @@ class BatchMixin:
 
         # Step 2: Process with RAG
         # Initialize RAG system
-        init_result = await self._ensure_lightrag_initialized()
-        if not init_result or not init_result.get("success"):
-            raise RuntimeError(
-                f"LightRAG initialization failed: {(init_result or {}).get('error', 'unknown error')}"
-            )
+        if not parse_result.dry_run:
+            init_result = await self._ensure_lightrag_initialized()
+            if not init_result or not init_result.get("success"):
+                raise RuntimeError(
+                    f"LightRAG initialization failed: {(init_result or {}).get('error', 'unknown error')}"
+                )
 
         # Then, process each successful file with RAG
         rag_results = {}
 
-        if parse_result.successful_files:
+        if parse_result.successful_files and not parse_result.dry_run:
             self.logger.info(
                 f"Processing {len(parse_result.successful_files)} files with RAG"
             )
