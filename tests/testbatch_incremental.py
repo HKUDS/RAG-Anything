@@ -206,7 +206,8 @@ def test_incremental_skip_does_not_rehash_unchanged_files(monkeypatch, tmp_path)
     assert hashed == []
 
 
-def test_incremental_ignores_corrupt_manifest(monkeypatch, tmp_path):
+@pytest.mark.parametrize("manifest_content", [b"this is not valid json{", b"\xff\xfe"])
+def test_incremental_ignores_corrupt_manifest(monkeypatch, tmp_path, manifest_content):
     batch_parser, fake_parser = _make_batch_parser(monkeypatch)
     docs_dir, first_doc, second_doc = _seed_two_docs(tmp_path)
     output_dir = tmp_path / "out"
@@ -214,7 +215,7 @@ def test_incremental_ignores_corrupt_manifest(monkeypatch, tmp_path):
     batch_parser.process_batch([str(docs_dir)], str(output_dir), incremental=True)
 
     manifest_path = output_dir / ".raganything_batch_manifest.json"
-    manifest_path.write_text("this is not valid json{", encoding="utf-8")
+    manifest_path.write_bytes(manifest_content)
     fake_parser.processed_files.clear()
 
     result = batch_parser.process_batch(

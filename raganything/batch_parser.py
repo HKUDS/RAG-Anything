@@ -245,7 +245,7 @@ class BatchParser:
 
         try:
             data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as exc:
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
             self.logger.warning(
                 f"Could not read incremental manifest {manifest_path}: {exc}"
             )
