@@ -73,6 +73,12 @@ This keeps parser artifacts from being overwritten when different directories
 contain files with the same name, and gives repeated runs for the same input a
 stable output location.
 
+A non-incremental run invalidates any existing incremental manifest entries for
+its input files before parsing, since it can replace their saved artifacts.
+The next incremental run reparses those files; unrelated entries are preserved.
+Dry runs leave the manifest unchanged, and non-incremental runs do not create a
+manifest when none exists.
+
 ### Asynchronous Batch Processing
 
 ```python
