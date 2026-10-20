@@ -5,6 +5,7 @@ This example demonstrates how to use RAG-Anything's modal processors directly wi
 """
 
 import asyncio
+import base64
 import argparse
 from functools import partial
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
@@ -16,6 +17,7 @@ from raganything.modalprocessors import (
     TableModalProcessor,
     EquationModalProcessor,
 )
+from raganything.image_signature import image_mime_type
 
 WORKING_DIR = "./rag_storage"
 
@@ -37,6 +39,13 @@ def get_llm_model_func(api_key: str, base_url: str = None):
     )
 
 
+def image_data_url(image_data: str) -> str:
+    # Label the image with its real media type (PNG, GIF, WebP, ...),
+    # identified from its first bytes (24 base64 characters)
+    mime_type = image_mime_type(base64.b64decode(image_data[:24])) or "image/jpeg"
+    return f"data:{mime_type};base64,{image_data}"
+
+
 def get_vision_model_func(api_key: str, base_url: str = None):
     return (
         lambda prompt,
@@ -56,9 +65,7 @@ def get_vision_model_func(api_key: str, base_url: str = None):
                         {"type": "text", "text": prompt},
                         {
                             "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_data}"
-                            },
+                            "image_url": {"url": image_data_url(image_data)},
                         },
                     ],
                 }

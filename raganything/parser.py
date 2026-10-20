@@ -2293,11 +2293,15 @@ class DoclingParser(Parser):
                 return self.parse_office_doc(file_path, output_dir, lang, **kwargs)
             elif ext in self.HTML_FORMATS:
                 return self.parse_html(file_path, output_dir, lang, **kwargs)
+            elif ext in self.TEXT_FORMATS:
+                # Already text: read directly, as the other parsers do
+                return self.parse_text_file(file_path, output_dir, lang, **kwargs)
             else:
                 raise ValueError(
                     f"Unsupported file format: {ext}. "
-                    f"Docling only supports PDF files, Office formats ({', '.join(self.OFFICE_FORMATS)}) "
-                    f"and HTML formats ({', '.join(self.HTML_FORMATS)})"
+                    f"Docling only supports PDF files, Office formats ({', '.join(self.OFFICE_FORMATS)}), "
+                    f"HTML formats ({', '.join(self.HTML_FORMATS)}) "
+                    f"and text formats ({', '.join(self.TEXT_FORMATS)})"
                 )
         finally:
             # Clean up temporary file if we downloaded one
@@ -2491,13 +2495,22 @@ class DoclingParser(Parser):
     ) -> List[Dict[str, Any]]:
         content_list = []
         if not block.get("children"):
-            cnt += 1
-            content_list.append(self.read_from_block(block, type, output_dir, cnt, num))
+            # body and groups only hold children; an empty one (e.g. the body
+            # of an empty document) has no content of its own to convert.
+            if type not in ["groups", "body"]:
+                cnt += 1
+                content_list.append(
+                    self.read_from_block(
+                        block, type, output_dir, cnt, num, docling_content
+                    )
+                )
         else:
             if type not in ["groups", "body"]:
                 cnt += 1
                 content_list.append(
-                    self.read_from_block(block, type, output_dir, cnt, num)
+                    self.read_from_block(
+                        block, type, output_dir, cnt, num, docling_content
+                    )
                 )
             members = block["children"]
             for member in members:
@@ -2527,11 +2540,33 @@ class DoclingParser(Parser):
                         docling_content,
                     )
                 )
-        return content_list
+        # read_from_block returns None for items without content
+        return [item for item in content_list if item is not None]
+
+    @staticmethod
+    def _ref_texts(refs, docling_content: Optional[Dict[str, Any]]) -> List[str]:
+        """Texts of the items Docling links by reference, e.g. a picture's captions."""
+        texts = []
+        for ref in refs or []:
+            # References follow the form {"$ref": "#/texts/<index>"}
+            try:
+                _, ref_type, ref_num = ref["$ref"].split("/")
+                text = docling_content[ref_type][int(ref_num)]["orig"]
+            except (AttributeError, TypeError, KeyError, ValueError, IndexError):
+                continue
+            if isinstance(text, str) and text.strip():
+                texts.append(text.strip())
+        return texts
 
     def read_from_block(
-        self, block, type: str, output_dir: Path, cnt: int, num: str
-    ) -> Dict[str, Any]:
+        self,
+        block,
+        type: str,
+        output_dir: Path,
+        cnt: int,
+        num: str,
+        docling_content: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
         # Docling provenance uses one-based source pages. Block counts are
         # unrelated to pagination, including for nested groups or long pages.
         # A multi-page item is anchored to its first source page; unpaginated
@@ -2544,6 +2579,10 @@ class DoclingParser(Parser):
                 break
 
         if type == "texts":
+            # Docling also emits empty text items (e.g. an HTML page's empty
+            # <title>); they carry no content.
+            if not block["orig"].strip():
+                return None
             if block["label"] == "formula":
                 return {
                     "type": "equation",
@@ -2559,8 +2598,15 @@ class DoclingParser(Parser):
                     "page_idx": page_idx,
                 }
         elif type == "pictures":
+            base64_uri = (block.get("image") or {}).get("uri")
+            if not base64_uri:
+                # Nothing to describe, e.g. every <img> of an HTML page (Docling
+                # does not fetch them). Docling emits the caption (or the alt
+                # text when there is no caption) as a separate text item, so a
+                # placeholder would only add noise to the index.
+                self.logger.debug(f"Skipping picture {num} without image data")
+                return None
             try:
-                base64_uri = block["image"]["uri"]
                 # base64 data URIs have the form "data:<mime>;base64,<data>"
                 # but some exporters may omit the prefix
                 parts = base64_uri.split(",", 1)
@@ -2574,17 +2620,17 @@ class DoclingParser(Parser):
                 return {
                     "type": "image",
                     "img_path": str(image_path.resolve()),  # Convert to absolute path
-                    "image_caption": block.get("caption", ""),
-                    "image_footnote": block.get("footnote", ""),
+                    "image_caption": self._ref_texts(
+                        block.get("captions"), docling_content
+                    ),
+                    "image_footnote": self._ref_texts(
+                        block.get("footnotes"), docling_content
+                    ),
                     "page_idx": page_idx,
                 }
             except Exception as e:
                 self.logger.warning(f"Failed to process image {num}: {e}")
-                return {
-                    "type": "text",
-                    "text": f"[Image processing failed: {block.get('caption', '')}]",
-                    "page_idx": page_idx,
-                }
+                return None
         else:
             try:
                 return {
