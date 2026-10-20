@@ -43,6 +43,7 @@ class _HtmlParser:
 
     def parse_html(self, html_path, output_dir=None, **kwargs):
         self.calls.append(("parse_html", Path(html_path)))
+        self.forwarded = (output_dir, kwargs)
         return list(_BLOCK)
 
     def parse_office_doc(self, doc_path, output_dir=None, **kwargs):
@@ -85,10 +86,14 @@ async def test_html_uses_parse_html_when_available(tmp_path, ext):
     doc = tmp_path / f"page{ext}"
     doc.write_text("<html><body>hello</body></html>")
 
-    content_list, _ = await processor.parse_document(str(doc))
+    content_list, _ = await processor.parse_document(str(doc), lang="en")
 
     assert parser.calls == [("parse_html", doc)]
     assert content_list[0]["text"] == "hello"
+    # The output directory and caller options reach the HTML parser too.
+    output_dir, kwargs = parser.forwarded
+    assert output_dir == str(tmp_path / "output")
+    assert kwargs.get("lang") == "en"
 
 
 @pytest.mark.asyncio

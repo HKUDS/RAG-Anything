@@ -318,7 +318,7 @@ instead of restarting it.
 - **Office documents**: `.doc`, `.docx`, `.ppt`, `.pptx`, `.xls`, `.xlsx`
 - **Images**: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.tif`, `.gif`, `.webp`
 - **Text files**: `.txt`, `.md`
-- **HTML files** (only discovered when using the Docling parser): `.html`, `.htm`, `.xhtml`
+- **HTML files** (Docling parser only): `.html`, `.htm`, `.xhtml`. `BatchParser`, the CLI, `process_documents_batch()` and `process_documents_with_rag_batch()` discover them automatically; `process_folder_complete()` filters on `SUPPORTED_FILE_EXTENSIONS`, so pass `file_extensions=[".html", ".htm", ".xhtml"]` (or add them to that variable)
 
 ## API Reference
 
