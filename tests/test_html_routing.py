@@ -169,7 +169,8 @@ def test_parser_cli_rejects_html_for_mineru(
     )
 
     assert parser_module.main() == 1
-    assert "parser='docling'" in capsys.readouterr().out
+    # The hint names the CLI flag as well as the Python-API spelling.
+    assert "--parser docling" in capsys.readouterr().out
     assert no_libreoffice == []
 
 
@@ -186,6 +187,9 @@ def test_batch_discovery_advertises_html_only_for_docling(parser_type, html_adve
     html = {".html", ".htm", ".xhtml"}
 
     if html_advertised:
+        # Docling discovers exactly the suffixes the other parsers reject.
+        assert set(batch_parser.parser.HTML_FORMATS) == html
+        assert parser_module.HTML_FILE_EXTENSIONS == html
         assert html <= extensions
     else:
         assert not extensions & html

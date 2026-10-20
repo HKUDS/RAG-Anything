@@ -127,17 +127,18 @@ class MineruExecutionError(Exception):
 # HTML is accepted only by parsers with a native HTML entry point
 # (``parse_html``, i.e. Docling). The others could only read it by converting
 # it to PDF with LibreOffice, which fetches the remote URLs and embeds the
-# local files the page references.
+# local files the page references. HTML is recognised by suffix only.
 HTML_FILE_EXTENSIONS = frozenset({".html", ".htm", ".xhtml"})
 
 
 def html_requires_docling_error(file_path: Union[str, Path]) -> ValueError:
     """Build the error raised when HTML reaches a parser without parse_html."""
     return ValueError(
-        f"HTML input ({Path(file_path).name}) requires the Docling parser: "
-        "use parser='docling'. Other parsers would convert it to PDF with "
-        "LibreOffice, which fetches remote URLs and embeds local files "
-        "referenced by the page."
+        f"HTML input ({Path(file_path).name}) requires a parser with native "
+        "HTML support (parse_html), such as Docling: use parser='docling' "
+        "(CLI: --parser docling). HTML is not converted to PDF with "
+        "LibreOffice, because that conversion fetches remote URLs and embeds "
+        "local files referenced by the page."
     )
 
 
@@ -2201,7 +2202,7 @@ class DoclingParser(Parser):
     """
 
     # Define Docling-specific formats
-    HTML_FORMATS = {".html", ".htm", ".xhtml"}
+    HTML_FORMATS = set(HTML_FILE_EXTENSIONS)
 
     def __init__(self) -> None:
         """Initialize DoclingParser"""
@@ -3122,6 +3123,12 @@ def register_parser(name: str, parser_class: type) -> None:
         parser_class: A subclass of ``Parser`` that implements at least
                       ``parse_document``, ``check_installation``, and
                       optionally ``parse_pdf``, ``parse_image``, ``parse_office_doc``.
+                      ``RAGAnything.parse_document`` passes HTML
+                      (``.html``/``.htm``/``.xhtml``) only to an optional
+                      ``parse_html(html_path, output_dir=None, **kwargs)`` and
+                      raises ``ValueError`` without it; ``BatchParser``
+                      discovers HTML only for suffixes listed in an
+                      ``HTML_FORMATS`` attribute.
 
     Raises:
         TypeError: If *parser_class* is not a subclass of ``Parser``.
