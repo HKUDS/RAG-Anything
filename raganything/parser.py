@@ -2293,11 +2293,15 @@ class DoclingParser(Parser):
                 return self.parse_office_doc(file_path, output_dir, lang, **kwargs)
             elif ext in self.HTML_FORMATS:
                 return self.parse_html(file_path, output_dir, lang, **kwargs)
+            elif ext in self.TEXT_FORMATS:
+                # Already text: read directly, as the other parsers do
+                return self.parse_text_file(file_path, output_dir, lang, **kwargs)
             else:
                 raise ValueError(
                     f"Unsupported file format: {ext}. "
-                    f"Docling only supports PDF files, Office formats ({', '.join(self.OFFICE_FORMATS)}) "
-                    f"and HTML formats ({', '.join(self.HTML_FORMATS)})"
+                    f"Docling only supports PDF files, Office formats ({', '.join(self.OFFICE_FORMATS)}), "
+                    f"HTML formats ({', '.join(self.HTML_FORMATS)}) "
+                    f"and text formats ({', '.join(self.TEXT_FORMATS)})"
                 )
         finally:
             # Clean up temporary file if we downloaded one
