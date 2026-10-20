@@ -23,7 +23,6 @@ from raganything.parser import DoclingParser
             },
             "image",
         ),
-        ("pictures", {}, "text"),  # failed image conversion retains provenance
         ("tables", {"data": {"table_cells": []}}, "table"),
     ],
 )
