@@ -1,3 +1,4 @@
+import asyncio
 import importlib.util
 import json
 import sys
@@ -674,3 +675,66 @@ def test_non_incremental_parse_waits_for_manifest_invalidation(monkeypatch, tmp_
     with pytest.raises(OSError, match="manifest cannot be replaced"):
         batch_parser.process_batch(inputs, output_dir)
     assert fake_parser.processed_files == []
+
+
+@pytest.mark.parametrize("dry_run", [None, False, True])
+def test_rag_batch_dry_run_skips_ingestion(monkeypatch, tmp_path, dry_run):
+    _load_batch_parser_module(monkeypatch)
+    repo_root = Path(__file__).parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "raganything.batch", repo_root / "raganything" / "batch.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "raganything.batch", module)
+    spec.loader.exec_module(module)
+    events = []
+
+    class Harness(module.BatchMixin):
+        config = types.SimpleNamespace(
+            parser="fake",
+            parser_output_dir=str(tmp_path / "out"),
+            parse_method="auto",
+            max_concurrent_files=1,
+            recursive_folder_processing=False,
+        )
+        logger = types.SimpleNamespace(info=lambda *args: None)
+        callback_manager = types.SimpleNamespace(
+            dispatch=lambda name, **data: events.append((name, data))
+        )
+
+        def __init__(self):
+            self.initialized = False
+            self.processed = []
+
+        async def _ensure_lightrag_initialized(self):
+            self.initialized = True
+            return {"success": True}
+
+        async def process_document_complete(self, file_path, **kwargs):
+            assert "dry_run" not in kwargs
+            self.processed.append(file_path)
+
+    document = tmp_path / "document.txt"
+    document.write_text("test document", encoding="utf-8")
+    harness = Harness()
+    options = {} if dry_run is None else {"dry_run": dry_run}
+    dry_run = bool(dry_run)
+    result = asyncio.run(
+        harness.process_documents_with_rag_batch(
+            [str(document)], show_progress=False, **options
+        )
+    )
+
+    assert result["parse_result"].dry_run is dry_run
+    assert result["parse_result"].successful_files == [str(document)]
+    assert harness.initialized is (not dry_run)
+    assert harness.processed == ([] if dry_run else [str(document)])
+    assert result["successful_rag_files"] == (0 if dry_run else 1)
+    assert result["failed_rag_files"] == 0
+    assert result["skipped_rag_files"] == 0
+    assert result["rag_results"] == (
+        {} if dry_run else {str(document): {"status": "success", "processed": True}}
+    )
+    assert [name for name, _ in events] == ["on_batch_start", "on_batch_complete"]
+    assert events[-1][1]["successful"] == (0 if dry_run else 1)
+    assert events[-1][1]["failed"] == 0

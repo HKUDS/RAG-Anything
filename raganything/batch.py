@@ -374,6 +374,9 @@ class BatchMixin:
 
         self.logger.info("Starting batch processing with RAG integration")
 
+        # dry_run only shapes the parse plan; never forward it to ingestion.
+        dry_run = kwargs.pop("dry_run", False)
+
         # Keep ingestion options out of parser calls and the parse manifest.
         parser_kwargs = {
             key: value
@@ -398,21 +401,27 @@ class BatchMixin:
             recursive=recursive,
             show_progress=show_progress,
             incremental=incremental,
+            dry_run=dry_run,
             **parser_kwargs,
         )
 
         # Step 2: Process with RAG
         # Initialize RAG system
-        init_result = await self._ensure_lightrag_initialized()
-        if not init_result or not init_result.get("success"):
-            raise RuntimeError(
-                f"LightRAG initialization failed: {(init_result or {}).get('error', 'unknown error')}"
-            )
+        if not parse_result.dry_run:
+            init_result = await self._ensure_lightrag_initialized()
+            if not init_result or not init_result.get("success"):
+                raise RuntimeError(
+                    f"LightRAG initialization failed: {(init_result or {}).get('error', 'unknown error')}"
+                )
 
         # Then, process each successful file with RAG
         rag_results = {}
 
-        rag_files = parse_result.successful_files + parse_result.skipped_files
+        rag_files = (
+            []
+            if parse_result.dry_run
+            else parse_result.successful_files + parse_result.skipped_files
+        )
         parse_skipped = set(parse_result.skipped_files)
         if rag_files:
             self.logger.info(f"Processing {len(rag_files)} files with RAG")
