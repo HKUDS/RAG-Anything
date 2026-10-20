@@ -748,6 +748,18 @@ class ProcessorMixin:
                         output_dir=output_dir,
                         **kwargs,
                     )
+            elif ext in [".html", ".htm", ".xhtml"] and hasattr(
+                doc_parser, "parse_html"
+            ):
+                # Docling exposes a dedicated HTML entry point and rejects
+                # HTML in parse_office_doc; prefer it when available.
+                self.logger.info("Detected HTML document, using parser for HTML...")
+                content_list = await asyncio.to_thread(
+                    doc_parser.parse_html,
+                    html_path=file_path,
+                    output_dir=output_dir,
+                    **kwargs,
+                )
             elif ext in [
                 ".doc",
                 ".docx",
