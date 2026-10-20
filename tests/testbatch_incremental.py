@@ -62,6 +62,51 @@ def _make_batch_parser(monkeypatch):
     return batch_parser, fake_parser
 
 
+@pytest.mark.parametrize("extension", [".html", ".HTM", ".xhtml"])
+@pytest.mark.parametrize("use_directory", [False, True])
+def test_docling_batch_processes_html(monkeypatch, tmp_path, extension, use_directory):
+    batch_parser, _ = _make_batch_parser(monkeypatch)
+    module_path = Path(__file__).parents[1] / "raganything" / "parser.py"
+    spec = importlib.util.spec_from_file_location("_batch_html_parser", module_path)
+    parser_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(parser_module)
+    parser = parser_module.DoclingParser()
+    converted = []
+
+    def convert(input_path, output_dir, file_stem, **kwargs):
+        converted.append(Path(input_path).read_text(encoding="utf-8"))
+        return {
+            "body": {"children": [{"$ref": "#/texts/0"}]},
+            "texts": [{"label": "text", "orig": "A document"}],
+        }
+
+    monkeypatch.setattr(parser, "_run_docling_python", convert)
+    batch_parser.parser = parser
+    source_dir = tmp_path / "documents"
+    source_dir.mkdir()
+    source = source_dir / f"document{extension}"
+    source.write_text("<p>A document</p>", encoding="utf-8")
+
+    result = batch_parser.process_batch(
+        [str(source_dir if use_directory else source)], str(tmp_path / "output")
+    )
+
+    assert result.successful_files == [str(source)]
+    assert result.failed_files == []
+    assert converted == ["<p>A document</p>"]
+
+
+def test_batch_does_not_add_html_for_parsers_without_support(monkeypatch, tmp_path):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    source = tmp_path / "document.html"
+    source.write_text("<p>A document</p>", encoding="utf-8")
+
+    result = batch_parser.process_batch([str(source)], str(tmp_path / "output"))
+
+    assert result.total_files == 0
+    assert fake_parser.processed_files == []
+
+
 def test_cli_can_disable_recursive_scan(monkeypatch, tmp_path):
     batch_parser_module, _ = _load_batch_parser_module(monkeypatch)
     captured = {}
