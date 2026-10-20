@@ -324,7 +324,7 @@ instead of restarting it.
 - **Office documents**: `.doc`, `.docx`, `.ppt`, `.pptx`, `.xls`, `.xlsx`
 - **Images**: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.tif`, `.gif`, `.webp`
 - **Text files**: `.txt`, `.md`
-- **HTML files** (Docling parser only): `.html`, `.htm`, `.xhtml`. `BatchParser`, the CLI, `process_documents_batch()` and `process_documents_with_rag_batch()` discover them automatically; `process_folder_complete()` filters on `SUPPORTED_FILE_EXTENSIONS`, so pass `file_extensions=[".html", ".htm", ".xhtml"]` (or add them to that variable)
+- **HTML files** (Docling parser only): `.html`, `.htm`, `.xhtml`. Docling does not fetch `<img>` sources, so HTML images are not analysed; their caption (or alt text) is indexed as text. `BatchParser`, the CLI, `process_documents_batch()` and `process_documents_with_rag_batch()` discover them automatically; `process_folder_complete()` filters on `SUPPORTED_FILE_EXTENSIONS`, so pass `file_extensions=[".html", ".htm", ".xhtml"]` (or add them to that variable)
 
 ## API Reference
 

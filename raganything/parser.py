@@ -2601,8 +2601,9 @@ class DoclingParser(Parser):
             base64_uri = (block.get("image") or {}).get("uri")
             if not base64_uri:
                 # Nothing to describe, e.g. every <img> of an HTML page (Docling
-                # does not fetch them). Alt text and captions are separate text
-                # items, so a placeholder would only add noise to the index.
+                # does not fetch them). Docling emits the caption (or the alt
+                # text when there is no caption) as a separate text item, so a
+                # placeholder would only add noise to the index.
                 self.logger.debug(f"Skipping picture {num} without image data")
                 return None
             try:
