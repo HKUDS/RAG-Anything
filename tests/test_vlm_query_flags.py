@@ -32,16 +32,29 @@ class _QueryHarness(QueryMixin):
     async def _retrieve(self, query, param, system_prompt=None):
         assert isinstance(param, QueryParam)
         self.query_calls.append((query, param, system_prompt))
+        if param.mode == "bypass":
+            if param.stream:
+                return self._stream("text", " answer")
+            return "text answer"
         # LightRAG gives only_need_prompt precedence when both flags are true.
         if param.only_need_prompt:
             return self.prompt
         if param.only_need_context:
             return self.context
+        if param.stream:
+            return self._stream("text", " answer")
         return "text answer"
 
     async def _vision(self, prompt, **kwargs):
         self.vision_calls.append((prompt, kwargs))
+        if kwargs.get("stream"):
+            return self._stream("vision", " answer")
         return "vision answer"
+
+    @staticmethod
+    async def _stream(*chunks):
+        for chunk in chunks:
+            yield chunk
 
 
 @pytest.fixture
@@ -134,4 +147,73 @@ async def test_explicit_false_flags_preserve_text_fallback(harness, entrypoint):
     assert final_param.only_need_context is False
     assert system_prompt == "Use the supplied context: {context_data}"
     harness.encode_image.assert_not_called()
+    assert harness.vision_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+@pytest.mark.parametrize("stream", [False, True])
+async def test_bypass_queries_delegate_once_without_image_processing(
+    harness, entrypoint, stream
+):
+    history = [{"role": "user", "content": "Earlier question"}]
+
+    result = await getattr(harness, entrypoint)(
+        "Answer without retrieval",
+        mode="bypass",
+        stream=stream,
+        system_prompt="Use a short answer",
+        conversation_history=history,
+    )
+
+    if stream:
+        assert [chunk async for chunk in result] == ["text", " answer"]
+    else:
+        assert result == "text answer"
+    assert len(harness.query_calls) == 1
+    query, param, system_prompt = harness.query_calls[0]
+    assert query == "Answer without retrieval"
+    assert param.mode == "bypass"
+    assert param.stream is stream
+    assert param.conversation_history == history
+    assert param.only_need_prompt is False
+    assert system_prompt == "Use a short answer"
+    harness.encode_image.assert_not_called()
+    assert harness.vision_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+async def test_image_queries_forward_streaming_to_vision(harness, entrypoint):
+    result = await getattr(harness, entrypoint)("Describe the figure", stream=True)
+
+    assert [chunk async for chunk in result] == ["vision", " answer"]
+    assert harness.vision_calls[0][1]["stream"] is True
+    assert len(harness.query_calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+async def test_non_streaming_vision_callbacks_need_no_stream_parameter(
+    harness, entrypoint
+):
+    async def vision(prompt, messages):
+        return "vision answer"
+
+    harness.vision_model_func = vision
+
+    result = await getattr(harness, entrypoint)("Describe the figure", stream=False)
+
+    assert result == "vision answer"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+async def test_streaming_queries_without_images_keep_text_fallback(harness, entrypoint):
+    harness.prompt = "Retrieved prompt without images"
+
+    result = await getattr(harness, entrypoint)("Describe the document", stream=True)
+
+    assert [chunk async for chunk in result] == ["text", " answer"]
+    assert harness.query_calls[-1][1].stream is True
     assert harness.vision_calls == []

@@ -609,12 +609,10 @@ def _h_delimiter(element: ET.Element) -> str:
         if sep_elem is not None:
             sep = sep_elem.get(_M + "val", sep)
     inner = sep.join(_convert_children(e) for e in _children_by_tag(element, "e"))
-    return (
-        _delim_to_latex(beg, opening=True) + inner + _delim_to_latex(end, opening=False)
-    )
+    return _delim_to_latex(beg) + inner + _delim_to_latex(end)
 
 
-def _delim_to_latex(ch: str, *, opening: bool) -> str:
+def _delim_to_latex(ch: str) -> str:
     mapping = {
         "(": "(",
         ")": ")",
@@ -630,7 +628,10 @@ def _delim_to_latex(ch: str, *, opening: bool) -> str:
         "\u230b": r"\rfloor",
         "\u2308": r"\lceil",
         "\u2309": r"\rceil",
-        "": "." if opening else ".",
+        # An empty begChr/endChr means no delimiter on that side, as on the
+        # closing side of a cases brace. "." is a null delimiter only after
+        # \left or \right, which this converter does not emit.
+        "": "",
     }
     return mapping.get(ch, ch)
 
@@ -642,6 +643,15 @@ def _h_matrix(element: ET.Element) -> str:
         cells = [_convert_children(e) for e in _children_by_tag(row, "e")]
         body.append(" & ".join(cells))
     return r"\begin{matrix} " + r" \\ ".join(body) + r" \end{matrix}"
+
+
+def _h_eq_array(element: ET.Element) -> str:
+    # m:eqArr — equation array: one m:e per row, stacked vertically. Without
+    # a row break, a system of equations reads as one equation. aligned also
+    # keeps an "&" in a row valid; outside an alignment environment it is a
+    # LaTeX error.
+    rows = [_convert_children(e) for e in _children_by_tag(element, "e")]
+    return r"\begin{aligned} " + r" \\ ".join(rows) + r" \end{aligned}"
 
 
 def _h_bar(element: ET.Element) -> str:
@@ -745,6 +755,7 @@ _HANDLERS: Dict[str, Any] = {
     "func": _h_function,
     "d": _h_delimiter,
     "m": _h_matrix,
+    "eqArr": _h_eq_array,
     "bar": _h_bar,
     "acc": _h_acc,
     "groupChr": _h_group_chr,

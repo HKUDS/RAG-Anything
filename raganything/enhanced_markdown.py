@@ -424,8 +424,9 @@ class EnhancedMarkdownConverter:
             with open(input_path_obj, "r", encoding="utf-8") as f:
                 markdown_content = f.read()
         except UnicodeDecodeError:
-            # Try with different encodings
-            for encoding in ["gbk", "latin-1", "cp1252"]:
+            # Try with different encodings; latin-1 maps every byte, so it
+            # goes last
+            for encoding in ["gbk", "cp1252", "latin-1"]:
                 try:
                     with open(input_path_obj, "r", encoding=encoding) as f:
                         markdown_content = f.read()

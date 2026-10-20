@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Optional, TYPE_CHECKING
 import time
 
 from .batch_parser import BatchParser, BatchProcessingResult
+from .base import DocStatus
 
 if TYPE_CHECKING:
     from .config import RAGAnythingConfig
@@ -69,6 +70,8 @@ class BatchMixin:
             recursive = self.config.recursive_folder_processing
         if max_workers is None:
             max_workers = self.config.max_concurrent_files
+        if max_workers < 1:
+            raise ValueError("max_workers must be greater than zero")
 
         init_result = await self._ensure_lightrag_initialized()
         if not init_result or not init_result.get("success"):
@@ -371,8 +374,26 @@ class BatchMixin:
 
         self.logger.info("Starting batch processing with RAG integration")
 
+        # dry_run only shapes the parse plan; never forward it to ingestion.
+        dry_run = kwargs.pop("dry_run", False)
+
+        # Keep ingestion options out of parser calls and the parse manifest.
+        parser_kwargs = {
+            key: value
+            for key, value in kwargs.items()
+            if key
+            not in {
+                "display_stats",
+                "split_by_character",
+                "split_by_character_only",
+                "doc_id",
+                "file_name",
+                "force_multimodal_reprocess",
+            }
+        }
+
         # Step 1: Parse documents in batch
-        parse_result = self.process_documents_batch(
+        parse_result = await self.process_documents_batch_async(
             file_paths=file_paths,
             output_dir=output_dir,
             parse_method=parse_method,
@@ -380,28 +401,73 @@ class BatchMixin:
             recursive=recursive,
             show_progress=show_progress,
             incremental=incremental,
-            **kwargs,
+            dry_run=dry_run,
+            **parser_kwargs,
         )
 
         # Step 2: Process with RAG
         # Initialize RAG system
-        init_result = await self._ensure_lightrag_initialized()
-        if not init_result or not init_result.get("success"):
-            raise RuntimeError(
-                f"LightRAG initialization failed: {(init_result or {}).get('error', 'unknown error')}"
-            )
+        if not parse_result.dry_run:
+            init_result = await self._ensure_lightrag_initialized()
+            if not init_result or not init_result.get("success"):
+                raise RuntimeError(
+                    f"LightRAG initialization failed: {(init_result or {}).get('error', 'unknown error')}"
+                )
 
         # Then, process each successful file with RAG
         rag_results = {}
 
-        if parse_result.successful_files:
-            self.logger.info(
-                f"Processing {len(parse_result.successful_files)} files with RAG"
-            )
+        rag_files = (
+            []
+            if parse_result.dry_run
+            else parse_result.successful_files + parse_result.skipped_files
+        )
+        parse_skipped = set(parse_result.skipped_files)
+        if rag_files:
+            self.logger.info(f"Processing {len(rag_files)} files with RAG")
 
             # Process files with RAG (this could be parallelized in the future)
-            for file_path in parse_result.successful_files:
+            for file_path in rag_files:
                 try:
+                    restore_multimodal_completion = False
+                    if file_path in parse_skipped:
+                        # A parse manifest says nothing about ingestion in this
+                        # workspace. Resolve the document ID via the parse cache
+                        # (or parse once if this workspace has no cached result).
+                        _, parsed_doc_id = await self.parse_document(
+                            file_path,
+                            output_dir=output_dir,
+                            parse_method=parse_method,
+                            display_stats=False,
+                            **parser_kwargs,
+                        )
+                        doc_id = kwargs.get("doc_id")
+                        if doc_id is None:
+                            doc_id = parsed_doc_id
+                        status = await self.lightrag.doc_status.get_by_id(doc_id)
+                        multimodal_complete = (
+                            status
+                            and await self._get_multimodal_processed_flag(
+                                doc_id, status
+                            )
+                        )
+                        if (
+                            status
+                            and status.get("status") == DocStatus.PROCESSED
+                            and multimodal_complete
+                            and not kwargs.get("force_multimodal_reprocess", False)
+                        ):
+                            rag_results[file_path] = {
+                                "status": "skipped",
+                                "processed": False,
+                            }
+                            continue
+                        restore_multimodal_completion = (
+                            multimodal_complete
+                            and status.get("status") != DocStatus.PROCESSED
+                            and not kwargs.get("force_multimodal_reprocess", False)
+                        )
+
                     # Process the successfully parsed file with RAG
                     await self.process_document_complete(
                         file_path,
@@ -409,6 +475,19 @@ class BatchMixin:
                         parse_method=parse_method,
                         **kwargs,
                     )
+
+                    if restore_multimodal_completion:
+                        # The completed multimodal stage returns early on retry.
+                        # Restore only the HANDLING left after successful text
+                        # indexing, without repeating already completed work.
+                        status = await self.lightrag.doc_status.get_by_id(doc_id)
+                        if status and status.get("status") == DocStatus.HANDLING:
+                            await self._mark_multimodal_processing_complete(doc_id)
+                            status = await self.lightrag.doc_status.get_by_id(doc_id)
+                        if not status or status.get("status") != DocStatus.PROCESSED:
+                            raise RuntimeError(
+                                f"RAG retry did not complete document {doc_id}"
+                            )
 
                     # Get some statistics about the processed content
                     # This would require additional tracking in the RAG system
@@ -427,7 +506,12 @@ class BatchMixin:
         processing_time = time.time() - start_time
 
         successful_rag_files = len([r for r in rag_results.values() if r["processed"]])
-        failed_rag_files = len([r for r in rag_results.values() if not r["processed"]])
+        failed_rag_files = len(
+            [r for r in rag_results.values() if r["status"] == "failed"]
+        )
+        skipped_rag_files = len(
+            [r for r in rag_results.values() if r["status"] == "skipped"]
+        )
 
         if callback_manager is not None:
             callback_manager.dispatch(
@@ -435,6 +519,7 @@ class BatchMixin:
                 total_files=total_files,
                 successful=successful_rag_files,
                 failed=failed_rag_files,
+                skipped=skipped_rag_files,
                 duration_seconds=processing_time,
             )
 
@@ -444,4 +529,5 @@ class BatchMixin:
             "total_processing_time": processing_time,
             "successful_rag_files": successful_rag_files,
             "failed_rag_files": failed_rag_files,
+            "skipped_rag_files": skipped_rag_files,
         }
