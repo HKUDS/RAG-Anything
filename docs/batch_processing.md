@@ -238,7 +238,7 @@ OUTPUT_DIR=./parsed_output
 ### BatchParser Parameters
 
 - **parser_type**: `"mineru"`, `"docling"`, or `"paddleocr"` (default: `"mineru"`)
-- **max_workers**: Number of parallel workers (default: `4`)
+- **max_workers**: Number of parallel workers, at least 1 (default: `4`)
 - **show_progress**: Show progress bar (default: `True`)
 - **timeout_per_file**: Timeout per file in seconds (default: `300`)
 - **skip_installation_check**: Skip parser installation check (default: `False`)
