@@ -411,3 +411,25 @@ class TestBatchParserInit:
         bp = BatchParser(parser_type="mineru", skip_installation_check=True)
         result = bp.filter_supported_files(["/nonexistent/path"])
         assert result == []
+
+
+# ── EnhancedMarkdownConverter Tests ──────────────────────────────
+
+
+class TestConvertFileToPdfEncoding:
+    def test_cp1252_markdown_keeps_its_punctuation(self, tmp_path, monkeypatch):
+        from raganything.enhanced_markdown import EnhancedMarkdownConverter
+
+        text = "# “Quoted” – 5 €\n"
+        source = tmp_path / "doc.md"
+        source.write_bytes(text.encode("cp1252"))
+        converter = EnhancedMarkdownConverter()
+        received = []
+        monkeypatch.setattr(
+            converter,
+            "convert_markdown_to_pdf",
+            lambda content, output_path, method: received.append(content) or True,
+        )
+
+        assert converter.convert_file_to_pdf(str(source), str(tmp_path / "doc.pdf"))
+        assert received == [text]

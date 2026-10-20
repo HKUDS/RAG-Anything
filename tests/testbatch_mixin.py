@@ -3,6 +3,9 @@ import importlib.util
 import sys
 import types
 from pathlib import Path
+from unittest.mock import AsyncMock, Mock
+
+import pytest
 
 
 def _load_batch_mixin(monkeypatch):
@@ -59,3 +62,65 @@ def test_process_folder_matches_extensions_case_insensitively(monkeypatch, tmp_p
     asyncio.run(harness.process_folder_complete(str(docs_dir), display_stats=False))
 
     assert harness.processed == [str(upper_pdf)]
+
+
+@pytest.fixture
+def folder_harness(monkeypatch, tmp_path):
+    batch_mixin = _load_batch_mixin(monkeypatch)
+    harness = batch_mixin()
+    harness.config = types.SimpleNamespace(
+        parser_output_dir=str(tmp_path / "out"),
+        parse_method="auto",
+        supported_file_extensions=[".txt"],
+        recursive_folder_processing=True,
+        max_concurrent_files=1,
+    )
+    harness.logger = Mock()
+    harness._ensure_lightrag_initialized = AsyncMock(return_value={"success": True})
+    harness.process_document_complete = AsyncMock()
+    (tmp_path / "document.txt").write_text("Document")
+    return harness
+
+
+@pytest.mark.parametrize("max_workers", [0, -1])
+@pytest.mark.parametrize("use_config", [False, True])
+def test_process_folder_rejects_nonpositive_workers(
+    tmp_path, folder_harness, max_workers, use_config
+):
+    if use_config:
+        folder_harness.config.max_concurrent_files = max_workers
+
+    async def run():
+        with pytest.raises(ValueError, match="max_workers must be greater than zero"):
+            await asyncio.wait_for(
+                folder_harness.process_folder_complete(
+                    str(tmp_path),
+                    max_workers=None if use_config else max_workers,
+                ),
+                timeout=0.1,
+            )
+
+    asyncio.run(run())
+    folder_harness._ensure_lightrag_initialized.assert_not_awaited()
+    folder_harness.process_document_complete.assert_not_awaited()
+
+
+@pytest.mark.parametrize("configured_workers", [0, 1])
+def test_process_folder_accepts_positive_worker_limit(
+    tmp_path, folder_harness, configured_workers
+):
+    folder_harness.config.max_concurrent_files = configured_workers
+    asyncio.run(
+        asyncio.wait_for(
+            folder_harness.process_folder_complete(
+                str(tmp_path),
+                max_workers=1 if configured_workers == 0 else None,
+                display_stats=False,
+            ),
+            timeout=1,
+        )
+    )
+    folder_harness.process_document_complete.assert_awaited_once()
+    assert folder_harness.process_document_complete.await_args.args[0] == str(
+        tmp_path / "document.txt"
+    )

@@ -152,6 +152,34 @@ class TestEncodingHandling:
         blocks = MineruParser().parse_text_file(f)
         assert blocks[0]["text"] == "First paragraph."
 
+    def test_cp1252_punctuation_is_not_read_as_latin1(self, tmp_path):
+        # GBK rejects these bytes, and latin-1 would accept them as C1
+        # control characters, so cp1252 has to be tried before latin-1.
+        text = "\u201cQuoted\u201d text \u2013 costs 5 \u20ac."
+        f = tmp_path / "doc.txt"
+        f.write_bytes(text.encode("cp1252"))
+        blocks = MineruParser().parse_text_file(f)
+        assert blocks[0]["text"] == text
+
+    def test_latin1_still_reads_what_cp1252_cannot(self, tmp_path):
+        # 0x81 is undefined in cp1252 and starts no valid GBK pair here.
+        f = tmp_path / "doc.txt"
+        f.write_bytes(b"caf\xe9 \x81 menu")
+        blocks = MineruParser().parse_text_file(f)
+        assert blocks[0]["text"] == "caf\u00e9 \x81 menu"
+
+    @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
+    def test_utf16_with_bom(self, tmp_path, encoding):
+        text = "# Bericht\n\nErster Absatz.\n\nZweiter Absatz \u00fcber M\u00fcller.\n"
+        f = tmp_path / "doc.md"
+        f.write_bytes(("\ufeff" + text).encode(encoding))
+        blocks = MineruParser().parse_text_file(f)
+        assert [(b["text"], b.get("text_level")) for b in blocks] == [
+            ("Bericht", 1),
+            ("Erster Absatz.", None),
+            ("Zweiter Absatz \u00fcber M\u00fcller.", None),
+        ]
+
 
 class TestNoPdfRoundTrip:
     """The point of the change: text formats must never touch the PDF path."""

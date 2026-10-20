@@ -4,6 +4,7 @@ Query functionality for RAGAnything
 Contains all query-related methods for both text and multimodal queries
 """
 
+import base64
 import json
 import hashlib
 import re
@@ -12,11 +13,16 @@ from typing import AsyncIterator, Dict, List, Any
 from pathlib import Path
 from lightrag import QueryParam
 from lightrag.utils import always_get_an_event_loop
+from raganything.image_signature import SIGNATURE_BYTES, image_mime_type
 from raganything.prompt import PROMPTS
 from raganything.utils import (
     get_processor_for_type,
     encode_image_to_base64,
     validate_image_file,
+    normalize_caption_list,
+    get_table_body,
+    format_table_body,
+    get_equation_text_and_format,
 )
 
 
@@ -419,9 +425,13 @@ class QueryMixin:
         self.logger.info(f"Executing VLM enhanced query: {query[:100]}...")
 
         query_param = QueryParam(mode=mode, **kwargs)
-        # Retrieval-only requests must return LightRAG's result without image
-        # processing or answer generation, even when VLM enhancement is enabled.
-        if query_param.only_need_context or query_param.only_need_prompt:
+        # Bypass and retrieval-only requests must return LightRAG's result
+        # without image processing or additional answer generation.
+        if (
+            query_param.mode == "bypass"
+            or query_param.only_need_context
+            or query_param.only_need_prompt
+        ):
             return await self.lightrag.aquery(
                 query, param=query_param, system_prompt=system_prompt
             )
@@ -552,8 +562,12 @@ class QueryMixin:
     ) -> str:
         """Generate image description for query"""
         image_path = content.get("img_path")
-        captions = content.get("image_caption", content.get("img_caption", []))
-        footnotes = content.get("image_footnote", content.get("img_footnote", []))
+        captions = normalize_caption_list(
+            content.get("image_caption", content.get("img_caption", []))
+        )
+        footnotes = normalize_caption_list(
+            content.get("image_footnote", content.get("img_footnote", []))
+        )
 
         if image_path and Path(image_path).exists():
             # If image exists, use vision model to generate description
@@ -582,8 +596,8 @@ class QueryMixin:
         self, processor, content: Dict[str, Any]
     ) -> str:
         """Generate table description for query"""
-        table_data = content.get("table_data", "")
-        table_caption = content.get("table_caption", "")
+        table_data = format_table_body(get_table_body(content))
+        table_caption = ", ".join(normalize_caption_list(content.get("table_caption")))
 
         prompt = PROMPTS["QUERY_TABLE_ANALYSIS"].format(
             table_data=table_data, table_caption=table_caption
@@ -599,8 +613,12 @@ class QueryMixin:
         self, processor, content: Dict[str, Any]
     ) -> str:
         """Generate equation description for query"""
-        latex = content.get("latex", "")
-        equation_caption = content.get("equation_caption", "")
+        latex = str(content.get("latex") or "").strip()
+        if not latex:
+            latex, _ = get_equation_text_and_format(content)
+        equation_caption = ", ".join(
+            normalize_caption_list(content.get("equation_caption"))
+        )
 
         prompt = PROMPTS["QUERY_EQUATION_ANALYSIS"].format(
             latex=latex, equation_caption=equation_caption
@@ -796,11 +814,19 @@ class QueryMixin:
 
                     # Insert corresponding image
                     if 0 <= image_num < len(images_base64):
+                        image_data = images_base64[image_num]
+                        # Decode only enough base64 to identify the existing payload.
+                        header_length = ((SIGNATURE_BYTES + 2) // 3) * 4
+                        mime_type = image_mime_type(
+                            base64.b64decode(image_data[:header_length])
+                        )
+                        if mime_type is None:
+                            raise ValueError("Unsupported image format in VLM message")
                         content_parts.append(
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/jpeg;base64,{images_base64[image_num]}"
+                                    "url": f"data:{mime_type};base64,{image_data}"
                                 },
                             }
                         )

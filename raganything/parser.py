@@ -30,6 +30,7 @@ import hashlib
 import json
 import argparse
 import base64
+import codecs
 import subprocess
 import tempfile
 import threading
@@ -724,12 +725,21 @@ class Parser:
         """
         Read a text file, trying UTF-8 first and falling back to common
         legacy encodings. utf-8-sig also strips a UTF-8 BOM if present.
+        A UTF-16 BOM selects UTF-16 instead: the other codecs would read
+        such a file one byte per character, NUL bytes included.
         """
+        with open(text_path, "rb") as f:
+            has_utf16_bom = f.read(2) in (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)
         try:
-            with open(text_path, "r", encoding="utf-8-sig") as f:
+            with open(
+                text_path, "r", encoding="utf-16" if has_utf16_bom else "utf-8-sig"
+            ) as f:
                 return f.read()
         except UnicodeDecodeError:
-            for encoding in ["gbk", "latin-1", "cp1252"]:
+            # latin-1 maps every byte, so it has to come last: tried before
+            # cp1252, it would turn cp1252's quotes, dashes and euro sign
+            # into C1 control characters.
+            for encoding in ["gbk", "cp1252", "latin-1"]:
                 try:
                     with open(text_path, "r", encoding=encoding) as f:
                         content = f.read()
@@ -800,10 +810,12 @@ class Parser:
         """
         inner = target.strip()
         captions: List[str] = []
-        # optional title: ![alt](path "title")
-        title = re.search(r'\s+"([^"]*)"\s*$', inner)
+        # Optional titles may use double quotes, single quotes, or parentheses.
+        title = re.search(r"""\s+(?:"([^"]*)"|'([^']*)'|\(([^()]*)\))\s*$""", inner)
         if title:
-            captions.append(title.group(1))
+            captions.append(
+                next(value for value in title.groups() if value is not None)
+            )
             inner = inner[: title.start()].strip()
         # angle-bracketed targets: ![alt](<path with spaces>)
         if inner.startswith("<") and inner.endswith(">"):

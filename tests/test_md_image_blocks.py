@@ -52,9 +52,20 @@ def test_empty_alt_gives_empty_caption(md_dir):
     assert blocks_of(blocks, "image")[0]["img_caption"] == []
 
 
-def test_title_joins_captions(md_dir):
-    blocks = parse(md_dir, '![alt text](images/arch.png "The Title")\n')
-    assert blocks_of(blocks, "image")[0]["img_caption"] == ["alt text", "The Title"]
+@pytest.mark.parametrize(
+    "title,expected",
+    [
+        ('"The Title"', "The Title"),
+        ("'The Title'", "The Title"),
+        ("(The Title)", "The Title"),
+        ("''", ""),
+        ("()", ""),
+        ("'Title with \"quotes\"'", 'Title with "quotes"'),
+    ],
+)
+def test_title_joins_captions(md_dir, title, expected):
+    blocks = parse(md_dir, f"![alt text](images/arch.png {title})\n")
+    assert blocks_of(blocks, "image")[0]["img_caption"] == ["alt text", expected]
 
 
 def test_angle_bracket_target_with_spaces(md_dir):
@@ -239,3 +250,26 @@ def test_encoders_refuse_non_image_content(md_dir):
     processor = ImageModalProcessor.__new__(ImageModalProcessor)
     assert processor._encode_image_to_base64(str(fake)) == ""
     assert processor._encode_image_to_base64(str(real)) != ""
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "'Single title'",
+        "(Parenthesized title)",
+    ],
+)
+def test_titled_angle_bracket_target_with_spaces(md_dir, title):
+    (md_dir / "my image.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
+    blocks = parse(md_dir, f"![alt](<my image.png> {title})\n")
+    assert blocks_of(blocks, "image")[0]["img_path"] == str(
+        (md_dir / "my image.png").resolve()
+    )
+
+
+@pytest.mark.parametrize("title", ["'Missing title'", "(Missing title)"])
+def test_unresolved_titled_image_stays_literal(md_dir, title):
+    source = f"![alt](images/missing.png {title})"
+    blocks = parse(md_dir, source)
+    assert blocks_of(blocks, "image") == []
+    assert blocks_of(blocks, "text")[0]["text"] == source
