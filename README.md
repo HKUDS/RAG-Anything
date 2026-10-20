@@ -1111,6 +1111,7 @@ RAGAnything now supports multiple parsers, each with specific advantages:
 
 #### Docling Parser
 - Optimized for Office documents and HTML files
+- The only built-in parser that accepts HTML (.html, .htm, .xhtml); MinerU and PaddleOCR reject it (see [Document Formats](#document-formats))
 - Better document structure preservation
 - Native support for multiple Office formats
 
@@ -1220,6 +1221,7 @@ Different content types require specific optional dependencies:
 - **Office Documents** - DOC, DOCX, PPT, PPTX, XLS, XLSX
 - **Images** - JPG, PNG, BMP, TIFF, GIF, WebP
 - **Text Files** - TXT, MD
+- **HTML** - HTML, HTM, XHTML (Docling parser only: `parser="docling"`). MinerU and PaddleOCR raise an error for HTML instead of converting it to PDF with LibreOffice, because that conversion fetches remote URLs and embeds local files referenced by the page
 
 ### Multimodal Elements
 

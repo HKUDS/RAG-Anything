@@ -124,6 +124,23 @@ class MineruExecutionError(Exception):
         super().__init__(message)
 
 
+# HTML is accepted only by parsers with a native HTML entry point
+# (``parse_html``, i.e. Docling). The others could only read it by converting
+# it to PDF with LibreOffice, which fetches the remote URLs and embeds the
+# local files the page references.
+HTML_FILE_EXTENSIONS = frozenset({".html", ".htm", ".xhtml"})
+
+
+def html_requires_docling_error(file_path: Union[str, Path]) -> ValueError:
+    """Build the error raised when HTML reaches a parser without parse_html."""
+    return ValueError(
+        f"HTML input ({Path(file_path).name}) requires the Docling parser: "
+        "use parser='docling'. Other parsers would convert it to PDF with "
+        "LibreOffice, which fetches remote URLs and embeds local files "
+        "referenced by the page."
+    )
+
+
 class Parser:
     """
     Base class for document parsing utilities.
@@ -312,6 +329,8 @@ class Parser:
         try:
             # Convert to Path object for easier handling
             doc_path = Path(doc_path)
+            if doc_path.suffix.lower() in HTML_FILE_EXTENSIONS:
+                raise html_requires_docling_error(doc_path)
             if not doc_path.exists():
                 raise FileNotFoundError(f"Office document does not exist: {doc_path}")
 
@@ -2098,6 +2117,8 @@ class MineruParser(Parser):
             return self.parse_office_doc(file_path, output_dir, lang, **kwargs)
         elif ext in self.TEXT_FORMATS:
             return self.parse_text_file(file_path, output_dir, lang, **kwargs)
+        elif ext in HTML_FILE_EXTENSIONS:
+            raise html_requires_docling_error(file_path)
         else:
             # For unsupported file types, try as PDF
             self.logger.warning(
@@ -3056,6 +3077,8 @@ class PaddleOCRParser(Parser):
             return self.parse_office_doc(file_path, output_dir, lang=lang, **kwargs)
         if ext in self.TEXT_FORMATS:
             return self.parse_text_file(file_path, output_dir, lang=lang, **kwargs)
+        if ext in HTML_FILE_EXTENSIONS:
+            raise html_requires_docling_error(file_path)
 
         raise ValueError(
             f"Unsupported file format: {ext}. "

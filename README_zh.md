@@ -1086,6 +1086,7 @@ RAGAnything 现在支持多种解析器，每种解析器都有其特定的优�
 
 #### Docling 解析器
 - 专门优化Office文档和HTML文件的解析
+- 唯一接受 HTML（.html、.htm、.xhtml）的内置解析器；MinerU 和 PaddleOCR 会拒绝 HTML（见[文档格式](#文档格式)）
 - 更好的文档结构保持
 - 原生支持多种Office格式
 
@@ -1179,6 +1180,7 @@ MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并�
 - **Office文档** - DOC、DOCX、PPT、PPTX、XLS、XLSX
 - **图像** - JPG、PNG、BMP、TIFF、GIF、WebP
 - **文本文件** - TXT、MD
+- **HTML** - HTML、HTM、XHTML（仅 Docling 解析器：`parser="docling"`）。MinerU 和 PaddleOCR 遇到 HTML 会直接报错，而不是用 LibreOffice 转成 PDF，因为该转换会请求网页引用的远程 URL 并嵌入其引用的本地文件
 
 ### 多模态元素
 
