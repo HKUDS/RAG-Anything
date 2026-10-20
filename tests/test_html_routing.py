@@ -1,8 +1,9 @@
-"""HTML files route to parse_html when the parser provides it.
+"""HTML is accepted only by parsers with a native parse_html (Docling).
 
-DoclingParser.parse_office_doc rejects HTML, so parse_document must call
-the dedicated parse_html entry point; parsers without it (MinerU) keep the
-Office/LibreOffice fallback.
+parse_document routes HTML to parse_html. MinerU and PaddleOCR could only
+read HTML by converting it to PDF with LibreOffice, which fetches remote URLs
+and embeds local files referenced by the page, so every path into them must
+refuse HTML before any conversion runs.
 """
 
 from pathlib import Path
@@ -10,6 +11,9 @@ from types import SimpleNamespace
 
 import pytest
 
+import raganything.parser as parser_module
+from raganything.batch_parser import BatchParser
+from raganything.parser import MineruParser, PaddleOCRParser, Parser
 from raganything.processor import ProcessorMixin
 
 
@@ -97,12 +101,97 @@ async def test_html_uses_parse_html_when_available(tmp_path, ext):
 
 
 @pytest.mark.asyncio
-async def test_html_falls_back_to_office_without_parse_html(tmp_path):
+@pytest.mark.parametrize("ext", [".html", ".htm", ".xhtml", ".HTML"])
+async def test_html_rejected_without_parse_html(tmp_path, ext):
     parser = _OfficeOnlyParser()
     processor = _make_processor(tmp_path, parser)
-    doc = tmp_path / "page.html"
+    doc = tmp_path / f"page{ext}"
     doc.write_text("<html><body>hello</body></html>")
 
-    await processor.parse_document(str(doc))
+    with pytest.raises(ValueError, match="parser='docling'"):
+        await processor.parse_document(str(doc))
 
-    assert parser.calls == [("parse_office_doc", doc)]
+    assert parser.calls == []
+
+
+@pytest.fixture
+def no_libreoffice(monkeypatch):
+    """Fail the test if anything tries to launch LibreOffice (or any process)."""
+    launched = []
+
+    def fake_run(cmd, **kwargs):
+        launched.append(cmd)
+        raise AssertionError(f"subprocess launched for HTML: {cmd}")
+
+    monkeypatch.setattr(parser_module.subprocess, "run", fake_run)
+    monkeypatch.setattr(parser_module.subprocess, "Popen", fake_run)
+    return launched
+
+
+def _fail_parse_pdf(self, *args, **kwargs):
+    raise AssertionError("HTML must not reach parse_pdf")
+
+
+@pytest.mark.parametrize("parser_cls", [MineruParser, PaddleOCRParser])
+@pytest.mark.parametrize("entry_point", ["parse_document", "parse_office_doc"])
+@pytest.mark.parametrize("ext", [".html", ".htm", ".xhtml", ".XHTML"])
+def test_direct_parser_paths_reject_html(
+    tmp_path, monkeypatch, no_libreoffice, parser_cls, entry_point, ext
+):
+    monkeypatch.setattr(parser_cls, "parse_pdf", _fail_parse_pdf)
+    doc = tmp_path / f"page{ext}"
+    doc.write_text('<img src="http://127.0.0.1:9/canary.png">')
+
+    with pytest.raises(ValueError, match="parser='docling'"):
+        getattr(parser_cls(), entry_point)(doc, output_dir=str(tmp_path / "out"))
+
+    assert no_libreoffice == []
+    assert not (tmp_path / "out").exists()
+
+
+def test_convert_office_to_pdf_rejects_html(tmp_path, no_libreoffice):
+    doc = tmp_path / "page.htm"
+    doc.write_text("<p>hello</p>")
+
+    with pytest.raises(ValueError, match="parser='docling'"):
+        Parser.convert_office_to_pdf(doc, str(tmp_path / "out"))
+
+    assert no_libreoffice == []
+
+
+def test_parser_cli_rejects_html_for_mineru(
+    tmp_path, monkeypatch, capsys, no_libreoffice
+):
+    doc = tmp_path / "page.html"
+    doc.write_text("<p>hello</p>")
+    monkeypatch.setattr(
+        "sys.argv", ["raganything.parser", str(doc), "--parser", "mineru"]
+    )
+
+    assert parser_module.main() == 1
+    # The hint names the CLI flag as well as the Python-API spelling.
+    assert "--parser docling" in capsys.readouterr().out
+    assert no_libreoffice == []
+
+
+@pytest.mark.parametrize(
+    "parser_type, html_advertised",
+    [("mineru", False), ("paddleocr", False), ("docling", True)],
+)
+def test_batch_discovery_advertises_html_only_for_docling(parser_type, html_advertised):
+    batch_parser = BatchParser(
+        parser_type=parser_type, show_progress=False, skip_installation_check=True
+    )
+
+    extensions = set(batch_parser.get_supported_extensions())
+    html = {".html", ".htm", ".xhtml"}
+
+    if html_advertised:
+        # Docling discovers exactly the suffixes the other parsers reject.
+        assert set(batch_parser.parser.HTML_FORMATS) == html
+        assert parser_module.HTML_FILE_EXTENSIONS == html
+        assert html <= extensions
+    else:
+        assert not extensions & html
+    # Discovery follows the native HTML entry point, nothing else.
+    assert hasattr(batch_parser.parser, "parse_html") is html_advertised

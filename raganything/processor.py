@@ -15,7 +15,13 @@ from pathlib import Path
 
 from raganything.base import DocStatus
 from raganything.document_context import document_context
-from raganything.parser import MineruParser, MineruExecutionError, get_parser
+from raganything.parser import (
+    HTML_FILE_EXTENSIONS,
+    MineruParser,
+    MineruExecutionError,
+    get_parser,
+    html_requires_docling_error,
+)
 from raganything.utils import (
     separate_content_with_page_map,
     insert_text_content,
@@ -749,11 +755,12 @@ class ProcessorMixin:
                         output_dir=output_dir,
                         **kwargs,
                     )
-            elif ext in [".html", ".htm", ".xhtml"] and hasattr(
-                doc_parser, "parse_html"
-            ):
-                # Docling exposes a dedicated HTML entry point and rejects
-                # HTML in parse_office_doc; prefer it when available.
+            elif ext in HTML_FILE_EXTENSIONS:
+                # Only parsers with a native HTML entry point (Docling) take
+                # HTML; never fall back to parse_office_doc, whose LibreOffice
+                # conversion fetches remote URLs referenced by the page.
+                if not hasattr(doc_parser, "parse_html"):
+                    raise html_requires_docling_error(file_path)
                 self.logger.info("Detected HTML document, using parser for HTML...")
                 content_list = await asyncio.to_thread(
                     doc_parser.parse_html,
@@ -768,12 +775,9 @@ class ProcessorMixin:
                 ".pptx",
                 ".xls",
                 ".xlsx",
-                ".html",
-                ".htm",
-                ".xhtml",
             ]:
                 self.logger.info(
-                    "Detected Office or HTML document, using parser for Office/HTML..."
+                    "Detected Office document, using parser for Office documents..."
                 )
                 content_list = await asyncio.to_thread(
                     doc_parser.parse_office_doc,

@@ -324,7 +324,7 @@ instead of restarting it.
 - **Office documents**: `.doc`, `.docx`, `.ppt`, `.pptx`, `.xls`, `.xlsx`
 - **Images**: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.tif`, `.gif`, `.webp`
 - **Text files**: `.txt`, `.md`
-- **HTML files** (Docling parser only): `.html`, `.htm`, `.xhtml`. Docling does not fetch `<img>` sources, so HTML images are not analysed; their caption (or alt text) is indexed as text. `BatchParser`, the CLI, `process_documents_batch()` and `process_documents_with_rag_batch()` discover them automatically; `process_folder_complete()` filters on `SUPPORTED_FILE_EXTENSIONS`, so pass `file_extensions=[".html", ".htm", ".xhtml"]` (or add them to that variable)
+- **HTML files** (Docling parser only): `.html`, `.htm`, `.xhtml`. With MinerU or PaddleOCR, `BatchParser` and the batch CLI skip HTML (a file passed explicitly is logged as "Unsupported file type"), while `parse_document()` and `process_document_complete()` raise a `ValueError` (the parser CLI exits with that error) telling you to use `parser="docling"`, because converting HTML to PDF with LibreOffice would fetch remote URLs and embed local files referenced by the page. With Docling, `BatchParser`, the CLI, `process_documents_batch()` and `process_documents_with_rag_batch()` discover them automatically; `process_folder_complete()` filters on `SUPPORTED_FILE_EXTENSIONS`, so pass `file_extensions=[".html", ".htm", ".xhtml"]` (or add them to that variable). Docling does not fetch `<img>` sources, so HTML images are not analysed; their caption (or alt text) is indexed as text.
 
 ## API Reference
 
