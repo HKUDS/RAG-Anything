@@ -1221,7 +1221,7 @@ Different content types require specific optional dependencies:
 - **Office Documents** - DOC, DOCX, PPT, PPTX, XLS, XLSX
 - **Images** - JPG, PNG, BMP, TIFF, GIF, WebP
 - **Text Files** - TXT, MD
-- **HTML** - HTML, HTM, XHTML (Docling parser only: `parser="docling"`). MinerU and PaddleOCR raise an error for HTML instead of converting it to PDF with LibreOffice, because that conversion fetches remote URLs and embeds local files referenced by the page
+- **HTML** - HTML, HTM, XHTML (Docling parser only: `parser="docling"`). MinerU and PaddleOCR raise an error for these files instead of converting them to PDF with LibreOffice, because that conversion fetches remote URLs and embeds local files referenced by the page. HTML is recognised by file extension: HTML content saved under an Office extension (for example `.doc` or `.xls`) is still converted by LibreOffice
 
 ### Multimodal Elements
 
