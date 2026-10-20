@@ -81,11 +81,16 @@ class BatchParser:
 
         Args:
             parser_type: Type of parser to use ("mineru", "docling", or "paddleocr")
-            max_workers: Maximum number of parallel workers
+            max_workers: Maximum number of parallel workers (at least 1)
             show_progress: Whether to show progress bars
             timeout_per_file: Timeout in seconds for each file
             skip_installation_check: Skip parser installation check (useful for testing)
         """
+        # ThreadPoolExecutor rejects these only once a batch runs, where the
+        # error would be swallowed and every file silently dropped.
+        if max_workers is not None and max_workers < 1:
+            raise ValueError("max_workers must be greater than zero")
+
         self.parser_type = parser_type
         self.max_workers = max_workers
         self.show_progress = show_progress

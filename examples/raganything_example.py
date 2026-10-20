@@ -12,6 +12,7 @@ This example shows how to:
 import os
 import argparse
 import asyncio
+import base64
 import logging
 import logging.config
 from functools import partial
@@ -25,6 +26,7 @@ sys.path.append(str(Path(__file__).parent.parent))
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc, logger, set_verbose_debug
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.image_signature import image_mime_type
 
 from dotenv import load_dotenv
 
@@ -154,6 +156,11 @@ async def process_with_rag(
                 )
             # Traditional single image format
             elif image_data:
+                # Label the image with its real media type (PNG, GIF, WebP, ...),
+                # identified from its first bytes (24 base64 characters)
+                mime_type = (
+                    image_mime_type(base64.b64decode(image_data[:24])) or "image/jpeg"
+                )
                 return openai_complete_if_cache(
                     vision_model,
                     "",
@@ -170,7 +177,7 @@ async def process_with_rag(
                                 {
                                     "type": "image_url",
                                     "image_url": {
-                                        "url": f"data:image/jpeg;base64,{image_data}"
+                                        "url": f"data:{mime_type};base64,{image_data}"
                                     },
                                 },
                             ],

@@ -307,8 +307,10 @@ Models are downloaded automatically on first use. For manual download, refer to 
 
 ```python
 import asyncio
+import base64
 from functools import partial
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.image_signature import image_mime_type
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 
@@ -357,6 +359,9 @@ async def main():
             )
         # Traditional single image format
         elif image_data:
+            # Label the image with its real media type (PNG, GIF, WebP, ...),
+            # identified from its first bytes (24 base64 characters)
+            mime_type = image_mime_type(base64.b64decode(image_data[:24])) or "image/jpeg"
             return openai_complete_if_cache(
                 "gpt-4o",
                 "",
@@ -373,7 +378,7 @@ async def main():
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_data}"
+                                    "url": f"data:{mime_type};base64,{image_data}"
                                 },
                             },
                         ],
@@ -446,11 +451,20 @@ if __name__ == "__main__":
 
 ```python
 import asyncio
+import base64
 from functools import partial
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 from raganything.modalprocessors import ImageModalProcessor, TableModalProcessor
+from raganything.image_signature import image_mime_type
+
+def image_data_url(image_data):
+    # Label the image with its real media type (PNG, GIF, WebP, ...),
+    # identified from its first bytes (24 base64 characters)
+    mime_type = image_mime_type(base64.b64decode(image_data[:24])) or "image/jpeg"
+    return f"data:{mime_type};base64,{image_data}"
+
 
 async def process_multimodal_content():
     # Set up API configuration
@@ -494,7 +508,7 @@ async def process_multimodal_content():
                 {"role": "system", "content": system_prompt} if system_prompt else None,
                 {"role": "user", "content": [
                     {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}}
+                    {"type": "image_url", "image_url": {"url": image_data_url(image_data)}}
                 ]} if image_data else {"role": "user", "content": prompt}
             ],
             api_key=api_key,
@@ -662,8 +676,10 @@ equation_result = await rag.aquery_with_multimodal(
 
 ```python
 import asyncio
+import base64
 from functools import partial
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.image_signature import image_mime_type
 from lightrag import LightRAG
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.kg.shared_storage import initialize_pipeline_status
@@ -730,6 +746,9 @@ async def load_existing_lightrag():
             )
         # Traditional single image format
         elif image_data:
+            # Label the image with its real media type (PNG, GIF, WebP, ...),
+            # identified from its first bytes (24 base64 characters)
+            mime_type = image_mime_type(base64.b64decode(image_data[:24])) or "image/jpeg"
             return openai_complete_if_cache(
                 "gpt-4o",
                 "",
@@ -746,7 +765,7 @@ async def load_existing_lightrag():
                             {
                                 "type": "image_url",
                                 "image_url": {
-                                    "url": f"data:image/jpeg;base64,{image_data}"
+                                    "url": f"data:{mime_type};base64,{image_data}"
                                 },
                             },
                         ],
@@ -792,8 +811,10 @@ For scenarios where you already have a pre-parsed content list (e.g., from exter
 
 ```python
 import asyncio
+import base64
 from functools import partial
 from raganything import RAGAnything, RAGAnythingConfig
+from raganything.image_signature import image_mime_type
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 
@@ -837,6 +858,9 @@ async def insert_content_list_example():
             )
         # Traditional single image format
         elif image_data:
+            # Label the image with its real media type (PNG, GIF, WebP, ...),
+            # identified from its first bytes (24 base64 characters)
+            mime_type = image_mime_type(base64.b64decode(image_data[:24])) or "image/jpeg"
             return openai_complete_if_cache(
                 "gpt-4o",
                 "",
@@ -848,7 +872,7 @@ async def insert_content_list_example():
                         "role": "user",
                         "content": [
                             {"type": "text", "text": prompt},
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}}
+                            {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{image_data}"}}
                         ],
                     } if image_data else {"role": "user", "content": prompt},
                 ],

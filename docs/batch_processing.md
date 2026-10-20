@@ -219,9 +219,15 @@ skip. The parse statistics remain in `parse_result`; `skipped_rag_files` counts
 already indexed documents, whose `rag_results` entry has `status="skipped"`
 and `processed=False`. These skips count as neither successful nor failed RAG
 operations; the `on_batch_complete` callback also receives their `skipped` count.
-When a text retry succeeds and multimodal work was already complete, the batch
-restores the document's completion status without repeating that multimodal
-work. A failed text retry or completion-status write remains a RAG failure.
+When a text retry succeeds and multimodal work was already complete, the
+document is marked fully processed again, but that multimodal work is skipped
+only if its completion flag survived the retry. LightRAG rewrites the
+`doc_status` record of a `failed`, `pending` or `processing` document when it
+reprocesses the text, which drops the flag on the default JSON storage, so such
+a document repeats its multimodal processing. A `handling` document (text
+already indexed) keeps the flag, and the batch restores its completion status
+without repeating that work. A failed text retry or completion-status write
+remains a RAG failure.
 
 ## Configuration
 
@@ -238,7 +244,7 @@ OUTPUT_DIR=./parsed_output
 ### BatchParser Parameters
 
 - **parser_type**: `"mineru"`, `"docling"`, or `"paddleocr"` (default: `"mineru"`)
-- **max_workers**: Number of parallel workers (default: `4`)
+- **max_workers**: Number of parallel workers, at least 1 (default: `4`)
 - **show_progress**: Show progress bar (default: `True`)
 - **timeout_per_file**: Timeout per file in seconds (default: `300`)
 - **skip_installation_check**: Skip parser installation check (default: `False`)
@@ -318,7 +324,7 @@ instead of restarting it.
 - **Office documents**: `.doc`, `.docx`, `.ppt`, `.pptx`, `.xls`, `.xlsx`
 - **Images**: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.tif`, `.gif`, `.webp`
 - **Text files**: `.txt`, `.md`
-- **HTML files** (Docling parser only): `.html`, `.htm`, `.xhtml`. With MinerU or PaddleOCR, `BatchParser` and the batch CLI skip HTML (a file passed explicitly is logged as "Unsupported file type"), while `parse_document()` and `process_document_complete()` raise a `ValueError` (the parser CLI exits with that error) telling you to use `parser="docling"`, because converting HTML to PDF with LibreOffice would fetch remote URLs and embed local files referenced by the page. With Docling, `BatchParser`, the CLI, `process_documents_batch()` and `process_documents_with_rag_batch()` discover them automatically; `process_folder_complete()` filters on `SUPPORTED_FILE_EXTENSIONS`, so pass `file_extensions=[".html", ".htm", ".xhtml"]` (or add them to that variable)
+- **HTML files** (Docling parser only): `.html`, `.htm`, `.xhtml`. With MinerU or PaddleOCR, `BatchParser` and the batch CLI skip HTML (a file passed explicitly is logged as "Unsupported file type"), while `parse_document()` and `process_document_complete()` raise a `ValueError` (the parser CLI exits with that error) telling you to use `parser="docling"`, because converting HTML to PDF with LibreOffice would fetch remote URLs and embed local files referenced by the page. With Docling, `BatchParser`, the CLI, `process_documents_batch()` and `process_documents_with_rag_batch()` discover them automatically; `process_folder_complete()` filters on `SUPPORTED_FILE_EXTENSIONS`, so pass `file_extensions=[".html", ".htm", ".xhtml"]` (or add them to that variable). Docling does not fetch `<img>` sources, so HTML images are not analysed; their caption (or alt text) is indexed as text.
 
 ## API Reference
 
