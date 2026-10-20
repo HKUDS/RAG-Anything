@@ -222,11 +222,12 @@ operations; the `on_batch_complete` callback also receives their `skipped` count
 When a text retry succeeds and multimodal work was already complete, the
 document is marked fully processed again, but that multimodal work is skipped
 only if its completion flag survived the retry. LightRAG rewrites the
-`doc_status` record of a `failed` or `pending` document when it reprocesses the
-text, which drops the flag on the default JSON storage, so such a document
-repeats its multimodal processing. A `handling` document (text already indexed)
-keeps the flag, and the batch restores its completion status without repeating
-that work. A failed text retry or completion-status write remains a RAG failure.
+`doc_status` record of a `failed`, `pending` or `processing` document when it
+reprocesses the text, which drops the flag on the default JSON storage, so such
+a document repeats its multimodal processing. A `handling` document (text
+already indexed) keeps the flag, and the batch restores its completion status
+without repeating that work. A failed text retry or completion-status write
+remains a RAG failure.
 
 ## Configuration
 
