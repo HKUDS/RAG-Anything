@@ -41,10 +41,14 @@ class _QueryHarness(QueryMixin):
             return self.prompt
         if param.only_need_context:
             return self.context
+        if param.stream:
+            return self._stream("text", " answer")
         return "text answer"
 
     async def _vision(self, prompt, **kwargs):
         self.vision_calls.append((prompt, kwargs))
+        if kwargs.get("stream"):
+            return self._stream("vision", " answer")
         return "vision answer"
 
     @staticmethod
@@ -175,4 +179,41 @@ async def test_bypass_queries_delegate_once_without_image_processing(
     assert param.only_need_prompt is False
     assert system_prompt == "Use a short answer"
     harness.encode_image.assert_not_called()
+    assert harness.vision_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+async def test_image_queries_forward_streaming_to_vision(harness, entrypoint):
+    result = await getattr(harness, entrypoint)("Describe the figure", stream=True)
+
+    assert [chunk async for chunk in result] == ["vision", " answer"]
+    assert harness.vision_calls[0][1]["stream"] is True
+    assert len(harness.query_calls) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+async def test_non_streaming_vision_callbacks_need_no_stream_parameter(
+    harness, entrypoint
+):
+    async def vision(prompt, messages):
+        return "vision answer"
+
+    harness.vision_model_func = vision
+
+    result = await getattr(harness, entrypoint)("Describe the figure", stream=False)
+
+    assert result == "vision answer"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+async def test_streaming_queries_without_images_keep_text_fallback(harness, entrypoint):
+    harness.prompt = "Retrieved prompt without images"
+
+    result = await getattr(harness, entrypoint)("Describe the document", stream=True)
+
+    assert [chunk async for chunk in result] == ["text", " answer"]
+    assert harness.query_calls[-1][1].stream is True
     assert harness.vision_calls == []
