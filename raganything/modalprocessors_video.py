@@ -399,6 +399,46 @@ class VideoModalProcessor(BaseModalProcessor):
             if os.path.exists(audio_path):
                 os.remove(audio_path)
 
+    @staticmethod
+    def _add_audio_only_segments(
+        visual_segments: List[Dict[str, Any]],
+        audio_segments: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        """Keep speech outside retained scenes without adding visual model calls.
+
+        A segment overlapping a scene is already included in full by the merge.
+        Audio-only rows carry their own text so overlapping, already covered ASR
+        segments are not repeated when these rows are merged.
+        """
+        visual_segments = sorted(visual_segments, key=lambda row: row["start"])
+        audio_only = []
+        scene_index = 0
+        for segment in sorted(audio_segments, key=lambda row: row["start"]):
+            while (
+                scene_index < len(visual_segments)
+                and visual_segments[scene_index]["end"] <= segment["start"]
+            ):
+                scene_index += 1
+            if (
+                scene_index < len(visual_segments)
+                and visual_segments[scene_index]["start"] < segment["end"]
+            ):
+                continue
+            if audio_only and segment["start"] <= audio_only[-1]["end"]:
+                row = audio_only[-1]
+                row["end"] = max(row["end"], segment["end"])
+                row["audio"] += " " + segment["text"]
+            else:
+                audio_only.append(
+                    {
+                        "start": segment["start"],
+                        "end": segment["end"],
+                        "visual": "",
+                        "audio": segment["text"],
+                    }
+                )
+        return sorted(visual_segments + audio_only, key=lambda row: row["start"])
+
     def _merge_channels(
         self,
         visual_segments: List[Dict[str, Any]],
@@ -419,8 +459,12 @@ class VideoModalProcessor(BaseModalProcessor):
             end_str = self._format_timestamp(vs["end"])
 
             # Find audio transcript in this time range
-            audio_text = self._get_transcript_in_range(
-                audio_segments, vs["start"], vs["end"]
+            audio_text = (
+                vs["audio"]
+                if "audio" in vs
+                else self._get_transcript_in_range(
+                    audio_segments, vs["start"], vs["end"]
+                )
             )
 
             line = f"[{start_str}-{end_str}]"
@@ -517,13 +561,16 @@ class VideoModalProcessor(BaseModalProcessor):
 
             visual_segments = await self._describe_scenes(video_path, scenes)
             audio_segments = await self._transcribe_audio_track(video_path)
+            visual_segments = self._add_audio_only_segments(
+                visual_segments, audio_segments
+            )
 
             merged_description = self._merge_channels(visual_segments, audio_segments)
             if not merged_description:
                 merged_description = f"Video file: {Path(video_path).name}"
 
             filename = Path(video_path).stem
-            total_duration = scenes[-1][1] if scenes else 0
+            total_duration = max((s["end"] for s in visual_segments), default=0)
             entity_info = {
                 "entity_name": entity_name if entity_name else f"video_{filename}",
                 "entity_type": "video",
@@ -566,8 +613,8 @@ class VideoModalProcessor(BaseModalProcessor):
 
         Scene detection and audio transcription run once for the whole video;
         scenes are then grouped into windows (bounded by ``max_scenes`` and the
-        token budget). Audio that extends past the last scene is appended to the
-        final window as an audio-only row so nothing is dropped.
+        token budget). Speech outside retained scenes is included as audio-only
+        rows before window planning, including leading, internal and trailing gaps.
         """
         try:
             video_path = self._resolve_video_path(modal_content)
@@ -581,23 +628,20 @@ class VideoModalProcessor(BaseModalProcessor):
             logger.info(f"Processing video: {video_path}")
 
             scenes = await asyncio.to_thread(self._detect_scenes, video_path)
-            if not scenes:
-                raise RuntimeError(f"No scenes detected in video: {video_path}")
             logger.info(f"Detected {len(scenes)} scenes")
 
             visual_segments = await self._describe_scenes(video_path, scenes)
             audio_segments = await self._transcribe_audio_track(video_path)
 
-            # Capture audio beyond the last visual scene as a trailing audio-only row
-            if visual_segments and audio_segments:
-                last_end = visual_segments[-1]["end"]
-                tail = [a for a in audio_segments if a["start"] >= last_end]
-                if tail:
-                    visual_segments.append(
-                        {"start": last_end, "end": tail[-1]["end"], "visual": ""}
-                    )
+            visual_segments = self._add_audio_only_segments(
+                visual_segments, audio_segments
+            )
 
             windows = self._plan_windows(visual_segments)
+            if not windows:
+                raise RuntimeError(
+                    f"No scenes or speech detected in video: {video_path}"
+                )
             total = len(windows)
             filename = Path(video_path).stem
 

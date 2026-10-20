@@ -73,6 +73,12 @@ This keeps parser artifacts from being overwritten when different directories
 contain files with the same name, and gives repeated runs for the same input a
 stable output location.
 
+A non-incremental run invalidates any existing incremental manifest entries for
+its input files before parsing, since it can replace their saved artifacts.
+The next incremental run reparses those files; unrelated entries are preserved.
+Dry runs leave the manifest unchanged, and non-incremental runs do not create a
+manifest when none exists.
+
 ### Asynchronous Batch Processing
 
 ```python
@@ -132,7 +138,7 @@ print(f"Processed {result['successful_rag_files']} files with RAG")
 print(f"Total processing time: {result['total_processing_time']:.2f} seconds")
 ```
 
-Pass `dry_run=True` to preview the parse plan without initializing LightRAG or ingesting documents. The selected files remain in `parse_result.successful_files`, while `rag_results` stays empty and both RAG counters are zero.
+Pass `dry_run=True` to preview the parse plan without initializing LightRAG or ingesting documents. The selected files remain in `parse_result.successful_files`, while `rag_results` stays empty and all RAG counters (`successful_rag_files`, `failed_rag_files`, `skipped_rag_files`) are zero.
 
 ### Command Line Interface
 
@@ -199,6 +205,23 @@ result = batch_parser.process_batch(
 print(f"Processed: {len(result.successful_files)}")
 print(f"Skipped unchanged: {len(result.skipped_files)}")
 ```
+
+When using `process_documents_with_rag_batch(..., incremental=True)`, unchanged
+parsing does not imply that the document has been indexed in the current RAG
+workspace. The RAG phase retries files with missing, failed, or incomplete
+indexing status, including after a parse-only batch or when reusing parser
+output in a new workspace. It resolves document IDs from the parse cache; if
+this workspace has no cached parse, it parses the file once to identify it.
+
+Only documents whose text and multimodal processing are both complete are
+skipped during the RAG phase. `force_multimodal_reprocess=True` bypasses this
+skip. The parse statistics remain in `parse_result`; `skipped_rag_files` counts
+already indexed documents, whose `rag_results` entry has `status="skipped"`
+and `processed=False`. These skips count as neither successful nor failed RAG
+operations; the `on_batch_complete` callback also receives their `skipped` count.
+When a text retry succeeds and multimodal work was already complete, the batch
+restores the document's completion status without repeating that multimodal
+work. A failed text retry or completion-status write remains a RAG failure.
 
 ## Configuration
 

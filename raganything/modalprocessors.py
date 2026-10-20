@@ -27,6 +27,7 @@ from lightrag.operate import extract_entities, merge_nodes_and_edges
 
 # Import prompt templates
 from raganything.prompt import PROMPTS
+from raganything.document_context import get_document_source, set_document_source
 from raganything.utils import (
     encode_image_to_base64,
     format_table_body,
@@ -34,6 +35,19 @@ from raganything.utils import (
     get_table_body,
     normalize_caption_list,
 )
+
+
+def _restore_latex_escapes(value: Any) -> Any:
+    # json.loads turns a single-backslash "\frac" into form feed + "rac" and
+    # "\beta" into backspace + "eta"
+    if isinstance(value, str):
+        value = re.sub(r"\x0c(?=[A-Za-z])", r"\\f", value)
+        return re.sub(r"\x08(?=[A-Za-z])", r"\\b", value)
+    if isinstance(value, dict):
+        return {k: _restore_latex_escapes(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_restore_latex_escapes(v) for v in value]
+    return value
 
 
 @dataclass
@@ -418,12 +432,16 @@ class BaseModalProcessor:
     def set_content_source(self, content_source: Any, content_format: str = "auto"):
         """Set content source for context extraction
 
+        During document ingestion this source belongs to the current operation
+        and its child tasks. Direct processor use keeps the instance default.
+
         Args:
             content_source: Source content for context extraction
             content_format: Format of content source ("minerU", "text_chunks", "auto")
         """
-        self.content_source = content_source
-        self.content_format = content_format
+        if not set_document_source(self, content_source, content_format):
+            self.content_source = content_source
+            self.content_format = content_format
         logger.info(f"Content source set with format: {content_format}")
 
     def _get_context_for_item(self, item_info: Dict[str, Any]) -> str:
@@ -435,12 +453,16 @@ class BaseModalProcessor:
         Returns:
             Context text for the item
         """
-        if not self.content_source:
+        source = get_document_source(self)
+        content_source, content_format = (
+            source if source is not None else (self.content_source, self.content_format)
+        )
+        if not content_source:
             return ""
 
         try:
             context = self.context_extractor.extract_context(
-                self.content_source, item_info, self.content_format
+                content_source, item_info, content_format
             )
             if context:
                 logger.debug(
@@ -714,9 +736,10 @@ class BaseModalProcessor:
             return None
 
         try:
-            return json.loads(json_str)
+            parsed = json.loads(json_str)
         except (json.JSONDecodeError, ValueError):
             return None
+        return _restore_latex_escapes(parsed)
 
     def _basic_json_cleanup(self, json_str: str) -> str:
         """Basic cleanup for common JSON issues"""

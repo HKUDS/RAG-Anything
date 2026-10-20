@@ -14,6 +14,7 @@ from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 
 from raganything.base import DocStatus
+from raganything.document_context import document_context
 from raganything.parser import MineruParser, MineruExecutionError, get_parser
 from raganything.utils import (
     separate_content_with_page_map,
@@ -1958,6 +1959,7 @@ class ProcessorMixin:
                 "chunks_count": 0,
             }
 
+    @document_context
     async def process_document_complete(
         self,
         file_path: str,
@@ -2152,6 +2154,7 @@ class ProcessorMixin:
                 duration_seconds=duration,
             )
 
+    @document_context
     async def process_document_complete_lightrag_api(
         self,
         file_path: str,
@@ -2460,6 +2463,7 @@ class ProcessorMixin:
                         f"Failed to update pipeline status in finally block: {_finally_err}"
                     )
 
+    @document_context
     async def insert_content_list(
         self,
         content_list: List[Dict[str, Any]],

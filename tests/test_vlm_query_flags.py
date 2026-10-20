@@ -32,6 +32,10 @@ class _QueryHarness(QueryMixin):
     async def _retrieve(self, query, param, system_prompt=None):
         assert isinstance(param, QueryParam)
         self.query_calls.append((query, param, system_prompt))
+        if param.mode == "bypass":
+            if param.stream:
+                return self._stream("text", " answer")
+            return "text answer"
         # LightRAG gives only_need_prompt precedence when both flags are true.
         if param.only_need_prompt:
             return self.prompt
@@ -42,6 +46,11 @@ class _QueryHarness(QueryMixin):
     async def _vision(self, prompt, **kwargs):
         self.vision_calls.append((prompt, kwargs))
         return "vision answer"
+
+    @staticmethod
+    async def _stream(*chunks):
+        for chunk in chunks:
+            yield chunk
 
 
 @pytest.fixture
@@ -133,5 +142,37 @@ async def test_explicit_false_flags_preserve_text_fallback(harness, entrypoint):
     assert final_param.only_need_prompt is False
     assert final_param.only_need_context is False
     assert system_prompt == "Use the supplied context: {context_data}"
+    harness.encode_image.assert_not_called()
+    assert harness.vision_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+@pytest.mark.parametrize("stream", [False, True])
+async def test_bypass_queries_delegate_once_without_image_processing(
+    harness, entrypoint, stream
+):
+    history = [{"role": "user", "content": "Earlier question"}]
+
+    result = await getattr(harness, entrypoint)(
+        "Answer without retrieval",
+        mode="bypass",
+        stream=stream,
+        system_prompt="Use a short answer",
+        conversation_history=history,
+    )
+
+    if stream:
+        assert [chunk async for chunk in result] == ["text", " answer"]
+    else:
+        assert result == "text answer"
+    assert len(harness.query_calls) == 1
+    query, param, system_prompt = harness.query_calls[0]
+    assert query == "Answer without retrieval"
+    assert param.mode == "bypass"
+    assert param.stream is stream
+    assert param.conversation_history == history
+    assert param.only_need_prompt is False
+    assert system_prompt == "Use a short answer"
     harness.encode_image.assert_not_called()
     assert harness.vision_calls == []
