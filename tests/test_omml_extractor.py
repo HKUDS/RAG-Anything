@@ -179,6 +179,16 @@ class TestOmmlToLatex:
         )
         assert omml_to_latex(elem) == "[x]"
 
+    @pytest.mark.parametrize("revision", ["del", "moveFrom"])
+    def test_tracked_deletion_inside_an_equation_is_left_out(self, revision):
+        # x + y edited to x + z with track changes on
+        elem = _wrap_in_omath(
+            "<m:r><m:t>x+</m:t></m:r>"
+            f'<w:{revision} w:id="1" w:author="A"><m:r><m:t>y</m:t></m:r></w:{revision}>'
+            '<w:ins w:id="2" w:author="A"><m:r><m:t>z</m:t></m:r></w:ins>'
+        )
+        assert omml_to_latex(elem) == "x+z"
+
     def test_matrix_2x2(self):
         elem = _wrap_in_omath(
             "<m:m>"
@@ -388,6 +398,31 @@ class TestExtractFromDocx:
         result = extract_omml_equations(path)
         assert [eq["text"] for eq in result] == ["a+b", "{x}^{2}"]
         assert [eq["index"] for eq in result] == [0, 1]
+
+    @pytest.mark.parametrize("revision", ["del", "moveFrom"])
+    def test_skips_an_equation_removed_with_track_changes(self, tmp_path, revision):
+        # A whole equation deleted, or moved away, with track changes on is no
+        # longer in the document; the one moved to its new place is.
+        removed = (
+            f'<w:{revision} w:id="1" w:author="A">'
+            "<m:oMath><m:r><m:t>old</m:t></m:r></m:oMath>"
+            f"</w:{revision}>"
+        )
+        kept = "<m:oMath><m:r><m:t>new</m:t></m:r></m:oMath>"
+        path = tmp_path / "revised.docx"
+        path.write_bytes(_make_docx(removed + kept))
+        assert [eq["text"] for eq in extract_omml_equations(path)] == ["new"]
+
+    def test_keeps_document_order_across_paragraphs(self, tmp_path):
+        equations = "".join(
+            f"<m:oMath><m:r><m:t>e{i}</m:t></m:r></m:oMath></w:p><w:p>"
+            for i in range(300)
+        )
+        path = tmp_path / "many.docx"
+        path.write_bytes(_make_docx(equations))
+        result = extract_omml_equations(path)
+        assert [eq["text"] for eq in result] == [f"e{i}" for i in range(300)]
+        assert [eq["index"] for eq in result] == list(range(300))
 
     def test_missing_file_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):
