@@ -1126,6 +1126,8 @@ After parsing, each non-empty `img_path`, `table_img_path`, or `equation_img_pat
 
 ### Parser Configuration
 
+The parser is chosen when `RAGAnything` is created: set `RAGAnythingConfig(parser=...)` to `"mineru"` (default), `"docling"`, or `"paddleocr"`, or use the `PARSER` environment variable (command-line tools: `--parser`). It cannot be switched per `process_document_complete()` call.
+
 RAGAnything now supports multiple parsers, each with specific advantages:
 
 #### MinerU Parser
@@ -1138,6 +1140,12 @@ RAGAnything now supports multiple parsers, each with specific advantages:
 - The only built-in parser that accepts HTML (.html, .htm, .xhtml); MinerU and PaddleOCR reject it (see [Document Formats](#document-formats))
 - Better document structure preservation
 - Native support for multiple Office formats
+
+Install Docling (not included in `raganything[all]`):
+
+```bash
+pip install docling
+```
 
 #### PaddleOCR Parser
 - OCR-focused parser for images and PDFs
@@ -1170,12 +1178,15 @@ mineru -p input.pdf -o output_dir -b pipeline --device cuda  # GPU acceleration
 You can also configure parsing through RAGAnything parameters:
 
 ```python
-# Basic parsing configuration with parser selection
+# The parser comes from RAGAnythingConfig (or PARSER), not from process_document_complete()
+config = RAGAnythingConfig(parser="mineru")  # "mineru", "docling", or "paddleocr"
+rag = RAGAnything(config=config, llm_model_func=llm_model_func, embedding_func=embedding_func)
+
+# Basic parsing configuration
 await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
-    parse_method="auto",          # or "ocr", "txt"
-    parser="mineru"               # Optional: "mineru", "docling", or "paddleocr"
+    parse_method="auto"           # or "ocr", "txt"
 )
 
 # Advanced parsing configuration with special parameters
@@ -1183,7 +1194,6 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # Parsing method: "auto", "ocr", "txt"
-    parser="mineru",              # Parser selection: "mineru", "docling", or "paddleocr"
 
     # MinerU special parameters - all supported kwargs:
     lang="ch",                   # Document language for OCR optimization (e.g., "ch", "en", "ja")
@@ -1215,7 +1225,6 @@ Page headers, footers, page numbers, aside text, and page footnotes are excluded
 ```python
 await rag.process_document_complete(
     file_path="document.pdf",
-    parser="mineru",
     include_layout_blocks=True,
 )
 ```
@@ -1245,7 +1254,7 @@ Different content types require specific optional dependencies:
 - **Office Documents** - DOC, DOCX, PPT, PPTX, XLS, XLSX
 - **Images** - JPG, PNG, BMP, TIFF, GIF, WebP
 - **Text Files** - TXT, MD
-- **HTML** - HTML, HTM, XHTML (Docling parser only: `parser="docling"`). MinerU and PaddleOCR raise an error for these files instead of converting them to PDF with LibreOffice, because that conversion fetches remote URLs and embeds local files referenced by the page. HTML is recognised by file extension: HTML content saved under an Office extension (for example `.doc` or `.xls`) is still converted by LibreOffice
+- **HTML** - HTML, HTM, XHTML (Docling parser only: install it with `pip install docling` and select it with `RAGAnythingConfig(parser="docling")` or `PARSER=docling`). MinerU and PaddleOCR raise an error for these files instead of converting them to PDF with LibreOffice, because that conversion fetches remote URLs and embeds local files referenced by the page. HTML is recognised by file extension: HTML content saved under an Office extension (for example `.doc` or `.xls`) is still converted by LibreOffice
 
 ### Multimodal Elements
 

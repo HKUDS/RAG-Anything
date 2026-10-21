@@ -300,7 +300,7 @@ async def main():
     # 创建 RAGAnything 配置
     config = RAGAnythingConfig(
         working_dir="./rag_storage",
-        parser="mineru",  # 选择解析器：mineru 或 docling
+        parser="mineru",  # 选择解析器：mineru、docling 或 paddleocr
         parse_method="auto",  # 解析方法：auto, ocr 或 txt
         enable_image_processing=True,
         enable_table_processing=True,
@@ -1071,7 +1071,7 @@ python examples/text_format_test.py --check-reportlab --file dummy
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_BASE_URL=your_base_url  # 可选
 OUTPUT_DIR=./output             # 解析文档的默认输出目录
-PARSER=mineru                   # 解析器选择：mineru 或 docling
+PARSER=mineru                   # 解析器选择：mineru、docling 或 paddleocr
 PARSE_METHOD=auto              # 解析方法：auto, ocr 或 txt
 ```
 
@@ -1079,6 +1079,8 @@ PARSE_METHOD=auto              # 解析方法：auto, ocr 或 txt
 - `MINERU_PARSE_METHOD` 已弃用，请使用 `PARSE_METHOD`
 
 ### 解析器配置
+
+解析器在创建 `RAGAnything` 时确定：将 `RAGAnythingConfig(parser=...)` 设为 `"mineru"`（默认）、`"docling"` 或 `"paddleocr"`，或使用 `PARSER` 环境变量（命令行工具：`--parser`）。不能在单次 `process_document_complete()` 调用中切换解析器。
 
 RAGAnything 现在支持多种解析器，每种解析器都有其特定的优势：
 
@@ -1092,6 +1094,12 @@ RAGAnything 现在支持多种解析器，每种解析器都有其特定的优�
 - 唯一接受 HTML（.html、.htm、.xhtml）的内置解析器；MinerU 和 PaddleOCR 会拒绝 HTML（见[文档格式](#文档格式)）
 - 更好的文档结构保持
 - 原生支持多种Office格式
+
+安装 Docling（不包含在 `raganything[all]` 中）：
+
+```bash
+pip install docling
+```
 
 ### MinerU配置
 
@@ -1109,12 +1117,15 @@ mineru -p input.pdf -o output_dir -b pipeline --device cuda  # GPU加速
 你也可以通过RAGAnything参数配置解析：
 
 ```python
-# 基础解析配置和解析器选择
+# 解析器来自 RAGAnythingConfig（或 PARSER），而不是 process_document_complete()
+config = RAGAnythingConfig(parser="mineru")  # "mineru"、"docling" 或 "paddleocr"
+rag = RAGAnything(config=config, llm_model_func=llm_model_func, embedding_func=embedding_func)
+
+# 基础解析配置
 await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
-    parse_method="auto",          # 或 "ocr", "txt"
-    parser="mineru"               # 可选："mineru" 或 "docling"
+    parse_method="auto"           # 或 "ocr", "txt"
 )
 
 # 高级解析配置（包含特殊参数）
@@ -1122,7 +1133,6 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # 解析方法："auto", "ocr", "txt"
-    parser="mineru",              # 解析器选择："mineru" 或 "docling"
 
     # MinerU特殊参数 - 支持的所有kwargs：
     lang="ch",                   # 文档语言优化（如："ch", "en", "ja"）
@@ -1154,7 +1164,6 @@ await rag.process_document_complete(
 ```python
 await rag.process_document_complete(
     file_path="document.pdf",
-    parser="mineru",
     include_layout_blocks=True,
 )
 ```
@@ -1183,7 +1192,7 @@ MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并�
 - **Office文档** - DOC、DOCX、PPT、PPTX、XLS、XLSX
 - **图像** - JPG、PNG、BMP、TIFF、GIF、WebP
 - **文本文件** - TXT、MD
-- **HTML** - HTML、HTM、XHTML（仅 Docling 解析器：`parser="docling"`）。MinerU 和 PaddleOCR 遇到这些文件会直接报错，而不是用 LibreOffice 转成 PDF，因为该转换会请求网页引用的远程 URL 并嵌入其引用的本地文件。HTML 按文件扩展名识别：以 Office 扩展名（如 `.doc`、`.xls`）保存的 HTML 内容仍会交给 LibreOffice 转换
+- **HTML** - HTML、HTM、XHTML（仅 Docling 解析器：使用 `pip install docling` 安装，并通过 `RAGAnythingConfig(parser="docling")` 或 `PARSER=docling` 选择）。MinerU 和 PaddleOCR 遇到这些文件会直接报错，而不是用 LibreOffice 转成 PDF，因为该转换会请求网页引用的远程 URL 并嵌入其引用的本地文件。HTML 按文件扩展名识别：以 Office 扩展名（如 `.doc`、`.xls`）保存的 HTML 内容仍会交给 LibreOffice 转换
 
 ### 多模态元素
 
