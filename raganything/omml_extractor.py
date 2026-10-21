@@ -560,10 +560,32 @@ def _h_function(element: ET.Element) -> str:
     # the function name (typically a m:r run); m:e provides the argument.
     fname = _first_child(element, "fName")
     arg = _first_child(element, "e")
-    name = _convert_children(fname).strip() if fname is not None else ""
     arg_latex = _convert_children(arg) if arg is not None else ""
+    # Word writes lim, max, min and the like with their limit around the name:
+    # fName holds m:limLow (or m:limUpp) whose base is the name.
+    for limit_tag, script in (("limLow", "_"), ("limUpp", "^")):
+        limit = _first_child(fname, limit_tag) if fname is not None else None
+        if limit is None:
+            continue
+        base = _convert_children(_first_child(limit, "e")).strip()
+        if base in _FUNCTION_NAMES:
+            bound = _convert_children(_first_child(limit, "lim"))
+            return f"\\{base}{script}{{{bound}}}{{{arg_latex}}}"
+    name = _convert_children(fname).strip() if fname is not None else ""
     # If the name matches a known LaTeX command, keep it as a control sequence.
-    known = {
+    if name in _FUNCTION_NAMES:
+        return f"\\{name}{{{arg_latex}}}"
+    # Word puts the brackets of f(x) in the argument, as a delimiter object;
+    # adding another pair around it read f((x)).
+    if arg is not None and len(arg) == 1 and arg[0].tag == _M + "d":
+        return f"{name}{arg_latex}"
+    return f"{name}({arg_latex})"
+
+
+# Function names that are LaTeX commands: the trigonometric and logarithmic
+# ones and the other names Word recognises as functions in an equation.
+_FUNCTION_NAMES = frozenset(
+    {
         "sin",
         "cos",
         "tan",
@@ -573,13 +595,17 @@ def _h_function(element: ET.Element) -> str:
         "sinh",
         "cosh",
         "tanh",
+        "coth",
         "arcsin",
         "arccos",
         "arctan",
         "log",
+        "lg",
         "ln",
         "exp",
         "lim",
+        "liminf",
+        "limsup",
         "max",
         "min",
         "sup",
@@ -587,10 +613,13 @@ def _h_function(element: ET.Element) -> str:
         "det",
         "dim",
         "ker",
+        "arg",
+        "deg",
+        "gcd",
+        "hom",
+        "Pr",
     }
-    if name in known:
-        return f"\\{name}{{{arg_latex}}}"
-    return f"{name}({arg_latex})"
+)
 
 
 def _h_delimiter(element: ET.Element) -> str:
