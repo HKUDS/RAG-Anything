@@ -40,11 +40,14 @@ markdown = [
     "weasyprint>=60.0",
     "pygments>=2.10.0",
 ]
-audio = ["faster-whisper>=1.0.0"]
+# av<19: faster-whisper 1.2.1 calls av.open(..., metadata_errors=...), which
+# PyAV 19 removed, so every transcription fails. Drop once a fixed release ships.
+audio = ["faster-whisper>=1.0.0", "av<19"]
 video = [
     "scenedetect[opencv]>=0.6.0",
     "moviepy>=2.0.0",
     "faster-whisper>=1.0.0",
+    "av<19",  # see audio
     "opencv-python>=4.8.0",
 ]
 all = [
@@ -56,6 +59,7 @@ all = [
     "weasyprint>=60.0",
     "pygments>=2.10.0",
     "faster-whisper>=1.0.0",
+    "av<19",  # see audio
     "scenedetect[opencv]>=0.6.0",
     "moviepy>=2.0.0",
     "opencv-python>=4.8.0",
