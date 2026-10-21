@@ -13,7 +13,7 @@ Supports:
 
 Dependencies:
     pip install raganything[audio]
-    # or: pip install faster-whisper
+    # or: pip install faster-whisper "av<19"
 """
 
 import asyncio
@@ -117,7 +117,7 @@ class AudioModalProcessor(BaseModalProcessor):
                 raise ImportError(
                     "faster-whisper is required for audio processing. "
                     "Install it with: pip install raganything[audio] "
-                    "or: pip install faster-whisper"
+                    'or: pip install faster-whisper "av<19"'
                 )
 
             logger.info(
