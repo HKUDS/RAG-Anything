@@ -135,10 +135,11 @@ def html_requires_docling_error(file_path: Union[str, Path]) -> ValueError:
     """Build the error raised when HTML reaches a parser without parse_html."""
     return ValueError(
         f"HTML input ({Path(file_path).name}) requires a parser with native "
-        "HTML support (parse_html), such as Docling: use parser='docling' "
-        "(CLI: --parser docling). HTML is not converted to PDF with "
-        "LibreOffice, because that conversion fetches remote URLs and embeds "
-        "local files referenced by the page."
+        "HTML support (parse_html), such as Docling (pip install docling): "
+        "select it with RAGAnythingConfig(parser='docling') or the "
+        "PARSER=docling environment variable (CLI: --parser docling). HTML is "
+        "not converted to PDF with LibreOffice, because that conversion "
+        "fetches remote URLs and embeds local files referenced by the page."
     )
 
 

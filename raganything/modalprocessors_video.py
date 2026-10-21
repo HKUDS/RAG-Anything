@@ -20,7 +20,7 @@ Supports:
 
 Dependencies:
     pip install raganything[video]
-    # or: pip install scenedetect[opencv] moviepy faster-whisper opencv-python
+    # or: pip install scenedetect[opencv] moviepy faster-whisper "av<19" opencv-python
 """
 
 import asyncio

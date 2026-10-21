@@ -40,6 +40,10 @@ class _MemoryCache:
 
 _BLOCK = [{"type": "text", "text": "hello", "page_idx": 0}]
 
+# The error names the settings that select Docling (config/env; the CLI test
+# checks --parser): a per-call parser= argument does not switch parsers.
+_DOCLING_HINT = r"RAGAnythingConfig\(parser='docling'\) or the PARSER=docling"
+
 
 class _HtmlParser:
     def __init__(self):
@@ -108,7 +112,7 @@ async def test_html_rejected_without_parse_html(tmp_path, ext):
     doc = tmp_path / f"page{ext}"
     doc.write_text("<html><body>hello</body></html>")
 
-    with pytest.raises(ValueError, match="parser='docling'"):
+    with pytest.raises(ValueError, match=_DOCLING_HINT):
         await processor.parse_document(str(doc))
 
     assert parser.calls == []
@@ -142,7 +146,7 @@ def test_direct_parser_paths_reject_html(
     doc = tmp_path / f"page{ext}"
     doc.write_text('<img src="http://127.0.0.1:9/canary.png">')
 
-    with pytest.raises(ValueError, match="parser='docling'"):
+    with pytest.raises(ValueError, match=_DOCLING_HINT):
         getattr(parser_cls(), entry_point)(doc, output_dir=str(tmp_path / "out"))
 
     assert no_libreoffice == []
@@ -153,7 +157,7 @@ def test_convert_office_to_pdf_rejects_html(tmp_path, no_libreoffice):
     doc = tmp_path / "page.htm"
     doc.write_text("<p>hello</p>")
 
-    with pytest.raises(ValueError, match="parser='docling'"):
+    with pytest.raises(ValueError, match=_DOCLING_HINT):
         Parser.convert_office_to_pdf(doc, str(tmp_path / "out"))
 
     assert no_libreoffice == []
@@ -169,8 +173,11 @@ def test_parser_cli_rejects_html_for_mineru(
     )
 
     assert parser_module.main() == 1
-    # The hint names the CLI flag as well as the Python-API spelling.
-    assert "--parser docling" in capsys.readouterr().out
+    # The hint names the CLI flag as well as the config and env spellings.
+    out = capsys.readouterr().out
+    assert "--parser docling" in out
+    assert "RAGAnythingConfig(parser='docling')" in out
+    assert "PARSER=docling" in out
     assert no_libreoffice == []
 
 

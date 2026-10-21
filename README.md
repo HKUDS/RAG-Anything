@@ -246,7 +246,7 @@ The hybrid retrieval system combines vector similarity search with graph travers
 pip install raganything
 
 # With optional dependencies for extended format support:
-pip install 'raganything[all]'              # All optional features
+pip install 'raganything[all]'              # All optional features (Docling not included)
 pip install 'raganything[image]'            # Image format conversion (BMP, TIFF, GIF, WebP)
 pip install 'raganything[text]'             # Text file processing (TXT, MD)
 pip install 'raganything[image,text]'       # Multiple features
@@ -644,6 +644,8 @@ vlm_disabled = await rag.aquery(
 # 2. Load and encode images as base64
 # 3. Send both text context and images to VLM for comprehensive analysis
 ```
+
+> **Streaming**: with `stream=True`, a VLM enhanced query that sends retrieved images returns the vision model's async iterator instead of a string (without images it falls back to LightRAG's streaming answer). `vision_model_func` then receives `stream=True`, so a custom function must accept `**kwargs` and pass them to a client that can stream, as the example above does; one without `**kwargs` raises `TypeError`.
 
 **Multimodal Queries** - Enhanced queries with specific multimodal content analysis:
 ```python
@@ -1126,6 +1128,8 @@ After parsing, each non-empty `img_path`, `table_img_path`, or `equation_img_pat
 
 ### Parser Configuration
 
+The parser is chosen when `RAGAnything` is created: set `RAGAnythingConfig(parser=...)` to `"mineru"` (default), `"docling"`, or `"paddleocr"`, or use the `PARSER` environment variable (command-line tools: `--parser`). It cannot be switched per `process_document_complete()` call.
+
 RAGAnything now supports multiple parsers, each with specific advantages:
 
 #### MinerU Parser
@@ -1138,6 +1142,12 @@ RAGAnything now supports multiple parsers, each with specific advantages:
 - The only built-in parser that accepts HTML (.html, .htm, .xhtml); MinerU and PaddleOCR reject it (see [Document Formats](#document-formats))
 - Better document structure preservation
 - Native support for multiple Office formats
+
+Install Docling (not included in `raganything[all]`):
+
+```bash
+pip install docling
+```
 
 #### PaddleOCR Parser
 - OCR-focused parser for images and PDFs
@@ -1170,12 +1180,15 @@ mineru -p input.pdf -o output_dir -b pipeline --device cuda  # GPU acceleration
 You can also configure parsing through RAGAnything parameters:
 
 ```python
-# Basic parsing configuration with parser selection
+# The parser comes from RAGAnythingConfig (or PARSER), not from process_document_complete()
+config = RAGAnythingConfig(parser="mineru")  # "mineru", "docling", or "paddleocr"
+rag = RAGAnything(config=config, llm_model_func=llm_model_func, embedding_func=embedding_func)
+
+# Basic parsing configuration
 await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
-    parse_method="auto",          # or "ocr", "txt"
-    parser="mineru"               # Optional: "mineru", "docling", or "paddleocr"
+    parse_method="auto"           # or "ocr", "txt"
 )
 
 # Advanced parsing configuration with special parameters
@@ -1183,7 +1196,6 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # Parsing method: "auto", "ocr", "txt"
-    parser="mineru",              # Parser selection: "mineru", "docling", or "paddleocr"
 
     # MinerU special parameters - all supported kwargs:
     lang="ch",                   # Document language for OCR optimization (e.g., "ch", "en", "ja")
@@ -1215,7 +1227,6 @@ Page headers, footers, page numbers, aside text, and page footnotes are excluded
 ```python
 await rag.process_document_complete(
     file_path="document.pdf",
-    parser="mineru",
     include_layout_blocks=True,
 )
 ```
@@ -1233,7 +1244,7 @@ Different content types require specific optional dependencies:
 - **Text Files** (.txt, .md): Install with `pip install raganything[text]`. Parsed directly (no PDF/OCR round trip); markdown image references (`![alt](path)`) that point to local image files (an image extension and image file contents) become image blocks and flow through the same multimodal pipeline as images extracted from PDFs — URLs, missing files and other files stay as plain text. Referenced images are sent to the configured vision model wherever they are on disk, so only ingest Markdown whose image references you trust
 - **PaddleOCR Parser** (`parser="paddleocr"`): Install with `pip install raganything[paddleocr]`, then install `paddlepaddle` for your platform
 
-> **📋 Quick Install**: Use `pip install raganything[all]` to enable all format support (Python dependencies only - LibreOffice still needs separate installation)
+> **📋 Quick Install**: Use `pip install raganything[all]` to enable all format support (Python dependencies only - LibreOffice still needs separate installation, and HTML needs Docling: `pip install docling`)
 
 ---
 
@@ -1245,7 +1256,7 @@ Different content types require specific optional dependencies:
 - **Office Documents** - DOC, DOCX, PPT, PPTX, XLS, XLSX
 - **Images** - JPG, PNG, BMP, TIFF, GIF, WebP
 - **Text Files** - TXT, MD
-- **HTML** - HTML, HTM, XHTML (Docling parser only: `parser="docling"`). MinerU and PaddleOCR raise an error for these files instead of converting them to PDF with LibreOffice, because that conversion fetches remote URLs and embeds local files referenced by the page. HTML is recognised by file extension: HTML content saved under an Office extension (for example `.doc` or `.xls`) is still converted by LibreOffice
+- **HTML** - HTML, HTM, XHTML (Docling parser only: install it with `pip install docling` and select it with `RAGAnythingConfig(parser="docling")` or `PARSER=docling`). MinerU and PaddleOCR raise an error for these files instead of converting them to PDF with LibreOffice, because that conversion fetches remote URLs and embeds local files referenced by the page. HTML is recognised by file extension: HTML content saved under an Office extension (for example `.doc` or `.xls`) is still converted by LibreOffice
 
 ### Multimodal Elements
 

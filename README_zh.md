@@ -47,27 +47,6 @@
 
 ---
 
-<div align="center">
-  <table>
-    <tr>
-      <td style="vertical-align: middle;">
-        <img src="./assets/LiteWrite.png"
-             width="56"
-             height="56"
-             alt="LiteWrite"
-             style="border-radius: 12px;" />
-      </td>
-      <td style="vertical-align: middle; padding-left: 12px;">
-        <a href="https://litewrite.ai">
-          <img src="https://img.shields.io/badge/🚀%20LiteWrite-AI%20原生%20LaTeX%20编辑器-ff6b6b?style=for-the-badge&logoColor=white&labelColor=1a1a2e">
-        </a>
-      </td>
-    </tr>
-  </table>
-</div>
-
----
-
 ## 🎉 新闻
 - [X] [2026.06]🎯📢 🎉 [LightRAG](https://github.com/HKUDS/LightRAG) 通过原生集成 RAG-Anything 实现多模态 RAG。
 - [X] [2025.10]🎯📢 🚀 我们已发布 [RAG-Anything] 的技术报告（[http://arxiv.org/abs/2510.12323](http://arxiv.org/abs/2510.12323)），立即访问以了解我们的最新研究成果。
@@ -257,7 +236,7 @@
 pip install raganything
 
 # 安装包含扩展格式支持的可选依赖：
-pip install 'raganything[all]'              # 所有可选功能
+pip install 'raganything[all]'              # 所有可选功能（不含 Docling）
 pip install 'raganything[image]'            # 图像格式转换 (BMP, TIFF, GIF, WebP)
 pip install 'raganything[text]'             # 文本文件处理 (TXT, MD)
 pip install 'raganything[image,text]'       # 多个功能组合
@@ -321,7 +300,7 @@ async def main():
     # 创建 RAGAnything 配置
     config = RAGAnythingConfig(
         working_dir="./rag_storage",
-        parser="mineru",  # 选择解析器：mineru 或 docling
+        parser="mineru",  # 选择解析器：mineru、docling 或 paddleocr
         parse_method="auto",  # 解析方法：auto, ocr 或 txt
         enable_image_processing=True,
         enable_table_processing=True,
@@ -647,6 +626,8 @@ vlm_disabled = await rag.aquery(
 # 2. 加载图片并编码为base64格式
 # 3. 将文本上下文和图片一起发送给VLM进行综合分析
 ```
+
+> **流式输出**：使用 `stream=True` 时，若 VLM 增强查询发送了检索到的图片，返回的是视觉模型的异步迭代器而不是字符串（没有图片时回退到 LightRAG 的流式回答）。此时 `vision_model_func` 会收到 `stream=True`，因此自定义函数必须接受 `**kwargs` 并将其传给支持流式输出的客户端（如上面的示例）；不接受 `**kwargs` 的函数会抛出 `TypeError`。
 
 **多模态查询** - 包含特定多模态内容分析的增强查询：
 ```python
@@ -1092,7 +1073,7 @@ python examples/text_format_test.py --check-reportlab --file dummy
 OPENAI_API_KEY=your_openai_api_key
 OPENAI_BASE_URL=your_base_url  # 可选
 OUTPUT_DIR=./output             # 解析文档的默认输出目录
-PARSER=mineru                   # 解析器选择：mineru 或 docling
+PARSER=mineru                   # 解析器选择：mineru、docling 或 paddleocr
 PARSE_METHOD=auto              # 解析方法：auto, ocr 或 txt
 ```
 
@@ -1100,6 +1081,8 @@ PARSE_METHOD=auto              # 解析方法：auto, ocr 或 txt
 - `MINERU_PARSE_METHOD` 已弃用，请使用 `PARSE_METHOD`
 
 ### 解析器配置
+
+解析器在创建 `RAGAnything` 时确定：将 `RAGAnythingConfig(parser=...)` 设为 `"mineru"`（默认）、`"docling"` 或 `"paddleocr"`，或使用 `PARSER` 环境变量（命令行工具：`--parser`）。不能在单次 `process_document_complete()` 调用中切换解析器。
 
 RAGAnything 现在支持多种解析器，每种解析器都有其特定的优势：
 
@@ -1113,6 +1096,12 @@ RAGAnything 现在支持多种解析器，每种解析器都有其特定的优�
 - 唯一接受 HTML（.html、.htm、.xhtml）的内置解析器；MinerU 和 PaddleOCR 会拒绝 HTML（见[文档格式](#文档格式)）
 - 更好的文档结构保持
 - 原生支持多种Office格式
+
+安装 Docling（不包含在 `raganything[all]` 中）：
+
+```bash
+pip install docling
+```
 
 ### MinerU配置
 
@@ -1130,12 +1119,15 @@ mineru -p input.pdf -o output_dir -b pipeline --device cuda  # GPU加速
 你也可以通过RAGAnything参数配置解析：
 
 ```python
-# 基础解析配置和解析器选择
+# 解析器来自 RAGAnythingConfig（或 PARSER），而不是 process_document_complete()
+config = RAGAnythingConfig(parser="mineru")  # "mineru"、"docling" 或 "paddleocr"
+rag = RAGAnything(config=config, llm_model_func=llm_model_func, embedding_func=embedding_func)
+
+# 基础解析配置
 await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
-    parse_method="auto",          # 或 "ocr", "txt"
-    parser="mineru"               # 可选："mineru" 或 "docling"
+    parse_method="auto"           # 或 "ocr", "txt"
 )
 
 # 高级解析配置（包含特殊参数）
@@ -1143,7 +1135,6 @@ await rag.process_document_complete(
     file_path="document.pdf",
     output_dir="./output/",
     parse_method="auto",          # 解析方法："auto", "ocr", "txt"
-    parser="mineru",              # 解析器选择："mineru" 或 "docling"
 
     # MinerU特殊参数 - 支持的所有kwargs：
     lang="ch",                   # 文档语言优化（如："ch", "en", "ja"）
@@ -1175,7 +1166,6 @@ await rag.process_document_complete(
 ```python
 await rag.process_document_complete(
     file_path="document.pdf",
-    parser="mineru",
     include_layout_blocks=True,
 )
 ```
@@ -1192,7 +1182,7 @@ MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并�
 - **视频** (.mp4, .mov, .webm, .avi, .mkv): 使用 `pip install raganything[video]` 安装（另需系统 ffmpeg），并设置 `enable_video_processing=True`（环境变量 `ENABLE_VIDEO_PROCESSING`）；双通道处理：SceneDetect 场景切分 + 关键帧 VLM 描述 + 音轨转写，按时间戳合并。媒体文件可以直接传给 `process_document_complete()` / 文件夹批处理，也可以作为 content list 项插入
 - **文本文件** (.txt, .md): 使用 `pip install raganything[text]` 安装。直接解析，不再经过 PDF/OCR 中转；markdown 中指向本地图片文件（扩展名为图片格式且文件内容确为图片）的引用（`![alt](path)`）会生成图像块，与 PDF 中提取的图片走同一条多模态管线——URL、不存在的文件和其他文件保持为纯文本。被引用的图片无论位于磁盘何处都会发送给配置的视觉模型，因此只摄入图片引用可信的 Markdown
 
-> **📋 快速安装**: 使用 `pip install raganything[all]` 启用所有格式支持（仅Python依赖 - LibreOffice仍需单独安装）
+> **📋 快速安装**: 使用 `pip install raganything[all]` 启用所有格式支持（仅Python依赖 - LibreOffice仍需单独安装，HTML需要Docling：`pip install docling`）
 
 ---
 
@@ -1204,7 +1194,7 @@ MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并�
 - **Office文档** - DOC、DOCX、PPT、PPTX、XLS、XLSX
 - **图像** - JPG、PNG、BMP、TIFF、GIF、WebP
 - **文本文件** - TXT、MD
-- **HTML** - HTML、HTM、XHTML（仅 Docling 解析器：`parser="docling"`）。MinerU 和 PaddleOCR 遇到这些文件会直接报错，而不是用 LibreOffice 转成 PDF，因为该转换会请求网页引用的远程 URL 并嵌入其引用的本地文件。HTML 按文件扩展名识别：以 Office 扩展名（如 `.doc`、`.xls`）保存的 HTML 内容仍会交给 LibreOffice 转换
+- **HTML** - HTML、HTM、XHTML（仅 Docling 解析器：使用 `pip install docling` 安装，并通过 `RAGAnythingConfig(parser="docling")` 或 `PARSER=docling` 选择）。MinerU 和 PaddleOCR 遇到这些文件会直接报错，而不是用 LibreOffice 转成 PDF，因为该转换会请求网页引用的远程 URL 并嵌入其引用的本地文件。HTML 按文件扩展名识别：以 Office 扩展名（如 `.doc`、`.xls`）保存的 HTML 内容仍会交给 LibreOffice 转换
 
 ### 多模态元素
 
