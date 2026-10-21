@@ -236,7 +236,7 @@
 pip install raganything
 
 # 安装包含扩展格式支持的可选依赖：
-pip install 'raganything[all]'              # 所有可选功能
+pip install 'raganything[all]'              # 所有可选功能（不含 Docling）
 pip install 'raganything[image]'            # 图像格式转换 (BMP, TIFF, GIF, WebP)
 pip install 'raganything[text]'             # 文本文件处理 (TXT, MD)
 pip install 'raganything[image,text]'       # 多个功能组合
@@ -1182,7 +1182,7 @@ MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并�
 - **视频** (.mp4, .mov, .webm, .avi, .mkv): 使用 `pip install raganything[video]` 安装（另需系统 ffmpeg），并设置 `enable_video_processing=True`（环境变量 `ENABLE_VIDEO_PROCESSING`）；双通道处理：SceneDetect 场景切分 + 关键帧 VLM 描述 + 音轨转写，按时间戳合并。媒体文件可以直接传给 `process_document_complete()` / 文件夹批处理，也可以作为 content list 项插入
 - **文本文件** (.txt, .md): 使用 `pip install raganything[text]` 安装。直接解析，不再经过 PDF/OCR 中转；markdown 中指向本地图片文件（扩展名为图片格式且文件内容确为图片）的引用（`![alt](path)`）会生成图像块，与 PDF 中提取的图片走同一条多模态管线——URL、不存在的文件和其他文件保持为纯文本。被引用的图片无论位于磁盘何处都会发送给配置的视觉模型，因此只摄入图片引用可信的 Markdown
 
-> **📋 快速安装**: 使用 `pip install raganything[all]` 启用所有格式支持（仅Python依赖 - LibreOffice仍需单独安装）
+> **📋 快速安装**: 使用 `pip install raganything[all]` 启用所有格式支持（仅Python依赖 - LibreOffice仍需单独安装，HTML需要Docling：`pip install docling`）
 
 ---
 

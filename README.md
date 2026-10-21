@@ -246,7 +246,7 @@ The hybrid retrieval system combines vector similarity search with graph travers
 pip install raganything
 
 # With optional dependencies for extended format support:
-pip install 'raganything[all]'              # All optional features
+pip install 'raganything[all]'              # All optional features (Docling not included)
 pip install 'raganything[image]'            # Image format conversion (BMP, TIFF, GIF, WebP)
 pip install 'raganything[text]'             # Text file processing (TXT, MD)
 pip install 'raganything[image,text]'       # Multiple features
@@ -1244,7 +1244,7 @@ Different content types require specific optional dependencies:
 - **Text Files** (.txt, .md): Install with `pip install raganything[text]`. Parsed directly (no PDF/OCR round trip); markdown image references (`![alt](path)`) that point to local image files (an image extension and image file contents) become image blocks and flow through the same multimodal pipeline as images extracted from PDFs — URLs, missing files and other files stay as plain text. Referenced images are sent to the configured vision model wherever they are on disk, so only ingest Markdown whose image references you trust
 - **PaddleOCR Parser** (`parser="paddleocr"`): Install with `pip install raganything[paddleocr]`, then install `paddlepaddle` for your platform
 
-> **📋 Quick Install**: Use `pip install raganything[all]` to enable all format support (Python dependencies only - LibreOffice still needs separate installation)
+> **📋 Quick Install**: Use `pip install raganything[all]` to enable all format support (Python dependencies only - LibreOffice still needs separate installation, and HTML needs Docling: `pip install docling`)
 
 ---
 
