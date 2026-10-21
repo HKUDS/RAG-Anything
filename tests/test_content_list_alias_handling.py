@@ -155,6 +155,25 @@ class ContentListAliasHandlingTests(unittest.TestCase):
         self.assertNotIn("P, e, r, f", chunk)
         self.assertIn("Synthetic example", chunk)
 
+    def test_table_rows_keep_their_cells(self):
+        # None is an empty cell, a pipe or a line break stays inside its cell,
+        # and a short row is padded instead of shifting the next ones.
+        self.assertEqual(
+            format_table_body(
+                [
+                    ["Name", "Qty", "Note"],
+                    ["pen", None, "a|b"],
+                    ["ink", 3, "two\nlines"],
+                    ["cap"],
+                ]
+            ),
+            "| Name | Qty | Note |\n"
+            "| --- | --- | --- |\n"
+            "| pen |  | a\\|b |\n"
+            "| ink | 3 | two lines |\n"
+            "| cap |  |  |",
+        )
+
     def test_equation_latex_alias_is_not_dropped_from_chunk_template(self):
         processor = ProcessorMixin()
 
