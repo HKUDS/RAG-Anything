@@ -47,27 +47,6 @@
 
 ---
 
-<div align="center">
-  <table>
-    <tr>
-      <td style="vertical-align: middle;">
-        <img src="./assets/LiteWrite.png"
-             width="56"
-             height="56"
-             alt="LiteWrite"
-             style="border-radius: 12px;" />
-      </td>
-      <td style="vertical-align: middle; padding-left: 12px;">
-        <a href="https://litewrite.ai">
-          <img src="https://img.shields.io/badge/🚀%20LiteWrite-AI%20原生%20LaTeX%20编辑器-ff6b6b?style=for-the-badge&logoColor=white&labelColor=1a1a2e">
-        </a>
-      </td>
-    </tr>
-  </table>
-</div>
-
----
-
 ## 🎉 新闻
 - [X] [2026.06]🎯📢 🎉 [LightRAG](https://github.com/HKUDS/LightRAG) 通过原生集成 RAG-Anything 实现多模态 RAG。
 - [X] [2025.10]🎯📢 🚀 我们已发布 [RAG-Anything] 的技术报告（[http://arxiv.org/abs/2510.12323](http://arxiv.org/abs/2510.12323)），立即访问以了解我们的最新研究成果。
