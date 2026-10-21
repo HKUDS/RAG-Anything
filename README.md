@@ -645,6 +645,8 @@ vlm_disabled = await rag.aquery(
 # 3. Send both text context and images to VLM for comprehensive analysis
 ```
 
+> **Streaming**: with `stream=True`, a VLM enhanced query that sends retrieved images returns the vision model's async iterator instead of a string (without images it falls back to LightRAG's streaming answer). `vision_model_func` then receives `stream=True`, so a custom function must accept `**kwargs` and pass them to a client that can stream, as the example above does; one without `**kwargs` raises `TypeError`.
+
 **Multimodal Queries** - Enhanced queries with specific multimodal content analysis:
 ```python
 # Query with table data

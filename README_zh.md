@@ -627,6 +627,8 @@ vlm_disabled = await rag.aquery(
 # 3. 将文本上下文和图片一起发送给VLM进行综合分析
 ```
 
+> **流式输出**：使用 `stream=True` 时，若 VLM 增强查询发送了检索到的图片，返回的是视觉模型的异步迭代器而不是字符串（没有图片时回退到 LightRAG 的流式回答）。此时 `vision_model_func` 会收到 `stream=True`，因此自定义函数必须接受 `**kwargs` 并将其传给支持流式输出的客户端（如上面的示例）；不接受 `**kwargs` 的函数会抛出 `TypeError`。
+
 **多模态查询** - 包含特定多模态内容分析的增强查询：
 ```python
 # 包含表格数据的查询

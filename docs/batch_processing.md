@@ -238,7 +238,7 @@ remains a RAG failure.
 
 ```env
 # Batch processing configuration
-MAX_CONCURRENT_FILES=4
+MAX_CONCURRENT_FILES=4  # Default max_workers for RAGAnything batch methods; at least 1
 SUPPORTED_FILE_EXTENSIONS=.pdf,.docx,.doc,.pptx,.ppt,.xlsx,.xls,.txt,.md
 RECURSIVE_FOLDER_PROCESSING=true
 OUTPUT_DIR=./parsed_output
@@ -247,7 +247,7 @@ OUTPUT_DIR=./parsed_output
 ### BatchParser Parameters
 
 - **parser_type**: `"mineru"`, `"docling"`, or `"paddleocr"` (default: `"mineru"`)
-- **max_workers**: Number of parallel workers, at least 1 (default: `4`)
+- **max_workers**: Number of parallel workers, at least 1; `0` or less raises `ValueError` (default: `4`)
 - **show_progress**: Show progress bar (default: `True`)
 - **timeout_per_file**: Timeout per file in seconds (default: `300`)
 - **skip_installation_check**: Skip parser installation check (default: `False`)
