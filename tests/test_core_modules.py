@@ -428,8 +428,11 @@ class TestConvertFileToPdfEncoding:
         monkeypatch.setattr(
             converter,
             "convert_markdown_to_pdf",
-            lambda content, output_path, method: received.append(content) or True,
+            lambda content, output_path, method, *, base_url: received.append(
+                (content, base_url)
+            )
+            or True,
         )
 
         assert converter.convert_file_to_pdf(str(source), str(tmp_path / "doc.pdf"))
-        assert received == [text]
+        assert received == [(text, source.as_uri())]
