@@ -11,54 +11,60 @@ from lightrag.utils import get_env_value
 
 @dataclass
 class RAGAnythingConfig:
-    """Configuration class for RAGAnything with environment variable support"""
+    """Configuration whose environment defaults are read at instantiation."""
 
     # Directory Configuration
     # ---
-    working_dir: str = field(default=get_env_value("WORKING_DIR", "./rag_storage", str))
+    working_dir: str = field(
+        default_factory=lambda: get_env_value("WORKING_DIR", "./rag_storage", str)
+    )
     """Directory where RAG storage and cache files are stored."""
 
     # Parser Configuration
     # ---
-    parse_method: str = field(default=get_env_value("PARSE_METHOD", "auto", str))
+    parse_method: str = field(
+        default_factory=lambda: get_env_value("PARSE_METHOD", "auto", str)
+    )
     """Default parsing method for document parsing: 'auto', 'ocr', or 'txt'."""
 
-    parser_output_dir: str = field(default=get_env_value("OUTPUT_DIR", "./output", str))
+    parser_output_dir: str = field(
+        default_factory=lambda: get_env_value("OUTPUT_DIR", "./output", str)
+    )
     """Default output directory for parsed content."""
 
-    parser: str = field(default=get_env_value("PARSER", "mineru", str))
+    parser: str = field(default_factory=lambda: get_env_value("PARSER", "mineru", str))
     """Parser selection: 'mineru', 'docling', or 'paddleocr'."""
 
     display_content_stats: bool = field(
-        default=get_env_value("DISPLAY_CONTENT_STATS", True, bool)
+        default_factory=lambda: get_env_value("DISPLAY_CONTENT_STATS", True, bool)
     )
     """Whether to display content statistics during parsing."""
 
     # Multimodal Processing Configuration
     # ---
     enable_image_processing: bool = field(
-        default=get_env_value("ENABLE_IMAGE_PROCESSING", True, bool)
+        default_factory=lambda: get_env_value("ENABLE_IMAGE_PROCESSING", True, bool)
     )
     """Enable image content processing."""
 
     enable_table_processing: bool = field(
-        default=get_env_value("ENABLE_TABLE_PROCESSING", True, bool)
+        default_factory=lambda: get_env_value("ENABLE_TABLE_PROCESSING", True, bool)
     )
     """Enable table content processing."""
 
     enable_equation_processing: bool = field(
-        default=get_env_value("ENABLE_EQUATION_PROCESSING", True, bool)
+        default_factory=lambda: get_env_value("ENABLE_EQUATION_PROCESSING", True, bool)
     )
     """Enable equation content processing."""
 
     enable_audio_processing: bool = field(
-        default=get_env_value("ENABLE_AUDIO_PROCESSING", False, bool)
+        default_factory=lambda: get_env_value("ENABLE_AUDIO_PROCESSING", False, bool)
     )
     """Enable audio content processing. Requires optional 'audio' dependencies
     (``pip install raganything[audio]``); disabled by default."""
 
     enable_video_processing: bool = field(
-        default=get_env_value("ENABLE_VIDEO_PROCESSING", False, bool)
+        default_factory=lambda: get_env_value("ENABLE_VIDEO_PROCESSING", False, bool)
     )
     """Enable video content processing. Requires optional 'video' dependencies
     (``pip install raganything[video]``); disabled by default."""
@@ -66,7 +72,7 @@ class RAGAnythingConfig:
     # Batch Processing Configuration
     # ---
     max_concurrent_files: int = field(
-        default=get_env_value("MAX_CONCURRENT_FILES", 1, int)
+        default_factory=lambda: get_env_value("MAX_CONCURRENT_FILES", 1, int)
     )
     """Maximum number of files to process concurrently."""
 
@@ -83,28 +89,34 @@ class RAGAnythingConfig:
     """List of supported file extensions for batch processing."""
 
     recursive_folder_processing: bool = field(
-        default=get_env_value("RECURSIVE_FOLDER_PROCESSING", True, bool)
+        default_factory=lambda: get_env_value("RECURSIVE_FOLDER_PROCESSING", True, bool)
     )
     """Whether to recursively process subfolders in batch mode."""
 
     # Context Extraction Configuration
     # ---
-    context_window: int = field(default=get_env_value("CONTEXT_WINDOW", 1, int))
+    context_window: int = field(
+        default_factory=lambda: get_env_value("CONTEXT_WINDOW", 1, int)
+    )
     """Number of pages/chunks to include before and after current item for context."""
 
-    context_mode: str = field(default=get_env_value("CONTEXT_MODE", "page", str))
+    context_mode: str = field(
+        default_factory=lambda: get_env_value("CONTEXT_MODE", "page", str)
+    )
     """Context extraction mode: 'page' for page-based, 'chunk' for chunk-based."""
 
     max_context_tokens: int = field(
-        default=get_env_value("MAX_CONTEXT_TOKENS", 2000, int)
+        default_factory=lambda: get_env_value("MAX_CONTEXT_TOKENS", 2000, int)
     )
     """Maximum number of tokens in extracted context."""
 
-    include_headers: bool = field(default=get_env_value("INCLUDE_HEADERS", True, bool))
+    include_headers: bool = field(
+        default_factory=lambda: get_env_value("INCLUDE_HEADERS", True, bool)
+    )
     """Whether to include document headers and titles in context."""
 
     include_captions: bool = field(
-        default=get_env_value("INCLUDE_CAPTIONS", True, bool)
+        default_factory=lambda: get_env_value("INCLUDE_CAPTIONS", True, bool)
     )
     """Whether to include image/table captions in context."""
 
@@ -118,12 +130,16 @@ class RAGAnythingConfig:
     )
     """Content types to include in context extraction (e.g., 'text', 'image', 'table')."""
 
-    content_format: str = field(default=get_env_value("CONTENT_FORMAT", "minerU", str))
+    content_format: str = field(
+        default_factory=lambda: get_env_value("CONTENT_FORMAT", "minerU", str)
+    )
     """Default content format for context extraction when processing documents."""
 
     # Path Handling Configuration
     # ---
-    use_full_path: bool = field(default=get_env_value("USE_FULL_PATH", False, bool))
+    use_full_path: bool = field(
+        default_factory=lambda: get_env_value("USE_FULL_PATH", False, bool)
+    )
     """Whether to use full file path (True) or just basename (False) for file references in LightRAG."""
 
     def __post_init__(self):
