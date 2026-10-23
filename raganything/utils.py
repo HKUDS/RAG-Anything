@@ -112,29 +112,36 @@ def extract_section_path_from_content_list(
     heading_chain: List[Tuple[int, str]] = []
 
     for item in content_list[:limit]:
-        if not isinstance(item, dict):
-            continue
-
-        if item.get("type", "text") != "text":
-            continue
-
-        text = str(item.get("text", "") or "").strip()
-        if not text:
-            continue
-
-        try:
-            level = int(item.get("text_level", 0) or 0)
-        except (TypeError, ValueError):
-            continue
-
-        if level <= 0:
-            continue
-
-        while heading_chain and heading_chain[-1][0] >= level:
-            heading_chain.pop()
-        heading_chain.append((level, text))
+        _update_heading_chain(item, heading_chain)
 
     return " > ".join(text for _, text in heading_chain)
+
+
+def _update_heading_chain(
+    item: Dict[str, Any], heading_chain: List[Tuple[int, str]]
+) -> None:
+    """Advance the heading hierarchy by one content block."""
+    if not isinstance(item, dict):
+        return
+
+    if item.get("type", "text") != "text":
+        return
+
+    text = str(item.get("text", "") or "").strip()
+    if not text:
+        return
+
+    try:
+        level = int(item.get("text_level", 0) or 0)
+    except (TypeError, ValueError):
+        return
+
+    if level <= 0:
+        return
+
+    while heading_chain and heading_chain[-1][0] >= level:
+        heading_chain.pop()
+    heading_chain.append((level, text))
 
 
 def extract_neighbor_text_from_content_list(
@@ -191,8 +198,10 @@ def separate_content_with_page_map(
     multimodal_items = []
     page_intervals: List[Tuple[int, int, Optional[int]]] = []
     text_length = 0
+    heading_chain: List[Tuple[int, str]] = []
 
     for index, item in enumerate(content_list):
+        _update_heading_chain(item, heading_chain)
         content_type = item.get("type", "text")
 
         if content_type == "text":
@@ -214,7 +223,7 @@ def separate_content_with_page_map(
             if content_type == "image":
                 multimodal_item.setdefault(
                     "_section_path",
-                    extract_section_path_from_content_list(content_list, index),
+                    " > ".join(text for _, text in heading_chain),
                 )
                 multimodal_item.setdefault(
                     "_neighbor_text",
