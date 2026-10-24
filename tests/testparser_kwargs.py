@@ -24,6 +24,8 @@ import pytest
 from unittest.mock import patch, MagicMock
 import os
 import re
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from raganything.parser import MineruParser, DoclingParser, Parser
 import raganything.parser as parser_module
 from pathlib import Path
@@ -358,5 +360,55 @@ def test_convert_office_to_pdf_uses_windows_standard_libreoffice_path(
     pdf_path = Parser.convert_office_to_pdf(doc_path, output_dir)
 
     assert captured_commands[-1][0] == str(soffice_path)
-    assert pdf_path == output_dir / "sample.pdf"
+    expected_output_dir = Parser._unique_output_dir(output_dir, doc_path)
+    assert pdf_path == expected_output_dir / "sample.pdf"
     assert pdf_path.exists()
+
+
+def test_office_parsing_isolated_for_same_stem_inputs(monkeypatch, tmp_path):
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    first_doc = first_dir / "report.docx"
+    second_doc = second_dir / "report.pptx"
+    first_content = b"first synthetic office document"
+    second_content = b"second synthetic office document"
+    first_doc.write_bytes(first_content)
+    second_doc.write_bytes(second_content)
+    output_dir = tmp_path / "output"
+    parse_barrier = threading.Barrier(2)
+    parser = MineruParser()
+
+    monkeypatch.setattr(
+        Parser,
+        "_libreoffice_command_candidates",
+        classmethod(lambda cls: ["synthetic-libreoffice"]),
+    )
+
+    def fake_run(command, **kwargs):
+        source_path = Path(command[-1])
+        generated_pdf = Path(command[command.index("--outdir") + 1]) / "report.pdf"
+        generated_pdf.write_bytes(source_path.read_bytes().ljust(100, b"!"))
+        return MagicMock(returncode=0, stderr="")
+
+    monkeypatch.setattr(parser_module.subprocess, "run", fake_run)
+
+    def read_converted_pdf(pdf_path, **kwargs):
+        parse_barrier.wait(timeout=10)
+        return pdf_path.read_bytes()
+
+    parser.parse_pdf = read_converted_pdf
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first_future = executor.submit(
+            parser.parse_office_doc, first_doc, str(output_dir)
+        )
+        second_future = executor.submit(
+            parser.parse_office_doc, second_doc, str(output_dir)
+        )
+        first_result = first_future.result(timeout=15)
+        second_result = second_future.result(timeout=15)
+
+    assert first_result == first_content.ljust(100, b"!")
+    assert second_result == second_content.ljust(100, b"!")
