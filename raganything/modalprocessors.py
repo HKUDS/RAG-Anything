@@ -27,7 +27,11 @@ from lightrag.operate import extract_entities, merge_nodes_and_edges
 
 # Import prompt templates
 from raganything.prompt import PROMPTS
-from raganything.document_context import get_document_source, set_document_source
+from raganything.document_context import (
+    get_document_source,
+    page_context_items,
+    set_document_source,
+)
 from raganything.utils import (
     encode_image_to_base64,
     format_table_body,
@@ -170,7 +174,7 @@ class ContextExtractor:
 
         context_texts = []
 
-        for item in content_list:
+        for item in page_context_items(content_list, start_page, end_page):
             item_page = item.get("page_idx", 0)
             item_type = item.get("type", "")
 
@@ -434,6 +438,8 @@ class BaseModalProcessor:
 
         During document ingestion this source belongs to the current operation
         and its child tasks. Direct processor use keeps the instance default.
+        Keep list order and page assignments stable during ingestion; call this
+        setter again after edits to invalidate the operation's page index.
 
         Args:
             content_source: Source content for context extraction
