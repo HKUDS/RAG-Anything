@@ -1,6 +1,7 @@
 import asyncio
 import importlib.util
 import json
+import shutil
 import sys
 import time
 import types
@@ -224,6 +225,40 @@ def _seed_two_docs(tmp_path):
     first_doc.write_text("alpha", encoding="utf-8")
     second_doc.write_text("beta", encoding="utf-8")
     return docs_dir, first_doc, second_doc
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_incremental_reprocesses_missing_output_directory(monkeypatch, tmp_path, dry_run):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    docs_dir, first_doc, second_doc = _seed_two_docs(tmp_path)
+    output_dir = tmp_path / "out"
+    batch_parser.process_batch([str(docs_dir)], str(output_dir), incremental=True)
+    manifest_path = batch_parser._manifest_path(str(output_dir))
+    manifest_before = manifest_path.read_bytes()
+    first_output = batch_parser._file_output_dir(str(output_dir), str(first_doc))
+    shutil.rmtree(first_output)
+    fake_parser.processed_files.clear()
+
+    result = batch_parser.process_batch(
+        [str(docs_dir)], str(output_dir), incremental=True, dry_run=dry_run
+    )
+
+    assert result.successful_files == [str(first_doc)]
+    assert result.skipped_files == [str(second_doc)]
+    assert result.failed_files == []
+    if dry_run:
+        assert fake_parser.processed_files == []
+        assert not first_output.exists()
+        assert manifest_path.read_bytes() == manifest_before
+    else:
+        assert fake_parser.processed_files == [str(first_doc)]
+        assert first_output.is_dir()
+        fake_parser.processed_files.clear()
+        next_result = batch_parser.process_batch(
+            [str(docs_dir)], str(output_dir), incremental=True
+        )
+        assert set(next_result.skipped_files) == {str(first_doc), str(second_doc)}
+        assert fake_parser.processed_files == []
 
 
 def test_incremental_skip_does_not_rehash_unchanged_files(monkeypatch, tmp_path):
