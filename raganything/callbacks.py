@@ -23,15 +23,16 @@ Usage::
 from __future__ import annotations
 
 import logging
+import threading
 import time
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
-import threading
 
 logger = logging.getLogger(__name__)
 
 
-@dataclass
+@dataclass(frozen=True)
 class ProcessingEvent:
     """Immutable record of a processing pipeline event."""
 
@@ -52,7 +53,7 @@ class ProcessingEvent:
             "file_path": self.file_path,
             "doc_id": self.doc_id,
             "stage": self.stage,
-            "details": self.details,
+            "details": deepcopy(self.details),
             "duration_seconds": self.duration_seconds,
             "error": self.error,
         }
@@ -335,7 +336,7 @@ class CallbackManager:
     def event_log(self) -> List[ProcessingEvent]:
         """Read-only access to the internal event log."""
         with self._lock:
-            return list(self._event_log)
+            return deepcopy(self._event_log)
 
     def clear_event_log(self) -> None:
         """Clear the internal event log."""
@@ -358,7 +359,7 @@ class CallbackManager:
                     file_path=kwargs.get("file_path"),
                     doc_id=kwargs.get("doc_id"),
                     stage=kwargs.get("stage"),
-                    details=kwargs,
+                    details=deepcopy(kwargs),
                     duration_seconds=kwargs.get("duration_seconds"),
                     error=str(kwargs["error"]) if "error" in kwargs else None,
                 )
