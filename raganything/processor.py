@@ -477,7 +477,21 @@ class ProcessorMixin:
                     content_hash_data.append(item["text"].strip())
                 # For other content types, use key identifiers
                 elif item.get("type") == "image" and item.get("img_path"):
-                    content_hash_data.append(f"image:{item['img_path']}")
+                    image_identity = f"image:{item['img_path']}"
+                    try:
+                        image_path = Path(item["img_path"])
+                        fingerprint = (
+                            self._file_content_fingerprint(image_path)
+                            if image_path.is_file()
+                            else None
+                        )
+                    except (OSError, ValueError):
+                        # Preserve path-only identity for unavailable files and
+                        # URLs; document identity must not fetch remote assets.
+                        fingerprint = None
+                    if fingerprint is not None:
+                        image_identity += f":sha256:{fingerprint}"
+                    content_hash_data.append(image_identity)
                 elif item.get("type") == "table" and item.get("table_body"):
                     content_hash_data.append(f"table:{item['table_body']}")
                 elif item.get("type") == "equation" and item.get("text"):
