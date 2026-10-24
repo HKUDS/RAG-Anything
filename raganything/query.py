@@ -46,20 +46,28 @@ class QueryMixin:
             return None
 
     @staticmethod
+    def _callable_cache_identity(model_func: Any) -> Dict[str, Any] | None:
+        if model_func is None:
+            return None
+        return {
+            "module": getattr(
+                model_func, "__module__", type(model_func).__module__
+            ),
+            "qualname": getattr(
+                model_func, "__qualname__", type(model_func).__qualname__
+            ),
+            "identity": id(model_func),
+        }
+
+    @staticmethod
     def _normalize_query_options(options: Dict[str, Any]) -> Dict[str, Any]:
         """Make query options cache-safe without dropping result-affecting values."""
         normalized = dict(options)
         model_func = normalized.get("model_func")
         if model_func is not None:
-            normalized["model_func"] = {
-                "module": getattr(
-                    model_func, "__module__", type(model_func).__module__
-                ),
-                "qualname": getattr(
-                    model_func, "__qualname__", type(model_func).__qualname__
-                ),
-                "identity": id(model_func),
-            }
+            normalized["model_func"] = QueryMixin._callable_cache_identity(
+                model_func
+            )
         return normalized
 
     def _generate_multimodal_cache_key(
@@ -124,6 +132,26 @@ class QueryMixin:
         # Every forwarded query option can affect retrieval or generation.
         # Keep them nested so they cannot overwrite the core cache fields.
         cache_data["query_options"] = self._normalize_query_options(kwargs)
+
+        # The multimodal descriptions and VLM answer also depend on callbacks
+        # configured on this RAGAnything instance, not just QueryParam kwargs.
+        configured_model_funcs: dict[str, Dict[str, Any]] = {}
+        for name in ("llm_model_func", "vision_model_func"):
+            identity = self._callable_cache_identity(getattr(self, name, None))
+            if identity is not None:
+                configured_model_funcs[name] = identity
+        processors = getattr(self, "modal_processors", None)
+        if isinstance(processors, dict):
+            for processor_name, processor in processors.items():
+                identity = self._callable_cache_identity(
+                    getattr(processor, "modal_caption_func", None)
+                )
+                if identity is not None:
+                    configured_model_funcs[
+                        f"{processor_name}.modal_caption_func"
+                    ] = identity
+        if configured_model_funcs:
+            cache_data["configured_model_funcs"] = configured_model_funcs
 
         # Generate hash from the cache data
         cache_str = json.dumps(cache_data, sort_keys=True, ensure_ascii=False)
