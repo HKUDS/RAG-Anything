@@ -1,5 +1,7 @@
 """Tests for the processing callbacks and events system."""
 
+from dataclasses import FrozenInstanceError
+
 import pytest
 from raganything.callbacks import (
     ProcessingCallback,
@@ -122,6 +124,29 @@ class TestCallbackManager:
         assert len(mgr.event_log) == 1
         assert mgr.event_log[0].event_type == "on_parse_start"
         assert mgr.event_log[0].file_path == "test.pdf"
+
+    def test_event_log_is_an_immutable_snapshot(self):
+        class MutatingCallback(ProcessingCallback):
+            def on_parse_start(self, metadata, **kwargs):
+                metadata["labels"].append("callback mutation")
+
+        mgr = CallbackManager()
+        mgr.enable_event_log(True)
+        mgr.register(MutatingCallback())
+        mgr.dispatch(
+            "on_parse_start",
+            file_path="test.pdf",
+            metadata={"labels": ["dispatch value"]},
+        )
+
+        event = mgr.event_log[0]
+        assert event.details["metadata"]["labels"] == ["dispatch value"]
+        with pytest.raises(FrozenInstanceError):
+            event.event_type = "tampered"
+
+        event.details["metadata"]["labels"].append("reader mutation")
+        event.to_dict()["details"]["metadata"]["labels"].append("dict mutation")
+        assert mgr.event_log[0].details["metadata"]["labels"] == ["dispatch value"]
 
     def test_clear_event_log(self):
         mgr = CallbackManager()
