@@ -437,7 +437,8 @@ class BatchParser:
             recursive: Whether to search directories recursively
             dry_run: When True, only list files without processing them
             incremental: When True, skip files whose size, mtime, md5, and parsing
-                configuration match the previous successful batch run in output_dir
+                configuration match the previous successful batch run in output_dir,
+                provided their output directory still exists
             **kwargs: Additional parser arguments
 
         Returns:
@@ -473,6 +474,11 @@ class BatchParser:
         if incremental:
             parse_config = self._parse_config_signature(parse_method, kwargs)
             manifest = self._load_incremental_manifest(output_dir)
+            # A successful parse always creates this directory. If its output
+            # was cleaned up, the old input signature cannot justify reuse.
+            for file_path in supported_files:
+                if not self._file_output_dir(output_dir, file_path).is_dir():
+                    manifest.pop(str(Path(file_path).resolve()), None)
             files_to_process, skipped_files, signatures = (
                 self._filter_incremental_files(supported_files, manifest, parse_config)
             )
