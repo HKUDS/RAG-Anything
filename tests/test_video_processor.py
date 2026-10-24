@@ -1,6 +1,9 @@
 """Tests for the VideoModalProcessor."""
 
+import os
+import sys
 from dataclasses import dataclass
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -32,6 +35,32 @@ class _FakeLightRAG:
     tokenizer: object = None
     chunk_token_size: int = 1200
     max_parallel_insert: int = 2
+
+
+def test_audio_extraction_closes_video_clip_when_writing_fails(tmp_path, monkeypatch):
+    import raganything.modalprocessors_video as video_module
+
+    class FailingAudio:
+        def write_audiofile(self, *_args, **_kwargs):
+            raise OSError("synthetic audio write failure")
+
+    clip = SimpleNamespace(audio=FailingAudio(), close=MagicMock())
+    moviepy = SimpleNamespace(VideoFileClip=lambda _path: clip)
+    monkeypatch.setitem(sys.modules, "moviepy", moviepy)
+
+    def task_local_mkstemp(suffix, prefix):
+        audio_path = tmp_path / f"{prefix}fixture{suffix}"
+        fd = os.open(audio_path, os.O_CREAT | os.O_EXCL | os.O_RDWR)
+        return fd, str(audio_path)
+
+    monkeypatch.setattr(video_module.tempfile, "mkstemp", task_local_mkstemp)
+
+    processor = VideoModalProcessor(
+        lightrag=_FakeLightRAG(), modal_caption_func=AsyncMock()
+    )
+    assert processor._extract_audio_track("synthetic-video.mp4") is None
+    clip.close.assert_called_once_with()
+    assert list(tmp_path.iterdir()) == []
 
 
 class TestIsVideoFile:
