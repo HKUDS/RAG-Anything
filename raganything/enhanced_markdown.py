@@ -262,7 +262,12 @@ class EnhancedMarkdownConverter:
         html_content = md.convert(content)
 
         # Add CSS styling
-        css = self.config.custom_css or self._get_default_css()
+        if self.config.custom_css:
+            css = self.config.custom_css
+        elif self.config.css_file:
+            css = Path(self.config.css_file).read_text(encoding="utf-8")
+        else:
+            css = self._get_default_css()
 
         # Create complete HTML document
         html_doc = f"""
