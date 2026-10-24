@@ -119,6 +119,26 @@ class TestOmmlToLatex:
         )
         assert omml_to_latex(elem) == r"\sqrt[3]{x}"
 
+    @pytest.mark.parametrize(
+        ("hidden", "expected"),
+        [
+            ("1", r"\sqrt{x}"),
+            ("true", r"\sqrt{x}"),
+            ("0", r"\sqrt[3]{x}"),
+            ("false", r"\sqrt[3]{x}"),
+        ],
+    )
+    def test_radical_respects_hidden_degree_property(self, hidden, expected):
+        elem = _wrap_in_omath(
+            "<m:rad>"
+            f'<m:radPr><m:degHide m:val="{hidden}"/></m:radPr>'
+            "<m:deg><m:r><m:t>3</m:t></m:r></m:deg>"
+            "<m:e><m:r><m:t>x</m:t></m:r></m:e>"
+            "</m:rad>"
+        )
+
+        assert omml_to_latex(elem) == expected
+
     def test_summation_with_bounds(self):
         # ∑ from i=1 to n of x_i^2
         elem = _wrap_in_omath(
