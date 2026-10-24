@@ -120,6 +120,44 @@ class _QueryHarness(QueryMixin):
         return "retrieved context" if only_need_context else "generated answer"
 
 
+class _ConfiguredModelHarness(QueryMixin):
+    def __init__(self, cache, model_label):
+        self.logger = logging.getLogger("test.multimodal_query_key")
+        self.lightrag = SimpleNamespace(llm_response_cache=cache)
+        self.aquery_calls = []
+        self.llm_model_func = self._model
+        self.modal_processors = {
+            "table": SimpleNamespace(modal_caption_func=self._model)
+        }
+        self.model_label = model_label
+
+    async def _model(self, prompt, **kwargs):
+        del prompt, kwargs
+        return f"description from {self.model_label}"
+
+    async def _ensure_lightrag_initialized(self):
+        return {"success": True}
+
+    async def aquery(self, query, mode="mix", system_prompt=None, **kwargs):
+        self.aquery_calls.append(query)
+        return f"answer from {self.model_label}"
+
+
+@pytest.mark.asyncio
+async def test_multimodal_cache_is_scoped_to_configured_models():
+    cache = _MemoryCache()
+    first = _ConfiguredModelHarness(cache, "model A")
+    second = _ConfiguredModelHarness(cache, "model B")
+    content = [{"type": "table", "table_data": "name,value\nalpha,1"}]
+
+    first_answer = await first.aquery_with_multimodal("summarize this table", content)
+    second_answer = await second.aquery_with_multimodal("summarize this table", content)
+
+    assert first_answer == "answer from model A"
+    assert second_answer == "answer from model B"
+    assert len(second.aquery_calls) == 1
+
+
 @pytest.mark.asyncio
 async def test_context_only_cache_entry_is_not_reused_as_a_generated_answer():
     harness = _QueryHarness()
