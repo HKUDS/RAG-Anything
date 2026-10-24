@@ -279,3 +279,30 @@ async def test_child_context_setter_preserves_parent_source_and_format(processor
 
     p._batch_extract_entities_lightrag_style_type_aware = extract
     await p.insert_content_list(content("A"), doc_id="doc-A")
+
+
+@pytest.mark.asyncio
+async def test_indexed_table_prompt_matches_direct_scan_byte_for_byte(processor):
+    from raganything.document_context import document_context
+
+    modal = processor.modal_processors["table"]
+    source = [
+        {"type": "text", "text": "Second page first.", "page_idx": 1},
+        {"type": "text", "text": "Current heading", "text_level": 1, "page_idx": 0},
+        {"type": "table", "table_body": "Body", "page_idx": 0},
+        {"type": "text", "text": "Second page later.", "page_idx": 1},
+    ]
+    modal.set_content_source(source, "minerU")
+    item_info = {"page_idx": 0, "index": 2}
+    baseline_sections = await modal.generate_chunk_sections(
+        source[2], "table", item_info
+    )
+    baseline_prompt = processor.prompts[-1]
+
+    @document_context
+    async def indexed():
+        modal.set_content_source(source, "minerU")
+        return await modal.generate_chunk_sections(source[2], "table", item_info)
+
+    assert await indexed() == baseline_sections
+    assert processor.prompts[-1] == baseline_prompt
