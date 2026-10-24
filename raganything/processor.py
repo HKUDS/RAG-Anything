@@ -481,7 +481,25 @@ class ProcessorMixin:
                 elif item.get("type") == "table" and item.get("table_body"):
                     content_hash_data.append(f"table:{item['table_body']}")
                 elif item.get("type") == "equation" and item.get("text"):
-                    content_hash_data.append(f"equation:{item['text']}")
+                    equation_text = item["text"].strip()
+                    formula_fields = {
+                        key: item[key]
+                        for key in ("latex", "equation")
+                        if item.get(key) and item[key] != equation_text
+                    }
+                    if formula_fields:
+                        equation_identity = {"text": equation_text, **formula_fields}
+                        content_hash_data.append(
+                            "equation:"
+                            + json.dumps(
+                                equation_identity,
+                                sort_keys=True,
+                                ensure_ascii=False,
+                                default=str,
+                            )
+                        )
+                    else:
+                        content_hash_data.append(f"equation:{equation_text}")
                 else:
                     # For other types, use string representation
                     content_hash_data.append(str(item))

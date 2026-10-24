@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 from pathlib import Path
 import asyncio
+import hashlib
+import importlib
 import sys
 import types
 
@@ -231,3 +233,66 @@ def test_insert_content_list_keeps_status_for_multimodal_only_content():
         DocStatus.HANDLING,
     )
     assert processor.events[2] == ("multimodal", "doc-content-list", "source.pdf")
+
+
+class _ContentIdentityProcessor(DummyProcessor):
+    _generate_content_based_doc_id = ProcessorMixin._generate_content_based_doc_id
+
+    def __init__(self):
+        super().__init__()
+        self.multimodal_doc_ids = []
+
+    async def _process_multimodal_content(
+        self, multimodal_items, file_ref, doc_id, **kwargs
+    ):
+        return await ProcessorMixin._process_multimodal_content(
+            self, multimodal_items, file_ref, doc_id, **kwargs
+        )
+
+    async def _process_multimodal_content_batch_type_aware(
+        self, multimodal_items, file_path, doc_id
+    ):
+        self.multimodal_doc_ids.append(doc_id)
+
+    async def _mark_multimodal_processing_complete(self, doc_id):
+        record = await self.lightrag.doc_status.get_by_id(doc_id)
+        record["status"] = DocStatus.PROCESSED
+        record["multimodal_processed"] = True
+        await self.lightrag.doc_status.upsert({doc_id: record})
+
+
+def test_equation_change_with_same_description_gets_a_new_doc_id(monkeypatch):
+    fake_lightrag_utils = importlib.import_module("lightrag.utils")
+    monkeypatch.setattr(
+        fake_lightrag_utils,
+        "compute_mdhash_id",
+        lambda content, prefix="": prefix
+        + hashlib.sha256(content.encode()).hexdigest(),
+    )
+    processor = _ContentIdentityProcessor()
+    original = [
+        {
+            "type": "equation",
+            "text": "Document relevance probability formula",
+            "latex": r"P(d|q) = P(q|d) P(d) / P(q)",
+            "text_format": "latex",
+            "page_idx": 3,
+        }
+    ]
+    revised = [
+        {
+            **original[0],
+            "latex": r"P(d|q) = P(q|d) / P(d)",
+        }
+    ]
+    original_doc_id = processor._generate_content_based_doc_id(original)
+    revised_doc_id = processor._generate_content_based_doc_id(revised)
+
+    async def insert_both_versions():
+        await processor.insert_content_list(original, file_path="synthetic-paper.pdf")
+        await processor.insert_content_list(revised, file_path="synthetic-paper.pdf")
+
+    asyncio.run(insert_both_versions())
+
+    assert processor.multimodal_doc_ids == [original_doc_id, revised_doc_id]
+    assert original_doc_id != revised_doc_id
