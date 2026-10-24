@@ -170,7 +170,7 @@ class AudioModalProcessor(BaseModalProcessor):
         segments = []
         for segment in segments_iter:
             text = segment.text.strip()
-            if len(text) >= self.segment_min_length:
+            if text and len(text) >= self.segment_min_length:
                 segments.append(
                     {
                         "start": segment.start,
