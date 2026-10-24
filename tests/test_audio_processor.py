@@ -97,6 +97,29 @@ class TestAudioModalProcessorInit:
         assert processor.language == "en"
 
 
+def test_transcribe_discards_empty_segments(tmp_path):
+    audio_path = tmp_path / "synthetic.wav"
+    audio_path.write_bytes(b"")
+    processor = AudioModalProcessor(
+        lightrag=_FakeLightRAG(),
+        modal_caption_func=AsyncMock(),
+    )
+    processor._whisper_model = MagicMock()
+    processor._whisper_model.transcribe.return_value = (
+        iter(
+            [
+                MagicMock(start=0, end=1, text="   "),
+                MagicMock(start=1, end=2, text="Ok"),
+            ]
+        ),
+        MagicMock(language="en", duration=2.0),
+    )
+
+    assert processor.transcribe(str(audio_path)) == [
+        {"start": 1, "end": 2, "text": "Ok"}
+    ]
+
+
 class TestFormatTimestamp:
     """Test timestamp formatting."""
 
