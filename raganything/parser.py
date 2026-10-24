@@ -343,6 +343,9 @@ class Parser:
                 base_output_dir = Path(output_dir)
             else:
                 base_output_dir = doc_path.parent / "libreoffice_output"
+            # Parallel conversions of same-stem documents must not overwrite
+            # one another before the resulting PDFs are parsed.
+            base_output_dir = cls._unique_output_dir(base_output_dir, doc_path)
 
             base_output_dir.mkdir(parents=True, exist_ok=True)
 
