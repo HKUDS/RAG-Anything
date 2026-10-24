@@ -228,7 +228,9 @@ def _seed_two_docs(tmp_path):
 
 
 @pytest.mark.parametrize("dry_run", [False, True])
-def test_incremental_reprocesses_missing_output_directory(monkeypatch, tmp_path, dry_run):
+def test_incremental_reprocesses_missing_output_directory(
+    monkeypatch, tmp_path, dry_run
+):
     batch_parser, fake_parser = _make_batch_parser(monkeypatch)
     docs_dir, first_doc, second_doc = _seed_two_docs(tmp_path)
     output_dir = tmp_path / "out"
