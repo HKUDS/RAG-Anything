@@ -249,8 +249,13 @@ OUTPUT_DIR=./parsed_output
 - **parser_type**: `"mineru"`, `"docling"`, or `"paddleocr"` (default: `"mineru"`)
 - **max_workers**: Number of parallel workers, at least 1; `0` or less raises `ValueError` (default: `4`)
 - **show_progress**: Show progress bar (default: `True`)
-- **timeout_per_file**: Timeout per file in seconds (default: `300`)
+- **timeout_per_file**: Per-file time limit in seconds from when a worker starts
+  the file (default: `300`)
 - **skip_installation_check**: Skip parser installation check (default: `False`)
+
+The timer excludes time spent waiting in the worker queue. When the limit expires,
+that file is reported as failed, but Python cannot forcibly stop an already-running
+thread; its parser may continue until it returns and delay the overall batch call.
 
 ### Multimodal ingestion concurrency
 

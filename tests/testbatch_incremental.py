@@ -2,6 +2,7 @@ import asyncio
 import importlib.util
 import json
 import sys
+import threading
 import time
 import types
 from pathlib import Path
@@ -388,6 +389,33 @@ def test_timeout_is_applied_per_file_not_to_entire_batch(monkeypatch, tmp_path):
     # have failed here. Compare sorted since glob order is not defined.
     assert sorted(result.successful_files) == sorted([str(first_doc), str(second_doc)])
     assert result.failed_files == []
+
+
+def test_timeout_is_measured_from_each_worker_start(monkeypatch, tmp_path):
+    batch_parser, _ = _make_batch_parser(monkeypatch)
+    _, first_doc, second_doc = _seed_two_docs(tmp_path)
+    batch_parser.max_workers = 2
+    batch_parser.timeout_per_file = 1.0
+    second_started = threading.Event()
+
+    def slow_process(file_path, output_dir, parse_method="auto", **kwargs):
+        if file_path == str(first_doc):
+            second_started.wait()
+            time.sleep(0.8)
+        else:
+            second_started.set()
+            time.sleep(1.2)
+        return True, file_path, None
+
+    monkeypatch.setattr(batch_parser, "process_single_file", slow_process)
+
+    result = batch_parser.process_batch(
+        [str(first_doc), str(second_doc)], str(tmp_path / "out")
+    )
+
+    assert result.successful_files == [str(first_doc)]
+    assert result.failed_files == [str(second_doc)]
+    assert "timed out" in result.errors[str(second_doc)]
 
 
 @pytest.mark.parametrize(
