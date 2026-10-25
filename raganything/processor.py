@@ -481,7 +481,7 @@ class ProcessorMixin:
                 elif item.get("type") == "table" and item.get("table_body"):
                     content_hash_data.append(f"table:{item['table_body']}")
                 elif item.get("type") == "equation" and item.get("text"):
-                    equation_text = item["text"].strip()
+                    equation_text = item["text"]
                     formula_fields = {
                         key: item[key]
                         for key in ("latex", "equation")
@@ -495,7 +495,6 @@ class ProcessorMixin:
                                 equation_identity,
                                 sort_keys=True,
                                 ensure_ascii=False,
-                                default=str,
                             )
                         )
                     else:
