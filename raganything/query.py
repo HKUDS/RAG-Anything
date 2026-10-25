@@ -668,11 +668,10 @@ class QueryMixin:
         # Initialize image cache
         self._current_images_base64 = []
 
-        # Enhanced regex pattern for matching image paths
-        # Matches only the path ending with image file extensions
-        image_path_pattern = (
-            r"Image Path:\s*([^\r\n]*?\.(?:jpg|jpeg|png|gif|bmp|webp|tiff|tif))"
-        )
+        # Read the complete path field; validate_image_file checks its suffix
+        # and bytes. Stopping at the first image extension can select a different
+        # file when a directory or filename itself contains an image suffix.
+        image_path_pattern = r"Image Path:[ \t]*([^\r\n]+)"
 
         # First, let's see what matches we find
         matches = re.findall(image_path_pattern, prompt)
