@@ -8,8 +8,16 @@ import pytest
 from raganything.query import QueryMixin
 
 
+def _empty_query_mixin() -> QueryMixin:
+    mixin = QueryMixin()
+    mixin.llm_model_func = None
+    mixin.vision_model_func = None
+    mixin.modal_processors = {}
+    return mixin
+
+
 def _cache_key(file_path: str) -> str:
-    return QueryMixin()._generate_multimodal_cache_key(
+    return _empty_query_mixin()._generate_multimodal_cache_key(
         "describe this image",
         [{"type": "image", "img_path": file_path}],
         "mix",
@@ -17,7 +25,7 @@ def _cache_key(file_path: str) -> str:
 
 
 def _query_options_key(**kwargs) -> str:
-    return QueryMixin()._generate_multimodal_cache_key(
+    return _empty_query_mixin()._generate_multimodal_cache_key(
         "summarize this table",
         [{"type": "table", "table_data": "name,value\nalpha,1"}],
         "mix",
@@ -104,6 +112,9 @@ class _MemoryCache:
 
 class _QueryHarness(QueryMixin):
     def __init__(self):
+        self.llm_model_func = None
+        self.vision_model_func = None
+        self.modal_processors = {}
         self.logger = logging.getLogger("test.multimodal_query_key")
         self.lightrag = SimpleNamespace(llm_response_cache=_MemoryCache())
         self.only_context_calls = []
@@ -126,6 +137,7 @@ class _ConfiguredModelHarness(QueryMixin):
         self.lightrag = SimpleNamespace(llm_response_cache=cache)
         self.aquery_calls = []
         self.llm_model_func = self._model
+        self.vision_model_func = None
         self.modal_processors = {
             "table": SimpleNamespace(modal_caption_func=self._model)
         }

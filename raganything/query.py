@@ -137,19 +137,15 @@ class QueryMixin:
         # configured on this RAGAnything instance, not just QueryParam kwargs.
         configured_model_funcs: dict[str, Dict[str, Any]] = {}
         for name in ("llm_model_func", "vision_model_func"):
-            identity = self._callable_cache_identity(getattr(self, name, None))
+            identity = self._callable_cache_identity(getattr(self, name))
             if identity is not None:
                 configured_model_funcs[name] = identity
-        processors = getattr(self, "modal_processors", None)
-        if isinstance(processors, dict):
-            for processor_name, processor in processors.items():
-                identity = self._callable_cache_identity(
-                    getattr(processor, "modal_caption_func", None)
-                )
-                if identity is not None:
-                    configured_model_funcs[
-                        f"{processor_name}.modal_caption_func"
-                    ] = identity
+        for processor_name, processor in self.modal_processors.items():
+            identity = self._callable_cache_identity(processor.modal_caption_func)
+            if identity is not None:
+                configured_model_funcs[
+                    f"{processor_name}.modal_caption_func"
+                ] = identity
         if configured_model_funcs:
             cache_data["configured_model_funcs"] = configured_model_funcs
 
