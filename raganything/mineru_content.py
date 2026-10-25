@@ -443,17 +443,9 @@ def _is_cjk(char: str) -> bool:
     codepoint = ord(char)
     return (
         0x3000 <= codepoint <= 0x30FF  # CJK punctuation, Hiragana, and Katakana
-        or 0x3100 <= codepoint <= 0x312F  # Bopomofo
         or 0x31F0 <= codepoint <= 0x31FF  # Katakana phonetic extensions
         or 0x3400 <= codepoint <= 0x9FFF  # CJK unified ideographs
-        or 0x1100 <= codepoint <= 0x11FF  # Hangul Jamo
-        or 0x3130 <= codepoint <= 0x318F  # Hangul compatibility Jamo
-        or 0xA960 <= codepoint <= 0xA97F  # Hangul Jamo extended-A
-        or 0xAC00 <= codepoint <= 0xD7AF  # Hangul syllables
-        or 0xD7B0 <= codepoint <= 0xD7FF  # Hangul Jamo extended-B
-        or 0xF900 <= codepoint <= 0xFAFF  # CJK compatibility ideographs
-        or 0x20000 <= codepoint <= 0x323AF  # Supplementary CJK ideographs
-        or 0xFF00 <= codepoint <= 0xFFEF  # Fullwidth and halfwidth forms
+        or 0xFF61 <= codepoint <= 0xFF9F  # Halfwidth Japanese punctuation and Katakana
     )
 
 

@@ -224,11 +224,12 @@ def test_convert_v2_preserves_extended_mineru_modalities_and_routes_text():
     [
         (["ひら", "がな"], "ひらがな"),
         (["カタ", "カナ"], "カタカナ"),
-        (["한", "글"], "한글"),
+        (["한국", "사람"], "한국 사람"),
+        (["ＡＢ", "ＣＤ"], "ＡＢ ＣＤ"),
         (["かな", "。"], "かな。"),
     ],
 )
-def test_convert_v2_joins_cjk_spans_without_inserted_spaces(spans, expected):
+def test_convert_v2_preserves_script_specific_span_spacing(spans, expected):
     payload = [
         [
             {
