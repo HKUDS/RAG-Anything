@@ -83,7 +83,8 @@ def _restricted_url_fetcher(base_url: Optional[str]):
     extension, see ``_ALLOWED_RESOURCE_SUFFIXES``); without a local
     ``base_url`` only ``data:`` URIs. Anything else is refused before any
     I/O, and WeasyPrint skips the resource (it logs an error for images,
-    stylesheets and attachments, only a debug message for fonts).
+    stylesheets and attachments; for fonts a warning naming the family, with
+    the reason only at DEBUG level).
     """
     root = _local_directory(base_url)
 

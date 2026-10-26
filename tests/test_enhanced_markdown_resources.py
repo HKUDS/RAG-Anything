@@ -8,6 +8,7 @@ stylesheets, PDF attachments such as ``.env``). These run the real WeasyPrint.
 import base64
 import http.server
 import io
+import logging
 import threading
 from pathlib import Path
 
@@ -204,6 +205,35 @@ def test_uppercase_image_and_inside_stylesheet_and_font_still_load(tmp_path):
     page = pypdf.PdfReader(output).pages[0]
     assert float(page.mediabox.width) * 25.4 / 72 == pytest.approx(100, abs=0.5)
     assert any(name.endswith("+RagProbe") for name in _font_names(output))
+
+
+def test_refused_font_logs_a_warning_with_the_reason_at_debug(tmp_path, caplog):
+    """A skipped font is not silent: WeasyPrint warns, naming the family."""
+    pytest.importorskip("fontTools")
+    source_dir = tmp_path / "docs"
+    # A valid TrueType font, refused because .dat is not a font extension.
+    _font(source_dir / "fonts" / "brand.dat", "RagBrand")
+    source = source_dir / "report.md"
+    source.write_text(
+        "<style>@font-face { font-family: RagBrand; src: url(fonts/brand.dat); }\n"
+        ".brand { font-family: RagBrand; }</style>\n\n"
+        '<p class="brand">Probe</p>\n',
+        encoding="utf-8",
+    )
+    output = tmp_path / "report.pdf"
+    caplog.set_level(logging.DEBUG, logger="weasyprint")
+
+    converter = EnhancedMarkdownConverter()
+    assert converter.convert_file_to_pdf(str(source), str(output), "weasyprint")
+
+    assert not any(name.endswith("+RagBrand") for name in _font_names(output))
+    records = [record for record in caplog.records if record.name == "weasyprint"]
+    assert "Font-face 'RagBrand' cannot be loaded" in [
+        record.getMessage() for record in records if record.levelno == logging.WARNING
+    ]
+    reasons = [record for record in records if "brand.dat" in record.getMessage()]
+    assert reasons and {record.levelno for record in reasons} == {logging.DEBUG}
+    assert any(".woff2" in record.getMessage() for record in reasons)
 
 
 def test_data_uri_images_still_embed(tmp_path):

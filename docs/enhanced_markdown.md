@@ -239,8 +239,10 @@ symlink named `chart.png` that points at one of them. This covers every
 resource WeasyPrint loads — images, stylesheets, fonts and attachments
 (`<link rel="attachment">`, `<a rel="attachment">`), so an attachment can only
 carry an allowed image, stylesheet or font file or a `data:` URI. WeasyPrint
-logs an error for a skipped image, stylesheet or attachment; a skipped font
-falls back to another font and is logged only at `DEBUG` level.
+logs an error for a skipped image, stylesheet or attachment. For a skipped
+font it falls back to another font and logs only a warning naming the family
+(`Font-face '<family>' cannot be loaded`); the reason is logged at `DEBUG`
+level.
 
 The CSS from `css_file` or `custom_css` is inlined into the page, so its
 `url()` references resolve against the Markdown file's directory too, and
@@ -481,7 +483,9 @@ sudo apt-get install pandoc wkhtmltopdf
 #### Font Issues
 - With WeasyPrint, `@font-face` fonts load only from `.ttf`, `.otf`, `.woff`
   or `.woff2` files in the Markdown file's directory or from `data:` URIs; a
-  skipped font silently falls back to another font (see
+  skipped font falls back to another font with only a
+  `Font-face ... cannot be loaded` warning; enable `DEBUG` logging for the
+  `weasyprint` logger to see why (see
   [Resource Loading](#resource-loading-weasyprint))
 
 ```python
