@@ -183,8 +183,9 @@ the manifest:
 - **Parsing configuration** — a SHA-256 digest of the parser name, the
   `parse_method`, and the parser options. Built-in options that change the
   parse result (`lang`, `device`, `start_page`, `end_page`, `formula`, `table`,
-  `backend`, `source`, `include_layout_blocks`) are normalised the same way as
-  the parse cache, so passing a default explicitly (for example
+  `backend`, `source`, `vlm_url`, `include_layout_blocks`, `table_mode`,
+  `tables`, `allow_ocr`, `artifacts_path`, `cls`) are normalised the same way
+  as the parse cache, so passing a default explicitly (for example
   `include_layout_blocks=False` or `lang=None`) or changing the parser name's
   case does not trigger a reparse. Any other option is kept verbatim, since a
   custom parser may depend on it. Worker count, progress display and scan
@@ -193,9 +194,11 @@ the manifest:
 
 Changing the parser, `parse_method` or a result-affecting option reparses the
 affected files. After upgrading, manifests written by older versions have no
-configuration digest, so every file is reparsed once. A file whose reparse
-fails is removed from the manifest so the next run retries it, and options that
-cannot be serialised to JSON disable reuse for that run.
+configuration digest, so every file is reparsed once. Runs that pass `vlm_url`
+also reparse once, because the URL now enters the digest as its SHA-256 hash
+instead of verbatim. A file whose reparse fails is removed from the manifest so
+the next run retries it, and options that cannot be serialised to JSON disable
+reuse for that run.
 
 ```python
 result = batch_parser.process_batch(
