@@ -224,16 +224,27 @@ resources only from:
   after resolving symlinks and `..`. Relative references such as
   `![chart](images/chart.png)` resolve against that directory.
 
-Everything else is skipped with a WeasyPrint warning and never fetched: remote
-URLs (`http`, `https`, `ftp`, ...), `file://` paths outside the directory, and
-other schemes. This covers every resource WeasyPrint loads — images,
-stylesheets, fonts and attachments (`<link rel="attachment">`). The CSS from
-`css_file` or `custom_css` is inlined into the page, so its `url()` references
-resolve against the Markdown file's directory too. `convert_markdown_to_pdf()`
-called on a Markdown string without a file `base_url` loads only `data:` URIs.
+Everything else is skipped and never fetched: remote URLs (`http`, `https`,
+`ftp`, ...), `file://` paths outside the directory, and other schemes. This
+covers every resource WeasyPrint loads — images, stylesheets, fonts and
+attachments (`<link rel="attachment">`). WeasyPrint logs an error for a skipped
+image, stylesheet or attachment; a skipped font falls back to another font and
+is logged only at `DEBUG` level. An attachment can be a file of any type, so
+any file in that directory tree, hidden files such as `.env` included, can be
+embedded in the PDF: keep untrusted Markdown away from directories that hold
+secrets.
 
-The restriction applies to the WeasyPrint backend; the Pandoc backend runs an
-external program with its own resource loading.
+The CSS from `css_file` or `custom_css` is inlined into the page, so its
+`url()` references resolve against the Markdown file's directory too, and
+absolute `file://` references in it must also point inside that directory.
+
+`convert_markdown_to_pdf()` takes the directory from its `base_url` keyword (a
+`file:` URL or a filesystem path, normally the Markdown file's path); called
+on a Markdown string without one, it loads only `data:` URIs.
+
+The restriction applies to the WeasyPrint backend only; the Pandoc backend runs
+an external program with its own resource loading. `method="auto"` picks Pandoc
+when it is installed, so pass `method="weasyprint"` for untrusted Markdown.
 
 ## Backend Comparison
 
@@ -527,13 +538,13 @@ class EnhancedMarkdownConverter:
     def convert_file_to_pdf(self, input_path: str, output_path: str, method: str = "auto") -> bool:
         """Convert markdown file to PDF"""
 
-    def convert_markdown_to_pdf(self, markdown_content: str, output_path: str, method: str = "auto") -> bool:
-        """Convert markdown content to PDF"""
+    def convert_markdown_to_pdf(self, markdown_content: str, output_path: str, method: str = "auto", *, base_url: Optional[str] = None) -> bool:
+        """Convert markdown content to PDF; base_url locates its local resources (WeasyPrint)"""
 
     def get_backend_info(self) -> Dict[str, Any]:
         """Get information about available backends"""
 
-    def convert_with_weasyprint(self, markdown_content: str, output_path: str) -> bool:
+    def convert_with_weasyprint(self, markdown_content: str, output_path: str, *, base_url: Optional[str] = None) -> bool:
         """Convert using WeasyPrint backend"""
 
     def convert_with_pandoc(self, markdown_content: str, output_path: str) -> bool:
@@ -545,7 +556,8 @@ class EnhancedMarkdownConverter:
 1. **Choose the right backend** for your use case:
    - **WeasyPrint** for web-style documents and custom CSS
    - **Pandoc** for academic papers and complex formatting
-   - **Auto** for general use and development
+   - **Auto** for general use and development (use WeasyPrint for untrusted
+     Markdown, see [Resource Loading](#resource-loading-weasyprint))
 
 2. **Optimize images** before embedding:
    - Use appropriate formats (JPEG for photos, PNG for graphics)

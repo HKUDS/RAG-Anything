@@ -67,8 +67,9 @@ def _restricted_url_fetcher(base_url: Optional[str]):
     ``data:`` URIs and ``file:`` URLs that resolve (symlinks and ``..``
     resolved) inside the directory of ``base_url``, the Markdown file's
     location; without a local ``base_url`` only ``data:`` URIs. Anything else
-    is refused before any I/O: WeasyPrint logs a warning and skips the
-    resource.
+    is refused before any I/O, and WeasyPrint skips the resource (it logs an
+    error for images, stylesheets and attachments, only a debug message for
+    fonts).
     """
     root = _local_directory(base_url)
 
@@ -359,8 +360,8 @@ class EnhancedMarkdownConverter:
         ``url()`` references of the CSS, which is inlined) load only from
         ``data:`` URIs and from files inside the directory of ``base_url``
         (a ``file:`` URL or a filesystem path, normally the Markdown file's);
-        remote URLs and other files are skipped with a warning. Without a
-        local ``base_url`` only ``data:`` URIs load.
+        remote URLs and other files are skipped. Without a local
+        ``base_url`` only ``data:`` URIs load.
         """
         if not WEASYPRINT_AVAILABLE:
             raise RuntimeError(
@@ -507,7 +508,7 @@ class EnhancedMarkdownConverter:
         With the WeasyPrint backend, relative resources resolve against the
         Markdown file's directory, and only files inside that directory (and
         ``data:`` URIs) are loaded; remote URLs and files elsewhere are
-        skipped with a warning.
+        skipped.
 
         Args:
             input_path: Input Markdown file path
