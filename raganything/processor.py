@@ -932,6 +932,12 @@ class ProcessorMixin:
                         self.logger.info(
                             f"Document {doc_id} multimodal content is already processed"
                         )
+                        # The caller set HANDLING after the text stage (or
+                        # up front for multimodal-only content); skipping
+                        # the completed multimodal stage must still finish
+                        # the document instead of leaving it HANDLING.
+                        if existing_doc_status.get("status") == DocStatus.HANDLING:
+                            await self._mark_multimodal_processing_complete(doc_id)
                         return
 
                     # Even if status is DocStatus.PROCESSED (text processing done),

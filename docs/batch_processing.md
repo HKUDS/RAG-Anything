@@ -228,9 +228,9 @@ only if its completion flag survived the retry. LightRAG rewrites the
 `doc_status` record of a `failed`, `pending` or `processing` document when it
 reprocesses the text, which drops the flag on the default JSON storage, so such
 a document repeats its multimodal processing. A `handling` document (text
-already indexed) keeps the flag, and the batch restores its completion status
-without repeating that work. A failed text retry or completion-status write
-remains a RAG failure.
+already indexed) keeps the flag, and its completion status is restored without
+repeating that work. A failed text retry or completion-status write remains a
+RAG failure.
 
 ## Configuration
 
