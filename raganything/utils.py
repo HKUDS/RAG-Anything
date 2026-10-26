@@ -50,17 +50,36 @@ def format_table_body(table_body: Any) -> str:
         if not table_body:
             return ""
         if all(isinstance(row, (list, tuple)) for row in table_body):
+            column_count = max(len(row) for row in table_body)
+            # Every row gets every column, so a short row cannot shift the ones
+            # after it, and each cell stays one cell (see _table_cell).
             rendered_rows = [
-                "| " + " | ".join(str(cell) for cell in row) + " |"
+                "| "
+                + " | ".join(
+                    _table_cell(row[i] if i < len(row) else None)
+                    for i in range(column_count)
+                )
+                + " |"
                 for row in table_body
             ]
-            if len(rendered_rows) >= 1:
-                column_count = max(len(row) for row in table_body)
-                separator = "| " + " | ".join(["---"] * column_count) + " |"
-                rendered_rows.insert(1, separator)
+            separator = "| " + " | ".join(["---"] * column_count) + " |"
+            rendered_rows.insert(1, separator)
             return "\n".join(rendered_rows)
         return "\n".join(str(row) for row in table_body)
     return str(table_body)
+
+
+def _table_cell(cell: Any) -> str:
+    """One cell of a Markdown table row.
+
+    An empty cell (``None``) stays empty instead of reading "None"; a pipe is
+    escaped and a line break becomes a space, since either would otherwise end
+    the cell or the row early.
+    """
+    if cell is None:
+        return ""
+    text = str(cell).replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+    return text.replace("|", "\\|")
 
 
 def get_equation_text_and_format(item: Dict[str, Any]) -> Tuple[str, str]:
