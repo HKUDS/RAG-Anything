@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from raganything.processor import ProcessorMixin
+from raganything.parser import DoclingParser
 
 
 class _Logger:
@@ -76,6 +77,48 @@ async def test_parse_cache_reuses_unchanged_file(tmp_path):
 
     assert processor.doc_parser.calls == 1
     assert second_result == first_result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "option,first,second",
+    [
+        ("allow_ocr", True, False),
+        ("tables", True, False),
+        ("table_mode", "fast", "accurate"),
+        ("artifacts_path", Path("models-a"), Path("models-b")),
+    ],
+)
+async def test_docling_options_invalidate_parse_cache(
+    tmp_path, monkeypatch, option, first, second
+):
+    processor = _make_processor(tmp_path)
+    processor.config.parser = "docling"
+    processor.doc_parser = DoclingParser()
+    converted = []
+
+    def convert(input_path, output_dir, file_stem, **kwargs):
+        converted.append(kwargs[option])
+        return {
+            "body": {"children": [{"$ref": "#/texts/0"}]},
+            "texts": [{"label": "text", "orig": str(kwargs[option])}],
+        }
+
+    monkeypatch.setattr(processor.doc_parser, "_run_docling_python", convert)
+    document = tmp_path / "document.pdf"
+    document.write_bytes(b"synthetic document for a stubbed converter")
+    first_result = await processor.parse_document(str(document), **{option: first})
+    second_result = await processor.parse_document(str(document), **{option: second})
+    repeated_value = str(second) if isinstance(second, Path) else second
+    repeated_result = await processor.parse_document(
+        str(document), **{option: repeated_value}
+    )
+
+    assert converted == [first, second]
+    assert first_result[0][0]["text"] == str(first)
+    assert second_result[0][0]["text"] == str(second)
+    assert first_result[1] != second_result[1]
+    assert repeated_result == second_result
 
 
 @pytest.mark.asyncio
