@@ -25,6 +25,9 @@ Image = pytest.importorskip("PIL.Image")
         ("BMP", "bmp", "image/bmp"),
         ("TIFF", "tiff", "image/tiff"),
         ("PNG", "jpg", "image/png"),
+        ("PNG", "PNG", "image/png"),
+        ("PNG", "jpg.png", "image/png"),
+        ("PNG", "png.backup.png", "image/png"),
     ],
 )
 async def test_retrieved_image_media_type_matches_unchanged_bytes(
@@ -54,3 +57,23 @@ async def test_retrieved_image_media_type_matches_unchanged_bytes(
     assert decoded == original
     with Image.open(io.BytesIO(decoded)) as image:
         assert image.format == image_format
+
+
+@pytest.mark.asyncio
+async def test_retrieved_path_does_not_send_an_existing_prefix(tmp_path):
+    prefix = tmp_path / "figure.png"
+    Image.new("RGB", (2, 2), "red").save(prefix)
+    query = QueryMixin()
+    query.logger = logging.getLogger(__name__)
+    query.config = SimpleNamespace(
+        working_dir=str(tmp_path), parser_output_dir=str(tmp_path)
+    )
+    query._ensure_lightrag_initialized = AsyncMock(return_value={"success": True})
+    prompt = f"Context\nImage Path: {prefix}.backup\nCaption"
+    query.lightrag = SimpleNamespace(
+        aquery=AsyncMock(side_effect=[prompt, "text answer"])
+    )
+    query.vision_model_func = AsyncMock(return_value="vision answer")
+
+    assert await query.aquery("Describe it") == "text answer"
+    query.vision_model_func.assert_not_awaited()

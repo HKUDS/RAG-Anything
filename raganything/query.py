@@ -668,14 +668,31 @@ class QueryMixin:
         # Initialize image cache
         self._current_images_base64 = []
 
-        # Enhanced regex pattern for matching image paths
-        # Matches only the path ending with image file extensions
-        image_path_pattern = (
-            r"Image Path:\s*([^\r\n]*?\.(?:jpg|jpeg|png|gif|bmp|webp|tiff|tif))"
+        # LightRAG 1.4.x json.dumps each retrieved chunk into the prompt, so the
+        # newline after "Image Path: <path>" usually arrives as the two
+        # characters backslash and "n". Capture through a case-insensitive image
+        # extension, and only when a delimiter follows it, so "figure.PNG" is
+        # found and "figure.png.backup" is not shortened to "figure.png".
+        # A delimiter is a quote or whitespace character, unescaped or as
+        # json.dumps escapes it (\", \n, \r, \t, \f, \u000b, \u001c-\u001f),
+        # or end of line, optionally after one punctuation mark (". , ; : ) ]").
+        # An escaped backslash is not a delimiter, because it separates the
+        # parts of a JSON-escaped Windows path.
+        # "(?![ \t])" stops the leading blanks from being re-tried one by one,
+        # which made a long run of spaces take quadratic time. The capture
+        # stops at the next "Image Path:" label, so an invalid path cannot
+        # swallow a valid one later in the same chunk.
+        # validate_image_file and the safe-directory check below still run on
+        # every captured path.
+        image_path_pattern = re.compile(
+            r"Image Path:[ \t]*(?![ \t])"
+            r"((?:(?!Image Path:)[^\r\n])*?\.(?:jpe?g|png|gif|bmp|webp|tiff?))"
+            r"(?=[.,;:)\]]?(?:\\(?:[\"fnrt]|u00(?:0b|1[c-f]))|[\"\s]|$))",
+            re.IGNORECASE | re.MULTILINE,
         )
 
         # First, let's see what matches we find
-        matches = re.findall(image_path_pattern, prompt)
+        matches = image_path_pattern.findall(prompt)
         self.logger.info(f"Found {len(matches)} image path matches in prompt")
 
         def replace_image_path(match):
@@ -762,9 +779,7 @@ class QueryMixin:
                 return match.group(0)  # Keep original
 
         # Execute replacement
-        enhanced_prompt = re.sub(
-            image_path_pattern, replace_image_path, enhanced_prompt
-        )
+        enhanced_prompt = image_path_pattern.sub(replace_image_path, enhanced_prompt)
 
         return enhanced_prompt, images_processed
 
