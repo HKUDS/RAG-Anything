@@ -973,11 +973,11 @@ class ImageModalProcessor(BaseModalProcessor):
                 content_data = modal_content
 
             image_path = content_data.get("img_path")
-            captions = content_data.get(
-                "image_caption", content_data.get("img_caption", [])
+            captions = normalize_caption_list(
+                content_data.get("image_caption", content_data.get("img_caption"))
             )
-            footnotes = content_data.get(
-                "image_footnote", content_data.get("img_footnote", [])
+            footnotes = normalize_caption_list(
+                content_data.get("image_footnote", content_data.get("img_footnote"))
             )
             section_path = content_data.get("_section_path", "")
 
@@ -1008,8 +1008,8 @@ class ImageModalProcessor(BaseModalProcessor):
                     if entity_name
                     else "unique descriptive name for this image",
                     image_path=image_path,
-                    captions=captions if captions else "None",
-                    footnotes=footnotes if footnotes else "None",
+                    captions=", ".join(captions) if captions else "None",
+                    footnotes=", ".join(footnotes) if footnotes else "None",
                 )
             else:
                 vision_prompt = PROMPTS["vision_prompt"].format(
@@ -1018,8 +1018,8 @@ class ImageModalProcessor(BaseModalProcessor):
                     if entity_name
                     else "unique descriptive name for this image",
                     image_path=image_path,
-                    captions=captions if captions else "None",
-                    footnotes=footnotes if footnotes else "None",
+                    captions=", ".join(captions) if captions else "None",
+                    footnotes=", ".join(footnotes) if footnotes else "None",
                 )
 
             # Encode image to base64
