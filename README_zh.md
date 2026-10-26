@@ -269,8 +269,14 @@ pip install -e '.[all]'
 
 **检查MinerU安装：**
 
+RAG-Anything 会将 MinerU 3.x 作为依赖一并安装（`mineru[core]>=3.4.1,<4`）。暂不支持 MinerU 4.x：它替换了 RAG-Anything 所调用的命令行接口。安装了 MinerU 4.x 时，`check_parser_installation()` 返回 `False`，使用 MinerU 解析器的 `RAGAnything` 实例会初始化失败，错误信息会提示安装 3.x 版本。如果 `mineru --version` 显示 4.x，请在同一环境中安装 3.x 版本：
+
 ```bash
-# 验证安装
+pip install -U "mineru[core]>=3.4.1,<4"
+```
+
+```bash
+# 验证安装（应显示 3.x 版本）
 mineru --version
 
 # 检查是否正确配置
@@ -1106,7 +1112,7 @@ pip install docling
 ### MinerU配置
 
 ```bash
-# MinerU 2.0使用命令行参数而不是配置文件
+# MinerU 3.x使用命令行参数而不是配置文件（暂不支持 MinerU 4.x）
 # 查看可用选项：
 mineru --help
 

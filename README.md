@@ -291,8 +291,14 @@ uv sync --all-extras                 # All optional features
 
 **Check MinerU installation:**
 
+RAG-Anything installs MinerU 3.x as a dependency (`mineru[core]>=3.4.1,<4`). MinerU 4.x is not supported yet: it replaced the command-line interface that RAG-Anything drives. With MinerU 4.x installed, `check_parser_installation()` returns `False` and a `RAGAnything` instance using the MinerU parser fails to initialize with an error that asks for a 3.x release. If `mineru --version` reports 4.x, install a 3.x release in the same environment:
+
 ```bash
-# Verify installation
+pip install -U "mineru[core]>=3.4.1,<4"
+```
+
+```bash
+# Verify installation (should report a 3.x version)
 mineru --version
 
 # Check if properly configured
@@ -1167,7 +1173,7 @@ uv sync --extra paddleocr
 ### MinerU Configuration
 
 ```bash
-# MinerU 2.0 uses command-line parameters instead of config files
+# MinerU 3.x uses command-line parameters instead of config files (MinerU 4.x is not supported)
 # Check available options:
 mineru --help
 

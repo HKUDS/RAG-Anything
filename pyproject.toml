@@ -23,7 +23,9 @@ classifiers = [
 dependencies = [
     "huggingface_hub",
     "lightrag-hku<1.5",
-    "mineru[core]>=3.4.1",
+    # <4: MinerU 4.0 replaced the CLI RAG-Anything drives (`mineru -p ... -o ...`)
+    # with subcommands and Markdown-only output, so 4.x is not supported yet.
+    "mineru[core]>=3.4.1,<4",
     "tqdm",
 ]
 
