@@ -266,7 +266,9 @@ class CircuitBreaker:
         self._last_failure_time: float = 0.0
         self._state: str = "closed"  # closed | open | half-open
         # Concurrency control for half-open single-flight behaviour
-        self._lock = threading.Lock()
+        # Outcome checks and the public recording methods share this lock.
+        self._lock = threading.RLock()
+        self._generation = 0
         self._trial_in_flight: object | None = None
 
     @property
@@ -281,6 +283,8 @@ class CircuitBreaker:
     def record_success(self) -> None:
         """Record a successful call, resetting the breaker."""
         with self._lock:
+            if self._state != "closed":
+                self._generation += 1
             self._failure_count = 0
             self._state = "closed"
             self._trial_in_flight = None
@@ -304,6 +308,7 @@ class CircuitBreaker:
                 self._failure_count += 1
             self._last_failure_time = now
             if self._failure_count >= self.failure_threshold:
+                self._generation += 1
                 self._state = "open"
                 self._trial_in_flight = None
                 logger.warning(
@@ -312,7 +317,17 @@ class CircuitBreaker:
                     self._failure_count,
                 )
 
-    def _acquire_permission(self) -> object | None:
+    def _record_outcome(self, generation: int, *, success: bool) -> None:
+        """Ignore results admitted before the current recovery cycle."""
+        with self._lock:
+            if generation != self._generation:
+                return
+            if success:
+                self.record_success()
+            else:
+                self.record_failure()
+
+    def _acquire_permission(self) -> tuple[int, object | None]:
         """Check and update state before executing a protected call.
 
         - If the breaker is open and reset_timeout has not elapsed, raise.
@@ -320,7 +335,8 @@ class CircuitBreaker:
           trial call and reject additional concurrent calls.
         - If the breaker is closed, allow the call.
 
-        Return an ownership token for a half-open trial, otherwise ``None``.
+        Return the recovery generation and a half-open trial ownership token
+        (``None`` for a closed-state call).
         """
         with self._lock:
             # Transition open -> half-open if timeout has elapsed.
@@ -343,25 +359,25 @@ class CircuitBreaker:
                 # Mark that a trial call is now in-flight.
                 trial = object()
                 self._trial_in_flight = trial
-                return trial
+                return self._generation, trial
 
             # closed: allow call as normal.
-            return
+            return self._generation, None
 
     def __call__(self, func: F) -> F:
         """Use as a decorator around sync functions."""
 
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
-            trial = self._acquire_permission()
+            generation, trial = self._acquire_permission()
             try:
                 result = func(*args, **kwargs)
-                self.record_success()
+                self._record_outcome(generation, success=True)
                 return result
             except tuple(self._failure_exceptions):
                 # Upstream / transient failure: contributes towards opening
                 # the breaker.
-                self.record_failure()
+                self._record_outcome(generation, success=False)
                 raise
             except Exception:
                 # Application bug or non-transient local error: do not treat as
@@ -379,13 +395,13 @@ class CircuitBreaker:
 
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
-            trial = self._acquire_permission()
+            generation, trial = self._acquire_permission()
             try:
                 result = await func(*args, **kwargs)
-                self.record_success()
+                self._record_outcome(generation, success=True)
                 return result
             except tuple(self._failure_exceptions):
-                self.record_failure()
+                self._record_outcome(generation, success=False)
                 raise
             except BaseException:
                 # Cancellation also needs to release the half-open trial slot.
