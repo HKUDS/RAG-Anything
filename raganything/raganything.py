@@ -322,8 +322,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             # Check parser installation first
             if not self._parser_installation_checked:
                 if not self.doc_parser.check_installation():
-                    error_msg = (
-                        f"Parser '{self.config.parser}' is not properly installed. "
+                    error_msg = self._parser_installation_error_message(
                         "Please install it using 'pip install' or 'uv pip install'."
                     )
                     self.logger.error(error_msg)
@@ -543,12 +542,25 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         """
         return self.doc_parser.check_installation()
 
+    def _parser_installation_error_message(self, default_advice: str) -> str:
+        """Explain a failed parser installation check.
+
+        Uses the parser's own explanation (``installation_error``, e.g. an
+        unsupported MinerU version) when it gives one, else ``default_advice``.
+        """
+        reason = getattr(self.doc_parser, "installation_error", None)
+        return (
+            f"Parser '{self.config.parser}' is not properly installed. "
+            f"{reason or default_advice}"
+        )
+
     def verify_parser_installation_once(self) -> bool:
         if not self._parser_installation_checked:
             if not self.doc_parser.check_installation():
                 raise RuntimeError(
-                    f"Parser '{self.config.parser}' is not properly installed. "
-                    "Please install it using pip install or uv pip install."
+                    self._parser_installation_error_message(
+                        "Please install it using pip install or uv pip install."
+                    )
                 )
             self._parser_installation_checked = True
             self.logger.info(f"Parser '{self.config.parser}' installation verified")

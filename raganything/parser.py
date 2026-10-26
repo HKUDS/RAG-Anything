@@ -41,6 +41,7 @@ import urllib.parse
 import urllib.request
 import shutil
 from bisect import bisect_left
+from collections import deque
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -50,6 +51,7 @@ from typing import (
     Union,
     Tuple,
     Any,
+    Iterable,
     Iterator,
 )
 
@@ -65,6 +67,14 @@ from raganything.mineru_content import (
 
 _IS_WINDOWS: bool = platform.system() == "Windows"
 
+# The MinerU release line MineruParser drives. MinerU 4.0 replaced the
+# ``mineru -p <input> -o <output>`` command line used by _run_mineru_command
+# with subcommands (``mineru parse`` ...) that only produce Markdown, so 4.x
+# is not supported yet. Keep in sync with pyproject.toml and requirements.txt.
+_MINERU_REQUIREMENT = "mineru[core]>=3.4.1,<4"
+_MINERU_INSTALL_COMMAND = f'pip install -U "{_MINERU_REQUIREMENT}"'
+_MINERU_FIRST_UNSUPPORTED_MAJOR = 4
+
 
 # Known MinerU failure signatures mapped to actionable remediation advice.
 #
@@ -77,7 +87,7 @@ _MINERU_KNOWN_FAILURES: Tuple[Tuple[str, str], ...] = (
         "This is a MinerU/pdftext version incompatibility, not a problem with your document.\n"
         "pdftext 0.7 changed its character-extraction API, and MinerU only handles the new\n"
         "'PageChars' return type from version 3.4.1 onward. Fix it by upgrading MinerU:\n"
-        '    pip install -U "mineru[core]>=3.4.1"\n'
+        f"    {_MINERU_INSTALL_COMMAND}\n"
         "or, if you must stay on an older MinerU, pin the previous pdftext release:\n"
         '    pip install "pdftext==0.6.3"\n'
         "Office documents (.xls, .xlsx, .doc, .docx, .ppt, .pptx) trigger this most often\n"
@@ -85,7 +95,101 @@ _MINERU_KNOWN_FAILURES: Tuple[Tuple[str, str], ...] = (
         "path. As an immediate workaround for those formats, the Docling parser reads them\n"
         'natively without going through MinerU: RAGAnythingConfig(parser="docling").',
     ),
+    (
+        # rich-click's usage error when MinerU 4.x receives the 3.x command line
+        "No such option: -p",
+        "The installed MinerU does not accept the `-p` option: MinerU 4.0 replaced the\n"
+        "MinerU 3.x command line RAG-Anything drives (`mineru -p <input> -o <output>`)\n"
+        "with subcommands that only produce Markdown. MinerU 4.x is not supported yet;\n"
+        "install a MinerU 3.x release in this environment:\n"
+        f"    {_MINERU_INSTALL_COMMAND}",
+    ),
 )
+
+# How much of MinerU's own output MineruExecutionError quotes: enough for a
+# traceback or a CLI usage error without dumping a whole run's progress log.
+_MINERU_OUTPUT_TAIL_LINES = 40
+_MINERU_OUTPUT_TAIL_CHARS = 4000
+# Raw stderr lines buffered while MinerU runs; cleaning drops some of them.
+_MINERU_OUTPUT_BUFFER_LINES = 200
+
+# CSI/OSC/two-character escape sequences (colours, cursor movement, links).
+_ANSI_ESCAPE_RE = re.compile(
+    r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)|[@-Z\\-_])"
+)
+# Box-drawing borders (U+2500-U+257F) that rich-click draws around CLI errors.
+_BOX_BORDER_RE = re.compile(r"^[\s\u2500-\u257f]+|[\s\u2500-\u257f]+$")
+
+
+def _mineru_output_tail(lines: Iterable[Any]) -> List[str]:
+    """
+    Clean and bound the last lines of MinerU output for an error message.
+
+    ANSI escape sequences and leading/trailing box-drawing borders are
+    removed, lines left empty are dropped, and at most
+    ``_MINERU_OUTPUT_TAIL_LINES`` lines / ``_MINERU_OUTPUT_TAIL_CHARS``
+    characters from the end are kept.
+    """
+    cleaned = []
+    for line in lines:
+        text = _BOX_BORDER_RE.sub("", _ANSI_ESCAPE_RE.sub("", str(line)))
+        if text:
+            cleaned.append(text)
+    tail = cleaned[-_MINERU_OUTPUT_TAIL_LINES:]
+    while tail and sum(len(line) + 1 for line in tail) > _MINERU_OUTPUT_TAIL_CHARS:
+        if len(tail) == 1:
+            # Keep the end of a single over-long line.
+            tail[0] = tail[0][-_MINERU_OUTPUT_TAIL_CHARS:]
+            break
+        tail.pop(0)
+    return tail
+
+
+def _format_mineru_output(
+    stderr_lines: Iterable[Any], stdout_lines: Iterable[Any]
+) -> Optional[str]:
+    """
+    Quote the end of MinerU's stderr, or of its stdout when stderr is empty.
+
+    Returns:
+        Optional[str]: A labelled, bounded excerpt, or None if MinerU printed
+        nothing usable
+    """
+    for stream, lines in (("stderr", stderr_lines), ("stdout", stdout_lines)):
+        tail = _mineru_output_tail(lines)
+        if tail:
+            return f"Last {len(tail)} line(s) of MinerU {stream}:\n" + "\n".join(tail)
+    return None
+
+
+# A dotted version number not glued to a preceding word or number (so the
+# "3.12" in "python3.12" is not read as a version).
+_VERSION_RE = re.compile(r"(?<![\w.])v?(\d+)\.(\d+)(?:\.(\d+))?")
+
+
+def _parse_mineru_version(output: str) -> Optional[Tuple[str, int]]:
+    """
+    Read MinerU's version from ``mineru --version`` output.
+
+    MinerU 3.x prints ``mineru, version 3.4.5``; 4.x prints
+    ``MinerU version: 4.0.12`` (the label is localized, e.g.
+    ``MinerU 版本: 4.0.12``) followed by a ``Python version: ...`` line.
+    Only a version on a line naming MinerU counts, or output consisting of a
+    bare version number.
+
+    Returns:
+        Optional[Tuple[str, int]]: The version text and its major number, or
+        None if the output does not state MinerU's version recognisably
+    """
+    candidates = [line for line in output.splitlines() if "mineru" in line.lower()]
+    stripped = output.strip()
+    if not candidates and re.fullmatch(r"v?\d+\.\d+\S*", stripped):
+        candidates = [stripped]
+    for line in candidates:
+        match = _VERSION_RE.search(line)
+        if match:
+            return match.group(0).lstrip("v"), int(match.group(1))
+    return None
 
 
 def _diagnose_mineru_failure(error_msg: Any) -> Optional[str]:
@@ -112,13 +216,32 @@ def _diagnose_mineru_failure(error_msg: Any) -> Optional[str]:
 class MineruExecutionError(Exception):
     """catch mineru error"""
 
-    def __init__(self, return_code, error_msg, hint: Optional[str] = None):
+    def __init__(
+        self,
+        return_code,
+        error_msg,
+        hint: Optional[str] = None,
+        output: Optional[str] = None,
+    ):
         self.return_code = return_code
         self.error_msg = error_msg
-        # Recognize known dependency/environment failures so that users get an
-        # actionable message instead of a raw MinerU traceback line.
-        self.hint = hint if hint is not None else _diagnose_mineru_failure(error_msg)
+        # The end of MinerU's own output (see _format_mineru_output). error_msg
+        # holds only stderr lines mentioning "error", which for a multi-line
+        # CLI error is just its first line.
+        self.output = output
+        if hint is None:
+            # Recognize known dependency/environment failures so that users get
+            # an actionable message instead of a raw MinerU traceback line.
+            haystack = (
+                list(error_msg) if isinstance(error_msg, (list, tuple)) else [error_msg]
+            )
+            if output:
+                haystack.append(output)
+            hint = _diagnose_mineru_failure(haystack)
+        self.hint = hint
         message = f"Mineru command failed with return code {return_code}: {error_msg}"
+        if output:
+            message = f"{message}\n\n{output}"
         if self.hint:
             message = f"{message}\n\n{self.hint}"
         super().__init__(message)
@@ -157,6 +280,10 @@ class Parser:
 
     # Class-level logger
     logger = logging.getLogger(__name__)
+
+    # Why the last check_installation() call failed, when the parser can say
+    # more than "not installed" (e.g. an unsupported MinerU version).
+    installation_error: Optional[str] = None
 
     @staticmethod
     def _is_url(path: str) -> bool:
@@ -1331,6 +1458,10 @@ class MineruParser(Parser):
 
         output_lines = []
         error_lines = []
+        # Every stderr line (bounded), for the error message: error_lines only
+        # keeps lines mentioning "error", e.g. just the top border of a
+        # multi-line CLI error box.
+        stderr_lines = deque(maxlen=_MINERU_OUTPUT_BUFFER_LINES)
 
         # Handle and validate environment variables
         custom_env = kwargs.pop("env", None)
@@ -1427,6 +1558,7 @@ class MineruParser(Parser):
                 try:
                     while True:
                         prefix, line = stderr_queue.get_nowait()
+                        stderr_lines.append(line)
                         # Log mineru errors with WARNING level
                         if "warning" in line.lower():
                             cls.logger.warning(f"[MinerU] {line}")
@@ -1467,6 +1599,7 @@ class MineruParser(Parser):
             try:
                 while True:
                     prefix, line = stderr_queue.get_nowait()
+                    stderr_lines.append(line)
                     if "warning" in line.lower():
                         cls.logger.warning(f"[MinerU] {line}")
                     elif "error" in line.lower():
@@ -1487,10 +1620,15 @@ class MineruParser(Parser):
 
             if return_code != 0 or error_lines:
                 cls.logger.info("[MinerU] Command executed failed")
-                hint = _diagnose_mineru_failure(error_lines)
+                hint = _diagnose_mineru_failure([*error_lines, *stderr_lines])
                 if hint:
                     cls.logger.error(f"[MinerU] {hint}")
-                raise MineruExecutionError(return_code, error_lines, hint=hint)
+                raise MineruExecutionError(
+                    return_code,
+                    error_lines,
+                    hint=hint,
+                    output=_format_mineru_output(stderr_lines, output_lines),
+                )
             else:
                 cls.logger.info("[MinerU] Command executed successfully")
 
@@ -1503,8 +1641,8 @@ class MineruParser(Parser):
             raise
         except FileNotFoundError:
             raise RuntimeError(
-                "mineru command not found. Please ensure MinerU 2.0 is properly installed:\n"
-                "pip install -U 'mineru[core]' or uv pip install -U 'mineru[core]'"
+                "mineru command not found. Please ensure MinerU 3.x is properly installed:\n"
+                f"{_MINERU_INSTALL_COMMAND} or uv {_MINERU_INSTALL_COMMAND}"
             )
         except Exception as e:
             error_message = f"Unexpected error running mineru command: {e}"
@@ -2134,11 +2272,18 @@ class MineruParser(Parser):
 
     def check_installation(self) -> bool:
         """
-        Check if MinerU 2.0 is properly installed
+        Check if a supported MinerU (3.x) is properly installed
+
+        Runs ``mineru --version``. MinerU 4.0 and later are rejected because
+        4.0 replaced the command line this parser drives; the reason is logged
+        and kept in ``installation_error``. Output that does not state a
+        recognisable MinerU version is accepted, as long as the command
+        succeeds.
 
         Returns:
             bool: True if installation is valid, False otherwise
         """
+        self.installation_error = None
         try:
             # Prepare subprocess parameters to hide console window on Windows
             subprocess_kwargs = {
@@ -2154,14 +2299,32 @@ class MineruParser(Parser):
                 subprocess_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
             result = subprocess.run(["mineru", "--version"], **subprocess_kwargs)
-            self.logger.debug(f"MinerU version: {result.stdout.strip()}")
-            return True
         except (subprocess.CalledProcessError, FileNotFoundError):
             self.logger.debug(
-                "MinerU 2.0 is not properly installed. "
-                "Please install it using: pip install -U 'mineru[core]'"
+                "MinerU is not properly installed. "
+                f"Please install it using: {_MINERU_INSTALL_COMMAND}"
             )
             return False
+
+        version_output = "\n".join(
+            stream.strip()
+            for stream in (result.stdout, getattr(result, "stderr", None))
+            if stream and stream.strip()
+        )
+        self.logger.debug(f"MinerU version: {version_output}")
+        version = _parse_mineru_version(version_output)
+        if version is not None and version[1] >= _MINERU_FIRST_UNSUPPORTED_MAJOR:
+            self.installation_error = (
+                f"MinerU {version[0]} is installed, but RAG-Anything does not "
+                "support MinerU 4.0 or later yet: MinerU 4.0 replaced the "
+                "`mineru -p <input> -o <output>` command line RAG-Anything "
+                "drives with subcommands that only produce Markdown. Install a "
+                "MinerU 3.x release in this environment: "
+                f"{_MINERU_INSTALL_COMMAND}"
+            )
+            self.logger.warning(self.installation_error)
+            return False
+        return True
 
 
 class DoclingParser(Parser):
@@ -3387,6 +3550,9 @@ def main():
             return 0
         else:
             print(f"❌ {args.parser.title()} installation check failed")
+            reason = getattr(doc_parser, "installation_error", None)
+            if reason:
+                print(reason)
             return 1
 
     try:
