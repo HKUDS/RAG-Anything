@@ -166,6 +166,37 @@ class TestOmmlToLatex:
         )
         assert omml_to_latex(elem) == "foo(x)"
 
+    def test_limit_under_a_function_name(self):
+        # Word writes lim with its limit as m:limLow inside fName
+        elem = _wrap_in_omath(
+            "<m:func>"
+            "<m:fName><m:limLow>"
+            "<m:e><m:r><m:t>lim</m:t></m:r></m:e>"
+            "<m:lim><m:r><m:t>x\u21920</m:t></m:r></m:lim>"
+            "</m:limLow></m:fName>"
+            "<m:e><m:r><m:t>f</m:t></m:r></m:e>"
+            "</m:func>"
+        )
+        assert omml_to_latex(elem) == r"\lim_{x\to0}{f}"
+
+    def test_word_function_name_keeps_its_argument_brackets(self):
+        elem = _wrap_in_omath(
+            "<m:func>"
+            "<m:fName><m:r><m:t>gcd</m:t></m:r></m:fName>"
+            "<m:e><m:d><m:e><m:r><m:t>a,b</m:t></m:r></m:e></m:d></m:e>"
+            "</m:func>"
+        )
+        assert omml_to_latex(elem) == r"\gcd{(a,b)}"
+
+    def test_unknown_function_does_not_double_its_argument_brackets(self):
+        elem = _wrap_in_omath(
+            "<m:func>"
+            "<m:fName><m:r><m:t>sgn</m:t></m:r></m:fName>"
+            "<m:e><m:d><m:e><m:r><m:t>x</m:t></m:r></m:e></m:d></m:e>"
+            "</m:func>"
+        )
+        assert omml_to_latex(elem) == "sgn(x)"
+
     def test_delimiter_default_parentheses(self):
         elem = _wrap_in_omath("<m:d><m:e><m:r><m:t>x+y</m:t></m:r></m:e></m:d>")
         assert omml_to_latex(elem) == "(x+y)"
