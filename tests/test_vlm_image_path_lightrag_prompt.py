@@ -385,3 +385,26 @@ async def test_existing_prefix_is_not_captured_without_delimiter(
     assert count == 0
     assert enhanced == prompt
     assert str(prefix) not in validated_paths
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Known limitation: whitespace is a delimiter, so for 'chart.png v2.png' "
+        "the capture stops at an existing 'chart.png' and sends that image. "
+        "Main does the same; the fix would be to try image-suffixed prefixes "
+        "of the whole field from longest to shortest."
+    ),
+)
+@pytest.mark.asyncio
+async def test_filename_with_space_after_image_suffix_sends_that_file(
+    tmp_path, validated_paths
+):
+    _save_png(tmp_path / "chart.png", "red")
+    spaced = tmp_path / "chart.png v2.png"
+    spaced_bytes = _save_png(spaced, "blue")
+    prompt = await _lightrag_prompt("naive", [_image_chunk(str(spaced))])
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode="naive") == "vision answer"
+    assert _sent_images(query) == [spaced_bytes]
