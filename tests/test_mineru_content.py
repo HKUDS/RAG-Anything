@@ -219,6 +219,29 @@ def test_convert_v2_preserves_extended_mineru_modalities_and_routes_text():
     ]
 
 
+@pytest.mark.parametrize(
+    ("spans", "expected"),
+    [
+        (["ひら", "がな"], "ひらがな"),
+        (["カタ", "カナ"], "カタカナ"),
+        (["한국", "사람"], "한국 사람"),
+        (["ＡＢ", "ＣＤ"], "ＡＢ ＣＤ"),
+        (["かな", "。"], "かな。"),
+    ],
+)
+def test_convert_v2_preserves_script_specific_span_spacing(spans, expected):
+    payload = [
+        [
+            {
+                "type": "paragraph",
+                "content": {"paragraph_content": [_text_span(part) for part in spans]},
+            }
+        ]
+    ]
+
+    assert convert_mineru_content_list_v2(payload)[0]["text"] == expected
+
+
 def test_convert_v2_preserves_explicit_span_spacing_and_nested_links():
     payload = [
         [

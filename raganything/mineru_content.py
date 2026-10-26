@@ -440,7 +440,13 @@ def _needs_span_separator(left: str, right: str) -> bool:
 
 
 def _is_cjk(char: str) -> bool:
-    return "\u3400" <= char <= "\u9fff"
+    codepoint = ord(char)
+    return (
+        0x3000 <= codepoint <= 0x30FF  # CJK punctuation, Hiragana, and Katakana
+        or 0x31F0 <= codepoint <= 0x31FF  # Katakana phonetic extensions
+        or 0x3400 <= codepoint <= 0x9FFF  # CJK unified ideographs
+        or 0xFF61 <= codepoint <= 0xFF9F  # Halfwidth Japanese punctuation and Katakana
+    )
 
 
 def _list_items(value: Any) -> list[str]:
