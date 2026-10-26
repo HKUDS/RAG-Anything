@@ -9,6 +9,7 @@ import base64
 import http.server
 import io
 import threading
+from pathlib import Path
 
 import pytest
 
@@ -157,6 +158,34 @@ def test_configured_css_file_still_applies(tmp_path):
     page = pypdf.PdfReader(output).pages[0]
     width_mm = float(page.mediabox.width) * 25.4 / 72
     assert width_mm == pytest.approx(100, abs=0.5)
+    assert _image_colors(output) == [(255, 0, 0)]
+
+
+@pytest.mark.parametrize(
+    "make_base_url",
+    [
+        lambda path: path.resolve().as_uri(),
+        str,
+        Path,
+        lambda path: str(path.parent),
+    ],
+    ids=["file-url", "path-str", "pathlib", "directory"],
+)
+def test_base_url_may_be_a_filesystem_path(tmp_path, make_base_url):
+    _png(tmp_path / "private" / "outside.png", "blue")
+    source_dir = tmp_path / "docs"
+    _png(source_dir / "images" / "inside.png", "red")
+    source = source_dir / "doc.md"
+    output = tmp_path / "doc.pdf"
+
+    converter = EnhancedMarkdownConverter()
+    assert converter.convert_markdown_to_pdf(
+        "![inside](images/inside.png)\n\n![parent](../private/outside.png)\n",
+        str(output),
+        "weasyprint",
+        base_url=make_base_url(source),
+    )
+
     assert _image_colors(output) == [(255, 0, 0)]
 
 

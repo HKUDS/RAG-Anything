@@ -357,10 +357,10 @@ class EnhancedMarkdownConverter:
 
         Resources (images, stylesheets, fonts, attachments, including the
         ``url()`` references of the CSS, which is inlined) load only from
-        ``data:`` URIs and from files inside the directory of a ``file:``
-        ``base_url`` (the Markdown file's directory); remote URLs and other
-        files are skipped with a warning. Without a local ``base_url`` only
-        ``data:`` URIs load.
+        ``data:`` URIs and from files inside the directory of ``base_url``
+        (a ``file:`` URL or a filesystem path, normally the Markdown file's);
+        remote URLs and other files are skipped with a warning. Without a
+        local ``base_url`` only ``data:`` URIs load.
         """
         if not WEASYPRINT_AVAILABLE:
             raise RuntimeError(
@@ -368,6 +368,12 @@ class EnhancedMarkdownConverter:
             )
 
         try:
+            from weasyprint.urls import ensure_url
+
+            # WeasyPrint turns a filesystem path base_url into a file: URL;
+            # do that here so the fetcher allows the same directory.
+            base_url = ensure_url(os.fsdecode(base_url)) if base_url else None
+
             # Process Markdown to HTML
             html_content = self._process_markdown_content(markdown_content)
 
@@ -463,9 +469,10 @@ class EnhancedMarkdownConverter:
             markdown_content: Markdown content to convert
             output_path: Output PDF file path
             method: Conversion method ("auto", "weasyprint", "pandoc", "pandoc_system")
-            base_url: Base URL for relative resources in the WeasyPrint backend.
-                WeasyPrint loads only ``data:`` URIs and files inside this
-                ``file:`` URL's directory; without one, only ``data:`` URIs.
+            base_url: Base URL for relative resources in the WeasyPrint backend:
+                a ``file:`` URL or a filesystem path, normally the Markdown
+                file's. WeasyPrint loads only ``data:`` URIs and files inside
+                its directory; without one, only ``data:`` URIs.
 
         Returns:
             True if conversion successful, False otherwise
