@@ -782,7 +782,11 @@ class BaseModalProcessor:
 
         # Extract entity_name
         name_match = re.search(r'"entity_name":\s*"([^"]*(?:\\.[^"]*)*)"', response)
-        entity_name = name_match.group(1) if name_match else "unknown_entity"
+        entity_name = (
+            name_match.group(1)
+            if name_match
+            else f"entity_{compute_mdhash_id(response)}"
+        )
 
         # Extract entity_type
         type_match = re.search(r'"entity_type":\s*"([^"]*(?:\\.[^"]*)*)"', response)
