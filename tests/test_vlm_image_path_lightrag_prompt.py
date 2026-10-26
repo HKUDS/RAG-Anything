@@ -245,12 +245,44 @@ async def test_captured_path_outside_safe_dirs_is_still_blocked(
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize(
     "following",
-    ["\nCaptions: x", "\r\nCaptions: x", "\tCaptions: x", " (see caption)", ""],
-    ids=["newline", "crlf", "tab", "space", "end-of-content"],
+    [
+        "\nCaptions: x",
+        "\r\nCaptions: x",
+        "\tCaptions: x",
+        " (see caption)",
+        "",
+        '" said the caption',
+        "\fx",
+        "\x0bx",
+        "\x1fx",
+        ". Next sentence",
+        ", next",
+        "; next",
+        ": next",
+        ") next",
+        "]\nCaptions: x",
+        ".",
+    ],
+    ids=[
+        "newline",
+        "crlf",
+        "tab",
+        "space",
+        "end-of-content",
+        "quote",
+        "form-feed",
+        "vertical-tab",
+        "unit-separator",
+        "period-space",
+        "comma",
+        "semicolon",
+        "colon",
+        "close-paren",
+        "close-bracket-newline",
+        "period-end-of-content",
+    ],
 )
-async def test_capture_stops_at_json_escaped_delimiter(
-    tmp_path, validated_paths, mode, following
-):
+async def test_capture_stops_at_delimiter(tmp_path, validated_paths, mode, following):
     image_path = tmp_path / "figure.png"
     _save_png(image_path)
     content = f"Image Path: {image_path}{following}"
@@ -261,8 +293,8 @@ async def test_capture_stops_at_json_escaped_delimiter(
 
     assert count == 1
     assert validated_paths == [str(image_path)]
-    # Everything after the path, starting at the JSON escape or closing
-    # quote, is kept right after the image marker.
+    # Everything after the path (any punctuation, then the JSON escape or
+    # closing quote) is kept right after the image marker.
     escaped_rest = prompt.split(f"Image Path: {image_path}", 1)[1]
     assert escaped_rest.startswith(json.dumps(following)[1:-1] + '"')
     assert f"Image Path: {image_path}\n[VLM_IMAGE_1]{escaped_rest}" in enhanced
@@ -320,3 +352,36 @@ async def test_long_run_of_spaces_after_label_is_linear(tmp_path, tail):
     assert time.perf_counter() - start < 1.0
     assert count == 0
     assert enhanced == prompt
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize(
+    "suffix",
+    [".backup", "x", "~", "_old", "\\x", "..", ".x", ").x", ";x"],
+    ids=[
+        "dot-backup",
+        "letter",
+        "tilde",
+        "underscore",
+        "backslash",
+        "two-dots",
+        "dot-letter",
+        "paren-letter",
+        "semicolon-letter",
+    ],
+)
+async def test_existing_prefix_is_not_captured_without_delimiter(
+    tmp_path, validated_paths, mode, suffix
+):
+    prefix = tmp_path / "figure.png"
+    _save_png(prefix)
+    content = f"Image Path: {prefix}{suffix}\nCaptions: x"
+    prompt = await _lightrag_prompt(mode, [content])
+    query = _make_query(tmp_path, prompt)
+
+    enhanced, count = await query._process_image_paths_for_vlm(prompt)
+
+    assert count == 0
+    assert enhanced == prompt
+    assert str(prefix) not in validated_paths

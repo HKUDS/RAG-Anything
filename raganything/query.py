@@ -671,9 +671,13 @@ class QueryMixin:
         # LightRAG 1.4.x json.dumps each retrieved chunk into the prompt, so the
         # newline after "Image Path: <path>" usually arrives as the two
         # characters backslash and "n". Capture through a case-insensitive image
-        # extension, and only when a delimiter follows it (a JSON escape such
-        # as \n, a quote, whitespace or end of line), so "figure.PNG" is found
-        # and "figure.png.backup" is not shortened to "figure.png".
+        # extension, and only when a delimiter follows it, so "figure.PNG" is
+        # found and "figure.png.backup" is not shortened to "figure.png".
+        # A delimiter is a quote or whitespace character, unescaped or as
+        # json.dumps escapes it (\", \n, \r, \t, \f, \u000b, \u001c-\u001f),
+        # or end of line, optionally after one punctuation mark (". , ; : ) ]").
+        # An escaped backslash is not a delimiter, because it separates the
+        # parts of a JSON-escaped Windows path.
         # "(?![ \t])" stops the leading blanks from being re-tried one by one,
         # which made a long run of spaces take quadratic time. The capture
         # stops at the next "Image Path:" label, so an invalid path cannot
@@ -683,7 +687,7 @@ class QueryMixin:
         image_path_pattern = re.compile(
             r"Image Path:[ \t]*(?![ \t])"
             r"((?:(?!Image Path:)[^\r\n])*?\.(?:jpe?g|png|gif|bmp|webp|tiff?))"
-            r"(?=\\[nrt]|[\"\s]|$)",
+            r"(?=[.,;:)\]]?(?:\\(?:[\"fnrt]|u00(?:0b|1[c-f]))|[\"\s]|$))",
             re.IGNORECASE | re.MULTILINE,
         )
 
