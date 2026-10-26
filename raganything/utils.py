@@ -21,7 +21,11 @@ def normalize_caption_list(value: Any) -> List[str]:
     if value is None:
         return []
     if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
+        return [
+            str(item).strip()
+            for item in value
+            if item is not None and str(item).strip()
+        ]
     if isinstance(value, str) and value.strip():
         return [value.strip()]
     return []
