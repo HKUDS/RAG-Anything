@@ -37,6 +37,11 @@ def install_import_stubs():
     raganything_parser.MineruParser = object
     raganything_parser.MineruExecutionError = RuntimeError
     raganything_parser.get_parser = lambda *args, **kwargs: None
+    # processor.py imports these since HTML parsing requires Docling (#418)
+    raganything_parser.HTML_FILE_EXTENSIONS = frozenset({".html", ".htm", ".xhtml"})
+    raganything_parser.html_requires_docling_error = lambda file_path: ValueError(
+        f"HTML input ({file_path}) requires a parser with parse_html"
+    )
 
     sys.modules.setdefault("lightrag", lightrag_module)
     sys.modules.setdefault("lightrag.utils", lightrag_utils)

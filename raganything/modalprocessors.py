@@ -31,6 +31,7 @@ from raganything.document_context import get_document_source, set_document_sourc
 from raganything.utils import (
     encode_image_to_base64,
     format_table_body,
+    get_equation_description,
     get_equation_text_and_format,
     get_table_body,
     normalize_caption_list,
@@ -972,11 +973,11 @@ class ImageModalProcessor(BaseModalProcessor):
                 content_data = modal_content
 
             image_path = content_data.get("img_path")
-            captions = content_data.get(
-                "image_caption", content_data.get("img_caption", [])
+            captions = normalize_caption_list(
+                content_data.get("image_caption", content_data.get("img_caption"))
             )
-            footnotes = content_data.get(
-                "image_footnote", content_data.get("img_footnote", [])
+            footnotes = normalize_caption_list(
+                content_data.get("image_footnote", content_data.get("img_footnote"))
             )
             section_path = content_data.get("_section_path", "")
 
@@ -1007,8 +1008,8 @@ class ImageModalProcessor(BaseModalProcessor):
                     if entity_name
                     else "unique descriptive name for this image",
                     image_path=image_path,
-                    captions=captions if captions else "None",
-                    footnotes=footnotes if footnotes else "None",
+                    captions=", ".join(captions) if captions else "None",
+                    footnotes=", ".join(footnotes) if footnotes else "None",
                 )
             else:
                 vision_prompt = PROMPTS["vision_prompt"].format(
@@ -1017,8 +1018,8 @@ class ImageModalProcessor(BaseModalProcessor):
                     if entity_name
                     else "unique descriptive name for this image",
                     image_path=image_path,
-                    captions=captions if captions else "None",
-                    footnotes=footnotes if footnotes else "None",
+                    captions=", ".join(captions) if captions else "None",
+                    footnotes=", ".join(footnotes) if footnotes else "None",
                 )
 
             # Encode image to base64
@@ -1210,9 +1211,11 @@ class TableModalProcessor(BaseModalProcessor):
                     if entity_name
                     else "descriptive name for this table",
                     table_img_path=table_img_path,
-                    table_caption=table_caption if table_caption else "None",
+                    table_caption=", ".join(table_caption) if table_caption else "None",
                     table_body=table_body,
-                    table_footnote=table_footnote if table_footnote else "None",
+                    table_footnote=", ".join(table_footnote)
+                    if table_footnote
+                    else "None",
                 )
             else:
                 table_prompt = PROMPTS["table_prompt"].format(
@@ -1220,9 +1223,11 @@ class TableModalProcessor(BaseModalProcessor):
                     if entity_name
                     else "descriptive name for this table",
                     table_img_path=table_img_path,
-                    table_caption=table_caption if table_caption else "None",
+                    table_caption=", ".join(table_caption) if table_caption else "None",
                     table_body=table_body,
-                    table_footnote=table_footnote if table_footnote else "None",
+                    table_footnote=", ".join(table_footnote)
+                    if table_footnote
+                    else "None",
                 )
 
             # Call LLM for table analysis
@@ -1391,6 +1396,13 @@ class EquationModalProcessor(BaseModalProcessor):
             context = ""
             if item_info:
                 context = self._get_context_for_item(item_info)
+            description = get_equation_description(content_data)
+            if description:
+                # The item's own description of its formula, marked like the
+                # context extractor's [Image: ...] / [Table: ...] captions.
+                context = "\n".join(
+                    part for part in (f"[Equation: {description}]", context) if part
+                )
 
             # Build equation analysis prompt with context
             if context:

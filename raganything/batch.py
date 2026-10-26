@@ -429,7 +429,7 @@ class BatchMixin:
             # Process files with RAG (this could be parallelized in the future)
             for file_path in rag_files:
                 try:
-                    restore_multimodal_completion = False
+                    verify_retry_completion = False
                     if file_path in parse_skipped:
                         # A parse manifest says nothing about ingestion in this
                         # workspace. Resolve the document ID via the parse cache
@@ -462,7 +462,7 @@ class BatchMixin:
                                 "processed": False,
                             }
                             continue
-                        restore_multimodal_completion = (
+                        verify_retry_completion = (
                             multimodal_complete
                             and status.get("status") != DocStatus.PROCESSED
                             and not kwargs.get("force_multimodal_reprocess", False)
@@ -476,14 +476,12 @@ class BatchMixin:
                         **kwargs,
                     )
 
-                    if restore_multimodal_completion:
-                        # The completed multimodal stage returns early on retry.
-                        # Restore only the HANDLING left after successful text
-                        # indexing, without repeating already completed work.
+                    if verify_retry_completion:
+                        # process_document_complete skips the completed
+                        # multimodal stage and restores PROCESSED itself; a
+                        # retry that still did not end PROCESSED (e.g. the
+                        # completion-status write failed) is a RAG failure.
                         status = await self.lightrag.doc_status.get_by_id(doc_id)
-                        if status and status.get("status") == DocStatus.HANDLING:
-                            await self._mark_multimodal_processing_complete(doc_id)
-                            status = await self.lightrag.doc_status.get_by_id(doc_id)
                         if not status or status.get("status") != DocStatus.PROCESSED:
                             raise RuntimeError(
                                 f"RAG retry did not complete document {doc_id}"

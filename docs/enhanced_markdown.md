@@ -214,6 +214,49 @@ python -m raganything.enhanced_markdown --info
 python -m raganything.enhanced_markdown --help
 ```
 
+### Resource Loading (WeasyPrint)
+
+Markdown is treated as untrusted input, so the WeasyPrint backend loads
+resources only from:
+
+- `data:` URIs, and
+- image, stylesheet and font files inside the Markdown file's directory
+  (subdirectories included). Relative references such as
+  `![chart](images/chart.png)` resolve against that directory. Both the
+  directory and the type are checked on the file actually fetched, after
+  resolving symlinks and `..`; the type is decided by its extension,
+  case-insensitively:
+  - images: `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.svg`, `.tif`,
+    `.tiff`, `.ico`
+  - stylesheets: `.css`
+  - fonts: `.ttf`, `.otf`, `.woff`, `.woff2`
+
+Everything else is skipped and never fetched: remote URLs (`http`, `https`,
+`ftp`, ...), `file://` paths outside the directory, other schemes, and any
+other file inside the directory — hidden files such as `.env`, files without
+an extension, `.txt`, `.json`, `.pdf`, the Markdown source itself, or a
+symlink named `chart.png` that points at one of them. This covers every
+resource WeasyPrint loads — images, stylesheets, fonts and attachments
+(`<link rel="attachment">`, `<a rel="attachment">`), so an attachment can only
+carry an allowed image, stylesheet or font file or a `data:` URI. WeasyPrint
+logs an error for a skipped image, stylesheet or attachment. For a skipped
+font it falls back to another font and logs only a warning naming the family
+(`Font-face '<family>' cannot be loaded`); the reason is logged at `DEBUG`
+level.
+
+The CSS from `css_file` or `custom_css` is inlined into the page, so its
+`url()` references resolve against the Markdown file's directory too, and
+absolute `file://` references in it must also point to allowed files inside
+that directory.
+
+`convert_markdown_to_pdf()` takes the directory from its `base_url` keyword (a
+`file:` URL or a filesystem path, normally the Markdown file's path); called
+on a Markdown string without one, it loads only `data:` URIs.
+
+The restriction applies to the WeasyPrint backend only; the Pandoc backend runs
+an external program with its own resource loading. `method="auto"` picks Pandoc
+when it is installed, so pass `method="weasyprint"` for untrusted Markdown.
+
 ## Backend Comparison
 
 | Backend | Pros | Cons | Best For | Quality |
@@ -429,12 +472,22 @@ sudo apt-get install pandoc wkhtmltopdf
 - Use browser developer tools to debug styling
 
 #### Image Problems
-- Ensure images are accessible (correct paths)
+- Ensure images are accessible (correct paths); with WeasyPrint, keep them in
+  the Markdown file's directory, with an image extension such as `.png` or
+  `.jpg`, or embed them as `data:` URIs (see
+  [Resource Loading](#resource-loading-weasyprint))
 - Check image file formats (PNG, JPEG, GIF supported)
 - Verify image file permissions
 - Consider image size and format optimization
 
 #### Font Issues
+- With WeasyPrint, `@font-face` fonts load only from `.ttf`, `.otf`, `.woff`
+  or `.woff2` files in the Markdown file's directory or from `data:` URIs; a
+  skipped font falls back to another font with only a
+  `Font-face ... cannot be loaded` warning; enable `DEBUG` logging for the
+  `weasyprint` logger to see why (see
+  [Resource Loading](#resource-loading-weasyprint))
+
 ```python
 # Use web-safe fonts
 config = MarkdownConfig(
@@ -504,13 +557,13 @@ class EnhancedMarkdownConverter:
     def convert_file_to_pdf(self, input_path: str, output_path: str, method: str = "auto") -> bool:
         """Convert markdown file to PDF"""
 
-    def convert_markdown_to_pdf(self, markdown_content: str, output_path: str, method: str = "auto") -> bool:
-        """Convert markdown content to PDF"""
+    def convert_markdown_to_pdf(self, markdown_content: str, output_path: str, method: str = "auto", *, base_url: Optional[str] = None) -> bool:
+        """Convert markdown content to PDF; base_url locates its local resources (WeasyPrint)"""
 
     def get_backend_info(self) -> Dict[str, Any]:
         """Get information about available backends"""
 
-    def convert_with_weasyprint(self, markdown_content: str, output_path: str) -> bool:
+    def convert_with_weasyprint(self, markdown_content: str, output_path: str, *, base_url: Optional[str] = None) -> bool:
         """Convert using WeasyPrint backend"""
 
     def convert_with_pandoc(self, markdown_content: str, output_path: str) -> bool:
@@ -522,7 +575,8 @@ class EnhancedMarkdownConverter:
 1. **Choose the right backend** for your use case:
    - **WeasyPrint** for web-style documents and custom CSS
    - **Pandoc** for academic papers and complex formatting
-   - **Auto** for general use and development
+   - **Auto** for general use and development (use WeasyPrint for untrusted
+     Markdown, see [Resource Loading](#resource-loading-weasyprint))
 
 2. **Optimize images** before embedding:
    - Use appropriate formats (JPEG for photos, PNG for graphics)

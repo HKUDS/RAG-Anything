@@ -6,10 +6,12 @@ exists to bridge both shapes and is already used by ``TableModalProcessor`` and
 ``ProcessorMixin._apply_chunk_template``; the image paths had to catch up.
 """
 
+import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import pytest
+from PIL import Image
 
 import raganything.modalprocessors as modalprocessors
 from raganything.modalprocessors import ContextConfig, ContextExtractor
@@ -26,9 +28,8 @@ class RecordingStorage:
         return self.records.get(record_id)
 
 
-@pytest.fixture
-def processor(monkeypatch):
-    lightrag = SimpleNamespace(
+def _fake_lightrag():
+    return SimpleNamespace(
         text_chunks=RecordingStorage(),
         chunks_vdb=RecordingStorage(),
         entities_vdb=RecordingStorage(),
@@ -45,6 +46,11 @@ def processor(monkeypatch):
         _build_global_config=lambda: {},
         _insert_done=AsyncMock(),
     )
+
+
+@pytest.fixture
+def processor(monkeypatch):
+    lightrag = _fake_lightrag()
     monkeypatch.setattr(modalprocessors, "extract_entities", AsyncMock(return_value=[]))
     monkeypatch.setattr(modalprocessors, "merge_nodes_and_edges", AsyncMock())
     monkeypatch.setattr(
@@ -123,3 +129,125 @@ def test_context_extractor_string_caption_is_not_joined_per_character():
         )
         == "[Table: Performance table]"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_context", [False, True])
+@pytest.mark.parametrize(
+    "captions,footnotes,expected_captions,expected_footnotes",
+    [
+        (["Figure 1", None, " "], [], "Figure 1", "None"),
+        (["First", "Second"], ["Note a", "Note b"], "First, Second", "Note a, Note b"),
+        (
+            "Figure 3.1 ablation curve",
+            "Synthetic",
+            "Figure 3.1 ablation curve",
+            "Synthetic",
+        ),
+        (None, None, "None", "None"),
+    ],
+)
+async def test_vision_prompt_gets_joined_captions(
+    tmp_path,
+    captions,
+    footnotes,
+    expected_captions,
+    expected_footnotes,
+    with_context,
+):
+    image_path = tmp_path / "figure.png"
+    Image.new("RGB", (4, 4), "red").save(image_path)
+    prompts = []
+
+    async def vlm(prompt, image_data=None, system_prompt=None, **kwargs):
+        prompts.append(prompt)
+        return json.dumps(
+            {
+                "detailed_description": "A red square.",
+                "entity_info": {
+                    "entity_name": "Red Square",
+                    "entity_type": "image",
+                    "summary": "A red square.",
+                },
+            }
+        )
+
+    instance = modalprocessors.ImageModalProcessor(
+        _fake_lightrag(), modal_caption_func=vlm
+    )
+    if with_context:
+        instance._get_context_for_item = lambda item_info: "Surrounding text."
+
+    await instance.generate_description_only(
+        {
+            "type": "image",
+            "img_path": str(image_path),
+            "image_caption": captions,
+            "image_footnote": footnotes,
+        },
+        "image",
+        item_info={"page_idx": 0, "index": 0, "type": "image"},
+    )
+
+    (prompt,) = prompts
+    assert ("Surrounding text." in prompt) is with_context
+    assert f"- Captions: {expected_captions}\n" in prompt
+    assert f"- Footnotes: {expected_footnotes}\n" in prompt
+    assert "['" not in prompt
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_context", [False, True])
+@pytest.mark.parametrize(
+    "captions,footnotes,expected_captions,expected_footnotes",
+    [
+        (["Table 1"], ["Note"], "Table 1", "Note"),
+        (["First", "Second"], ["Note a", "Note b"], "First, Second", "Note a, Note b"),
+        ("Performance table", "Synthetic", "Performance table", "Synthetic"),
+        (None, None, "None", "None"),
+    ],
+)
+async def test_table_prompt_gets_joined_captions(
+    captions,
+    footnotes,
+    expected_captions,
+    expected_footnotes,
+    with_context,
+):
+    prompts = []
+
+    async def llm(prompt, system_prompt=None, **kwargs):
+        prompts.append(prompt)
+        return json.dumps(
+            {
+                "detailed_description": "A one-column table.",
+                "entity_info": {
+                    "entity_name": "Table One",
+                    "entity_type": "table",
+                    "summary": "A one-column table.",
+                },
+            }
+        )
+
+    instance = modalprocessors.TableModalProcessor(
+        _fake_lightrag(), modal_caption_func=llm
+    )
+    if with_context:
+        instance._get_context_for_item = lambda item_info: "Surrounding text."
+
+    await instance.generate_description_only(
+        {
+            "type": "table",
+            "table_body": "|a|\n|-|\n|1|",
+            "table_caption": captions,
+            "table_footnote": footnotes,
+        },
+        "table",
+        item_info={"page_idx": 0, "index": 0, "type": "table"},
+    )
+
+    (prompt,) = prompts
+    assert ("Surrounding text." in prompt) is with_context
+    assert f"Caption: {expected_captions}\n" in prompt
+    assert f"Footnotes: {expected_footnotes}\n" in prompt
+    assert "['" not in prompt
