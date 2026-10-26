@@ -220,23 +220,32 @@ Markdown is treated as untrusted input, so the WeasyPrint backend loads
 resources only from:
 
 - `data:` URIs, and
-- files inside the Markdown file's directory (subdirectories included), checked
-  after resolving symlinks and `..`. Relative references such as
-  `![chart](images/chart.png)` resolve against that directory.
+- image, stylesheet and font files inside the Markdown file's directory
+  (subdirectories included). Relative references such as
+  `![chart](images/chart.png)` resolve against that directory. Both the
+  directory and the type are checked on the file actually fetched, after
+  resolving symlinks and `..`; the type is decided by its extension,
+  case-insensitively:
+  - images: `.png`, `.jpg`, `.jpeg`, `.gif`, `.bmp`, `.webp`, `.svg`, `.tif`,
+    `.tiff`, `.ico`
+  - stylesheets: `.css`
+  - fonts: `.ttf`, `.otf`, `.woff`, `.woff2`
 
 Everything else is skipped and never fetched: remote URLs (`http`, `https`,
-`ftp`, ...), `file://` paths outside the directory, and other schemes. This
-covers every resource WeasyPrint loads — images, stylesheets, fonts and
-attachments (`<link rel="attachment">`). WeasyPrint logs an error for a skipped
-image, stylesheet or attachment; a skipped font falls back to another font and
-is logged only at `DEBUG` level. An attachment can be a file of any type, so
-any file in that directory tree, hidden files such as `.env` included, can be
-embedded in the PDF: keep untrusted Markdown away from directories that hold
-secrets.
+`ftp`, ...), `file://` paths outside the directory, other schemes, and any
+other file inside the directory — hidden files such as `.env`, files without
+an extension, `.txt`, `.json`, `.pdf`, the Markdown source itself, or a
+symlink named `chart.png` that points at one of them. This covers every
+resource WeasyPrint loads — images, stylesheets, fonts and attachments
+(`<link rel="attachment">`, `<a rel="attachment">`), so an attachment can only
+carry an allowed image, stylesheet or font file or a `data:` URI. WeasyPrint
+logs an error for a skipped image, stylesheet or attachment; a skipped font
+falls back to another font and is logged only at `DEBUG` level.
 
 The CSS from `css_file` or `custom_css` is inlined into the page, so its
 `url()` references resolve against the Markdown file's directory too, and
-absolute `file://` references in it must also point inside that directory.
+absolute `file://` references in it must also point to allowed files inside
+that directory.
 
 `convert_markdown_to_pdf()` takes the directory from its `base_url` keyword (a
 `file:` URL or a filesystem path, normally the Markdown file's path); called
@@ -462,13 +471,19 @@ sudo apt-get install pandoc wkhtmltopdf
 
 #### Image Problems
 - Ensure images are accessible (correct paths); with WeasyPrint, keep them in
-  the Markdown file's directory or embed them as `data:` URIs (see
+  the Markdown file's directory, with an image extension such as `.png` or
+  `.jpg`, or embed them as `data:` URIs (see
   [Resource Loading](#resource-loading-weasyprint))
 - Check image file formats (PNG, JPEG, GIF supported)
 - Verify image file permissions
 - Consider image size and format optimization
 
 #### Font Issues
+- With WeasyPrint, `@font-face` fonts load only from `.ttf`, `.otf`, `.woff`
+  or `.woff2` files in the Markdown file's directory or from `data:` URIs; a
+  skipped font silently falls back to another font (see
+  [Resource Loading](#resource-loading-weasyprint))
+
 ```python
 # Use web-safe fonts
 config = MarkdownConfig(

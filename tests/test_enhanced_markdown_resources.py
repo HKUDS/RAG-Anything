@@ -1,8 +1,8 @@
-"""WeasyPrint loads only resources from the Markdown file's directory.
+"""WeasyPrint loads only images, stylesheets and fonts from the Markdown's directory.
 
 The Markdown being converted is untrusted: WeasyPrint's default fetcher
 requested any remote URL it referenced and embedded any local file (images,
-stylesheets, PDF attachments). These run the real WeasyPrint.
+stylesheets, PDF attachments such as ``.env``). These run the real WeasyPrint.
 """
 
 import base64
@@ -33,6 +33,51 @@ def _image_colors(pdf):
         for page in pypdf.PdfReader(pdf).pages
         for image in page.images
     ]
+
+
+def _attachments(pdf):
+    """The contents of every file attached to the document or to a link."""
+    reader = pypdf.PdfReader(pdf)
+    contents = [data for datas in reader.attachments.values() for data in datas]
+    for page in reader.pages:
+        for annotation in page.get("/Annots", []):
+            annotation = annotation.get_object()
+            if annotation.get("/Subtype") == "/FileAttachment":
+                contents.append(annotation["/FS"]["/EF"]["/F"].get_object().get_data())
+    return contents
+
+
+def _font_names(pdf):
+    return {
+        str(font.get_object()["/BaseFont"])
+        for page in pypdf.PdfReader(pdf).pages
+        for font in page["/Resources"].get("/Font", {}).values()
+    }
+
+
+def _font(path, family):
+    """A minimal TrueType font drawing the letters of "Probe" as boxes."""
+    from fontTools.fontBuilder import FontBuilder
+    from fontTools.pens.ttGlyphPen import TTGlyphPen
+
+    pen = TTGlyphPen(None)
+    pen.moveTo((100, 0))
+    pen.lineTo((100, 700))
+    pen.lineTo((500, 700))
+    pen.lineTo((500, 0))
+    pen.closePath()
+    builder = FontBuilder(1000, isTTF=True)
+    builder.setupGlyphOrder([".notdef", "box"])
+    builder.setupCharacterMap({ord(char): "box" for char in "Probe"})
+    builder.setupGlyf({".notdef": TTGlyphPen(None).glyph(), "box": pen.glyph()})
+    builder.setupHorizontalMetrics({".notdef": (600, 0), "box": (600, 0)})
+    builder.setupHorizontalHeader(ascent=800, descent=-200)
+    builder.setupNameTable({"familyName": family, "styleName": "Regular"})
+    builder.setupOS2()
+    builder.setupPost()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    builder.save(str(path))
+    return path
 
 
 @pytest.fixture
@@ -96,6 +141,69 @@ def test_only_files_inside_the_markdown_directory_are_embedded(tmp_path, canary)
     pdf = pypdf.PdfReader(output)
     assert not pdf.attachments
     assert b"SECRET-ATTACHMENT-CONTENT" not in output.read_bytes()
+
+
+def test_only_image_stylesheet_and_font_files_are_attached(tmp_path):
+    source_dir = tmp_path / "docs"
+    source_dir.mkdir()
+    (source_dir / ".env").write_text("ENV-SECRET", encoding="utf-8")
+    (source_dir / "credentials").write_text("NO-SUFFIX-SECRET", encoding="utf-8")
+    (source_dir / "notes.txt").write_text("TXT-SECRET", encoding="utf-8")
+    # Named like an image, but the file actually fetched is .env.
+    (source_dir / "leak.png").symlink_to(source_dir / ".env")
+    (source_dir / "figure.png").write_bytes(b"ALLOWED-PNG-ATTACHMENT")
+    source = source_dir / "report.md"
+    source.write_text(
+        "# Report SOURCE-SECRET\n\n"
+        '<link rel="attachment" href=".env">\n'
+        '<link rel="attachment" href="credentials">\n'
+        '<link rel="attachment" href="notes.txt">\n'
+        '<link rel="attachment" href="report.md">\n'
+        '<link rel="attachment" href="leak.png">\n'
+        '<link rel="attachment" href="figure.png">\n\n'
+        '<p><a rel="attachment" href=".env">env</a>\n'
+        '<a rel="attachment" href="report.md">source</a>\n'
+        '<a rel="attachment" href="leak.png">leak</a></p>\n',
+        encoding="utf-8",
+    )
+    output = tmp_path / "report.pdf"
+
+    converter = EnhancedMarkdownConverter()
+    assert converter.convert_file_to_pdf(str(source), str(output), "weasyprint")
+
+    # The allowed file is attached, so the others were refused, not lost.
+    assert set(_attachments(output)) == {b"ALLOWED-PNG-ATTACHMENT"}
+
+
+def test_uppercase_image_and_inside_stylesheet_and_font_still_load(tmp_path):
+    pytest.importorskip("fontTools")
+    source_dir = tmp_path / "docs"
+    _png(source_dir / "figures" / "photo.PNG", "red")
+    _font(source_dir / "fonts" / "probe.ttf", "RagProbe")
+    css_file = source_dir / "styles" / "print.css"
+    css_file.parent.mkdir()
+    css_file.write_text(
+        "@page { size: 100mm 50mm; margin: 5mm; }\n"
+        "@font-face { font-family: RagProbe; src: url(../fonts/probe.ttf); }\n"
+        ".probe { font-family: RagProbe; }\n",
+        encoding="utf-8",
+    )
+    source = source_dir / "report.md"
+    source.write_text(
+        '<link rel="stylesheet" href="styles/print.css">\n\n'
+        "![photo](figures/photo.PNG)\n\n"
+        '<p class="probe">Probe</p>\n',
+        encoding="utf-8",
+    )
+    output = tmp_path / "report.pdf"
+
+    converter = EnhancedMarkdownConverter()
+    assert converter.convert_file_to_pdf(str(source), str(output), "weasyprint")
+
+    assert _image_colors(output) == [(255, 0, 0)]
+    page = pypdf.PdfReader(output).pages[0]
+    assert float(page.mediabox.width) * 25.4 / 72 == pytest.approx(100, abs=0.5)
+    assert any(name.endswith("+RagProbe") for name in _font_names(output))
 
 
 def test_data_uri_images_still_embed(tmp_path):
@@ -205,3 +313,30 @@ def test_fetcher_refuses_other_urls_before_any_io(tmp_path, url):
     fetcher = _restricted_url_fetcher((tmp_path / "doc.md").as_uri())
     with pytest.raises(ValueError, match="Markdown file's directory"):
         fetcher(url)
+
+
+_INSIDE_FILES = [
+    ".env",
+    "credentials",
+    "notes.txt",
+    "doc.md",
+    "data.json",
+    "report.pdf",
+    ".git/config",
+    ".aws/credentials",
+]
+
+
+@pytest.mark.parametrize("name", [*_INSIDE_FILES, "leak.png"])
+def test_fetcher_refuses_other_files_inside_the_directory(tmp_path, name):
+    from raganything.enhanced_markdown import _restricted_url_fetcher
+
+    for secret in _INSIDE_FILES:
+        (tmp_path / secret).parent.mkdir(exist_ok=True)
+        (tmp_path / secret).write_text("SECRET", encoding="utf-8")
+    (tmp_path / "leak.png").symlink_to(tmp_path / ".env")
+
+    fetcher = _restricted_url_fetcher((tmp_path / "doc.md").as_uri())
+    with pytest.raises(ValueError, match="Markdown file's directory") as refused:
+        fetcher((tmp_path / name).as_uri())
+    assert ".png" in str(refused.value) and ".woff2" in str(refused.value)
