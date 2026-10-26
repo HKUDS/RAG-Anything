@@ -418,6 +418,30 @@ def test_timeout_is_measured_from_each_worker_start(monkeypatch, tmp_path):
     assert "timed out" in result.errors[str(second_doc)]
 
 
+def test_queued_file_is_not_charged_for_waiting_behind_slow_file(monkeypatch, tmp_path):
+    batch_parser, _ = _make_batch_parser(monkeypatch)
+    _, first_doc, second_doc = _seed_two_docs(tmp_path)
+    batch_parser.max_workers = 1
+    batch_parser.timeout_per_file = 0.3
+    ran = []
+
+    def slow_process(file_path, output_dir, parse_method="auto", **kwargs):
+        ran.append(file_path)
+        if file_path == str(first_doc):
+            time.sleep(1.0)
+        return True, file_path, None
+
+    monkeypatch.setattr(batch_parser, "process_single_file", slow_process)
+
+    result = batch_parser.process_batch(
+        [str(first_doc), str(second_doc)], str(tmp_path / "out")
+    )
+
+    assert result.failed_files == [str(first_doc)]
+    assert result.successful_files == [str(second_doc)]
+    assert ran == [str(first_doc), str(second_doc)]
+
+
 @pytest.mark.parametrize(
     "first_options,second_options",
     [
