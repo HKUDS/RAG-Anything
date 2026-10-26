@@ -27,12 +27,19 @@ try:
 except ImportError:
     MARKDOWN_AVAILABLE = False
 
+# Why WeasyPrint cannot be used, when it is installed but fails to import.
+_WEASYPRINT_IMPORT_ERROR: Optional[str] = None
 try:
     from weasyprint import HTML
 
     WEASYPRINT_AVAILABLE = True
 except ImportError:
     WEASYPRINT_AVAILABLE = False
+except OSError as exc:
+    # WeasyPrint is installed, but loading its system libraries (Pango,
+    # GObject, ...) failed; that raises OSError at import time.
+    WEASYPRINT_AVAILABLE = False
+    _WEASYPRINT_IMPORT_ERROR = str(exc)
 
 try:
     # Check if pandoc module exists (not used directly, just for detection)
@@ -383,6 +390,14 @@ class EnhancedMarkdownConverter:
         skipped. Without a local ``base_url`` only ``data:`` URIs load.
         """
         if not WEASYPRINT_AVAILABLE:
+            if _WEASYPRINT_IMPORT_ERROR:
+                raise RuntimeError(
+                    "WeasyPrint is installed but could not load its system "
+                    f"libraries (Pango, GObject): {_WEASYPRINT_IMPORT_ERROR}. "
+                    "Install them as described in WeasyPrint's installation "
+                    "guide: https://doc.courtbouillon.org/weasyprint/stable/"
+                    "first_steps.html"
+                )
             raise RuntimeError(
                 "WeasyPrint not available. Install with: pip install weasyprint"
             )
