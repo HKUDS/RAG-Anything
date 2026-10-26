@@ -1,5 +1,6 @@
 """Regression tests for parse-cache file identity."""
 
+import json
 import os
 from pathlib import Path
 from types import SimpleNamespace
@@ -7,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from raganything.processor import ProcessorMixin
-from raganything.parser import DoclingParser
+from raganything.parser import DoclingParser, MineruParser, PaddleOCRParser
 
 
 class _Logger:
@@ -144,3 +145,74 @@ async def test_parse_cache_invalidates_when_content_changes_with_preserved_mtime
     assert first_content != second_content
     assert first_doc_id != second_doc_id
     assert second_content == [{"type": "text", "text": "bravo"}]
+
+
+@pytest.mark.asyncio
+async def test_paddleocr_cls_invalidates_parse_cache(tmp_path, monkeypatch):
+    processor = _make_processor(tmp_path)
+    processor.config.parser = "paddleocr"
+    processor.doc_parser = PaddleOCRParser()
+    recognized = []
+
+    def ocr_input(input_data, lang=None, cls_enabled=True):
+        recognized.append(cls_enabled)
+        return [f"angle classifier: {cls_enabled}"]
+
+    monkeypatch.setattr(processor.doc_parser, "_ocr_input", ocr_input)
+    image = tmp_path / "scan.png"
+    image.write_bytes(b"synthetic image for a stubbed OCR engine")
+
+    first = await processor.parse_document(str(image), cls=True)
+    second = await processor.parse_document(str(image), cls=False)
+    repeated = await processor.parse_document(str(image), cls=False)
+
+    assert recognized == [True, False]
+    assert first[0][0]["text"] == "angle classifier: True"
+    assert second[0][0]["text"] == "angle classifier: False"
+    assert repeated == second
+
+
+@pytest.mark.asyncio
+async def test_mineru_vlm_url_invalidates_parse_cache_without_persisting_it(
+    tmp_path, monkeypatch
+):
+    processor = _make_processor(tmp_path)
+    processor.config.parser = "mineru"
+    processor.doc_parser = MineruParser()
+    servers = []
+
+    def run_mineru(input_path, output_dir, method="auto", vlm_url=None, **kwargs):
+        servers.append(vlm_url)
+        stem = Path(input_path).stem
+        out = Path(output_dir) / stem / "vlm"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / f"{stem}_content_list.json").write_text(
+            json.dumps([{"type": "text", "text": f"parsed by {vlm_url}"}]),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(processor.doc_parser, "_run_mineru_command", run_mineru)
+    document = tmp_path / "document.pdf"
+    document.write_bytes(b"synthetic document for a stubbed MinerU run")
+    first_server = "http://user:secret-a@vlm-a:30000"
+    second_server = "http://user:secret-b@vlm-b:30000"
+    options = {"backend": "vlm-http-client"}
+
+    first = await processor.parse_document(
+        str(document), vlm_url=first_server, **options
+    )
+    second = await processor.parse_document(
+        str(document), vlm_url=second_server, **options
+    )
+    repeated = await processor.parse_document(
+        str(document), vlm_url=second_server, **options
+    )
+
+    assert servers == [first_server, second_server]
+    assert first[0][0]["text"] == f"parsed by {first_server}"
+    assert second[0][0]["text"] == f"parsed by {second_server}"
+    assert repeated == second
+    persisted = json.dumps(
+        [entry["parse_config"] for entry in processor.parse_cache.entries.values()]
+    )
+    assert "secret" not in persisted and "vlm-a" not in persisted
