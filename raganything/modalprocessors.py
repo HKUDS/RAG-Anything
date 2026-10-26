@@ -31,6 +31,7 @@ from raganything.document_context import get_document_source, set_document_sourc
 from raganything.utils import (
     encode_image_to_base64,
     format_table_body,
+    get_equation_description,
     get_equation_text_and_format,
     get_table_body,
     normalize_caption_list,
@@ -1391,6 +1392,13 @@ class EquationModalProcessor(BaseModalProcessor):
             context = ""
             if item_info:
                 context = self._get_context_for_item(item_info)
+            description = get_equation_description(content_data)
+            if description:
+                # The item's own description of its formula, marked like the
+                # context extractor's [Image: ...] / [Table: ...] captions.
+                context = "\n".join(
+                    part for part in (f"[Equation: {description}]", context) if part
+                )
 
             # Build equation analysis prompt with context
             if context:

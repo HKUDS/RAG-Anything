@@ -89,29 +89,43 @@ def _table_cell(cell: Any) -> str:
 def get_equation_text_and_format(item: Dict[str, Any]) -> Tuple[str, str]:
     """Read equation content while preserving LaTeX aliases from content lists.
 
-    Field priority follows MinerU first (``text`` + ``text_format``), then
-    falls back to ``latex`` and ``equation`` aliases used by other parsers.
-    The textual description is intentionally NOT concatenated into the
-    equation body: the ``equation_chunk`` template has a separate
-    ``enhanced_caption`` slot for that.
+    An explicit ``latex`` formula comes first: in the documented content-list
+    format (``{"type": "equation", "latex": ..., "text": "<description>"}``)
+    ``text`` is a description, not the formula. Otherwise MinerU's ``text``
+    (+ ``text_format``) is the formula, then the ``equation`` alias used by
+    other parsers. A textual description is intentionally NOT concatenated
+    into the equation body (the ``equation_chunk`` template has a separate
+    ``enhanced_caption`` slot); :func:`get_equation_description` reads it.
     """
     text = str(item.get("text", "") or "").strip()
     latex = str(item.get("latex", "") or "").strip()
     equation = str(item.get("equation", "") or "").strip()
     equation_format = str(item.get("text_format", "") or "").strip()
 
-    if text:
-        equation_text = text
-    elif latex:
+    if latex:
         equation_text = latex
         if not equation_format:
             equation_format = "latex"
+    elif text:
+        equation_text = text
     elif equation:
         equation_text = equation
     else:
         equation_text = ""
 
     return equation_text, equation_format
+
+
+def get_equation_description(item: Dict[str, Any]) -> str:
+    """The description an equation item gives next to its ``latex`` formula.
+
+    Only the documented content-list format has one (``text`` beside
+    ``latex``); in MinerU items ``text`` is the formula itself, so this
+    returns ``""`` for them.
+    """
+    latex = str(item.get("latex", "") or "").strip()
+    text = str(item.get("text", "") or "").strip()
+    return text if latex and text != latex else ""
 
 
 def extract_section_path_from_content_list(
