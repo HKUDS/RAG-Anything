@@ -214,6 +214,27 @@ python -m raganything.enhanced_markdown --info
 python -m raganything.enhanced_markdown --help
 ```
 
+### Resource Loading (WeasyPrint)
+
+Markdown is treated as untrusted input, so the WeasyPrint backend loads
+resources only from:
+
+- `data:` URIs, and
+- files inside the Markdown file's directory (subdirectories included), checked
+  after resolving symlinks and `..`. Relative references such as
+  `![chart](images/chart.png)` resolve against that directory.
+
+Everything else is skipped with a WeasyPrint warning and never fetched: remote
+URLs (`http`, `https`, `ftp`, ...), `file://` paths outside the directory, and
+other schemes. This covers every resource WeasyPrint loads — images,
+stylesheets, fonts and attachments (`<link rel="attachment">`). The CSS from
+`css_file` or `custom_css` is inlined into the page, so its `url()` references
+resolve against the Markdown file's directory too. `convert_markdown_to_pdf()`
+called on a Markdown string without a file `base_url` loads only `data:` URIs.
+
+The restriction applies to the WeasyPrint backend; the Pandoc backend runs an
+external program with its own resource loading.
+
 ## Backend Comparison
 
 | Backend | Pros | Cons | Best For | Quality |
@@ -429,7 +450,9 @@ sudo apt-get install pandoc wkhtmltopdf
 - Use browser developer tools to debug styling
 
 #### Image Problems
-- Ensure images are accessible (correct paths)
+- Ensure images are accessible (correct paths); with WeasyPrint, keep them in
+  the Markdown file's directory or embed them as `data:` URIs (see
+  [Resource Loading](#resource-loading-weasyprint))
 - Check image file formats (PNG, JPEG, GIF supported)
 - Verify image file permissions
 - Consider image size and format optimization

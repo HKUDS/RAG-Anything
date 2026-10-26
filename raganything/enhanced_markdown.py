@@ -17,6 +17,8 @@ from typing import Dict, Any, Optional
 from dataclasses import dataclass
 import tempfile
 import subprocess
+from urllib.parse import urlsplit
+from urllib.request import url2pathname
 
 try:
     import markdown
@@ -40,6 +42,66 @@ try:
     PANDOC_AVAILABLE = spec is not None
 except ImportError:
     PANDOC_AVAILABLE = False
+
+
+def _local_directory(url: Optional[str]) -> Optional[Path]:
+    """The resolved local directory a ``file:`` base URL points into, if any.
+
+    Like ``urljoin``, a base URL without a trailing slash names a file, whose
+    parent directory relative references resolve against.
+    """
+    if not url:
+        return None
+    parts = urlsplit(url)
+    if parts.scheme.lower() != "file" or parts.netloc not in ("", "localhost"):
+        return None
+    path = Path(url2pathname(parts.path))
+    return (path if parts.path.endswith("/") else path.parent).resolve()
+
+
+def _restricted_url_fetcher(base_url: Optional[str]):
+    """A WeasyPrint ``url_fetcher`` that only loads trusted local resources.
+
+    The Markdown is untrusted input; WeasyPrint's default fetcher would request
+    any remote URL it references and embed any local file. This one allows
+    ``data:`` URIs and ``file:`` URLs that resolve (symlinks and ``..``
+    resolved) inside the directory of ``base_url``, the Markdown file's
+    location; without a local ``base_url`` only ``data:`` URIs. Anything else
+    is refused before any I/O: WeasyPrint logs a warning and skips the
+    resource.
+    """
+    root = _local_directory(base_url)
+
+    def checked(url: str) -> str:
+        parts = urlsplit(url)
+        scheme = parts.scheme.lower()
+        if scheme == "data":
+            return url
+        if scheme == "file" and root is not None and parts.netloc in ("", "localhost"):
+            path = Path(url2pathname(parts.path)).resolve()
+            if path.is_relative_to(root):
+                # Fetch the file that was checked, not the link to it.
+                return path.as_uri()
+        raise ValueError(
+            "only data: URIs and files in the Markdown file's directory are "
+            f"loaded, not {url[:200]}"
+        )
+
+    try:  # WeasyPrint >= 68
+        from weasyprint.urls import URLFetcher
+    except ImportError:  # WeasyPrint < 68: plain function fetchers
+        from weasyprint.urls import default_url_fetcher
+
+        def fetcher(url, *args, **kwargs):
+            return default_url_fetcher(checked(url), *args, **kwargs)
+
+        return fetcher
+
+    class RestrictedURLFetcher(URLFetcher):
+        def fetch(self, url, headers=None):
+            return super().fetch(checked(url), headers)
+
+    return RestrictedURLFetcher(allowed_protocols=("data", "file"))
 
 
 @dataclass
@@ -291,7 +353,15 @@ class EnhancedMarkdownConverter:
     def convert_with_weasyprint(
         self, markdown_content: str, output_path: str, *, base_url: Optional[str] = None
     ) -> bool:
-        """Convert using WeasyPrint, resolving relative resources against base_url."""
+        """Convert using WeasyPrint, resolving relative resources against base_url.
+
+        Resources (images, stylesheets, fonts, attachments, including the
+        ``url()`` references of the CSS, which is inlined) load only from
+        ``data:`` URIs and from files inside the directory of a ``file:``
+        ``base_url`` (the Markdown file's directory); remote URLs and other
+        files are skipped with a warning. Without a local ``base_url`` only
+        ``data:`` URIs load.
+        """
         if not WEASYPRINT_AVAILABLE:
             raise RuntimeError(
                 "WeasyPrint not available. Install with: pip install weasyprint"
@@ -302,7 +372,11 @@ class EnhancedMarkdownConverter:
             html_content = self._process_markdown_content(markdown_content)
 
             # Convert HTML to PDF
-            html = HTML(string=html_content, base_url=base_url)
+            html = HTML(
+                string=html_content,
+                base_url=base_url,
+                url_fetcher=_restricted_url_fetcher(base_url),
+            )
             html.write_pdf(output_path)
 
             self.logger.info(
@@ -389,7 +463,9 @@ class EnhancedMarkdownConverter:
             markdown_content: Markdown content to convert
             output_path: Output PDF file path
             method: Conversion method ("auto", "weasyprint", "pandoc", "pandoc_system")
-            base_url: Base URL for relative resources in the WeasyPrint backend
+            base_url: Base URL for relative resources in the WeasyPrint backend.
+                WeasyPrint loads only ``data:`` URIs and files inside this
+                ``file:`` URL's directory; without one, only ``data:`` URIs.
 
         Returns:
             True if conversion successful, False otherwise
@@ -420,6 +496,11 @@ class EnhancedMarkdownConverter:
     ) -> bool:
         """
         Convert Markdown file to PDF
+
+        With the WeasyPrint backend, relative resources resolve against the
+        Markdown file's directory, and only files inside that directory (and
+        ``data:`` URIs) are loaded; remote URLs and files elsewhere are
+        skipped with a warning.
 
         Args:
             input_path: Input Markdown file path
