@@ -1211,9 +1211,11 @@ class TableModalProcessor(BaseModalProcessor):
                     if entity_name
                     else "descriptive name for this table",
                     table_img_path=table_img_path,
-                    table_caption=table_caption if table_caption else "None",
+                    table_caption=", ".join(table_caption) if table_caption else "None",
                     table_body=table_body,
-                    table_footnote=table_footnote if table_footnote else "None",
+                    table_footnote=", ".join(table_footnote)
+                    if table_footnote
+                    else "None",
                 )
             else:
                 table_prompt = PROMPTS["table_prompt"].format(
@@ -1221,9 +1223,11 @@ class TableModalProcessor(BaseModalProcessor):
                     if entity_name
                     else "descriptive name for this table",
                     table_img_path=table_img_path,
-                    table_caption=table_caption if table_caption else "None",
+                    table_caption=", ".join(table_caption) if table_caption else "None",
                     table_body=table_body,
-                    table_footnote=table_footnote if table_footnote else "None",
+                    table_footnote=", ".join(table_footnote)
+                    if table_footnote
+                    else "None",
                 )
 
             # Call LLM for table analysis

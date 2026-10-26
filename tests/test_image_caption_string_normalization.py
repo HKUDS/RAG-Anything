@@ -194,3 +194,60 @@ async def test_vision_prompt_gets_joined_captions(
     assert f"- Captions: {expected_captions}\n" in prompt
     assert f"- Footnotes: {expected_footnotes}\n" in prompt
     assert "['" not in prompt
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("with_context", [False, True])
+@pytest.mark.parametrize(
+    "captions,footnotes,expected_captions,expected_footnotes",
+    [
+        (["Table 1"], ["Note"], "Table 1", "Note"),
+        (["First", "Second"], ["Note a", "Note b"], "First, Second", "Note a, Note b"),
+        ("Performance table", "Synthetic", "Performance table", "Synthetic"),
+        (None, None, "None", "None"),
+    ],
+)
+async def test_table_prompt_gets_joined_captions(
+    captions,
+    footnotes,
+    expected_captions,
+    expected_footnotes,
+    with_context,
+):
+    prompts = []
+
+    async def llm(prompt, system_prompt=None, **kwargs):
+        prompts.append(prompt)
+        return json.dumps(
+            {
+                "detailed_description": "A one-column table.",
+                "entity_info": {
+                    "entity_name": "Table One",
+                    "entity_type": "table",
+                    "summary": "A one-column table.",
+                },
+            }
+        )
+
+    instance = modalprocessors.TableModalProcessor(
+        _fake_lightrag(), modal_caption_func=llm
+    )
+    if with_context:
+        instance._get_context_for_item = lambda item_info: "Surrounding text."
+
+    await instance.generate_description_only(
+        {
+            "type": "table",
+            "table_body": "|a|\n|-|\n|1|",
+            "table_caption": captions,
+            "table_footnote": footnotes,
+        },
+        "table",
+        item_info={"page_idx": 0, "index": 0, "type": "table"},
+    )
+
+    (prompt,) = prompts
+    assert ("Surrounding text." in prompt) is with_context
+    assert f"Caption: {expected_captions}\n" in prompt
+    assert f"Footnotes: {expected_footnotes}\n" in prompt
+    assert "['" not in prompt
