@@ -668,13 +668,22 @@ class QueryMixin:
         # Initialize image cache
         self._current_images_base64 = []
 
-        # Read the complete path field; validate_image_file checks its suffix
-        # and bytes. Stopping at the first image extension can select a different
-        # file when a directory or filename itself contains an image suffix.
-        image_path_pattern = r"Image Path:[ \t]*([^\r\n]+)"
+        # LightRAG 1.4.x json.dumps each retrieved chunk into the prompt, so the
+        # newline after "Image Path: <path>" usually arrives as the two
+        # characters backslash and "n". Capture through a case-insensitive image
+        # extension, and only when a delimiter follows it (a JSON escape such
+        # as \n, a quote, whitespace or end of line), so "figure.PNG" is found
+        # and "figure.png.backup" is not shortened to "figure.png".
+        # validate_image_file and the safe-directory check below still run on
+        # every captured path.
+        image_path_pattern = re.compile(
+            r"Image Path:[ \t]*([^\r\n]*?\.(?:jpe?g|png|gif|bmp|webp|tiff?))"
+            r"(?=\\[nrt]|[\"\s]|$)",
+            re.IGNORECASE | re.MULTILINE,
+        )
 
         # First, let's see what matches we find
-        matches = re.findall(image_path_pattern, prompt)
+        matches = image_path_pattern.findall(prompt)
         self.logger.info(f"Found {len(matches)} image path matches in prompt")
 
         def replace_image_path(match):
@@ -761,9 +770,7 @@ class QueryMixin:
                 return match.group(0)  # Keep original
 
         # Execute replacement
-        enhanced_prompt = re.sub(
-            image_path_pattern, replace_image_path, enhanced_prompt
-        )
+        enhanced_prompt = image_path_pattern.sub(replace_image_path, enhanced_prompt)
 
         return enhanced_prompt, images_processed
 
