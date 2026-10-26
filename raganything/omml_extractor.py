@@ -519,10 +519,8 @@ def _h_radical(element: ET.Element) -> str:
     rad_pr = _first_child(element, "radPr")
     # OMML can retain degree text even when degHide suppresses its display.
     deg_hide = _first_child(rad_pr, "degHide") if rad_pr is not None else None
-    degree_hidden = (
-        deg_hide is not None
-        and deg_hide.get(_M + "val", "1").lower() in {"1", "true", "on"}
-    )
+    hide_val = deg_hide.get(_M + "val", "1").lower() if deg_hide is not None else "0"
+    degree_hidden = hide_val in {"1", "true", "on"}
     base = _first_child(element, "e")
     base_latex = _convert_children(base)
     if deg is not None and list(deg) and not degree_hidden:
