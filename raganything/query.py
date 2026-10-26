@@ -674,10 +674,15 @@ class QueryMixin:
         # extension, and only when a delimiter follows it (a JSON escape such
         # as \n, a quote, whitespace or end of line), so "figure.PNG" is found
         # and "figure.png.backup" is not shortened to "figure.png".
+        # "(?![ \t])" stops the leading blanks from being re-tried one by one,
+        # which made a long run of spaces take quadratic time. The capture
+        # stops at the next "Image Path:" label, so an invalid path cannot
+        # swallow a valid one later in the same chunk.
         # validate_image_file and the safe-directory check below still run on
         # every captured path.
         image_path_pattern = re.compile(
-            r"Image Path:[ \t]*([^\r\n]*?\.(?:jpe?g|png|gif|bmp|webp|tiff?))"
+            r"Image Path:[ \t]*(?![ \t])"
+            r"((?:(?!Image Path:)[^\r\n])*?\.(?:jpe?g|png|gif|bmp|webp|tiff?))"
             r"(?=\\[nrt]|[\"\s]|$)",
             re.IGNORECASE | re.MULTILINE,
         )

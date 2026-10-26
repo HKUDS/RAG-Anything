@@ -12,6 +12,7 @@ content uses RAG-Anything's own ``image_chunk`` template.
 import base64
 import json
 import logging
+import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
@@ -265,3 +266,57 @@ async def test_capture_stops_at_json_escaped_delimiter(
     escaped_rest = prompt.split(f"Image Path: {image_path}", 1)[1]
     assert escaped_rest.startswith(json.dumps(following)[1:-1] + '"')
     assert f"Image Path: {image_path}\n[VLM_IMAGE_1]{escaped_rest}" in enhanced
+
+
+def _table_chunk(table_img_path):
+    return PROMPTS["table_chunk"].format(
+        table_img_path=table_img_path,
+        table_caption="Table 1",
+        table_body="| quarter | revenue |",
+        table_footnote="None",
+        enhanced_caption="A table of revenue per quarter.",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize(
+    "invalid_first",
+    [
+        lambda tmp_path: _image_chunk(str(tmp_path / "diagram.svg")),
+        lambda tmp_path: _table_chunk(""),
+        lambda tmp_path: _image_chunk(f"{tmp_path / 'figure.png'}.backup"),
+    ],
+    ids=["svg", "empty-table-path", "png-backup"],
+)
+async def test_invalid_path_does_not_hide_valid_image_in_same_chunk(
+    tmp_path, validated_paths, mode, invalid_first
+):
+    _save_png(tmp_path / "figure.png", "red")
+    valid = tmp_path / "valid.png"
+    valid_bytes = _save_png(valid, "blue")
+    content = invalid_first(tmp_path) + "\n" + _image_chunk(str(valid))
+    prompt = await _lightrag_prompt(mode, [content])
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode=mode) == "vision answer"
+    assert _sent_images(query) == [valid_bytes]
+    assert validated_paths == [str(valid)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tail", ["x", "x.pngx"])
+async def test_long_run_of_spaces_after_label_is_linear(tmp_path, tail):
+    # The earlier pattern re-scanned the rest of the line once per space:
+    # 20k spaces took about 4 s, and 100k (one default-size chunk) about
+    # 110 s, blocking the event loop.
+    content = "Image Path:" + " " * 20_000 + tail
+    prompt = await _lightrag_prompt("naive", [content])
+    query = _make_query(tmp_path, prompt)
+
+    start = time.perf_counter()
+    enhanced, count = await query._process_image_paths_for_vlm(prompt)
+
+    assert time.perf_counter() - start < 1.0
+    assert count == 0
+    assert enhanced == prompt
