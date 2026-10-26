@@ -21,7 +21,11 @@ def normalize_caption_list(value: Any) -> List[str]:
     if value is None:
         return []
     if isinstance(value, list):
-        return [str(item).strip() for item in value if str(item).strip()]
+        return [
+            str(item).strip()
+            for item in value
+            if item is not None and str(item).strip()
+        ]
     if isinstance(value, str) and value.strip():
         return [value.strip()]
     return []
@@ -50,17 +54,36 @@ def format_table_body(table_body: Any) -> str:
         if not table_body:
             return ""
         if all(isinstance(row, (list, tuple)) for row in table_body):
+            column_count = max(len(row) for row in table_body)
+            # Every row gets every column, so a short row cannot shift the ones
+            # after it, and each cell stays one cell (see _table_cell).
             rendered_rows = [
-                "| " + " | ".join(str(cell) for cell in row) + " |"
+                "| "
+                + " | ".join(
+                    _table_cell(row[i] if i < len(row) else None)
+                    for i in range(column_count)
+                )
+                + " |"
                 for row in table_body
             ]
-            if len(rendered_rows) >= 1:
-                column_count = max(len(row) for row in table_body)
-                separator = "| " + " | ".join(["---"] * column_count) + " |"
-                rendered_rows.insert(1, separator)
+            separator = "| " + " | ".join(["---"] * column_count) + " |"
+            rendered_rows.insert(1, separator)
             return "\n".join(rendered_rows)
         return "\n".join(str(row) for row in table_body)
     return str(table_body)
+
+
+def _table_cell(cell: Any) -> str:
+    """One cell of a Markdown table row.
+
+    An empty cell (``None``) stays empty instead of reading "None"; a pipe is
+    escaped and a line break becomes a space, since either would otherwise end
+    the cell or the row early.
+    """
+    if cell is None:
+        return ""
+    text = str(cell).replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+    return text.replace("|", "\\|")
 
 
 def get_equation_text_and_format(item: Dict[str, Any]) -> Tuple[str, str]:
@@ -112,29 +135,36 @@ def extract_section_path_from_content_list(
     heading_chain: List[Tuple[int, str]] = []
 
     for item in content_list[:limit]:
-        if not isinstance(item, dict):
-            continue
-
-        if item.get("type", "text") != "text":
-            continue
-
-        text = str(item.get("text", "") or "").strip()
-        if not text:
-            continue
-
-        try:
-            level = int(item.get("text_level", 0) or 0)
-        except (TypeError, ValueError):
-            continue
-
-        if level <= 0:
-            continue
-
-        while heading_chain and heading_chain[-1][0] >= level:
-            heading_chain.pop()
-        heading_chain.append((level, text))
+        _update_heading_chain(item, heading_chain)
 
     return " > ".join(text for _, text in heading_chain)
+
+
+def _update_heading_chain(
+    item: Dict[str, Any], heading_chain: List[Tuple[int, str]]
+) -> None:
+    """Advance the heading hierarchy by one content block."""
+    if not isinstance(item, dict):
+        return
+
+    if item.get("type", "text") != "text":
+        return
+
+    text = str(item.get("text", "") or "").strip()
+    if not text:
+        return
+
+    try:
+        level = int(item.get("text_level", 0) or 0)
+    except (TypeError, ValueError):
+        return
+
+    if level <= 0:
+        return
+
+    while heading_chain and heading_chain[-1][0] >= level:
+        heading_chain.pop()
+    heading_chain.append((level, text))
 
 
 def extract_neighbor_text_from_content_list(
@@ -191,8 +221,10 @@ def separate_content_with_page_map(
     multimodal_items = []
     page_intervals: List[Tuple[int, int, Optional[int]]] = []
     text_length = 0
+    heading_chain: List[Tuple[int, str]] = []
 
     for index, item in enumerate(content_list):
+        _update_heading_chain(item, heading_chain)
         content_type = item.get("type", "text")
 
         if content_type == "text":
@@ -214,7 +246,7 @@ def separate_content_with_page_map(
             if content_type == "image":
                 multimodal_item.setdefault(
                     "_section_path",
-                    extract_section_path_from_content_list(content_list, index),
+                    " > ".join(text for _, text in heading_chain),
                 )
                 multimodal_item.setdefault(
                     "_neighbor_text",

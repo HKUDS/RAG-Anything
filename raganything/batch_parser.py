@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from functools import partial
 from pathlib import Path
@@ -83,7 +84,9 @@ class BatchParser:
             parser_type: Type of parser to use ("mineru", "docling", or "paddleocr")
             max_workers: Maximum number of parallel workers (at least 1)
             show_progress: Whether to show progress bars
-            timeout_per_file: Timeout in seconds for each file
+            timeout_per_file: Per-worker time limit in seconds, measured from
+                when a worker starts a file. An over-limit parse is marked failed
+                but its running thread is not forcibly stopped.
             skip_installation_check: Skip parser installation check (useful for testing)
         """
         # ThreadPoolExecutor rejects these only once a batch runs, where the
@@ -437,7 +440,8 @@ class BatchParser:
             recursive: Whether to search directories recursively
             dry_run: When True, only list files without processing them
             incremental: When True, skip files whose size, mtime, md5, and parsing
-                configuration match the previous successful batch run in output_dir
+                configuration match the previous successful batch run in output_dir,
+                provided their output directory still exists
             **kwargs: Additional parser arguments
 
         Returns:
@@ -473,6 +477,11 @@ class BatchParser:
         if incremental:
             parse_config = self._parse_config_signature(parse_method, kwargs)
             manifest = self._load_incremental_manifest(output_dir)
+            # A successful parse always creates this directory. If its output
+            # was cleaned up, the old input signature cannot justify reuse.
+            for file_path in supported_files:
+                if not self._file_output_dir(output_dir, file_path).is_dir():
+                    manifest.pop(str(Path(file_path).resolve()), None)
             files_to_process, skipped_files, signatures = (
                 self._filter_incremental_files(supported_files, manifest, parse_config)
             )
@@ -528,14 +537,35 @@ class BatchParser:
         try:
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 # Submit all tasks
+                # Track execution start (not submission time) so queueing and
+                # waiting on earlier futures do not consume a file's time budget.
+                started_at: Dict[str, float] = {}
+                started_events = {
+                    file_path: threading.Event() for file_path in files_to_process
+                }
+                start_lock = threading.Lock()
+
+                def process_with_worker_clock(file_path: str):
+                    started = time.monotonic()
+                    with start_lock:
+                        started_at[file_path] = started
+                    started_events[file_path].set()
+                    result = self.process_single_file(
+                        file_path, output_dir, parse_method, **kwargs
+                    )
+                    if (
+                        self.timeout_per_file is not None
+                        and time.monotonic() - started > self.timeout_per_file
+                    ):
+                        return (
+                            False,
+                            file_path,
+                            f"Processing timed out after {self.timeout_per_file} seconds",
+                        )
+                    return result
+
                 future_to_file = {
-                    executor.submit(
-                        self.process_single_file,
-                        file_path,
-                        output_dir,
-                        parse_method,
-                        **kwargs,
-                    ): file_path
+                    executor.submit(process_with_worker_clock, file_path): file_path
                     for file_path in files_to_process
                 }
 
@@ -543,16 +573,24 @@ class BatchParser:
                 # the timeout to as_completed() would incorrectly apply it to
                 # the whole batch instead of each individual parse.
                 for future, submitted_file in future_to_file.items():
+                    if self.timeout_per_file is None:
+                        remaining_timeout = None
+                    else:
+                        started_events[submitted_file].wait()
+                        with start_lock:
+                            started = started_at[submitted_file]
+                        remaining_timeout = max(
+                            0.0,
+                            self.timeout_per_file - (time.monotonic() - started),
+                        )
                     try:
                         success, file_path, error_msg = future.result(
-                            timeout=self.timeout_per_file
+                            timeout=remaining_timeout
                         )
                     except TimeoutError:
-                        # cancel() only prevents a not-yet-started task from
-                        # running; a parse already in progress keeps running in
-                        # its worker thread. We still record the file as failed
-                        # and move on so one slow file cannot stall the batch.
-                        future.cancel()
+                        # ThreadPoolExecutor cannot stop a running parse. Record
+                        # the file as failed and continue collecting results;
+                        # executor shutdown still waits for the worker to return.
                         success = False
                         file_path = submitted_file
                         error_msg = f"Processing timed out after {self.timeout_per_file} seconds"

@@ -119,6 +119,26 @@ class TestOmmlToLatex:
         )
         assert omml_to_latex(elem) == r"\sqrt[3]{x}"
 
+    @pytest.mark.parametrize(
+        ("hidden", "expected"),
+        [
+            ("1", r"\sqrt{x}"),
+            ("true", r"\sqrt{x}"),
+            ("0", r"\sqrt[3]{x}"),
+            ("false", r"\sqrt[3]{x}"),
+        ],
+    )
+    def test_radical_respects_hidden_degree_property(self, hidden, expected):
+        elem = _wrap_in_omath(
+            "<m:rad>"
+            f'<m:radPr><m:degHide m:val="{hidden}"/></m:radPr>'
+            "<m:deg><m:r><m:t>3</m:t></m:r></m:deg>"
+            "<m:e><m:r><m:t>x</m:t></m:r></m:e>"
+            "</m:rad>"
+        )
+
+        assert omml_to_latex(elem) == expected
+
     def test_summation_with_bounds(self):
         # ∑ from i=1 to n of x_i^2
         elem = _wrap_in_omath(
@@ -166,6 +186,37 @@ class TestOmmlToLatex:
         )
         assert omml_to_latex(elem) == "foo(x)"
 
+    def test_limit_under_a_function_name(self):
+        # Word writes lim with its limit as m:limLow inside fName
+        elem = _wrap_in_omath(
+            "<m:func>"
+            "<m:fName><m:limLow>"
+            "<m:e><m:r><m:t>lim</m:t></m:r></m:e>"
+            "<m:lim><m:r><m:t>x\u21920</m:t></m:r></m:lim>"
+            "</m:limLow></m:fName>"
+            "<m:e><m:r><m:t>f</m:t></m:r></m:e>"
+            "</m:func>"
+        )
+        assert omml_to_latex(elem) == r"\lim_{x\to0}{f}"
+
+    def test_word_function_name_keeps_its_argument_brackets(self):
+        elem = _wrap_in_omath(
+            "<m:func>"
+            "<m:fName><m:r><m:t>gcd</m:t></m:r></m:fName>"
+            "<m:e><m:d><m:e><m:r><m:t>a,b</m:t></m:r></m:e></m:d></m:e>"
+            "</m:func>"
+        )
+        assert omml_to_latex(elem) == r"\gcd{(a,b)}"
+
+    def test_unknown_function_does_not_double_its_argument_brackets(self):
+        elem = _wrap_in_omath(
+            "<m:func>"
+            "<m:fName><m:r><m:t>sgn</m:t></m:r></m:fName>"
+            "<m:e><m:d><m:e><m:r><m:t>x</m:t></m:r></m:e></m:d></m:e>"
+            "</m:func>"
+        )
+        assert omml_to_latex(elem) == "sgn(x)"
+
     def test_delimiter_default_parentheses(self):
         elem = _wrap_in_omath("<m:d><m:e><m:r><m:t>x+y</m:t></m:r></m:e></m:d>")
         assert omml_to_latex(elem) == "(x+y)"
@@ -178,6 +229,16 @@ class TestOmmlToLatex:
             "</m:d>"
         )
         assert omml_to_latex(elem) == "[x]"
+
+    @pytest.mark.parametrize("revision", ["del", "moveFrom"])
+    def test_tracked_deletion_inside_an_equation_is_left_out(self, revision):
+        # x + y edited to x + z with track changes on
+        elem = _wrap_in_omath(
+            "<m:r><m:t>x+</m:t></m:r>"
+            f'<w:{revision} w:id="1" w:author="A"><m:r><m:t>y</m:t></m:r></w:{revision}>'
+            '<w:ins w:id="2" w:author="A"><m:r><m:t>z</m:t></m:r></w:ins>'
+        )
+        assert omml_to_latex(elem) == "x+z"
 
     def test_matrix_2x2(self):
         elem = _wrap_in_omath(
@@ -388,6 +449,31 @@ class TestExtractFromDocx:
         result = extract_omml_equations(path)
         assert [eq["text"] for eq in result] == ["a+b", "{x}^{2}"]
         assert [eq["index"] for eq in result] == [0, 1]
+
+    @pytest.mark.parametrize("revision", ["del", "moveFrom"])
+    def test_skips_an_equation_removed_with_track_changes(self, tmp_path, revision):
+        # A whole equation deleted, or moved away, with track changes on is no
+        # longer in the document; the one moved to its new place is.
+        removed = (
+            f'<w:{revision} w:id="1" w:author="A">'
+            "<m:oMath><m:r><m:t>old</m:t></m:r></m:oMath>"
+            f"</w:{revision}>"
+        )
+        kept = "<m:oMath><m:r><m:t>new</m:t></m:r></m:oMath>"
+        path = tmp_path / "revised.docx"
+        path.write_bytes(_make_docx(removed + kept))
+        assert [eq["text"] for eq in extract_omml_equations(path)] == ["new"]
+
+    def test_keeps_document_order_across_paragraphs(self, tmp_path):
+        equations = "".join(
+            f"<m:oMath><m:r><m:t>e{i}</m:t></m:r></m:oMath></w:p><w:p>"
+            for i in range(300)
+        )
+        path = tmp_path / "many.docx"
+        path.write_bytes(_make_docx(equations))
+        result = extract_omml_equations(path)
+        assert [eq["text"] for eq in result] == [f"e{i}" for i in range(300)]
+        assert [eq["index"] for eq in result] == list(range(300))
 
     def test_missing_file_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):

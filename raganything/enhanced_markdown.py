@@ -262,7 +262,12 @@ class EnhancedMarkdownConverter:
         html_content = md.convert(content)
 
         # Add CSS styling
-        css = self.config.custom_css or self._get_default_css()
+        if self.config.custom_css:
+            css = self.config.custom_css
+        elif self.config.css_file:
+            css = Path(self.config.css_file).read_text(encoding="utf-8")
+        else:
+            css = self._get_default_css()
 
         # Create complete HTML document
         html_doc = f"""
@@ -283,8 +288,10 @@ class EnhancedMarkdownConverter:
 
         return html_doc
 
-    def convert_with_weasyprint(self, markdown_content: str, output_path: str) -> bool:
-        """Convert using WeasyPrint (best for styling)"""
+    def convert_with_weasyprint(
+        self, markdown_content: str, output_path: str, *, base_url: Optional[str] = None
+    ) -> bool:
+        """Convert using WeasyPrint, resolving relative resources against base_url."""
         if not WEASYPRINT_AVAILABLE:
             raise RuntimeError(
                 "WeasyPrint not available. Install with: pip install weasyprint"
@@ -295,7 +302,7 @@ class EnhancedMarkdownConverter:
             html_content = self._process_markdown_content(markdown_content)
 
             # Convert HTML to PDF
-            html = HTML(string=html_content)
+            html = HTML(string=html_content, base_url=base_url)
             html.write_pdf(output_path)
 
             self.logger.info(
@@ -368,7 +375,12 @@ class EnhancedMarkdownConverter:
                     )
 
     def convert_markdown_to_pdf(
-        self, markdown_content: str, output_path: str, method: str = "auto"
+        self,
+        markdown_content: str,
+        output_path: str,
+        method: str = "auto",
+        *,
+        base_url: Optional[str] = None,
     ) -> bool:
         """
         Convert markdown content to PDF
@@ -377,6 +389,7 @@ class EnhancedMarkdownConverter:
             markdown_content: Markdown content to convert
             output_path: Output PDF file path
             method: Conversion method ("auto", "weasyprint", "pandoc", "pandoc_system")
+            base_url: Base URL for relative resources in the WeasyPrint backend
 
         Returns:
             True if conversion successful, False otherwise
@@ -386,7 +399,9 @@ class EnhancedMarkdownConverter:
 
         try:
             if method == "weasyprint":
-                return self.convert_with_weasyprint(markdown_content, output_path)
+                return self.convert_with_weasyprint(
+                    markdown_content, output_path, base_url=base_url
+                )
             elif method == "pandoc":
                 return self.convert_with_pandoc(markdown_content, output_path)
             elif method == "pandoc_system":
@@ -442,7 +457,12 @@ class EnhancedMarkdownConverter:
         if output_path is None:
             output_path = str(input_path_obj.with_suffix(".pdf"))
 
-        return self.convert_markdown_to_pdf(markdown_content, output_path, method)
+        return self.convert_markdown_to_pdf(
+            markdown_content,
+            output_path,
+            method,
+            base_url=input_path_obj.resolve().as_uri(),
+        )
 
     def get_backend_info(self) -> Dict[str, Any]:
         """Get information about available backends"""

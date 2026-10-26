@@ -283,13 +283,11 @@ class VideoModalProcessor(BaseModalProcessor):
         os.close(fd)
 
         try:
-            clip = VideoFileClip(video_path)
-            if clip.audio is None:
-                clip.close()
-                os.remove(audio_path)
-                return None
-            clip.audio.write_audiofile(audio_path, logger=None)
-            clip.close()
+            with VideoFileClip(video_path) as clip:
+                if clip.audio is None:
+                    os.remove(audio_path)
+                    return None
+                clip.audio.write_audiofile(audio_path, logger=None)
             return audio_path
         except Exception as e:
             logger.warning(f"Failed to extract audio from {video_path}: {e}")

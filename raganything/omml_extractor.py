@@ -43,7 +43,7 @@ import logging
 import re
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterator, List, Optional, Union
 from xml.etree import ElementTree as ET
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,10 @@ NS = {
 
 _M = "{" + NS["m"] + "}"
 _W = "{" + NS["w"] + "}"
+
+# Tracked-change wrappers whose content the document no longer shows: text
+# deleted with track changes on, and the old position of moved text.
+_REMOVED_REVISIONS = frozenset({_W + "del", _W + "moveFrom"})
 
 # OMML "n-ary" operator characters and their LaTeX equivalents. Word stores
 # the operator as a Unicode codepoint inside m:naryPr/m:chr; if the chr
@@ -168,30 +172,7 @@ def extract_omml_equations(
         raise ValueError(f"Could not parse word/document.xml in {path}: {e}") from e
 
     results: List[Dict[str, Any]] = []
-    # iter() walks the entire tree in document order, which is exactly what
-    # we want: the resulting list is ordered the same way Word renders the
-    # equations on screen.
-    seen: set = set()
-    for elem in root.iter(_M + "oMath"):
-        elem_id = id(elem)
-        if elem_id in seen:
-            continue
-        # Skip nested oMath inside another oMath (defensive; Word does not
-        # nest oMath, but custom XML manipulation could).
-        parent_is_omath = False
-        for ancestor in root.iter(_M + "oMath"):
-            if ancestor is elem:
-                continue
-            for child in ancestor.iter(_M + "oMath"):
-                if child is elem:
-                    parent_is_omath = True
-                    break
-            if parent_is_omath:
-                break
-        if parent_is_omath:
-            continue
-
-        seen.add(elem_id)
+    for elem in _top_level_equations(root):
         try:
             latex = omml_to_latex(elem).strip()
         except Exception as e:  # pragma: no cover - defensive
@@ -214,6 +195,26 @@ def extract_omml_equations(
 
     logger.debug("Extracted %d OMML equations from %s", len(results), path)
     return results
+
+
+def _top_level_equations(root: ET.Element) -> Iterator[ET.Element]:
+    """Yield the ``<m:oMath>`` elements of ``root`` in document order.
+
+    The walk does not descend into an equation, so an ``m:oMath`` nested in
+    another (which Word does not write) is not returned twice, and it skips
+    tracked deletions: an equation inside ``w:del`` or ``w:moveFrom`` is no
+    longer in the document. One pass over the tree, where checking every
+    equation against every other grew with the square of their number.
+    """
+    stack = list(reversed(root))
+    while stack:
+        element = stack.pop()
+        if element.tag in _REMOVED_REVISIONS:
+            continue
+        if element.tag == _M + "oMath":
+            yield element
+            continue
+        stack.extend(reversed(element))
 
 
 def enrich_content_list_with_docx_equations(
@@ -516,9 +517,14 @@ def _h_pre_sub_superscript(element: ET.Element) -> str:
 
 def _h_radical(element: ET.Element) -> str:
     deg = _first_child(element, "deg")
+    rad_pr = _first_child(element, "radPr")
+    # OMML can retain degree text even when degHide suppresses its display.
+    deg_hide = _first_child(rad_pr, "degHide") if rad_pr is not None else None
+    hide_val = deg_hide.get(_M + "val", "1").lower() if deg_hide is not None else "0"
+    degree_hidden = hide_val in {"1", "true", "on"}
     base = _first_child(element, "e")
     base_latex = _convert_children(base)
-    if deg is not None and list(deg):
+    if deg is not None and list(deg) and not degree_hidden:
         return r"\sqrt[" + _convert_children(deg) + "]{" + base_latex + "}"
     return r"\sqrt{" + base_latex + "}"
 
@@ -560,10 +566,32 @@ def _h_function(element: ET.Element) -> str:
     # the function name (typically a m:r run); m:e provides the argument.
     fname = _first_child(element, "fName")
     arg = _first_child(element, "e")
-    name = _convert_children(fname).strip() if fname is not None else ""
     arg_latex = _convert_children(arg) if arg is not None else ""
+    # Word writes lim, max, min and the like with their limit around the name:
+    # fName holds m:limLow (or m:limUpp) whose base is the name.
+    for limit_tag, script in (("limLow", "_"), ("limUpp", "^")):
+        limit = _first_child(fname, limit_tag) if fname is not None else None
+        if limit is None:
+            continue
+        base = _convert_children(_first_child(limit, "e")).strip()
+        if base in _FUNCTION_NAMES:
+            bound = _convert_children(_first_child(limit, "lim"))
+            return f"\\{base}{script}{{{bound}}}{{{arg_latex}}}"
+    name = _convert_children(fname).strip() if fname is not None else ""
     # If the name matches a known LaTeX command, keep it as a control sequence.
-    known = {
+    if name in _FUNCTION_NAMES:
+        return f"\\{name}{{{arg_latex}}}"
+    # Word puts the brackets of f(x) in the argument, as a delimiter object;
+    # adding another pair around it read f((x)).
+    if arg is not None and len(arg) == 1 and arg[0].tag == _M + "d":
+        return f"{name}{arg_latex}"
+    return f"{name}({arg_latex})"
+
+
+# Function names that are LaTeX commands: the trigonometric and logarithmic
+# ones and the other names Word recognises as functions in an equation.
+_FUNCTION_NAMES = frozenset(
+    {
         "sin",
         "cos",
         "tan",
@@ -573,13 +601,17 @@ def _h_function(element: ET.Element) -> str:
         "sinh",
         "cosh",
         "tanh",
+        "coth",
         "arcsin",
         "arccos",
         "arctan",
         "log",
+        "lg",
         "ln",
         "exp",
         "lim",
+        "liminf",
+        "limsup",
         "max",
         "min",
         "sup",
@@ -587,10 +619,13 @@ def _h_function(element: ET.Element) -> str:
         "det",
         "dim",
         "ker",
+        "arg",
+        "deg",
+        "gcd",
+        "hom",
+        "Pr",
     }
-    if name in known:
-        return f"\\{name}{{{arg_latex}}}"
-    return f"{name}({arg_latex})"
+)
 
 
 def _h_delimiter(element: ET.Element) -> str:
@@ -733,6 +768,12 @@ def _h_phantom(element: ET.Element) -> str:
     return r"\phantom{" + _convert_children(_first_child(element, "e")) + "}"
 
 
+def _h_removed(element: ET.Element) -> str:
+    # w:del / w:moveFrom inside an equation: math deleted, or moved away, with
+    # track changes on.
+    return ""
+
+
 def _h_pass_through(element: ET.Element) -> str:
     """Default for elements whose semantics are 'recurse on children'."""
     return _convert_children(element)
@@ -763,6 +804,8 @@ _HANDLERS: Dict[str, Any] = {
     "limUpp": _h_lim_upp,
     "box": _h_box,
     "phant": _h_phantom,
+    "del": _h_removed,
+    "moveFrom": _h_removed,
     # Pass-through containers that have no LaTeX equivalent of their own.
     "e": _h_pass_through,
     "num": _h_pass_through,
