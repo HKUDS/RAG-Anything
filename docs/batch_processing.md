@@ -174,8 +174,8 @@ python -m raganything.batch_parser --help
 Use `incremental=True` when repeatedly processing the same folder. RAG-Anything
 stores a manifest at `.raganything_batch_manifest.json` inside the output
 directory and skips files that are unchanged since the last successful run. A
-file is skipped only when both its content and the parsing configuration match
-the manifest:
+file is skipped only when its content and the parsing configuration match the
+manifest and its parse output still exists:
 
 - **Content** — size and modification time; only when those differ is the MD5
   hash recomputed and compared, so large unchanged files are not re-hashed on
@@ -191,6 +191,13 @@ the manifest:
   custom parser may depend on it. Worker count, progress display and scan
   settings are not part of the digest, and raw option values are never written
   to the manifest.
+- **Output directory** — the file's own output directory,
+  `<output_dir>/<stem>_<hash>/` (`<hash>` is the first 8 hex digits of the MD5
+  of the file's resolved path), must still exist. If it was deleted, the file's
+  manifest entry is dropped and the file is reparsed, while other unchanged
+  files are still skipped. A dry run (`dry_run=True`, CLI `--dry-run`) lists
+  such files as to be processed without recreating their output directory or
+  writing the manifest.
 
 Changing the parser, `parse_method` or a result-affecting option reparses the
 affected files. After upgrading, manifests written by older versions have no

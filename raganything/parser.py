@@ -448,9 +448,17 @@ class Parser:
         Convert Office document (.doc, .docx, .ppt, .pptx, .xls, .xlsx) to PDF.
         Requires LibreOffice to be installed.
 
+        The PDF is written to a subdirectory unique to the document's resolved
+        path, so same-named documents from different folders do not overwrite
+        each other: ``<output_dir>/<stem>_<hash>/<stem>.pdf``, or
+        ``<document dir>/libreoffice_output/<stem>_<hash>/<stem>.pdf`` without
+        ``output_dir``, where ``<hash>`` is the first 8 hex digits of the MD5
+        of that path (see ``_unique_output_dir``).
+
         Args:
             doc_path: Path to the Office document file
-            output_dir: Output directory for the PDF file
+            output_dir: Base output directory; the PDF lands in a per-document
+                subdirectory of it (see above)
 
         Returns:
             Path to the generated PDF file
