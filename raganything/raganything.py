@@ -540,7 +540,14 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         Returns:
             bool: True if the configured parser is properly installed
         """
-        return self.doc_parser.check_installation()
+        installed = self.doc_parser.check_installation()
+        reason = getattr(self.doc_parser, "installation_error", None)
+        if not installed and reason:
+            # The parser itself logs the reason at debug level only.
+            self.logger.warning(
+                f"Parser '{self.config.parser}' is not properly installed. {reason}"
+            )
+        return installed
 
     def _parser_installation_error_message(self, default_advice: str) -> str:
         """Explain a failed parser installation check.

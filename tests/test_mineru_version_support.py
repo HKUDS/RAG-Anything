@@ -61,8 +61,10 @@ posix_only = pytest.mark.skipif(
 
 @pytest.fixture(autouse=True)
 def _python_with_mineru3(monkeypatch):
-    """Behave as on a Python MinerU 3.x supports unless a test says otherwise."""
+    """Behave as on a Python MinerU 3.x supports, with no MinerU distribution
+    of its own, unless a test says otherwise."""
     monkeypatch.setattr(parser_module, "_mineru_python_unsupported", lambda: False)
+    monkeypatch.setattr(parser_module, "_installed_mineru_version", lambda: None)
 
 
 def _python_without_mineru3(monkeypatch):
@@ -245,6 +247,166 @@ def test_check_installation_rejects_mineru_4(monkeypatch, tmp_path, version_outp
     assert "MinerU 4.0.12" in reason
     assert "does not support MinerU 4.0 or later" in reason
     assert SUPPORTED_INSTALL in reason
+
+
+@posix_only
+def test_mineru_4_reason_names_the_executable(monkeypatch, tmp_path):
+    _fake_mineru_version(
+        monkeypatch, tmp_path, "MinerU version: 4.0.12\nPython version: 3.12.13"
+    )
+    parser = MineruParser()
+
+    assert parser.check_installation() is False
+    assert f"MinerU 4.0.12 ({tmp_path / 'fake-bin' / 'mineru'})" in (
+        parser.installation_error
+    )
+
+
+@posix_only
+def test_mineru_4_from_another_environment_points_to_path_not_pip(
+    monkeypatch, tmp_path
+):
+    """This Python has MinerU 3.x, but PATH finds another env's MinerU 4.x
+    (unactivated venv, Jupyter kernel): installing 3.x again would not help."""
+    _fake_mineru_version(
+        monkeypatch, tmp_path, "MinerU version: 4.0.12\nPython version: 3.12.13"
+    )
+    monkeypatch.setattr(parser_module, "_installed_mineru_version", lambda: "3.4.5")
+    parser = MineruParser()
+
+    assert parser.check_installation() is False
+    reason = parser.installation_error
+    assert "MinerU 4.0.12" in reason
+    assert "belongs to another environment" in reason
+    assert "has MinerU 3.4.5 installed" in reason
+    assert parser_module.sys.executable in reason
+    assert parser_module.sysconfig.get_path("scripts") in reason
+    assert SUPPORTED_INSTALL not in reason
+
+
+@posix_only
+def test_mineru_4_installed_for_this_python_still_suggests_mineru_3(
+    monkeypatch, tmp_path
+):
+    _fake_mineru_version(
+        monkeypatch, tmp_path, "MinerU version: 4.0.12\nPython version: 3.12.13"
+    )
+    monkeypatch.setattr(parser_module, "_installed_mineru_version", lambda: "4.0.12")
+    parser = MineruParser()
+
+    assert parser.check_installation() is False
+    assert "another environment" not in parser.installation_error
+    assert SUPPORTED_INSTALL in parser.installation_error
+
+
+@posix_only
+def test_check_installation_logs_the_mineru_4_reason_at_debug_only(
+    monkeypatch, tmp_path, caplog
+):
+    """Callers report installation_error themselves; a WARNING here showed the
+    same text twice (CLI --check, RAGAnything and BatchParser logs)."""
+    _fake_mineru_version(
+        monkeypatch, tmp_path, "MinerU version: 4.0.12\nPython version: 3.12.13"
+    )
+
+    with caplog.at_level("DEBUG", logger="raganything.parser"):
+        assert MineruParser().check_installation() is False
+
+    reason_records = [r for r in caplog.records if "MinerU 4.0.12" in r.getMessage()]
+    assert reason_records
+    assert all(r.levelname == "DEBUG" for r in reason_records)
+
+
+# `mineru --version` in python:3.12-slim with MinerU 3.4.5 installed but no
+# libGL (opencv-python is imported at startup).
+MINERU_MISSING_LIBGL = (
+    "Traceback (most recent call last):\n"
+    '  File "/usr/local/bin/mineru", line 5, in <module>\n'
+    "    from mineru.cli.client import main\n"
+    "  ...\n"
+    "    from .cv2 import *\n"
+    "ImportError: libGL.so.1: cannot open shared object file: No such file or directory\n"
+)
+
+
+@posix_only
+def test_failing_mineru_version_reports_mineru_last_line(monkeypatch, tmp_path):
+    _fake_mineru_failure(monkeypatch, tmp_path, MINERU_MISSING_LIBGL, return_code=1)
+    parser = MineruParser()
+
+    assert parser.check_installation() is False
+    reason = parser.installation_error
+    assert reason.startswith(
+        "`mineru --version` failed with exit code 1: ImportError: libGL.so.1: "
+        "cannot open shared object file"
+    )
+    assert "apt-get install libgl1 libglib2.0-0" in reason
+    assert "Traceback" not in reason
+
+
+@posix_only
+def test_failing_mineru_version_without_output(monkeypatch, tmp_path):
+    _fake_mineru(monkeypatch, tmp_path, "exit 3\n")
+    parser = MineruParser()
+
+    assert parser.check_installation() is False
+    assert parser.installation_error == (
+        "`mineru --version` failed with exit code 3. "
+        "Run `mineru --version` to see MinerU's full error."
+    )
+
+
+@posix_only
+def test_initialization_reports_a_failing_mineru_version(monkeypatch, tmp_path):
+    _fake_mineru_failure(monkeypatch, tmp_path, MINERU_MISSING_LIBGL, return_code=1)
+    rag = _make_rag(monkeypatch, tmp_path)
+
+    result = asyncio.run(rag._ensure_lightrag_initialized())
+
+    assert result["success"] is False
+    assert "ImportError: libGL.so.1" in result["error"]
+    assert "pip install' or 'uv pip install'" not in result["error"]
+
+
+@posix_only
+def test_check_parser_installation_warns_with_the_reason_once(
+    monkeypatch, tmp_path, caplog
+):
+    _fake_mineru_version(
+        monkeypatch, tmp_path, "MinerU version: 4.0.12\nPython version: 3.12.13"
+    )
+    rag = _make_rag(monkeypatch, tmp_path)
+    # RAGAnything logs through LightRAG's logger, which does not propagate to
+    # caplog's root handler.
+    rag_warnings = []
+    monkeypatch.setattr(rag.logger, "warning", rag_warnings.append)
+
+    with caplog.at_level("WARNING"):
+        assert rag.check_parser_installation() is False
+
+    assert len(rag_warnings) == 1
+    assert rag_warnings[0].startswith("Parser 'mineru' is not properly installed. ")
+    assert "MinerU 4.0.12" in rag_warnings[0]
+    assert not [r for r in caplog.records if "MinerU 4.0.12" in r.getMessage()]
+
+
+@posix_only
+def test_parser_cli_check_prints_the_reason_once(monkeypatch, tmp_path, capsys, caplog):
+    _fake_mineru_version(
+        monkeypatch, tmp_path, "MinerU version: 4.0.12\nPython version: 3.12.13"
+    )
+    monkeypatch.setattr(
+        parser_module.sys, "argv", ["raganything.parser", "x.pdf", "--check"]
+    )
+
+    with caplog.at_level("WARNING"):
+        assert parser_module.main() == 1
+
+    out = capsys.readouterr().out
+    assert "Mineru installation check failed" in out
+    assert out.count("MinerU 4.0.12") == 1
+    assert SUPPORTED_INSTALL in out
+    assert not [r for r in caplog.records if "MinerU 4.0.12" in r.getMessage()]
 
 
 @posix_only

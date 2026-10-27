@@ -27,6 +27,7 @@ from __future__ import annotations
 import os
 import platform
 import hashlib
+import importlib.metadata
 import json
 import argparse
 import base64
@@ -41,6 +42,7 @@ import urllib.parse
 import urllib.request
 import shutil
 import sys
+import sysconfig
 from bisect import bisect_left
 from collections import deque
 from pathlib import Path
@@ -223,6 +225,60 @@ def _parse_mineru_version(output: str) -> Optional[Tuple[str, int]]:
         if match:
             return match.group(0).lstrip("v"), int(match.group(1))
     return None
+
+
+def _installed_mineru_version() -> Optional[str]:
+    """Return the MinerU distribution version installed for this Python, if any."""
+    try:
+        return importlib.metadata.version("mineru")
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _describe_unsupported_mineru(version: str) -> str:
+    """
+    Explain why the ``mineru`` on PATH (MinerU 4.0 or later) cannot be used.
+
+    Names the executable, because it can belong to another environment than
+    the running Python (an unactivated venv, a Jupyter kernel): when this
+    Python has a supported MinerU of its own, the fix is PATH, not pip.
+    """
+    executable = shutil.which("mineru") or "mineru"
+    message = (
+        f"MinerU {version} ({executable}) is installed, but RAG-Anything does "
+        "not support MinerU 4.0 or later yet: MinerU 4.0 replaced the "
+        "`mineru -p <input> -o <output>` command line RAG-Anything drives "
+        "with subcommands that only produce Markdown. "
+    )
+    own_version = _installed_mineru_version()
+    own = _parse_mineru_version(own_version) if own_version else None
+    if own is not None and own[1] < _MINERU_FIRST_UNSUPPORTED_MAJOR:
+        return message + (
+            f"This Python ({sys.executable}) has MinerU {own[0]} installed, "
+            "but the `mineru` command found on PATH belongs to another "
+            "environment. Activate this Python's environment, or put "
+            f"{sysconfig.get_path('scripts')} first on PATH, so that its own "
+            "`mineru` is used."
+        )
+    return message + _mineru_install_advice()
+
+
+def _describe_mineru_version_failure(error: subprocess.CalledProcessError) -> str:
+    """
+    Explain a ``mineru --version`` that exited non-zero, quoting MinerU's
+    last line of output (typically the exception that stopped it).
+    """
+    output = "\n".join(str(stream) for stream in (error.stderr, error.stdout) if stream)
+    tail = _mineru_output_tail(output.splitlines())
+    message = f"`mineru --version` failed with exit code {error.returncode}"
+    message += f": {tail[-1]}" if tail else "."
+    if "cannot open shared object file" in output:
+        return message + (
+            " MinerU 3.x needs system libraries (for OpenCV) that minimal "
+            "Linux and Docker images lack. On Debian or Ubuntu, install them "
+            "with: apt-get install libgl1 libglib2.0-0"
+        )
+    return message + " Run `mineru --version` to see MinerU's full error."
 
 
 def _diagnose_mineru_failure(error_msg: Any) -> Optional[str]:
@@ -2318,11 +2374,12 @@ class MineruParser(Parser):
         Check if a supported MinerU (3.x) is properly installed
 
         Runs ``mineru --version``. MinerU 4.0 and later are rejected because
-        4.0 replaced the command line this parser drives; the reason is logged
-        and kept in ``installation_error``, as is the Python limit when
-        ``mineru`` is missing on a Python no MinerU 3.x release supports
-        (3.14 or later). Output that does not state a recognisable MinerU
-        version is accepted, as long as the command succeeds.
+        4.0 replaced the command line this parser drives. The reason is kept
+        in ``installation_error`` (and logged at debug level), as is MinerU's
+        last line of output when the command exits non-zero, and the Python
+        limit when ``mineru`` is missing on a Python no MinerU 3.x release
+        supports (3.14 or later). Output that does not state a recognisable
+        MinerU version is accepted, as long as the command succeeds.
 
         Returns:
             bool: True if installation is valid, False otherwise
@@ -2343,8 +2400,8 @@ class MineruParser(Parser):
                 subprocess_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
             result = subprocess.run(["mineru", "--version"], **subprocess_kwargs)
-        except (subprocess.CalledProcessError, FileNotFoundError) as e:
-            if isinstance(e, FileNotFoundError) and _mineru_python_unsupported():
+        except FileNotFoundError:
+            if _mineru_python_unsupported():
                 self.installation_error = (
                     f"The `mineru` command was not found. {_mineru_python_note()}"
                 )
@@ -2352,6 +2409,12 @@ class MineruParser(Parser):
                 "MinerU is not properly installed. "
                 f"Please install it using: {_MINERU_INSTALL_COMMAND}"
             )
+            return False
+        except subprocess.CalledProcessError as e:
+            # `mineru` exists but cannot start (e.g. an ImportError for a
+            # missing system library): say why rather than suggesting pip.
+            self.installation_error = _describe_mineru_version_failure(e)
+            self.logger.debug(self.installation_error)
             return False
 
         version_output = "\n".join(
@@ -2362,14 +2425,10 @@ class MineruParser(Parser):
         self.logger.debug(f"MinerU version: {version_output}")
         version = _parse_mineru_version(version_output)
         if version is not None and version[1] >= _MINERU_FIRST_UNSUPPORTED_MAJOR:
-            self.installation_error = (
-                f"MinerU {version[0]} is installed, but RAG-Anything does not "
-                "support MinerU 4.0 or later yet: MinerU 4.0 replaced the "
-                "`mineru -p <input> -o <output>` command line RAG-Anything "
-                "drives with subcommands that only produce Markdown. "
-                f"{_mineru_install_advice()}"
-            )
-            self.logger.warning(self.installation_error)
+            self.installation_error = _describe_unsupported_mineru(version[0])
+            # Debug only: the callers that act on the result (RAGAnything,
+            # BatchParser, the --check CLI) report installation_error once.
+            self.logger.debug(self.installation_error)
             return False
         return True
 
