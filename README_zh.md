@@ -275,6 +275,16 @@ pip install -e '.[all]'
 
 ```bash
 pip install -U "mineru[core]>=3.4.1,<4"
+# 可选：移除两个仅 MinerU 4.x 使用的包；否则 docvortex 会让 `pip check`
+# 报告 pypdfium2 冲突。请保留 mineru-magika：它提供 MinerU 3.x 所导入的
+# `magika` 模块。也可以改用全新的虚拟环境。
+pip uninstall -y docvortex mineru-llama-cpp
+```
+
+在精简的 Linux 或 Docker 镜像（例如 `python:3.12-slim`）中，MinerU 3.x 还需要 OpenCV 所用的系统库。缺少这些库时，`mineru --version` 会因 `libxcb.so.1` 或 `libGL.so.1: cannot open shared object file` 而失败，安装检查也会报告该错误。在 Debian 或 Ubuntu 上：
+
+```bash
+apt-get install -y --no-install-recommends libgl1 libglib2.0-0
 ```
 
 ```bash

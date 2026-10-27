@@ -297,6 +297,16 @@ On Python 3.10 to 3.13, RAG-Anything installs MinerU 3.x as a dependency (`miner
 
 ```bash
 pip install -U "mineru[core]>=3.4.1,<4"
+# Optional: remove two packages only MinerU 4.x uses; docvortex otherwise makes
+# `pip check` report a pypdfium2 conflict. Keep mineru-magika: it provides the
+# `magika` module MinerU 3.x imports. A fresh virtual environment also works.
+pip uninstall -y docvortex mineru-llama-cpp
+```
+
+On minimal Linux or Docker images (for example `python:3.12-slim`), MinerU 3.x also needs system libraries for OpenCV. Without them, `mineru --version` fails with `libxcb.so.1` or `libGL.so.1: cannot open shared object file`, and the installation check reports that error. On Debian or Ubuntu:
+
+```bash
+apt-get install -y --no-install-recommends libgl1 libglib2.0-0
 ```
 
 ```bash
