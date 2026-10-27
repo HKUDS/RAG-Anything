@@ -40,6 +40,7 @@ import time
 import urllib.parse
 import urllib.request
 import shutil
+import sys
 from bisect import bisect_left
 from collections import deque
 from pathlib import Path
@@ -74,6 +75,36 @@ _IS_WINDOWS: bool = platform.system() == "Windows"
 _MINERU_REQUIREMENT = "mineru[core]>=3.4.1,<4"
 _MINERU_INSTALL_COMMAND = f'pip install -U "{_MINERU_REQUIREMENT}"'
 _MINERU_FIRST_UNSUPPORTED_MAJOR = 4
+# Every MinerU 3.x release declares Requires-Python "<3.14,>=3.10", so the
+# MinerU dependency carries a ``python_version < "3.14"`` marker and newer
+# Pythons get RAG-Anything without MinerU (see _mineru_python_note).
+_MINERU_LAST_SUPPORTED_PYTHON = (3, 13)
+
+
+def _mineru_python_unsupported() -> bool:
+    """Return True when no supported MinerU release runs on this Python."""
+    return sys.version_info[:2] > _MINERU_LAST_SUPPORTED_PYTHON
+
+
+def _mineru_python_note() -> str:
+    """Explain why the MinerU parser is unavailable on this Python."""
+    return (
+        "MinerU 3.x supports Python 3.10 to 3.13 only, so RAG-Anything does "
+        f"not install MinerU on Python {sys.version_info[0]}.{sys.version_info[1]}. "
+        "To use the MinerU parser, run RAG-Anything on Python 3.13 or earlier; "
+        "on this Python, use the Docling parser instead (pip install docling, "
+        'then RAGAnythingConfig(parser="docling")).'
+    )
+
+
+def _mineru_install_advice() -> str:
+    """Tell the user how to get a supported MinerU on this Python."""
+    if _mineru_python_unsupported():
+        return _mineru_python_note()
+    return (
+        "Install a MinerU 3.x release in this environment: "
+        f"{_MINERU_INSTALL_COMMAND}"
+    )
 
 
 # Known MinerU failure signatures mapped to actionable remediation advice.
@@ -102,7 +133,9 @@ _MINERU_KNOWN_FAILURES: Tuple[Tuple[str, str], ...] = (
         "MinerU 3.x command line RAG-Anything drives (`mineru -p <input> -o <output>`)\n"
         "with subcommands that only produce Markdown. MinerU 4.x is not supported yet;\n"
         "install a MinerU 3.x release in this environment:\n"
-        f"    {_MINERU_INSTALL_COMMAND}",
+        f"    {_MINERU_INSTALL_COMMAND}\n"
+        "MinerU 3.x supports Python 3.10 to 3.13 only. On Python 3.14 or later, use\n"
+        'Python 3.13 or earlier, or the Docling parser: RAGAnythingConfig(parser="docling").',
     ),
 )
 
@@ -1648,6 +1681,8 @@ class MineruParser(Parser):
             cls.logger.error(f"Return code: {e.returncode}")
             raise
         except FileNotFoundError:
+            if _mineru_python_unsupported():
+                raise RuntimeError(f"mineru command not found. {_mineru_python_note()}")
             raise RuntimeError(
                 "mineru command not found. Please ensure MinerU 3.x is properly installed:\n"
                 f"{_MINERU_INSTALL_COMMAND} or uv {_MINERU_INSTALL_COMMAND}"
@@ -2284,9 +2319,10 @@ class MineruParser(Parser):
 
         Runs ``mineru --version``. MinerU 4.0 and later are rejected because
         4.0 replaced the command line this parser drives; the reason is logged
-        and kept in ``installation_error``. Output that does not state a
-        recognisable MinerU version is accepted, as long as the command
-        succeeds.
+        and kept in ``installation_error``, as is the Python limit when
+        ``mineru`` is missing on a Python no MinerU 3.x release supports
+        (3.14 or later). Output that does not state a recognisable MinerU
+        version is accepted, as long as the command succeeds.
 
         Returns:
             bool: True if installation is valid, False otherwise
@@ -2307,7 +2343,11 @@ class MineruParser(Parser):
                 subprocess_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
             result = subprocess.run(["mineru", "--version"], **subprocess_kwargs)
-        except (subprocess.CalledProcessError, FileNotFoundError):
+        except (subprocess.CalledProcessError, FileNotFoundError) as e:
+            if isinstance(e, FileNotFoundError) and _mineru_python_unsupported():
+                self.installation_error = (
+                    f"The `mineru` command was not found. {_mineru_python_note()}"
+                )
             self.logger.debug(
                 "MinerU is not properly installed. "
                 f"Please install it using: {_MINERU_INSTALL_COMMAND}"
@@ -2326,9 +2366,8 @@ class MineruParser(Parser):
                 f"MinerU {version[0]} is installed, but RAG-Anything does not "
                 "support MinerU 4.0 or later yet: MinerU 4.0 replaced the "
                 "`mineru -p <input> -o <output>` command line RAG-Anything "
-                "drives with subcommands that only produce Markdown. Install a "
-                "MinerU 3.x release in this environment: "
-                f"{_MINERU_INSTALL_COMMAND}"
+                "drives with subcommands that only produce Markdown. "
+                f"{_mineru_install_advice()}"
             )
             self.logger.warning(self.installation_error)
             return False

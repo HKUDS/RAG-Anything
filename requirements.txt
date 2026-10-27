@@ -9,8 +9,10 @@ lightrag-hku<1.5
 # crash with "TypeError: 'PageChars' object is not iterable" against pdftext>=0.7
 # <4: MinerU 4.0 replaced the CLI RAG-Anything drives (`mineru -p ... -o ...`)
 # with subcommands and Markdown-only output, so 4.x is not supported yet.
+# python_version < "3.14": every MinerU 3.x release requires Python <3.14, so
+# Python 3.14 gets RAG-Anything without MinerU (use the Docling parser there).
 # Keep in sync with pyproject.toml.
-mineru[core]>=3.4.1,<4
+mineru[core]>=3.4.1,<4; python_version < "3.14"
 # Progress bars for batch processing
 tqdm
 # Note: Optional dependencies are now defined in setup.py extras_require:

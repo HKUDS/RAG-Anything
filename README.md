@@ -239,6 +239,8 @@ The hybrid retrieval system combines vector similarity search with graph travers
 
 ### Installation
 
+> **Python version:** RAG-Anything supports Python 3.10 and later, but its default MinerU parser needs MinerU 3.x, which supports Python 3.10 to 3.13 only. On Python 3.14, RAG-Anything is installed without MinerU: use the Docling parser there (`pip install docling`, then `RAGAnythingConfig(parser="docling")`), or create the environment with Python 3.13 to use MinerU.
+
 #### Option 1: Install from PyPI (Recommended)
 
 ```bash
@@ -291,7 +293,7 @@ uv sync --all-extras                 # All optional features
 
 **Check MinerU installation:**
 
-RAG-Anything installs MinerU 3.x as a dependency (`mineru[core]>=3.4.1,<4`). MinerU 4.x is not supported yet: it replaced the command-line interface that RAG-Anything drives. With MinerU 4.x installed, `check_parser_installation()` returns `False` and a `RAGAnything` instance using the MinerU parser fails to initialize with an error that asks for a 3.x release. If `mineru --version` reports 4.x, install a 3.x release in the same environment:
+On Python 3.10 to 3.13, RAG-Anything installs MinerU 3.x as a dependency (`mineru[core]>=3.4.1,<4`). MinerU 3.x does not support Python 3.14, so on Python 3.14 MinerU is not installed and the MinerU parser is unavailable (see the Python version note above). MinerU 4.x is not supported yet: it replaced the command-line interface that RAG-Anything drives. With MinerU 4.x installed, `check_parser_installation()` returns `False` and a `RAGAnything` instance using the MinerU parser fails to initialize with an error that asks for a 3.x release. If `mineru --version` reports 4.x, install a 3.x release in the same environment (Python 3.10 to 3.13):
 
 ```bash
 pip install -U "mineru[core]>=3.4.1,<4"

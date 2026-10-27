@@ -17,9 +17,12 @@ Usage:
 
 import asyncio
 import os
+from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
 
+import raganything.parser as parser_module
 import raganything.raganything as rag_module
 from raganything import RAGAnything, RAGAnythingConfig
 from raganything.batch_parser import BatchParser
@@ -31,7 +34,15 @@ from raganything.parser import (
     _parse_mineru_version,
 )
 
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10
+    import tomli as tomllib
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
 SUPPORTED_INSTALL = 'pip install -U "mineru[core]>=3.4.1,<4"'
+PYTHON_LIMIT = "MinerU 3.x supports Python 3.10 to 3.13 only"
 
 # `mineru -p ...` against MinerU 4.0.12, stderr captured verbatim (exit code 2).
 MINERU4_USAGE_ERROR = (
@@ -45,6 +56,39 @@ MINERU4_USAGE_ERROR = (
 posix_only = pytest.mark.skipif(
     os.name == "nt", reason="the fake mineru executable is a POSIX shell script"
 )
+
+
+@pytest.fixture(autouse=True)
+def _python_with_mineru3(monkeypatch):
+    """Behave as on a Python MinerU 3.x supports unless a test says otherwise."""
+    monkeypatch.setattr(parser_module, "_mineru_python_unsupported", lambda: False)
+
+
+def _python_without_mineru3(monkeypatch):
+    """Behave as on Python 3.14+, where no MinerU 3.x release installs."""
+    monkeypatch.setattr(parser_module, "_mineru_python_unsupported", lambda: True)
+
+
+def _empty_path(monkeypatch, tmp_path):
+    empty_bin = tmp_path / "empty-bin"
+    empty_bin.mkdir()
+    monkeypatch.setenv("PATH", str(empty_bin))
+
+
+def _make_rag(monkeypatch, tmp_path):
+    monkeypatch.setattr(rag_module.atexit, "register", lambda *args: None)
+
+    def llm_model_func(prompt, **kwargs):
+        raise AssertionError("the LLM must not be called")
+
+    def embedding_func(texts):
+        raise AssertionError("embeddings must not be computed")
+
+    return RAGAnything(
+        config=RAGAnythingConfig(working_dir=str(tmp_path / "rag"), parser="mineru"),
+        llm_model_func=llm_model_func,
+        embedding_func=embedding_func,
+    )
 
 
 def _fake_mineru(monkeypatch, tmp_path, body):
@@ -109,6 +153,65 @@ def test_unrecognisable_version_output_is_not_parsed(output):
 
 
 # --------------------------------------------------------------------------
+# Dependency metadata
+# --------------------------------------------------------------------------
+
+
+def _mineru_requirements():
+    pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text("utf-8"))
+    from_pyproject = [
+        Requirement(dep)
+        for dep in pyproject["project"]["dependencies"]
+        if Requirement(dep).name == "mineru"
+    ]
+    from_requirements = [
+        Requirement(line)
+        for line in (REPO_ROOT / "requirements.txt").read_text("utf-8").splitlines()
+        if line.strip()
+        and not line.lstrip().startswith("#")
+        and Requirement(line).name == "mineru"
+    ]
+    return from_pyproject, from_requirements
+
+
+def test_pyproject_and_requirements_declare_the_same_mineru_requirement():
+    from_pyproject, from_requirements = _mineru_requirements()
+
+    assert len(from_pyproject) == 1 and len(from_requirements) == 1
+    assert str(from_pyproject[0]) == str(from_requirements[0])
+    requirement = from_pyproject[0]
+    assert requirement.extras == {"core"}
+    # The install command the error messages print is the same requirement.
+    printed = Requirement(parser_module._MINERU_REQUIREMENT)
+    assert (printed.name, printed.extras) == (requirement.name, requirement.extras)
+    assert printed.specifier == requirement.specifier
+    assert f'"{parser_module._MINERU_REQUIREMENT}"' in SUPPORTED_INSTALL
+    assert requirement.specifier.contains("3.4.1")
+    assert requirement.specifier.contains("3.4.5")
+    assert not requirement.specifier.contains("3.4.0")
+    assert not requirement.specifier.contains("4.0.0")
+
+
+@pytest.mark.parametrize(
+    "python_version, installs_mineru",
+    [("3.10", True), ("3.13", True), ("3.14", False), ("3.15", False)],
+)
+def test_mineru_is_only_required_on_pythons_mineru_3_supports(
+    python_version, installs_mineru
+):
+    """Every MinerU 3.x release requires Python <3.14. Without a marker, pip on
+    3.14 skips this release and falls back to raganything 1.4.3 + MinerU 4.x."""
+    for requirement in _mineru_requirements()[0] + _mineru_requirements()[1]:
+        assert requirement.marker is not None
+        environment = {"python_version": python_version}
+        assert requirement.marker.evaluate(environment) is installs_mineru
+
+
+def test_python_limit_matches_the_dependency_marker():
+    assert parser_module._MINERU_LAST_SUPPORTED_PYTHON == (3, 13)
+
+
+# --------------------------------------------------------------------------
 # check_installation
 # --------------------------------------------------------------------------
 
@@ -167,9 +270,7 @@ def test_check_installation_clears_a_previous_failure_reason(monkeypatch, tmp_pa
 
 @posix_only
 def test_check_installation_without_mineru_still_fails_quietly(monkeypatch, tmp_path):
-    empty_bin = tmp_path / "empty-bin"
-    empty_bin.mkdir()
-    monkeypatch.setenv("PATH", str(empty_bin))
+    _empty_path(monkeypatch, tmp_path)
     parser = MineruParser()
 
     assert parser.check_installation() is False
@@ -177,23 +278,74 @@ def test_check_installation_without_mineru_still_fails_quietly(monkeypatch, tmp_
 
 
 @posix_only
+def test_missing_mineru_on_python_3_14_explains_the_python_limit(monkeypatch, tmp_path):
+    _python_without_mineru3(monkeypatch)
+    _empty_path(monkeypatch, tmp_path)
+    parser = MineruParser()
+
+    assert parser.check_installation() is False
+    reason = parser.installation_error
+    assert "`mineru` command was not found" in reason
+    assert PYTHON_LIMIT in reason
+    assert 'parser="docling"' in reason
+    # pip cannot install MinerU 3.x there, so do not tell the user to.
+    assert SUPPORTED_INSTALL not in reason
+
+
+@posix_only
+def test_mineru_4_on_python_3_14_points_to_python_3_13_or_docling(
+    monkeypatch, tmp_path
+):
+    _python_without_mineru3(monkeypatch)
+    _fake_mineru_version(
+        monkeypatch, tmp_path, "MinerU version: 4.0.12\nPython version: 3.14.4"
+    )
+    parser = MineruParser()
+
+    assert parser.check_installation() is False
+    reason = parser.installation_error
+    assert "MinerU 4.0.12" in reason
+    assert PYTHON_LIMIT in reason
+    assert 'parser="docling"' in reason
+    assert SUPPORTED_INSTALL not in reason
+
+
+@posix_only
+def test_initialization_on_python_3_14_without_mineru_explains_the_limit(
+    monkeypatch, tmp_path
+):
+    _python_without_mineru3(monkeypatch)
+    _empty_path(monkeypatch, tmp_path)
+    rag = _make_rag(monkeypatch, tmp_path)
+
+    result = asyncio.run(rag._ensure_lightrag_initialized())
+
+    assert result["success"] is False
+    assert "Parser 'mineru' is not properly installed" in result["error"]
+    assert PYTHON_LIMIT in result["error"]
+    assert "pip install' or 'uv pip install'" not in result["error"]
+
+
+@posix_only
+def test_run_mineru_command_not_found_on_python_3_14_explains_the_limit(
+    monkeypatch, tmp_path
+):
+    _python_without_mineru3(monkeypatch)
+    _empty_path(monkeypatch, tmp_path)
+
+    with pytest.raises(RuntimeError) as excinfo:
+        MineruParser._run_mineru_command(tmp_path / "doc.pdf", tmp_path / "out")
+
+    assert "mineru command not found" in str(excinfo.value)
+    assert PYTHON_LIMIT in str(excinfo.value)
+
+
+@posix_only
 def test_initialization_fails_with_the_mineru_4_reason(monkeypatch, tmp_path):
     _fake_mineru_version(
         monkeypatch, tmp_path, "MinerU version: 4.0.12\nPython version: 3.12.13"
     )
-    monkeypatch.setattr(rag_module.atexit, "register", lambda *args: None)
-
-    def llm_model_func(prompt, **kwargs):
-        raise AssertionError("the LLM must not be called")
-
-    def embedding_func(texts):
-        raise AssertionError("embeddings must not be computed")
-
-    rag = RAGAnything(
-        config=RAGAnythingConfig(working_dir=str(tmp_path / "rag"), parser="mineru"),
-        llm_model_func=llm_model_func,
-        embedding_func=embedding_func,
-    )
+    rag = _make_rag(monkeypatch, tmp_path)
 
     result = asyncio.run(rag._ensure_lightrag_initialized())
 

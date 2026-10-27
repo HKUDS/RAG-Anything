@@ -229,6 +229,8 @@
 
 ### 安装
 
+> **Python 版本：** RAG-Anything 支持 Python 3.10 及以上版本，但默认的 MinerU 解析器依赖 MinerU 3.x，而 MinerU 3.x 仅支持 Python 3.10 至 3.13。在 Python 3.14 上安装 RAG-Anything 时不会安装 MinerU：请改用 Docling 解析器（`pip install docling`，然后设置 `RAGAnythingConfig(parser="docling")`），或使用 Python 3.13 创建环境以使用 MinerU。
+
 #### 选项1：从PyPI安装（推荐）
 
 ```bash
@@ -269,7 +271,7 @@ pip install -e '.[all]'
 
 **检查MinerU安装：**
 
-RAG-Anything 会将 MinerU 3.x 作为依赖一并安装（`mineru[core]>=3.4.1,<4`）。暂不支持 MinerU 4.x：它替换了 RAG-Anything 所调用的命令行接口。安装了 MinerU 4.x 时，`check_parser_installation()` 返回 `False`，使用 MinerU 解析器的 `RAGAnything` 实例会初始化失败，错误信息会提示安装 3.x 版本。如果 `mineru --version` 显示 4.x，请在同一环境中安装 3.x 版本：
+在 Python 3.10 至 3.13 上，RAG-Anything 会将 MinerU 3.x 作为依赖一并安装（`mineru[core]>=3.4.1,<4`）。MinerU 3.x 不支持 Python 3.14，因此在 Python 3.14 上不会安装 MinerU，MinerU 解析器不可用（见上方的 Python 版本说明）。暂不支持 MinerU 4.x：它替换了 RAG-Anything 所调用的命令行接口。安装了 MinerU 4.x 时，`check_parser_installation()` 返回 `False`，使用 MinerU 解析器的 `RAGAnything` 实例会初始化失败，错误信息会提示安装 3.x 版本。如果 `mineru --version` 显示 4.x，请在同一环境（Python 3.10 至 3.13）中安装 3.x 版本：
 
 ```bash
 pip install -U "mineru[core]>=3.4.1,<4"
