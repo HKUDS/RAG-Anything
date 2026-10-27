@@ -249,3 +249,28 @@ def test_initialization_failure_record_timestamps_are_never_empty():
     failed = processor.lightrag.doc_status.records["doc-pre-source.pdf"]
     assert failed["status"] == DocStatus.FAILED
     assert failed["created_at"], "created_at must be a real timestamp"
+
+
+def test_mineru_failure_persists_mineru_output_and_hint_in_doc_status():
+    """error_msg holds only stderr lines mentioning "error" (for a CLI error
+    box, just its top border); the persisted status must carry MinerU's real
+    error text and the remediation hint as well."""
+    import raganything.processor as processor_module
+
+    processor = DummyProcessor()
+    output = "Last 1 line(s) of MinerU stderr:\nNo such option: -p"
+
+    async def failing_parse(*args, **kwargs):
+        raise processor_module.MineruExecutionError(2, ["╭─ Error ───╮"], output=output)
+
+    processor.parse_document = failing_parse
+
+    result = asyncio.run(
+        processor.process_document_complete_lightrag_api("/tmp/source.pdf")
+    )
+
+    assert result is False
+    failed = processor.lightrag.doc_status.records["doc-pre-source.pdf"]
+    assert failed["status"] == DocStatus.FAILED
+    assert failed["error_msg"].startswith("╭─ Error ───╮\n\n" + output)
+    assert "MinerU 4.x is not supported yet" in failed["error_msg"]
