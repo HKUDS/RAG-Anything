@@ -17,6 +17,7 @@ Usage:
 
 import asyncio
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -209,6 +210,17 @@ def test_mineru_is_only_required_on_pythons_mineru_3_supports(
 
 def test_python_limit_matches_the_dependency_marker():
     assert parser_module._MINERU_LAST_SUPPORTED_PYTHON == (3, 13)
+
+
+@pytest.mark.parametrize("readme", ["README.md", "README_zh.md"])
+def test_readme_mineru_links_point_at_mineru_3_docs(readme):
+    """MinerU's default branch documents MinerU 4.x (and tells readers to
+    install mineru>=4.0,<5), so setup links must name a MinerU 3.x tag."""
+    text = (REPO_ROOT / readme).read_text("utf-8")
+    links = re.findall(r"https://github\.com/opendatalab/MinerU/blob/([^/\s)]+)/", text)
+
+    assert links, "expected a MinerU documentation link"
+    assert all(ref.startswith("mineru-3.") for ref in links), links
 
 
 # --------------------------------------------------------------------------
