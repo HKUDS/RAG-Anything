@@ -37,7 +37,7 @@ def test_pagechars_failure_is_recognized():
     hint = _diagnose_mineru_failure(PAGECHARS_ERROR_LINES)
 
     assert hint is not None
-    assert 'pip install -U "mineru[core]>=3.4.1"' in hint
+    assert 'pip install -U "mineru[core]>=3.4.1,<4"' in hint
     assert "pdftext" in hint
 
 
@@ -45,7 +45,7 @@ def test_diagnosis_accepts_a_plain_string():
     hint = _diagnose_mineru_failure("TypeError: 'PageChars' object is not iterable")
 
     assert hint is not None
-    assert "mineru[core]>=3.4.1" in hint
+    assert "mineru[core]>=3.4.1,<4" in hint
 
 
 @pytest.mark.parametrize(
@@ -69,7 +69,7 @@ def test_execution_error_message_includes_hint():
     assert "Mineru command failed with return code 1" in message
     assert "'PageChars' object is not iterable" in message
     # ... and the remediation advice is appended.
-    assert 'pip install -U "mineru[core]>=3.4.1"' in message
+    assert 'pip install -U "mineru[core]>=3.4.1,<4"' in message
 
 
 def test_execution_error_without_known_signature_has_no_hint():
@@ -127,7 +127,7 @@ def test_hint_survives_the_real_stderr_capture_path(mock_mkdir, mock_popen):
     assert exc.return_code == 1
     assert "'PageChars' object is not iterable" in "\n".join(exc.error_msg)
     assert exc.hint is not None
-    assert 'pip install -U "mineru[core]>=3.4.1"' in str(exc)
+    assert 'pip install -U "mineru[core]>=3.4.1,<4"' in str(exc)
     assert 'parser="docling"' in str(exc)
 
 

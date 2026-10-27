@@ -109,10 +109,14 @@ class BatchParser:
         # Check parser installation (optional)
         if not skip_installation_check:
             if not self.parser.check_installation():
+                reason = (
+                    getattr(self.parser, "installation_error", None)
+                    or "This may be due to package conflicts."
+                )
                 self.logger.warning(
                     f"{parser_type.title()} parser installation check failed. "
-                    f"This may be due to package conflicts. "
-                    f"Use skip_installation_check=True to bypass this check."
+                    f"{reason} "
+                    "Use skip_installation_check=True to bypass this check."
                 )
                 # Don't raise an error, just warn - the parser might still work
 

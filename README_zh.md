@@ -229,6 +229,8 @@
 
 ### 安装
 
+> **Python 版本：** RAG-Anything 支持 Python 3.10 及以上版本，但默认的 MinerU 解析器依赖 MinerU 3.x，而 MinerU 3.x 仅支持 Python 3.10 至 3.13。在 Python 3.14 上安装 RAG-Anything 时不会安装 MinerU：请改用 Docling 解析器（`pip install docling`，然后设置 `RAGAnythingConfig(parser="docling")`），或使用 Python 3.13 创建环境以使用 MinerU。
+
 #### 选项1：从PyPI安装（推荐）
 
 ```bash
@@ -269,15 +271,31 @@ pip install -e '.[all]'
 
 **检查MinerU安装：**
 
+在 Python 3.10 至 3.13 上，RAG-Anything 会将 MinerU 3.x 作为依赖一并安装（`mineru[core]>=3.4.1,<4`）。MinerU 3.x 不支持 Python 3.14，因此在 Python 3.14 上不会安装 MinerU，MinerU 解析器不可用（见上方的 Python 版本说明）。暂不支持 MinerU 4.x：它替换了 RAG-Anything 所调用的命令行接口。安装了 MinerU 4.x 时，`check_parser_installation()` 返回 `False`，使用 MinerU 解析器的 `RAGAnything` 实例会初始化失败，错误信息会提示安装 3.x 版本。如果 `mineru --version` 显示 4.x，请在同一环境（Python 3.10 至 3.13）中安装 3.x 版本：
+
 ```bash
-# 验证安装
+pip install -U "mineru[core]>=3.4.1,<4"
+# 可选：移除两个仅 MinerU 4.x 使用的包；否则 docvortex 会让 `pip check`
+# 报告 pypdfium2 冲突。请保留 mineru-magika：它提供 MinerU 3.x 所导入的
+# `magika` 模块。也可以改用全新的虚拟环境。
+pip uninstall -y docvortex mineru-llama-cpp
+```
+
+在精简的 Linux 或 Docker 镜像（例如 `python:3.12-slim`）中，MinerU 3.x 还需要 OpenCV 所用的系统库。缺少这些库时，`mineru --version` 会因 `libxcb.so.1` 或 `libGL.so.1: cannot open shared object file` 而失败，安装检查也会报告该错误。在 Debian 或 Ubuntu 上：
+
+```bash
+apt-get install -y --no-install-recommends libgl1 libglib2.0-0
+```
+
+```bash
+# 验证安装（应显示 3.x 版本）
 mineru --version
 
 # 检查是否正确配置
 python -c "from raganything import RAGAnything; rag = RAGAnything(); print('✅ MinerU安装正常' if rag.check_parser_installation() else '❌ MinerU安装有问题')"
 ```
 
-模型在首次使用时自动下载。手动下载参考[MinerU模型源配置](https://github.com/opendatalab/MinerU/blob/master/README_zh-CN.md#22-%E6%A8%A1%E5%9E%8B%E6%BA%90%E9%85%8D%E7%BD%AE)：
+模型在首次使用时自动下载。手动下载参考[MinerU模型源配置](https://github.com/opendatalab/MinerU/blob/mineru-3.4.5-released/docs/zh/usage/model_source.md)（MinerU 3.x 文档；MinerU 当前文档针对的是 RAG-Anything 暂不支持的 MinerU 4.x）。
 
 ### 使用示例
 
@@ -1106,7 +1124,7 @@ pip install docling
 ### MinerU配置
 
 ```bash
-# MinerU 2.0使用命令行参数而不是配置文件
+# MinerU 3.x使用命令行参数而不是配置文件（暂不支持 MinerU 4.x）
 # 查看可用选项：
 mineru --help
 

@@ -23,7 +23,13 @@ classifiers = [
 dependencies = [
     "huggingface_hub",
     "lightrag-hku<1.5",
-    "mineru[core]>=3.4.1",
+    # <4: MinerU 4.0 replaced the CLI RAG-Anything drives (`mineru -p ... -o ...`)
+    # with subcommands and Markdown-only output, so 4.x is not supported yet.
+    # python_version < "3.14": every MinerU 3.x release requires Python <3.14.
+    # Without the marker, pip on 3.14 skips this release and falls back to
+    # raganything 1.4.3 with MinerU 4.x; with it, 3.14 gets this release
+    # without MinerU (use the Docling parser there).
+    'mineru[core]>=3.4.1,<4; python_version < "3.14"',
     "tqdm",
 ]
 

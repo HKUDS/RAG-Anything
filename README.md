@@ -239,6 +239,8 @@ The hybrid retrieval system combines vector similarity search with graph travers
 
 ### Installation
 
+> **Python version:** RAG-Anything supports Python 3.10 and later, but its default MinerU parser needs MinerU 3.x, which supports Python 3.10 to 3.13 only. On Python 3.14, RAG-Anything is installed without MinerU: use the Docling parser there (`pip install docling`, then `RAGAnythingConfig(parser="docling")`), or create the environment with Python 3.13 to use MinerU.
+
 #### Option 1: Install from PyPI (Recommended)
 
 ```bash
@@ -291,15 +293,31 @@ uv sync --all-extras                 # All optional features
 
 **Check MinerU installation:**
 
+On Python 3.10 to 3.13, RAG-Anything installs MinerU 3.x as a dependency (`mineru[core]>=3.4.1,<4`). MinerU 3.x does not support Python 3.14, so on Python 3.14 MinerU is not installed and the MinerU parser is unavailable (see the Python version note above). MinerU 4.x is not supported yet: it replaced the command-line interface that RAG-Anything drives. With MinerU 4.x installed, `check_parser_installation()` returns `False` and a `RAGAnything` instance using the MinerU parser fails to initialize with an error that asks for a 3.x release. If `mineru --version` reports 4.x, install a 3.x release in the same environment (Python 3.10 to 3.13):
+
 ```bash
-# Verify installation
+pip install -U "mineru[core]>=3.4.1,<4"
+# Optional: remove two packages only MinerU 4.x uses; docvortex otherwise makes
+# `pip check` report a pypdfium2 conflict. Keep mineru-magika: it provides the
+# `magika` module MinerU 3.x imports. A fresh virtual environment also works.
+pip uninstall -y docvortex mineru-llama-cpp
+```
+
+On minimal Linux or Docker images (for example `python:3.12-slim`), MinerU 3.x also needs system libraries for OpenCV. Without them, `mineru --version` fails with `libxcb.so.1` or `libGL.so.1: cannot open shared object file`, and the installation check reports that error. On Debian or Ubuntu:
+
+```bash
+apt-get install -y --no-install-recommends libgl1 libglib2.0-0
+```
+
+```bash
+# Verify installation (should report a 3.x version)
 mineru --version
 
 # Check if properly configured
 python -c "from raganything import RAGAnything; rag = RAGAnything(); print('✅ MinerU installed properly' if rag.check_parser_installation() else '❌ MinerU installation issue')"
 ```
 
-Models are downloaded automatically on first use. For manual download, refer to [MinerU Model Source Configuration](https://github.com/opendatalab/MinerU/blob/master/README.md#22-model-source-configuration).
+Models are downloaded automatically on first use. For manual download, refer to [MinerU Model Source Configuration](https://github.com/opendatalab/MinerU/blob/mineru-3.4.5-released/docs/en/usage/model_source.md) (MinerU 3.x docs; MinerU's current docs describe MinerU 4.x, which RAG-Anything does not support yet).
 
 ### Usage Examples
 
@@ -1167,7 +1185,7 @@ uv sync --extra paddleocr
 ### MinerU Configuration
 
 ```bash
-# MinerU 2.0 uses command-line parameters instead of config files
+# MinerU 3.x uses command-line parameters instead of config files (MinerU 4.x is not supported)
 # Check available options:
 mineru --help
 
