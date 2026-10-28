@@ -1179,6 +1179,8 @@ await rag.process_document_complete(
 
 当 MinerU 3.x 产出 `*_content_list_v2.json` 或 `content_list_v2.json` 时，RAG-Anything 会优先读取它们，而不是旧的扁平 content list。文件发现遵循确定性优先级：文档专属目录优先于共享根目录；同一 bundle 内 v2 优先于 legacy，同一 schema 内精确文件名优先于 generic 文件名。v2 按页分组的结构会被转换为现有的扁平 `content_list` 契约，同时保留页码、边界框、锚点、标题层级、视觉元数据、标题说明和脚注。算法块会兼容归一为 `type="code", sub_type="algorithm"`。
 
+带有 `img_path` 的图表在入库和多模态查询时使用图像处理器，保留标题说明、脚注和抽取的文字；没有图片的图表继续按普通文本处理。原始解析数据和文档 ID 保持不变。已入库的图表可通过 `force_multimodal_reprocess=True` 重新处理。
+
 默认会排除页眉、页脚、页码、旁注和页脚注，避免重复版面噪声进入语义检索或图谱构建。只有这些信息确实有业务意义时，才开启 `include_layout_blocks=True`：
 
 ```python

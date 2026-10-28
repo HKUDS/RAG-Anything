@@ -1240,6 +1240,8 @@ await rag.process_document_complete(
 
 RAG-Anything natively reads MinerU 3.x `*_content_list_v2.json` and `content_list_v2.json` outputs when they are available, ahead of the legacy flat content list. Document-scoped output directories are preferred over shared roots; within one bundle, v2 is preferred over legacy and exact stem filenames are preferred over generic filenames. The v2 page-grouped representation is converted to the existing flat `content_list` contract while preserving page indexes, bounding boxes, anchors, heading levels, visual metadata, captions, and footnotes. Algorithm blocks use the compatible `type="code", sub_type="algorithm"` representation.
 
+Charts with an `img_path` use the image processor for ingestion and multimodal queries, including their captions, footnotes and extracted text. Charts without an image keep generic text processing. The original parsed content and document IDs stay unchanged. To update previously indexed charts, re-ingest with `force_multimodal_reprocess=True`.
+
 Page headers, footers, page numbers, aside text, and page footnotes are excluded by default so repeated layout artifacts do not enter semantic retrieval or graph construction. Set `include_layout_blocks=True` only when those blocks are meaningful for your use case:
 
 ```python

@@ -20,6 +20,7 @@ from raganything.utils import (
     encode_image_to_base64,
     validate_image_file,
     normalize_caption_list,
+    normalize_chart_item,
     get_table_body,
     format_table_body,
     get_equation_text_and_format,
@@ -492,6 +493,7 @@ class QueryMixin:
         enhanced_parts = [f"User query: {base_query}"]
 
         for i, content in enumerate(multimodal_content):
+            content = normalize_chart_item(content)
             content_type = content.get("type", "unknown")
             self.logger.info(
                 f"Processing {i + 1}/{len(multimodal_content)} multimodal content: {content_type}"

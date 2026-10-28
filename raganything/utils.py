@@ -31,6 +31,24 @@ def normalize_caption_list(value: Any) -> List[str]:
     return []
 
 
+def normalize_chart_item(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Use the image pipeline for charts with a rendered figure.
+
+    Keep the parsed item unchanged: document IDs and parse caches use that
+    original representation. Text-only charts continue through the generic
+    processor.
+    """
+    if item.get("type") != "chart" or not item.get("img_path"):
+        return item
+    return {
+        **item,
+        "type": "image",
+        "image_caption": normalize_caption_list(item.get("chart_caption"))
+        + normalize_caption_list(item.get("content")),
+        "image_footnote": normalize_caption_list(item.get("chart_footnote")),
+    }
+
+
 def get_table_body(item: Dict[str, Any]) -> Any:
     """Read table content across common content-list alias fields."""
     if item.get("table_body") not in (None, ""):
@@ -255,9 +273,9 @@ def separate_content_with_page_map(
                 page_intervals.append((start, end, page_idx))
         else:
             # Multimodal content (image, table, equation, etc.)
-            multimodal_item = dict(item)
+            multimodal_item = dict(normalize_chart_item(item))
             multimodal_item.setdefault("_content_list_index", index)
-            if content_type == "image":
+            if multimodal_item.get("type") == "image":
                 multimodal_item.setdefault(
                     "_section_path",
                     " > ".join(text for _, text in heading_chain),
