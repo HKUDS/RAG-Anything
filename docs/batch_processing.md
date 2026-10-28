@@ -324,6 +324,24 @@ guarantees one call per image or a particular speedup. Tune conservatively
 against provider rate limits and measure both call counts and stage timings on
 a small representative document.
 
+#### Reducing multimodal LLM call count
+
+Concurrency settings change wall clock, not how many LLM calls a page issues.
+By default RAG-Anything uses `multimodal_kg_extraction_mode=packed`:
+
+- Each image/table still gets **one** vision/caption call.
+- Full templated chunks (including neighbor text) are stored for retrieval.
+- Entity extraction runs on **description-only** text packed into
+  `chunk_token_size` units, so extract/merge calls scale with caption tokens
+  rather than roughly linearly with image count.
+- Set `MULTIMODAL_KG_EXTRACTION_MODE=per_item` for the legacy one-extract-per
+  multimodal chunk behaviour, or `skip` to store vision results without
+  multimodal extract/merge (lowest call count).
+
+Optional `MAX_PARALLEL_MODAL_ITEMS` (or `RAGAnythingConfig.max_parallel_modal_items`)
+limits vision/caption concurrency independently of `max_parallel_insert`.
+
+
 Text indexing goes through LightRAG's single document pipeline per workspace. A
 file whose text arrives while a pipeline run is busy is queued and indexed by
 that run (queued files fetched together are indexed in parallel, up to
