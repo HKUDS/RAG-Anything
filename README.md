@@ -306,7 +306,7 @@ pip uninstall -y docvortex mineru-llama-cpp
 On minimal Linux or Docker images (for example `python:3.12-slim`), MinerU 3.x also needs system libraries for OpenCV. Without them, `mineru --version` fails with `libxcb.so.1` or `libGL.so.1: cannot open shared object file`, and the installation check reports that error. On Debian or Ubuntu:
 
 ```bash
-apt-get install -y --no-install-recommends libgl1 libglib2.0-0
+apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0
 ```
 
 ```bash
