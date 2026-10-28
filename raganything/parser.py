@@ -1019,31 +1019,36 @@ class Parser:
         for marker in re.finditer(r"`+", text):
             backticks.setdefault(len(marker.group()), []).append(marker.start())
 
-        cursor = 0
-        while cursor < len(text):
-            if text[cursor] == "\\":
-                cursor += 2
+        # Jump between candidate images and the escapes/code spans before them
+        # instead of stepping one character at a time. A pending search result
+        # stays valid while the cursor has not moved past its start.
+        image_re = cls._MD_IMAGE_RE
+        special_re = re.compile(r"\\|`+")
+        match = image_re.search(text)
+        special = special_re.search(text)
+        while match is not None:
+            if special is None or special.start() > match.start():
+                yield match
+                cursor = match.end()
+                match = image_re.search(text, cursor)
+                if special is not None and special.start() < cursor:
+                    special = special_re.search(text, cursor)
                 continue
-            if text[cursor] == "`":
-                end = cursor + 1
-                while end < len(text) and text[end] == "`":
-                    end += 1
-                length = end - cursor
+            if special.group() == "\\":
+                cursor = special.start() + 2
+            else:
+                length = len(special.group())
                 closers = backticks.get(length, [])
-                closing_index = bisect_left(closers, end)
+                closing_index = bisect_left(closers, special.end())
                 # Unmatched backticks are literal text, not an open code span.
                 cursor = (
                     closers[closing_index] + length
                     if closing_index < len(closers)
-                    else end
+                    else special.end()
                 )
-                continue
-            match = cls._MD_IMAGE_RE.match(text, cursor)
-            if match:
-                yield match
-                cursor = match.end()
-            else:
-                cursor += 1
+            if match.start() < cursor:
+                match = image_re.search(text, cursor)
+            special = special_re.search(text, cursor)
 
     @classmethod
     def _resolve_md_image(
@@ -1147,10 +1152,17 @@ class Parser:
         inline_end = 0
         inline_offset = 0
         image_starts: set[int] = set()
+        fence_re = re.compile(r"^(`{3,}|~{3,})")
+        heading_re = re.compile(r"^(#{1,6})\s+(.+)$")
+        block_start_re = re.compile(r"^(?:#{1,6}\s+|`{3,}|~{3,})")
         for index, line in enumerate(lines):
             stripped = line.strip()
             if is_markdown:
-                fence = re.match(r"^(`{3,}|~{3,})", stripped)
+                fence = (
+                    fence_re.match(stripped)
+                    if stripped.startswith(("```", "~~~"))
+                    else None
+                )
                 if fence:
                     if not in_fence:
                         in_fence = True
@@ -1170,7 +1182,9 @@ class Parser:
                 flush()
                 continue
             if is_markdown:
-                heading = re.match(r"^(#{1,6})\s+(.+)$", stripped)
+                heading = (
+                    heading_re.match(stripped) if stripped.startswith("#") else None
+                )
                 if heading:
                     flush()
                     blocks.append(
@@ -1187,8 +1201,8 @@ class Parser:
                     inline_end = index + 1
                     while inline_end < len(lines):
                         following = lines[inline_end].strip()
-                        if not following or re.match(
-                            r"^(?:#{1,6}\s+|`{3,}|~{3,})", following
+                        if not following or (
+                            following[0] in "#`~" and block_start_re.match(following)
                         ):
                             break
                         inline_end += 1
@@ -1200,6 +1214,9 @@ class Parser:
                     inline_offset = 0
                 offset = inline_offset + len(line) - len(line.lstrip())
                 inline_offset += len(line) + 1
+                if not image_starts or "![" not in stripped:
+                    paragraph.append(line.rstrip())
+                    continue
                 matches = {
                     match.start()
                     for match in cls._MD_IMAGE_RE.finditer(stripped)
