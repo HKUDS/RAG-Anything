@@ -213,10 +213,11 @@ def test_convert_v2_preserves_extended_mineru_modalities_and_routes_text():
     text_content, multimodal_items = separate_content(content_list)
     assert text_content == "[1] Ref\n\nSummary\n\nReference\n\n$a+b$"
     assert [item["type"] for item in multimodal_items] == [
-        "chart",
+        "image",
         "code",
         "code",
     ]
+    assert content_list[1]["type"] == "chart"
 
 
 @pytest.mark.parametrize(
