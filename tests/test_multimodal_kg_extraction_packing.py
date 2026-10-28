@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import ast
 import asyncio
-import sys
-import types
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -14,36 +12,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# Do NOT stub lightrag/raganything in sys.modules at import time — that poisons
+# collection of other tests in the same pytest process (CI runs `pytest tests/`).
 
-def _install_stubs():
-    # Always install lightweight stubs so this file stays offline-friendly even
-    # when a real LightRAG checkout is on PYTHONPATH.
-    fake_lightrag = types.ModuleType("lightrag")
-    fake_lightrag.LightRAG = object
-    fake_utils = types.ModuleType("lightrag.utils")
-
-    def compute_mdhash_id(content, prefix=""):
-        return f"{prefix}{abs(hash(str(content))) % (10**12)}"
-
-    fake_utils.compute_mdhash_id = compute_mdhash_id
-    fake_utils.get_env_value = lambda key, default=None, value_type=str, **kw: default
-    fake_utils.logger = SimpleNamespace(
-        info=lambda *a, **k: None,
-        warning=lambda *a, **k: None,
-        error=lambda *a, **k: None,
-        debug=lambda *a, **k: None,
-    )
-    sys.modules["lightrag"] = fake_lightrag
-    sys.modules["lightrag.utils"] = fake_utils
-
-    # Ensure raganything package path resolves to this checkout
-    pkg = types.ModuleType("raganything")
-    pkg.__path__ = [str(REPO_ROOT / "raganything")]
-    sys.modules["raganything"] = pkg
-
-
-_install_stubs()
-
+from lightrag.utils import compute_mdhash_id
 from raganything.config import RAGAnythingConfig
 from raganything.processor import ProcessorMixin
 
@@ -106,8 +78,6 @@ def test_packed_mode_collapses_many_short_captions_into_few_chunks():
     for data in data_list:
         # Use apply path via a minimal stub template
         content = f"FULL TEMPLATE with {data['original_item']['_neighbor_text']} :: {data['description']}"
-        from lightrag.utils import compute_mdhash_id
-
         cid = compute_mdhash_id(content, prefix="chunk-")
         # Monkeypatch apply to stable content matching convert hashing
         data["_test_full"] = content
