@@ -1160,8 +1160,22 @@ class ProcessorMixin:
         except Exception:
             existing_chunks_count = 0
 
-        # Use LightRAG's concurrency control
-        semaphore = asyncio.Semaphore(getattr(self.lightrag, "max_parallel_insert", 2))
+        # Vision/caption concurrency: prefer dedicated modal limit, else LightRAG's
+        # max_parallel_insert (documented for #348). Call COUNT is controlled
+        # separately via multimodal_kg_extraction_mode (packed/skip).
+        modal_limit = None
+        config = getattr(self, "config", None)
+        if config is not None:
+            modal_limit = getattr(config, "max_parallel_modal_items", None)
+        if modal_limit is None:
+            modal_limit = getattr(self.lightrag, "max_parallel_insert", 2)
+        try:
+            modal_limit = int(modal_limit)
+        except (TypeError, ValueError):
+            modal_limit = 2
+        if modal_limit < 1:
+            modal_limit = 1
+        semaphore = asyncio.Semaphore(modal_limit)
 
         # Progress tracking variables
         total_items = len(multimodal_items)
@@ -1312,23 +1326,246 @@ class ProcessorMixin:
         # Track chunk IDs for doc_status update
         chunk_ids = list(lightrag_chunks.keys())
 
-        # Stage 4: Use LightRAG's batch entity relation extraction
-        chunk_results = await self._batch_extract_entities_lightrag_style_type_aware(
-            lightrag_chunks
-        )
+        # Stage 4-6: KG extraction / merge. Default packed mode cuts the
+        # per-image extract+merge amplification described in issue #348 by
+        # (a) extracting from description-only text (no neighbor_text) and
+        # (b) packing those descriptions into token-budgeted units.
+        kg_mode = "packed"
+        if config is not None:
+            kg_mode = (
+                getattr(config, "multimodal_kg_extraction_mode", "packed") or "packed"
+            )
+        kg_mode = str(kg_mode).strip().lower()
+        if kg_mode not in {"packed", "per_item", "skip"}:
+            self.logger.warning(
+                f"Unknown multimodal_kg_extraction_mode={kg_mode!r}; using packed"
+            )
+            kg_mode = "packed"
 
-        # Stage 5: Add belongs_to relations (multimodal-specific)
-        enhanced_chunk_results = await self._batch_add_belongs_to_relations_type_aware(
-            chunk_results, multimodal_data_list
-        )
+        if kg_mode == "skip":
+            self.logger.info(
+                "Skipping multimodal entity extraction/merge "
+                f"(multimodal_kg_extraction_mode=skip); "
+                f"kept {len(chunk_ids)} retrieval chunks and main entities"
+            )
+        else:
+            extraction_chunks = self._build_multimodal_extraction_chunks(
+                multimodal_data_list, lightrag_chunks, mode=kg_mode
+            )
+            self.logger.info(
+                f"Multimodal KG extraction mode={kg_mode}: "
+                f"{len(multimodal_data_list)} items -> "
+                f"{len(extraction_chunks)} extraction chunk(s)"
+            )
+            chunk_results = (
+                await self._batch_extract_entities_lightrag_style_type_aware(
+                    extraction_chunks
+                )
+            )
 
-        # Stage 6: Use LightRAG's batch merge
-        await self._batch_merge_lightrag_style_type_aware(
-            enhanced_chunk_results, file_path, doc_id
-        )
+            if kg_mode == "per_item":
+                # belongs_to needs 1:1 chunk_id <-> modal entity (per_item only)
+                enhanced_chunk_results = (
+                    await self._batch_add_belongs_to_relations_type_aware(
+                        chunk_results, multimodal_data_list
+                    )
+                )
+            else:
+                # Packed extraction units do not map cleanly to one modal entity
+                enhanced_chunk_results = chunk_results
+                self.logger.debug(
+                    "Skipping belongs_to enrichment in packed KG extraction mode"
+                )
+
+            await self._batch_merge_lightrag_style_type_aware(
+                enhanced_chunk_results, file_path, doc_id
+            )
 
         # Stage 7: Update doc_status with integrated chunks_list
         await self._update_doc_status_with_chunks_type_aware(doc_id, chunk_ids)
+
+    def _modal_description_only_text(self, data: Dict[str, Any]) -> str:
+        """Build compact KG-extraction text for one multimodal item.
+
+        Omits ``_neighbor_text`` / section scaffolding that already went through
+        the text pipeline — re-feeding that text per image is the main call
+        amplifier in issue #348. Keeps the vision description plus any native
+        captions/footnotes so image-specific entities still get extracted.
+        """
+        content_type = data.get("content_type", "unknown")
+        description = (data.get("description") or "").strip()
+        entity_info = data.get("entity_info") or {}
+        original_item = data.get("original_item") or {}
+        entity_name = (entity_info.get("entity_name") or "").strip()
+
+        header_bits = [f"[{content_type}]"]
+        if entity_name:
+            header_bits.append(entity_name)
+
+        extra_bits: List[str] = []
+        if content_type == "image":
+            captions = normalize_caption_list(
+                original_item.get("image_caption", original_item.get("img_caption", []))
+            )
+            footnotes = normalize_caption_list(
+                original_item.get(
+                    "image_footnote", original_item.get("img_footnote", [])
+                )
+            )
+            if captions:
+                extra_bits.append("Captions: " + ", ".join(captions))
+            if footnotes:
+                extra_bits.append("Footnotes: " + ", ".join(footnotes))
+        elif content_type == "table":
+            captions = normalize_caption_list(original_item.get("table_caption", []))
+            footnotes = normalize_caption_list(original_item.get("table_footnote", []))
+            table_body = format_table_body(get_table_body(original_item))
+            if captions:
+                extra_bits.append("Caption: " + ", ".join(captions))
+            if table_body and table_body.strip() and table_body.strip() != "None":
+                # Keep tables informative but avoid huge HTML blow-ups
+                body = table_body.strip()
+                if len(body) > 4000:
+                    body = body[:4000] + "…"
+                extra_bits.append("Structure:\n" + body)
+            if footnotes:
+                extra_bits.append("Footnotes: " + ", ".join(footnotes))
+        elif content_type == "equation":
+            equation_text, equation_format = get_equation_text_and_format(original_item)
+            if equation_text:
+                extra_bits.append(f"Equation ({equation_format}): {equation_text}")
+
+        parts = [" ".join(header_bits)]
+        parts.extend(extra_bits)
+        if description:
+            parts.append(description)
+        return "\n".join(p for p in parts if p).strip()
+
+    def _chunk_token_budget_for_extraction(self, default: int = 1200) -> int:
+        """Token budget used when packing multimodal descriptions for extraction."""
+        value = default
+        try:
+            value = int(getattr(self.lightrag, "chunk_token_size", default) or default)
+        except (TypeError, ValueError):
+            value = default
+        return value if value > 0 else default
+
+    def _count_tokens_for_extraction(self, text: str) -> int:
+        tokenizer = getattr(self.lightrag, "tokenizer", None)
+        if tokenizer is not None:
+            try:
+                return len(tokenizer.encode(text))
+            except Exception:
+                pass
+        return max(1, len(text) // 4)
+
+    def _build_multimodal_extraction_chunks(
+        self,
+        multimodal_data_list: List[Dict[str, Any]],
+        lightrag_chunks: Dict[str, Any],
+        mode: str = "packed",
+    ) -> Dict[str, Any]:
+        """Build chunks passed to ``extract_entities``.
+
+        Retrieval chunks (``lightrag_chunks``) keep the full template including
+        neighbor text. Extraction chunks use description-only text so page
+        prose is not re-extracted once per image.
+
+        ``per_item``: one extraction chunk per stored multimodal chunk (same
+        chunk_id, description-only content).
+        ``packed``: concatenate description-only texts into token-budgeted
+        units (call count ≈ ceil(total_caption_tokens / chunk_token_size)).
+        """
+        # Map stored chunk_id -> multimodal data (same hashing as convert step)
+        chunk_id_to_data: Dict[str, Dict[str, Any]] = {}
+        for data in multimodal_data_list:
+            formatted = self._apply_chunk_template(
+                data["content_type"], data["original_item"], data["description"]
+            )
+            chunk_id = compute_mdhash_id(formatted, prefix="chunk-")
+            chunk_id_to_data[chunk_id] = data
+
+        if mode == "per_item":
+            extraction_chunks: Dict[str, Any] = {}
+            for chunk_id, chunk in lightrag_chunks.items():
+                data = chunk_id_to_data.get(chunk_id)
+                content = (
+                    self._modal_description_only_text(data)
+                    if data is not None
+                    else chunk.get("content", "")
+                )
+                extraction_chunks[chunk_id] = {
+                    **chunk,
+                    "content": content,
+                    "tokens": self._count_tokens_for_extraction(content),
+                }
+            return extraction_chunks
+
+        # packed
+        budget = self._chunk_token_budget_for_extraction()
+        file_ref = next(
+            (c.get("file_path") for c in lightrag_chunks.values()),
+            "multimodal_content",
+        )
+        doc_id = next(
+            (c.get("full_doc_id") for c in lightrag_chunks.values()),
+            None,
+        )
+
+        packs: List[List[str]] = []
+        current: List[str] = []
+        current_tokens = 0
+
+        # Preserve multimodal_data_list order (already item/section ordered)
+        for data in multimodal_data_list:
+            text = self._modal_description_only_text(data)
+            if not text:
+                continue
+            tokens = self._count_tokens_for_extraction(text)
+            # Flush when adding would exceed budget (always keep at least one)
+            if current and current_tokens + tokens > budget:
+                packs.append(current)
+                current = []
+                current_tokens = 0
+            current.append(text)
+            current_tokens += tokens
+            # Oversized single description: keep alone in its own pack
+            if current_tokens >= budget and len(current) == 1:
+                packs.append(current)
+                current = []
+                current_tokens = 0
+
+        if current:
+            packs.append(current)
+
+        extraction_chunks = {}
+        try:
+            base_order = min(
+                (c.get("chunk_order_index", 0) for c in lightrag_chunks.values()),
+                default=0,
+            )
+        except ValueError:
+            base_order = 0
+
+        for pack_index, parts in enumerate(packs):
+            packed_content = "\n\n".join(parts)
+            chunk_id = compute_mdhash_id(
+                f"modal-pack:{doc_id}:{pack_index}:{packed_content}",
+                prefix="chunk-",
+            )
+            extraction_chunks[chunk_id] = {
+                "content": packed_content,
+                "tokens": self._count_tokens_for_extraction(packed_content),
+                "full_doc_id": doc_id,
+                "chunk_order_index": base_order + pack_index,
+                "file_path": file_ref,
+                "llm_cache_list": [],
+                "is_multimodal": True,
+                "is_multimodal_extraction_pack": True,
+                "original_type": "packed_modal",
+            }
+
+        return extraction_chunks
 
     def _convert_to_lightrag_chunks_type_aware(
         self, multimodal_data_list: List[Dict[str, Any]], file_path: str, doc_id: str

@@ -5,7 +5,7 @@ Contains configuration dataclasses with environment variable support
 """
 
 from dataclasses import dataclass, field
-from typing import List
+
 from lightrag.utils import get_env_value
 
 
@@ -76,7 +76,7 @@ class RAGAnythingConfig:
     )
     """Maximum number of files to process concurrently."""
 
-    supported_file_extensions: List[str] = field(
+    supported_file_extensions: list[str] = field(
         default_factory=lambda: [
             x.strip()
             for x in get_env_value(
@@ -120,7 +120,7 @@ class RAGAnythingConfig:
     )
     """Whether to include image/table captions in context."""
 
-    context_filter_content_types: List[str] = field(
+    context_filter_content_types: list[str] = field(
         default_factory=lambda: [
             x.strip()
             for x in get_env_value("CONTEXT_FILTER_CONTENT_TYPES", "text", str).split(
@@ -134,6 +134,35 @@ class RAGAnythingConfig:
         default_factory=lambda: get_env_value("CONTENT_FORMAT", "minerU", str)
     )
     """Default content format for context extraction when processing documents."""
+
+    # Multimodal KG extraction (call-count controls for issue #348)
+    # ---
+    multimodal_kg_extraction_mode: str = field(
+        default_factory=lambda: get_env_value(
+            "MULTIMODAL_KG_EXTRACTION_MODE", "packed", str
+        )
+    )
+    """How multimodal items feed LightRAG entity extraction after vision/captioning.
+
+    - ``packed`` (default): pack description-only captions into token-budgeted
+      extraction units so extract/merge call count scales with caption tokens,
+      not image count. Full templated chunks (including neighbor text) still
+      go to the vector store for retrieval.
+    - ``per_item``: legacy behaviour — one extract call per multimodal chunk
+      (still uses description-only content for extraction to avoid re-feeding
+      surrounding page text through the KG pipeline).
+    - ``skip``: vision + store chunks/main entities only; no multimodal
+      extract/merge. Lowest LLM call count.
+    """
+
+    max_parallel_modal_items: int | None = field(
+        default_factory=lambda: get_env_value("MAX_PARALLEL_MODAL_ITEMS", None, int)
+    )
+    """Optional concurrency limit for multimodal section generation (vision/
+    caption). When unset, falls back to ``LightRAG.max_parallel_insert`` (or 2).
+    Separate from text-insert parallelism so image-heavy pages can tune vision
+    concurrency without changing LightRAG's document insert limit.
+    """
 
     # Path Handling Configuration
     # ---
