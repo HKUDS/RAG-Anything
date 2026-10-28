@@ -276,7 +276,8 @@ def _describe_mineru_version_failure(error: subprocess.CalledProcessError) -> st
         return message + (
             " MinerU 3.x needs system libraries (for OpenCV) that minimal "
             "Linux and Docker images lack. On Debian or Ubuntu, install them "
-            "with: apt-get install libgl1 libglib2.0-0"
+            "with: apt-get update && apt-get install -y --no-install-recommends "
+            "libgl1 libglib2.0-0"
         )
     return message + " Run `mineru --version` to see MinerU's full error."
 

@@ -340,7 +340,10 @@ def test_failing_mineru_version_reports_mineru_last_line(monkeypatch, tmp_path):
         "`mineru --version` failed with exit code 1: ImportError: libGL.so.1: "
         "cannot open shared object file"
     )
-    assert "apt-get install libgl1 libglib2.0-0" in reason
+    assert (
+        "apt-get update && apt-get install -y --no-install-recommends libgl1 libglib2.0-0"
+        in reason
+    )
     assert "Traceback" not in reason
 
 

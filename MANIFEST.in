@@ -4,6 +4,8 @@ include README_zh.md
 include LICENSE
 recursive-include raganything *.py
 recursive-include examples *.py
+recursive-include reproduce *.py
+include reproduce/env.example
 global-exclude *.pyc
 global-exclude __pycache__
 global-exclude *.egg-info
