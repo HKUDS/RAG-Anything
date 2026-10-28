@@ -11,6 +11,7 @@ Reports approximate vision + extract invocations for N image blocks under
 
 from __future__ import annotations
 
+
 class FakeTokenizer:
     def encode(self, text: str):
         return list(range(max(1, len(text) // 4)))
@@ -27,7 +28,11 @@ def _estimate(mode: str, n_images: int, caption_chars: int = 400, budget: int = 
     else:  # packed
         total = n_images * caption_tokens
         extract = max(1, (total + budget - 1) // budget) if n_images else 0
-    return {"vision": vision, "extract_chunks": extract, "approx_llm_min": vision + extract}
+    return {
+        "vision": vision,
+        "extract_chunks": extract,
+        "approx_llm_min": vision + extract,
+    }
 
 
 def main():

@@ -5,7 +5,7 @@ Contains configuration dataclasses with environment variable support
 """
 
 from dataclasses import dataclass, field
-from typing import List, Optional
+
 from lightrag.utils import get_env_value
 
 
@@ -76,7 +76,7 @@ class RAGAnythingConfig:
     )
     """Maximum number of files to process concurrently."""
 
-    supported_file_extensions: List[str] = field(
+    supported_file_extensions: list[str] = field(
         default_factory=lambda: [
             x.strip()
             for x in get_env_value(
@@ -120,7 +120,7 @@ class RAGAnythingConfig:
     )
     """Whether to include image/table captions in context."""
 
-    context_filter_content_types: List[str] = field(
+    context_filter_content_types: list[str] = field(
         default_factory=lambda: [
             x.strip()
             for x in get_env_value("CONTEXT_FILTER_CONTENT_TYPES", "text", str).split(
@@ -155,10 +155,8 @@ class RAGAnythingConfig:
       extract/merge. Lowest LLM call count.
     """
 
-    max_parallel_modal_items: Optional[int] = field(
-        default_factory=lambda: get_env_value(
-            "MAX_PARALLEL_MODAL_ITEMS", None, int
-        )
+    max_parallel_modal_items: int | None = field(
+        default_factory=lambda: get_env_value("MAX_PARALLEL_MODAL_ITEMS", None, int)
     )
     """Optional concurrency limit for multimodal section generation (vision/
     caption). When unset, falls back to ``LightRAG.max_parallel_insert`` (or 2).

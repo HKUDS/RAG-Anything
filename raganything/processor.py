@@ -1384,7 +1384,6 @@ class ProcessorMixin:
         # Stage 7: Update doc_status with integrated chunks_list
         await self._update_doc_status_with_chunks_type_aware(doc_id, chunk_ids)
 
-
     def _modal_description_only_text(self, data: Dict[str, Any]) -> str:
         """Build compact KG-extraction text for one multimodal item.
 
@@ -1406,9 +1405,7 @@ class ProcessorMixin:
         extra_bits: List[str] = []
         if content_type == "image":
             captions = normalize_caption_list(
-                original_item.get(
-                    "image_caption", original_item.get("img_caption", [])
-                )
+                original_item.get("image_caption", original_item.get("img_caption", []))
             )
             footnotes = normalize_caption_list(
                 original_item.get(

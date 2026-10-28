@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, Mock
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -45,8 +44,8 @@ def _install_stubs():
 
 _install_stubs()
 
-from raganything.config import RAGAnythingConfig  # noqa: E402
-from raganything.processor import ProcessorMixin  # noqa: E402
+from raganything.config import RAGAnythingConfig
+from raganything.processor import ProcessorMixin
 
 
 class _FakeTokenizer:
@@ -174,7 +173,7 @@ def _load_batch_method():
         "asyncio": asyncio,
         "get_processor_for_type": lambda processors, kind: processors.get(kind),
     }
-    exec(compile(ast.fix_missing_locations(module), str(source), "exec"), namespace)
+    exec(compile(ast.fix_missing_locations(module), str(source), "exec"), namespace)  # noqa: S102
     return namespace[method.name]
 
 
@@ -187,7 +186,9 @@ def _load_batch_method():
         ("per_item", 8, True),
     ],
 )
-async def test_batch_path_extract_call_scaling(mode, expect_extract_calls_max, expect_merge):
+async def test_batch_path_extract_call_scaling(
+    mode, expect_extract_calls_max, expect_merge
+):
     """Mocked end-to-end of the batch method: vision N, extract ≪ N when packed/skip."""
     batch = _load_batch_method()
     vision_calls = []
@@ -214,14 +215,17 @@ async def test_batch_path_extract_call_scaling(mode, expect_extract_calls_max, e
 
     async def fake_merge(*args, **kwargs):
         merge_calls.append(1)
-        return None
 
     def build_extraction(data_list, lightrag_chunks, mode="packed"):
         # Mirror real packing enough for call-count assertions
         if mode == "per_item":
-            return {f"c{i}": {"content": d["description"]} for i, d in enumerate(data_list)}
+            return {
+                f"c{i}": {"content": d["description"]} for i, d in enumerate(data_list)
+            }
         if mode == "packed":
-            return {"pack0": {"content": "\n\n".join(d["description"] for d in data_list)}}
+            return {
+                "pack0": {"content": "\n\n".join(d["description"] for d in data_list)}
+            }
         return {}
 
     config = SimpleNamespace(
