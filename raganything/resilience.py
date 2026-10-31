@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import inspect
 import logging
 import threading
 import time
@@ -162,7 +163,7 @@ def async_retry(
         exponential_base: Multiplier applied to the delay after each retry.
         jitter: If ``True``, adds random jitter (0–50 % of computed delay).
         retryable_exceptions: Exception types that trigger a retry.
-        on_retry: Optional async-compatible callback.
+        on_retry: Optional callback; awaitable results complete before retrying.
 
     Returns:
         The decorated async function, with retry behaviour.
@@ -208,7 +209,7 @@ def async_retry(
                     delay = min(delay, max_delay)
                     if on_retry is not None:
                         result = on_retry(exc, attempt, delay)
-                        if asyncio.iscoroutine(result):
+                        if inspect.isawaitable(result):
                             await result
                     logger.warning(
                         "%s attempt %d/%d failed (%s), retrying in %.1fs…",
