@@ -64,10 +64,22 @@ def format_table_body(table_body: Any) -> str:
     Strings are passed through unchanged. List-of-lists (the common
     ``table_data`` shape from non-MinerU parsers) are rendered as a simple
     Markdown table so the LLM sees structured rows instead of a Python repr.
+    Docling's ``TableData`` dict is rendered the same way from its ``grid``.
     Other shapes fall back to a newline-joined string of ``str(...)`` items.
     """
     if isinstance(table_body, str):
         return table_body
+    grid = table_body.get("grid") if isinstance(table_body, dict) else None
+    if isinstance(grid, list) and all(isinstance(row, list) for row in grid):
+        # Docling's cells also carry a bounding box, offsets and header flags;
+        # the table needs only their text. The grid repeats a spanning cell in
+        # every position it covers.
+        return format_table_body(
+            [
+                [cell.get("text") if isinstance(cell, dict) else cell for cell in row]
+                for row in grid
+            ]
+        )
     if isinstance(table_body, list):
         if not table_body:
             return ""
