@@ -466,6 +466,9 @@ class QueryMixin:
         messages = self._build_vlm_messages_with_images(
             enhanced_prompt, query, system_prompt
         )
+        # Preserve prior turns before the current multimodal user message.
+        if query_param.conversation_history:
+            messages[1:1] = query_param.conversation_history
 
         # 4. Call VLM for question answering
         result = await self._call_vlm_with_multimodal_content(
@@ -891,7 +894,7 @@ class QueryMixin:
             VLM response, or an async iterator when streaming is requested.
         """
         try:
-            user_message = messages[1]
+            user_message = messages[-1]
             content = user_message["content"]
             system_prompt = messages[0]["content"]
             stream_options = {"stream": True} if stream else {}
