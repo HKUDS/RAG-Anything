@@ -12,7 +12,7 @@ lightrag-hku<1.5
 # python_version < "3.14": every MinerU 3.x release requires Python <3.14, so
 # Python 3.14 gets RAG-Anything without MinerU (use the Docling parser there).
 # Keep in sync with pyproject.toml.
-mineru[core]>=3.4.1,<4; python_version < "3.14"
+mineru[core]>=4.0.12,<5; python_version < "3.14"
 # Progress bars for batch processing
 tqdm
 # Note: Optional dependencies are now defined in setup.py extras_require:
