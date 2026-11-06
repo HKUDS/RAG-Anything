@@ -387,24 +387,72 @@ async def test_existing_prefix_is_not_captured_without_delimiter(
     assert str(prefix) not in validated_paths
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known limitation: whitespace is a delimiter, so for 'chart.png v2.png' "
-        "the capture stops at an existing 'chart.png' and sends that image. "
-        "Main does the same; the fix would be to try image-suffixed prefixes "
-        "of the whole field from longest to shortest."
-    ),
-)
 @pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+@pytest.mark.parametrize("mode", MODES)
 async def test_filename_with_space_after_image_suffix_sends_that_file(
-    tmp_path, validated_paths
+    tmp_path, validated_paths, mode, entrypoint
 ):
     _save_png(tmp_path / "chart.png", "red")
     spaced = tmp_path / "chart.png v2.png"
     spaced_bytes = _save_png(spaced, "blue")
-    prompt = await _lightrag_prompt("naive", [_image_chunk(str(spaced))])
+    prompt = await _lightrag_prompt(mode, [_image_chunk(str(spaced))])
     query = _make_query(tmp_path, prompt)
 
-    assert await query.aquery(QUESTION, mode="naive") == "vision answer"
+    assert await getattr(query, entrypoint)(QUESTION, mode=mode) == "vision answer"
     assert _sent_images(query) == [spaced_bytes]
+    assert validated_paths == [str(spaced)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("unavailable", ["missing", "invalid", "outside-symlink"])
+async def test_unavailable_spaced_filename_does_not_send_existing_prefix(
+    tmp_path, tmp_path_factory, validated_paths, mode, unavailable
+):
+    _save_png(tmp_path / "chart.png", "red")
+    spaced = tmp_path / "chart.png v2.png"
+    if unavailable == "invalid":
+        spaced.write_text("not an image", encoding="utf-8")
+    elif unavailable == "outside-symlink":
+        outside = tmp_path_factory.mktemp("outside") / "secret.png"
+        _save_png(outside, "blue")
+        spaced.symlink_to(outside)
+    prompt = await _lightrag_prompt(mode, [_image_chunk(str(spaced))])
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode=mode) == "text answer"
+    assert _sent_images(query) == []
+    assert validated_paths == [str(spaced)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("retrieved", [False, True], ids=["plain", "json-escaped"])
+async def test_spaced_filename_stops_before_next_image_field(
+    tmp_path, validated_paths, mode, retrieved
+):
+    spaced = tmp_path / "chart.png v2.png"
+    spaced_bytes = _save_png(spaced, "blue")
+    other = tmp_path / "other.png"
+    other_bytes = _save_png(other, "green")
+    content = _image_chunk(str(spaced)) + "\n" + _image_chunk(str(other))
+    prompt = await _lightrag_prompt(mode, [content]) if retrieved else content
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode=mode) == "vision answer"
+    assert _sent_images(query) == [spaced_bytes, other_bytes]
+    assert validated_paths == [str(spaced), str(other)]
+
+
+@pytest.mark.asyncio
+async def test_long_run_of_escaped_backslashes_is_linear(tmp_path):
+    prompt = await _lightrag_prompt(
+        "naive", ["Image Path: " + "\\" * 20_000 + "not-an-image"]
+    )
+    query = _make_query(tmp_path, prompt)
+
+    start = time.perf_counter()
+    assert await query.aquery(QUESTION, mode="naive") == "text answer"
+    assert time.perf_counter() - start < 1.0
+    assert _sent_images(query) == []

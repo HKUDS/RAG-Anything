@@ -684,11 +684,20 @@ class QueryMixin:
         # which made a long run of spaces take quadratic time. The capture
         # stops at the next "Image Path:" label, so an invalid path cannot
         # swallow a valid one later in the same chunk.
+        # Prefer the last extension within this field: "chart.png v2.png"
+        # names one file, even when "chart.png" also exists. Stop at real or
+        # JSON-escaped field separators before searching backwards, and consume
+        # escaped backslashes together so a Windows separator before "n" is
+        # not mistaken for an escaped newline.
         # validate_image_file and the safe-directory check below still run on
         # every captured path.
         image_path_pattern = re.compile(
             r"Image Path:[ \t]*(?![ \t])"
-            r"((?:(?!Image Path:)[^\r\n])*?\.(?:jpe?g|png|gif|bmp|webp|tiff?))"
+            r"((?:(?!Image Path:)(?:"
+            r"\\\\"
+            r'|\\(?!["\\fnrt]|u00(?:0b|1[c-f]))[^\r\n]'
+            r'|[^"\\\x00-\x1f]'
+            r"))*\.(?:jpe?g|png|gif|bmp|webp|tiff?))"
             r"(?=[.,;:)\]]?(?:\\(?:[\"fnrt]|u00(?:0b|1[c-f]))|[\"\s]|$))",
             re.IGNORECASE | re.MULTILINE,
         )
