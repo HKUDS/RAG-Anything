@@ -672,23 +672,15 @@ class QueryMixin:
 
         # LightRAG 1.4.x json.dumps each retrieved chunk into the prompt, so the
         # newline after "Image Path: <path>" usually arrives as the two
-        # characters backslash and "n". Capture through a case-insensitive image
-        # extension, and only when a delimiter follows it, so "figure.PNG" is
-        # found and "figure.png.backup" is not shortened to "figure.png".
-        # A delimiter is a quote or whitespace character, unescaped or as
-        # json.dumps escapes it (\", \n, \r, \t, \f, \u000b, \u001c-\u001f),
-        # or end of line, optionally after one punctuation mark (". , ; : ) ]").
-        # An escaped backslash is not a delimiter, because it separates the
-        # parts of a JSON-escaped Windows path.
-        # "(?![ \t])" stops the leading blanks from being re-tried one by one,
-        # which made a long run of spaces take quadratic time. The capture
-        # stops at the next "Image Path:" label, so an invalid path cannot
-        # swallow a valid one later in the same chunk.
-        # Prefer the last extension within this field: "chart.png v2.png"
-        # names one file, even when "chart.png" also exists. Stop at real or
-        # JSON-escaped field separators before searching backwards, and consume
-        # escaped backslashes together so a Windows separator before "n" is
-        # not mistaken for an escaped newline.
+        # characters backslash and "n". Isolate each field at real or escaped
+        # separators (or the next label) before selecting its last image suffix.
+        # Check that suffix's delimiter separately: "chart.png v2.png.backup"
+        # must not backtrack to the earlier "chart.png" when its last suffix
+        # fails validation. Whitespace may be part of a filename.
+        # The alternatives consume disjoint characters/escape pairs, and the
+        # leading-blank guard prevents quadratic retries on long space runs.
+        # Consume escaped backslashes together so a Windows separator before
+        # "n" is not mistaken for an escaped newline.
         # validate_image_file and the safe-directory check below still run on
         # every captured path.
         image_path_pattern = re.compile(
@@ -697,19 +689,31 @@ class QueryMixin:
             r"\\\\"
             r'|\\(?!["\\fnrt]|u00(?:0b|1[c-f]))[^\r\n]'
             r'|[^"\\\x00-\x1f]'
-            r"))*\.(?:jpe?g|png|gif|bmp|webp|tiff?))"
-            r"(?=[.,;:)\]]?(?:\\(?:[\"fnrt]|u00(?:0b|1[c-f]))|[\"\s]|$))",
+            r"))*)"
+            r'(?=Image Path:|\\(?:["fnrt]|u00(?:0b|1[c-f]))|["\x00-\x1f]|$)',
             re.IGNORECASE | re.MULTILINE,
         )
+        image_suffix_pattern = re.compile(
+            r"\.(?:jpe?g|png|gif|bmp|webp|tiff?)", re.IGNORECASE
+        )
+        suffix_delimiter_pattern = re.compile(r"[.,;:)\]]?(?:\s|$)")
 
         # First, let's see what matches we find
         matches = image_path_pattern.findall(prompt)
-        self.logger.info(f"Found {len(matches)} image path matches in prompt")
+        self.logger.info(f"Found {len(matches)} image path fields in prompt")
 
         def replace_image_path(match):
             nonlocal images_processed
 
-            image_path = match.group(1).strip()
+            field = match.group(1)
+            suffixes = list(image_suffix_pattern.finditer(field))
+            if not suffixes or not suffix_delimiter_pattern.match(
+                field, suffixes[-1].end()
+            ):
+                return match.group(0)
+            path_end = suffixes[-1].end()
+            image_path = field[:path_end].strip()
+            trailing_text = field[path_end:]
             self.logger.debug(f"Processing image path: '{image_path}'")
 
             # Validate path format (basic check)
@@ -776,7 +780,10 @@ class QueryMixin:
                     self._current_images_base64.append(image_base64)
 
                     # Keep original path info and add VLM marker
-                    result = f"Image Path: {image_path}\n[VLM_IMAGE_{images_processed}]"
+                    result = (
+                        f"Image Path: {image_path}\n[VLM_IMAGE_{images_processed}]"
+                        f"{trailing_text}"
+                    )
                     self.logger.debug(
                         f"Successfully processed image {images_processed}: {image_path}"
                     )

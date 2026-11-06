@@ -456,3 +456,23 @@ async def test_long_run_of_escaped_backslashes_is_linear(tmp_path):
     assert await query.aquery(QUESTION, mode="naive") == "text answer"
     assert time.perf_counter() - start < 1.0
     assert _sent_images(query) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("retrieved", [False, True], ids=["plain", "json-escaped"])
+@pytest.mark.parametrize("suffix", [".backup", "x", "\\"])
+async def test_spaced_invalid_suffix_does_not_send_existing_prefix(
+    tmp_path, validated_paths, mode, retrieved, suffix
+):
+    _save_png(tmp_path / "chart.png", "red")
+    _save_png(tmp_path / "chart.png v2.png", "green")
+    invalid = tmp_path / f"chart.png v2.png{suffix}"
+    _save_png(invalid, "blue")
+    content = _image_chunk(str(invalid))
+    prompt = await _lightrag_prompt(mode, [content]) if retrieved else content
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode=mode) == "text answer"
+    assert _sent_images(query) == []
+    assert validated_paths == []
