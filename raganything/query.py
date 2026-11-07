@@ -701,6 +701,17 @@ class QueryMixin:
             nonlocal images_processed
 
             image_path = match.group(1).strip()
+            if "\\" in image_path:
+                # Decode transport escapes only inside a JSON record. Plain-text
+                # paths may contain literal backslashes that must stay literal.
+                line_start = prompt.rfind("\n", 0, match.start()) + 1
+                line_end = prompt.find("\n", match.end())
+                line = prompt[line_start : line_end if line_end != -1 else len(prompt)]
+                try:
+                    if isinstance(json.loads(line), (dict, list)):
+                        image_path = json.loads(f'"{image_path}"')
+                except json.JSONDecodeError:
+                    pass
             self.logger.debug(f"Processing image path: '{image_path}'")
 
             # Validate path format (basic check)
@@ -767,7 +778,7 @@ class QueryMixin:
                     self._current_images_base64.append(image_base64)
 
                     # Keep original path info and add VLM marker
-                    result = f"Image Path: {image_path}\n[VLM_IMAGE_{images_processed}]"
+                    result = f"{match.group(0)}\n[VLM_IMAGE_{images_processed}]"
                     self.logger.debug(
                         f"Successfully processed image {images_processed}: {image_path}"
                     )

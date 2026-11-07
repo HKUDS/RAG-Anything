@@ -12,6 +12,7 @@ content uses RAG-Anything's own ``image_chunk`` template.
 import base64
 import json
 import logging
+import os
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -133,6 +134,77 @@ def _sent_images(query):
         for part in messages[1]["content"]
         if part["type"] == "image_url"
     ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+@pytest.mark.parametrize(
+    "filename",
+    [
+        r"nested\figure.png",
+        r"figure\u0041.png",
+        pytest.param(
+            'figure"quoted.png',
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windows forbids quotes"),
+        ),
+    ],
+    ids=["backslash", "literal-unicode-escape", "quote"],
+)
+async def test_json_escaped_image_path_reaches_vision_model(
+    tmp_path, mode, entrypoint, filename
+):
+    image_path = tmp_path / filename
+    original = _save_png(image_path)
+    prompt = await _lightrag_prompt(mode, [_image_chunk(str(image_path))])
+    query = _make_query(tmp_path, prompt)
+
+    assert await getattr(query, entrypoint)(QUESTION, mode=mode) == "vision answer"
+    assert _sent_images(query) == [original]
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="Windows forbids control characters")
+async def test_plain_text_image_path_keeps_literal_backslashes(tmp_path):
+    image_path = tmp_path / r"nested\figure.png"
+    original = _save_png(image_path, "blue")
+    _save_png(tmp_path / "nested\figure.png", "red")
+    query = _make_query(tmp_path, _image_chunk(str(image_path)))
+
+    assert await query.aquery(QUESTION) == "vision answer"
+    assert _sent_images(query) == [original]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("unsafe_kind", ["outside", "symlink", "not-image"])
+async def test_json_escaped_image_path_still_requires_safe_image(
+    tmp_path, tmp_path_factory, monkeypatch, caplog, mode, unsafe_kind
+):
+    monkeypatch.chdir(tmp_path)
+    image_path = tmp_path / r"nested\figure.png"
+    if unsafe_kind == "outside":
+        image_path = tmp_path_factory.mktemp("outside") / r"nested\figure.png"
+        _save_png(image_path)
+    elif unsafe_kind == "symlink":
+        target = tmp_path / "target.png"
+        _save_png(target)
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.symlink_to(target)
+    else:
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_text("not an image", encoding="utf-8")
+    prompt = await _lightrag_prompt(mode, [_image_chunk(str(image_path))])
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode=mode) == "text answer"
+    assert _sent_images(query) == []
+    if unsafe_kind == "outside":
+        assert (
+            f"Blocking image path outside safe directories: {image_path}" in caplog.text
+        )
+    elif unsafe_kind == "symlink":
+        assert f"Blocking symlink for security: {image_path}" in caplog.text
 
 
 @pytest.fixture
