@@ -104,6 +104,7 @@ def retry(
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exception: BaseException | None = None
+            raw_delay = float(base_delay)
             for attempt in range(1, max_attempts + 1):
                 try:
                     return func(*args, **kwargs)
@@ -117,7 +118,8 @@ def retry(
                             exc,
                         )
                         raise
-                    delay = base_delay * (exponential_base ** (attempt - 1))
+                    delay = raw_delay
+                    raw_delay *= exponential_base
                     if jitter:
                         import random
 
@@ -187,6 +189,7 @@ def async_retry(
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exception: BaseException | None = None
+            raw_delay = float(base_delay)
             for attempt in range(1, max_attempts + 1):
                 try:
                     return await func(*args, **kwargs)
@@ -200,7 +203,8 @@ def async_retry(
                             exc,
                         )
                         raise
-                    delay = base_delay * (exponential_base ** (attempt - 1))
+                    delay = raw_delay
+                    raw_delay *= exponential_base
                     if jitter:
                         import random
 
