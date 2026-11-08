@@ -527,7 +527,13 @@ def test_capped_retry_does_not_overflow(monkeypatch, base_delay, jitter):
     monkeypatch.setattr(resilience_module.time, "sleep", delays.append)
     calls = 0
 
-    @retry(max_attempts=350, base_delay=base_delay, max_delay=0.0, exponential_base=10.0, jitter=jitter)
+    @retry(
+        max_attempts=350,
+        base_delay=base_delay,
+        max_delay=0.0,
+        exponential_base=10.0,
+        jitter=jitter,
+    )
     def operation():
         nonlocal calls
         calls += 1
@@ -550,7 +556,13 @@ async def test_capped_async_retry_does_not_overflow(monkeypatch, base_delay, jit
     monkeypatch.setattr(resilience_module.asyncio, "sleep", sleep)
     calls = 0
 
-    @async_retry(max_attempts=350, base_delay=base_delay, max_delay=0.0, exponential_base=10.0, jitter=jitter)
+    @async_retry(
+        max_attempts=350,
+        base_delay=base_delay,
+        max_delay=0.0,
+        exponential_base=10.0,
+        jitter=jitter,
+    )
     async def operation():
         nonlocal calls
         calls += 1
