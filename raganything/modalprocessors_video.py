@@ -136,6 +136,15 @@ class VideoModalProcessor(BaseModalProcessor):
         """
         super().__init__(lightrag, modal_caption_func, context_extractor)
 
+        # A non-positive cap is meaningless: a negative value makes
+        # _redistribute return no windows at all (surfacing later as a
+        # misleading "No scenes or speech detected" failure after the whole
+        # pipeline has run), and 0 is silently ignored by the truthiness
+        # check in _plan_windows. Reject both up front, like BatchParser
+        # does for max_workers.
+        if max_windows is not None and max_windows < 1:
+            raise ValueError("max_windows must be greater than zero")
+
         self.whisper_model_name = whisper_model or os.environ.get(
             "WHISPER_MODEL", "base"
         )
