@@ -10,6 +10,7 @@ import os
 import time
 import hashlib
 import json
+import shutil
 from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from raganything.base import DocStatus
 from raganything.document_context import document_context
 from raganything.parser import (
     HTML_FILE_EXTENSIONS,
+    Parser,
     MineruParser,
     MineruExecutionError,
     get_parser,
@@ -41,7 +43,6 @@ from raganything.parse_options import (
 )
 import asyncio
 from lightrag.utils import compute_mdhash_id
-
 
 AUDIO_FILE_EXTENSIONS = frozenset(
     {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".wma", ".aac", ".opus"}
@@ -1440,9 +1441,9 @@ class ProcessorMixin:
                     table_img_path=table_img_path,
                     table_caption=", ".join(table_caption) if table_caption else "None",
                     table_body=table_body,
-                    table_footnote=", ".join(table_footnote)
-                    if table_footnote
-                    else "None",
+                    table_footnote=(
+                        ", ".join(table_footnote) if table_footnote else "None"
+                    ),
                     enhanced_caption=description,
                 )
 
@@ -1981,6 +1982,173 @@ class ProcessorMixin:
                 "chunks_count": 0,
             }
 
+    async def adelete_by_doc_id(
+        self,
+        doc_id: str,
+        delete_media_files: bool = False,
+        delete_llm_cache: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Cascading deletion of a document from RAG-Anything and LightRAG.
+
+        Removes all associated data across all storage layers:
+        - Text and multimodal chunks from vector databases and key-value stores
+        - Knowledge graph entities and relationships linked to the document
+        - RAG-Anything's internal multimodal_status_cache
+        - Pre-registration placeholders (doc-pre-<file_name>)
+        - (Optional) Physical parsed artifacts and extracted media on disk
+        - (Optional) Cached LLM extractions in LightRAG
+
+        Args:
+            doc_id: The document ID to delete.
+            delete_media_files: If True, deletes the parsed output directory on disk.
+            delete_llm_cache: If True, deletes cached LLM responses in LightRAG.
+
+        Returns:
+            Dict[str, Any] containing deletion status, counts, and metadata.
+        """
+        # Ensure LightRAG is initialized before accessing its storages
+        await self._ensure_lightrag_initialized()
+
+        current_status = None
+        if hasattr(self.lightrag, "doc_status") and self.lightrag.doc_status:
+            current_status = await self.lightrag.doc_status.get_by_id(doc_id)
+
+        doc_exists = bool(current_status)
+        if (
+            not doc_exists
+            and hasattr(self.lightrag, "full_docs")
+            and self.lightrag.full_docs
+        ):
+            doc_exists = bool(await self.lightrag.full_docs.get_by_id(doc_id))
+
+        multimodal_cache_exists = False
+        if hasattr(self, "multimodal_status_cache") and self.multimodal_status_cache:
+            multimodal_cache_exists = bool(
+                await self.multimodal_status_cache.get_by_id(doc_id)
+            )
+
+        if not doc_exists and not multimodal_cache_exists:
+            return {
+                "status": "not_found",
+                "doc_id": doc_id,
+                "message": f"Document {doc_id} not found",
+                "multimodal_status_deleted": False,
+                "media_files_deleted": False,
+                "lightrag_result": None,
+            }
+
+        # 1. Clean up RAG-Anything internal multimodal status cache
+        multimodal_status_deleted = False
+        if hasattr(self, "multimodal_status_cache") and self.multimodal_status_cache:
+            try:
+                if await self.multimodal_status_cache.get_by_id(doc_id):
+                    await self.multimodal_status_cache.delete([doc_id])
+                    await self.multimodal_status_cache.index_done_callback()
+                    multimodal_status_deleted = True
+            except Exception as e:
+                self.logger.warning(
+                    f"Error deleting multimodal status cache for {doc_id}: {e}"
+                )
+
+        # 2. Clean up media and parsing output directory on disk if requested
+        media_files_deleted = False
+        if delete_media_files and current_status:
+            file_path = current_status.get("file_path")
+            if file_path:
+                try:
+                    output_base = Path(self.config.parser_output_dir).resolve()
+                    unique_dir = Parser._unique_output_dir(
+                        output_base, file_path
+                    ).resolve()
+                    # Security check: ensure target directory is strictly within output_base
+                    if (
+                        output_base in unique_dir.parents
+                        and unique_dir.exists()
+                        and unique_dir.is_dir()
+                    ):
+                        shutil.rmtree(unique_dir, ignore_errors=True)
+                        media_files_deleted = True
+                except Exception as e:
+                    self.logger.warning(f"Error removing media files for {doc_id}: {e}")
+
+        # 3. Clean up pre-registration placeholder (doc-pre-<filename>) if present
+        if current_status:
+            file_name = current_status.get("file_path")
+            if file_name:
+                doc_pre_id = f"doc-pre-{self._get_file_reference(file_name)}"
+                if (
+                    hasattr(self.lightrag, "doc_status")
+                    and self.lightrag.doc_status
+                    and doc_pre_id != doc_id
+                ):
+                    try:
+                        if await self.lightrag.doc_status.get_by_id(doc_pre_id):
+                            await self.lightrag.doc_status.delete([doc_pre_id])
+                            await self.lightrag.doc_status.index_done_callback()
+                    except Exception as e:
+                        self.logger.debug(
+                            f"Pre-registration record {doc_pre_id} cleanup: {e}"
+                        )
+
+        # 4. Delegate core graph and vector deletion to LightRAG
+        lightrag_result = None
+        if hasattr(self.lightrag, "adelete_by_doc_id"):
+            try:
+                lr_res = await self.lightrag.adelete_by_doc_id(
+                    doc_id, delete_llm_cache=delete_llm_cache
+                )
+                if hasattr(lr_res, "status"):
+                    lightrag_result = {
+                        "status": lr_res.status,
+                        "doc_id": lr_res.doc_id,
+                        "message": lr_res.message,
+                        "status_code": getattr(lr_res, "status_code", 200),
+                        "file_path": getattr(lr_res, "file_path", None),
+                    }
+                elif isinstance(lr_res, dict):
+                    lightrag_result = lr_res
+                else:
+                    lightrag_result = {"status": "success", "raw": str(lr_res)}
+            except Exception as e:
+                self.logger.error(
+                    f"Error calling LightRAG adelete_by_doc_id for {doc_id}: {e}"
+                )
+                lightrag_result = {
+                    "status": "failed",
+                    "doc_id": doc_id,
+                    "message": str(e),
+                    "status_code": 500,
+                }
+        else:
+            # Fallback for custom / stub LightRAG instances
+            if hasattr(self.lightrag, "doc_status") and self.lightrag.doc_status:
+                await self.lightrag.doc_status.delete([doc_id])
+                await self.lightrag.doc_status.index_done_callback()
+            if hasattr(self.lightrag, "full_docs") and self.lightrag.full_docs:
+                await self.lightrag.full_docs.delete([doc_id])
+                await self.lightrag.full_docs.index_done_callback()
+            lightrag_result = {
+                "status": "success",
+                "doc_id": doc_id,
+                "message": f"Document {doc_id} deleted from storage",
+                "status_code": 200,
+            }
+
+        res_status = (
+            lightrag_result.get("status", "success")
+            if isinstance(lightrag_result, dict)
+            else "success"
+        )
+        return {
+            "status": res_status,
+            "doc_id": doc_id,
+            "message": f"Successfully processed deletion for document {doc_id}",
+            "multimodal_status_deleted": multimodal_status_deleted,
+            "media_files_deleted": media_files_deleted,
+            "lightrag_result": lightrag_result,
+        }
+
     @document_context
     async def process_document_complete(
         self,
@@ -2210,7 +2378,9 @@ class ProcessorMixin:
         doc_pre_id = f"doc-pre-{file_name}"
         pipeline_status = None
         pipeline_status_lock = None
-        current_doc_status = {}  # initialised here so the except block can always unpack it
+        current_doc_status = (
+            {}
+        )  # initialised here so the except block can always unpack it
 
         async def mark_initialization_failed(error_msg: str) -> None:
             """Persist init failures when LightRAG doc_status is already available."""
