@@ -13,6 +13,7 @@ import json
 from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 
+from raganything.asset_urls import MEDIA_PATH_FIELDS
 from raganything.base import DocStatus
 from raganything.document_context import document_context
 from raganything.parser import (
@@ -543,6 +544,21 @@ class ProcessorMixin:
             doc_id = cached_data.get("doc_id")
 
             if content_list and doc_id:
+                # Cached blocks reference local parser outputs, not their bytes.
+                for item in content_list:
+                    if not isinstance(item, dict):
+                        continue
+                    for field in (*MEDIA_PATH_FIELDS, "audio_path", "video_path"):
+                        media_path = item.get(field)
+                        if not isinstance(media_path, str) or not media_path:
+                            continue
+                        if media_path.startswith(("http://", "https://", "s3://")):
+                            continue
+                        if not Path(media_path).is_file():
+                            self.logger.debug(
+                                f"Cache invalid - missing media file: {media_path}"
+                            )
+                            return None
                 self.logger.debug(
                     f"Found valid cached parsing result for key: {cache_key}"
                 )
