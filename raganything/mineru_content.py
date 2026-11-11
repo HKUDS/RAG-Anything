@@ -380,7 +380,9 @@ def _text_value(value: Any) -> str:
     if value_type is not dict and isinstance(value, (int, float, bool)):
         return str(value)
     if value_type is dict or (
-        value_type is not list and value_type is not tuple and isinstance(value, Mapping)
+        value_type is not list
+        and value_type is not tuple
+        and isinstance(value, Mapping)
     ):
         span_type = value.get("type")
         if isinstance(span_type, str) and span_type in _INLINE_EQUATION_TYPES:
