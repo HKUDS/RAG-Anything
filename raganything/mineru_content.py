@@ -376,9 +376,12 @@ def _text_value(value: Any) -> str:
         return ""
     if isinstance(value, str):
         return value
-    if isinstance(value, (int, float, bool)):
+    value_type = type(value)
+    if value_type is not dict and isinstance(value, (int, float, bool)):
         return str(value)
-    if isinstance(value, Mapping):
+    if value_type is dict or (
+        value_type is not list and value_type is not tuple and isinstance(value, Mapping)
+    ):
         span_type = value.get("type")
         if isinstance(span_type, str) and span_type in _INLINE_EQUATION_TYPES:
             equation = _text_value(value.get("content", value.get("text", "")))
@@ -390,7 +393,7 @@ def _text_value(value: Any) -> str:
 
         content = value.get("content")
         if content not in (None, ""):
-            text = _text_value(content)
+            text = content if type(content) is str else _text_value(content)
             if text:
                 return text
         children = value.get("children")
@@ -410,7 +413,7 @@ def _text_value(value: Any) -> str:
                     return text
         return ""
     if isinstance(value, (list, tuple)):
-        return _join_text_parts([_text_value(part) for part in value])
+        return _join_text_parts(list(map(_text_value, value)))
     return str(value).strip()
 
 
@@ -441,6 +444,8 @@ def _needs_span_separator(left: str, right: str) -> bool:
 
 def _is_cjk(char: str) -> bool:
     codepoint = ord(char)
+    if codepoint < 0x3000:
+        return False
     return (
         0x3000 <= codepoint <= 0x30FF  # CJK punctuation, Hiragana, and Katakana
         or 0x31F0 <= codepoint <= 0x31FF  # Katakana phonetic extensions
