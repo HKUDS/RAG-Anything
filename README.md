@@ -465,6 +465,8 @@ if __name__ == "__main__":
 
 > **Text indexing**: `process_document_complete()` and `insert_content_list()` return only after LightRAG has indexed the document's text; if another insert is running LightRAG's pipeline, they wait for that run to process it. If LightRAG fails the text (for example, the LLM is unavailable) and no run is left to retry it, they raise `RuntimeError` and the document stays `failed` in `doc_status`; LightRAG retries it on its next pipeline run, such as when the file is processed again. See [multimodal ingestion concurrency](docs/batch_processing.md#multimodal-ingestion-concurrency).
 
+> **Multimodal retries**: if both batch and individual multimodal processing fail to store an item, these entry points raise and leave the document `failed`. A normal retry runs its multimodal processing again, including after a failed forced reprocess. Successfully stored chunks remain linked to the document. A parse-cache hit is also reparsed when a referenced local media file is missing.
+
 #### 2. Direct Multimodal Content Processing
 
 ```python
@@ -1178,6 +1180,7 @@ RAGAnything now supports multiple parsers, each with specific advantages:
 - Optimized for Office documents and HTML files
 - The only built-in parser that accepts HTML (.html, .htm, .xhtml); MinerU and PaddleOCR reject it (see [Document Formats](#document-formats))
 - Better document structure preservation
+- Table chunks render cell text as Markdown rows and resolve linked captions and footnotes; the original table data remains in `content_list` for stable document IDs
 - Native support for multiple Office formats
 
 Install Docling (not included in `raganything[all]`):
@@ -1280,6 +1283,8 @@ Different content types require specific optional dependencies:
 - **Extended Image Formats** (.bmp, .tiff, .gif, .webp): Install with `pip install raganything[image]`
 - **Audio** (.mp3, .wav, .flac, .m4a, .ogg): Install with `pip install raganything[audio]` and set `enable_audio_processing=True` (env `ENABLE_AUDIO_PROCESSING`); local transcription via faster-whisper, model picked by `WHISPER_MODEL` (default `base`; for CJK audio use `WHISPER_MODEL=medium` or larger and set `WHISPER_LANGUAGE`, e.g. `zh` — smaller models garble non-Latin proper nouns)
 - **Video** (.mp4, .mov, .webm, .avi, .mkv): Install with `pip install raganything[video]` (also needs ffmpeg on PATH) and set `enable_video_processing=True` (env `ENABLE_VIDEO_PROCESSING`); dual-channel: SceneDetect + keyframe VLM description + audio-track transcription. Media files can be passed directly to `process_document_complete()` / folder batches, or inserted as content-list items
+
+> When constructing `VideoModalProcessor` directly, `max_windows` must be a positive integer or `None`. Window size estimates include explicit audio text alongside visual descriptions. A single oversized segment stays intact; a window-count cap can redistribute segments into larger windows.
 - **Text Files** (.txt, .md): Install with `pip install raganything[text]`. Parsed directly (no PDF/OCR round trip); markdown image references (`![alt](path)`) that point to local image files (an image extension and image file contents) become image blocks and flow through the same multimodal pipeline as images extracted from PDFs — URLs, missing files and other files stay as plain text. Referenced images are sent to the configured vision model wherever they are on disk, so only ingest Markdown whose image references you trust
 - **PaddleOCR Parser** (`parser="paddleocr"`): Install with `pip install raganything[paddleocr]`, then install `paddlepaddle` for your platform
 

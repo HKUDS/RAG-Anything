@@ -242,6 +242,14 @@ already indexed) keeps the flag, and its completion status is restored without
 repeating that work. A failed text retry or completion-status write remains a
 RAG failure.
 
+If batch multimodal processing fails, individual processing is attempted. If
+any item still fails during individual processing, the document stays `failed`
+and the caller receives an exception. Successfully stored chunks remain in `chunks_list`;
+the document's multimodal completion flag is cleared so a normal retry can
+recover, even after a failed forced reprocess. A parse-cache hit whose local
+media file has been removed triggers reparsing; HTTP, HTTPS and S3 references
+are not checked for local existence.
+
 ## Configuration
 
 ### Environment Variables

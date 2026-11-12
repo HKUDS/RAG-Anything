@@ -2,6 +2,7 @@
 
 import base64
 import logging
+from copy import deepcopy
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -216,4 +217,65 @@ async def test_streaming_queries_without_images_keep_text_fallback(harness, entr
 
     assert [chunk async for chunk in result] == ["text", " answer"]
     assert harness.query_calls[-1][1].stream is True
+    assert harness.vision_calls == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+@pytest.mark.parametrize("stream", [False, True])
+async def test_image_queries_preserve_conversation_history(harness, entrypoint, stream):
+    history = [
+        {"role": "user", "content": "Focus on panel (a) in the next question."},
+        {"role": "assistant", "content": "I will compare the two groups in panel (a)."},
+    ]
+    original_history = deepcopy(history)
+    question = "How far apart are they?"
+
+    result = await getattr(harness, entrypoint)(
+        question,
+        conversation_history=history,
+        system_prompt="Keep the answer brief.",
+        stream=stream,
+    )
+
+    if stream:
+        assert [chunk async for chunk in result] == ["vision", " answer"]
+    else:
+        assert result == "vision answer"
+    assert harness.query_calls[0][1].conversation_history == original_history
+    assert len(harness.vision_calls) == 1
+    messages = harness.vision_calls[0][1]["messages"]
+    assert messages[0]["role"] == "system"
+    assert "Keep the answer brief." in messages[0]["content"]
+    assert messages[1:-1] == original_history
+    assert messages[-1]["role"] == "user"
+    assert any(part["type"] == "image_url" for part in messages[-1]["content"])
+    assert any(question in part.get("text", "") for part in messages[-1]["content"])
+    assert history == original_history
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+@pytest.mark.parametrize("stream", [False, True])
+async def test_image_free_fallback_preserves_conversation_history(
+    harness, entrypoint, stream
+):
+    harness.prompt = "Retrieved prompt without images"
+    history = [
+        {"role": "user", "content": "Focus on panel (a) in the next question."},
+        {"role": "assistant", "content": "I will compare the two groups in panel (a)."},
+    ]
+
+    result = await getattr(harness, entrypoint)(
+        "How far apart are they?",
+        conversation_history=history,
+        stream=stream,
+    )
+
+    if stream:
+        assert [chunk async for chunk in result] == ["text", " answer"]
+    else:
+        assert result == "text answer"
+    assert len(harness.query_calls) == 2
+    assert all(call[1].conversation_history == history for call in harness.query_calls)
     assert harness.vision_calls == []

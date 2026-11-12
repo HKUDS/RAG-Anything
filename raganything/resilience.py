@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import functools
+import inspect
 import logging
 import threading
 import time
@@ -104,6 +105,7 @@ def retry(
         @functools.wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exception: BaseException | None = None
+            raw_delay = float(base_delay)
             for attempt in range(1, max_attempts + 1):
                 try:
                     return func(*args, **kwargs)
@@ -117,7 +119,8 @@ def retry(
                             exc,
                         )
                         raise
-                    delay = base_delay * (exponential_base ** (attempt - 1))
+                    delay = raw_delay
+                    raw_delay *= exponential_base
                     if jitter:
                         import random
 
@@ -162,7 +165,7 @@ def async_retry(
         exponential_base: Multiplier applied to the delay after each retry.
         jitter: If ``True``, adds random jitter (0–50 % of computed delay).
         retryable_exceptions: Exception types that trigger a retry.
-        on_retry: Optional async-compatible callback.
+        on_retry: Optional callback; awaitable results complete before retrying.
 
     Returns:
         The decorated async function, with retry behaviour.
@@ -187,6 +190,7 @@ def async_retry(
         @functools.wraps(func)
         async def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exception: BaseException | None = None
+            raw_delay = float(base_delay)
             for attempt in range(1, max_attempts + 1):
                 try:
                     return await func(*args, **kwargs)
@@ -200,7 +204,8 @@ def async_retry(
                             exc,
                         )
                         raise
-                    delay = base_delay * (exponential_base ** (attempt - 1))
+                    delay = raw_delay
+                    raw_delay *= exponential_base
                     if jitter:
                         import random
 
@@ -208,7 +213,7 @@ def async_retry(
                     delay = min(delay, max_delay)
                     if on_retry is not None:
                         result = on_retry(exc, attempt, delay)
-                        if asyncio.iscoroutine(result):
+                        if inspect.isawaitable(result):
                             await result
                     logger.warning(
                         "%s attempt %d/%d failed (%s), retrying in %.1fs…",
@@ -259,7 +264,7 @@ class CircuitBreaker:
         # By default these mirror the retry helpers so application bugs do not
         # open the breaker unless explicitly configured to do so.
         self._failure_exceptions: tuple[Type[BaseException], ...] = tuple(
-            failure_exceptions or _DEFAULT_RETRYABLE
+            _DEFAULT_RETRYABLE if failure_exceptions is None else failure_exceptions
         )
 
         self._failure_count = 0
@@ -379,10 +384,9 @@ class CircuitBreaker:
                 # the breaker.
                 self._record_outcome(generation, success=False)
                 raise
-            except Exception:
-                # Application bug or non-transient local error: do not treat as
-                # upstream instability. We still need to clear the half-open
-                # trial gate so that future calls are not permanently blocked.
+            except BaseException:
+                # Local errors and interruptions are not upstream failures, but
+                # must release the half-open trial slot before propagating.
                 with self._lock:
                     if trial is not None and self._trial_in_flight is trial:
                         self._trial_in_flight = None
