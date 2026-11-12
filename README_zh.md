@@ -1031,6 +1031,14 @@ await rag.insert_content_list(
 
 该参数只影响多模态内容处理，是纯可选（opt-in）参数，默认值为 `False`，因此不会改变任何现有行为，除非您显式设置它。
 
+多模态图谱抽取默认使用 `multimodal_kg_extraction_mode="legacy"`，保留完整 chunk
+模板和 `belongs_to` 关系。可将该配置设为 `"packed"`，合并描述以减少抽取调用；
+合并后的来源 chunk 会入库并登记，供检索和删除使用。该模式会增加检索候选且省略
+`belongs_to`，请根据自己的数据验证检索质量。`"per_item"` 逐项抽取精简描述；
+`"skip"` 只存储描述、chunk 和多模态主实体，不做后续抽取。
+`max_parallel_modal_items` 可独立控制描述生成并发，不影响 LightRAG 的文档插入并发。
+详见[调用次数配置](docs/batch_processing.md#reducing-multimodal-llm-call-count)。
+
 #### 9. 删除文档
 
 使用 `adelete_by_doc_id` 可以在 LightRAG 与 RAG-Anything 中对指定文档执行级联删除。该方法会首先调用 `LightRAG.adelete_by_doc_id` 删除核心知识图谱、向量分块与文档状态，仅当核心删除确认成功后，才会继续清理 RAG-Anything 内部的多模态完成状态缓存、预注册占位符（`doc-pre-<file_name>`）以及可选的磁盘解析输出目录：

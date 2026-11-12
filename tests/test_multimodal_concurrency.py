@@ -55,6 +55,9 @@ def _make_processor(generate, limit):
         modal_processors={"image": SimpleNamespace(generate_chunk_sections=generate)},
         _convert_to_lightrag_chunks_type_aware=Mock(return_value={"chunk": {}}),
     )
+    processor._build_multimodal_extraction_chunks = Mock(
+        return_value={"extract-chunk": {}}
+    )
     for name in (
         "_store_chunks_to_lightrag_storage_type_aware",
         "_store_multimodal_main_entities",
