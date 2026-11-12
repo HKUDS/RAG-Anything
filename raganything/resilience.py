@@ -383,10 +383,9 @@ class CircuitBreaker:
                 # the breaker.
                 self._record_outcome(generation, success=False)
                 raise
-            except Exception:
-                # Application bug or non-transient local error: do not treat as
-                # upstream instability. We still need to clear the half-open
-                # trial gate so that future calls are not permanently blocked.
+            except BaseException:
+                # Local errors and interruptions are not upstream failures, but
+                # must release the half-open trial slot before propagating.
                 with self._lock:
                     if trial is not None and self._trial_in_flight is trial:
                         self._trial_in_flight = None
