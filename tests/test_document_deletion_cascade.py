@@ -1,10 +1,14 @@
 """Tests for cascading document deletion in RAG-Anything (#127, #332).
 
-Ensures that calling adelete_by_doc_id cleans up:
-- multimodal_status_cache entries
-- parsed media files and isolated output directories on disk
-- pre-registration placeholders (doc-pre-<filename>)
-- core LightRAG vector/graph elements via adelete_by_doc_id
+Ensures that calling adelete_by_doc_id:
+- delegates core deletion to LightRAG.adelete_by_doc_id first
+- retains multimodal_status_cache, media directories, and doc-pre placeholders
+  whenever core deletion raises or returns a non-success status (e.g. fail, busy, not_allowed)
+- refuses false-positive partial deletion when LightRAG lacks adelete_by_doc_id
+- resolves actual parsed output directories across nested source paths (with default
+  use_full_path=False), per-call output_dir overrides, Office intermediate PDF dirs,
+  and persisted parse_cache / doc_status metadata
+- invalidates stale parse_cache entries when media files on disk are deleted
 """
 
 from types import SimpleNamespace
@@ -37,12 +41,19 @@ class InMemoryStorage:
 
 
 class FakeDeletionResult:
-    def __init__(self, status="success", doc_id="doc-1", message="Deleted"):
+    def __init__(
+        self,
+        status="success",
+        doc_id="doc-1",
+        message="Deleted",
+        status_code=200,
+        file_path="sample.pdf",
+    ):
         self.status = status
         self.doc_id = doc_id
         self.message = message
-        self.status_code = 200
-        self.file_path = "sample.pdf"
+        self.status_code = status_code
+        self.file_path = file_path
 
 
 class FakeLightRAG:
@@ -50,18 +61,31 @@ class FakeLightRAG:
         self.doc_status = InMemoryStorage(doc_status_records)
         self.full_docs = InMemoryStorage(full_docs_records)
         self.adelete_called_with = None
+        self.call_order = []
 
     async def adelete_by_doc_id(self, doc_id, delete_llm_cache=False):
         self.adelete_called_with = (doc_id, delete_llm_cache)
+        self.call_order.append("lightrag.adelete_by_doc_id")
+        if (
+            doc_id not in self.doc_status.records
+            and doc_id not in self.full_docs.records
+        ):
+            return FakeDeletionResult(
+                status="not_found",
+                doc_id=doc_id,
+                message=f"Document {doc_id} not found",
+                status_code=404,
+            )
         await self.doc_status.delete([doc_id])
         await self.full_docs.delete([doc_id])
         return FakeDeletionResult(doc_id=doc_id)
 
 
 class DummyProcessor(ProcessorMixin):
-    def __init__(self, lightrag, multimodal_cache, tmp_path):
+    def __init__(self, lightrag, multimodal_cache, tmp_path, parse_cache=None):
         self.lightrag = lightrag
         self.multimodal_status_cache = multimodal_cache
+        self.parse_cache = parse_cache if parse_cache is not None else InMemoryStorage()
         self.logger = SimpleNamespace(
             info=lambda *args, **kwargs: None,
             warning=lambda *args, **kwargs: None,
@@ -93,6 +117,7 @@ async def test_adelete_by_doc_id_not_found(tmp_path):
     assert result["doc_id"] == "non-existent-doc"
     assert result["multimodal_status_deleted"] is False
     assert result["media_files_deleted"] is False
+    assert result["lightrag_result"] is None
 
 
 @pytest.mark.asyncio
@@ -196,21 +221,395 @@ async def test_adelete_by_doc_id_delegates_to_lightrag(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_adelete_by_doc_id_fallback_when_lightrag_lacks_method(tmp_path):
-    """When LightRAG lacks adelete_by_doc_id, falls back to direct storage deletion."""
-    doc_id = "doc-fallback"
-    # Barebones LightRAG without adelete_by_doc_id method
+async def test_adelete_by_doc_id_retains_media_cache_and_placeholders_when_core_deletion_raises(
+    tmp_path,
+):
+    """If LightRAG.adelete_by_doc_id raises, media, cache, and doc-pre records must be retained."""
+    doc_id = "doc-raise-test"
+    file_name = "important.pdf"
+    doc_pre_id = f"doc-pre-{file_name}"
+    output_dir = tmp_path / "output"
+    unique_dir = Parser._unique_output_dir(output_dir, file_name)
+    unique_dir.mkdir(parents=True, exist_ok=True)
+    (unique_dir / "extracted_table.png").write_text("image bytes")
+
+    lightrag = FakeLightRAG(
+        doc_status_records={
+            doc_id: {"status": DocStatus.PROCESSED, "file_path": file_name},
+            doc_pre_id: {"status": DocStatus.HANDLING, "file_path": file_name},
+        },
+        full_docs_records={doc_id: {"content": "full text"}},
+    )
+
+    should_fail = True
+    original_adelete = lightrag.adelete_by_doc_id
+
+    async def flaky_adelete(target_doc_id, delete_llm_cache=False):
+        if should_fail:
+            raise RuntimeError("Graph database connection lost before deleting graph")
+        return await original_adelete(target_doc_id, delete_llm_cache=delete_llm_cache)
+
+    lightrag.adelete_by_doc_id = flaky_adelete
+    cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
+    processor = DummyProcessor(lightrag, cache, tmp_path)
+
+    # 1. Core deletion raises -> nothing in RAG-Anything should be lost
+    failed_result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)
+    assert failed_result["status"] == "failed"
+    assert "Successfully processed deletion" not in failed_result["message"]
+    assert "Graph database connection lost" in failed_result["message"]
+    assert failed_result["multimodal_status_deleted"] is False
+    assert failed_result["media_files_deleted"] is False
+    assert unique_dir.exists()
+    assert doc_id in cache.records
+    assert doc_pre_id in lightrag.doc_status.records
+    assert doc_id in lightrag.doc_status.records
+
+    # 2. Retry after transient failure recovers -> everything is now cleaned up
+    should_fail = False
+    retry_result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)
+    assert retry_result["status"] == "success"
+    assert retry_result["multimodal_status_deleted"] is True
+    assert retry_result["media_files_deleted"] is True
+    assert not unique_dir.exists()
+    assert doc_id not in cache.records
+    assert doc_pre_id not in lightrag.doc_status.records
+    assert doc_id not in lightrag.doc_status.records
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("lr_status", "lr_code", "lr_message"),
+    [
+        ("fail", 500, "Failed to delete entities from graph storage"),
+        ("failed", 500, "Vector storage deletion error"),
+        ("not_allowed", 409, "Cannot delete document while pipeline is busy"),
+        ("busy", 409, "Pipeline is currently processing documents"),
+    ],
+)
+async def test_adelete_by_doc_id_retains_state_on_unsuccessful_or_busy_lightrag_status(
+    tmp_path, lr_status, lr_code, lr_message
+):
+    """Non-success statuses from LightRAG.adelete_by_doc_id must retain media, cache, and placeholders."""
+    doc_id = f"doc-{lr_status}"
+    file_name = "busy_doc.pdf"
+    doc_pre_id = f"doc-pre-{file_name}"
+    output_dir = tmp_path / "output"
+    unique_dir = Parser._unique_output_dir(output_dir, file_name)
+    unique_dir.mkdir(parents=True, exist_ok=True)
+    (unique_dir / "fig.png").write_text("figure")
+
+    lightrag = FakeLightRAG(
+        doc_status_records={
+            doc_id: {"status": DocStatus.PROCESSED, "file_path": file_name},
+            doc_pre_id: {"status": DocStatus.HANDLING, "file_path": file_name},
+        }
+    )
+
+    async def unsuccessful_adelete(target_doc_id, delete_llm_cache=False):
+        return FakeDeletionResult(
+            status=lr_status,
+            doc_id=target_doc_id,
+            message=lr_message,
+            status_code=lr_code,
+        )
+
+    lightrag.adelete_by_doc_id = unsuccessful_adelete
+    cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
+    processor = DummyProcessor(lightrag, cache, tmp_path)
+
+    result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)
+    assert result["status"] == lr_status
+    assert result["message"] == lr_message
+    assert result["multimodal_status_deleted"] is False
+    assert result["media_files_deleted"] is False
+    assert unique_dir.exists()
+    assert doc_id in cache.records
+    assert doc_pre_id in lightrag.doc_status.records
+
+
+@pytest.mark.asyncio
+async def test_adelete_by_doc_id_fails_without_false_positive_when_lightrag_lacks_method(
+    tmp_path,
+):
+    """When LightRAG lacks adelete_by_doc_id, do not partially delete doc_status/full_docs or claim success."""
+    doc_id = "doc-no-adelete"
+    file_name = "simple.pdf"
+    output_dir = tmp_path / "output"
+    unique_dir = Parser._unique_output_dir(output_dir, file_name)
+    unique_dir.mkdir(parents=True, exist_ok=True)
+    (unique_dir / "page.png").write_text("img")
+
     bare_lightrag = SimpleNamespace(
         doc_status=InMemoryStorage(
-            {doc_id: {"status": DocStatus.PROCESSED, "file_path": "simple.pdf"}}
+            {doc_id: {"status": DocStatus.PROCESSED, "file_path": file_name}}
         ),
         full_docs=InMemoryStorage({doc_id: {"content": "sample text"}}),
     )
     cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
     processor = DummyProcessor(bare_lightrag, cache, tmp_path)
 
+    result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)
+    assert result["status"] == "failed"
+    assert result["multimodal_status_deleted"] is False
+    assert result["media_files_deleted"] is False
+    assert doc_id in bare_lightrag.doc_status.records
+    assert doc_id in bare_lightrag.full_docs.records
+    assert doc_id in cache.records
+    assert unique_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_adelete_by_doc_id_resolves_nested_source_path_and_custom_output_dir(
+    tmp_path,
+):
+    """With default use_full_path=False (basename-only in doc_status) and a per-call output_dir override,
+    adelete_by_doc_id deletes the actual parsed output directory for the nested source path.
+    """
+    nested_dir = tmp_path / "nested" / "subdir"
+    nested_dir.mkdir(parents=True, exist_ok=True)
+    source_file = nested_dir / "paper.pdf"
+    source_file.write_bytes(b"%PDF-1.4 sample nested pdf")
+
+    custom_output_dir = tmp_path / "custom_parsed_output"
+    actual_unique_dir = Parser._unique_output_dir(custom_output_dir, source_file)
+
+    doc_id = "doc-nested-custom-out"
+    lightrag = FakeLightRAG(
+        doc_status_records={
+            # Default use_full_path=False stores only basename "paper.pdf" in doc_status
+            doc_id: {"status": DocStatus.PROCESSED, "file_path": "paper.pdf"}
+        }
+    )
+    cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
+    processor = DummyProcessor(lightrag, cache, tmp_path)
+
+    class StubParser:
+        def parse_pdf(self, pdf_path, output_dir=None, method="auto", **kwargs):
+            target_dir = Parser._unique_output_dir(output_dir, pdf_path)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            img_file = target_dir / "fig1.png"
+            img_file.write_text("extracted image")
+            return [
+                {"type": "text", "text": "Nested paper text", "page_idx": 0},
+                {"type": "image", "img_path": str(img_file), "page_idx": 0},
+            ]
+
+    processor.doc_parser = StubParser()
+
+    _content_list, parsed_doc_id = await processor.parse_document(
+        file_path=str(source_file),
+        output_dir=str(custom_output_dir),
+    )
+    assert actual_unique_dir.exists()
+
+    # Bind the custom doc_id as process_document_complete does
+    processor._record_parsed_output_location(
+        doc_id,
+        str(source_file),
+        str(custom_output_dir),
+        fallback_doc_id=parsed_doc_id,
+    )
+
+    result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)
+    assert result["status"] == "success"
+    assert result["media_files_deleted"] is True
+    assert not actual_unique_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_adelete_by_doc_id_preserves_same_basename_file_in_other_directory(
+    tmp_path,
+):
+    """When two documents in different directories share the same basename under use_full_path=False,
+    deleting one document must only remove its own parsed output directory."""
+    dir_a = tmp_path / "dept_a"
+    dir_b = tmp_path / "dept_b"
+    dir_a.mkdir(parents=True, exist_ok=True)
+    dir_b.mkdir(parents=True, exist_ok=True)
+    file_a = dir_a / "report.pdf"
+    file_b = dir_b / "report.pdf"
+    file_a.write_bytes(b" PDF A ")
+    file_b.write_bytes(b" PDF B ")
+
+    output_base = tmp_path / "output"
+    unique_dir_a = Parser._unique_output_dir(output_base, file_a)
+    unique_dir_b = Parser._unique_output_dir(output_base, file_b)
+    unique_dir_a.mkdir(parents=True, exist_ok=True)
+    unique_dir_b.mkdir(parents=True, exist_ok=True)
+    (unique_dir_a / "a.png").write_text("A")
+    (unique_dir_b / "b.png").write_text("B")
+
+    doc_a = "doc-dept-a"
+    doc_b = "doc-dept-b"
+    lightrag = FakeLightRAG(
+        doc_status_records={
+            doc_a: {"status": DocStatus.PROCESSED, "file_path": "report.pdf"},
+            doc_b: {"status": DocStatus.PROCESSED, "file_path": "report.pdf"},
+        }
+    )
+    cache = InMemoryStorage(
+        {
+            doc_a: {"multimodal_processed": True},
+            doc_b: {"multimodal_processed": True},
+        }
+    )
+    processor = DummyProcessor(lightrag, cache, tmp_path)
+    processor._record_parsed_output_location(doc_a, file_a, output_base)
+    processor._record_parsed_output_location(doc_b, file_b, output_base)
+
+    res_a = await processor.adelete_by_doc_id(doc_a, delete_media_files=True)
+    assert res_a["status"] == "success"
+    assert res_a["media_files_deleted"] is True
+    assert not unique_dir_a.exists()
+    assert unique_dir_b.exists()
+
+
+@pytest.mark.asyncio
+async def test_adelete_by_doc_id_resolves_from_persisted_parse_cache_and_invalidates_cache(
+    tmp_path,
+):
+    """After a processor restart (no in-memory _parsed_output_locations), adelete_by_doc_id
+    resolves custom output_dir and nested source path from persisted parse_cache and invalidates
+    the stale parse_cache entry so subsequent re-ingestion re-parses the document."""
+    nested_dir = tmp_path / "archive" / "2026"
+    nested_dir.mkdir(parents=True, exist_ok=True)
+    source_file = nested_dir / "slides.pdf"
+    source_file.write_bytes(b"%PDF-1.4 slides")
+
+    custom_output = tmp_path / "custom_slides_out"
+    shared_parse_cache = InMemoryStorage()
+
+    parse_calls = 0
+
+    class CountingStubParser:
+        def parse_pdf(self, pdf_path, output_dir=None, method="auto", **kwargs):
+            nonlocal parse_calls
+            parse_calls += 1
+            target_dir = Parser._unique_output_dir(output_dir, pdf_path)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            (target_dir / "slide1.png").write_text("slide image")
+            return [{"type": "text", "text": "Slide deck content", "page_idx": 0}]
+
+    # First processor instance parses and populates shared_parse_cache
+    lightrag = FakeLightRAG()
+    cache = InMemoryStorage()
+    processor_1 = DummyProcessor(
+        lightrag, cache, tmp_path, parse_cache=shared_parse_cache
+    )
+    processor_1.doc_parser = CountingStubParser()
+
+    _, doc_id = await processor_1.parse_document(
+        file_path=str(source_file),
+        output_dir=str(custom_output),
+    )
+    actual_unique_dir = Parser._unique_output_dir(custom_output, source_file)
+    assert actual_unique_dir.exists()
+    assert parse_calls == 1
+    assert len(shared_parse_cache.records) == 1
+
+    # Simulate doc_status having only basename "slides.pdf" and a fresh processor instance
+    lightrag.doc_status.records[doc_id] = {
+        "status": DocStatus.PROCESSED,
+        "file_path": "slides.pdf",
+    }
+    cache.records[doc_id] = {"multimodal_processed": True}
+
+    processor_2 = DummyProcessor(
+        lightrag, cache, tmp_path, parse_cache=shared_parse_cache
+    )
+    processor_2.doc_parser = CountingStubParser()
+
+    del_result = await processor_2.adelete_by_doc_id(doc_id, delete_media_files=True)
+    assert del_result["status"] == "success"
+    assert del_result["media_files_deleted"] is True
+    assert not actual_unique_dir.exists()
+    assert len(shared_parse_cache.records) == 0
+
+    # Re-parsing after media deletion must invoke the parser again to recreate the directory
+    await processor_2.parse_document(
+        file_path=str(source_file),
+        output_dir=str(custom_output),
+    )
+    assert parse_calls == 2
+    assert actual_unique_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_adelete_by_doc_id_cleans_office_document_both_output_dirs(tmp_path):
+    """Office documents create both a conversion dir (<stem>_<doc_hash>) and a PDF parse dir
+    (<stem>_<converted_pdf_hash>); both must be removed when delete_media_files=True."""
+    nested_dir = tmp_path / "office_docs"
+    nested_dir.mkdir(parents=True, exist_ok=True)
+    docx_file = nested_dir / "quarterly_review.docx"
+    docx_file.write_bytes(b"fake docx content")
+
+    custom_out = tmp_path / "office_output"
+    primary_dir = Parser._unique_output_dir(custom_out, docx_file)
+    converted_pdf = primary_dir / "quarterly_review.pdf"
+    secondary_dir = Parser._unique_output_dir(custom_out, converted_pdf)
+
+    primary_dir.mkdir(parents=True, exist_ok=True)
+    converted_pdf.write_bytes(b"%PDF-1.4 converted")
+    secondary_dir.mkdir(parents=True, exist_ok=True)
+    (secondary_dir / "chart.png").write_text("chart image")
+
+    doc_id = "doc-office-1"
+    lightrag = FakeLightRAG(
+        doc_status_records={
+            doc_id: {
+                "status": DocStatus.PROCESSED,
+                "file_path": "quarterly_review.docx",
+            }
+        }
+    )
+    cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
+    processor = DummyProcessor(lightrag, cache, tmp_path)
+    processor._record_parsed_output_location(doc_id, docx_file, custom_out)
+
+    result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)
+    assert result["status"] == "success"
+    assert result["media_files_deleted"] is True
+    assert not primary_dir.exists()
+    assert not secondary_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_adelete_by_doc_id_cleans_orphaned_multimodal_cache_only_record(tmp_path):
+    """When a document only exists as an orphaned record in multimodal_status_cache
+    (absent from LightRAG doc_status/full_docs), adelete_by_doc_id cleans it up."""
+    doc_id = "doc-orphaned-mm"
+    lightrag = FakeLightRAG()
+    cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
+    processor = DummyProcessor(lightrag, cache, tmp_path)
+
     result = await processor.adelete_by_doc_id(doc_id)
     assert result["status"] == "success"
-    assert doc_id not in bare_lightrag.doc_status.records
-    assert doc_id not in bare_lightrag.full_docs.records
     assert result["multimodal_status_deleted"] is True
+    assert doc_id not in cache.records
+
+
+@pytest.mark.asyncio
+async def test_adelete_by_doc_id_handles_lightrag_initialization_failure(tmp_path):
+    """If _ensure_lightrag_initialized fails, adelete_by_doc_id returns status='failed' immediately."""
+    doc_id = "doc-init-fail"
+    lightrag = FakeLightRAG(
+        doc_status_records={
+            doc_id: {"status": DocStatus.PROCESSED, "file_path": "doc.pdf"}
+        }
+    )
+    cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
+    processor = DummyProcessor(lightrag, cache, tmp_path)
+
+    async def fail_init():
+        return {"success": False, "error": "Failed to initialize storage backends"}
+
+    processor._ensure_lightrag_initialized = fail_init
+
+    result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)
+    assert result["status"] == "failed"
+    assert "Failed to initialize storage backends" in result["message"]
+    assert result["multimodal_status_deleted"] is False
+    assert result["media_files_deleted"] is False
+    assert doc_id in cache.records
+    assert doc_id in lightrag.doc_status.records

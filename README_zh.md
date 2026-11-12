@@ -1029,6 +1029,23 @@ await rag.insert_content_list(
 
 该参数只影响多模态内容处理，是纯可选（opt-in）参数，默认值为 `False`，因此不会改变任何现有行为，除非您显式设置它。
 
+#### 9. 删除文档
+
+使用 `adelete_by_doc_id` 可以在 LightRAG 与 RAG-Anything 中对指定文档执行级联删除。该方法会首先调用 `LightRAG.adelete_by_doc_id` 删除核心知识图谱、向量分块与文档状态，仅当核心删除确认成功后，才会继续清理 RAG-Anything 内部的多模态完成状态缓存、预注册占位符（`doc-pre-<file_name>`）以及可选的磁盘解析输出目录：
+
+```python
+# 从 LightRAG（知识图谱、向量分块、doc_status）及 RAG-Anything 多模态状态缓存中删除文档
+result = await rag.adelete_by_doc_id("doc-12345")
+
+# 可选：同时删除磁盘上的解析输出/媒体目录以及缓存的 LLM 抽取结果
+result = await rag.adelete_by_doc_id(
+    "doc-12345",
+    delete_media_files=True,
+    delete_llm_cache=True,
+)
+print(result["status"], result["media_files_deleted"])
+```
+
 ---
 
 ## 🛠️ 示例

@@ -1056,6 +1056,25 @@ await rag.insert_content_list(
 This flag only affects multimodal content; it is opt-in and defaults to `False`,
 so existing behavior is unchanged unless you explicitly set it.
 
+#### 9. Deleting Documents
+
+Use `adelete_by_doc_id` to perform a cascading deletion of a document across both LightRAG and RAG-Anything. Core graph, vector, and document-status deletion is delegated to `LightRAG.adelete_by_doc_id` first; RAG-Anything's internal multimodal completion cache, pre-registration placeholder (`doc-pre-<file_name>`), and optional parsed output directory on disk are cleaned up only after core deletion succeeds:
+
+```python
+# Delete a document from LightRAG (graph, vector chunks, doc_status) and
+# RAG-Anything's multimodal status cache
+result = await rag.adelete_by_doc_id("doc-12345")
+
+# Optionally also remove the document's parsed output/media directory on disk
+# and cached LLM extraction responses
+result = await rag.adelete_by_doc_id(
+    "doc-12345",
+    delete_media_files=True,
+    delete_llm_cache=True,
+)
+print(result["status"], result["media_files_deleted"])
+```
+
 ---
 
 ## 🛠️ Examples

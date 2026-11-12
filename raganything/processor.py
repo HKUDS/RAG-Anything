@@ -544,6 +544,21 @@ class ProcessorMixin:
             doc_id = cached_data.get("doc_id")
 
             if content_list and doc_id:
+                cached_output_dir = cached_data.get("output_dir")
+                cached_parsed_dirs = cached_data.get("parsed_output_dirs") or []
+                extra_pairs = None
+                if cached_output_dir and cached_parsed_dirs:
+                    resolved_base = str(Path(cached_output_dir).resolve())
+                    extra_pairs = [
+                        (resolved_base, str(Path(d).resolve()))
+                        for d in cached_parsed_dirs
+                    ]
+                self._record_parsed_output_location(
+                    doc_id,
+                    cached_data.get("file_path") or file_path,
+                    cached_output_dir,
+                    extra_pairs=extra_pairs,
+                )
                 self.logger.debug(
                     f"Found valid cached parsing result for key: {cache_key}"
                 )
@@ -558,6 +573,132 @@ class ProcessorMixin:
             self.logger.warning(f"Error accessing parse cache: {e}")
 
         return None
+
+    def _compute_parsed_output_dirs(
+        self,
+        file_path: str | Path | None,
+        output_dir: str | Path | None = None,
+    ) -> Tuple[Optional[Path], List[Path]]:
+        """Compute the resolved output base and per-document parsed output directories."""
+        effective_output_dir = (
+            output_dir
+            if output_dir is not None
+            else getattr(getattr(self, "config", None), "parser_output_dir", None)
+        )
+        if not effective_output_dir or not file_path:
+            return None, []
+
+        file_path_obj = Path(file_path)
+        ext = file_path_obj.suffix.lower()
+        if ext in AUDIO_FILE_EXTENSIONS or ext in VIDEO_FILE_EXTENSIONS:
+            return None, []
+
+        output_base = Path(effective_output_dir).resolve()
+        primary_dir = Parser._unique_output_dir(output_base, file_path_obj).resolve()
+        dirs = [primary_dir]
+
+        if ext in {".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"}:
+            converted_pdf = primary_dir / f"{file_path_obj.stem}.pdf"
+            secondary_dir = Parser._unique_output_dir(
+                output_base, converted_pdf
+            ).resolve()
+            if secondary_dir != primary_dir:
+                dirs.append(secondary_dir)
+
+        return output_base, dirs
+
+    def _record_parsed_output_location(
+        self,
+        doc_id: str | None,
+        file_path: str | Path | None,
+        output_dir: str | Path | None = None,
+        *,
+        fallback_doc_id: str | None = None,
+        extra_pairs: Optional[List[Tuple[str, str]]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Record the resolved parsed-output directory locations for a document."""
+        if not hasattr(self, "_parsed_output_locations"):
+            self._parsed_output_locations: Dict[str, Dict[str, Any]] = {}
+        if not hasattr(self, "_parsed_output_locations_by_file_ref"):
+            self._parsed_output_locations_by_file_ref: Dict[
+                str, Dict[str, Dict[str, Any]]
+            ] = {}
+
+        pairs: List[Tuple[str, str]] = []
+        seen_pairs: set[Tuple[str, str]] = set()
+
+        def _add_pair(base_str: str, dir_str: str) -> None:
+            if not base_str or not dir_str:
+                return
+            base_resolved = str(Path(base_str).resolve())
+            dir_resolved = str(Path(dir_str).resolve())
+            key = (base_resolved, dir_resolved)
+            if key not in seen_pairs:
+                seen_pairs.add(key)
+                pairs.append(key)
+
+        if (
+            fallback_doc_id is not None
+            and fallback_doc_id in self._parsed_output_locations
+        ):
+            prev = self._parsed_output_locations[fallback_doc_id]
+            for base_str, dir_str in prev.get("pairs", []):
+                _add_pair(base_str, dir_str)
+
+        if doc_id is not None and doc_id in self._parsed_output_locations:
+            prev = self._parsed_output_locations[doc_id]
+            for base_str, dir_str in prev.get("pairs", []):
+                _add_pair(base_str, dir_str)
+
+        if extra_pairs:
+            for base_str, dir_str in extra_pairs:
+                _add_pair(base_str, dir_str)
+
+        output_base, computed_dirs = self._compute_parsed_output_dirs(
+            file_path, output_dir
+        )
+        if output_base is not None:
+            for d in computed_dirs:
+                _add_pair(str(output_base), str(d))
+
+        if not pairs:
+            return None
+
+        resolved_source = str(Path(file_path).resolve()) if file_path else ""
+        record = {
+            "source_file_path": resolved_source,
+            "output_base": (
+                str(output_base) if output_base is not None else pairs[-1][0]
+            ),
+            "parsed_output_dirs": [d for _, d in pairs],
+            "pairs": pairs,
+        }
+
+        if doc_id is not None:
+            self._parsed_output_locations[doc_id] = record
+        if fallback_doc_id is not None and fallback_doc_id != doc_id:
+            self._parsed_output_locations.setdefault(fallback_doc_id, record)
+
+        if file_path:
+            file_refs = {str(file_path), Path(file_path).name}
+            try:
+                file_refs.add(self._get_file_reference(str(file_path)))
+            except Exception:
+                pass
+            target_key = (
+                doc_id
+                if doc_id is not None
+                else (
+                    fallback_doc_id if fallback_doc_id is not None else resolved_source
+                )
+            )
+            for ref in file_refs:
+                if ref:
+                    self._parsed_output_locations_by_file_ref.setdefault(ref, {})[
+                        target_key
+                    ] = record
+
+        return record
 
     async def _store_cached_result(
         self,
@@ -579,6 +720,7 @@ class ProcessorMixin:
             parse_method: Parse method used
             **kwargs: Additional parser parameters
         """
+        output_dir = kwargs.pop("output_dir", None)
         if not hasattr(self, "parse_cache") or self.parse_cache is None:
             return
 
@@ -595,6 +737,10 @@ class ProcessorMixin:
             # Add relevant kwargs to config
             parse_config.update(self._relevant_parser_kwargs(kwargs))
 
+            output_base, parsed_dirs = self._compute_parsed_output_dirs(
+                file_path, output_dir
+            )
+
             cache_data = {
                 cache_key: {
                     "content_list": content_list,
@@ -603,6 +749,9 @@ class ProcessorMixin:
                     "parse_config": parse_config,
                     "cached_at": time.time(),
                     "cache_version": "1.0",
+                    "file_path": str(Path(file_path).resolve()),
+                    "output_dir": str(output_base) if output_base is not None else "",
+                    "parsed_output_dirs": [str(d) for d in parsed_dirs],
                 }
             }
             await self.parse_cache.upsert(cache_data)
@@ -668,6 +817,7 @@ class ProcessorMixin:
         )
         if cached_result is not None:
             content_list, doc_id = cached_result
+            self._record_parsed_output_location(doc_id, file_path, output_dir)
             self.logger.info(f"Using cached parsing result for: {file_path}")
             if display_stats:
                 self.logger.info(
@@ -830,10 +980,17 @@ class ProcessorMixin:
 
         # Generate doc_id based on content
         doc_id = self._generate_content_based_doc_id(content_list)
+        self._record_parsed_output_location(doc_id, file_path, output_dir)
 
         # Store result in cache
         await self._store_cached_result(
-            cache_key, content_list, doc_id, file_path, parse_method, **kwargs
+            cache_key,
+            content_list,
+            doc_id,
+            file_path,
+            parse_method,
+            output_dir=output_dir,
+            **kwargs,
         )
 
         # Display content statistics if requested
@@ -1875,6 +2032,24 @@ class ProcessorMixin:
                     "multimodal_processed": True,
                     "updated_at": self._current_doc_status_timestamp(),
                 }
+                loc_record = getattr(self, "_parsed_output_locations", {}).get(doc_id)
+                if loc_record:
+                    existing_meta = update_payload.get("metadata")
+                    meta = (
+                        dict(existing_meta) if isinstance(existing_meta, dict) else {}
+                    )
+                    meta.update(
+                        {
+                            "raganything_output_base": loc_record["output_base"],
+                            "raganything_parsed_output_dirs": list(
+                                loc_record["parsed_output_dirs"]
+                            ),
+                            "raganything_source_file_path": loc_record[
+                                "source_file_path"
+                            ],
+                        }
+                    )
+                    update_payload["metadata"] = meta
                 try:
                     await self.lightrag.doc_status.upsert({doc_id: update_payload})
                 except Exception as exc:
@@ -1982,6 +2157,145 @@ class ProcessorMixin:
                 "chunks_count": 0,
             }
 
+    async def _resolve_parsed_output_dirs_for_deletion(
+        self,
+        doc_id: str,
+        current_status: Optional[Dict[str, Any]],
+    ) -> List[Tuple[Path, Path]]:
+        """
+        Resolve (output_base, parsed_output_dir) pairs for a document deletion.
+
+        Checks in order of specificity:
+        1. In-memory locations recorded during ``parse_document`` / ``process_document_*``
+        2. ``metadata`` persisted inside ``doc_status``
+        3. Entries in ``self.parse_cache`` matching ``doc_id``
+        4. Fallback to ``current_status["file_path"]`` and ``self.config.parser_output_dir``
+        """
+        pairs: List[Tuple[Path, Path]] = []
+        seen: set[Tuple[Path, Path]] = set()
+
+        def _add_pair(base_val: Any, dir_val: Any) -> None:
+            if not base_val or not dir_val:
+                return
+            try:
+                base_p = Path(str(base_val)).resolve()
+                dir_p = Path(str(dir_val)).resolve()
+                key = (base_p, dir_p)
+                if key not in seen:
+                    seen.add(key)
+                    pairs.append(key)
+            except Exception:
+                pass
+
+        # 1. In-memory tracking keyed by doc_id
+        loc_map = getattr(self, "_parsed_output_locations", {})
+        if doc_id in loc_map:
+            rec = loc_map[doc_id]
+            for base_s, dir_s in rec.get("pairs", []):
+                _add_pair(base_s, dir_s)
+            if not rec.get("pairs"):
+                base_s = rec.get("output_base")
+                for dir_s in rec.get("parsed_output_dirs", []):
+                    _add_pair(base_s, dir_s)
+
+        # 2. Metadata stored on doc_status
+        if isinstance(current_status, dict):
+            meta = current_status.get("metadata")
+            if isinstance(meta, dict):
+                base_s = meta.get("raganything_output_base")
+                for dir_s in meta.get("raganything_parsed_output_dirs") or []:
+                    _add_pair(base_s, dir_s)
+                src_s = meta.get("raganything_source_file_path")
+                if src_s and base_s and not pairs:
+                    comp_base, comp_dirs = self._compute_parsed_output_dirs(
+                        src_s, base_s
+                    )
+                    if comp_base is not None:
+                        for d in comp_dirs:
+                            _add_pair(comp_base, d)
+
+        # 3. Parse cache entries matching doc_id (handles restarted instances or custom doc_ids)
+        parse_cache = getattr(self, "parse_cache", None)
+        if parse_cache is not None:
+            cache_dicts: List[Dict[str, Any]] = []
+            for attr_name in ("_data", "entries", "records", "data"):
+                raw_store = getattr(parse_cache, attr_name, None)
+                if isinstance(raw_store, dict):
+                    cache_dicts.extend(
+                        v for v in raw_store.values() if isinstance(v, dict)
+                    )
+            status_file_ref = (
+                current_status.get("file_path")
+                if isinstance(current_status, dict)
+                else None
+            )
+            matching_by_file_ref: List[Dict[str, Any]] = []
+            for entry in cache_dicts:
+                if entry.get("doc_id") == doc_id:
+                    base_s = entry.get("output_dir") or getattr(
+                        getattr(self, "config", None), "parser_output_dir", None
+                    )
+                    for dir_s in entry.get("parsed_output_dirs") or []:
+                        _add_pair(base_s, dir_s)
+                    entry_fp = entry.get("file_path")
+                    if entry_fp and base_s and not entry.get("parsed_output_dirs"):
+                        comp_base, comp_dirs = self._compute_parsed_output_dirs(
+                            entry_fp, base_s
+                        )
+                        if comp_base is not None:
+                            for d in comp_dirs:
+                                _add_pair(comp_base, d)
+                elif status_file_ref and entry.get("file_path"):
+                    entry_fp = str(entry.get("file_path"))
+                    if (
+                        entry_fp == status_file_ref
+                        or Path(entry_fp).name == status_file_ref
+                    ):
+                        matching_by_file_ref.append(entry)
+
+            if not pairs and len(matching_by_file_ref) == 1:
+                entry = matching_by_file_ref[0]
+                base_s = entry.get("output_dir") or getattr(
+                    getattr(self, "config", None), "parser_output_dir", None
+                )
+                for dir_s in entry.get("parsed_output_dirs") or []:
+                    _add_pair(base_s, dir_s)
+                entry_fp = entry.get("file_path")
+                if entry_fp and base_s and not entry.get("parsed_output_dirs"):
+                    comp_base, comp_dirs = self._compute_parsed_output_dirs(
+                        entry_fp, base_s
+                    )
+                    if comp_base is not None:
+                        for d in comp_dirs:
+                            _add_pair(comp_base, d)
+
+        # 4. In-memory file-reference fallback if unambiguous
+        if not pairs and isinstance(current_status, dict):
+            file_ref = current_status.get("file_path")
+            by_ref = getattr(self, "_parsed_output_locations_by_file_ref", {}).get(
+                file_ref, {}
+            )
+            if len(by_ref) == 1:
+                rec = next(iter(by_ref.values()))
+                for base_s, dir_s in rec.get("pairs", []):
+                    _add_pair(base_s, dir_s)
+
+        # 5. Final fallback: compute from doc_status["file_path"] and config.parser_output_dir
+        if not pairs and isinstance(current_status, dict):
+            file_path = current_status.get("file_path")
+            default_base = getattr(
+                getattr(self, "config", None), "parser_output_dir", None
+            )
+            if file_path and default_base:
+                comp_base, comp_dirs = self._compute_parsed_output_dirs(
+                    file_path, default_base
+                )
+                if comp_base is not None:
+                    for d in comp_dirs:
+                        _add_pair(comp_base, d)
+
+        return pairs
+
     async def adelete_by_doc_id(
         self,
         doc_id: str,
@@ -1991,13 +2305,10 @@ class ProcessorMixin:
         """
         Cascading deletion of a document from RAG-Anything and LightRAG.
 
-        Removes all associated data across all storage layers:
-        - Text and multimodal chunks from vector databases and key-value stores
-        - Knowledge graph entities and relationships linked to the document
-        - RAG-Anything's internal multimodal_status_cache
-        - Pre-registration placeholders (doc-pre-<file_name>)
-        - (Optional) Physical parsed artifacts and extracted media on disk
-        - (Optional) Cached LLM extractions in LightRAG
+        Delegates core graph/vector/KV deletion to LightRAG first, and only
+        cleans up RAG-Anything state (multimodal status cache, pre-registration
+        placeholders, and optional parsed output/media directories on disk)
+        once core deletion confirms success.
 
         Args:
             doc_id: The document ID to delete.
@@ -2008,7 +2319,19 @@ class ProcessorMixin:
             Dict[str, Any] containing deletion status, counts, and metadata.
         """
         # Ensure LightRAG is initialized before accessing its storages
-        await self._ensure_lightrag_initialized()
+        init_result = await self._ensure_lightrag_initialized()
+        if isinstance(init_result, dict) and not init_result.get("success", True):
+            error_msg = init_result.get(
+                "error", "LightRAG initialization failed before deletion"
+            )
+            return {
+                "status": "failed",
+                "doc_id": doc_id,
+                "message": str(error_msg),
+                "multimodal_status_deleted": False,
+                "media_files_deleted": False,
+                "lightrag_result": None,
+            }
 
         current_status = None
         if hasattr(self.lightrag, "doc_status") and self.lightrag.doc_status:
@@ -2038,7 +2361,114 @@ class ProcessorMixin:
                 "lightrag_result": None,
             }
 
-        # 1. Clean up RAG-Anything internal multimodal status cache
+        # Snapshot resolved parsed-output directories and pre-registration placeholder
+        # BEFORE delegating to LightRAG, because LightRAG deletes the doc_status record.
+        candidate_output_dirs: List[Tuple[Path, Path]] = []
+        if delete_media_files:
+            candidate_output_dirs = await self._resolve_parsed_output_dirs_for_deletion(
+                doc_id, current_status
+            )
+
+        doc_pre_id: Optional[str] = None
+        if isinstance(current_status, dict):
+            file_name = current_status.get("file_path")
+            if file_name:
+                candidate_pre_id = f"doc-pre-{self._get_file_reference(file_name)}"
+                if candidate_pre_id != doc_id:
+                    doc_pre_id = candidate_pre_id
+
+        # 1. Delegate core graph and vector deletion to LightRAG FIRST.
+        # Do not fall back to deleting only doc_status/full_docs, as that leaves
+        # graph entities/relations and vector chunks orphaned while falsely reporting success.
+        adelete_fn = getattr(self.lightrag, "adelete_by_doc_id", None)
+        if not callable(adelete_fn):
+            error_msg = (
+                "Underlying LightRAG instance does not support adelete_by_doc_id; "
+                "refusing partial doc_status/full_docs deletion to avoid leaving "
+                "orphaned graph/vector data."
+            )
+            self.logger.error(error_msg)
+            return {
+                "status": "failed",
+                "doc_id": doc_id,
+                "message": error_msg,
+                "multimodal_status_deleted": False,
+                "media_files_deleted": False,
+                "lightrag_result": {
+                    "status": "failed",
+                    "doc_id": doc_id,
+                    "message": error_msg,
+                    "status_code": 501,
+                },
+            }
+
+        try:
+            lr_res = await adelete_fn(doc_id, delete_llm_cache=delete_llm_cache)
+            if hasattr(lr_res, "status"):
+                lightrag_result = {
+                    "status": lr_res.status,
+                    "doc_id": getattr(lr_res, "doc_id", doc_id),
+                    "message": getattr(lr_res, "message", ""),
+                    "status_code": getattr(lr_res, "status_code", 200),
+                    "file_path": getattr(lr_res, "file_path", None),
+                }
+            elif isinstance(lr_res, dict):
+                lightrag_result = dict(lr_res)
+                lightrag_result.setdefault("status", "success")
+                lightrag_result.setdefault("doc_id", doc_id)
+            else:
+                lightrag_result = {
+                    "status": "success",
+                    "doc_id": doc_id,
+                    "message": str(lr_res),
+                    "raw": str(lr_res),
+                }
+        except Exception as e:
+            self.logger.error(
+                f"Error calling LightRAG adelete_by_doc_id for {doc_id}: {e}"
+            )
+            error_msg = f"Failed to delete document {doc_id} from LightRAG: {e}"
+            lightrag_result = {
+                "status": "failed",
+                "doc_id": doc_id,
+                "message": str(e),
+                "status_code": 500,
+            }
+            return {
+                "status": "failed",
+                "doc_id": doc_id,
+                "message": error_msg,
+                "multimodal_status_deleted": False,
+                "media_files_deleted": False,
+                "lightrag_result": lightrag_result,
+            }
+
+        res_status = str(lightrag_result.get("status", "failed"))
+        lr_message = lightrag_result.get("message") or ""
+
+        # Core deletion is considered confirmed if LightRAG returned "success",
+        # or if the document was only present as an orphaned multimodal_status_cache
+        # record (not in LightRAG doc_status/full_docs) and LightRAG returned "not_found".
+        core_deletion_confirmed = res_status == "success" or (
+            res_status == "not_found" and not doc_exists and multimodal_cache_exists
+        )
+
+        if not core_deletion_confirmed:
+            failure_message = (
+                lr_message
+                if lr_message
+                else f"Core deletion for document {doc_id} did not succeed (status={res_status})"
+            )
+            return {
+                "status": res_status,
+                "doc_id": doc_id,
+                "message": failure_message,
+                "multimodal_status_deleted": False,
+                "media_files_deleted": False,
+                "lightrag_result": lightrag_result,
+            }
+
+        # 2. Clean up RAG-Anything internal multimodal status cache
         multimodal_status_deleted = False
         if hasattr(self, "multimodal_status_cache") and self.multimodal_status_cache:
             try:
@@ -2051,16 +2481,11 @@ class ProcessorMixin:
                     f"Error deleting multimodal status cache for {doc_id}: {e}"
                 )
 
-        # 2. Clean up media and parsing output directory on disk if requested
+        # 3. Clean up media and parsing output directory on disk if requested
         media_files_deleted = False
-        if delete_media_files and current_status:
-            file_path = current_status.get("file_path")
-            if file_path:
+        if delete_media_files and candidate_output_dirs:
+            for output_base, unique_dir in candidate_output_dirs:
                 try:
-                    output_base = Path(self.config.parser_output_dir).resolve()
-                    unique_dir = Parser._unique_output_dir(
-                        output_base, file_path
-                    ).resolve()
                     # Security check: ensure target directory is strictly within output_base
                     if (
                         output_base in unique_dir.parents
@@ -2070,80 +2495,81 @@ class ProcessorMixin:
                         shutil.rmtree(unique_dir, ignore_errors=True)
                         media_files_deleted = True
                 except Exception as e:
-                    self.logger.warning(f"Error removing media files for {doc_id}: {e}")
+                    self.logger.warning(
+                        f"Error removing media files for {doc_id} at {unique_dir}: {e}"
+                    )
 
-        # 3. Clean up pre-registration placeholder (doc-pre-<filename>) if present
-        if current_status:
-            file_name = current_status.get("file_path")
-            if file_name:
-                doc_pre_id = f"doc-pre-{self._get_file_reference(file_name)}"
-                if (
-                    hasattr(self.lightrag, "doc_status")
-                    and self.lightrag.doc_status
-                    and doc_pre_id != doc_id
-                ):
-                    try:
-                        if await self.lightrag.doc_status.get_by_id(doc_pre_id):
-                            await self.lightrag.doc_status.delete([doc_pre_id])
-                            await self.lightrag.doc_status.index_done_callback()
-                    except Exception as e:
-                        self.logger.debug(
-                            f"Pre-registration record {doc_pre_id} cleanup: {e}"
-                        )
+            # Remove stale in-memory location tracking once artifacts are cleaned up
+            if hasattr(self, "_parsed_output_locations"):
+                self._parsed_output_locations.pop(doc_id, None)
+            if hasattr(self, "_parsed_output_locations_by_file_ref"):
+                for ref_dict in self._parsed_output_locations_by_file_ref.values():
+                    ref_dict.pop(doc_id, None)
 
-        # 4. Delegate core graph and vector deletion to LightRAG
-        lightrag_result = None
-        if hasattr(self.lightrag, "adelete_by_doc_id"):
-            try:
-                lr_res = await self.lightrag.adelete_by_doc_id(
-                    doc_id, delete_llm_cache=delete_llm_cache
-                )
-                if hasattr(lr_res, "status"):
-                    lightrag_result = {
-                        "status": lr_res.status,
-                        "doc_id": lr_res.doc_id,
-                        "message": lr_res.message,
-                        "status_code": getattr(lr_res, "status_code", 200),
-                        "file_path": getattr(lr_res, "file_path", None),
+            # Invalidate parse_cache entries for this doc_id when parsed artifacts are removed
+            parse_cache = getattr(self, "parse_cache", None)
+            if media_files_deleted and parse_cache is not None:
+                try:
+                    removed_dirs = {
+                        str(unique_dir) for _, unique_dir in candidate_output_dirs
                     }
-                elif isinstance(lr_res, dict):
-                    lightrag_result = lr_res
-                else:
-                    lightrag_result = {"status": "success", "raw": str(lr_res)}
-            except Exception as e:
-                self.logger.error(
-                    f"Error calling LightRAG adelete_by_doc_id for {doc_id}: {e}"
-                )
-                lightrag_result = {
-                    "status": "failed",
-                    "doc_id": doc_id,
-                    "message": str(e),
-                    "status_code": 500,
-                }
-        else:
-            # Fallback for custom / stub LightRAG instances
-            if hasattr(self.lightrag, "doc_status") and self.lightrag.doc_status:
-                await self.lightrag.doc_status.delete([doc_id])
-                await self.lightrag.doc_status.index_done_callback()
-            if hasattr(self.lightrag, "full_docs") and self.lightrag.full_docs:
-                await self.lightrag.full_docs.delete([doc_id])
-                await self.lightrag.full_docs.index_done_callback()
-            lightrag_result = {
-                "status": "success",
-                "doc_id": doc_id,
-                "message": f"Document {doc_id} deleted from storage",
-                "status_code": 200,
-            }
+                    stale_keys: List[str] = []
+                    for attr_name in ("_data", "entries", "records", "data"):
+                        raw_store = getattr(parse_cache, attr_name, None)
+                        if isinstance(raw_store, dict):
+                            for k, v in list(raw_store.items()):
+                                if not isinstance(v, dict):
+                                    continue
+                                entry_dirs = set(v.get("parsed_output_dirs") or [])
+                                if v.get("doc_id") == doc_id or bool(
+                                    entry_dirs & removed_dirs
+                                ):
+                                    if k not in stale_keys:
+                                        stale_keys.append(k)
+                    if stale_keys:
+                        if callable(getattr(parse_cache, "delete", None)):
+                            await parse_cache.delete(stale_keys)
+                            if callable(
+                                getattr(parse_cache, "index_done_callback", None)
+                            ):
+                                await parse_cache.index_done_callback()
+                        else:
+                            for attr_name in ("_data", "entries", "records", "data"):
+                                raw_store = getattr(parse_cache, attr_name, None)
+                                if isinstance(raw_store, dict):
+                                    for k in stale_keys:
+                                        raw_store.pop(k, None)
+                except Exception as e:
+                    self.logger.debug(
+                        f"Parse cache invalidation for {doc_id} after media deletion: {e}"
+                    )
 
-        res_status = (
-            lightrag_result.get("status", "success")
-            if isinstance(lightrag_result, dict)
-            else "success"
+        # 4. Clean up pre-registration placeholder (doc-pre-<filename>) if present
+        if (
+            doc_pre_id
+            and hasattr(self.lightrag, "doc_status")
+            and self.lightrag.doc_status
+        ):
+            try:
+                if await self.lightrag.doc_status.get_by_id(doc_pre_id):
+                    await self.lightrag.doc_status.delete([doc_pre_id])
+                    await self.lightrag.doc_status.index_done_callback()
+            except Exception as e:
+                self.logger.debug(f"Pre-registration record {doc_pre_id} cleanup: {e}")
+
+        final_status = (
+            "success"
+            if (res_status == "success" or multimodal_status_deleted)
+            else res_status
         )
         return {
-            "status": res_status,
+            "status": final_status,
             "doc_id": doc_id,
-            "message": f"Successfully processed deletion for document {doc_id}",
+            "message": (
+                lr_message
+                if (lr_message and res_status == "success")
+                else f"Successfully processed deletion for document {doc_id}"
+            ),
             "multimodal_status_deleted": multimodal_status_deleted,
             "media_files_deleted": media_files_deleted,
             "lightrag_result": lightrag_result,
@@ -2217,6 +2643,12 @@ class ProcessorMixin:
             # Use provided doc_id or fall back to content-based doc_id
             if doc_id is None:
                 doc_id = content_based_doc_id
+            self._record_parsed_output_location(
+                doc_id,
+                file_path,
+                output_dir,
+                fallback_doc_id=content_based_doc_id,
+            )
 
             # Step 2: Separate text and multimodal content
             text_content, multimodal_items, page_intervals = (
@@ -2549,6 +2981,12 @@ class ProcessorMixin:
             # Use provided doc_id or fall back to content-based doc_id
             if doc_id is None:
                 doc_id = content_based_doc_id
+            self._record_parsed_output_location(
+                doc_id,
+                file_path,
+                output_dir,
+                fallback_doc_id=content_based_doc_id,
+            )
 
             # Step 2: Separate text and multimodal content
             text_content, multimodal_items, page_intervals = (
@@ -2726,6 +3164,13 @@ class ProcessorMixin:
         # Generate doc_id based on content if not provided
         if doc_id is None:
             doc_id = self._generate_content_based_doc_id(content_list)
+
+        if file_path and file_path != "unknown_document":
+            self._record_parsed_output_location(
+                doc_id,
+                file_path,
+                getattr(getattr(self, "config", None), "parser_output_dir", None),
+            )
 
         file_ref = self._get_file_reference(file_path)
 
