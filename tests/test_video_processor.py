@@ -88,6 +88,34 @@ class TestVideoModalProcessorInit:
         assert processor.max_scenes == 20
         assert processor.scene_threshold == 30.0
 
+    def test_max_windows_zero_rejected(self):
+        # 0 is falsy in _plan_windows, so the cap would be silently ignored
+        with pytest.raises(ValueError, match="max_windows must be greater than zero"):
+            VideoModalProcessor(
+                lightrag=_FakeLightRAG(),
+                modal_caption_func=AsyncMock(),
+                max_windows=0,
+            )
+
+    def test_max_windows_negative_rejected(self):
+        # A negative cap makes _redistribute return no windows at all, which
+        # later surfaces as a misleading "No scenes or speech detected" error
+        with pytest.raises(ValueError, match="max_windows must be greater than zero"):
+            VideoModalProcessor(
+                lightrag=_FakeLightRAG(),
+                modal_caption_func=AsyncMock(),
+                max_windows=-1,
+            )
+
+    def test_max_windows_positive_accepted(self):
+        for max_windows in (1, 2, 100):
+            processor = VideoModalProcessor(
+                lightrag=_FakeLightRAG(),
+                modal_caption_func=AsyncMock(),
+                max_windows=max_windows,
+            )
+            assert processor.max_windows == max_windows
+
 
 class TestTimestampFormatting:
     """Test timestamp formatting."""
@@ -293,6 +321,12 @@ class TestPlanWindows:
         windows = processor._plan_windows(self._scenes(6))
         # max_scenes=1 would give 6 windows, but max_windows caps to 2 groups
         assert len(windows) == 2
+        assert sum(len(w) for w in windows) == 6  # all scenes preserved
+
+    def test_max_windows_one_keeps_all_scenes(self):
+        processor = self._processor(max_scenes=1, max_windows=1)
+        windows = processor._plan_windows(self._scenes(6))
+        assert len(windows) == 1
         assert sum(len(w) for w in windows) == 6  # all scenes preserved
 
     def test_audio_only_rows_participate_in_the_token_budget(self):
