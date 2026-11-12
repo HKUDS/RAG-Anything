@@ -995,9 +995,24 @@ class ProcessorMixin:
             self.logger.error(f"Error in multimodal processing: {e}")
             # Fallback to individual processing if batch processing fails
             self.logger.warning("Falling back to individual multimodal processing")
-            await self._process_multimodal_content_individual(
-                multimodal_items, file_path, doc_id
-            )
+            try:
+                await self._process_multimodal_content_individual(
+                    multimodal_items, file_path, doc_id
+                )
+            except Exception as fallback_error:
+                # Individual processors can return a fallback description even
+                # when no chunk was stored. Such a document must remain retryable,
+                # including after a failed forced reprocess of a completed one.
+                current = await self.lightrag.doc_status.get_by_id(doc_id)
+                updates = {
+                    "status": DocStatus.FAILED,
+                    "error_msg": str(fallback_error),
+                }
+                if current and "multimodal_processed" in current:
+                    updates["multimodal_processed"] = False
+                await self._upsert_doc_status(doc_id, file_path, **updates)
+                await self._set_multimodal_status_record(doc_id, False)
+                raise
 
             # Mark multimodal content as processed even after fallback
             await self._mark_multimodal_processing_complete(doc_id)
@@ -1019,6 +1034,8 @@ class ProcessorMixin:
         # Collect all chunk results for batch processing (similar to text content processing)
         all_chunk_results = []
         multimodal_chunk_ids = []
+        failed_count = 0
+        first_error = None
 
         # Get current text chunks count to set proper order indexes for multimodal chunks
         existing_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
@@ -1062,18 +1079,20 @@ class ProcessorMixin:
                         chunk_order_index=next_order,  # Running order index
                     )
 
-                    # Collect chunk results for batch processing
-                    all_chunk_results.extend(chunk_results)
-
                     # Register every chunk id created (an item may yield several,
                     # e.g. long audio/video split into windows) and advance the
                     # running order index past all of them.
                     if entity_info and entity_info.get("chunk_ids"):
                         item_chunk_ids = entity_info["chunk_ids"]
-                    elif entity_info and "chunk_id" in entity_info:
+                    elif entity_info and entity_info.get("chunk_id"):
                         item_chunk_ids = [entity_info["chunk_id"]]
                     else:
                         item_chunk_ids = []
+                    if not item_chunk_ids:
+                        raise RuntimeError(
+                            f"No chunks stored for multimodal {content_type} item {i}"
+                        )
+                    all_chunk_results.extend(chunk_results)
                     multimodal_chunk_ids.extend(item_chunk_ids)
                     next_order += max(1, len(item_chunk_ids))
 
@@ -1086,6 +1105,9 @@ class ProcessorMixin:
                     )
 
             except Exception as e:
+                failed_count += 1
+                if first_error is None:
+                    first_error = e
                 self.logger.error(f"Error processing multimodal content: {str(e)}")
                 self.logger.debug("Exception details:", exc_info=True)
                 continue
@@ -1129,6 +1151,11 @@ class ProcessorMixin:
             )
 
             await self.lightrag._insert_done()
+
+        if failed_count:
+            raise RuntimeError(
+                f"Failed to process {failed_count}/{len(multimodal_items)} multimodal items"
+            ) from first_error
 
         self.logger.info("Individual multimodal content processing complete")
 

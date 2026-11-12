@@ -189,7 +189,11 @@ async def test_individual_fallback_keeps_operation_context(processor):
         sections = await modal.generate_chunk_sections(
             modal_content, "table", item_info
         )
-        return sections[0]["description"], sections[0]["entity_info"], []
+        return (
+            sections[0]["description"],
+            {**sections[0]["entity_info"], "chunk_id": f"chunk-{kwargs['doc_id']}"},
+            [],
+        )
 
     modal.process_multimodal_content = process_item
     task_a = asyncio.create_task(insert(p, "document", "A"))
@@ -205,6 +209,12 @@ async def test_individual_fallback_keeps_operation_context(processor):
     prompt_a = next(x for x in p.prompts if "Body: Table A\n" in x)
     assert "Only document A context." in prompt_a
     assert "Only document B context." not in prompt_a
+    p._update_doc_status_with_chunks_type_aware.assert_any_await(
+        "doc-A", ["chunk-doc-A"]
+    )
+    p._update_doc_status_with_chunks_type_aware.assert_any_await(
+        "doc-B", ["chunk-doc-B"]
+    )
 
 
 @pytest.mark.asyncio
