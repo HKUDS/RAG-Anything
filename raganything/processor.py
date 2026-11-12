@@ -389,6 +389,50 @@ class ProcessorMixin:
             if len(pages) == 1
         }
 
+    _LEGACY_DOC_STATUS_FIELDS = frozenset(
+        {"content", "multimodal_content", "scheme_name"}
+    )
+
+    @staticmethod
+    def _doc_status_supports_multimodal_processed() -> bool:
+        """Return False if LightRAG's DocProcessingStatus dataclass rejects multimodal_processed."""
+        try:
+            from lightrag.base import DocProcessingStatus
+
+            fields = getattr(DocProcessingStatus, "__dataclass_fields__", None)
+            if isinstance(fields, dict):
+                return "multimodal_processed" in fields
+            import inspect
+
+            sig = inspect.signature(DocProcessingStatus)
+            return "multimodal_processed" in sig.parameters or any(
+                p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+            )
+        except Exception:
+            return True
+
+    def _sanitize_doc_status_record(
+        self,
+        record: Dict[str, Any],
+        *,
+        allow_multimodal_processed: bool | None = None,
+    ) -> Dict[str, Any]:
+        """Strip undeclared legacy keys before persisting a doc_status record."""
+        if allow_multimodal_processed is None:
+            allow_multimodal_processed = (
+                self._doc_status_supports_multimodal_processed()
+            )
+        forbidden = set(self._LEGACY_DOC_STATUS_FIELDS)
+        if not allow_multimodal_processed:
+            forbidden.add("multimodal_processed")
+        cleaned = {k: v for k, v in record.items() if k not in forbidden}
+        if "scheme_name" in record and record["scheme_name"] is not None:
+            existing_meta = cleaned.get("metadata")
+            meta = dict(existing_meta) if isinstance(existing_meta, dict) else {}
+            meta.setdefault("scheme_name", record["scheme_name"])
+            cleaned["metadata"] = meta
+        return cleaned
+
     async def _upsert_doc_status(
         self,
         doc_id: str,
@@ -403,11 +447,12 @@ class ProcessorMixin:
             file_path,
             scheme_name=scheme_name,
         )
-        updated_doc_status = {
+        raw_updated = {
             **current_doc_status,
             **updates,
             "updated_at": self._current_doc_status_timestamp(),
         }
+        updated_doc_status = self._sanitize_doc_status_record(raw_updated)
         await self.lightrag.doc_status.upsert({doc_id: updated_doc_status})
         await self.lightrag.doc_status.index_done_callback()
         return updated_doc_status
@@ -1876,16 +1921,15 @@ class ProcessorMixin:
             updated_chunks_count = existing_chunks_count + len(new_chunk_ids)
 
             # Update document status with integrated chunk list
-            await self.lightrag.doc_status.upsert(
+            sanitized_status = self._sanitize_doc_status_record(
                 {
-                    doc_id: {
-                        **current_doc_status,  # Keep existing fields
-                        "chunks_list": updated_chunks_list,  # Integrated chunks list
-                        "chunks_count": updated_chunks_count,  # Updated total count
-                        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                    }
+                    **current_doc_status,  # Keep existing fields
+                    "chunks_list": updated_chunks_list,  # Integrated chunks list
+                    "chunks_count": updated_chunks_count,  # Updated total count
+                    "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                 }
             )
+            await self.lightrag.doc_status.upsert({doc_id: sanitized_status})
 
             # Ensure doc_status update is persisted to disk
             await self.lightrag.doc_status.index_done_callback()
@@ -1908,36 +1952,52 @@ class ProcessorMixin:
                 final_status = current_doc_status.get("status") or DocStatus.PROCESSED
                 if final_status != DocStatus.FAILED:
                     final_status = DocStatus.PROCESSED
-                update_payload = {
-                    **current_doc_status,
-                    "status": final_status,
-                    "multimodal_processed": True,
-                    "updated_at": self._current_doc_status_timestamp(),
-                }
-                try:
-                    await self.lightrag.doc_status.upsert({doc_id: update_payload})
-                except Exception as exc:
-                    # Older LightRAG versions reject unknown doc_status fields such as
-                    # multimodal_processed. Fall back to a schema-compatible status-only
-                    # update so image-only and multimodal documents still complete.
-                    self.logger.debug(
-                        "Falling back to schema-compatible doc_status update for %s: %s",
-                        doc_id,
-                        exc,
-                    )
-                    fallback_payload = {
-                        k: v
-                        for k, v in current_doc_status.items()
-                        if k != "multimodal_processed"
-                    }
-                    fallback_payload.update(
+
+                supports_mm_field = self._doc_status_supports_multimodal_processed()
+                if not supports_mm_field:
+                    fallback_payload = self._sanitize_doc_status_record(
                         {
+                            **current_doc_status,
                             "status": final_status,
                             "updated_at": self._current_doc_status_timestamp(),
-                        }
+                        },
+                        allow_multimodal_processed=False,
                     )
                     await self.lightrag.doc_status.upsert({doc_id: fallback_payload})
                     await self._set_multimodal_status_record(doc_id, True)
+                else:
+                    update_payload = self._sanitize_doc_status_record(
+                        {
+                            **current_doc_status,
+                            "status": final_status,
+                            "multimodal_processed": True,
+                            "updated_at": self._current_doc_status_timestamp(),
+                        },
+                        allow_multimodal_processed=True,
+                    )
+                    try:
+                        await self.lightrag.doc_status.upsert({doc_id: update_payload})
+                    except Exception as exc:
+                        # Older LightRAG versions reject unknown doc_status fields such as
+                        # multimodal_processed. Fall back to a schema-compatible status-only
+                        # update so image-only and multimodal documents still complete.
+                        self.logger.debug(
+                            "Falling back to schema-compatible doc_status update for %s: %s",
+                            doc_id,
+                            exc,
+                        )
+                        fallback_payload = self._sanitize_doc_status_record(
+                            {
+                                **current_doc_status,
+                                "status": final_status,
+                                "updated_at": self._current_doc_status_timestamp(),
+                            },
+                            allow_multimodal_processed=False,
+                        )
+                        await self.lightrag.doc_status.upsert(
+                            {doc_id: fallback_payload}
+                        )
+                        await self._set_multimodal_status_record(doc_id, True)
                 await self.lightrag.doc_status.index_done_callback()
                 self.logger.debug(
                     f"Marked multimodal content processing as complete for document {doc_id}"
