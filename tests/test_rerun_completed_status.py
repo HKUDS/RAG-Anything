@@ -137,6 +137,28 @@ async def test_insert_content_list_rerun_stays_processed(rag, content):
 
 
 @pytest.mark.asyncio
+async def test_failed_text_retry_retains_multimodal_chunk_links(rag):
+    content = [{"type": "text", "text": "Alpha findings.", "page_idx": 0}, _TABLE]
+    try:
+        await rag.insert_content_list(content, file_path="a.pdf", doc_id="doc-a")
+        before = await rag.lightrag.doc_status.get_by_id("doc-a")
+        chunk_ids = set(before["chunks_list"])
+        assert len(chunk_ids) == 2
+
+        await rag.lightrag.doc_status.upsert(
+            {"doc-a": {**before, "status": DocStatus.FAILED}}
+        )
+        await rag.insert_content_list(content, file_path="a.pdf", doc_id="doc-a")
+
+        await _assert_completed(rag, "doc-a")
+        after = await rag.lightrag.doc_status.get_by_id("doc-a")
+        assert chunk_ids.issubset(after["chunks_list"])
+        assert all(await rag.lightrag.text_chunks.get_by_ids(list(chunk_ids)))
+    finally:
+        await _close(rag)
+
+
+@pytest.mark.asyncio
 async def test_batch_and_complete_rerun_of_a_file_stay_processed(rag, tmp_path):
     source = tmp_path / "src"
     source.mkdir()

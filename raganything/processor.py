@@ -1903,10 +1903,6 @@ class ProcessorMixin:
     async def _mark_multimodal_processing_complete(self, doc_id: str):
         """Mark multimodal content processing as complete in the document status."""
         try:
-            # Always ensure the multimodal status is recorded in RAG-Anything's
-            # dedicated compatibility cache
-            await self._set_multimodal_status_record(doc_id, True)
-
             current_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
             if current_doc_status:
                 final_status = current_doc_status.get("status") or DocStatus.PROCESSED
@@ -1941,6 +1937,7 @@ class ProcessorMixin:
                         }
                     )
                     await self.lightrag.doc_status.upsert({doc_id: fallback_payload})
+                    await self._set_multimodal_status_record(doc_id, True)
                 await self.lightrag.doc_status.index_done_callback()
                 self.logger.debug(
                     f"Marked multimodal content processing as complete for document {doc_id}"
