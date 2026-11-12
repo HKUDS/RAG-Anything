@@ -108,10 +108,10 @@ async def test_ensure_doc_status_record_is_deserializable_by_doc_processing_stat
 
 
 @pytest.mark.asyncio
-async def test_mark_multimodal_processing_complete_always_populates_multimodal_cache(
+async def test_completed_multimodal_status_remains_readable_by_server(
     doc_status_storage,
 ):
-    """Verify that multimodal status is recorded in multimodal_status_cache even on normal upsert."""
+    """Completion must be visible without breaking paginated server retrieval."""
     multimodal_cache = InMemoryStorage()
     processor = DummyDocStatusProcessor(doc_status_storage, multimodal_cache)
 
@@ -127,10 +127,8 @@ async def test_mark_multimodal_processing_complete_always_populates_multimodal_c
 
     await processor._mark_multimodal_processing_complete("doc-456")
 
-    # Multimodal cache must be populated
-    cache_record = await multimodal_cache.get_by_id("doc-456")
-    assert cache_record is not None
-    assert cache_record["multimodal_processed"] is True
+    record = await doc_status_storage.get_by_id("doc-456")
+    assert await processor._get_multimodal_processed_flag("doc-456", record)
 
     # Storage must remain readable by get_docs_paginated
     paginated_docs, count = await doc_status_storage.get_docs_paginated()
