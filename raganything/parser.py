@@ -2944,7 +2944,25 @@ class DoclingParser(Parser):
             except Exception as e:
                 self.logger.warning(f"Failed to process image {num}: {e}")
                 return None
+        elif type == "tables":
+            # Docling links a table's captions and footnotes by reference, as
+            # for pictures; it sets no caption or footnote key.
+            return {
+                "type": "table",
+                "img_path": "",
+                "table_caption": self._ref_texts(
+                    block.get("captions"), docling_content
+                ),
+                "table_footnote": self._ref_texts(
+                    block.get("footnotes"), docling_content
+                ),
+                "table_body": block.get("data", []),
+                "page_idx": page_idx,
+            }
         else:
+            # Key-value, form and field items. Without a table body this whole
+            # entry is hashed into the document ID, so changing it would change
+            # the IDs of documents that were already ingested.
             try:
                 return {
                     "type": "table",

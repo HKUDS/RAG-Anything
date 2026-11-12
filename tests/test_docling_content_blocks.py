@@ -3,8 +3,9 @@
 Docling's HTML backend does not fetch ``<img>`` sources, so those pictures
 carry no image data (their alt text and captions are separate text items),
 and an empty document exports a body without children. Neither may reach
-LightRAG as placeholder text or as an invented empty table. The documents
-below follow the shape Docling 2.x exports.
+LightRAG as placeholder text or as an invented empty table. Real tables reach
+it as rows of cell text, with the captions and footnotes Docling links by
+reference. The documents below follow the shape Docling 2.x exports.
 """
 
 import base64
@@ -16,6 +17,7 @@ import pytest
 
 from raganything.parser import DoclingParser
 from raganything.processor import ProcessorMixin
+from raganything.utils import format_table_body
 
 PNG_BASE64 = (
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ"
@@ -44,6 +46,43 @@ def _picture(parent, captions=(), children=(), uri=None):
     if uri is not None:
         picture["image"] = {"mimetype": "image/png", "uri": uri}
     return picture
+
+
+def _cell(row, col, text, col_span=1):
+    # Every cell carries its bounding box, offsets and header flags.
+    return {
+        "bbox": {
+            "l": 72.0 + 80.0 * col,
+            "t": 140.0 + 15.0 * row,
+            "r": 72.0 + 80.0 * (col + col_span),
+            "b": 155.0 + 15.0 * row,
+            "coord_origin": "TOPLEFT",
+        },
+        "row_span": 1,
+        "col_span": col_span,
+        "start_row_offset_idx": row,
+        "end_row_offset_idx": row + 1,
+        "start_col_offset_idx": col,
+        "end_col_offset_idx": col + col_span,
+        "text": text,
+        "column_header": row == 0,
+        "row_header": False,
+        "row_section": False,
+        "fillable": False,
+    }
+
+
+def _table_data(rows):
+    # Docling exports each cell twice: in table_cells and in the computed grid.
+    grid = [
+        [_cell(r, c, text) for c, text in enumerate(row)] for r, row in enumerate(rows)
+    ]
+    return {
+        "table_cells": [cell for row in grid for cell in row],
+        "num_rows": len(rows),
+        "num_cols": len(rows[0]),
+        "grid": grid,
+    }
 
 
 def _document(body_children, **items):
@@ -194,6 +233,66 @@ def test_real_tables_are_still_emitted(tmp_path, monkeypatch):
 
     assert [item["type"] for item in items] == ["table"]
     assert items[0]["table_body"] == table_data
+
+
+def test_table_chunk_has_rows_caption_and_footnote(tmp_path, monkeypatch):
+    # PDF shape: the caption and footnote are the table's children, linked as
+    # its captions and footnotes. There is no caption or footnote key.
+    table_data = _table_data([["Region", "Q1 revenue"], ["North", "1,200"]])
+    document = _document(
+        [{"$ref": "#/tables/0"}],
+        texts=[
+            _text("caption", "Table 1: Revenue by region", parent="#/tables/0"),
+            _text("footnote", "Figures in USD thousands", parent="#/tables/0"),
+        ],
+        tables=[
+            {
+                "label": "table",
+                "parent": {"$ref": "#/body"},
+                "children": [{"$ref": "#/texts/0"}, {"$ref": "#/texts/1"}],
+                "captions": [{"$ref": "#/texts/0"}],
+                "footnotes": [{"$ref": "#/texts/1"}],
+                "data": table_data,
+            }
+        ],
+    )
+    source = tmp_path / "report.pdf"
+    source.write_bytes(b"%PDF-1.4\n")
+    parser = _parser_returning(monkeypatch, document)
+
+    table = parser.parse_pdf(source, output_dir=str(tmp_path / "output"))[0]
+    chunk = _Processor()._apply_chunk_template("table", table, "Revenue by region.")
+
+    assert table["table_caption"] == ["Table 1: Revenue by region"]
+    assert table["table_footnote"] == ["Figures in USD thousands"]
+    # The content list keeps Docling's data: document IDs are hashed from it.
+    assert table["table_body"] == table_data
+    assert "Caption: Table 1: Revenue by region\n" in chunk
+    assert (
+        "Structure: | Region | Q1 revenue |\n| --- | --- |\n| North | 1,200 |\n"
+        in chunk
+    )
+    assert "Footnotes: Figures in USD thousands\n" in chunk
+    assert "bbox" not in chunk
+
+
+def test_table_data_is_rendered_from_its_grid():
+    # The grid repeats a spanning cell in every position it covers.
+    region = _cell(0, 0, "Region")
+    revenue = _cell(0, 1, "Revenue", col_span=2)
+    rows = [_cell(1, 0, "North"), _cell(1, 1, "1,200"), _cell(1, 2, "1,350")]
+    table_data = {
+        "table_cells": [region, revenue, *rows],
+        "num_rows": 2,
+        "num_cols": 3,
+        "grid": [[region, revenue, revenue], rows],
+    }
+
+    assert format_table_body(table_data) == (
+        "| Region | Revenue | Revenue |\n"
+        "| --- | --- | --- |\n"
+        "| North | 1,200 | 1,350 |"
+    )
 
 
 class _Processor(ProcessorMixin):

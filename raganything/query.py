@@ -466,6 +466,9 @@ class QueryMixin:
         messages = self._build_vlm_messages_with_images(
             enhanced_prompt, query, system_prompt
         )
+        # Preserve prior turns before the current multimodal user message.
+        if query_param.conversation_history:
+            messages[1:1] = query_param.conversation_history
 
         # 4. Call VLM for question answering
         result = await self._call_vlm_with_multimodal_content(
@@ -672,46 +675,42 @@ class QueryMixin:
 
         # LightRAG 1.4.x json.dumps each retrieved chunk into the prompt, so the
         # newline after "Image Path: <path>" usually arrives as the two
-        # characters backslash and "n". Capture through a case-insensitive image
-        # extension, and only when a delimiter follows it, so "figure.PNG" is
-        # found and "figure.png.backup" is not shortened to "figure.png".
-        # A delimiter is a quote or whitespace character, unescaped or as
-        # json.dumps escapes it (\", \n, \r, \t, \f, \u000b, \u001c-\u001f),
-        # or end of line, optionally after one punctuation mark (". , ; : ) ]").
-        # An escaped backslash is not a delimiter, because it separates the
-        # parts of a JSON-escaped Windows path.
-        # "(?![ \t])" stops the leading blanks from being re-tried one by one,
-        # which made a long run of spaces take quadratic time. The capture
-        # stops at the next "Image Path:" label, so an invalid path cannot
-        # swallow a valid one later in the same chunk.
-        # validate_image_file and the safe-directory check below still run on
-        # every captured path.
-        image_path_pattern = re.compile(
-            r"Image Path:[ \t]*(?![ \t])"
-            r"((?:(?!Image Path:)[^\r\n])*?\.(?:jpe?g|png|gif|bmp|webp|tiff?))"
-            r"(?=[.,;:)\]]?(?:\\(?:[\"fnrt]|u00(?:0b|1[c-f]))|[\"\s]|$))",
+        # characters backslash and "n". Select the last image suffix within
+        # each field, so "chart.png v2.png" never loads the shorter file.
+        # Only JSON records interpret transport escapes; literal backslashes
+        # in plain-text paths remain part of the filename.
+        plain_path_pattern = re.compile(
+            r"Image Path:[ \t]*(?![ \t])" r"((?:(?!Image Path:)[^\x00-\x1f])*)",
             re.IGNORECASE | re.MULTILINE,
         )
+        json_path_pattern = re.compile(
+            r"Image Path:[ \t]*(?![ \t])"
+            r"((?:(?!Image Path:)(?:"
+            r"\\\\"
+            r"|\\(?![\\fnrt]|u00(?:0b|1[c-f]))[^\r\n]"
+            r'|[^"\\\x00-\x1f]'
+            r"))*)"
+            r'(?=Image Path:|\\(?:[fnrt]|u00(?:0b|1[c-f]))|["\x00-\x1f]|$)',
+            re.IGNORECASE | re.MULTILINE,
+        )
+        image_suffix_pattern = re.compile(
+            r"\.(?:jpe?g|png|gif|bmp|webp|tiff?)", re.IGNORECASE
+        )
+        suffix_delimiter_pattern = re.compile(r'[.,;:)\]]?(?:\\"|["\s]|$)')
 
-        # First, let's see what matches we find
-        matches = image_path_pattern.findall(prompt)
-        self.logger.info(f"Found {len(matches)} image path matches in prompt")
-
-        def replace_image_path(match):
+        def replace_image_path(match, json_encoded):
             nonlocal images_processed
 
-            image_path = match.group(1).strip()
-            if "\\" in image_path:
-                # Decode transport escapes only inside a JSON record. Plain-text
-                # paths may contain literal backslashes that must stay literal.
-                line_start = prompt.rfind("\n", 0, match.start()) + 1
-                line_end = prompt.find("\n", match.end())
-                line = prompt[line_start : line_end if line_end != -1 else len(prompt)]
-                try:
-                    if isinstance(json.loads(line), (dict, list)):
-                        image_path = json.loads(f'"{image_path}"')
-                except json.JSONDecodeError:
-                    pass
+            field = match.group(1)
+            suffixes = list(image_suffix_pattern.finditer(field))
+            if not suffixes or not suffix_delimiter_pattern.match(
+                field, suffixes[-1].end()
+            ):
+                return match.group(0)
+            path_end = suffixes[-1].end()
+            image_path = field[:path_end].strip()
+            if json_encoded:
+                image_path = json.loads(f'"{image_path}"')
             self.logger.debug(f"Processing image path: '{image_path}'")
 
             # Validate path format (basic check)
@@ -778,7 +777,12 @@ class QueryMixin:
                     self._current_images_base64.append(image_base64)
 
                     # Keep original path info and add VLM marker
-                    result = f"{match.group(0)}\n[VLM_IMAGE_{images_processed}]"
+                    original = match.group(0)
+                    path_end_in_match = match.start(1) - match.start() + path_end
+                    result = (
+                        f"{original[:path_end_in_match]}\n[VLM_IMAGE_{images_processed}]"
+                        f"{original[path_end_in_match:]}"
+                    )
                     self.logger.debug(
                         f"Successfully processed image {images_processed}: {image_path}"
                     )
@@ -791,8 +795,20 @@ class QueryMixin:
                 self.logger.error(f"Failed to process image {image_path}: {e}")
                 return match.group(0)  # Keep original
 
-        # Execute replacement
-        enhanced_prompt = image_path_pattern.sub(replace_image_path, enhanced_prompt)
+        lines = []
+        for line in prompt.split("\n"):
+            if "image path:" not in line.lower():
+                lines.append(line)
+                continue
+            try:
+                json_encoded = isinstance(json.loads(line), (dict, list))
+            except json.JSONDecodeError:
+                json_encoded = False
+            pattern = json_path_pattern if json_encoded else plain_path_pattern
+            lines.append(
+                pattern.sub(lambda match: replace_image_path(match, json_encoded), line)
+            )
+        enhanced_prompt = "\n".join(lines)
 
         return enhanced_prompt, images_processed
 
@@ -902,7 +918,7 @@ class QueryMixin:
             VLM response, or an async iterator when streaming is requested.
         """
         try:
-            user_message = messages[1]
+            user_message = messages[-1]
             content = user_message["content"]
             system_prompt = messages[0]["content"]
             stream_options = {"stream": True} if stream else {}
