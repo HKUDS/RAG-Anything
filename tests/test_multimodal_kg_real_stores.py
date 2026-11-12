@@ -4,11 +4,110 @@ import tempfile
 import pytest
 from datetime import datetime, timezone
 import numpy as np
+import asyncio
+import uuid
 from lightrag import LightRAG, QueryParam
 from lightrag.utils import EmbeddingFunc, Tokenizer
 from lightrag.kg.shared_storage import initialize_pipeline_status
 from raganything import RAGAnything
 from raganything.config import RAGAnythingConfig
+from raganything.parser import MineruParser
+
+
+@pytest.fixture
+def frontdoor_rag(tmp_path, monkeypatch):
+    monkeypatch.setattr(MineruParser, "check_installation", lambda self: True)
+    return RAGAnything(
+        config=RAGAnythingConfig(
+            working_dir=str(tmp_path / "rag"),
+            parser_output_dir=str(tmp_path / "output"),
+            display_content_stats=False,
+        ),
+        llm_model_func=llm,
+        embedding_func=EmbeddingFunc(embedding_dim=8, max_token_size=8192, func=embed),
+        lightrag_kwargs={
+            "workspace": f"frontdoor-{uuid.uuid4().hex}",
+            "tokenizer": Tokenizer("synthetic", Codec()),
+            "entity_extract_max_gleaning": 0,
+        },
+    )
+
+
+async def close_frontdoor(rag):
+    await rag.finalize_storages()
+    atexit.unregister(rag.close)
+    workers = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+    for task in workers:
+        task.cancel()
+    await asyncio.gather(*workers, return_exceptions=True)
+
+
+TABLE = {
+    "type": "table",
+    "table_body": "Company | Sales\nACME | 10",
+    "table_caption": ["Sales"],
+    "page_idx": 0,
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["legacy", "packed", "per_item", "skip"])
+async def test_public_insertion_tracks_and_deletes_all_mode_chunks(frontdoor_rag, mode):
+    rag = frontdoor_rag
+    rag.config.multimodal_kg_extraction_mode = mode
+    try:
+        await rag.insert_content_list(
+            [TABLE], file_path="sales.pdf", doc_id="doc-sales"
+        )
+        assert await rag.is_document_fully_processed("doc-sales")
+        status = await rag.lightrag.doc_status.get_by_id("doc-sales")
+        ids = status["chunks_list"]
+        chunks = await rag.lightrag.text_chunks.get_by_ids(ids)
+        assert ids and all(chunks)
+        assert any(c.get("is_multimodal_extraction_pack") for c in chunks) == (
+            mode == "packed"
+        )
+        node = await rag.lightrag.chunk_entity_relation_graph.get_node("ACME")
+        if mode == "skip":
+            assert node is None
+        else:
+            assert node
+            assert set(node["source_id"].split("<SEP>")).issubset(ids)
+        result = await rag.lightrag.adelete_by_doc_id("doc-sales")
+        assert result.status == "success"
+        assert not any(await rag.lightrag.text_chunks.get_by_ids(ids))
+    finally:
+        await close_frontdoor(rag)
+
+
+@pytest.mark.asyncio
+async def test_packed_batch_failure_keeps_pack_chunks_tracked_for_deletion(
+    frontdoor_rag, monkeypatch
+):
+    rag = frontdoor_rag
+    rag.config.multimodal_kg_extraction_mode = "packed"
+    packs = []
+
+    async def fail_batch_extract(chunks):
+        packs.extend(chunks)
+        assert all(await rag.lightrag.text_chunks.get_by_ids(packs))
+        raise RuntimeError("batch extraction temporarily unavailable")
+
+    monkeypatch.setattr(
+        rag, "_batch_extract_entities_lightrag_style_type_aware", fail_batch_extract
+    )
+    try:
+        await rag.insert_content_list(
+            [TABLE], file_path="sales.pdf", doc_id="doc-sales"
+        )
+        assert await rag.is_document_fully_processed("doc-sales")
+        status = await rag.lightrag.doc_status.get_by_id("doc-sales")
+        assert packs and set(packs).issubset(status["chunks_list"])
+        deleted = await rag.lightrag.adelete_by_doc_id("doc-sales")
+        assert deleted.status == "success"
+        assert not any(await rag.lightrag.text_chunks.get_by_ids(packs))
+    finally:
+        await close_frontdoor(rag)
 
 
 class Codec:

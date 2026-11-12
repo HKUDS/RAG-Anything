@@ -1058,6 +1058,16 @@ await rag.insert_content_list(
 This flag only affects multimodal content; it is opt-in and defaults to `False`,
 so existing behavior is unchanged unless you explicitly set it.
 
+Multimodal graph extraction defaults to `multimodal_kg_extraction_mode="legacy"`,
+which retains full chunk templates and `belongs_to` relations. Set this config
+field to `"packed"` to group descriptions into fewer extraction calls; packed
+sources are stored and tracked for retrieval and deletion. Packing adds retrieval
+candidates and omits `belongs_to`, so evaluate retrieval quality for your data.
+`"per_item"` extracts each compact description separately; `"skip"` stores captions,
+chunks and main multimodal entities without further extraction. Optional
+`max_parallel_modal_items` controls caption concurrency independently of LightRAG's
+document-insert limit. See [call-count controls](docs/batch_processing.md#reducing-multimodal-llm-call-count).
+
 ---
 
 ## 🛠️ Examples

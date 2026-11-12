@@ -1397,6 +1397,9 @@ class ProcessorMixin:
                     extraction_chunks
                 )
                 chunk_ids.extend(extraction_chunks)
+                # Extraction or merge may fail and fall back to per-item processing.
+                # Register stored packs first so that fallback and deletion keep them.
+                await self._update_doc_status_with_chunks_type_aware(doc_id, chunk_ids)
             self.logger.info(
                 f"Multimodal KG extraction mode={kg_mode}: "
                 f"{len(multimodal_data_list)} items -> "
@@ -1427,7 +1430,8 @@ class ProcessorMixin:
             )
 
         # Stage 7: Update doc_status with integrated chunks_list
-        await self._update_doc_status_with_chunks_type_aware(doc_id, chunk_ids)
+        if kg_mode != "packed":
+            await self._update_doc_status_with_chunks_type_aware(doc_id, chunk_ids)
 
     def _modal_description_only_text(self, data: Dict[str, Any]) -> str:
         """Build compact KG-extraction text for one multimodal item.
