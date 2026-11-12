@@ -13,6 +13,7 @@ import json
 from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 
+from raganything.asset_urls import MEDIA_PATH_FIELDS
 from raganything.base import DocStatus
 from raganything.document_context import document_context
 from raganything.parser import (
@@ -147,7 +148,6 @@ class ProcessorMixin:
         timestamp = self._current_doc_status_timestamp()
         doc_status_payload: Dict[str, Any] = {
             "status": status,
-            "content": "",
             "content_summary": "",
             "content_length": 0,
             "error_msg": "",
@@ -156,9 +156,8 @@ class ProcessorMixin:
             "created_at": timestamp,
             "updated_at": timestamp,
             "file_path": self._get_file_reference(file_path),
+            "metadata": {"scheme_name": scheme_name} if scheme_name is not None else {},
         }
-        if scheme_name is not None:
-            doc_status_payload["scheme_name"] = scheme_name
 
         await self.lightrag.doc_status.upsert({doc_id: doc_status_payload})
         await self.lightrag.doc_status.index_done_callback()
@@ -542,6 +541,21 @@ class ProcessorMixin:
             doc_id = cached_data.get("doc_id")
 
             if content_list and doc_id:
+                # Cached blocks reference local parser outputs, not their bytes.
+                for item in content_list:
+                    if not isinstance(item, dict):
+                        continue
+                    for field in (*MEDIA_PATH_FIELDS, "audio_path", "video_path"):
+                        media_path = item.get(field)
+                        if not isinstance(media_path, str) or not media_path:
+                            continue
+                        if media_path.startswith(("http://", "https://", "s3://")):
+                            continue
+                        if not Path(media_path).is_file():
+                            self.logger.debug(
+                                f"Cache invalid - missing media file: {media_path}"
+                            )
+                            return None
                 self.logger.debug(
                     f"Found valid cached parsing result for key: {cache_key}"
                 )
@@ -994,9 +1008,24 @@ class ProcessorMixin:
             self.logger.error(f"Error in multimodal processing: {e}")
             # Fallback to individual processing if batch processing fails
             self.logger.warning("Falling back to individual multimodal processing")
-            await self._process_multimodal_content_individual(
-                multimodal_items, file_path, doc_id
-            )
+            try:
+                await self._process_multimodal_content_individual(
+                    multimodal_items, file_path, doc_id
+                )
+            except Exception as fallback_error:
+                # Individual processors can return a fallback description even
+                # when no chunk was stored. Such a document must remain retryable,
+                # including after a failed forced reprocess of a completed one.
+                current = await self.lightrag.doc_status.get_by_id(doc_id)
+                updates = {
+                    "status": DocStatus.FAILED,
+                    "error_msg": str(fallback_error),
+                }
+                if current and "multimodal_processed" in current:
+                    updates["multimodal_processed"] = False
+                await self._upsert_doc_status(doc_id, file_path, **updates)
+                await self._set_multimodal_status_record(doc_id, False)
+                raise
 
             # Mark multimodal content as processed even after fallback
             await self._mark_multimodal_processing_complete(doc_id)
@@ -1018,6 +1047,8 @@ class ProcessorMixin:
         # Collect all chunk results for batch processing (similar to text content processing)
         all_chunk_results = []
         multimodal_chunk_ids = []
+        failed_count = 0
+        first_error = None
 
         # Get current text chunks count to set proper order indexes for multimodal chunks
         existing_doc_status = await self.lightrag.doc_status.get_by_id(doc_id)
@@ -1061,18 +1092,20 @@ class ProcessorMixin:
                         chunk_order_index=next_order,  # Running order index
                     )
 
-                    # Collect chunk results for batch processing
-                    all_chunk_results.extend(chunk_results)
-
                     # Register every chunk id created (an item may yield several,
                     # e.g. long audio/video split into windows) and advance the
                     # running order index past all of them.
                     if entity_info and entity_info.get("chunk_ids"):
                         item_chunk_ids = entity_info["chunk_ids"]
-                    elif entity_info and "chunk_id" in entity_info:
+                    elif entity_info and entity_info.get("chunk_id"):
                         item_chunk_ids = [entity_info["chunk_id"]]
                     else:
                         item_chunk_ids = []
+                    if not item_chunk_ids:
+                        raise RuntimeError(
+                            f"No chunks stored for multimodal {content_type} item {i}"
+                        )
+                    all_chunk_results.extend(chunk_results)
                     multimodal_chunk_ids.extend(item_chunk_ids)
                     next_order += max(1, len(item_chunk_ids))
 
@@ -1085,6 +1118,9 @@ class ProcessorMixin:
                     )
 
             except Exception as e:
+                failed_count += 1
+                if first_error is None:
+                    first_error = e
                 self.logger.error(f"Error processing multimodal content: {str(e)}")
                 self.logger.debug("Exception details:", exc_info=True)
                 continue
@@ -1128,6 +1164,11 @@ class ProcessorMixin:
             )
 
             await self.lightrag._insert_done()
+
+        if failed_count:
+            raise RuntimeError(
+                f"Failed to process {failed_count}/{len(multimodal_items)} multimodal items"
+            ) from first_error
 
         self.logger.info("Individual multimodal content processing complete")
 
@@ -2130,10 +2171,16 @@ class ProcessorMixin:
                         exc,
                     )
                     fallback_payload = {
-                        **current_doc_status,
-                        "status": final_status,
-                        "updated_at": self._current_doc_status_timestamp(),
+                        k: v
+                        for k, v in current_doc_status.items()
+                        if k != "multimodal_processed"
                     }
+                    fallback_payload.update(
+                        {
+                            "status": final_status,
+                            "updated_at": self._current_doc_status_timestamp(),
+                        }
+                    )
                     await self.lightrag.doc_status.upsert({doc_id: fallback_payload})
                     await self._set_multimodal_status_record(doc_id, True)
                 await self.lightrag.doc_status.index_done_callback()
@@ -2471,11 +2518,8 @@ class ProcessorMixin:
                 existing_status = await doc_status.get_by_id(doc_pre_id)
                 failed_status = {
                     "status": DocStatus.FAILED,
-                    "content": "",
                     "error_msg": error_msg,
                     "content_summary": "",
-                    "multimodal_content": [],
-                    "scheme_name": scheme_name,
                     "content_length": 0,
                     # A real timestamp, never "": storage backends that map
                     # created_at as a date reject an empty string, and the
@@ -2483,6 +2527,9 @@ class ProcessorMixin:
                     "created_at": self._current_doc_status_timestamp(),
                     "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                     "file_path": file_name,
+                    "metadata": (
+                        {"scheme_name": scheme_name} if scheme_name is not None else {}
+                    ),
                 }
                 if existing_status:
                     failed_status = {
@@ -2491,6 +2538,8 @@ class ProcessorMixin:
                         "error_msg": error_msg,
                         "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                     }
+                    failed_status.pop("content", None)
+                    failed_status.pop("multimodal_content", None)
                 await doc_status.upsert({doc_pre_id: failed_status})
                 await doc_status.index_done_callback()
             except Exception as status_error:
@@ -2531,11 +2580,8 @@ class ProcessorMixin:
                     {
                         doc_pre_id: {
                             "status": DocStatus.READY,
-                            "content": "",
                             "error_msg": "",
                             "content_summary": "",
-                            "multimodal_content": [],
-                            "scheme_name": scheme_name,
                             "content_length": 0,
                             # A real timestamp, never "": storage backends
                             # that map created_at as a date reject an empty
@@ -2544,6 +2590,11 @@ class ProcessorMixin:
                             "created_at": self._current_doc_status_timestamp(),
                             "updated_at": self._current_doc_status_timestamp(),
                             "file_path": file_name,
+                            "metadata": (
+                                {"scheme_name": scheme_name}
+                                if scheme_name is not None
+                                else {}
+                            ),
                         }
                     }
                 )
@@ -2564,13 +2615,16 @@ class ProcessorMixin:
                 pipeline_status.update({"scan_disabled": True})
                 pipeline_status["history_messages"].append("Now is not allowed to scan")
 
+            handling_status = {
+                **current_doc_status,
+                "status": DocStatus.HANDLING,
+                "error_msg": "",
+            }
+            handling_status.pop("content", None)
+            handling_status.pop("multimodal_content", None)
             await self.lightrag.doc_status.upsert(
                 {
-                    doc_pre_id: {
-                        **current_doc_status,
-                        "status": DocStatus.HANDLING,
-                        "error_msg": "",
-                    }
+                    doc_pre_id: handling_status,
                 }
             )
 
@@ -2594,13 +2648,16 @@ class ProcessorMixin:
                     error_message = f"{error_message}\n\n{e.output}"
                 if getattr(e, "hint", None):
                     error_message = f"{error_message}\n\n{e.hint}"
+                failed_status = {
+                    **current_doc_status,
+                    "status": DocStatus.FAILED,
+                    "error_msg": error_message,
+                }
+                failed_status.pop("content", None)
+                failed_status.pop("multimodal_content", None)
                 await self.lightrag.doc_status.upsert(
                     {
-                        doc_pre_id: {
-                            **current_doc_status,
-                            "status": DocStatus.FAILED,
-                            "error_msg": error_message,
-                        }
+                        doc_pre_id: failed_status,
                     }
                 )
                 self.logger.info(
@@ -2608,13 +2665,16 @@ class ProcessorMixin:
                 )
                 return False
             except Exception as e:
+                failed_status = {
+                    **current_doc_status,
+                    "status": DocStatus.FAILED,
+                    "error_msg": str(e),
+                }
+                failed_status.pop("content", None)
+                failed_status.pop("multimodal_content", None)
                 await self.lightrag.doc_status.upsert(
                     {
-                        doc_pre_id: {
-                            **current_doc_status,
-                            "status": DocStatus.FAILED,
-                            "error_msg": str(e),
-                        }
+                        doc_pre_id: failed_status,
                     }
                 )
                 self.logger.info(f"Error processing document {file_path}: {str(e)}")

@@ -19,11 +19,19 @@ It is meant to stay small and easy to maintain (see discussion in [#207](https:/
 
 ## 2. Table structure lost during preprocessing
 
-**Symptoms:** merged cells, tables shown as plain lines, or wrong row order.
+**Symptoms:** merged cells, tables shown as plain lines, wrong row order, or missing rows from a table that spans pages.
 
 **Quick checks:**
 
 - Find the `type: table` blocks in `content_list` and see if `table_body` / structure fields look plausible.
+- For a multi-page table, check whether the parser returned one table item or
+  several fragments. RAG-Anything processes each table item separately.
+- If the parser split the table, verify that the fragments belong together and
+  their columns align. Combine the rows in page order, remove repeated headers,
+  and pass the merged Markdown as `table_body` in a single table item via
+  [`insert_content_list()`](../README.md#7-direct-content-list-insertion).
+  When you need the whole table, compare the retrieved context with the source
+  to confirm it includes every row.
 - If you only need retrieval, sometimes a **flattened** table is acceptable; if you need exact structure, try another parse method or parser (`PARSE_METHOD`, `PARSER` in `.env`).
 
 ---

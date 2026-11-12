@@ -12,6 +12,7 @@ content uses RAG-Anything's own ``image_chunk`` template.
 import base64
 import json
 import logging
+import os
 import time
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -135,6 +136,77 @@ def _sent_images(query):
     ]
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+@pytest.mark.parametrize(
+    "filename",
+    [
+        r"nested\figure.png",
+        r"figure\u0041.png",
+        pytest.param(
+            'figure"quoted.png',
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windows forbids quotes"),
+        ),
+    ],
+    ids=["backslash", "literal-unicode-escape", "quote"],
+)
+async def test_json_escaped_image_path_reaches_vision_model(
+    tmp_path, mode, entrypoint, filename
+):
+    image_path = tmp_path / filename
+    original = _save_png(image_path)
+    prompt = await _lightrag_prompt(mode, [_image_chunk(str(image_path))])
+    query = _make_query(tmp_path, prompt)
+
+    assert await getattr(query, entrypoint)(QUESTION, mode=mode) == "vision answer"
+    assert _sent_images(query) == [original]
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="Windows forbids control characters")
+async def test_plain_text_image_path_keeps_literal_backslashes(tmp_path):
+    image_path = tmp_path / r"nested\figure.png"
+    original = _save_png(image_path, "blue")
+    _save_png(tmp_path / "nested\figure.png", "red")
+    query = _make_query(tmp_path, _image_chunk(str(image_path)))
+
+    assert await query.aquery(QUESTION) == "vision answer"
+    assert _sent_images(query) == [original]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("unsafe_kind", ["outside", "symlink", "not-image"])
+async def test_json_escaped_image_path_still_requires_safe_image(
+    tmp_path, tmp_path_factory, monkeypatch, caplog, mode, unsafe_kind
+):
+    monkeypatch.chdir(tmp_path)
+    image_path = tmp_path / r"nested\figure.png"
+    if unsafe_kind == "outside":
+        image_path = tmp_path_factory.mktemp("outside") / r"nested\figure.png"
+        _save_png(image_path)
+    elif unsafe_kind == "symlink":
+        target = tmp_path / "target.png"
+        _save_png(target)
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.symlink_to(target)
+    else:
+        image_path.parent.mkdir(parents=True, exist_ok=True)
+        image_path.write_text("not an image", encoding="utf-8")
+    prompt = await _lightrag_prompt(mode, [_image_chunk(str(image_path))])
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode=mode) == "text answer"
+    assert _sent_images(query) == []
+    if unsafe_kind == "outside":
+        assert (
+            f"Blocking image path outside safe directories: {image_path}" in caplog.text
+        )
+    elif unsafe_kind == "symlink":
+        assert f"Blocking symlink for security: {image_path}" in caplog.text
+
+
 @pytest.fixture
 def validated_paths(monkeypatch):
     """Record every captured path handed to the real validate_image_file."""
@@ -147,6 +219,33 @@ def validated_paths(monkeypatch):
 
     monkeypatch.setattr(query_module, "validate_image_file", recording_validate)
     return seen
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("retrieved", [False, True], ids=["plain", "json-escaped"])
+@pytest.mark.parametrize(
+    "filename",
+    [
+        r"chart.png v2\final.png",
+        pytest.param(
+            'chart.png v2"final.png',
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windows forbids quotes"),
+        ),
+    ],
+)
+async def test_spaced_and_escaped_filename_selects_complete_image(
+    tmp_path, mode, retrieved, filename
+):
+    _save_png(tmp_path / "chart.png", "red")
+    image = tmp_path / filename
+    expected = _save_png(image, "blue")
+    content = _image_chunk(str(image))
+    prompt = await _lightrag_prompt(mode, [content]) if retrieved else content
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode=mode) == "vision answer"
+    assert _sent_images(query) == [expected]
 
 
 @pytest.mark.asyncio
@@ -387,24 +486,92 @@ async def test_existing_prefix_is_not_captured_without_delimiter(
     assert str(prefix) not in validated_paths
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Known limitation: whitespace is a delimiter, so for 'chart.png v2.png' "
-        "the capture stops at an existing 'chart.png' and sends that image. "
-        "Main does the same; the fix would be to try image-suffixed prefixes "
-        "of the whole field from longest to shortest."
-    ),
-)
 @pytest.mark.asyncio
+@pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
+@pytest.mark.parametrize("mode", MODES)
 async def test_filename_with_space_after_image_suffix_sends_that_file(
-    tmp_path, validated_paths
+    tmp_path, validated_paths, mode, entrypoint
 ):
     _save_png(tmp_path / "chart.png", "red")
     spaced = tmp_path / "chart.png v2.png"
     spaced_bytes = _save_png(spaced, "blue")
-    prompt = await _lightrag_prompt("naive", [_image_chunk(str(spaced))])
+    prompt = await _lightrag_prompt(mode, [_image_chunk(str(spaced))])
     query = _make_query(tmp_path, prompt)
 
-    assert await query.aquery(QUESTION, mode="naive") == "vision answer"
+    assert await getattr(query, entrypoint)(QUESTION, mode=mode) == "vision answer"
     assert _sent_images(query) == [spaced_bytes]
+    assert validated_paths == [str(spaced)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("unavailable", ["missing", "invalid", "outside-symlink"])
+async def test_unavailable_spaced_filename_does_not_send_existing_prefix(
+    tmp_path, tmp_path_factory, validated_paths, mode, unavailable
+):
+    _save_png(tmp_path / "chart.png", "red")
+    spaced = tmp_path / "chart.png v2.png"
+    if unavailable == "invalid":
+        spaced.write_text("not an image", encoding="utf-8")
+    elif unavailable == "outside-symlink":
+        outside = tmp_path_factory.mktemp("outside") / "secret.png"
+        _save_png(outside, "blue")
+        spaced.symlink_to(outside)
+    prompt = await _lightrag_prompt(mode, [_image_chunk(str(spaced))])
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode=mode) == "text answer"
+    assert _sent_images(query) == []
+    assert validated_paths == [str(spaced)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("retrieved", [False, True], ids=["plain", "json-escaped"])
+async def test_spaced_filename_stops_before_next_image_field(
+    tmp_path, validated_paths, mode, retrieved
+):
+    spaced = tmp_path / "chart.png v2.png"
+    spaced_bytes = _save_png(spaced, "blue")
+    other = tmp_path / "other.png"
+    other_bytes = _save_png(other, "green")
+    content = _image_chunk(str(spaced)) + "\n" + _image_chunk(str(other))
+    prompt = await _lightrag_prompt(mode, [content]) if retrieved else content
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode=mode) == "vision answer"
+    assert _sent_images(query) == [spaced_bytes, other_bytes]
+    assert validated_paths == [str(spaced), str(other)]
+
+
+@pytest.mark.asyncio
+async def test_long_run_of_escaped_backslashes_is_linear(tmp_path):
+    prompt = await _lightrag_prompt(
+        "naive", ["Image Path: " + "\\" * 20_000 + "not-an-image"]
+    )
+    query = _make_query(tmp_path, prompt)
+
+    start = time.perf_counter()
+    assert await query.aquery(QUESTION, mode="naive") == "text answer"
+    assert time.perf_counter() - start < 1.0
+    assert _sent_images(query) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("retrieved", [False, True], ids=["plain", "json-escaped"])
+@pytest.mark.parametrize("suffix", [".backup", "x", "\\"])
+async def test_spaced_invalid_suffix_does_not_send_existing_prefix(
+    tmp_path, validated_paths, mode, retrieved, suffix
+):
+    _save_png(tmp_path / "chart.png", "red")
+    _save_png(tmp_path / "chart.png v2.png", "green")
+    invalid = tmp_path / f"chart.png v2.png{suffix}"
+    _save_png(invalid, "blue")
+    content = _image_chunk(str(invalid))
+    prompt = await _lightrag_prompt(mode, [content]) if retrieved else content
+    query = _make_query(tmp_path, prompt)
+
+    assert await query.aquery(QUESTION, mode=mode) == "text answer"
+    assert _sent_images(query) == []
+    assert validated_paths == []
