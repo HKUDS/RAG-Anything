@@ -633,10 +633,6 @@ class ProcessorMixin:
         """Record the resolved parsed-output directory locations for a document."""
         if not hasattr(self, "_parsed_output_locations"):
             self._parsed_output_locations: Dict[str, Dict[str, Any]] = {}
-        if not hasattr(self, "_parsed_output_locations_by_file_ref"):
-            self._parsed_output_locations_by_file_ref: Dict[
-                str, Dict[str, Dict[str, Any]]
-            ] = {}
 
         pairs: List[Tuple[str, str]] = []
         seen_pairs: set[Tuple[str, str]] = set()
@@ -692,25 +688,6 @@ class ProcessorMixin:
             self._parsed_output_locations[doc_id] = record
         if fallback_doc_id is not None and fallback_doc_id != doc_id:
             self._parsed_output_locations.setdefault(fallback_doc_id, record)
-
-        if file_path:
-            file_refs = {str(file_path), Path(file_path).name}
-            try:
-                file_refs.add(self._get_file_reference(str(file_path)))
-            except Exception:
-                pass
-            target_key = (
-                doc_id
-                if doc_id is not None
-                else (
-                    fallback_doc_id if fallback_doc_id is not None else resolved_source
-                )
-            )
-            for ref in file_refs:
-                if ref:
-                    self._parsed_output_locations_by_file_ref.setdefault(ref, {})[
-                        target_key
-                    ] = record
 
         return record
 
@@ -2216,7 +2193,7 @@ class ProcessorMixin:
         1. In-memory locations recorded during ``parse_document`` / ``process_document_*``
         2. ``metadata`` persisted inside ``doc_status``
         3. Entries in ``self.parse_cache`` matching ``doc_id``
-        4. Fallback to ``current_status["file_path"]`` and ``self.config.parser_output_dir``
+        4. Legacy absolute source path with the configured output directory
         """
         pairs: List[Tuple[Path, Path]] = []
         seen: set[Tuple[Path, Path]] = set()
@@ -2271,12 +2248,6 @@ class ProcessorMixin:
                     cache_dicts.extend(
                         v for v in raw_store.values() if isinstance(v, dict)
                     )
-            status_file_ref = (
-                current_status.get("file_path")
-                if isinstance(current_status, dict)
-                else None
-            )
-            matching_by_file_ref: List[Dict[str, Any]] = []
             for entry in cache_dicts:
                 if entry.get("doc_id") == doc_id:
                     base_s = entry.get("output_dir") or getattr(
@@ -2292,48 +2263,13 @@ class ProcessorMixin:
                         if comp_base is not None:
                             for d in comp_dirs:
                                 _add_pair(comp_base, d)
-                elif status_file_ref and entry.get("file_path"):
-                    entry_fp = str(entry.get("file_path"))
-                    if (
-                        entry_fp == status_file_ref
-                        or Path(entry_fp).name == status_file_ref
-                    ):
-                        matching_by_file_ref.append(entry)
-
-            if not pairs and len(matching_by_file_ref) == 1:
-                entry = matching_by_file_ref[0]
-                base_s = entry.get("output_dir") or getattr(
-                    getattr(self, "config", None), "parser_output_dir", None
-                )
-                for dir_s in entry.get("parsed_output_dirs") or []:
-                    _add_pair(base_s, dir_s)
-                entry_fp = entry.get("file_path")
-                if entry_fp and base_s and not entry.get("parsed_output_dirs"):
-                    comp_base, comp_dirs = self._compute_parsed_output_dirs(
-                        entry_fp, base_s
-                    )
-                    if comp_base is not None:
-                        for d in comp_dirs:
-                            _add_pair(comp_base, d)
-
-        # 4. In-memory file-reference fallback if unambiguous
-        if not pairs and isinstance(current_status, dict):
-            file_ref = current_status.get("file_path")
-            by_ref = getattr(self, "_parsed_output_locations_by_file_ref", {}).get(
-                file_ref, {}
-            )
-            if len(by_ref) == 1:
-                rec = next(iter(by_ref.values()))
-                for base_s, dir_s in rec.get("pairs", []):
-                    _add_pair(base_s, dir_s)
-
-        # 5. Final fallback: compute from doc_status["file_path"] and config.parser_output_dir
+        # A basename alone cannot identify the source file that produced a directory.
         if not pairs and isinstance(current_status, dict):
             file_path = current_status.get("file_path")
             default_base = getattr(
                 getattr(self, "config", None), "parser_output_dir", None
             )
-            if file_path and default_base:
+            if file_path and Path(file_path).is_absolute() and default_base:
                 comp_base, comp_dirs = self._compute_parsed_output_dirs(
                     file_path, default_base
                 )
@@ -2411,10 +2347,30 @@ class ProcessorMixin:
         # Snapshot resolved parsed-output directories and pre-registration placeholder
         # BEFORE delegating to LightRAG, because LightRAG deletes the doc_status record.
         candidate_output_dirs: List[Tuple[Path, Path]] = []
+        shared_output_dirs: set[Path] = set()
         if delete_media_files:
             candidate_output_dirs = await self._resolve_parsed_output_dirs_for_deletion(
                 doc_id, current_status
             )
+            if candidate_output_dirs:
+                # One source path can have several indexed document versions.
+                # Preserve outputs still referenced by another document.
+                page = 1
+                while True:
+                    records, total = await self.lightrag.doc_status.get_docs_paginated(
+                        page=page, page_size=200
+                    )
+                    for other_id, record in records:
+                        if other_id != doc_id:
+                            shared_output_dirs.update(
+                                Path(path).resolve()
+                                for path in (record.metadata or {}).get(
+                                    "raganything_parsed_output_dirs", []
+                                )
+                            )
+                    if page * 200 >= total:
+                        break
+                    page += 1
 
         doc_pre_id: Optional[str] = None
         if isinstance(current_status, dict):
@@ -2461,14 +2417,13 @@ class ProcessorMixin:
                 }
             elif isinstance(lr_res, dict):
                 lightrag_result = dict(lr_res)
-                lightrag_result.setdefault("status", "success")
+                lightrag_result.setdefault("status", "failed")
                 lightrag_result.setdefault("doc_id", doc_id)
             else:
                 lightrag_result = {
-                    "status": "success",
+                    "status": "failed",
                     "doc_id": doc_id,
-                    "message": str(lr_res),
-                    "raw": str(lr_res),
+                    "message": "LightRAG returned no confirmed deletion status",
                 }
         except Exception as e:
             self.logger.error(
@@ -2490,7 +2445,7 @@ class ProcessorMixin:
                 "lightrag_result": lightrag_result,
             }
 
-        res_status = str(lightrag_result.get("status", "failed"))
+        res_status = str(lightrag_result.get("status") or "failed")
         lr_message = lightrag_result.get("message") or ""
 
         # Core deletion is considered confirmed if LightRAG returned "success",
@@ -2530,8 +2485,16 @@ class ProcessorMixin:
 
         # 3. Clean up media and parsing output directory on disk if requested
         media_files_deleted = False
+        media_cleanup_failed = False
         if delete_media_files and candidate_output_dirs:
             for output_base, unique_dir in candidate_output_dirs:
+                if any(
+                    unique_dir == shared
+                    or unique_dir in shared.parents
+                    or shared in unique_dir.parents
+                    for shared in shared_output_dirs
+                ):
+                    continue
                 try:
                     # Security check: ensure target directory is strictly within output_base
                     if (
@@ -2539,19 +2502,19 @@ class ProcessorMixin:
                         and unique_dir.exists()
                         and unique_dir.is_dir()
                     ):
-                        shutil.rmtree(unique_dir, ignore_errors=True)
+                        shutil.rmtree(unique_dir)
                         media_files_deleted = True
                 except Exception as e:
+                    media_cleanup_failed = True
                     self.logger.warning(
                         f"Error removing media files for {doc_id} at {unique_dir}: {e}"
                     )
 
+            media_files_deleted = media_files_deleted and not media_cleanup_failed
+
             # Remove stale in-memory location tracking once artifacts are cleaned up
-            if hasattr(self, "_parsed_output_locations"):
+            if media_files_deleted and hasattr(self, "_parsed_output_locations"):
                 self._parsed_output_locations.pop(doc_id, None)
-            if hasattr(self, "_parsed_output_locations_by_file_ref"):
-                for ref_dict in self._parsed_output_locations_by_file_ref.values():
-                    ref_dict.pop(doc_id, None)
 
             # Invalidate parse_cache entries for this doc_id when parsed artifacts are removed
             parse_cache = getattr(self, "parse_cache", None)

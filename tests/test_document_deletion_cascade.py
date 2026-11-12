@@ -12,6 +12,7 @@ Ensures that calling adelete_by_doc_id:
 """
 
 from types import SimpleNamespace
+import os
 
 import pytest
 
@@ -38,6 +39,14 @@ class InMemoryStorage:
 
     async def index_done_callback(self):
         pass
+
+    async def get_docs_paginated(self, page=1, page_size=200):
+        records = list(self.records.items())
+        selected = records[(page - 1) * page_size : page * page_size]
+        return [
+            (key, SimpleNamespace(metadata=value.get("metadata", {})))
+            for key, value in selected
+        ], len(records)
 
 
 class FakeDeletionResult:
@@ -106,6 +115,118 @@ class DummyProcessor(ProcessorMixin):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("core_result", [None, {}, {"message": "no status"}, True])
+async def test_unconfirmed_core_result_preserves_all_project_data(
+    tmp_path, core_result
+):
+    doc_id = "doc-unconfirmed"
+    file_path = str(tmp_path / "source.pdf")
+    output_dir = tmp_path / "output"
+    media_dir = Parser._unique_output_dir(output_dir, file_path)
+    media_dir.mkdir(parents=True)
+    (media_dir / "image.png").write_bytes(b"media")
+    placeholder = "doc-pre-source.pdf"
+    lr = FakeLightRAG(
+        doc_status_records={doc_id: {"file_path": file_path}, placeholder: {}},
+        full_docs_records={doc_id: {"content": "content"}},
+    )
+
+    async def unconfirmed(*args, **kwargs):
+        return core_result
+
+    lr.adelete_by_doc_id = unconfirmed
+    cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
+    processor = DummyProcessor(lr, cache, tmp_path)
+    result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)
+    assert result["status"] == "failed"
+    assert media_dir.exists()
+    assert doc_id in cache.records
+    assert doc_id in lr.doc_status.records
+    assert placeholder in lr.doc_status.records
+
+
+@pytest.mark.asyncio
+async def test_basename_only_record_never_deletes_another_documents_output(tmp_path):
+    doc_id = "doc-without-location"
+    other_source = tmp_path / "other" / "report.pdf"
+    output_dir = tmp_path / "output"
+    other_dir = Parser._unique_output_dir(output_dir, other_source)
+    other_dir.mkdir(parents=True)
+    (other_dir / "image.png").write_bytes(b"other document")
+    parse_cache = InMemoryStorage(
+        {
+            "other-cache-key": {
+                "doc_id": "doc-other",
+                "file_path": str(other_source),
+                "output_dir": str(output_dir),
+                "parsed_output_dirs": [str(other_dir)],
+            }
+        }
+    )
+    lr = FakeLightRAG(doc_status_records={doc_id: {"file_path": "report.pdf"}})
+    cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
+    processor = DummyProcessor(lr, cache, tmp_path, parse_cache=parse_cache)
+    result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)
+    assert result["status"] == "success"
+    assert result["media_files_deleted"] is False
+    assert other_dir.exists()
+    assert "other-cache-key" in parse_cache.records
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.name == "nt", reason="POSIX directory permissions")
+@pytest.mark.parametrize("suffix", [".pdf", ".docx"])
+async def test_failed_media_removal_is_not_reported_as_deleted(tmp_path, suffix):
+    if os.geteuid() == 0:
+        pytest.skip("root can remove files from read-only directories")
+    doc_id = "doc-readonly"
+    file_path = str(tmp_path / ("source" + suffix))
+    lr = FakeLightRAG(doc_status_records={doc_id: {"file_path": file_path}})
+    cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
+    processor = DummyProcessor(lr, cache, tmp_path)
+    base, dirs = processor._compute_parsed_output_dirs(file_path)
+    for directory in dirs:
+        directory.mkdir(parents=True)
+        (directory / "image.png").write_bytes(b"media")
+    processor._record_parsed_output_location(doc_id, file_path, base)
+    denied = dirs[-1]
+    denied.chmod(0o500)
+    try:
+        result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)
+        assert result["status"] == "success"
+        assert result["media_files_deleted"] is False
+        assert (denied / "image.png").exists()
+    finally:
+        denied.chmod(0o700)
+
+
+@pytest.mark.asyncio
+async def test_output_used_by_another_indexed_document_is_preserved(tmp_path):
+    source = str(tmp_path / "report.pdf")
+    output = tmp_path / "output"
+    directory = Parser._unique_output_dir(output, source)
+    directory.mkdir(parents=True)
+    (directory / "image.png").write_bytes(b"shared media")
+    metadata = {
+        "raganything_output_base": str(output),
+        "raganything_parsed_output_dirs": [str(directory)],
+    }
+    lr = FakeLightRAG(
+        doc_status_records={
+            "old": {"file_path": "report.pdf", "metadata": metadata},
+            "new": {"file_path": "report.pdf", "metadata": metadata},
+        }
+    )
+    cache = InMemoryStorage({"old": {"multimodal_processed": True}})
+    processor = DummyProcessor(lr, cache, tmp_path)
+    result = await processor.adelete_by_doc_id("old", delete_media_files=True)
+    assert result["status"] == "success"
+    assert result["media_files_deleted"] is False
+    assert directory.exists()
+    assert "new" in lr.doc_status.records
+
+
+@pytest.mark.asyncio
 async def test_adelete_by_doc_id_not_found(tmp_path):
     """Deleting a non-existent document returns status='not_found' gracefully."""
     lightrag = FakeLightRAG()
@@ -143,7 +264,7 @@ async def test_adelete_by_doc_id_cleans_multimodal_cache(tmp_path):
 async def test_adelete_by_doc_id_media_files_removal(tmp_path):
     """Media output directory on disk is removed when delete_media_files=True, preserved otherwise."""
     doc_id = "doc-media-test"
-    file_path = "document.pdf"
+    file_path = str(tmp_path / "document.pdf")
     output_dir = tmp_path / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -252,6 +373,7 @@ async def test_adelete_by_doc_id_retains_media_cache_and_placeholders_when_core_
     lightrag.adelete_by_doc_id = flaky_adelete
     cache = InMemoryStorage({doc_id: {"multimodal_processed": True}})
     processor = DummyProcessor(lightrag, cache, tmp_path)
+    processor._record_parsed_output_location(doc_id, file_name, output_dir)
 
     # 1. Core deletion raises -> nothing in RAG-Anything should be lost
     failed_result = await processor.adelete_by_doc_id(doc_id, delete_media_files=True)

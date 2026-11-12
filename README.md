@@ -1077,6 +1077,16 @@ result = await rag.adelete_by_doc_id(
 print(result["status"], result["media_files_deleted"])
 ```
 
+Only an explicit successful core result permits cleanup; a missing or unknown
+result leaves media and completion state intact. Parsed outputs are matched by
+document ID and recorded paths, including per-call output directories. Legacy
+records with only a basename cannot identify their media directory reliably;
+their core data is deleted, while unlocated media is left in place and
+`media_files_deleted` is `False`.
+Outputs referenced by another indexed document are also retained. The media flag
+is only `True` when removal succeeds; a filesystem error leaves it `False` even
+when core document deletion succeeded.
+
 ---
 
 ## 🛠️ Examples
