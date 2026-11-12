@@ -505,7 +505,10 @@ class VideoModalProcessor(BaseModalProcessor):
         current_tokens = 0
 
         for seg in visual_segments:
-            seg_tokens = self._count_tokens(seg.get("visual", "") or "")
+            text = " ".join(
+                part for part in (seg.get("visual"), seg.get("audio")) if part
+            )
+            seg_tokens = self._count_tokens(text)
             too_many = len(current) >= self.max_scenes
             too_big = bool(current) and current_tokens + seg_tokens > budget
             if current and (too_many or too_big):

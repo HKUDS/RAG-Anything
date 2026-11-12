@@ -269,6 +269,18 @@ class TestRetryDefaults:
 
 
 class TestCircuitBreaker:
+    def test_empty_failure_exceptions_does_not_open(self):
+        cb = CircuitBreaker(failure_threshold=1, failure_exceptions=[])
+
+        @cb
+        def fail_func():
+            raise ConnectionError("not counted")
+
+        for _ in range(2):
+            with pytest.raises(ConnectionError, match="not counted"):
+                fail_func()
+            assert cb.state == "closed"
+
     def test_closed_state_allows_calls(self):
         cb = CircuitBreaker(failure_threshold=3, name="test")
 
@@ -412,6 +424,19 @@ class TestCircuitBreaker:
 
 class TestAsyncCircuitBreaker:
     @pytest.mark.asyncio
+    async def test_empty_failure_exceptions_does_not_open(self):
+        cb = CircuitBreaker(failure_threshold=1, failure_exceptions=[])
+
+        @cb.async_call
+        async def fail_func():
+            raise ConnectionError("not counted")
+
+        for _ in range(2):
+            with pytest.raises(ConnectionError, match="not counted"):
+                await fail_func()
+            assert cb.state == "closed"
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize("cancel_with_timeout", [False, True])
     async def test_cancelled_half_open_trial_allows_next_trial(
         self, cancel_with_timeout
@@ -519,3 +544,56 @@ class TestAsyncCircuitBreaker:
                     task.cancel()
                     with pytest.raises(asyncio.CancelledError):
                         await task
+
+
+@pytest.mark.parametrize("base_delay, jitter", [(1.0, False), (1, True)])
+def test_capped_retry_does_not_overflow(monkeypatch, base_delay, jitter):
+    delays = []
+    monkeypatch.setattr(resilience_module.time, "sleep", delays.append)
+    calls = 0
+
+    @retry(
+        max_attempts=350,
+        base_delay=base_delay,
+        max_delay=0.0,
+        exponential_base=10.0,
+        jitter=jitter,
+    )
+    def operation():
+        nonlocal calls
+        calls += 1
+        if calls < 350:
+            raise ConnectionError("retry")
+        return "recovered"
+
+    assert operation() == "recovered"
+    assert delays == [0.0] * 349
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("base_delay, jitter", [(1.0, False), (1, True)])
+async def test_capped_async_retry_does_not_overflow(monkeypatch, base_delay, jitter):
+    delays = []
+
+    async def sleep(delay):
+        delays.append(delay)
+
+    monkeypatch.setattr(resilience_module.asyncio, "sleep", sleep)
+    calls = 0
+
+    @async_retry(
+        max_attempts=350,
+        base_delay=base_delay,
+        max_delay=0.0,
+        exponential_base=10.0,
+        jitter=jitter,
+    )
+    async def operation():
+        nonlocal calls
+        calls += 1
+        if calls < 350:
+            raise ConnectionError("retry")
+        return "recovered"
+
+    assert await operation() == "recovered"
+    assert delays == [0.0] * 349
