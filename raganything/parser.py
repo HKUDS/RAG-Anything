@@ -989,10 +989,15 @@ class Parser:
             with open(text_path, "r", encoding=encoding) as f:
                 return f.read()
         except UnicodeDecodeError:
+            fallback_encodings = ["gbk", "cp1252", "latin-1"]
+            if prefix == codecs.BOM_UTF32_LE:
+                # A UTF-16 LE file starting with NUL has the same prefix.
+                # Keep its previous decoding when the UTF-32 payload is invalid.
+                fallback_encodings.insert(0, "utf-16")
             # latin-1 maps every byte, so it has to come last: tried before
             # cp1252, it would turn cp1252's quotes, dashes and euro sign
             # into C1 control characters.
-            for encoding in ["gbk", "cp1252", "latin-1"]:
+            for encoding in fallback_encodings:
                 try:
                     with open(text_path, "r", encoding=encoding) as f:
                         content = f.read()

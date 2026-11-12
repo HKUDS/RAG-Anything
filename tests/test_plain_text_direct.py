@@ -206,6 +206,15 @@ class TestEncodingHandling:
             [{"type": "text", "text": "A", "page_idx": 0}] if text else []
         )
 
+    @pytest.mark.parametrize("text", ["\x00A", "\x00AB"])
+    def test_utf16_le_starting_with_null_when_utf32_is_invalid(self, tmp_path, text):
+        f = tmp_path / "doc.txt"
+        f.write_bytes(("\ufeff" + text).encode("utf-16-le"))
+
+        assert MineruParser().parse_text_file(f) == [
+            {"type": "text", "text": text, "page_idx": 0}
+        ]
+
 
 class TestNoPdfRoundTrip:
     """The point of the change: text formats must never touch the PDF path."""
