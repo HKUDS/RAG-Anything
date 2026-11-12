@@ -1068,6 +1068,35 @@ chunks and main multimodal entities without further extraction. Optional
 `max_parallel_modal_items` controls caption concurrency independently of LightRAG's
 document-insert limit. See [call-count controls](docs/batch_processing.md#reducing-multimodal-llm-call-count).
 
+#### 9. Deleting Documents
+
+Use `adelete_by_doc_id` to perform a cascading deletion of a document across both LightRAG and RAG-Anything. Core graph, vector, and document-status deletion is delegated to `LightRAG.adelete_by_doc_id` first; RAG-Anything's internal multimodal completion cache, pre-registration placeholder (`doc-pre-<file_name>`), and optional parsed output directory on disk are cleaned up only after core deletion succeeds:
+
+```python
+# Delete a document from LightRAG (graph, vector chunks, doc_status) and
+# RAG-Anything's multimodal status cache
+result = await rag.adelete_by_doc_id("doc-12345")
+
+# Optionally also remove the document's parsed output/media directory on disk
+# and cached LLM extraction responses
+result = await rag.adelete_by_doc_id(
+    "doc-12345",
+    delete_media_files=True,
+    delete_llm_cache=True,
+)
+print(result["status"], result["media_files_deleted"])
+```
+
+Only an explicit successful core result permits cleanup; a missing or unknown
+result leaves media and completion state intact. Parsed outputs are matched by
+document ID and recorded paths, including per-call output directories. Legacy
+records with only a basename cannot identify their media directory reliably;
+their core data is deleted, while unlocated media is left in place and
+`media_files_deleted` is `False`.
+Outputs referenced by another indexed document are also retained. The media flag
+is only `True` when removal succeeds; a filesystem error leaves it `False` even
+when core document deletion succeeded.
+
 ---
 
 ## 🛠️ Examples

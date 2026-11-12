@@ -1039,6 +1039,30 @@ await rag.insert_content_list(
 `max_parallel_modal_items` 可独立控制描述生成并发，不影响 LightRAG 的文档插入并发。
 详见[调用次数配置](docs/batch_processing.md#reducing-multimodal-llm-call-count)。
 
+#### 9. 删除文档
+
+使用 `adelete_by_doc_id` 可以在 LightRAG 与 RAG-Anything 中对指定文档执行级联删除。该方法会首先调用 `LightRAG.adelete_by_doc_id` 删除核心知识图谱、向量分块与文档状态，仅当核心删除确认成功后，才会继续清理 RAG-Anything 内部的多模态完成状态缓存、预注册占位符（`doc-pre-<file_name>`）以及可选的磁盘解析输出目录：
+
+```python
+# 从 LightRAG（知识图谱、向量分块、doc_status）及 RAG-Anything 多模态状态缓存中删除文档
+result = await rag.adelete_by_doc_id("doc-12345")
+
+# 可选：同时删除磁盘上的解析输出/媒体目录以及缓存的 LLM 抽取结果
+result = await rag.adelete_by_doc_id(
+    "doc-12345",
+    delete_media_files=True,
+    delete_llm_cache=True,
+)
+print(result["status"], result["media_files_deleted"])
+```
+
+只有核心删除明确成功后才清理附属数据；返回值缺失或状态不明时，媒体和完成状态保持原样。
+解析输出按文档 ID 和已记录路径匹配，支持单次调用指定的输出目录。仅保存文件名的旧记录
+无法可靠定位媒体目录：核心数据仍会删除，无法定位的媒体保留，`media_files_deleted`
+返回 `False`。
+其他已入库文档仍引用的输出目录也会保留。只有磁盘清理成功时媒体删除标记才为 `True`；
+即使核心文档已删除，磁盘清理失败时该标记仍为 `False`。
+
 ---
 
 ## 🛠️ 示例
