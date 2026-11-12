@@ -295,6 +295,58 @@ class TestPlanWindows:
         assert len(windows) == 2
         assert sum(len(w) for w in windows) == 6  # all scenes preserved
 
+    def test_audio_only_rows_participate_in_the_token_budget(self):
+        processor = self._processor(chunk_token_size=20)
+        transcript = [
+            {"start": i * 10, "end": i * 10 + 5, "text": letter * 60}
+            for i, letter in enumerate("ABC")
+        ]
+        rows = processor._add_audio_only_segments([], transcript)
+
+        windows = processor._plan_windows(rows)
+
+        assert windows == [[row] for row in rows]
+        assert [row for window in windows for row in window] == rows
+
+    def test_audio_only_rows_can_share_a_window_under_budget(self):
+        processor = self._processor(chunk_token_size=40)
+        rows = [
+            {"visual": "", "audio": "A" * 60},
+            {"visual": "", "audio": "B" * 60},
+        ]
+
+        assert processor._plan_windows(rows) == [rows]
+
+    def test_visual_and_explicit_audio_text_share_one_budget(self):
+        processor = self._processor(chunk_token_size=20)
+        rows = [
+            {"visual": "V" * 40, "audio": "A" * 20},
+            {"visual": "W" * 40, "audio": "B" * 20},
+        ]
+
+        assert processor._plan_windows(rows) == [[rows[0]], [rows[1]]]
+
+    def test_visual_only_budget_is_unchanged(self):
+        processor = self._processor(chunk_token_size=20)
+        rows = [{"visual": "A" * 40}, {"visual": "B" * 40}]
+
+        assert processor._plan_windows(rows) == [rows]
+
+    def test_one_oversized_audio_row_is_kept_whole(self):
+        processor = self._processor(chunk_token_size=20)
+        rows = [{"visual": "", "audio": "A" * 200}]
+
+        assert processor._plan_windows(rows) == [rows]
+
+    def test_max_windows_still_redistributes_audio_rows_without_loss(self):
+        processor = self._processor(chunk_token_size=20, max_windows=2)
+        rows = [{"visual": "", "audio": letter * 60} for letter in "ABC"]
+
+        windows = processor._plan_windows(rows)
+
+        assert len(windows) == 2
+        assert [row for window in windows for row in window] == rows
+
     def test_redistribute_preserves_order(self):
         items = [{"i": i} for i in range(7)]
         groups = VideoModalProcessor._redistribute(items, 3)
@@ -359,6 +411,42 @@ class TestVideoChunkSections:
         )
         joined = "\n".join(s["description"] for s in sections)
         assert "trailing speech" in joined  # tail audio not dropped
+
+    async def test_audio_only_sections_split_by_tokens_and_keep_timestamps(
+        self, tmp_path
+    ):
+        processor = VideoModalProcessor(
+            lightrag=_FakeLightRAG(chunk_token_size=20),
+            modal_caption_func=AsyncMock(),
+        )
+        processor._detect_scenes = MagicMock(return_value=[])
+        processor._describe_scenes = AsyncMock(return_value=[])
+        transcript = [
+            {"start": i * 10, "end": i * 10 + 5, "text": letter * 60}
+            for i, letter in enumerate("ABC")
+        ]
+        processor._transcribe_audio_track = AsyncMock(return_value=transcript)
+        video = tmp_path / "speech.mp4"
+        video.write_bytes(b"")
+
+        sections = await processor.generate_chunk_sections(
+            {"video_path": str(video)}, "video"
+        )
+
+        assert len(sections) == 3
+        for part, (section, segment) in enumerate(zip(sections, transcript), start=1):
+            assert section["window_meta"] == {
+                "start": segment["start"],
+                "end": segment["end"],
+                "part": part,
+                "total": 3,
+            }
+            assert segment["text"] in section["description"]
+            assert section["entity_info"]["entity_name"] == f"video_speech_part{part}"
+        combined = "\n".join(section["description"] for section in sections)
+        for segment in transcript:
+            assert combined.count(segment["text"]) == 1
+        processor.modal_caption_func.assert_not_awaited()
 
 
 @pytest.mark.asyncio
