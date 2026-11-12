@@ -225,7 +225,14 @@ def validated_paths(monkeypatch):
 @pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize("retrieved", [False, True], ids=["plain", "json-escaped"])
 @pytest.mark.parametrize(
-    "filename", [r"chart.png v2\final.png", 'chart.png v2"final.png']
+    "filename",
+    [
+        r"chart.png v2\final.png",
+        pytest.param(
+            'chart.png v2"final.png',
+            marks=pytest.mark.skipif(os.name == "nt", reason="Windows forbids quotes"),
+        ),
+    ],
 )
 async def test_spaced_and_escaped_filename_selects_complete_image(
     tmp_path, mode, retrieved, filename
