@@ -216,3 +216,119 @@ async def test_mineru_vlm_url_invalidates_parse_cache_without_persisting_it(
         [entry["parse_config"] for entry in processor.parse_cache.entries.values()]
     )
     assert "secret" not in persisted and "vlm-a" not in persisted
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "media_type,path_field",
+    [
+        ("image", "img_path"),
+        ("table", "table_img_path"),
+        ("equation", "equation_img_path"),
+        ("audio", "audio_path"),
+        ("video", "video_path"),
+    ],
+)
+@pytest.mark.parametrize("missing_parent", [False, True])
+async def test_parse_cache_recreates_missing_media(
+    tmp_path, media_type, path_field, missing_parent
+):
+    processor = _make_processor(tmp_path)
+    document = tmp_path / "document.txt"
+    document.write_text("source document", encoding="utf-8")
+    asset = tmp_path / "output" / "asset.bin"
+
+    class AssetParser:
+        calls = 0
+
+        def parse_document(self, file_path, **kwargs):
+            self.calls += 1
+            asset.parent.mkdir(parents=True, exist_ok=True)
+            asset.write_bytes(b"parsed media")
+            return [
+                {
+                    "type": media_type,
+                    path_field: str(asset),
+                    path_field + "_public_url": "https://cdn.example.com/asset.bin",
+                }
+            ]
+
+    processor.doc_parser = AssetParser()
+    first = await processor.parse_document(str(document))
+    assert await processor.parse_document(str(document)) == first
+    assert processor.doc_parser.calls == 1
+
+    asset.unlink()
+    if missing_parent:
+        asset.parent.rmdir()
+
+    restored = await processor.parse_document(str(document))
+
+    assert asset.is_file()
+    assert processor.doc_parser.calls == 2
+    assert restored == first
+    assert await processor.parse_document(str(document)) == restored
+    assert processor.doc_parser.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_mineru_parse_cache_recreates_removed_image(tmp_path, monkeypatch):
+    processor = _make_processor(tmp_path)
+    processor.config.parser = "mineru"
+    processor.doc_parser = MineruParser()
+    calls = []
+
+    def run_mineru(input_path, output_dir, method="auto", **kwargs):
+        calls.append(input_path)
+        stem = Path(input_path).stem
+        out = Path(output_dir) / stem / method
+        (out / "images").mkdir(parents=True, exist_ok=True)
+        (out / "images" / "figure.png").write_bytes(b"parsed image")
+        (out / f"{stem}_content_list.json").write_text(
+            json.dumps([{"type": "image", "img_path": "images/figure.png"}]),
+            encoding="utf-8",
+        )
+
+    monkeypatch.setattr(processor.doc_parser, "_run_mineru_command", run_mineru)
+    document = tmp_path / "document.pdf"
+    document.write_bytes(b"synthetic PDF for a stubbed MinerU process")
+    first = await processor.parse_document(str(document))
+    image = Path(first[0][0]["img_path"])
+    assert image.is_file()
+    assert await processor.parse_document(str(document)) == first
+    assert len(calls) == 1
+
+    image.unlink()
+    restored = await processor.parse_document(str(document))
+
+    assert image.is_file()
+    assert restored == first
+    assert len(calls) == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "media_path",
+    [
+        "https://cdn.example.com/figure.png",
+        "http://cdn.example.com/figure.png",
+        "s3://bucket/figure.png",
+    ],
+)
+async def test_parse_cache_preserves_remote_media_references(tmp_path, media_path):
+    processor = _make_processor(tmp_path)
+    document = tmp_path / "document.txt"
+    document.write_text("source document", encoding="utf-8")
+
+    class RemoteParser:
+        calls = 0
+
+        def parse_document(self, file_path, **kwargs):
+            self.calls += 1
+            return [{"type": "image", "img_path": media_path}]
+
+    processor.doc_parser = RemoteParser()
+    first = await processor.parse_document(str(document))
+
+    assert await processor.parse_document(str(document)) == first
+    assert processor.doc_parser.calls == 1
