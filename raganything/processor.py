@@ -2216,9 +2216,7 @@ class ProcessorMixin:
         doc_pre_id = f"doc-pre-{file_name}"
         pipeline_status = None
         pipeline_status_lock = None
-        current_doc_status = (
-            {}
-        )  # initialised here so the except block can always unpack it
+        current_doc_status = {}  # initialised here so the except block can always unpack it
 
         async def mark_initialization_failed(error_msg: str) -> None:
             """Persist init failures when LightRAG doc_status is already available."""
