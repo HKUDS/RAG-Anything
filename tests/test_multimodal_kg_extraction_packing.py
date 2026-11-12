@@ -104,15 +104,18 @@ def test_packed_mode_collapses_many_short_captions_into_few_chunks():
     assert len(per_item) == 8
     assert len(packed) < 8
     assert len(packed) >= 1
+    legacy = mixin._build_multimodal_extraction_chunks(data_list, lightrag_chunks)
+    assert legacy == lightrag_chunks
+    assert all("SHARED" in chunk["content"] for chunk in legacy.values())
     # Packed content must not include neighbor prose
     for chunk in packed.values():
         assert "SHARED" not in chunk["content"]
         assert "Short visual description" in chunk["content"]
 
 
-def test_config_defaults_to_packed_mode():
+def test_config_defaults_to_legacy_mode():
     cfg = RAGAnythingConfig()
-    assert cfg.multimodal_kg_extraction_mode == "packed"
+    assert cfg.multimodal_kg_extraction_mode == "legacy"
     assert cfg.max_parallel_modal_items is None
 
 

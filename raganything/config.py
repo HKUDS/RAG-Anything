@@ -139,16 +139,18 @@ class RAGAnythingConfig:
     # ---
     multimodal_kg_extraction_mode: str = field(
         default_factory=lambda: get_env_value(
-            "MULTIMODAL_KG_EXTRACTION_MODE", "packed", str
+            "MULTIMODAL_KG_EXTRACTION_MODE", "legacy", str
         )
     )
     """How multimodal items feed LightRAG entity extraction after vision/captioning.
 
-    - ``packed`` (default): pack description-only captions into token-budgeted
+    - ``legacy`` (default): extract from each full retrieval chunk and retain
+      belongs_to enrichment.
+    - ``packed``: pack description-only captions into token-budgeted
       extraction units so extract/merge call count scales with caption tokens,
       not image count. Full templated chunks (including neighbor text) still
       go to the vector store for retrieval.
-    - ``per_item``: legacy behaviour — one extract call per multimodal chunk
+    - ``per_item``: one extract call per multimodal chunk
       (still uses description-only content for extraction to avoid re-feeding
       surrounding page text through the KG pipeline).
     - ``skip``: vision + store chunks/main entities only; no multimodal

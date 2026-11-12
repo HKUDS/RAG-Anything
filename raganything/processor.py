@@ -42,7 +42,6 @@ from raganything.parse_options import (
 import asyncio
 from lightrag.utils import compute_mdhash_id
 
-
 AUDIO_FILE_EXTENSIONS = frozenset(
     {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".wma", ".aac", ".opus"}
 )
@@ -1326,21 +1325,21 @@ class ProcessorMixin:
         # Track chunk IDs for doc_status update
         chunk_ids = list(lightrag_chunks.keys())
 
-        # Stage 4-6: KG extraction / merge. Default packed mode cuts the
+        # Stage 4-6: KG extraction / merge. Opt-in packed mode cuts the
         # per-image extract+merge amplification described in issue #348 by
         # (a) extracting from description-only text (no neighbor_text) and
         # (b) packing those descriptions into token-budgeted units.
-        kg_mode = "packed"
+        kg_mode = "legacy"
         if config is not None:
             kg_mode = (
-                getattr(config, "multimodal_kg_extraction_mode", "packed") or "packed"
+                getattr(config, "multimodal_kg_extraction_mode", "legacy") or "legacy"
             )
         kg_mode = str(kg_mode).strip().lower()
-        if kg_mode not in {"packed", "per_item", "skip"}:
+        if kg_mode not in {"legacy", "packed", "per_item", "skip"}:
             self.logger.warning(
-                f"Unknown multimodal_kg_extraction_mode={kg_mode!r}; using packed"
+                f"Unknown multimodal_kg_extraction_mode={kg_mode!r}; using legacy"
             )
-            kg_mode = "packed"
+            kg_mode = "legacy"
 
         if kg_mode == "skip":
             self.logger.info(
@@ -1352,6 +1351,11 @@ class ProcessorMixin:
             extraction_chunks = self._build_multimodal_extraction_chunks(
                 multimodal_data_list, lightrag_chunks, mode=kg_mode
             )
+            if kg_mode == "packed":
+                await self._store_chunks_to_lightrag_storage_type_aware(
+                    extraction_chunks
+                )
+                chunk_ids.extend(extraction_chunks)
             self.logger.info(
                 f"Multimodal KG extraction mode={kg_mode}: "
                 f"{len(multimodal_data_list)} items -> "
@@ -1363,8 +1367,8 @@ class ProcessorMixin:
                 )
             )
 
-            if kg_mode == "per_item":
-                # belongs_to needs 1:1 chunk_id <-> modal entity (per_item only)
+            if kg_mode in {"legacy", "per_item"}:
+                # belongs_to needs 1:1 chunk_id <-> modal entity
                 enhanced_chunk_results = (
                     await self._batch_add_belongs_to_relations_type_aware(
                         chunk_results, multimodal_data_list
@@ -1463,19 +1467,22 @@ class ProcessorMixin:
         self,
         multimodal_data_list: List[Dict[str, Any]],
         lightrag_chunks: Dict[str, Any],
-        mode: str = "packed",
+        mode: str = "legacy",
     ) -> Dict[str, Any]:
         """Build chunks passed to ``extract_entities``.
 
         Retrieval chunks (``lightrag_chunks``) keep the full template including
-        neighbor text. Extraction chunks use description-only text so page
-        prose is not re-extracted once per image.
+        neighbor text. ``legacy`` reuses those full chunks. Opt-in extraction
+        modes use description-only text to avoid repeated page prose.
 
         ``per_item``: one extraction chunk per stored multimodal chunk (same
         chunk_id, description-only content).
         ``packed``: concatenate description-only texts into token-budgeted
         units (call count ≈ ceil(total_caption_tokens / chunk_token_size)).
         """
+        if mode == "legacy":
+            return lightrag_chunks
+
         # Map stored chunk_id -> multimodal data (same hashing as convert step)
         chunk_id_to_data: Dict[str, Dict[str, Any]] = {}
         for data in multimodal_data_list:
@@ -1677,9 +1684,9 @@ class ProcessorMixin:
                     table_img_path=table_img_path,
                     table_caption=", ".join(table_caption) if table_caption else "None",
                     table_body=table_body,
-                    table_footnote=", ".join(table_footnote)
-                    if table_footnote
-                    else "None",
+                    table_footnote=(
+                        ", ".join(table_footnote) if table_footnote else "None"
+                    ),
                     enhanced_caption=description,
                 )
 
