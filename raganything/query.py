@@ -675,37 +675,30 @@ class QueryMixin:
 
         # LightRAG 1.4.x json.dumps each retrieved chunk into the prompt, so the
         # newline after "Image Path: <path>" usually arrives as the two
-        # characters backslash and "n". Isolate each field at real or escaped
-        # separators (or the next label) before selecting its last image suffix.
-        # Check that suffix's delimiter separately: "chart.png v2.png.backup"
-        # must not backtrack to the earlier "chart.png" when its last suffix
-        # fails validation. Whitespace may be part of a filename.
-        # The alternatives consume disjoint characters/escape pairs, and the
-        # leading-blank guard prevents quadratic retries on long space runs.
-        # Consume escaped backslashes together so a Windows separator before
-        # "n" is not mistaken for an escaped newline.
-        # validate_image_file and the safe-directory check below still run on
-        # every captured path.
-        image_path_pattern = re.compile(
+        # characters backslash and "n". Select the last image suffix within
+        # each field, so "chart.png v2.png" never loads the shorter file.
+        # Only JSON records interpret transport escapes; literal backslashes
+        # in plain-text paths remain part of the filename.
+        plain_path_pattern = re.compile(
+            r"Image Path:[ \t]*(?![ \t])" r"((?:(?!Image Path:)[^\x00-\x1f])*)",
+            re.IGNORECASE | re.MULTILINE,
+        )
+        json_path_pattern = re.compile(
             r"Image Path:[ \t]*(?![ \t])"
             r"((?:(?!Image Path:)(?:"
             r"\\\\"
-            r'|\\(?!["\\fnrt]|u00(?:0b|1[c-f]))[^\r\n]'
+            r"|\\(?![\\fnrt]|u00(?:0b|1[c-f]))[^\r\n]"
             r'|[^"\\\x00-\x1f]'
             r"))*)"
-            r'(?=Image Path:|\\(?:["fnrt]|u00(?:0b|1[c-f]))|["\x00-\x1f]|$)',
+            r'(?=Image Path:|\\(?:[fnrt]|u00(?:0b|1[c-f]))|["\x00-\x1f]|$)',
             re.IGNORECASE | re.MULTILINE,
         )
         image_suffix_pattern = re.compile(
             r"\.(?:jpe?g|png|gif|bmp|webp|tiff?)", re.IGNORECASE
         )
-        suffix_delimiter_pattern = re.compile(r"[.,;:)\]]?(?:\s|$)")
+        suffix_delimiter_pattern = re.compile(r'[.,;:)\]]?(?:\\"|["\s]|$)')
 
-        # First, let's see what matches we find
-        matches = image_path_pattern.findall(prompt)
-        self.logger.info(f"Found {len(matches)} image path fields in prompt")
-
-        def replace_image_path(match):
+        def replace_image_path(match, json_encoded):
             nonlocal images_processed
 
             field = match.group(1)
@@ -716,7 +709,8 @@ class QueryMixin:
                 return match.group(0)
             path_end = suffixes[-1].end()
             image_path = field[:path_end].strip()
-            trailing_text = field[path_end:]
+            if json_encoded:
+                image_path = json.loads(f'"{image_path}"')
             self.logger.debug(f"Processing image path: '{image_path}'")
 
             # Validate path format (basic check)
@@ -783,9 +777,11 @@ class QueryMixin:
                     self._current_images_base64.append(image_base64)
 
                     # Keep original path info and add VLM marker
+                    original = match.group(0)
+                    path_end_in_match = match.start(1) - match.start() + path_end
                     result = (
-                        f"Image Path: {image_path}\n[VLM_IMAGE_{images_processed}]"
-                        f"{trailing_text}"
+                        f"{original[:path_end_in_match]}\n[VLM_IMAGE_{images_processed}]"
+                        f"{original[path_end_in_match:]}"
                     )
                     self.logger.debug(
                         f"Successfully processed image {images_processed}: {image_path}"
@@ -799,8 +795,20 @@ class QueryMixin:
                 self.logger.error(f"Failed to process image {image_path}: {e}")
                 return match.group(0)  # Keep original
 
-        # Execute replacement
-        enhanced_prompt = image_path_pattern.sub(replace_image_path, enhanced_prompt)
+        lines = []
+        for line in prompt.split("\n"):
+            if "image path:" not in line.lower():
+                lines.append(line)
+                continue
+            try:
+                json_encoded = isinstance(json.loads(line), (dict, list))
+            except json.JSONDecodeError:
+                json_encoded = False
+            pattern = json_path_pattern if json_encoded else plain_path_pattern
+            lines.append(
+                pattern.sub(lambda match: replace_image_path(match, json_encoded), line)
+            )
+        enhanced_prompt = "\n".join(lines)
 
         return enhanced_prompt, images_processed
 
