@@ -180,3 +180,125 @@ async def test_process_document_complete_lightrag_api_leaves_storage_compatible(
         # Ensure no non-schema fields leaked
         assert not hasattr(doc_status, "multimodal_content")
         assert not hasattr(doc_status, "content")
+
+
+@pytest.mark.asyncio
+async def test_json_doc_status_with_strict_doc_processing_status_without_multimodal_processed(
+    doc_status_storage, monkeypatch
+):
+    """Reproduce #73, #91, #119: JsonDocStatusStorage.upsert accepts raw dicts without validation,
+    so _mark_multimodal_processing_complete must proactively check DocProcessingStatus fields
+    before writing multimodal_processed, preventing get_docs_paginated() from crashing with TypeError."""
+    from dataclasses import dataclass, field
+    from typing import Any
+
+    @dataclass
+    class StrictDocProcessingStatus:
+        content_summary: str
+        content_length: int
+        file_path: str
+        status: Any
+        created_at: str
+        updated_at: str
+        track_id: str | None = None
+        chunks_count: int | None = None
+        chunks_list: list[str] | None = field(default_factory=list)
+        error_msg: str | None = None
+        metadata: dict[str, Any] = field(default_factory=dict)
+
+    import lightrag.base as lr_base
+    import lightrag.kg.json_doc_status_impl as jimpl
+
+    monkeypatch.setattr(lr_base, "DocProcessingStatus", StrictDocProcessingStatus)
+    monkeypatch.setattr(jimpl, "DocProcessingStatus", StrictDocProcessingStatus)
+
+    multimodal_cache = InMemoryStorage()
+    processor = DummyDocStatusProcessor(doc_status_storage, multimodal_cache)
+
+    doc_status_storage._data["doc-strict"] = {
+        "status": DocStatus.HANDLING,
+        "content_summary": "summary",
+        "content_length": 42,
+        "file_path": "strict.pdf",
+        "created_at": "2026-11-12T00:00:00+00:00",
+        "updated_at": "2026-11-12T00:00:00+00:00",
+    }
+
+    await processor._mark_multimodal_processing_complete("doc-strict")
+
+    stored = await doc_status_storage.get_by_id("doc-strict")
+    assert "multimodal_processed" not in stored
+    assert multimodal_cache.records["doc-strict"]["multimodal_processed"] is True
+    assert await processor._get_multimodal_processed_flag("doc-strict", stored) is True
+
+    # get_docs_paginated must instantiate StrictDocProcessingStatus without TypeError
+    paginated_docs, count = await doc_status_storage.get_docs_paginated()
+    assert count == 1
+    assert paginated_docs[0][0] == "doc-strict"
+    assert isinstance(paginated_docs[0][1], StrictDocProcessingStatus)
+
+
+@pytest.mark.asyncio
+async def test_legacy_doc_status_record_is_sanitized_on_update_and_chunk_merge(
+    doc_status_storage, monkeypatch
+):
+    """Pre-existing records on disk containing legacy undeclared fields (content,
+    multimodal_content, scheme_name, multimodal_processed) are sanitized when updated."""
+    from dataclasses import dataclass, field
+    from typing import Any
+
+    @dataclass
+    class StrictDocProcessingStatus:
+        content_summary: str
+        content_length: int
+        file_path: str
+        status: Any
+        created_at: str
+        updated_at: str
+        track_id: str | None = None
+        chunks_count: int | None = None
+        chunks_list: list[str] | None = field(default_factory=list)
+        error_msg: str | None = None
+        metadata: dict[str, Any] = field(default_factory=dict)
+
+    import lightrag.base as lr_base
+    import lightrag.kg.json_doc_status_impl as jimpl
+
+    monkeypatch.setattr(lr_base, "DocProcessingStatus", StrictDocProcessingStatus)
+    monkeypatch.setattr(jimpl, "DocProcessingStatus", StrictDocProcessingStatus)
+
+    multimodal_cache = InMemoryStorage()
+    processor = DummyDocStatusProcessor(doc_status_storage, multimodal_cache)
+
+    doc_status_storage._data["doc-legacy"] = {
+        "status": DocStatus.HANDLING,
+        "content": "legacy inline content",
+        "multimodal_content": [{"type": "image"}],
+        "scheme_name": "legacy_scheme",
+        "multimodal_processed": False,
+        "content_summary": "summary",
+        "content_length": 10,
+        "chunks_count": 1,
+        "chunks_list": ["chunk-1"],
+        "file_path": "legacy.pdf",
+        "created_at": "2026-11-12T00:00:00+00:00",
+        "updated_at": "2026-11-12T00:00:00+00:00",
+    }
+
+    await processor._update_doc_status_with_chunks_type_aware(
+        "doc-legacy", ["chunk-mm-1"]
+    )
+    await processor._mark_multimodal_processing_complete("doc-legacy")
+
+    stored = await doc_status_storage.get_by_id("doc-legacy")
+    assert "content" not in stored
+    assert "multimodal_content" not in stored
+    assert "scheme_name" not in stored
+    assert "multimodal_processed" not in stored
+    assert stored["metadata"]["scheme_name"] == "legacy_scheme"
+    assert stored["chunks_list"] == ["chunk-1", "chunk-mm-1"]
+
+    paginated_docs, count = await doc_status_storage.get_docs_paginated()
+    assert count == 1
+    assert paginated_docs[0][0] == "doc-legacy"
+    assert paginated_docs[0][1].metadata["scheme_name"] == "legacy_scheme"

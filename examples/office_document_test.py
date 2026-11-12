@@ -73,16 +73,25 @@ async def test_office_document_parsing(file_path: str):
     try:
         # Test document parsing with MinerU
         print("\n🔄 Testing document parsing with MinerU...")
-        content_list, md_content = await rag.parse_document(
+        content_list, doc_id = await rag.parse_document(
             file_path=str(file_path),
             output_dir="./test_output",
             parse_method="auto",
             display_stats=True,
         )
 
+        extracted_text = "\n\n".join(
+            item.get("text", "")
+            for item in content_list
+            if isinstance(item, dict)
+            and item.get("type") == "text"
+            and item.get("text", "").strip()
+        )
+
         print("✅ Parsing successful!")
+        print(f"   🆔 Document ID: {doc_id}")
         print(f"   📊 Content blocks: {len(content_list)}")
-        print(f"   📝 Markdown length: {len(md_content)} characters")
+        print(f"   📝 Extracted text length: {len(extracted_text)} characters")
 
         # Analyze content types
         content_types = {}
@@ -97,10 +106,10 @@ async def test_office_document_parsing(file_path: str):
                 print(f"      • {content_type}: {count}")
 
         # Display some parsed content preview
-        if md_content.strip():
+        if extracted_text.strip():
             print("\n📄 Parsed content preview (first 500 characters):")
-            preview = md_content.strip()[:500]
-            print(f"   {preview}{'...' if len(md_content) > 500 else ''}")
+            preview = extracted_text.strip()[:500]
+            print(f"   {preview}{'...' if len(extracted_text) > 500 else ''}")
 
         # Display some structured content examples
         text_items = [
