@@ -12,7 +12,12 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from raganything.parser import MineruParser, PaddleOCRParser, Parser  # noqa: E402
+from raganything.parser import (  # noqa: E402
+    DoclingParser,
+    MineruParser,
+    PaddleOCRParser,
+    Parser,
+)
 
 # Image references only become image blocks for real image files.
 PNG = b"\x89PNG\r\n\x1a\n"
@@ -168,16 +173,46 @@ class TestEncodingHandling:
         blocks = MineruParser().parse_text_file(f)
         assert blocks[0]["text"] == "caf\u00e9 \x81 menu"
 
-    @pytest.mark.parametrize("encoding", ["utf-16-le", "utf-16-be"])
-    def test_utf16_with_bom(self, tmp_path, encoding):
-        text = "# Bericht\n\nErster Absatz.\n\nZweiter Absatz \u00fcber M\u00fcller.\n"
-        f = tmp_path / "doc.md"
+    @pytest.mark.parametrize(
+        "encoding", ["utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be"]
+    )
+    @pytest.mark.parametrize(
+        "parser_cls", [MineruParser, DoclingParser, PaddleOCRParser]
+    )
+    @pytest.mark.parametrize("suffix", [".txt", ".md"])
+    def test_unicode_with_bom(self, tmp_path, encoding, parser_cls, suffix):
+        text = "# Bericht\n\nErster Absatz.\n\nZweiter Absatz \u00fcber M\u00fcller \U0001f680.\n"
+        f = tmp_path / f"doc{suffix}"
         f.write_bytes(("\ufeff" + text).encode(encoding))
-        blocks = MineruParser().parse_text_file(f)
+        blocks = parser_cls().parse_document(f)
         assert [(b["text"], b.get("text_level")) for b in blocks] == [
-            ("Bericht", 1),
+            ("Bericht", 1) if suffix == ".md" else ("# Bericht", None),
             ("Erster Absatz.", None),
-            ("Zweiter Absatz \u00fcber M\u00fcller.", None),
+            ("Zweiter Absatz \u00fcber M\u00fcller \U0001f680.", None),
+        ]
+
+    @pytest.mark.parametrize(
+        "encoding", ["utf-8-sig", "utf-16-le", "utf-16-be", "utf-32-le", "utf-32-be"]
+    )
+    @pytest.mark.parametrize("text", ["", "A"])
+    def test_short_bom_marked_files(self, tmp_path, encoding, text):
+        f = tmp_path / "doc.txt"
+        prefix = "" if encoding == "utf-8-sig" else "\ufeff"
+        f.write_bytes((prefix + text).encode(encoding))
+
+        blocks = MineruParser().parse_text_file(f)
+
+        assert blocks == (
+            [{"type": "text", "text": "A", "page_idx": 0}] if text else []
+        )
+
+    @pytest.mark.parametrize("text", ["\x00A", "\x00AB"])
+    def test_utf16_le_starting_with_null_when_utf32_is_invalid(self, tmp_path, text):
+        f = tmp_path / "doc.txt"
+        f.write_bytes(("\ufeff" + text).encode("utf-16-le"))
+
+        assert MineruParser().parse_text_file(f) == [
+            {"type": "text", "text": text, "page_idx": 0}
         ]
 
 
