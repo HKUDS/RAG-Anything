@@ -1,5 +1,7 @@
 """Tests for retry and resilience utilities."""
 
+import asyncio
+
 import pytest
 
 import raganything.resilience as resilience_module
@@ -119,6 +121,79 @@ class TestSyncRetry:
 
 
 class TestAsyncRetry:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("callback_kind", ["coroutine", "task", "awaitable"])
+    @pytest.mark.parametrize("callback_fails", [False, True])
+    async def test_waits_for_callback_result(self, callback_kind, callback_fails):
+        events = []
+        tasks = []
+        callback_error = RuntimeError("retry callback failed")
+
+        async def complete_callback():
+            await asyncio.sleep(0)
+            events.append("callback")
+            if callback_fails:
+                raise callback_error
+
+        class CallbackResult:
+            def __await__(self):
+                return complete_callback().__await__()
+
+        def on_retry(_exc, _attempt, _delay):
+            if callback_kind == "awaitable":
+                return CallbackResult()
+            if callback_kind == "task":
+                task = asyncio.create_task(complete_callback())
+                tasks.append(task)
+                return task
+            return complete_callback()
+
+        @async_retry(max_attempts=2, base_delay=0, jitter=False, on_retry=on_retry)
+        async def operation():
+            events.append("attempt")
+            if events == ["attempt"]:
+                raise ConnectionError("transient")
+            return "recovered"
+
+        try:
+            if callback_fails:
+                with pytest.raises(RuntimeError) as caught:
+                    await operation()
+                assert caught.value is callback_error
+                assert events == ["attempt", "callback"]
+            else:
+                assert await operation() == "recovered"
+                assert events == ["attempt", "callback", "attempt"]
+        finally:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    @pytest.mark.asyncio
+    async def test_propagates_failed_future_callback(self):
+        future = asyncio.get_running_loop().create_future()
+        callback_error = RuntimeError("retry callback future failed")
+        future.set_exception(callback_error)
+        attempts = []
+
+        @async_retry(
+            max_attempts=2,
+            base_delay=0,
+            jitter=False,
+            on_retry=lambda *_args: future,
+        )
+        async def operation():
+            attempts.append(1)
+            if len(attempts) == 1:
+                raise ConnectionError("transient")
+            return "recovered"
+
+        try:
+            with pytest.raises(RuntimeError) as caught:
+                await operation()
+            assert caught.value is callback_error
+            assert len(attempts) == 1
+        finally:
+            future.exception()
+
     @pytest.mark.asyncio
     async def test_succeeds_first_try(self):
         call_count = 0
