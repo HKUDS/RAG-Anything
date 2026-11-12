@@ -259,7 +259,7 @@ class CircuitBreaker:
         # By default these mirror the retry helpers so application bugs do not
         # open the breaker unless explicitly configured to do so.
         self._failure_exceptions: tuple[Type[BaseException], ...] = tuple(
-            failure_exceptions or _DEFAULT_RETRYABLE
+            _DEFAULT_RETRYABLE if failure_exceptions is None else failure_exceptions
         )
 
         self._failure_count = 0

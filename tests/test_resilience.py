@@ -269,6 +269,18 @@ class TestRetryDefaults:
 
 
 class TestCircuitBreaker:
+    def test_empty_failure_exceptions_does_not_open(self):
+        cb = CircuitBreaker(failure_threshold=1, failure_exceptions=[])
+
+        @cb
+        def fail_func():
+            raise ConnectionError("not counted")
+
+        for _ in range(2):
+            with pytest.raises(ConnectionError, match="not counted"):
+                fail_func()
+            assert cb.state == "closed"
+
     def test_closed_state_allows_calls(self):
         cb = CircuitBreaker(failure_threshold=3, name="test")
 
@@ -411,6 +423,19 @@ class TestCircuitBreaker:
 
 
 class TestAsyncCircuitBreaker:
+    @pytest.mark.asyncio
+    async def test_empty_failure_exceptions_does_not_open(self):
+        cb = CircuitBreaker(failure_threshold=1, failure_exceptions=[])
+
+        @cb.async_call
+        async def fail_func():
+            raise ConnectionError("not counted")
+
+        for _ in range(2):
+            with pytest.raises(ConnectionError, match="not counted"):
+                await fail_func()
+            assert cb.state == "closed"
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize("cancel_with_timeout", [False, True])
     async def test_cancelled_half_open_trial_allows_next_trial(
