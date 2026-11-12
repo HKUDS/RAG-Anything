@@ -974,15 +974,19 @@ class Parser:
         """
         Read a text file, trying UTF-8 first and falling back to common
         legacy encodings. utf-8-sig also strips a UTF-8 BOM if present.
-        A UTF-16 BOM selects UTF-16 instead: the other codecs would read
-        such a file one byte per character, NUL bytes included.
+        UTF-32 and UTF-16 BOMs select their codecs instead. Check UTF-32
+        first because its little-endian BOM starts with the UTF-16 BOM.
         """
         with open(text_path, "rb") as f:
-            has_utf16_bom = f.read(2) in (codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)
+            prefix = f.read(4)
+        if prefix in (codecs.BOM_UTF32_LE, codecs.BOM_UTF32_BE):
+            encoding = "utf-32"
+        elif prefix.startswith((codecs.BOM_UTF16_LE, codecs.BOM_UTF16_BE)):
+            encoding = "utf-16"
+        else:
+            encoding = "utf-8-sig"
         try:
-            with open(
-                text_path, "r", encoding="utf-16" if has_utf16_bom else "utf-8-sig"
-            ) as f:
+            with open(text_path, "r", encoding=encoding) as f:
                 return f.read()
         except UnicodeDecodeError:
             # latin-1 maps every byte, so it has to come last: tried before
