@@ -396,7 +396,10 @@ class Parser:
 
             # Parse URL to get path and extension
             parsed_url = urllib.parse.urlparse(url)
-            path = Path(parsed_url.path)
+            # Decode the final URL segment, not the request URL or its query.
+            segment = parsed_url.path.rsplit("/", 1)[-1]
+            filename = urllib.parse.unquote(segment)
+            path = Path(segment if any(c in filename for c in "/\\\0") else filename)
             suffix = path.suffix if path.suffix else ""
 
             # Create request with User-Agent to avoid 403 Forbidden from some sites
