@@ -17,12 +17,18 @@ Dependencies:
 """
 
 import asyncio
+from concurrent.futures import ThreadPoolExecutor
 import importlib.util
+import inspect
 import json
 import logging
+import mimetypes
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
+import urllib.error
+import urllib.request
+import uuid
 
 from lightrag.utils import compute_mdhash_id
 
@@ -33,19 +39,56 @@ logger = logging.getLogger(__name__)
 # Supported audio file extensions
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".wma", ".aac", ".opus"}
 
+# Supported ASR architecture modes
+SUPPORTED_ASR_MODES = {"local", "online", "custom"}
+
 
 def is_audio_file(file_path: str) -> bool:
     """Check if a file is a supported audio format."""
     return Path(file_path).suffix.lower() in AUDIO_EXTENSIONS
 
 
-def audio_deps_available() -> bool:
-    """Return True if the optional audio dependencies are importable."""
+def _resolve_asr_mode(
+    asr_mode: Optional[str] = None,
+    asr_func: Optional[Callable] = None,
+) -> str:
+    """Resolve effective ASR mode from explicit argument, custom callable, or env."""
+    if asr_mode is not None and str(asr_mode).strip():
+        return str(asr_mode).strip().lower()
+    if asr_func is not None:
+        return "custom"
+    env_mode = os.environ.get("ASR_MODE", "").strip().lower()
+    return env_mode if env_mode else "local"
+
+
+def audio_deps_available(
+    asr_mode: Optional[str] = None,
+    asr_func: Optional[Callable] = None,
+) -> bool:
+    """Return True if the required dependencies for the configured ASR mode are available.
+
+    - ``local`` mode requires ``faster_whisper``.
+    - ``online`` mode uses standard library HTTP/multipart or an OpenAI-compatible
+      endpoint and does not require ``faster_whisper``.
+    - ``custom`` mode delegates to a user-provided ``asr_func`` and does not
+      require ``faster_whisper``.
+    """
+    mode = _resolve_asr_mode(asr_mode=asr_mode, asr_func=asr_func)
+    if mode == "online":
+        return True
+    if mode == "custom":
+        return asr_func is not None or asr_mode is not None
     return importlib.util.find_spec("faster_whisper") is not None
 
 
 class AudioModalProcessor(BaseModalProcessor):
-    """Processor for audio content using faster-whisper for transcription.
+    """Processor for audio content supporting multiple ASR architecture modes.
+
+    Supported ASR modes (``asr_mode``):
+    - ``"local"`` (default): Uses local ``faster-whisper`` model inference.
+    - ``"online"``: Calls an OpenAI-compatible ``/audio/transcriptions`` HTTP API
+      (e.g., OpenAI Whisper API, Groq, vLLM, DashScope/SiliconFlow compatible endpoints).
+    - ``"custom"``: Invokes a user-supplied ``asr_func`` callable (sync or async).
 
     Transcribes audio files into timestamped text segments, then processes
     them through LightRAG for knowledge graph construction and retrieval.
@@ -79,6 +122,12 @@ class AudioModalProcessor(BaseModalProcessor):
         whisper_compute_type: str = "auto",
         language: str = None,
         segment_min_length: int = 0,
+        asr_mode: str = None,
+        asr_model: str = None,
+        asr_api_key: str = None,
+        asr_base_url: str = None,
+        asr_func: Optional[Callable] = None,
+        asr_timeout: float = 120.0,
     ):
         """Initialize audio processor.
 
@@ -95,15 +144,74 @@ class AudioModalProcessor(BaseModalProcessor):
                 Defaults to 0 (keep every non-empty segment); raising it drops
                 short utterances such as "Yes." or "Revenue grew 23%.", so only
                 increase it when you explicitly want to filter noise.
+            asr_mode: ASR architecture mode ("local", "online", or "custom").
+                Defaults to "custom" when ``asr_func`` is provided, otherwise
+                env ``ASR_MODE`` or "local".
+            asr_model: Model identifier for ASR. Defaults to ``whisper_model`` /
+                ``WHISPER_MODEL`` ("base") in local mode, or "whisper-1" in online mode.
+            asr_api_key: API key for online ASR endpoint (falls back to
+                ``ASR_API_KEY`` or ``OPENAI_API_KEY``).
+            asr_base_url: Base URL for online OpenAI-compatible ASR endpoint
+                (falls back to ``ASR_BASE_URL``, ``OPENAI_BASE_URL``, or
+                "https://api.openai.com/v1").
+            asr_func: Custom transcription callable (sync or async) used when
+                ``asr_mode="custom"``. Accepts ``audio_path`` (and optionally
+                ``language`` / ``model``) and returns a list of segment dicts,
+                an OpenAI-style transcription dict, or a plain string.
+            asr_timeout: Request timeout in seconds for online ASR calls.
         """
         super().__init__(lightrag, modal_caption_func, context_extractor)
 
-        self.whisper_model_name = whisper_model or os.environ.get(
-            "WHISPER_MODEL", "base"
+        resolved_mode = _resolve_asr_mode(asr_mode=asr_mode, asr_func=asr_func)
+        if resolved_mode not in SUPPORTED_ASR_MODES:
+            raise ValueError(
+                f"Unsupported asr_mode '{asr_mode}'. "
+                f"Supported modes are: {', '.join(sorted(SUPPORTED_ASR_MODES))}"
+            )
+        if resolved_mode == "custom" and not callable(asr_func):
+            raise ValueError("asr_func must be a callable when asr_mode='custom'")
+
+        self.asr_mode = resolved_mode
+        self.asr_func = asr_func
+        self.asr_timeout = asr_timeout
+
+        env_asr_model = os.environ.get("ASR_MODEL", "").strip()
+        self.whisper_model_name = (
+            whisper_model
+            or (asr_model if asr_model else None)
+            or (env_asr_model if env_asr_model else None)
+            or os.environ.get("WHISPER_MODEL", "base")
         )
+        if self.asr_mode == "online":
+            self.asr_model = (
+                (asr_model if asr_model else None)
+                or whisper_model
+                or (env_asr_model if env_asr_model else None)
+                or "whisper-1"
+            )
+        else:
+            self.asr_model = self.whisper_model_name
+
+        self.asr_api_key = (
+            (asr_api_key if asr_api_key else None)
+            or os.environ.get("ASR_API_KEY")
+            or os.environ.get("OPENAI_API_KEY")
+            or ""
+        )
+        raw_base_url = (
+            (asr_base_url if asr_base_url else None)
+            or os.environ.get("ASR_BASE_URL")
+            or os.environ.get("OPENAI_BASE_URL")
+            or "https://api.openai.com/v1"
+        )
+        self.asr_base_url = raw_base_url.rstrip("/")
+
         self.whisper_device = whisper_device
         self.whisper_compute_type = whisper_compute_type
-        self.language = language or os.environ.get("WHISPER_LANGUAGE", None)
+        env_lang = (
+            os.environ.get("ASR_LANGUAGE") or os.environ.get("WHISPER_LANGUAGE") or None
+        )
+        self.language = language if language else env_lang
         self.segment_min_length = segment_min_length
         self._whisper_model = None
 
@@ -143,6 +251,245 @@ class AudioModalProcessor(BaseModalProcessor):
             content_data = modal_content
         return content_data.get("audio_path") or content_data.get("img_path") or ""
 
+    def _normalize_segments(self, raw_result: Any) -> List[Dict[str, Any]]:
+        """Normalize raw ASR output into filtered ``[{"start", "end", "text"}]`` segments.
+
+        Supports:
+        - Iterables/lists of segment dicts ``{"start": ..., "end": ..., "text": ...}``
+          or segment objects with ``.start``, ``.end``, ``.text`` attributes.
+        - OpenAI ``verbose_json`` / ``json`` style dicts or objects containing
+          ``segments`` and/or ``text`` + optional ``duration``.
+        - Plain transcription strings.
+        """
+        if raw_result is None:
+            return []
+
+        if isinstance(raw_result, str):
+            text = raw_result.strip()
+            if text and len(text) >= self.segment_min_length:
+                return [{"start": 0.0, "end": 0.0, "text": text}]
+            return []
+
+        if isinstance(raw_result, dict):
+            if isinstance(raw_result.get("segments"), (list, tuple)):
+                segments = self._normalize_segments(raw_result["segments"])
+                if segments:
+                    return segments
+            if "text" in raw_result and "start" not in raw_result:
+                text = str(raw_result.get("text") or "").strip()
+                if text and len(text) >= self.segment_min_length:
+                    end_val = raw_result.get("duration", raw_result.get("end", 0.0))
+                    return [
+                        {
+                            "start": float(raw_result.get("start", 0.0) or 0.0),
+                            "end": float(end_val or 0.0),
+                            "text": text,
+                        }
+                    ]
+                return []
+
+        # Handle SDK objects (e.g., OpenAI TranscriptionVerbose / Transcription)
+        if not isinstance(raw_result, (dict, list, tuple)) and (
+            hasattr(raw_result, "segments") or hasattr(raw_result, "text")
+        ):
+            raw_segments = getattr(raw_result, "segments", None)
+            if isinstance(raw_segments, (list, tuple)) and raw_segments:
+                segments = self._normalize_segments(raw_segments)
+                if segments:
+                    return segments
+            if hasattr(raw_result, "text") and not hasattr(raw_result, "start"):
+                text = str(getattr(raw_result, "text", "") or "").strip()
+                if text and len(text) >= self.segment_min_length:
+                    duration = getattr(raw_result, "duration", 0.0) or 0.0
+                    return [{"start": 0.0, "end": float(duration), "text": text}]
+                return []
+
+        segments: List[Dict[str, Any]] = []
+        for item in raw_result:
+            if isinstance(item, dict):
+                raw_text = item.get("text", "")
+                start = item.get("start", 0.0)
+                end = item.get("end", start)
+            else:
+                raw_text = getattr(item, "text", "")
+                start = getattr(item, "start", 0.0)
+                end = getattr(item, "end", start)
+
+            text = str(raw_text or "").strip()
+            if text and len(text) >= self.segment_min_length:
+                start_num = (
+                    start if isinstance(start, (int, float)) else float(start or 0.0)
+                )
+                end_num = (
+                    end
+                    if isinstance(end, (int, float))
+                    else float(end if end is not None else start_num)
+                )
+                segments.append(
+                    {
+                        "start": start_num,
+                        "end": end_num,
+                        "text": text,
+                    }
+                )
+        return segments
+
+    def _transcribe_local(self, audio_path: str) -> List[Dict[str, Any]]:
+        """Transcribe audio using local faster-whisper model."""
+        segments_iter, info = self.whisper.transcribe(
+            audio_path,
+            language=self.language,
+            vad_filter=True,  # Filter out silence
+            vad_parameters=dict(min_silence_duration_ms=500),
+        )
+
+        segments = self._normalize_segments(segments_iter)
+        logger.info(
+            f"Transcription complete (local): {len(segments)} segments, "
+            f"language={getattr(info, 'language', self.language)}, "
+            f"duration={getattr(info, 'duration', 0.0):.1f}s"
+        )
+        return segments
+
+    def _build_multipart_form_data(
+        self,
+        fields: Dict[str, str],
+        file_field: str,
+        filename: str,
+        file_bytes: bytes,
+        content_type: str,
+    ) -> Tuple[bytes, str]:
+        """Encode multipart/form-data body without external HTTP library dependencies."""
+        boundary = f"----RAGAnythingASRBoundary{uuid.uuid4().hex}"
+        body = bytearray()
+
+        for key, value in fields.items():
+            body.extend(f"--{boundary}\r\n".encode("utf-8"))
+            body.extend(
+                f'Content-Disposition: form-data; name="{key}"\r\n\r\n'.encode("utf-8")
+            )
+            body.extend(f"{value}\r\n".encode("utf-8"))
+
+        body.extend(f"--{boundary}\r\n".encode("utf-8"))
+        body.extend(
+            (
+                f'Content-Disposition: form-data; name="{file_field}"; '
+                f'filename="{filename}"\r\n'
+            ).encode("utf-8")
+        )
+        body.extend(f"Content-Type: {content_type}\r\n\r\n".encode("utf-8"))
+        body.extend(file_bytes)
+        body.extend(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+
+        return bytes(body), f"multipart/form-data; boundary={boundary}"
+
+    def _transcribe_online(self, audio_path: str) -> List[Dict[str, Any]]:
+        """Transcribe audio via an OpenAI-compatible ``/audio/transcriptions`` API."""
+        if not self.asr_api_key:
+            raise ValueError(
+                "API key is required for online ASR mode. "
+                "Provide asr_api_key or set ASR_API_KEY / OPENAI_API_KEY."
+            )
+
+        endpoint = (
+            self.asr_base_url
+            if self.asr_base_url.endswith("/audio/transcriptions")
+            else f"{self.asr_base_url}/audio/transcriptions"
+        )
+
+        audio_file = Path(audio_path)
+        mime_type, _ = mimetypes.guess_type(audio_file.name)
+        content_type = mime_type or "application/octet-stream"
+
+        fields: Dict[str, str] = {
+            "model": self.asr_model,
+            "response_format": "verbose_json",
+        }
+        if self.language:
+            fields["language"] = self.language
+
+        body, content_type_header = self._build_multipart_form_data(
+            fields=fields,
+            file_field="file",
+            filename=audio_file.name,
+            file_bytes=audio_file.read_bytes(),
+            content_type=content_type,
+        )
+
+        req = urllib.request.Request(
+            endpoint,
+            data=body,
+            headers={
+                "Authorization": f"Bearer {self.asr_api_key}",
+                "Content-Type": content_type_header,
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=self.asr_timeout) as resp:
+                raw_bytes = resp.read()
+        except urllib.error.HTTPError as e:
+            err_body = ""
+            try:
+                err_body = e.read().decode("utf-8", errors="replace")
+            except Exception:
+                pass
+            raise RuntimeError(
+                f"Online ASR request failed with HTTP {e.code}: {err_body or e.reason}"
+            ) from e
+
+        decoded = raw_bytes.decode("utf-8", errors="replace")
+        try:
+            payload = json.loads(decoded)
+        except json.JSONDecodeError:
+            payload = decoded
+
+        segments = self._normalize_segments(payload)
+        logger.info(
+            f"Transcription complete (online, model={self.asr_model}): "
+            f"{len(segments)} segments"
+        )
+        return segments
+
+    def _transcribe_custom(self, audio_path: str) -> List[Dict[str, Any]]:
+        """Transcribe audio using user-provided ``asr_func`` (sync or async)."""
+        if not callable(self.asr_func):
+            raise ValueError("asr_func must be a callable when asr_mode='custom'")
+
+        kwargs: Dict[str, Any] = {}
+        try:
+            sig = inspect.signature(self.asr_func)
+            params = sig.parameters
+            accepts_var_kw = any(
+                p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
+            )
+            if "language" in params or accepts_var_kw:
+                if self.language is not None:
+                    kwargs["language"] = self.language
+            if "model" in params or accepts_var_kw:
+                if self.asr_model:
+                    kwargs["model"] = self.asr_model
+        except (TypeError, ValueError):
+            pass
+
+        result = self.asr_func(audio_path, **kwargs)
+        if inspect.isawaitable(result):
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+
+            if loop is not None and loop.is_running():
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    result = pool.submit(asyncio.run, result).result()
+            else:
+                result = asyncio.run(result)
+
+        segments = self._normalize_segments(result)
+        logger.info(f"Transcription complete (custom): {len(segments)} segments")
+        return segments
+
     def transcribe(self, audio_path: str) -> List[Dict[str, Any]]:
         """Transcribe audio file to timestamped segments.
 
@@ -158,32 +505,13 @@ class AudioModalProcessor(BaseModalProcessor):
         if not Path(audio_path).exists():
             raise FileNotFoundError(f"Audio file not found: {audio_path}")
 
-        logger.info(f"Transcribing audio: {audio_path}")
+        logger.info(f"Transcribing audio ({self.asr_mode}): {audio_path}")
 
-        segments_iter, info = self.whisper.transcribe(
-            audio_path,
-            language=self.language,
-            vad_filter=True,  # Filter out silence
-            vad_parameters=dict(min_silence_duration_ms=500),
-        )
-
-        segments = []
-        for segment in segments_iter:
-            text = segment.text.strip()
-            if text and len(text) >= self.segment_min_length:
-                segments.append(
-                    {
-                        "start": segment.start,
-                        "end": segment.end,
-                        "text": text,
-                    }
-                )
-
-        logger.info(
-            f"Transcription complete: {len(segments)} segments, "
-            f"language={info.language}, duration={info.duration:.1f}s"
-        )
-        return segments
+        if self.asr_mode == "online":
+            return self._transcribe_online(audio_path)
+        if self.asr_mode == "custom":
+            return self._transcribe_custom(audio_path)
+        return self._transcribe_local(audio_path)
 
     def _format_timestamp(self, seconds: float) -> str:
         """Format seconds to HH:MM:SS or MM:SS."""

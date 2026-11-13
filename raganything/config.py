@@ -69,6 +69,34 @@ class RAGAnythingConfig:
     """Enable video content processing. Requires optional 'video' dependencies
     (``pip install raganything[video]``); disabled by default."""
 
+    # ASR (Audio Speech Recognition) Configuration
+    # ---
+    asr_mode: str = field(
+        default_factory=lambda: get_env_value("ASR_MODE", "local", str)
+    )
+    """ASR backend architecture mode: 'local' (faster-whisper), 'online'
+    (OpenAI-compatible /audio/transcriptions API), or 'custom' (user-supplied asr_func)."""
+
+    asr_model: str = field(default_factory=lambda: get_env_value("ASR_MODEL", "", str))
+    """ASR model identifier. Defaults to WHISPER_MODEL ('base') in 'local' mode
+    or 'whisper-1' in 'online' mode when left empty."""
+
+    asr_api_key: str = field(
+        default_factory=lambda: get_env_value("ASR_API_KEY", "", str)
+    )
+    """API key for online ASR service (falls back to OPENAI_API_KEY when empty)."""
+
+    asr_base_url: str = field(
+        default_factory=lambda: get_env_value("ASR_BASE_URL", "", str)
+    )
+    """Base URL for online OpenAI-compatible ASR service
+    (falls back to OPENAI_BASE_URL or 'https://api.openai.com/v1' when empty)."""
+
+    asr_language: str = field(
+        default_factory=lambda: get_env_value("ASR_LANGUAGE", "", str)
+    )
+    """Language code for ASR transcription (falls back to WHISPER_LANGUAGE; empty for auto-detect)."""
+
     # Batch Processing Configuration
     # ---
     max_concurrent_files: int = field(

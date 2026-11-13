@@ -31,12 +31,12 @@ import logging
 import os
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from lightrag.utils import compute_mdhash_id
 
 from .modalprocessors import BaseModalProcessor
-from .modalprocessors_audio import AudioModalProcessor
+from .modalprocessors_audio import AudioModalProcessor, _resolve_asr_mode
 from .prompt import PROMPTS
 
 logger = logging.getLogger(__name__)
@@ -63,12 +63,23 @@ def is_video_file(file_path: str) -> bool:
     return Path(file_path).suffix.lower() in VIDEO_EXTENSIONS
 
 
-def video_deps_available() -> bool:
+def video_deps_available(
+    asr_mode: Optional[str] = None,
+    asr_func: Optional[Callable] = None,
+) -> bool:
     """Return True if all optional video dependencies are importable."""
-    return all(
+    visual_ok = all(
         importlib.util.find_spec(mod) is not None
-        for mod in ("cv2", "scenedetect", "moviepy", "faster_whisper")
+        for mod in ("cv2", "scenedetect", "moviepy")
     )
+    if not visual_ok:
+        return False
+    mode = _resolve_asr_mode(asr_mode=asr_mode, asr_func=asr_func)
+    if mode == "online":
+        return True
+    if mode == "custom":
+        return asr_func is not None or asr_mode is not None
+    return importlib.util.find_spec("faster_whisper") is not None
 
 
 class VideoModalProcessor(BaseModalProcessor):
@@ -78,7 +89,7 @@ class VideoModalProcessor(BaseModalProcessor):
     - SceneDetect for intelligent scene boundary detection
     - OpenCV for keyframe extraction
     - VLM (via modal_caption_func) for visual description
-    - faster-whisper for audio transcription
+    - Configurable ASR (local faster-whisper, online API, or custom asr_func)
     - Timestamp-aligned merging of both channels
 
     Suitable for:
@@ -114,6 +125,11 @@ class VideoModalProcessor(BaseModalProcessor):
         scene_threshold: float = 27.0,
         max_windows: int = 100,
         audio_processor: "AudioModalProcessor" = None,
+        asr_mode: str = None,
+        asr_model: str = None,
+        asr_api_key: str = None,
+        asr_base_url: str = None,
+        asr_func: Optional[Callable] = None,
     ):
         """Initialize video processor.
 
@@ -133,6 +149,11 @@ class VideoModalProcessor(BaseModalProcessor):
                 if exceeded, scenes are redistributed into this many windows.
             audio_processor: Optional shared AudioModalProcessor to reuse a single
                 whisper model when both audio and video processing are enabled.
+            asr_mode: ASR architecture mode ("local", "online", or "custom").
+            asr_model: Model identifier for ASR.
+            asr_api_key: API key for online ASR endpoint.
+            asr_base_url: Base URL for online OpenAI-compatible ASR endpoint.
+            asr_func: Custom transcription callable when ``asr_mode="custom"``.
         """
         super().__init__(lightrag, modal_caption_func, context_extractor)
 
@@ -150,11 +171,20 @@ class VideoModalProcessor(BaseModalProcessor):
         )
         self.whisper_device = whisper_device
         self.whisper_compute_type = whisper_compute_type
-        self.language = language or os.environ.get("WHISPER_LANGUAGE", None)
+        self.language = (
+            language
+            or os.environ.get("ASR_LANGUAGE")
+            or os.environ.get("WHISPER_LANGUAGE", None)
+        )
         self.min_scene_duration = min_scene_duration
         self.max_scenes = max_scenes
         self.scene_threshold = scene_threshold
         self.max_windows = max_windows
+        self.asr_mode = asr_mode
+        self.asr_model = asr_model
+        self.asr_api_key = asr_api_key
+        self.asr_base_url = asr_base_url
+        self.asr_func = asr_func
 
         # Reuse a shared audio processor when provided, otherwise lazily create one.
         self._audio_processor = audio_processor
@@ -171,6 +201,11 @@ class VideoModalProcessor(BaseModalProcessor):
                 whisper_compute_type=self.whisper_compute_type,
                 language=self.language,
                 segment_min_length=0,
+                asr_mode=self.asr_mode,
+                asr_model=self.asr_model,
+                asr_api_key=self.asr_api_key,
+                asr_base_url=self.asr_base_url,
+                asr_func=self.asr_func,
             )
         return self._audio_processor
 

@@ -623,6 +623,7 @@ class TestVideoDepsAvailable:
     """Test optional-dependency detection."""
 
     def test_returns_false_when_any_missing(self, monkeypatch):
+        monkeypatch.delenv("ASR_MODE", raising=False)
         monkeypatch.setattr(
             "raganything.modalprocessors_video.importlib.util.find_spec",
             lambda name: None if name == "moviepy" else object(),
@@ -630,8 +631,33 @@ class TestVideoDepsAvailable:
         assert video_deps_available() is False
 
     def test_returns_true_when_all_present(self, monkeypatch):
+        monkeypatch.delenv("ASR_MODE", raising=False)
         monkeypatch.setattr(
             "raganything.modalprocessors_video.importlib.util.find_spec",
             lambda name: object(),
         )
         assert video_deps_available() is True
+
+    def test_online_or_custom_asr_does_not_require_faster_whisper(self, monkeypatch):
+        monkeypatch.setattr(
+            "raganything.modalprocessors_video.importlib.util.find_spec",
+            lambda name: None if name == "faster_whisper" else object(),
+        )
+        assert video_deps_available(asr_mode="online") is True
+        assert video_deps_available(asr_mode="custom", asr_func=lambda p: []) is True
+        assert video_deps_available(asr_mode="local") is False
+
+    def test_video_processor_forwards_asr_settings_to_audio_processor(self):
+        def custom_fn(p):
+            return [{"start": 0.0, "end": 1.0, "text": "ok"}]
+
+        vp = VideoModalProcessor(
+            lightrag=_FakeLightRAG(),
+            modal_caption_func=AsyncMock(),
+            asr_mode="custom",
+            asr_func=custom_fn,
+            language="en",
+        )
+        assert vp.audio_processor.asr_mode == "custom"
+        assert vp.audio_processor.asr_func is custom_fn
+        assert vp.audio_processor.language == "en"
