@@ -37,6 +37,7 @@ from raganything.utils import (
     annotate_chunks_with_page_idx,
     build_sanitized_page_map,
     replay_chunk_spans,
+    merge_continued_tables,
 )
 from raganything.parse_options import (
     PARSER_CACHE_KWARGS as _PARSER_CACHE_KWARGS,  # noqa: F401
@@ -969,6 +970,9 @@ class ProcessorMixin:
         if len(content_list) == 0:
             raise ValueError("Parsing failed: No content was extracted")
 
+        if getattr(self.config, "merge_continued_tables", False):
+            content_list = merge_continued_tables(content_list)
+
         # Generate doc_id based on content
         doc_id = self._generate_content_based_doc_id(content_list)
         self._record_parsed_output_location(doc_id, file_path, output_dir)
@@ -1209,6 +1213,7 @@ class ProcessorMixin:
                     # Prepare item info for context extraction
                     item_info = {
                         "page_idx": item.get("page_idx", 0),
+                        "page_idx_end": item.get("page_idx_end"),
                         "index": item.get("_content_list_index", i),
                         "type": content_type,
                     }
@@ -1797,6 +1802,8 @@ class ProcessorMixin:
                 "original_type": data["content_type"],
                 "page_idx": data["item_info"].get("page_idx", 0),
             }
+            if data["item_info"].get("page_idx_end") is not None:
+                chunks[chunk_id]["page_idx_end"] = data["item_info"]["page_idx_end"]
 
         self.logger.debug(
             f"Converted {len(chunks)} multimodal items to multimodal chunks format"
@@ -3412,6 +3419,9 @@ class ProcessorMixin:
         """
         if len(content_list) == 0:
             raise ValueError("content_list cannot be empty")
+
+        if getattr(self.config, "merge_continued_tables", False):
+            content_list = merge_continued_tables(content_list)
 
         callback_manager = getattr(self, "callback_manager", None)
         doc_start_time = time.time()
