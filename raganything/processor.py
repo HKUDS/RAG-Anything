@@ -783,6 +783,15 @@ class ProcessorMixin:
         if display_stats is None:
             display_stats = self.config.display_content_stats
 
+        # Populate parser/backend options from config if not explicitly overridden
+        if getattr(self, "config", None):
+            if "backend" not in kwargs and getattr(self.config, "mineru_backend", None):
+                kwargs["backend"] = self.config.mineru_backend
+            if "vlm_url" not in kwargs and getattr(self.config, "mineru_vlm_url", None):
+                kwargs["vlm_url"] = self.config.mineru_vlm_url
+            if "source" not in kwargs and getattr(self.config, "mineru_source", None):
+                kwargs["source"] = self.config.mineru_source
+
         self.logger.info(f"Starting document parsing: {file_path}")
 
         file_path = Path(file_path)
