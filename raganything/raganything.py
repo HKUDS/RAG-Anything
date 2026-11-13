@@ -78,6 +78,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
     embedding_func: Optional[Callable] = field(default=None)
     """Embedding function for text vectorization."""
 
+    asr_model_func: Optional[Callable] = field(default=None)
+    """Optional custom ASR function for audio/video speech transcription (used when asr_mode='custom' or provided directly)."""
+
     config: Optional[RAGAnythingConfig] = field(default=None)
     """Configuration object, if None will create with environment variables."""
 
@@ -253,8 +256,17 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 context_extractor=self.context_extractor,
             )
 
+        effective_asr_mode = (
+            "custom"
+            if self.asr_model_func is not None
+            and (not self.config.asr_mode or self.config.asr_mode == "local")
+            else self.config.asr_mode
+        )
+
         if self.config.enable_audio_processing:
-            if not audio_deps_available():
+            if not audio_deps_available(
+                asr_mode=effective_asr_mode, asr_func=self.asr_model_func
+            ):
                 self.logger.warning(
                     "enable_audio_processing=True but audio dependencies are missing. "
                     "Install them with: pip install raganything[audio]. "
@@ -265,10 +277,18 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                     lightrag=self.lightrag,
                     modal_caption_func=self.llm_model_func,
                     context_extractor=self.context_extractor,
+                    asr_mode=effective_asr_mode,
+                    asr_model=self.config.asr_model or None,
+                    asr_api_key=self.config.asr_api_key or None,
+                    asr_base_url=self.config.asr_base_url or None,
+                    language=self.config.asr_language or None,
+                    asr_func=self.asr_model_func,
                 )
 
         if self.config.enable_video_processing:
-            if not video_deps_available():
+            if not video_deps_available(
+                asr_mode=effective_asr_mode, asr_func=self.asr_model_func
+            ):
                 self.logger.warning(
                     "enable_video_processing=True but video dependencies are missing. "
                     "Install them with: pip install raganything[video]. "
@@ -289,6 +309,12 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                     max_windows=get_env_value("VIDEO_MAX_WINDOWS", 100, int),
                     # Reuse the audio processor's whisper model when audio is enabled
                     audio_processor=self.modal_processors.get("audio"),
+                    asr_mode=effective_asr_mode,
+                    asr_model=self.config.asr_model or None,
+                    asr_api_key=self.config.asr_api_key or None,
+                    asr_base_url=self.config.asr_base_url or None,
+                    language=self.config.asr_language or None,
+                    asr_func=self.asr_model_func,
                 )
 
         # Always include generic processor as fallback
