@@ -44,10 +44,10 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # RAG-Anything imports
+from lightrag.llm.openai import openai_complete_if_cache
+from lightrag.utils import EmbeddingFunc
 from raganything import RAGAnything, RAGAnythingConfig
 from raganything.image_signature import image_mime_type
-from lightrag.utils import EmbeddingFunc
-from lightrag.llm.openai import openai_complete_if_cache
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_LLM_MODEL = os.getenv("OLLAMA_LLM_MODEL", "llama3.2")
@@ -382,4 +382,4 @@ async def main():
 if __name__ == "__main__":
     print("🚀 Starting Ollama integration example …")
     success = asyncio.run(main())
-    exit(0 if success else 1)
+    sys.exit(0 if success else 1)

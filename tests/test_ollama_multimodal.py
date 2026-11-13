@@ -8,7 +8,6 @@ Ensures that:
 - OllamaRAGIntegration enables vision model wiring when enable_vision=True
 """
 
-import base64
 import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
