@@ -108,22 +108,12 @@ async def ollama_vision_model_func(
     # Ingestion single-image analysis format
     if image_data:
         if isinstance(image_data, bytes):
-            img_b64 = base64.b64encode(image_data).decode("utf-8")
-            raw_bytes = image_data
-        elif isinstance(image_data, str):
-            if os.path.exists(image_data):
-                with open(image_data, "rb") as f:
-                    raw_bytes = f.read()
-                img_b64 = base64.b64encode(raw_bytes).decode("utf-8")
-            else:
-                img_b64 = image_data
-                raw_bytes = (
-                    base64.b64decode(image_data[:24]) if len(image_data) >= 24 else b""
-                )
-        else:
-            raise ValueError("image_data must be a base64 string, bytes, or file path")
+            image_data = base64.b64encode(image_data).decode("utf-8")
+        elif isinstance(image_data, str) and os.path.exists(image_data):
+            with open(image_data, "rb") as f:
+                image_data = base64.b64encode(f.read()).decode("utf-8")
 
-        mime_type = image_mime_type(raw_bytes[:24]) or "image/jpeg"
+        mime_type = image_mime_type(base64.b64decode(image_data[:24])) or "image/jpeg"
         constructed_messages = []
         if system_prompt:
             constructed_messages.append({"role": "system", "content": system_prompt})
@@ -134,7 +124,7 @@ async def ollama_vision_model_func(
                     {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
-                        "image_url": {"url": f"data:{mime_type};base64,{img_b64}"},
+                        "image_url": {"url": f"data:{mime_type};base64,{image_data}"},
                     },
                 ],
             }
