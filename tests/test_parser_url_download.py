@@ -45,19 +45,22 @@ def _fake_response(*, body: bytes = b"%PDF-1.4 fake", content_type: str = ""):
     return response
 
 
-def test_download_file_uses_extension_from_url_path(tmp_path):
+@pytest.mark.parametrize("filename", ["report.pdf", "report%2Epdf", "report.%70df"])
+def test_download_file_uses_extension_from_url_path(filename):
     parser = Parser()
     response = _fake_response()
 
     with patch("urllib.request.urlopen", return_value=response) as mock_open:
-        downloaded = parser._download_file("https://example.com/docs/report.pdf")
+        url = f"https://example.com/docs/{filename}?download=1"
+        downloaded = parser._download_file(url)
 
     try:
         assert downloaded.suffix == ".pdf"
         assert downloaded.exists()
         assert downloaded.read_bytes() == b"%PDF-1.4 fake"
         mock_open.assert_called_once()
-        _, kwargs = mock_open.call_args
+        args, kwargs = mock_open.call_args
+        assert args[0].full_url == url
         assert kwargs.get("timeout") == 30, "must pass an explicit timeout"
     finally:
         if downloaded.exists():
