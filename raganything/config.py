@@ -40,6 +40,21 @@ class RAGAnythingConfig:
     )
     """Whether to display content statistics during parsing."""
 
+    mineru_backend: str | None = field(
+        default_factory=lambda: get_env_value("MINERU_BACKEND", None, str)
+    )
+    """Backend engine for MinerU parsing (e.g. 'pipeline', 'vlm-http-client')."""
+
+    mineru_vlm_url: str | None = field(
+        default_factory=lambda: get_env_value("MINERU_VLM_URL", None, str)
+    )
+    """Remote server URL for MinerU when backend is 'vlm-http-client'."""
+
+    mineru_source: str | None = field(
+        default_factory=lambda: get_env_value("MINERU_SOURCE", None, str)
+    )
+    """Model source or repository for MinerU parsing."""
+
     # Multimodal Processing Configuration
     # ---
     enable_image_processing: bool = field(
