@@ -8,7 +8,6 @@ Ensures that:
 - _run_mineru_command correctly constructs -b, -u, and --source CLI flags for remote execution
 """
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
