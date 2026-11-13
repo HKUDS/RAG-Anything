@@ -397,6 +397,10 @@ class BaseModalProcessor:
             context_extractor: Context extractor instance
         """
         self.lightrag = lightrag
+        if modal_caption_func is not None and not callable(modal_caption_func):
+            raise TypeError(
+                f"modal_caption_func must be callable or None, got {type(modal_caption_func).__name__}"
+            )
         self.modal_caption_func = modal_caption_func
 
         # Use LightRAG's storage instances
@@ -1022,6 +1026,21 @@ class ImageModalProcessor(BaseModalProcessor):
                     footnotes=", ".join(footnotes) if footnotes else "None",
                 )
 
+            # Check if vision model function is available
+            if not self.modal_caption_func:
+                logger.warning(
+                    "No modal_caption_func configured for image processing; "
+                    "skipping visual analysis and using fallback image entity."
+                )
+                fallback_entity = {
+                    "entity_name": entity_name
+                    if entity_name
+                    else f"image_{compute_mdhash_id(str(modal_content))}",
+                    "entity_type": "image",
+                    "summary": f"Image content: {str(modal_content)[:100]}",
+                }
+                return str(modal_content), fallback_entity
+
             # Encode image to base64
             image_base64 = self._encode_image_to_base64(image_path)
             if not image_base64:
@@ -1230,6 +1249,21 @@ class TableModalProcessor(BaseModalProcessor):
                     else "None",
                 )
 
+            # Check if model function is available
+            if not self.modal_caption_func:
+                logger.warning(
+                    "No modal_caption_func configured for table processing; "
+                    "skipping table analysis and using fallback table entity."
+                )
+                fallback_entity = {
+                    "entity_name": entity_name
+                    if entity_name
+                    else f"table_{compute_mdhash_id(str(modal_content))}",
+                    "entity_type": "table",
+                    "summary": f"Table content: {str(modal_content)[:100]}",
+                }
+                return str(modal_content), fallback_entity
+
             # Call LLM for table analysis
             response = await self.modal_caption_func(
                 table_prompt,
@@ -1425,6 +1459,21 @@ class EquationModalProcessor(BaseModalProcessor):
                     else "descriptive name for this equation",
                 )
 
+            # Check if model function is available
+            if not self.modal_caption_func:
+                logger.warning(
+                    "No modal_caption_func configured for equation processing; "
+                    "skipping equation analysis and using fallback equation entity."
+                )
+                fallback_entity = {
+                    "entity_name": entity_name
+                    if entity_name
+                    else f"equation_{compute_mdhash_id(str(modal_content))}",
+                    "entity_type": "equation",
+                    "summary": f"Equation content: {str(modal_content)[:100]}",
+                }
+                return str(modal_content), fallback_entity
+
             # Call LLM for equation analysis
             response = await self.modal_caption_func(
                 equation_prompt,
@@ -1596,6 +1645,21 @@ class GenericModalProcessor(BaseModalProcessor):
                     else f"descriptive name for this {content_type}",
                     content=str(modal_content),
                 )
+
+            # Check if model function is available
+            if not self.modal_caption_func:
+                logger.warning(
+                    f"No modal_caption_func configured for {content_type} processing; "
+                    "skipping model description and using fallback entity."
+                )
+                fallback_entity = {
+                    "entity_name": entity_name
+                    if entity_name
+                    else f"{content_type}_{compute_mdhash_id(str(modal_content))}",
+                    "entity_type": content_type,
+                    "summary": f"{content_type} content: {str(modal_content)[:100]}",
+                }
+                return str(modal_content), fallback_entity
 
             # Call LLM for generic analysis
             response = await self.modal_caption_func(

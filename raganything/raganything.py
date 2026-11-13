@@ -233,13 +233,24 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         self.modal_processors = {}
 
         if self.config.enable_image_processing:
+            image_caption_func = self.vision_model_func or self.llm_model_func
+            if image_caption_func is None:
+                self.logger.warning(
+                    "enable_image_processing is True, but neither vision_model_func nor "
+                    "llm_model_func is configured. Image analysis will fall back to basic metadata."
+                )
             self.modal_processors["image"] = ImageModalProcessor(
                 lightrag=self.lightrag,
-                modal_caption_func=self.vision_model_func or self.llm_model_func,
+                modal_caption_func=image_caption_func,
                 context_extractor=self.context_extractor,
             )
 
         if self.config.enable_table_processing:
+            if self.llm_model_func is None:
+                self.logger.warning(
+                    "enable_table_processing is True, but llm_model_func is not configured. "
+                    "Table analysis will fall back to raw table data."
+                )
             self.modal_processors["table"] = TableModalProcessor(
                 lightrag=self.lightrag,
                 modal_caption_func=self.llm_model_func,
@@ -247,6 +258,11 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             )
 
         if self.config.enable_equation_processing:
+            if self.llm_model_func is None:
+                self.logger.warning(
+                    "enable_equation_processing is True, but llm_model_func is not configured. "
+                    "Equation analysis will fall back to raw equation text."
+                )
             self.modal_processors["equation"] = EquationModalProcessor(
                 lightrag=self.lightrag,
                 modal_caption_func=self.llm_model_func,
@@ -548,6 +564,22 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 f"Parser '{self.config.parser}' is not properly installed. {reason}"
             )
         return installed
+
+    def check_mineru_installation(self) -> bool:
+        """
+        Check if MinerU is installed properly.
+
+        .. deprecated:: 1.2.0
+           Use :meth:`check_parser_installation` instead.
+        """
+        import warnings
+
+        warnings.warn(
+            "check_mineru_installation is deprecated, use check_parser_installation instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.check_parser_installation()
 
     def _parser_installation_error_message(self, default_advice: str) -> str:
         """Explain a failed parser installation check.

@@ -364,11 +364,12 @@ class VideoModalProcessor(BaseModalProcessor):
                             f"If the frame is a solid color or otherwise minimal, "
                             f"still describe what is visible (e.g. the dominant color)."
                         )
-                        visual_desc = await self.modal_caption_func(
-                            prompt,
-                            image_data=image_base64,
-                            system_prompt=PROMPTS["IMAGE_ANALYSIS_SYSTEM"],
-                        )
+                        if self.modal_caption_func:
+                            visual_desc = await self.modal_caption_func(
+                                prompt,
+                                image_data=image_base64,
+                                system_prompt=PROMPTS["IMAGE_ANALYSIS_SYSTEM"],
+                            )
                     except Exception as e:
                         logger.warning(
                             f"Failed to describe frame at {mid_time:.1f}s: {e}"
