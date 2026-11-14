@@ -52,6 +52,11 @@ class RAGAnythingConfig:
     )
     """Enable table content processing."""
 
+    merge_continued_tables: bool = field(
+        default_factory=lambda: get_env_value("MERGE_CONTINUED_TABLES", False, bool)
+    )
+    """Whether to merge multi-page continued tables across consecutive pages into a single table."""
+
     enable_equation_processing: bool = field(
         default_factory=lambda: get_env_value("ENABLE_EQUATION_PROCESSING", True, bool)
     )

@@ -9,6 +9,7 @@ from __future__ import annotations
 import bisect
 import base64
 import inspect
+import re
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 from lightrag.utils import logger
@@ -114,6 +115,318 @@ def _table_cell(cell: Any) -> str:
         return ""
     text = str(cell).replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
     return text.replace("|", "\\|")
+
+
+_CONTINUATION_MARKER_RE = re.compile(
+    r"(?i)^(?:"
+    r"table\s*\d*.*\(?\bcont(?:inued|\.)?\b\)?"
+    r"|.*\bcont(?:inued|\.)\b.*"
+    r"|continued(?:\s+from\s+previous\s+page|\s+on\s+next\s+page)?"
+    r"|续表.*"
+    r"|.*\(续\).*"
+    r"|表\s*\d+.*续.*"
+    r")$"
+)
+
+_MD_SEPARATOR_CELL_RE = re.compile(r"^:?-{2,}:?$")
+_HTML_TR_RE = re.compile(r"<tr\b[^>]*>.*?</tr>", flags=re.IGNORECASE | re.DOTALL)
+_HTML_CELL_RE = re.compile(
+    r"<t[dh]\b([^>]*)>(.*?)</t[dh]>", flags=re.IGNORECASE | re.DOTALL
+)
+_HTML_COLSPAN_RE = re.compile(r"\bcolspan\s*=\s*['\"]?(\d+)", flags=re.IGNORECASE)
+_HTML_TAG_STRIP_RE = re.compile(r"<[^>]+>")
+
+
+def _is_continuation_caption(text: str) -> bool:
+    """Return True if a short caption/text line marks a continued table."""
+    cleaned = str(text or "").strip()
+    if not cleaned or len(cleaned) > 100:
+        return False
+    return bool(_CONTINUATION_MARKER_RE.match(cleaned))
+
+
+def _is_ignorable_intervening_block(item: Dict[str, Any]) -> bool:
+    """Return True if an item between two page-boundary tables is empty or a continuation label."""
+    if not isinstance(item, dict):
+        return False
+    if item.get("type", "text") != "text":
+        return False
+    text = str(item.get("text", "") or "").strip()
+    if not text:
+        return True
+    return _is_continuation_caption(text)
+
+
+def _split_md_row(line: str) -> Optional[List[str]]:
+    """Parse a single Markdown pipe-table row into cell strings, or None if not a pipe row."""
+    stripped = line.strip()
+    if "|" not in stripped:
+        return None
+    if stripped.startswith("|"):
+        stripped = stripped[1:]
+    if stripped.endswith("|") and not stripped.endswith("\\|"):
+        stripped = stripped[:-1]
+    cells = [cell.strip() for cell in re.split(r"(?<!\\)\|", stripped)]
+    return cells if cells else None
+
+
+def _is_md_separator_row(cells: List[str]) -> bool:
+    """Return True if all cells in a parsed Markdown row are alignment/separator dashes."""
+    return bool(cells) and all(
+        bool(_MD_SEPARATOR_CELL_RE.match(c.strip())) for c in cells
+    )
+
+
+def _try_merge_markdown_tables(prev_body: str, curr_body: str) -> Optional[str]:
+    """Merge two Markdown pipe tables if their column counts match."""
+    prev_lines = [ln.strip() for ln in prev_body.strip().splitlines() if ln.strip()]
+    curr_lines = [ln.strip() for ln in curr_body.strip().splitlines() if ln.strip()]
+    if not prev_lines or not curr_lines:
+        return None
+
+    prev_rows = [_split_md_row(ln) for ln in prev_lines]
+    curr_rows = [_split_md_row(ln) for ln in curr_lines]
+    if any(r is None for r in prev_rows) or any(r is None for r in curr_rows):
+        return None
+
+    prev_col_counts = {
+        len(r) for r in prev_rows if r is not None and not _is_md_separator_row(r)
+    }
+    curr_col_counts = {
+        len(r) for r in curr_rows if r is not None and not _is_md_separator_row(r)
+    }
+    if (
+        len(prev_col_counts) != 1
+        or len(curr_col_counts) != 1
+        or prev_col_counts != curr_col_counts
+    ):
+        return None
+
+    n_cols = next(iter(prev_col_counts))
+    if n_cols < 1:
+        return None
+
+    prev_header_norm = [c.lower() for c in prev_rows[0]]
+
+    # Filter curr_lines: drop separator lines and drop repeated header row if it matches prev_rows[0]
+    appended_lines: List[str] = []
+    checked_first_non_sep = False
+    for line, cells in zip(curr_lines, curr_rows):
+        if _is_md_separator_row(cells):
+            continue
+        if not checked_first_non_sep:
+            checked_first_non_sep = True
+            if [c.lower() for c in cells] == prev_header_norm:
+                continue
+        appended_lines.append(line)
+
+    if not appended_lines:
+        return prev_body.strip()
+
+    # Ensure prev_lines has a separator row if it only had 1 line
+    merged_lines = list(prev_lines)
+    if not any(_is_md_separator_row(r) for r in prev_rows if r is not None):
+        sep = "| " + " | ".join(["---"] * n_cols) + " |"
+        merged_lines.insert(1, sep)
+
+    merged_lines.extend(appended_lines)
+    return "\n".join(merged_lines)
+
+
+def _html_row_signature(tr_html: str) -> Tuple[int, List[str]]:
+    """Return (effective_column_count, normalized_cell_texts) for an HTML <tr> block."""
+    cells = _HTML_CELL_RE.findall(tr_html)
+    if not cells:
+        return 0, []
+    col_count = 0
+    norm_texts: List[str] = []
+    for attrs, inner in cells:
+        m = _HTML_COLSPAN_RE.search(attrs or "")
+        span = int(m.group(1)) if m else 1
+        col_count += max(1, span)
+        text = _HTML_TAG_STRIP_RE.sub("", inner or "").strip().lower()
+        text = re.sub(r"\s+", " ", text)
+        norm_texts.append(text)
+    return col_count, norm_texts
+
+
+def _try_merge_html_tables(prev_body: str, curr_body: str) -> Optional[str]:
+    """Merge two HTML <table> blocks if their column counts match."""
+    if "<table" not in prev_body.lower() or "<table" not in curr_body.lower():
+        return None
+
+    prev_trs = _HTML_TR_RE.findall(prev_body)
+    curr_trs = _HTML_TR_RE.findall(curr_body)
+    if not prev_trs or not curr_trs:
+        return None
+
+    prev_sigs = [_html_row_signature(tr) for tr in prev_trs]
+    curr_sigs = [_html_row_signature(tr) for tr in curr_trs]
+
+    prev_cols = prev_sigs[0][0]
+    curr_cols = curr_sigs[0][0]
+    if prev_cols <= 0 or prev_cols != curr_cols:
+        return None
+
+    # Deduplicate repeated header row(s) at the start of curr_trs
+    start_idx = 0
+    while (
+        start_idx < len(curr_trs)
+        and start_idx < len(prev_trs)
+        and curr_sigs[start_idx][1] == prev_sigs[start_idx][1]
+    ):
+        start_idx += 1
+
+    remaining_trs = curr_trs[start_idx:]
+    if not remaining_trs:
+        return prev_body
+
+    insertion = "\n".join(remaining_trs)
+    close_tbody = re.search(r"</tbody\s*>", prev_body, flags=re.IGNORECASE)
+    if close_tbody:
+        pos = close_tbody.start()
+        return f"{prev_body[:pos]}{insertion}\n{prev_body[pos:]}"
+
+    close_table = re.search(r"</table\s*>", prev_body, flags=re.IGNORECASE)
+    if close_table:
+        pos = close_table.start()
+        return f"{prev_body[:pos]}{insertion}\n{prev_body[pos:]}"
+
+    return None
+
+
+def _can_merge_table_captions(
+    prev_captions: List[str], curr_captions: List[str]
+) -> bool:
+    """Return False if curr_captions introduces a different explicit table title."""
+    if not curr_captions:
+        return True
+    if all(_is_continuation_caption(c) for c in curr_captions):
+        return True
+    prev_norm = {c.strip().lower() for c in prev_captions if c.strip()}
+    curr_norm = {
+        c.strip().lower()
+        for c in curr_captions
+        if c.strip() and not _is_continuation_caption(c)
+    }
+    if not curr_norm:
+        return True
+    return bool(prev_norm and curr_norm.issubset(prev_norm))
+
+
+def merge_continued_tables(content_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Merge multi-page continued tables across consecutive pages into a single table item.
+
+    Two ``type == "table"`` blocks are merged when:
+    1. They appear on consecutive pages (``curr_page in (prev_end_page, prev_end_page + 1)``).
+    2. All intervening items in ``content_list`` are empty text blocks or continuation
+       markers (e.g. ``"Table 1 (continued)"``, ``"续表"``).
+    3. The second table does not carry a conflicting table caption (e.g. ``"Table 2"``).
+    4. Their table bodies (HTML ``<table>`` or Markdown pipe tables) have matching
+       column counts. Repeated header rows at the top of the continuation table
+       are automatically deduplicated.
+
+    Returns a new list without mutating the input dictionaries.
+    """
+    if not content_list or len(content_list) < 2:
+        return list(content_list) if content_list else []
+
+    result: List[Dict[str, Any]] = [
+        dict(item) if isinstance(item, dict) else item for item in content_list
+    ]
+
+    i = 0
+    while i < len(result):
+        item = result[i]
+        if not isinstance(item, dict) or item.get("type") != "table":
+            i += 1
+            continue
+
+        prev_page = item.get("page_idx")
+        if not isinstance(prev_page, int) or isinstance(prev_page, bool):
+            i += 1
+            continue
+
+        # Look ahead across ignorable intervening blocks for the next table
+        j = i + 1
+        while j < len(result) and _is_ignorable_intervening_block(result[j]):
+            j += 1
+
+        if j >= len(result):
+            i += 1
+            continue
+
+        next_item = result[j]
+        if not isinstance(next_item, dict) or next_item.get("type") != "table":
+            i += 1
+            continue
+
+        curr_page = next_item.get("page_idx")
+        if not isinstance(curr_page, int) or isinstance(curr_page, bool):
+            i += 1
+            continue
+
+        prev_end_page = item.get("page_idx_end", prev_page)
+        if not isinstance(prev_end_page, int) or isinstance(prev_end_page, bool):
+            prev_end_page = prev_page
+
+        if curr_page not in (prev_end_page, prev_end_page + 1):
+            i += 1
+            continue
+
+        prev_captions = normalize_caption_list(item.get("table_caption"))
+        curr_captions = normalize_caption_list(next_item.get("table_caption"))
+        if not _can_merge_table_captions(prev_captions, curr_captions):
+            i += 1
+            continue
+
+        prev_body_str = format_table_body(get_table_body(item))
+        curr_body_str = format_table_body(get_table_body(next_item))
+
+        merged_body = _try_merge_html_tables(prev_body_str, curr_body_str)
+        if merged_body is None:
+            merged_body = _try_merge_markdown_tables(prev_body_str, curr_body_str)
+
+        if merged_body is None:
+            i += 1
+            continue
+
+        # Merge succeeded: update item in place (already a shallow copy) and remove i+1..j
+        item["table_body"] = merged_body
+        if "table_data" in item:
+            item.pop("table_data", None)
+
+        combined_captions = list(prev_captions)
+        for cap in curr_captions:
+            if cap not in combined_captions and not _is_continuation_caption(cap):
+                combined_captions.append(cap)
+        if combined_captions or "table_caption" in item or "table_caption" in next_item:
+            item["table_caption"] = combined_captions
+
+        prev_footnotes = normalize_caption_list(item.get("table_footnote"))
+        curr_footnotes = normalize_caption_list(next_item.get("table_footnote"))
+        combined_footnotes = list(prev_footnotes)
+        for fn in curr_footnotes:
+            if fn not in combined_footnotes:
+                combined_footnotes.append(fn)
+        if (
+            combined_footnotes
+            or "table_footnote" in item
+            or "table_footnote" in next_item
+        ):
+            item["table_footnote"] = combined_footnotes
+
+        next_end_page = next_item.get("page_idx_end", curr_page)
+        if not isinstance(next_end_page, int) or isinstance(next_end_page, bool):
+            next_end_page = curr_page
+        if next_end_page > prev_page:
+            item["page_idx_end"] = next_end_page
+
+        # Remove the ignorable intervening blocks and the merged continuation table,
+        # then stay at index i so 3+ page tables continue merging seamlessly.
+        del result[i + 1 : j + 1]
+
+    return result
 
 
 def get_equation_text_and_format(item: Dict[str, Any]) -> Tuple[str, str]:
