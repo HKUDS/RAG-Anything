@@ -157,6 +157,7 @@ class QueryMixin:
 
         # Check if VLM enhanced query should be used
         vlm_enhanced = kwargs.pop("vlm_enhanced", None)
+        return_multimodal_context = kwargs.pop("return_multimodal_context", False)
 
         # Auto-determine VLM enhanced based on availability
         if vlm_enhanced is None:
@@ -172,7 +173,11 @@ class QueryMixin:
             and self.vision_model_func
         ):
             return await self.aquery_vlm_enhanced(
-                query, mode=mode, system_prompt=system_prompt, **kwargs
+                query,
+                mode=mode,
+                system_prompt=system_prompt,
+                return_multimodal_context=return_multimodal_context,
+                **kwargs,
             )
         elif vlm_enhanced and (
             not hasattr(self, "vision_model_func") or not self.vision_model_func
@@ -223,6 +228,13 @@ class QueryMixin:
                 duration_seconds=duration,
                 result_length=result_len,
             )
+        if return_multimodal_context:
+            return {
+                "response": result,
+                "multimodal_context": self.extract_multimodal_citations(
+                    result if isinstance(result, str) else ""
+                ),
+            }
         return result
 
     async def aquery_with_multimodal(
@@ -394,8 +406,9 @@ class QueryMixin:
         mode: str = "mix",
         system_prompt: str | None = None,
         extra_safe_dirs: List[str] = None,
+        return_multimodal_context: bool = False,
         **kwargs,
-    ) -> str | AsyncIterator[str]:
+    ) -> str | Dict[str, Any] | AsyncIterator[str]:
         """
         VLM enhanced query - replaces image paths in retrieved context with base64 encoded images for VLM processing
 
@@ -404,10 +417,11 @@ class QueryMixin:
             mode: Underlying LightRAG query mode
             system_prompt: Optional system prompt to include
             extra_safe_dirs: Optional list of additional safe directories to allow images from
+            return_multimodal_context: If True, returns dict with 'response' and 'multimodal_context' list
             **kwargs: Other query parameters
 
         Returns:
-            VLM query result, or an async iterator when stream=True.
+            VLM query result, or dict when return_multimodal_context=True, or an async iterator when stream=True.
         """
         # Ensure VLM is available
         if not hasattr(self, "vision_model_func") or not self.vision_model_func:
@@ -440,6 +454,8 @@ class QueryMixin:
         # Clear previous image cache
         if hasattr(self, "_current_images_base64"):
             delattr(self, "_current_images_base64")
+        if hasattr(self, "_current_retrieved_images"):
+            delattr(self, "_current_retrieved_images")
 
         # 1. Get original retrieval prompt (without generating final answer)
         query_param.only_need_prompt = True
@@ -456,9 +472,15 @@ class QueryMixin:
             self.logger.info("No valid images found, falling back to normal query")
             # Fallback to normal query
             query_param = QueryParam(mode=mode, **kwargs)
-            return await self.lightrag.aquery(
+            res = await self.lightrag.aquery(
                 query, param=query_param, system_prompt=system_prompt
             )
+            if return_multimodal_context and not query_param.stream:
+                return {
+                    "response": res,
+                    "multimodal_context": [],
+                }
+            return res
 
         self.logger.info(f"Processed {images_found} images for VLM")
 
@@ -476,6 +498,15 @@ class QueryMixin:
         )
 
         self.logger.info("VLM enhanced query completed")
+        if return_multimodal_context and not query_param.stream:
+            multimodal_items = [
+                {"type": "image", "path": p}
+                for p in getattr(self, "_current_retrieved_images", [])
+            ]
+            return {
+                "response": result,
+                "multimodal_context": multimodal_items,
+            }
         return result
 
     async def _process_multimodal_query_content(
@@ -672,6 +703,7 @@ class QueryMixin:
 
         # Initialize image cache
         self._current_images_base64 = []
+        self._current_retrieved_images = []
 
         # LightRAG 1.4.x json.dumps each retrieved chunk into the prompt, so the
         # newline after "Image Path: <path>" usually arrives as the two
@@ -775,6 +807,7 @@ class QueryMixin:
                     images_processed += 1
                     # Save base64 to instance variable for later use
                     self._current_images_base64.append(image_base64)
+                    self._current_retrieved_images.append(str(abs_image_path))
 
                     # Keep original path info and add VLM marker
                     original = match.group(0)
@@ -942,24 +975,74 @@ class QueryMixin:
             self.logger.error(f"VLM call failed: {e}")
             raise
 
+    def extract_multimodal_citations(self, text: str) -> List[Dict[str, Any]]:
+        """Extract cited image and table references from text or retrieved context.
+
+        Args:
+            text: Context or answer text containing path references.
+
+        Returns:
+            List of dicts with 'type' and 'path'.
+        """
+        if not text:
+            return []
+
+        citations: List[Dict[str, Any]] = []
+        seen_paths = set()
+
+        table_pattern = re.compile(
+            r"(?:Table Image Path|table_img_path):\s*([^\r\n,#]+)", re.IGNORECASE
+        )
+        for match in table_pattern.finditer(text):
+            p = match.group(1).strip().strip("\"'")
+            if p and p.lower() != "none" and p not in seen_paths:
+                seen_paths.add(p)
+                citations.append({"type": "table_image", "path": p})
+
+        image_pattern = re.compile(
+            r"(?<!Table\s)(?<!table_)(?:Image Path|image_path):\s*([^\r\n,#]+)",
+            re.IGNORECASE,
+        )
+        for match in image_pattern.finditer(text):
+            p = match.group(1).strip().strip("\"'")
+            if p and p.lower() != "none" and p not in seen_paths:
+                seen_paths.add(p)
+                citations.append({"type": "image", "path": p})
+
+        return citations
+
     # Synchronous versions of query methods
-    def query(self, query: str, mode: str = "mix", **kwargs) -> str:
+    def query(
+        self,
+        query: str,
+        mode: str = "mix",
+        return_multimodal_context: bool = False,
+        **kwargs,
+    ) -> str | Dict[str, Any]:
         """
         Synchronous version of pure text query
 
         Args:
             query: Query text
             mode: Query mode ("local", "global", "hybrid", "naive", "mix", "bypass")
+            return_multimodal_context: If True, returns dict with response and multimodal citations
             **kwargs: Other query parameters, will be passed to QueryParam
                 - vlm_enhanced: bool, default True when vision_model_func is available.
                   If True, will parse image paths in retrieved context and replace them
                   with base64 encoded images for VLM processing.
 
         Returns:
-            str: Query result
+            str or dict: Query result
         """
         loop = always_get_an_event_loop()
-        return loop.run_until_complete(self.aquery(query, mode=mode, **kwargs))
+        return loop.run_until_complete(
+            self.aquery(
+                query,
+                mode=mode,
+                return_multimodal_context=return_multimodal_context,
+                **kwargs,
+            )
+        )
 
     def query_with_multimodal(
         self,
