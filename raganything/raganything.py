@@ -158,6 +158,38 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         )
         self.logger.info(f"  Max concurrent files: {self.config.max_concurrent_files}")
 
+        # Configure prompt language and custom prompt overrides
+        self._custom_prompts: dict[str, str] = dict(self.config.custom_prompts or {})
+        if (
+            hasattr(self.config, "prompt_language")
+            and self.config.prompt_language != "en"
+        ):
+            from raganything.prompt_manager import set_prompt_language
+
+            set_prompt_language(self.config.prompt_language)
+
+        if self._custom_prompts:
+            from raganything.prompt_manager import update_prompts
+
+            update_prompts(self._custom_prompts)
+
+    def update_prompts(self, custom_prompts: dict[str, str]) -> None:
+        """Update active prompt templates with custom overrides."""
+        from raganything.prompt_manager import update_prompts
+
+        update_prompts(custom_prompts)
+        if not hasattr(self, "_custom_prompts"):
+            self._custom_prompts = {}
+        self._custom_prompts.update(custom_prompts)
+
+    def get_prompt(self, prompt_name: str, default: Any = None) -> Any:
+        """Get an active prompt template by key, checking instance overrides first."""
+        if hasattr(self, "_custom_prompts") and prompt_name in self._custom_prompts:
+            return self._custom_prompts[prompt_name]
+        from raganything.prompt_manager import get_prompt
+
+        return get_prompt(prompt_name, default)
+
     def close(self):
         """Cleanup resources when object is destroyed.
 

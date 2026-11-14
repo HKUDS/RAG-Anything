@@ -145,6 +145,45 @@ def reset_prompts() -> None:
     logger.info("Prompts reset to English defaults")
 
 
+def update_prompts(custom_prompts: dict[str, str]) -> None:
+    """Atomically update active prompt templates with custom overrides.
+
+    Args:
+        custom_prompts: Dictionary mapping prompt template keys to custom template strings.
+
+    Example::
+
+        from raganything.prompt_manager import update_prompts
+
+        update_prompts({"vision_prompt": "Custom prompt: {entity_name}"})
+    """
+    if not isinstance(custom_prompts, dict):
+        raise TypeError(
+            f"custom_prompts must be a dict, got {type(custom_prompts).__name__}"
+        )
+
+    for key, value in custom_prompts.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(
+                f"Prompt template key must be a non-empty string, got {key!r}"
+            )
+        if not isinstance(value, str):
+            raise TypeError(
+                f"Prompt template for {key!r} must be a string, got {type(value).__name__}"
+            )
+
+    with _PROMPTS_LOCK:
+        current_snapshot = PROMPTS.snapshot()
+        current_snapshot.update(custom_prompts)
+        PROMPTS.swap(current_snapshot)
+    logger.info("Updated %d custom prompt template(s)", len(custom_prompts))
+
+
+def get_prompt(prompt_name: str, default: Any = None) -> Any:
+    """Retrieve an active prompt template by key."""
+    return PROMPTS.get(prompt_name, default)
+
+
 def get_available_languages() -> list[str]:
     """Return a list of all registered language codes.
 

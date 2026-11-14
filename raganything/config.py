@@ -173,6 +173,16 @@ class RAGAnythingConfig:
     )
     """Whether to use full file path (True) or just basename (False) for file references in LightRAG."""
 
+    # Prompt Configuration
+    # ---
+    prompt_language: str = field(
+        default_factory=lambda: get_env_value("PROMPT_LANGUAGE", "en", str)
+    )
+    """Default language for prompt templates ('en', 'zh', etc.)."""
+
+    custom_prompts: dict[str, str] | None = field(default=None)
+    """Optional dictionary of prompt template overrides (e.g. {'vision_prompt': '...', 'table_prompt': '...'})."""
+
     def __post_init__(self):
         """Post-initialization setup for backward compatibility"""
         # Support legacy environment variable names for backward compatibility
