@@ -128,3 +128,27 @@ async def test_aquery_vlm_enhanced_return_multimodal_context(tmp_path):
         assert result["response"] == "VLM answer about the chart."
         assert len(result["multimodal_context"]) == 1
         assert result["multimodal_context"][0]["path"] == "/safe/img1.png"
+
+
+def test_sync_query_return_multimodal_context(tmp_path):
+    """Test synchronous query method with return_multimodal_context=True."""
+    config = RAGAnythingConfig(working_dir=str(tmp_path / "rag_storage"))
+    mock_lightrag = MagicMock()
+    mock_lightrag.aquery = AsyncMock(
+        return_value="Chart analysis with Image Path: /output/chart.jpg"
+    )
+
+    rag = RAGAnything(
+        config=config,
+        lightrag=mock_lightrag,
+        llm_model_func=AsyncMock(return_value="mock answer"),
+    )
+    rag.finalize_storages = AsyncMock()
+    rag.vision_model_func = None
+
+    result = rag.query("Test question", return_multimodal_context=True)
+    assert isinstance(result, dict)
+    assert result["response"] == "Chart analysis with Image Path: /output/chart.jpg"
+    assert len(result["multimodal_context"]) == 1
+    assert result["multimodal_context"][0]["path"] == "/output/chart.jpg"
+    assert result["multimodal_context"][0]["type"] == "image"

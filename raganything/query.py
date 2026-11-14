@@ -5,26 +5,41 @@ Contains all query-related methods for both text and multimodal queries
 """
 
 import base64
-import json
 import hashlib
+import json
 import re
 import time
-from typing import AsyncIterator, Dict, List, Any
 from pathlib import Path
+from typing import Any, AsyncIterator, Dict, List, Literal, TypedDict, overload
+
 from lightrag import QueryParam
 from lightrag.utils import always_get_an_event_loop
 from raganything.image_signature import SIGNATURE_BYTES, image_mime_type
 from raganything.prompt import PROMPTS
 from raganything.utils import (
-    get_processor_for_type,
     encode_image_to_base64,
-    validate_image_file,
-    normalize_caption_list,
-    normalize_chart_item,
-    get_table_body,
     format_table_body,
     get_equation_text_and_format,
+    get_processor_for_type,
+    get_table_body,
+    normalize_caption_list,
+    normalize_chart_item,
+    validate_image_file,
 )
+
+
+class MultimodalCitation(TypedDict):
+    """Citation metadata for a multimodal asset referenced in query retrieval."""
+
+    type: str
+    path: str
+
+
+class QueryResultWithContext(TypedDict):
+    """Structured query response bundling the text answer and cited multimodal assets."""
+
+    response: str | AsyncIterator[str]
+    multimodal_context: list[MultimodalCitation]
 
 
 class QueryMixin:
@@ -132,9 +147,29 @@ class QueryMixin:
 
         return f"multimodal_query:{cache_hash}"
 
+    @overload
+    async def aquery(
+        self,
+        query: str,
+        mode: str = "mix",
+        system_prompt: str | None = None,
+        return_multimodal_context: Literal[False] = False,
+        **kwargs,
+    ) -> str | AsyncIterator[str]: ...
+
+    @overload
+    async def aquery(
+        self,
+        query: str,
+        mode: str = "mix",
+        system_prompt: str | None = None,
+        return_multimodal_context: Literal[True] = ...,
+        **kwargs,
+    ) -> QueryResultWithContext: ...
+
     async def aquery(
         self, query: str, mode: str = "mix", system_prompt: str | None = None, **kwargs
-    ) -> str | AsyncIterator[str]:
+    ) -> str | QueryResultWithContext | AsyncIterator[str]:
         """
         Pure text query - directly calls LightRAG's query functionality
 
@@ -400,15 +435,37 @@ class QueryMixin:
         self.logger.info("Multimodal query completed")
         return result
 
+    @overload
     async def aquery_vlm_enhanced(
         self,
         query: str,
         mode: str = "mix",
         system_prompt: str | None = None,
-        extra_safe_dirs: List[str] = None,
+        extra_safe_dirs: list[str] | None = None,
+        return_multimodal_context: Literal[False] = False,
+        **kwargs,
+    ) -> str | AsyncIterator[str]: ...
+
+    @overload
+    async def aquery_vlm_enhanced(
+        self,
+        query: str,
+        mode: str = "mix",
+        system_prompt: str | None = None,
+        extra_safe_dirs: list[str] | None = None,
+        return_multimodal_context: Literal[True] = ...,
+        **kwargs,
+    ) -> QueryResultWithContext: ...
+
+    async def aquery_vlm_enhanced(
+        self,
+        query: str,
+        mode: str = "mix",
+        system_prompt: str | None = None,
+        extra_safe_dirs: list[str] | None = None,
         return_multimodal_context: bool = False,
         **kwargs,
-    ) -> str | Dict[str, Any] | AsyncIterator[str]:
+    ) -> str | QueryResultWithContext | AsyncIterator[str]:
         """
         VLM enhanced query - replaces image paths in retrieved context with base64 encoded images for VLM processing
 
@@ -975,7 +1032,7 @@ class QueryMixin:
             self.logger.error(f"VLM call failed: {e}")
             raise
 
-    def extract_multimodal_citations(self, text: str) -> List[Dict[str, Any]]:
+    def extract_multimodal_citations(self, text: str) -> list[MultimodalCitation]:
         """Extract cited image and table references from text or retrieved context.
 
         Args:
@@ -987,7 +1044,7 @@ class QueryMixin:
         if not text:
             return []
 
-        citations: List[Dict[str, Any]] = []
+        citations: list[MultimodalCitation] = []
         seen_paths = set()
 
         table_pattern = re.compile(
@@ -1012,13 +1069,31 @@ class QueryMixin:
         return citations
 
     # Synchronous versions of query methods
+    @overload
+    def query(
+        self,
+        query: str,
+        mode: str = "mix",
+        return_multimodal_context: Literal[False] = False,
+        **kwargs,
+    ) -> str | AsyncIterator[str]: ...
+
+    @overload
+    def query(
+        self,
+        query: str,
+        mode: str = "mix",
+        return_multimodal_context: Literal[True] = ...,
+        **kwargs,
+    ) -> QueryResultWithContext: ...
+
     def query(
         self,
         query: str,
         mode: str = "mix",
         return_multimodal_context: bool = False,
         **kwargs,
-    ) -> str | Dict[str, Any]:
+    ) -> str | QueryResultWithContext | AsyncIterator[str]:
         """
         Synchronous version of pure text query
 
