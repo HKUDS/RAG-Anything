@@ -132,6 +132,13 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         # Set working directory
         self.working_dir = self.config.working_dir
 
+        # Inherit model functions from pre-initialized LightRAG instance if not explicitly set
+        if self.lightrag is not None:
+            if self.llm_model_func is None and hasattr(self.lightrag, "llm_model_func"):
+                self.llm_model_func = self.lightrag.llm_model_func
+            if self.embedding_func is None and hasattr(self.lightrag, "embedding_func"):
+                self.embedding_func = self.lightrag.embedding_func
+
         # Set up logger (use existing logger, don't configure it)
         self.logger = logger
 
@@ -226,6 +233,11 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 "LightRAG instance must be initialized before creating processors"
             )
 
+        effective_llm_func = self.llm_model_func or getattr(
+            self.lightrag, "llm_model_func", None
+        )
+        effective_vision_func = self.vision_model_func or effective_llm_func
+
         # Create context extractor
         self.context_extractor = self._create_context_extractor()
 
@@ -235,21 +247,21 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         if self.config.enable_image_processing:
             self.modal_processors["image"] = ImageModalProcessor(
                 lightrag=self.lightrag,
-                modal_caption_func=self.vision_model_func or self.llm_model_func,
+                modal_caption_func=effective_vision_func,
                 context_extractor=self.context_extractor,
             )
 
         if self.config.enable_table_processing:
             self.modal_processors["table"] = TableModalProcessor(
                 lightrag=self.lightrag,
-                modal_caption_func=self.llm_model_func,
+                modal_caption_func=effective_llm_func,
                 context_extractor=self.context_extractor,
             )
 
         if self.config.enable_equation_processing:
             self.modal_processors["equation"] = EquationModalProcessor(
                 lightrag=self.lightrag,
-                modal_caption_func=self.llm_model_func,
+                modal_caption_func=effective_llm_func,
                 context_extractor=self.context_extractor,
             )
 
@@ -263,7 +275,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             else:
                 self.modal_processors["audio"] = AudioModalProcessor(
                     lightrag=self.lightrag,
-                    modal_caption_func=self.llm_model_func,
+                    modal_caption_func=effective_llm_func,
                     context_extractor=self.context_extractor,
                 )
 
@@ -279,7 +291,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
 
                 self.modal_processors["video"] = VideoModalProcessor(
                     lightrag=self.lightrag,
-                    modal_caption_func=self.vision_model_func or self.llm_model_func,
+                    modal_caption_func=effective_vision_func,
                     context_extractor=self.context_extractor,
                     min_scene_duration=get_env_value(
                         "VIDEO_MIN_SCENE_DURATION", 5.0, float
