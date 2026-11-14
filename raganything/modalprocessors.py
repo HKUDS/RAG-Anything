@@ -1022,6 +1022,20 @@ class ImageModalProcessor(BaseModalProcessor):
                     footnotes=", ".join(footnotes) if footnotes else "None",
                 )
 
+            # Check callable modal_caption_func
+            if not callable(self.modal_caption_func):
+                logger.warning(
+                    "No valid modal_caption_func provided for image analysis; skipping model captioning"
+                )
+                fallback_entity = {
+                    "entity_name": entity_name
+                    if entity_name
+                    else f"image_{compute_mdhash_id(str(modal_content))}",
+                    "entity_type": "image",
+                    "summary": f"Image content: {str(modal_content)[:100]}",
+                }
+                return str(modal_content), fallback_entity
+
             # Encode image to base64
             image_base64 = self._encode_image_to_base64(image_path)
             if not image_base64:
@@ -1230,6 +1244,20 @@ class TableModalProcessor(BaseModalProcessor):
                     else "None",
                 )
 
+            # Check callable modal_caption_func
+            if not callable(self.modal_caption_func):
+                logger.warning(
+                    "No valid modal_caption_func provided for table analysis; skipping model captioning"
+                )
+                fallback_entity = {
+                    "entity_name": entity_name
+                    if entity_name
+                    else f"table_{compute_mdhash_id(str(modal_content))}",
+                    "entity_type": "table",
+                    "summary": f"Table content: {str(modal_content)[:100]}",
+                }
+                return str(modal_content), fallback_entity
+
             # Call LLM for table analysis
             response = await self.modal_caption_func(
                 table_prompt,
@@ -1425,6 +1453,20 @@ class EquationModalProcessor(BaseModalProcessor):
                     else "descriptive name for this equation",
                 )
 
+            # Check callable modal_caption_func
+            if not callable(self.modal_caption_func):
+                logger.warning(
+                    "No valid modal_caption_func provided for equation analysis; skipping model captioning"
+                )
+                fallback_entity = {
+                    "entity_name": entity_name
+                    if entity_name
+                    else f"equation_{compute_mdhash_id(str(modal_content))}",
+                    "entity_type": "equation",
+                    "summary": f"Equation content: {str(modal_content)[:100]}",
+                }
+                return str(modal_content), fallback_entity
+
             # Call LLM for equation analysis
             response = await self.modal_caption_func(
                 equation_prompt,
@@ -1596,6 +1638,20 @@ class GenericModalProcessor(BaseModalProcessor):
                     else f"descriptive name for this {content_type}",
                     content=str(modal_content),
                 )
+
+            # Check callable modal_caption_func
+            if not callable(self.modal_caption_func):
+                logger.warning(
+                    f"No valid modal_caption_func provided for {content_type} analysis; skipping model captioning"
+                )
+                fallback_entity = {
+                    "entity_name": entity_name
+                    if entity_name
+                    else f"{content_type}_{compute_mdhash_id(str(modal_content))}",
+                    "entity_type": content_type,
+                    "summary": f"{content_type} content: {str(modal_content)[:100]}",
+                }
+                return str(modal_content), fallback_entity
 
             # Call LLM for generic analysis
             response = await self.modal_caption_func(
