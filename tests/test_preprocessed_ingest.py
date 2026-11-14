@@ -150,3 +150,60 @@ async def test_process_preprocessed_directory_batch(temp_batch_mineru_dir):
         assert "doc_alpha" in names
         assert "doc_beta" in names
         assert mock_insert.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_process_preprocessed_directory_concurrency(temp_batch_mineru_dir):
+    """Test process_preprocessed_directory works with bounded concurrency > 1."""
+    config = RAGAnythingConfig(
+        working_dir=str(temp_batch_mineru_dir.parent / "rag_storage"),
+        enable_image_processing=False,
+    )
+    rag = RAGAnything(config=config)
+
+    with patch.object(
+        rag, "insert_content_list", new=AsyncMock(return_value="doc-batch-id")
+    ) as mock_insert:
+        results = await rag.process_preprocessed_directory(
+            base_dir=temp_batch_mineru_dir,
+            concurrency=2,
+        )
+
+        assert len(results) == 2
+        assert mock_insert.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_process_preprocessed_directory_error_resilience(temp_batch_mineru_dir):
+    """Test process_preprocessed_directory with continue_on_error isolates failures."""
+    config = RAGAnythingConfig(
+        working_dir=str(temp_batch_mineru_dir.parent / "rag_storage"),
+        enable_image_processing=False,
+    )
+    rag = RAGAnything(config=config)
+
+    # Simulate failure on the second document
+    with patch.object(
+        rag,
+        "insert_content_list",
+        side_effect=[None, RuntimeError("Simulated DB insertion error")],
+    ):
+        # Without continue_on_error, it should raise the exception
+        with pytest.raises(RuntimeError, match="Simulated DB insertion error"):
+            await rag.process_preprocessed_directory(
+                base_dir=temp_batch_mineru_dir,
+                continue_on_error=False,
+            )
+
+    # With continue_on_error=True, it should successfully ingest the first doc and return it
+    with patch.object(
+        rag,
+        "insert_content_list",
+        side_effect=[None, RuntimeError("Simulated DB insertion error")],
+    ):
+        results = await rag.process_preprocessed_directory(
+            base_dir=temp_batch_mineru_dir,
+            continue_on_error=True,
+        )
+        assert len(results) == 1
+        assert results[0][0] == "doc_alpha"

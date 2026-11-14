@@ -3569,14 +3569,14 @@ class ProcessorMixin:
         file_path: str | Path | None = None,
         file_stem: str | None = None,
         parse_method: str = "auto",
-        display_stats: bool = None,
+        display_stats: bool | None = None,
         split_by_character: str | None = None,
         split_by_character_only: bool = False,
         doc_id: str | None = None,
         force_multimodal_reprocess: bool = False,
         include_layout_blocks: bool = False,
         **kwargs,
-    ) -> Tuple[List[Dict[str, Any]], str]:
+    ) -> tuple[list[dict[str, Any]], str]:
         """Ingest already-parsed MinerU output files from an output directory into LightRAG.
 
         Bypasses document parsing when documents have already been processed
@@ -3633,7 +3633,7 @@ class ProcessorMixin:
         if doc_parser is None or not hasattr(doc_parser, "_read_output_files"):
             doc_parser = get_parser("mineru")
 
-        content_list, md_content = doc_parser._read_output_files(
+        content_list, _md_content = doc_parser._read_output_files(
             out_path,
             resolved_file_stem,
             method=parse_method,
@@ -3665,16 +3665,19 @@ class ProcessorMixin:
         self,
         base_dir: str | Path,
         parse_method: str = "auto",
-        display_stats: bool = None,
+        display_stats: bool | None = None,
         split_by_character: str | None = None,
         split_by_character_only: bool = False,
         force_multimodal_reprocess: bool = False,
         include_layout_blocks: bool = False,
+        concurrency: int = 1,
+        continue_on_error: bool = False,
         **kwargs,
-    ) -> List[Tuple[str, Tuple[List[Dict[str, Any]], str]]]:
+    ) -> list[tuple[str, tuple[list[dict[str, Any]], str]]]:
         """Batch-import all preprocessed MinerU document folders from a directory.
 
-        Iterates over each subdirectory in base_dir and ingests its preprocessed output.
+        Iterates over each subdirectory in base_dir and ingests its preprocessed output
+        with bounded concurrency and optional error tolerance.
 
         Args:
             base_dir: Directory containing per-document output subdirectories.
@@ -3684,6 +3687,8 @@ class ProcessorMixin:
             split_by_character_only: If True, split only by specified character.
             force_multimodal_reprocess: If True, re-process multimodal items.
             include_layout_blocks: If True, keep v2 headers/footers.
+            concurrency: Number of concurrent document ingestion tasks (default: 1).
+            continue_on_error: If True, log errors and continue batch on individual failures.
             **kwargs: Extra parameters passed to process_preprocessed_output.
 
         Returns:
@@ -3707,20 +3712,46 @@ class ProcessorMixin:
         ):
             doc_dirs.append(base_path)
 
-        results = []
-        for doc_dir in doc_dirs:
-            self.logger.info(f"Ingesting preprocessed directory: {doc_dir.name}")
-            res = await self.process_preprocessed_output(
-                output_dir=doc_dir,
-                file_stem=doc_dir.name,
-                parse_method=parse_method,
-                display_stats=display_stats,
-                split_by_character=split_by_character,
-                split_by_character_only=split_by_character_only,
-                force_multimodal_reprocess=force_multimodal_reprocess,
-                include_layout_blocks=include_layout_blocks,
-                **kwargs,
-            )
-            results.append((doc_dir.name, res))
+        if not doc_dirs:
+            return []
+
+        results: list[tuple[str, tuple[list[dict[str, Any]], str]]] = []
+        semaphore = asyncio.Semaphore(max(1, concurrency))
+
+        async def _process_one(doc_dir: Path):
+            async with semaphore:
+                self.logger.info(f"Ingesting preprocessed directory: {doc_dir.name}")
+                try:
+                    res = await self.process_preprocessed_output(
+                        output_dir=doc_dir,
+                        file_stem=doc_dir.name,
+                        parse_method=parse_method,
+                        display_stats=display_stats,
+                        split_by_character=split_by_character,
+                        split_by_character_only=split_by_character_only,
+                        force_multimodal_reprocess=force_multimodal_reprocess,
+                        include_layout_blocks=include_layout_blocks,
+                        **kwargs,
+                    )
+                    return doc_dir.name, res, None
+                except Exception as exc:
+                    self.logger.error(
+                        f"Failed ingesting preprocessed directory {doc_dir.name}: {exc}"
+                    )
+                    if not continue_on_error:
+                        raise
+                    return doc_dir.name, None, exc
+
+        if concurrency > 1 and len(doc_dirs) > 1:
+            tasks = [_process_one(d) for d in doc_dirs]
+            batch_outcomes = await asyncio.gather(*tasks, return_exceptions=False)
+            for folder_name, res, _err in batch_outcomes:
+                if res is not None:
+                    results.append((folder_name, res))
+        else:
+            for doc_dir in doc_dirs:
+                folder_name, res, _err = await _process_one(doc_dir)
+                if res is not None:
+                    results.append((folder_name, res))
 
         return results
