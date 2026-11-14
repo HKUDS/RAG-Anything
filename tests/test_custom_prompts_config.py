@@ -37,6 +37,35 @@ def test_update_prompts_invalid_type():
     with pytest.raises(TypeError, match="custom_prompts must be a dict"):
         update_prompts("not a dict")
 
+    with pytest.raises(
+        ValueError, match="Prompt template key must be a non-empty string"
+    ):
+        update_prompts({"": "value"})
+
+    with pytest.raises(TypeError, match="must be a string"):
+        update_prompts({"valid_key": 12345})  # type: ignore
+
+
+def test_instance_prompt_priority_over_global_reset(tmp_path):
+    """Test instance-scoped prompts retain custom configuration even after global reset."""
+    custom_vision = "Instance private prompt: {entity_name}"
+    config = RAGAnythingConfig(
+        working_dir=str(tmp_path / "rag_storage"),
+        custom_prompts={"vision_prompt": custom_vision},
+    )
+
+    rag = RAGAnything(
+        config=config,
+        llm_model_func=AsyncMock(return_value="mock answer"),
+        embedding_func=AsyncMock(return_value=[0.1] * 1536),
+    )
+
+    # Reset global prompts
+    reset_prompts()
+
+    # Instance should still return its instance-scoped custom prompt
+    assert rag.get_prompt("vision_prompt") == custom_vision
+
 
 def test_raganything_config_custom_prompts(tmp_path):
     """Test RAGAnything initializes with custom_prompts from config."""

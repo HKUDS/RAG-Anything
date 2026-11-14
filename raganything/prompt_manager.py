@@ -145,7 +145,7 @@ def reset_prompts() -> None:
     logger.info("Prompts reset to English defaults")
 
 
-def update_prompts(custom_prompts: Dict[str, Any]) -> None:
+def update_prompts(custom_prompts: dict[str, str]) -> None:
     """Atomically update active prompt templates with custom overrides.
 
     Args:
@@ -161,6 +161,16 @@ def update_prompts(custom_prompts: Dict[str, Any]) -> None:
         raise TypeError(
             f"custom_prompts must be a dict, got {type(custom_prompts).__name__}"
         )
+
+    for key, value in custom_prompts.items():
+        if not isinstance(key, str) or not key.strip():
+            raise ValueError(
+                f"Prompt template key must be a non-empty string, got {key!r}"
+            )
+        if not isinstance(value, str):
+            raise TypeError(
+                f"Prompt template for {key!r} must be a string, got {type(value).__name__}"
+            )
 
     with _PROMPTS_LOCK:
         current_snapshot = PROMPTS.snapshot()
