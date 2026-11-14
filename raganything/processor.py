@@ -3560,3 +3560,198 @@ class ProcessorMixin:
                 doc_id=doc_id,
                 duration_seconds=duration,
             )
+        return doc_id
+
+    @document_context
+    async def process_preprocessed_output(
+        self,
+        output_dir: str | Path,
+        file_path: str | Path | None = None,
+        file_stem: str | None = None,
+        parse_method: str = "auto",
+        display_stats: bool | None = None,
+        split_by_character: str | None = None,
+        split_by_character_only: bool = False,
+        doc_id: str | None = None,
+        force_multimodal_reprocess: bool = False,
+        include_layout_blocks: bool = False,
+        **kwargs,
+    ) -> tuple[list[dict[str, Any]], str]:
+        """Ingest already-parsed MinerU output files from an output directory into LightRAG.
+
+        Bypasses document parsing when documents have already been processed
+        by MinerU (e.g. offline on a GPU server or batch preprocessing pipeline).
+
+        Args:
+            output_dir: Path to the directory containing MinerU output (or subdirectories).
+            file_path: Original file path or citation reference name.
+            file_stem: Document name without extension. Auto-detected if None.
+            parse_method: Parse method subdirectory ("auto", "ocr", "txt").
+            display_stats: Whether to log content stats.
+            split_by_character: Optional character to split text by.
+            split_by_character_only: If True, split only by specified character.
+            doc_id: Optional document ID. Generated from content if None.
+            force_multimodal_reprocess: If True, re-process multimodal items.
+            include_layout_blocks: If True, keep v2 headers/footers.
+            **kwargs: Extra parameters passed to insert_content_list.
+
+        Returns:
+            Tuple of (content_list, doc_id).
+        """
+        out_path = Path(output_dir)
+        if not out_path.exists():
+            raise FileNotFoundError(f"Output directory does not exist: {out_path}")
+
+        resolved_file_stem = file_stem
+        if resolved_file_stem is None and file_path is not None:
+            resolved_file_stem = Path(file_path).stem
+
+        if resolved_file_stem is None:
+            # Check for *_content_list*.json in out_path or its subdirectories
+            json_candidates = (
+                list(out_path.glob("*_content_list_v2.json"))
+                + list(out_path.glob("*_content_list.json"))
+                + list(out_path.glob("*/*_content_list_v2.json"))
+                + list(out_path.glob("*/*_content_list.json"))
+            )
+            for candidate in json_candidates:
+                name = candidate.name
+                stem = name.replace("_content_list_v2.json", "").replace(
+                    "_content_list.json", ""
+                )
+                if stem and stem != "content_list":
+                    resolved_file_stem = stem
+                    break
+            if resolved_file_stem is None:
+                resolved_file_stem = out_path.name
+
+        resolved_file_path = (
+            str(file_path) if file_path is not None else f"{resolved_file_stem}.pdf"
+        )
+
+        doc_parser = getattr(self, "doc_parser", None)
+        if doc_parser is None or not hasattr(doc_parser, "_read_output_files"):
+            doc_parser = get_parser("mineru")
+
+        content_list, _md_content = doc_parser._read_output_files(
+            out_path,
+            resolved_file_stem,
+            method=parse_method,
+            include_layout_blocks=include_layout_blocks,
+        )
+        if not content_list:
+            raise FileNotFoundError(
+                f"No MinerU content list found in '{output_dir}' for stem '{resolved_file_stem}'"
+            )
+
+        if doc_id is None:
+            doc_id = self._generate_content_based_doc_id(content_list)
+
+        self._record_parsed_output_location(doc_id, resolved_file_path, out_path)
+
+        await self.insert_content_list(
+            content_list=content_list,
+            file_path=resolved_file_path,
+            split_by_character=split_by_character,
+            split_by_character_only=split_by_character_only,
+            doc_id=doc_id,
+            display_stats=display_stats,
+            force_multimodal_reprocess=force_multimodal_reprocess,
+            **kwargs,
+        )
+        return content_list, doc_id
+
+    async def process_preprocessed_directory(
+        self,
+        base_dir: str | Path,
+        parse_method: str = "auto",
+        display_stats: bool | None = None,
+        split_by_character: str | None = None,
+        split_by_character_only: bool = False,
+        force_multimodal_reprocess: bool = False,
+        include_layout_blocks: bool = False,
+        concurrency: int = 1,
+        continue_on_error: bool = False,
+        **kwargs,
+    ) -> list[tuple[str, tuple[list[dict[str, Any]], str]]]:
+        """Batch-import all preprocessed MinerU document folders from a directory.
+
+        Iterates over each subdirectory in base_dir and ingests its preprocessed output
+        with bounded concurrency and optional error tolerance.
+
+        Args:
+            base_dir: Directory containing per-document output subdirectories.
+            parse_method: MinerU parse method subdirectory ("auto", "ocr", "txt").
+            display_stats: Whether to log content stats.
+            split_by_character: Optional character to split text by.
+            split_by_character_only: If True, split only by specified character.
+            force_multimodal_reprocess: If True, re-process multimodal items.
+            include_layout_blocks: If True, keep v2 headers/footers.
+            concurrency: Number of concurrent document ingestion tasks (default: 1).
+            continue_on_error: If True, log errors and continue batch on individual failures.
+            **kwargs: Extra parameters passed to process_preprocessed_output.
+
+        Returns:
+            List of (folder_name, (content_list, doc_id)) tuples for successfully ingested docs.
+        """
+        base_path = Path(base_dir)
+        if not base_path.is_dir():
+            raise NotADirectoryError(f"Directory not found: {base_dir}")
+
+        doc_dirs = []
+        for item in sorted(base_path.iterdir()):
+            if item.is_dir() and (
+                any(item.glob("*_content_list*.json"))
+                or any(item.glob("*/*_content_list*.json"))
+            ):
+                doc_dirs.append(item)
+
+        if not doc_dirs and (
+            any(base_path.glob("*_content_list*.json"))
+            or any(base_path.glob("*/*_content_list*.json"))
+        ):
+            doc_dirs.append(base_path)
+
+        if not doc_dirs:
+            return []
+
+        results: list[tuple[str, tuple[list[dict[str, Any]], str]]] = []
+        semaphore = asyncio.Semaphore(max(1, concurrency))
+
+        async def _process_one(doc_dir: Path):
+            async with semaphore:
+                self.logger.info(f"Ingesting preprocessed directory: {doc_dir.name}")
+                try:
+                    res = await self.process_preprocessed_output(
+                        output_dir=doc_dir,
+                        file_stem=doc_dir.name,
+                        parse_method=parse_method,
+                        display_stats=display_stats,
+                        split_by_character=split_by_character,
+                        split_by_character_only=split_by_character_only,
+                        force_multimodal_reprocess=force_multimodal_reprocess,
+                        include_layout_blocks=include_layout_blocks,
+                        **kwargs,
+                    )
+                    return doc_dir.name, res, None
+                except Exception as exc:
+                    self.logger.error(
+                        f"Failed ingesting preprocessed directory {doc_dir.name}: {exc}"
+                    )
+                    if not continue_on_error:
+                        raise
+                    return doc_dir.name, None, exc
+
+        if concurrency > 1 and len(doc_dirs) > 1:
+            tasks = [_process_one(d) for d in doc_dirs]
+            batch_outcomes = await asyncio.gather(*tasks, return_exceptions=False)
+            for folder_name, res, _err in batch_outcomes:
+                if res is not None:
+                    results.append((folder_name, res))
+        else:
+            for doc_dir in doc_dirs:
+                folder_name, res, _err = await _process_one(doc_dir)
+                if res is not None:
+                    results.append((folder_name, res))
+
+        return results
