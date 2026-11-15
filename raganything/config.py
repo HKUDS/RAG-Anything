@@ -110,6 +110,16 @@ class RAGAnythingConfig:
     )
     """Maximum number of tokens in extracted context."""
 
+    max_table_tokens: int = field(
+        default_factory=lambda: get_env_value("MAX_TABLE_TOKENS", 4000, int)
+    )
+    """Maximum token budget for table analysis prompts before intelligent truncation."""
+
+    max_modal_content_tokens: int = field(
+        default_factory=lambda: get_env_value("MAX_MODAL_CONTENT_TOKENS", 4000, int)
+    )
+    """Maximum token budget for general modal content (equations, etc.) in analysis prompts."""
+
     include_headers: bool = field(
         default_factory=lambda: get_env_value("INCLUDE_HEADERS", True, bool)
     )

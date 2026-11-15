@@ -244,6 +244,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 lightrag=self.lightrag,
                 modal_caption_func=self.llm_model_func,
                 context_extractor=self.context_extractor,
+                max_table_tokens=getattr(self.config, "max_table_tokens", 4000),
             )
 
         if self.config.enable_equation_processing:
@@ -251,6 +252,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 lightrag=self.lightrag,
                 modal_caption_func=self.llm_model_func,
                 context_extractor=self.context_extractor,
+                max_modal_content_tokens=getattr(
+                    self.config, "max_modal_content_tokens", 4000
+                ),
             )
 
         if self.config.enable_audio_processing:

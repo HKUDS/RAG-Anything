@@ -430,6 +430,17 @@ class BaseModalProcessor:
         self.content_source = None
         self.content_format = "auto"
 
+    def _count_tokens(self, text: str) -> int:
+        """Count tokens using LightRAG's tokenizer, falling back to heuristic."""
+        if not text:
+            return 0
+        if self.tokenizer and hasattr(self.tokenizer, "encode"):
+            try:
+                return len(self.tokenizer.encode(text))
+            except Exception:
+                pass
+        return max(1, len(text) // 4)
+
     def set_content_source(self, content_source: Any, content_format: str = "auto"):
         """Set content source for context extraction
 
@@ -1161,6 +1172,120 @@ class ImageModalProcessor(BaseModalProcessor):
 class TableModalProcessor(BaseModalProcessor):
     """Processor specialized for table content"""
 
+    def __init__(
+        self,
+        lightrag: LightRAG,
+        modal_caption_func,
+        context_extractor: ContextExtractor = None,
+        max_table_tokens: int = 4000,
+    ):
+        super().__init__(lightrag, modal_caption_func, context_extractor)
+        self.max_table_tokens = max_table_tokens
+
+    def _truncate_table_for_context(self, table_body: str) -> str:
+        """Truncate oversized tables to fit within token budget while preserving structure and header."""
+        if not table_body or not table_body.strip() or self.max_table_tokens <= 0:
+            return table_body
+
+        current_tokens = self._count_tokens(table_body)
+        if current_tokens <= self.max_table_tokens:
+            return table_body
+
+        logger.info(
+            f"Table size ({current_tokens} tokens) exceeds budget ({self.max_table_tokens} tokens); "
+            "performing structure-preserving truncation."
+        )
+
+        # Case 1: Markdown table
+        lines = [line for line in table_body.splitlines() if line.strip()]
+        if len(lines) >= 3 and "|" in lines[0] and ("---" in lines[1] or "|-" in lines[1]):
+            header_lines = lines[:2]
+            data_rows = lines[2:]
+            header_str = "\n".join(header_lines)
+            header_tokens = self._count_tokens(header_str)
+            budget_for_rows = max(10, self.max_table_tokens - header_tokens - 30)
+
+            retained_rows: List[str] = []
+            accumulated_tokens = 0
+            for row in data_rows:
+                row_tokens = self._count_tokens(row)
+                if accumulated_tokens + row_tokens > budget_for_rows:
+                    break
+                retained_rows.append(row)
+                accumulated_tokens += row_tokens
+
+            omitted_count = len(data_rows) - len(retained_rows)
+            if omitted_count > 0:
+                summary_marker = (
+                    f"\n[... {omitted_count} rows omitted for LLM context window budget; "
+                    f"total rows: {len(data_rows)} ...]\n"
+                )
+                return header_str + "\n" + "\n".join(retained_rows) + summary_marker
+
+        # Case 2: HTML table
+        lower_body = table_body.lower()
+        if "<table" in lower_body and "<tr" in lower_body:
+            import re
+
+            rows = re.split(r"(?i)(?<=</tr>)", table_body)
+            if len(rows) > 2:
+                header_row = rows[0]
+                data_rows = rows[1:]
+                header_tokens = self._count_tokens(header_row)
+                budget_for_rows = max(10, self.max_table_tokens - header_tokens - 30)
+
+                retained_rows: List[str] = []
+                accumulated_tokens = 0
+                for row in data_rows:
+                    if not row.strip():
+                        continue
+                    row_tokens = self._count_tokens(row)
+                    if accumulated_tokens + row_tokens > budget_for_rows:
+                        break
+                    retained_rows.append(row)
+                    accumulated_tokens += row_tokens
+
+                omitted_count = len(data_rows) - len(retained_rows)
+                if omitted_count > 0:
+                    summary_marker = (
+                        f"\n<!-- [... {omitted_count} rows omitted for context budget; "
+                        f"total rows: {len(data_rows)} ...] -->\n</tbody></table>"
+                    )
+                    return header_row + "".join(retained_rows) + summary_marker
+
+        # Case 3: Raw text / line-based table
+        lines = table_body.splitlines()
+        if len(lines) > 2:
+            header_line = lines[0]
+            data_lines = lines[1:]
+            budget_for_rows = max(
+                10, self.max_table_tokens - self._count_tokens(header_line) - 20
+            )
+
+            retained_lines: List[str] = []
+            accumulated_tokens = 0
+            for line in data_lines:
+                line_tokens = self._count_tokens(line)
+                if accumulated_tokens + line_tokens > budget_for_rows:
+                    break
+                retained_lines.append(line)
+                accumulated_tokens += line_tokens
+
+            omitted_count = len(data_lines) - len(retained_lines)
+            if omitted_count > 0:
+                summary_marker = (
+                    f"\n[... {omitted_count} lines omitted for context budget; "
+                    f"total lines: {len(data_lines)} ...]"
+                )
+                return header_line + "\n" + "\n".join(retained_lines) + summary_marker
+
+        # Fallback character slicing
+        char_budget = self.max_table_tokens * 4
+        return (
+            table_body[:char_budget]
+            + f"\n[... content truncated to ~{self.max_table_tokens} tokens for LLM context budget ...]"
+        )
+
     async def generate_description_only(
         self,
         modal_content,
@@ -1194,6 +1319,7 @@ class TableModalProcessor(BaseModalProcessor):
             table_img_path = content_data.get("img_path")
             table_caption = normalize_caption_list(content_data.get("table_caption"))
             table_body = format_table_body(get_table_body(content_data))
+            effective_table_body = self._truncate_table_for_context(table_body)
             table_footnote = normalize_caption_list(content_data.get("table_footnote"))
 
             # Extract context for current item
@@ -1212,7 +1338,7 @@ class TableModalProcessor(BaseModalProcessor):
                     else "descriptive name for this table",
                     table_img_path=table_img_path,
                     table_caption=", ".join(table_caption) if table_caption else "None",
-                    table_body=table_body,
+                    table_body=effective_table_body,
                     table_footnote=", ".join(table_footnote)
                     if table_footnote
                     else "None",
@@ -1224,7 +1350,7 @@ class TableModalProcessor(BaseModalProcessor):
                     else "descriptive name for this table",
                     table_img_path=table_img_path,
                     table_caption=", ".join(table_caption) if table_caption else "None",
-                    table_body=table_body,
+                    table_body=effective_table_body,
                     table_footnote=", ".join(table_footnote)
                     if table_footnote
                     else "None",
@@ -1360,6 +1486,39 @@ class TableModalProcessor(BaseModalProcessor):
 class EquationModalProcessor(BaseModalProcessor):
     """Processor specialized for equation content"""
 
+    def __init__(
+        self,
+        lightrag: LightRAG,
+        modal_caption_func,
+        context_extractor: ContextExtractor = None,
+        max_modal_content_tokens: int = 4000,
+    ):
+        super().__init__(lightrag, modal_caption_func, context_extractor)
+        self.max_modal_content_tokens = max_modal_content_tokens
+
+    def _truncate_equation_for_context(self, equation_text: str) -> str:
+        """Truncate oversized equation to fit within token budget."""
+        if (
+            not equation_text
+            or not equation_text.strip()
+            or self.max_modal_content_tokens <= 0
+        ):
+            return equation_text
+
+        current_tokens = self._count_tokens(equation_text)
+        if current_tokens <= self.max_modal_content_tokens:
+            return equation_text
+
+        logger.info(
+            f"Equation size ({current_tokens} tokens) exceeds budget "
+            f"({self.max_modal_content_tokens} tokens); truncating for prompt."
+        )
+        char_budget = self.max_modal_content_tokens * 4
+        return (
+            equation_text[:char_budget]
+            + f"\n[... equation truncated to ~{self.max_modal_content_tokens} tokens for LLM context budget ...]"
+        )
+
     async def generate_description_only(
         self,
         modal_content,
@@ -1391,6 +1550,7 @@ class EquationModalProcessor(BaseModalProcessor):
                 content_data = modal_content
 
             equation_text, equation_format = get_equation_text_and_format(content_data)
+            effective_equation_text = self._truncate_equation_for_context(equation_text)
 
             # Extract context for current item
             context = ""
@@ -1410,7 +1570,7 @@ class EquationModalProcessor(BaseModalProcessor):
                     "equation_prompt_with_context", PROMPTS["equation_prompt"]
                 ).format(
                     context=context,
-                    equation_text=equation_text,
+                    equation_text=effective_equation_text,
                     equation_format=equation_format,
                     entity_name=entity_name
                     if entity_name
@@ -1418,7 +1578,7 @@ class EquationModalProcessor(BaseModalProcessor):
                 )
             else:
                 equation_prompt = PROMPTS["equation_prompt"].format(
-                    equation_text=equation_text,
+                    equation_text=effective_equation_text,
                     equation_format=equation_format,
                     entity_name=entity_name
                     if entity_name
