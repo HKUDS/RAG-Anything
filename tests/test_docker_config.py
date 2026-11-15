@@ -22,9 +22,9 @@ def test_dockerfile_structure():
     assert "AS runtime" in content, "Dockerfile must define runtime stage"
 
     # Security: unprivileged non-root user
-    assert "useradd" in content or "adduser" in content, (
-        "Dockerfile must create non-root user"
-    )
+    assert (
+        "useradd" in content or "adduser" in content
+    ), "Dockerfile must create non-root user"
     assert "USER appuser" in content, "Dockerfile must switch to unprivileged user"
 
     # Healthcheck presence
@@ -45,9 +45,9 @@ def test_docker_compose_structure():
     parsed = yaml.safe_load(content)
 
     assert "services" in parsed, "Compose file must define 'services'"
-    assert "raganything" in parsed["services"], (
-        "Compose file must contain 'raganything' service"
-    )
+    assert (
+        "raganything" in parsed["services"]
+    ), "Compose file must contain 'raganything' service"
 
     service = parsed["services"]["raganything"]
     assert service.get("restart") == "unless-stopped"
