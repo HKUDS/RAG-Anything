@@ -40,7 +40,9 @@ def test_config_token_budget_defaults():
 
 def test_table_small_markdown_passes_through():
     lr = create_mock_lightrag()
-    proc = TableModalProcessor(lightrag=lr, modal_caption_func=AsyncMock(), max_table_tokens=100)
+    proc = TableModalProcessor(
+        lightrag=lr, modal_caption_func=AsyncMock(), max_table_tokens=100
+    )
     small_md = "| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |"
     truncated = proc._truncate_table_for_context(small_md)
     assert truncated == small_md
@@ -49,9 +51,14 @@ def test_table_small_markdown_passes_through():
 def test_table_large_markdown_structure_preserved():
     lr = create_mock_lightrag()
     # Token budget of 50 tokens (approx 200 chars)
-    proc = TableModalProcessor(lightrag=lr, modal_caption_func=AsyncMock(), max_table_tokens=50)
+    proc = TableModalProcessor(
+        lightrag=lr, modal_caption_func=AsyncMock(), max_table_tokens=50
+    )
 
-    rows = [f"| Item {i} | Category {i} | Description for value {i} in table |" for i in range(100)]
+    rows = [
+        f"| Item {i} | Category {i} | Description for value {i} in table |"
+        for i in range(100)
+    ]
     large_md = "| ID | Name | Details |\n|---|---|---|\n" + "\n".join(rows)
 
     truncated = proc._truncate_table_for_context(large_md)
@@ -70,10 +77,19 @@ def test_table_large_markdown_structure_preserved():
 
 def test_table_large_html_structure_preserved():
     lr = create_mock_lightrag()
-    proc = TableModalProcessor(lightrag=lr, modal_caption_func=AsyncMock(), max_table_tokens=60)
+    proc = TableModalProcessor(
+        lightrag=lr, modal_caption_func=AsyncMock(), max_table_tokens=60
+    )
 
-    html_rows = [f"<tr><td>{i}</td><td>Value_{i}</td><td>Extra long text details for row {i}</td></tr>" for i in range(80)]
-    large_html = "<table><thead><tr><th>ID</th><th>Val</th><th>Desc</th></tr></thead><tbody>\n" + "\n".join(html_rows) + "</tbody></table>"
+    html_rows = [
+        f"<tr><td>{i}</td><td>Value_{i}</td><td>Extra long text details for row {i}</td></tr>"
+        for i in range(80)
+    ]
+    large_html = (
+        "<table><thead><tr><th>ID</th><th>Val</th><th>Desc</th></tr></thead><tbody>\n"
+        + "\n".join(html_rows)
+        + "</tbody></table>"
+    )
 
     truncated = proc._truncate_table_for_context(large_html)
 
@@ -86,7 +102,9 @@ def test_table_large_html_structure_preserved():
 
 def test_table_disable_truncation():
     lr = create_mock_lightrag()
-    proc = TableModalProcessor(lightrag=lr, modal_caption_func=AsyncMock(), max_table_tokens=0)
+    proc = TableModalProcessor(
+        lightrag=lr, modal_caption_func=AsyncMock(), max_table_tokens=0
+    )
     large_text = "| Col |\n|---|\n" + "\n".join([f"| row {i} |" for i in range(200)])
     # When max_table_tokens is 0, no truncation occurs
     assert proc._truncate_table_for_context(large_text) == large_text
@@ -94,7 +112,9 @@ def test_table_disable_truncation():
 
 def test_equation_truncation():
     lr = create_mock_lightrag()
-    proc = EquationModalProcessor(lightrag=lr, modal_caption_func=AsyncMock(), max_modal_content_tokens=30)
+    proc = EquationModalProcessor(
+        lightrag=lr, modal_caption_func=AsyncMock(), max_modal_content_tokens=30
+    )
 
     long_eq = "x = " + " + ".join([f"a_{i} * y_{i}" for i in range(100)])
     truncated = proc._truncate_equation_for_context(long_eq)
@@ -112,9 +132,14 @@ async def test_table_generate_description_only_respects_token_budget():
         caption_calls.append(prompt)
         return '{"detailed_description": "Analyzed table", "entity_info": {"entity_name": "T1", "entity_type": "table", "summary": "Sum"}}'
 
-    proc = TableModalProcessor(lightrag=lr, modal_caption_func=mock_caption, max_table_tokens=40)
+    proc = TableModalProcessor(
+        lightrag=lr, modal_caption_func=mock_caption, max_table_tokens=40
+    )
 
-    rows = [f"| Row {i} | Value {i * 10} | Extremely descriptive narrative for line {i} |" for i in range(150)]
+    rows = [
+        f"| Row {i} | Value {i * 10} | Extremely descriptive narrative for line {i} |"
+        for i in range(150)
+    ]
     massive_table = "| Col A | Col B | Col C |\n|---|---|---|\n" + "\n".join(rows)
 
     desc, entity_info = await proc.generate_description_only(

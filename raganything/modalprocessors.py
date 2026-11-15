@@ -1198,7 +1198,11 @@ class TableModalProcessor(BaseModalProcessor):
 
         # Case 1: Markdown table
         lines = [line for line in table_body.splitlines() if line.strip()]
-        if len(lines) >= 3 and "|" in lines[0] and ("---" in lines[1] or "|-" in lines[1]):
+        if (
+            len(lines) >= 3
+            and "|" in lines[0]
+            and ("---" in lines[1] or "|-" in lines[1])
+        ):
             header_lines = lines[:2]
             data_rows = lines[2:]
             header_str = "\n".join(header_lines)
