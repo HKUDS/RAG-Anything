@@ -16,6 +16,81 @@ from lightrag.utils import logger
 from raganything.image_signature import SIGNATURE_BYTES, looks_like_image
 
 
+MODAL_CONTENT_TYPES = frozenset(
+    {"image", "table", "equation", "chart", "audio", "video", "code"}
+)
+
+MODAL_PAYLOAD_KEYS = frozenset(
+    {
+        "img_path",
+        "image_path",
+        "table_body",
+        "table_img_path",
+        "equation",
+        "latex",
+        "equation_body",
+        "code_body",
+        "audio_path",
+        "video_path",
+    }
+)
+
+KNOWN_TEXT_TYPES = frozenset(
+    {
+        "text",
+        "paragraph",
+        "list",
+        "title",
+        "heading",
+        "header",
+        "footer",
+        "page_header",
+        "page_footer",
+        "aside",
+        "footnote",
+        "reference",
+        "caption",
+        "text_block",
+        "body",
+    }
+)
+
+
+def is_multimodal_block(item: Dict[str, Any]) -> bool:
+    """Return True if item represents a multimodal artifact (image, table, equation, etc.)."""
+    if not isinstance(item, dict):
+        return False
+    content_type = item.get("type")
+    if isinstance(content_type, str) and content_type.lower() in MODAL_CONTENT_TYPES:
+        return True
+    return any(k in item and item[k] for k in MODAL_PAYLOAD_KEYS)
+
+
+def extract_block_text(item: Dict[str, Any]) -> str:
+    """Extract textual content from a block, checking 'text' and 'content' fields."""
+    if not isinstance(item, dict):
+        return ""
+    text_val = item.get("text")
+    if text_val is not None and str(text_val).strip():
+        return str(text_val)
+    content_val = item.get("content")
+    if content_val is not None and str(content_val).strip():
+        return str(content_val)
+    return ""
+
+
+def is_text_block(item: Dict[str, Any]) -> bool:
+    """Return True if item should be treated as text content in the document flow."""
+    if not isinstance(item, dict):
+        return False
+    if is_multimodal_block(item):
+        return False
+    content_type = item.get("type", "text")
+    if isinstance(content_type, str) and content_type.lower() in KNOWN_TEXT_TYPES:
+        return True
+    return bool(extract_block_text(item).strip())
+
+
 def normalize_caption_list(value: Any) -> List[str]:
     """Return captions and footnotes as a clean list of strings."""
     if value is None:
@@ -236,10 +311,10 @@ def extract_neighbor_text_from_content_list(
         item = content_list[pos]
         if not isinstance(item, dict):
             continue
-        if item.get("type", "text") != "text":
+        if not is_text_block(item):
             continue
 
-        text = str(item.get("text", "") or "").strip()
+        text = extract_block_text(item).strip()
         if text:
             parts.append(text)
 
@@ -268,12 +343,13 @@ def separate_content_with_page_map(
     heading_chain: List[Tuple[int, str]] = []
 
     for index, item in enumerate(content_list):
+        if not isinstance(item, dict):
+            continue
         _update_heading_chain(item, heading_chain)
-        content_type = item.get("type", "text")
 
-        if content_type == "text":
+        if is_text_block(item):
             # Text content
-            text = str(item.get("text", "") or "")
+            text = extract_block_text(item)
             if text.strip():
                 start = text_length + (2 if text_parts else 0)
                 text_parts.append(text)
@@ -283,7 +359,7 @@ def separate_content_with_page_map(
                 if not isinstance(page_idx, int) or isinstance(page_idx, bool):
                     page_idx = None
                 page_intervals.append((start, end, page_idx))
-        else:
+        elif is_multimodal_block(item):
             # Multimodal content (image, table, equation, etc.)
             multimodal_item = dict(normalize_chart_item(item))
             multimodal_item.setdefault("_content_list_index", index)
