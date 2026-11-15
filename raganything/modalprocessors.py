@@ -383,6 +383,8 @@ class ContextExtractor:
 class BaseModalProcessor:
     """Base class for modal processors"""
 
+    tokenizer = None
+
     def __init__(
         self,
         lightrag: LightRAG,
@@ -434,9 +436,10 @@ class BaseModalProcessor:
         """Count tokens using LightRAG's tokenizer, falling back to heuristic."""
         if not text:
             return 0
-        if self.tokenizer and hasattr(self.tokenizer, "encode"):
+        tokenizer = getattr(self, "tokenizer", None)
+        if tokenizer is not None and hasattr(tokenizer, "encode"):
             try:
-                return len(self.tokenizer.encode(text))
+                return len(tokenizer.encode(text))
             except Exception:
                 pass
         return max(1, len(text) // 4)
@@ -545,9 +548,10 @@ class BaseModalProcessor:
 
     def _count_tokens(self, text: str) -> int:
         """Best-effort token count, falling back to a char-based estimate."""
-        if self.tokenizer is not None:
+        tokenizer = getattr(self, "tokenizer", None)
+        if tokenizer is not None and hasattr(tokenizer, "encode"):
             try:
-                return len(self.tokenizer.encode(text))
+                return len(tokenizer.encode(text))
             except Exception:
                 pass
         # Rough fallback (~4 chars/token) when no tokenizer is available
@@ -1172,6 +1176,8 @@ class ImageModalProcessor(BaseModalProcessor):
 class TableModalProcessor(BaseModalProcessor):
     """Processor specialized for table content"""
 
+    max_table_tokens: int = 4000
+
     def __init__(
         self,
         lightrag: LightRAG,
@@ -1184,15 +1190,16 @@ class TableModalProcessor(BaseModalProcessor):
 
     def _truncate_table_for_context(self, table_body: str) -> str:
         """Truncate oversized tables to fit within token budget while preserving structure and header."""
-        if not table_body or not table_body.strip() or self.max_table_tokens <= 0:
+        max_tokens = getattr(self, "max_table_tokens", 4000)
+        if not table_body or not table_body.strip() or max_tokens <= 0:
             return table_body
 
         current_tokens = self._count_tokens(table_body)
-        if current_tokens <= self.max_table_tokens:
+        if current_tokens <= max_tokens:
             return table_body
 
         logger.info(
-            f"Table size ({current_tokens} tokens) exceeds budget ({self.max_table_tokens} tokens); "
+            f"Table size ({current_tokens} tokens) exceeds budget ({max_tokens} tokens); "
             "performing structure-preserving truncation."
         )
 
@@ -1207,7 +1214,7 @@ class TableModalProcessor(BaseModalProcessor):
             data_rows = lines[2:]
             header_str = "\n".join(header_lines)
             header_tokens = self._count_tokens(header_str)
-            budget_for_rows = max(10, self.max_table_tokens - header_tokens - 30)
+            budget_for_rows = max(10, max_tokens - header_tokens - 30)
 
             retained_rows: List[str] = []
             accumulated_tokens = 0
@@ -1236,7 +1243,7 @@ class TableModalProcessor(BaseModalProcessor):
                 header_row = rows[0]
                 data_rows = rows[1:]
                 header_tokens = self._count_tokens(header_row)
-                budget_for_rows = max(10, self.max_table_tokens - header_tokens - 30)
+                budget_for_rows = max(10, max_tokens - header_tokens - 30)
 
                 retained_rows: List[str] = []
                 accumulated_tokens = 0
@@ -1262,9 +1269,7 @@ class TableModalProcessor(BaseModalProcessor):
         if len(lines) > 2:
             header_line = lines[0]
             data_lines = lines[1:]
-            budget_for_rows = max(
-                10, self.max_table_tokens - self._count_tokens(header_line) - 20
-            )
+            budget_for_rows = max(10, max_tokens - self._count_tokens(header_line) - 20)
 
             retained_lines: List[str] = []
             accumulated_tokens = 0
@@ -1284,10 +1289,10 @@ class TableModalProcessor(BaseModalProcessor):
                 return header_line + "\n" + "\n".join(retained_lines) + summary_marker
 
         # Fallback character slicing
-        char_budget = self.max_table_tokens * 4
+        char_budget = max_tokens * 4
         return (
             table_body[:char_budget]
-            + f"\n[... content truncated to ~{self.max_table_tokens} tokens for LLM context budget ...]"
+            + f"\n[... content truncated to ~{max_tokens} tokens for LLM context budget ...]"
         )
 
     async def generate_description_only(
@@ -1490,6 +1495,8 @@ class TableModalProcessor(BaseModalProcessor):
 class EquationModalProcessor(BaseModalProcessor):
     """Processor specialized for equation content"""
 
+    max_modal_content_tokens: int = 4000
+
     def __init__(
         self,
         lightrag: LightRAG,
@@ -1502,25 +1509,22 @@ class EquationModalProcessor(BaseModalProcessor):
 
     def _truncate_equation_for_context(self, equation_text: str) -> str:
         """Truncate oversized equation to fit within token budget."""
-        if (
-            not equation_text
-            or not equation_text.strip()
-            or self.max_modal_content_tokens <= 0
-        ):
+        max_tokens = getattr(self, "max_modal_content_tokens", 4000)
+        if not equation_text or not equation_text.strip() or max_tokens <= 0:
             return equation_text
 
         current_tokens = self._count_tokens(equation_text)
-        if current_tokens <= self.max_modal_content_tokens:
+        if current_tokens <= max_tokens:
             return equation_text
 
         logger.info(
             f"Equation size ({current_tokens} tokens) exceeds budget "
-            f"({self.max_modal_content_tokens} tokens); truncating for prompt."
+            f"({max_tokens} tokens); truncating for prompt."
         )
-        char_budget = self.max_modal_content_tokens * 4
+        char_budget = max_tokens * 4
         return (
             equation_text[:char_budget]
-            + f"\n[... equation truncated to ~{self.max_modal_content_tokens} tokens for LLM context budget ...]"
+            + f"\n[... equation truncated to ~{max_tokens} tokens for LLM context budget ...]"
         )
 
     async def generate_description_only(
