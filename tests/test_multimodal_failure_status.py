@@ -23,6 +23,27 @@ class ByteTokenizer:
         return bytes(tokens).decode("utf-8", errors="replace")
 
 
+@pytest.mark.asyncio
+async def test_modal_only_ingestion_does_not_read_an_unowned_markdown_file(
+    ingestion, tmp_path
+):
+    rag, available = ingestion
+    available["value"] = True
+    output = tmp_path / "out"
+    output.mkdir(exist_ok=True)
+    (output / "full.md").write_text("OTHER DOCUMENT PRIVATE TEXT")
+    content = [{"type": "table", "table_body": "North sales 42", "page_idx": 0}]
+    rag.parse_document = AsyncMock(return_value=(content, "doc-only-table"))
+    try:
+        await rag.process_document_complete(
+            str(tmp_path / "report.pdf"), output_dir=str(output)
+        )
+        record = await rag.lightrag.full_docs.get_by_id("doc-only-table")
+        assert "OTHER DOCUMENT PRIVATE TEXT" not in str(record)
+    finally:
+        await close(rag)
+
+
 async def llm(*args, **kwargs):
     return (
         json.dumps(

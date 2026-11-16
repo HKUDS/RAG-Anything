@@ -13,6 +13,7 @@ import re
 import json
 import time
 from typing import Dict, Any, Tuple, List, Optional
+from .token_budget import TokenBudgetError, truncate_table, truncate_text
 from pathlib import Path
 from dataclasses import dataclass
 
@@ -31,6 +32,7 @@ from raganything.document_context import get_document_source, set_document_sourc
 from raganything.utils import (
     encode_image_to_base64,
     format_table_body,
+    table_image_paths,
     get_equation_description,
     get_equation_text_and_format,
     get_table_body,
@@ -383,6 +385,10 @@ class ContextExtractor:
 class BaseModalProcessor:
     """Base class for modal processors"""
 
+    @property
+    def _prompt_templates(self):
+        return getattr(self, "_instance_prompts", PROMPTS)
+
     def __init__(
         self,
         lightrag: LightRAG,
@@ -396,7 +402,10 @@ class BaseModalProcessor:
             modal_caption_func: Function for generating descriptions
             context_extractor: Context extractor instance
         """
+        self._instance_prompts = PROMPTS
         self.lightrag = lightrag
+        if modal_caption_func is not None and not callable(modal_caption_func):
+            raise TypeError("modal_caption_func must be callable or None")
         self.modal_caption_func = modal_caption_func
 
         # Use LightRAG's storage instances
@@ -534,9 +543,10 @@ class BaseModalProcessor:
 
     def _count_tokens(self, text: str) -> int:
         """Best-effort token count, falling back to a char-based estimate."""
-        if self.tokenizer is not None:
+        tokenizer = getattr(self, "tokenizer", None)
+        if tokenizer is not None and hasattr(tokenizer, "encode"):
             try:
-                return len(self.tokenizer.encode(text))
+                return len(tokenizer.encode(text))
             except Exception:
                 pass
         # Rough fallback (~4 chars/token) when no tokenizer is available
@@ -962,6 +972,11 @@ class ImageModalProcessor(BaseModalProcessor):
         Returns:
             Tuple of (enhanced_caption, entity_info)
         """
+        if not callable(self.modal_caption_func):
+            raise ValueError(
+                "Configure a callable model function before generating descriptions"
+            )
+
         try:
             # Parse image content (reuse existing logic)
             if isinstance(modal_content, str):
@@ -999,8 +1014,9 @@ class ImageModalProcessor(BaseModalProcessor):
 
             # Build detailed visual analysis prompt with context
             if context:
-                vision_prompt = PROMPTS.get(
-                    "vision_prompt_with_context", PROMPTS["vision_prompt"]
+                vision_prompt = self._prompt_templates.get(
+                    "vision_prompt_with_context",
+                    self._prompt_templates["vision_prompt"],
                 ).format(
                     context=context,
                     section_path=section_path if section_path else "None",
@@ -1012,7 +1028,7 @@ class ImageModalProcessor(BaseModalProcessor):
                     footnotes=", ".join(footnotes) if footnotes else "None",
                 )
             else:
-                vision_prompt = PROMPTS["vision_prompt"].format(
+                vision_prompt = self._prompt_templates["vision_prompt"].format(
                     section_path=section_path if section_path else "None",
                     entity_name=entity_name
                     if entity_name
@@ -1031,7 +1047,7 @@ class ImageModalProcessor(BaseModalProcessor):
             response = await self.modal_caption_func(
                 vision_prompt,
                 image_data=image_base64,
-                system_prompt=PROMPTS["IMAGE_ANALYSIS_SYSTEM"],
+                system_prompt=self._prompt_templates["IMAGE_ANALYSIS_SYSTEM"],
             )
 
             # Parse response (reuse existing logic)
@@ -1088,7 +1104,7 @@ class ImageModalProcessor(BaseModalProcessor):
             section_path = content_data.get("_section_path", "")
             neighbor_text = content_data.get("_neighbor_text", "")
 
-            modal_chunk = PROMPTS["image_chunk"].format(
+            modal_chunk = self._prompt_templates["image_chunk"].format(
                 section_path=section_path if section_path else "None",
                 neighbor_text=neighbor_text if neighbor_text else "None",
                 image_path=image_path,
@@ -1161,6 +1177,21 @@ class ImageModalProcessor(BaseModalProcessor):
 class TableModalProcessor(BaseModalProcessor):
     """Processor specialized for table content"""
 
+    max_table_tokens: int = 0
+
+    def __init__(
+        self,
+        lightrag: LightRAG,
+        modal_caption_func,
+        context_extractor: ContextExtractor = None,
+        max_table_tokens: int = 0,
+    ):
+        super().__init__(lightrag, modal_caption_func, context_extractor)
+        self.max_table_tokens = max_table_tokens
+
+    def _truncate_table_for_context(self, table_body: str) -> str:
+        return truncate_table(table_body, self.max_table_tokens, self._count_tokens)
+
     async def generate_description_only(
         self,
         modal_content,
@@ -1181,6 +1212,11 @@ class TableModalProcessor(BaseModalProcessor):
         Returns:
             Tuple of (enhanced_caption, entity_info)
         """
+        if not callable(self.modal_caption_func):
+            raise ValueError(
+                "Configure a callable model function before generating descriptions"
+            )
+
         try:
             # Parse table content (reuse existing logic)
             if isinstance(modal_content, str):
@@ -1191,9 +1227,12 @@ class TableModalProcessor(BaseModalProcessor):
             else:
                 content_data = modal_content
 
-            table_img_path = content_data.get("img_path")
+            table_img_path = "\nTable Image Path: ".join(
+                table_image_paths(content_data)
+            )
             table_caption = normalize_caption_list(content_data.get("table_caption"))
             table_body = format_table_body(get_table_body(content_data))
+            effective_table_body = self._truncate_table_for_context(table_body)
             table_footnote = normalize_caption_list(content_data.get("table_footnote"))
 
             # Extract context for current item
@@ -1203,8 +1242,8 @@ class TableModalProcessor(BaseModalProcessor):
 
             # Build table analysis prompt with context
             if context:
-                table_prompt = PROMPTS.get(
-                    "table_prompt_with_context", PROMPTS["table_prompt"]
+                table_prompt = self._prompt_templates.get(
+                    "table_prompt_with_context", self._prompt_templates["table_prompt"]
                 ).format(
                     context=context,
                     entity_name=entity_name
@@ -1212,19 +1251,19 @@ class TableModalProcessor(BaseModalProcessor):
                     else "descriptive name for this table",
                     table_img_path=table_img_path,
                     table_caption=", ".join(table_caption) if table_caption else "None",
-                    table_body=table_body,
+                    table_body=effective_table_body,
                     table_footnote=", ".join(table_footnote)
                     if table_footnote
                     else "None",
                 )
             else:
-                table_prompt = PROMPTS["table_prompt"].format(
+                table_prompt = self._prompt_templates["table_prompt"].format(
                     entity_name=entity_name
                     if entity_name
                     else "descriptive name for this table",
                     table_img_path=table_img_path,
                     table_caption=", ".join(table_caption) if table_caption else "None",
-                    table_body=table_body,
+                    table_body=effective_table_body,
                     table_footnote=", ".join(table_footnote)
                     if table_footnote
                     else "None",
@@ -1233,7 +1272,7 @@ class TableModalProcessor(BaseModalProcessor):
             # Call LLM for table analysis
             response = await self.modal_caption_func(
                 table_prompt,
-                system_prompt=PROMPTS["TABLE_ANALYSIS_SYSTEM"],
+                system_prompt=self._prompt_templates["TABLE_ANALYSIS_SYSTEM"],
             )
 
             # Parse response (reuse existing logic)
@@ -1242,6 +1281,9 @@ class TableModalProcessor(BaseModalProcessor):
             )
 
             return enhanced_caption, entity_info
+
+        except TokenBudgetError:
+            raise
 
         except Exception as e:
             logger.error(f"Error generating table description: {e}")
@@ -1282,13 +1324,15 @@ class TableModalProcessor(BaseModalProcessor):
             else:
                 content_data = modal_content
 
-            table_img_path = content_data.get("img_path")
+            table_img_path = "\nTable Image Path: ".join(
+                table_image_paths(content_data)
+            )
             table_caption = normalize_caption_list(content_data.get("table_caption"))
             table_body = format_table_body(get_table_body(content_data))
             table_footnote = normalize_caption_list(content_data.get("table_footnote"))
 
             # Build complete table content
-            modal_chunk = PROMPTS["table_chunk"].format(
+            modal_chunk = self._prompt_templates["table_chunk"].format(
                 table_img_path=table_img_path,
                 table_caption=", ".join(table_caption) if table_caption else "None",
                 table_body=table_body,
@@ -1360,6 +1404,27 @@ class TableModalProcessor(BaseModalProcessor):
 class EquationModalProcessor(BaseModalProcessor):
     """Processor specialized for equation content"""
 
+    max_modal_content_tokens: int = 0
+
+    def __init__(
+        self,
+        lightrag: LightRAG,
+        modal_caption_func,
+        context_extractor: ContextExtractor = None,
+        max_modal_content_tokens: int = 0,
+    ):
+        super().__init__(lightrag, modal_caption_func, context_extractor)
+        self.max_modal_content_tokens = max_modal_content_tokens
+
+    def _truncate_equation_for_context(self, equation_text: str) -> str:
+        budget = self.max_modal_content_tokens
+        return truncate_text(
+            equation_text,
+            budget,
+            self._count_tokens,
+            f"\n[... equation truncated to ~{budget} tokens ...]",
+        )
+
     async def generate_description_only(
         self,
         modal_content,
@@ -1380,6 +1445,11 @@ class EquationModalProcessor(BaseModalProcessor):
         Returns:
             Tuple of (enhanced_caption, entity_info)
         """
+        if not callable(self.modal_caption_func):
+            raise ValueError(
+                "Configure a callable model function before generating descriptions"
+            )
+
         try:
             # Parse equation content (reuse existing logic)
             if isinstance(modal_content, str):
@@ -1391,6 +1461,7 @@ class EquationModalProcessor(BaseModalProcessor):
                 content_data = modal_content
 
             equation_text, equation_format = get_equation_text_and_format(content_data)
+            effective_equation_text = self._truncate_equation_for_context(equation_text)
 
             # Extract context for current item
             context = ""
@@ -1406,19 +1477,20 @@ class EquationModalProcessor(BaseModalProcessor):
 
             # Build equation analysis prompt with context
             if context:
-                equation_prompt = PROMPTS.get(
-                    "equation_prompt_with_context", PROMPTS["equation_prompt"]
+                equation_prompt = self._prompt_templates.get(
+                    "equation_prompt_with_context",
+                    self._prompt_templates["equation_prompt"],
                 ).format(
                     context=context,
-                    equation_text=equation_text,
+                    equation_text=effective_equation_text,
                     equation_format=equation_format,
                     entity_name=entity_name
                     if entity_name
                     else "descriptive name for this equation",
                 )
             else:
-                equation_prompt = PROMPTS["equation_prompt"].format(
-                    equation_text=equation_text,
+                equation_prompt = self._prompt_templates["equation_prompt"].format(
+                    equation_text=effective_equation_text,
                     equation_format=equation_format,
                     entity_name=entity_name
                     if entity_name
@@ -1428,7 +1500,7 @@ class EquationModalProcessor(BaseModalProcessor):
             # Call LLM for equation analysis
             response = await self.modal_caption_func(
                 equation_prompt,
-                system_prompt=PROMPTS["EQUATION_ANALYSIS_SYSTEM"],
+                system_prompt=self._prompt_templates["EQUATION_ANALYSIS_SYSTEM"],
             )
 
             # Parse response (reuse existing logic)
@@ -1437,6 +1509,9 @@ class EquationModalProcessor(BaseModalProcessor):
             )
 
             return enhanced_caption, entity_info
+
+        except TokenBudgetError:
+            raise
 
         except Exception as e:
             logger.error(f"Error generating equation description: {e}")
@@ -1480,7 +1555,7 @@ class EquationModalProcessor(BaseModalProcessor):
             equation_text, equation_format = get_equation_text_and_format(content_data)
 
             # Build complete equation content
-            modal_chunk = PROMPTS["equation_chunk"].format(
+            modal_chunk = self._prompt_templates["equation_chunk"].format(
                 equation_text=equation_text,
                 equation_format=equation_format,
                 enhanced_caption=enhanced_caption,
@@ -1570,6 +1645,11 @@ class GenericModalProcessor(BaseModalProcessor):
         Returns:
             Tuple of (enhanced_caption, entity_info)
         """
+        if not callable(self.modal_caption_func):
+            raise ValueError(
+                "Configure a callable model function before generating descriptions"
+            )
+
         try:
             # Extract context for current item
             context = ""
@@ -1578,8 +1658,9 @@ class GenericModalProcessor(BaseModalProcessor):
 
             # Build generic analysis prompt with context
             if context:
-                generic_prompt = PROMPTS.get(
-                    "generic_prompt_with_context", PROMPTS["generic_prompt"]
+                generic_prompt = self._prompt_templates.get(
+                    "generic_prompt_with_context",
+                    self._prompt_templates["generic_prompt"],
                 ).format(
                     context=context,
                     content_type=content_type,
@@ -1589,7 +1670,7 @@ class GenericModalProcessor(BaseModalProcessor):
                     content=str(modal_content),
                 )
             else:
-                generic_prompt = PROMPTS["generic_prompt"].format(
+                generic_prompt = self._prompt_templates["generic_prompt"].format(
                     content_type=content_type,
                     entity_name=entity_name
                     if entity_name
@@ -1600,7 +1681,7 @@ class GenericModalProcessor(BaseModalProcessor):
             # Call LLM for generic analysis
             response = await self.modal_caption_func(
                 generic_prompt,
-                system_prompt=PROMPTS["GENERIC_ANALYSIS_SYSTEM"].format(
+                system_prompt=self._prompt_templates["GENERIC_ANALYSIS_SYSTEM"].format(
                     content_type=content_type
                 ),
             )
@@ -1643,7 +1724,7 @@ class GenericModalProcessor(BaseModalProcessor):
             )
 
             # Build complete content
-            modal_chunk = PROMPTS["generic_chunk"].format(
+            modal_chunk = self._prompt_templates["generic_chunk"].format(
                 content_type=content_type.title(),
                 content=str(modal_content),
                 enhanced_caption=enhanced_caption,

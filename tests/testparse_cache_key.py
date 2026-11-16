@@ -81,6 +81,18 @@ async def test_parse_cache_reuses_unchanged_file(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_table_continuation_setting_invalidates_parse_cache(tmp_path):
+    processor = _make_processor(tmp_path)
+    document = tmp_path / "report.txt"
+    document.write_text("Report", encoding="utf-8")
+    await processor.parse_document(str(document))
+    processor.config.merge_continued_tables = True
+    await processor.parse_document(str(document))
+    await processor.parse_document(str(document))
+    assert processor.doc_parser.calls == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "option,first,second",
     [
@@ -224,6 +236,7 @@ async def test_mineru_vlm_url_invalidates_parse_cache_without_persisting_it(
     [
         ("image", "img_path"),
         ("table", "table_img_path"),
+        ("table", "table_img_paths"),
         ("equation", "equation_img_path"),
         ("audio", "audio_path"),
         ("video", "video_path"),
@@ -248,7 +261,9 @@ async def test_parse_cache_recreates_missing_media(
             return [
                 {
                     "type": media_type,
-                    path_field: str(asset),
+                    path_field: [str(asset)]
+                    if path_field == "table_img_paths"
+                    else str(asset),
                     path_field + "_public_url": "https://cdn.example.com/asset.bin",
                 }
             ]

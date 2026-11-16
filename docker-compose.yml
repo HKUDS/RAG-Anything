@@ -1,0 +1,37 @@
+services:
+  raganything:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: raganything:latest
+    container_name: raganything
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      - PYTHONUNBUFFERED=1
+      - RAG_DIR=/app/rag_storage
+      - OUTPUT_DIR=/app/parser_output
+    volumes:
+      # Data persistence for vector stores and LightRAG working directories
+      - raganything-data:/app/rag_storage
+      # Output storage for parsed documents and intermediate representations
+      - raganything-output:/app/parser_output
+      # Input documents mounted as read-only for security
+      - ./inputs:/app/inputs:ro
+      # Model cache persistence across container restarts
+      - raganything-cache:/home/appuser/.cache
+    deploy:
+      resources:
+        limits:
+          cpus: "4.0"
+          memory: 8G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
+
+volumes:
+  raganything-cache:
+    driver: local
+  raganything-data:
+  raganything-output:

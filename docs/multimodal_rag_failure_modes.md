@@ -25,7 +25,10 @@ It is meant to stay small and easy to maintain (see discussion in [#207](https:/
 
 - Find the `type: table` blocks in `content_list` and see if `table_body` / structure fields look plausible.
 - For a multi-page table, check whether the parser returned one table item or
-  several fragments. RAG-Anything processes each table item separately.
+  several fragments. By default RAG-Anything processes each item separately.
+  `merge_continued_tables=True` opts into merging adjacent-page fragments with
+  explicit continuation labels; verify the merged rows and source images.
+  See [configuration options](configuration_extensions.md#cross-page-tables).
 - If the parser split the table, verify that the fragments belong together and
   their columns align. Combine the rows in page order, remove repeated headers,
   and pass the merged Markdown as `table_body` in a single table item via

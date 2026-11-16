@@ -78,6 +78,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
     embedding_func: Optional[Callable] = field(default=None)
     """Embedding function for text vectorization."""
 
+    asr_model_func: Optional[Callable] = field(default=None)
+    """Optional custom ASR function for audio/video speech transcription (used when asr_mode='custom' or provided directly)."""
+
     config: Optional[RAGAnythingConfig] = field(default=None)
     """Configuration object, if None will create with environment variables."""
 
@@ -132,6 +135,13 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         # Set working directory
         self.working_dir = self.config.working_dir
 
+        # Inherit model functions from pre-initialized LightRAG instance if not explicitly set
+        if self.lightrag is not None:
+            if self.llm_model_func is None and hasattr(self.lightrag, "llm_model_func"):
+                self.llm_model_func = self.lightrag.llm_model_func
+            if self.embedding_func is None and hasattr(self.lightrag, "embedding_func"):
+                self.embedding_func = self.lightrag.embedding_func
+
         # Set up logger (use existing logger, don't configure it)
         self.logger = logger
 
@@ -157,6 +167,33 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             f"Equation: {self.config.enable_equation_processing}"
         )
         self.logger.info(f"  Max concurrent files: {self.config.max_concurrent_files}")
+
+        from collections import ChainMap
+        from raganything.prompt import PROMPTS
+        from raganything.prompt_manager import (
+            prompt_templates_for_language,
+            validate_custom_prompts,
+        )
+
+        self._custom_prompts = dict(self.config.custom_prompts or {})
+        validate_custom_prompts(self._custom_prompts)
+        base_prompts = (
+            prompt_templates_for_language(self.config.prompt_language)
+            if self.config.prompt_language
+            else PROMPTS
+        )
+        self._instance_prompts = ChainMap(self._custom_prompts, base_prompts)
+
+    def update_prompts(self, custom_prompts: dict[str, str]) -> None:
+        """Update this instance's templates without affecting other RAG instances."""
+        from raganything.prompt_manager import validate_custom_prompts
+
+        validate_custom_prompts(custom_prompts)
+        self._custom_prompts.update(custom_prompts)
+
+    def get_prompt(self, prompt_name: str, default: Any = None) -> Any:
+        """Read the templates used by this instance's processors and queries."""
+        return self._instance_prompts.get(prompt_name, default)
 
     def close(self):
         """Cleanup resources when object is destroyed.
@@ -226,6 +263,29 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 "LightRAG instance must be initialized before creating processors"
             )
 
+        effective_llm_func = self.llm_model_func or getattr(
+            self.lightrag, "llm_model_func", None
+        )
+        effective_vision_func = self.vision_model_func or effective_llm_func
+
+        effective_asr_mode = (
+            "custom"
+            if self.asr_model_func is not None
+            and (not self.config.asr_mode or self.config.asr_mode == "local")
+            else self.config.asr_mode
+        )
+
+        if self.config.enable_audio_processing or self.config.enable_video_processing:
+            from .modalprocessors_audio import _resolve_asr_mode, SUPPORTED_ASR_MODES
+
+            effective_asr_mode = _resolve_asr_mode(
+                effective_asr_mode, self.asr_model_func
+            )
+            if effective_asr_mode not in SUPPORTED_ASR_MODES:
+                raise ValueError(f"Unsupported ASR mode: {effective_asr_mode}")
+            if effective_asr_mode == "custom" and not callable(self.asr_model_func):
+                raise ValueError("asr_model_func must be callable for custom ASR")
+
         # Create context extractor
         self.context_extractor = self._create_context_extractor()
 
@@ -235,26 +295,32 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         if self.config.enable_image_processing:
             self.modal_processors["image"] = ImageModalProcessor(
                 lightrag=self.lightrag,
-                modal_caption_func=self.vision_model_func or self.llm_model_func,
+                modal_caption_func=effective_vision_func,
                 context_extractor=self.context_extractor,
             )
 
         if self.config.enable_table_processing:
             self.modal_processors["table"] = TableModalProcessor(
                 lightrag=self.lightrag,
-                modal_caption_func=self.llm_model_func,
+                modal_caption_func=effective_llm_func,
                 context_extractor=self.context_extractor,
+                max_table_tokens=getattr(self.config, "max_table_tokens", 0),
             )
 
         if self.config.enable_equation_processing:
             self.modal_processors["equation"] = EquationModalProcessor(
                 lightrag=self.lightrag,
-                modal_caption_func=self.llm_model_func,
+                modal_caption_func=effective_llm_func,
                 context_extractor=self.context_extractor,
+                max_modal_content_tokens=getattr(
+                    self.config, "max_modal_content_tokens", 0
+                ),
             )
 
         if self.config.enable_audio_processing:
-            if not audio_deps_available():
+            if not audio_deps_available(
+                asr_mode=effective_asr_mode, asr_func=self.asr_model_func
+            ):
                 self.logger.warning(
                     "enable_audio_processing=True but audio dependencies are missing. "
                     "Install them with: pip install raganything[audio]. "
@@ -263,12 +329,20 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             else:
                 self.modal_processors["audio"] = AudioModalProcessor(
                     lightrag=self.lightrag,
-                    modal_caption_func=self.llm_model_func,
+                    modal_caption_func=effective_llm_func,
                     context_extractor=self.context_extractor,
+                    asr_mode=effective_asr_mode,
+                    asr_model=self.config.asr_model or None,
+                    asr_api_key=self.config.asr_api_key or None,
+                    asr_base_url=self.config.asr_base_url or None,
+                    language=self.config.asr_language or None,
+                    asr_func=self.asr_model_func,
                 )
 
         if self.config.enable_video_processing:
-            if not video_deps_available():
+            if not video_deps_available(
+                asr_mode=effective_asr_mode, asr_func=self.asr_model_func
+            ):
                 self.logger.warning(
                     "enable_video_processing=True but video dependencies are missing. "
                     "Install them with: pip install raganything[video]. "
@@ -279,7 +353,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
 
                 self.modal_processors["video"] = VideoModalProcessor(
                     lightrag=self.lightrag,
-                    modal_caption_func=self.vision_model_func or self.llm_model_func,
+                    modal_caption_func=effective_vision_func,
                     context_extractor=self.context_extractor,
                     min_scene_duration=get_env_value(
                         "VIDEO_MIN_SCENE_DURATION", 5.0, float
@@ -289,6 +363,12 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                     max_windows=get_env_value("VIDEO_MAX_WINDOWS", 100, int),
                     # Reuse the audio processor's whisper model when audio is enabled
                     audio_processor=self.modal_processors.get("audio"),
+                    asr_mode=effective_asr_mode,
+                    asr_model=self.config.asr_model or None,
+                    asr_api_key=self.config.asr_api_key or None,
+                    asr_base_url=self.config.asr_base_url or None,
+                    language=self.config.asr_language or None,
+                    asr_func=self.asr_model_func,
                 )
 
         # Always include generic processor as fallback
@@ -297,6 +377,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             modal_caption_func=self.llm_model_func,
             context_extractor=self.context_extractor,
         )
+
+        for processor in self.modal_processors.values():
+            processor._instance_prompts = self._instance_prompts
 
         self.logger.info("Multimodal processors initialized with context support")
         self.logger.info(f"Available processors: {list(self.modal_processors.keys())}")
@@ -548,6 +631,17 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 f"Parser '{self.config.parser}' is not properly installed. {reason}"
             )
         return installed
+
+    def check_mineru_installation(self) -> bool:
+        """Deprecated alias for :meth:`check_parser_installation`."""
+        import warnings
+
+        warnings.warn(
+            "check_mineru_installation is deprecated; use check_parser_installation instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.check_parser_installation()
 
     def _parser_installation_error_message(self, default_advice: str) -> str:
         """Explain a failed parser installation check.

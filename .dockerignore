@@ -1,0 +1,53 @@
+# Version control and editor
+.git
+.gitignore
+.github
+.vscode
+.idea
+
+# Python virtual environments and caches
+.venv
+venv
+ENV/
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov/
+.mypy_cache
+
+# Build artifacts
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Local data, storage, and models
+rag_storage/
+parser_output/
+*.log
+inputs/
+*.pdf
+*.docx
+*.pptx
+*.epub
+*.mobi
+
+# Secrets and local configurations
+.env
+.env.*
+!.env.example

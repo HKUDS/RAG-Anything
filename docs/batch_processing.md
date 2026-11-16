@@ -174,6 +174,8 @@ or write the incremental manifest. The output path need not exist or be
 writable to preview a batch; actual processing still requires a writable
 output directory.
 
+`dry_run=True`（CLI `--dry-run`）不会创建输出目录或写入增量清单。预览时输出路径无需存在或可写；实际处理仍要求输出目录可写。
+
 ### Incremental Folder Scans
 
 Use `incremental=True` when repeatedly processing the same folder. RAG-Anything

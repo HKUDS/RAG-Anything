@@ -13,6 +13,7 @@ env/
 venv/
 
 *.env*
+!.env.example
 .env_example
 
 # Build / Distribution
