@@ -1243,6 +1243,13 @@ MinerU 将 v2 标记为持续演进的输出 schema。RAG-Anything 会记录并�
 
 ---
 
+### 补充配置
+
+[模型、解析与导入配置](docs/configuration_extensions.md#模型解析与导入配置)介绍了本地、在线和
+自定义转写、远程 MinerU、已有解析结果导入、可选跨页表格合并、实例提示词及检索素材引用。
+[Ollama 示例](examples/ollama_integration_example.py)支持 `--multimodal`；
+CPU 批处理镜像的运行方式见[容器文档](docs/docker_deployment.md#容器使用)。
+
 ## 🧪 支持的内容类型
 
 ### 文档格式

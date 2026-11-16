@@ -40,6 +40,21 @@ class RAGAnythingConfig:
     )
     """Whether to display content statistics during parsing."""
 
+    mineru_backend: str | None = field(
+        default_factory=lambda: get_env_value("MINERU_BACKEND", None, str)
+    )
+    """Backend engine for MinerU parsing (e.g. 'pipeline', 'vlm-http-client')."""
+
+    mineru_vlm_url: str | None = field(
+        default_factory=lambda: get_env_value("MINERU_VLM_URL", None, str)
+    )
+    """Remote server URL for MinerU when backend is 'vlm-http-client'."""
+
+    mineru_source: str | None = field(
+        default_factory=lambda: get_env_value("MINERU_SOURCE", None, str)
+    )
+    """Model source or repository for MinerU parsing."""
+
     # Multimodal Processing Configuration
     # ---
     enable_image_processing: bool = field(
@@ -51,6 +66,11 @@ class RAGAnythingConfig:
         default_factory=lambda: get_env_value("ENABLE_TABLE_PROCESSING", True, bool)
     )
     """Enable table content processing."""
+
+    merge_continued_tables: bool = field(
+        default_factory=lambda: get_env_value("MERGE_CONTINUED_TABLES", False, bool)
+    )
+    """Whether to merge multi-page continued tables across consecutive pages into a single table."""
 
     enable_equation_processing: bool = field(
         default_factory=lambda: get_env_value("ENABLE_EQUATION_PROCESSING", True, bool)
@@ -68,6 +88,34 @@ class RAGAnythingConfig:
     )
     """Enable video content processing. Requires optional 'video' dependencies
     (``pip install raganything[video]``); disabled by default."""
+
+    # ASR (Audio Speech Recognition) Configuration
+    # ---
+    asr_mode: str = field(
+        default_factory=lambda: get_env_value("ASR_MODE", "local", str)
+    )
+    """ASR backend architecture mode: 'local' (faster-whisper), 'online'
+    (OpenAI-compatible /audio/transcriptions API), or 'custom' (user-supplied asr_func)."""
+
+    asr_model: str = field(default_factory=lambda: get_env_value("ASR_MODEL", "", str))
+    """ASR model identifier. Defaults to WHISPER_MODEL ('base') in 'local' mode
+    or 'whisper-1' in 'online' mode when left empty."""
+
+    asr_api_key: str = field(
+        default_factory=lambda: get_env_value("ASR_API_KEY", "", str)
+    )
+    """API key for online ASR service (falls back to OPENAI_API_KEY when empty)."""
+
+    asr_base_url: str = field(
+        default_factory=lambda: get_env_value("ASR_BASE_URL", "", str)
+    )
+    """Base URL for online OpenAI-compatible ASR service
+    (falls back to OPENAI_BASE_URL or 'https://api.openai.com/v1' when empty)."""
+
+    asr_language: str = field(
+        default_factory=lambda: get_env_value("ASR_LANGUAGE", "", str)
+    )
+    """Language code for ASR transcription (falls back to WHISPER_LANGUAGE; empty for auto-detect)."""
 
     # Batch Processing Configuration
     # ---
@@ -109,6 +157,16 @@ class RAGAnythingConfig:
         default_factory=lambda: get_env_value("MAX_CONTEXT_TOKENS", 2000, int)
     )
     """Maximum number of tokens in extracted context."""
+
+    max_table_tokens: int = field(
+        default_factory=lambda: get_env_value("MAX_TABLE_TOKENS", 0, int)
+    )
+    """Maximum token budget for table analysis prompts before intelligent truncation."""
+
+    max_modal_content_tokens: int = field(
+        default_factory=lambda: get_env_value("MAX_MODAL_CONTENT_TOKENS", 0, int)
+    )
+    """Maximum token budget for general modal content (equations, etc.) in analysis prompts."""
 
     include_headers: bool = field(
         default_factory=lambda: get_env_value("INCLUDE_HEADERS", True, bool)
@@ -172,6 +230,16 @@ class RAGAnythingConfig:
         default_factory=lambda: get_env_value("USE_FULL_PATH", False, bool)
     )
     """Whether to use full file path (True) or just basename (False) for file references in LightRAG."""
+
+    # Prompt Configuration
+    # ---
+    prompt_language: str | None = field(
+        default_factory=lambda: get_env_value("PROMPT_LANGUAGE", None, str)
+    )
+    """Instance prompt language; None follows the process-global language."""
+
+    custom_prompts: dict[str, str] | None = field(default=None)
+    """Optional dictionary of prompt template overrides (e.g. {'vision_prompt': '...', 'table_prompt': '...'})."""
 
     def __post_init__(self):
         """Post-initialization setup for backward compatibility"""

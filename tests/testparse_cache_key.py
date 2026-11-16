@@ -81,6 +81,18 @@ async def test_parse_cache_reuses_unchanged_file(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_table_continuation_setting_invalidates_parse_cache(tmp_path):
+    processor = _make_processor(tmp_path)
+    document = tmp_path / "report.txt"
+    document.write_text("Report", encoding="utf-8")
+    await processor.parse_document(str(document))
+    processor.config.merge_continued_tables = True
+    await processor.parse_document(str(document))
+    await processor.parse_document(str(document))
+    assert processor.doc_parser.calls == 2
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "option,first,second",
     [

@@ -1312,6 +1312,14 @@ Different content types require specific optional dependencies:
 
 ---
 
+### Additional configuration
+
+See [model, parser and ingestion options](docs/configuration_extensions.md) for
+local/online/custom ASR, remote MinerU, importing preprocessed bundles, optional
+cross-page table merging, private prompt templates and retrieved media references.
+The [Ollama example](examples/ollama_integration_example.py) accepts `--multimodal`.
+[Container usage](docs/docker_deployment.md) describes the CPU batch image.
+
 ## 🧪 Supported Content Types
 
 ### Document Formats

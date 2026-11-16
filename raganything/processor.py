@@ -37,6 +37,8 @@ from raganything.utils import (
     annotate_chunks_with_page_idx,
     build_sanitized_page_map,
     replay_chunk_spans,
+    merge_continued_tables,
+    table_image_paths,
 )
 from raganything.parse_options import (
     PARSER_CACHE_KWARGS as _PARSER_CACHE_KWARGS,  # noqa: F401
@@ -119,6 +121,8 @@ class ProcessorMixin:
             "parser": self.config.parser,
             "parse_method": parse_method or self.config.parse_method,
         }
+        if getattr(self.config, "merge_continued_tables", False):
+            config_dict["merge_continued_tables"] = True
 
         # Add relevant kwargs to config
         config_dict.update(self._relevant_parser_kwargs(kwargs))
@@ -391,6 +395,39 @@ class ProcessorMixin:
             if len(pages) == 1
         }
 
+    _LEGACY_DOC_STATUS_FIELDS = frozenset(
+        {"content", "multimodal_content", "scheme_name"}
+    )
+
+    @staticmethod
+    def _doc_status_supports_multimodal_processed() -> bool:
+        """Return False if LightRAG's DocProcessingStatus dataclass rejects multimodal_processed."""
+        from lightrag.base import DocProcessingStatus
+
+        return "multimodal_processed" in DocProcessingStatus.__dataclass_fields__
+
+    def _sanitize_doc_status_record(
+        self,
+        record: Dict[str, Any],
+        *,
+        allow_multimodal_processed: bool | None = None,
+    ) -> Dict[str, Any]:
+        """Strip undeclared legacy keys before persisting a doc_status record."""
+        if allow_multimodal_processed is None:
+            allow_multimodal_processed = (
+                self._doc_status_supports_multimodal_processed()
+            )
+        forbidden = set(self._LEGACY_DOC_STATUS_FIELDS)
+        if not allow_multimodal_processed:
+            forbidden.add("multimodal_processed")
+        cleaned = {k: v for k, v in record.items() if k not in forbidden}
+        if "scheme_name" in record and record["scheme_name"] is not None:
+            existing_meta = cleaned.get("metadata")
+            meta = dict(existing_meta) if isinstance(existing_meta, dict) else {}
+            meta.setdefault("scheme_name", record["scheme_name"])
+            cleaned["metadata"] = meta
+        return cleaned
+
     async def _upsert_doc_status(
         self,
         doc_id: str,
@@ -405,11 +442,12 @@ class ProcessorMixin:
             file_path,
             scheme_name=scheme_name,
         )
-        updated_doc_status = {
+        raw_updated = {
             **current_doc_status,
             **updates,
             "updated_at": self._current_doc_status_timestamp(),
         }
+        updated_doc_status = self._sanitize_doc_status_record(raw_updated)
         await self.lightrag.doc_status.upsert({doc_id: updated_doc_status})
         await self.lightrag.doc_status.index_done_callback()
         return updated_doc_status
@@ -531,6 +569,8 @@ class ProcessorMixin:
                 "parser": self.config.parser,
                 "parse_method": parse_method or self.config.parse_method,
             }
+            if getattr(self.config, "merge_continued_tables", False):
+                current_config["merge_continued_tables"] = True
 
             # Add relevant kwargs to current config
             current_config.update(self._relevant_parser_kwargs(kwargs))
@@ -724,6 +764,8 @@ class ProcessorMixin:
                 "parser": self.config.parser,
                 "parse_method": parse_method or self.config.parse_method,
             }
+            if getattr(self.config, "merge_continued_tables", False):
+                parse_config["merge_continued_tables"] = True
 
             # Add relevant kwargs to config
             parse_config.update(self._relevant_parser_kwargs(kwargs))
@@ -782,6 +824,15 @@ class ProcessorMixin:
             parse_method = self.config.parse_method
         if display_stats is None:
             display_stats = self.config.display_content_stats
+
+        # Populate parser/backend options from config if not explicitly overridden
+        if self.config.parser == "mineru":
+            if "backend" not in kwargs and getattr(self.config, "mineru_backend", None):
+                kwargs["backend"] = self.config.mineru_backend
+            if "vlm_url" not in kwargs and getattr(self.config, "mineru_vlm_url", None):
+                kwargs["vlm_url"] = self.config.mineru_vlm_url
+            if "source" not in kwargs and getattr(self.config, "mineru_source", None):
+                kwargs["source"] = self.config.mineru_source
 
         self.logger.info(f"Starting document parsing: {file_path}")
 
@@ -968,6 +1019,9 @@ class ProcessorMixin:
 
         if len(content_list) == 0:
             raise ValueError("Parsing failed: No content was extracted")
+
+        if getattr(self.config, "merge_continued_tables", False):
+            content_list = merge_continued_tables(content_list)
 
         # Generate doc_id based on content
         doc_id = self._generate_content_based_doc_id(content_list)
@@ -1209,6 +1263,7 @@ class ProcessorMixin:
                     # Prepare item info for context extraction
                     item_info = {
                         "page_idx": item.get("page_idx", 0),
+                        "page_idx_end": item.get("page_idx_end"),
                         "index": item.get("_content_list_index", i),
                         "type": content_type,
                     }
@@ -1797,6 +1852,8 @@ class ProcessorMixin:
                 "original_type": data["content_type"],
                 "page_idx": data["item_info"].get("page_idx", 0),
             }
+            if data["item_info"].get("page_idx_end") is not None:
+                chunks[chunk_id]["page_idx_end"] = data["item_info"]["page_idx_end"]
 
         self.logger.debug(
             f"Converted {len(chunks)} multimodal items to multimodal chunks format"
@@ -1826,6 +1883,8 @@ class ProcessorMixin:
         """
         from raganything.prompt import PROMPTS
 
+        templates = getattr(self, "_instance_prompts", PROMPTS)
+
         try:
             if content_type == "image":
                 image_path = original_item.get("img_path", "")
@@ -1842,7 +1901,7 @@ class ProcessorMixin:
                 section_path = original_item.get("_section_path", "")
                 neighbor_text = original_item.get("_neighbor_text", "")
 
-                return PROMPTS["image_chunk"].format(
+                return templates["image_chunk"].format(
                     section_path=section_path if section_path else "None",
                     neighbor_text=neighbor_text if neighbor_text else "None",
                     image_path=image_path,
@@ -1852,7 +1911,9 @@ class ProcessorMixin:
                 )
 
             elif content_type == "table":
-                table_img_path = original_item.get("img_path", "")
+                table_img_path = "\nTable Image Path: ".join(
+                    table_image_paths(original_item)
+                )
                 table_caption = normalize_caption_list(
                     original_item.get("table_caption", [])
                 )
@@ -1861,7 +1922,7 @@ class ProcessorMixin:
                     original_item.get("table_footnote", [])
                 )
 
-                return PROMPTS["table_chunk"].format(
+                return templates["table_chunk"].format(
                     table_img_path=table_img_path,
                     table_caption=", ".join(table_caption) if table_caption else "None",
                     table_body=table_body,
@@ -1876,7 +1937,7 @@ class ProcessorMixin:
                     original_item
                 )
 
-                return PROMPTS["equation_chunk"].format(
+                return templates["equation_chunk"].format(
                     equation_text=equation_text,
                     equation_format=equation_format,
                     enhanced_caption=description,
@@ -1909,7 +1970,7 @@ class ProcessorMixin:
             else:  # generic or unknown types
                 content = str(original_item.get("content", original_item))
 
-                return PROMPTS["generic_chunk"].format(
+                return templates["generic_chunk"].format(
                     content_type=content_type.title(),
                     content=content,
                     enhanced_caption=description,
@@ -2261,16 +2322,15 @@ class ProcessorMixin:
             updated_chunks_count = existing_chunks_count + len(new_chunk_ids)
 
             # Update document status with integrated chunk list
-            await self.lightrag.doc_status.upsert(
+            sanitized_status = self._sanitize_doc_status_record(
                 {
-                    doc_id: {
-                        **current_doc_status,  # Keep existing fields
-                        "chunks_list": updated_chunks_list,  # Integrated chunks list
-                        "chunks_count": updated_chunks_count,  # Updated total count
-                        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
-                    }
+                    **current_doc_status,  # Keep existing fields
+                    "chunks_list": updated_chunks_list,  # Integrated chunks list
+                    "chunks_count": updated_chunks_count,  # Updated total count
+                    "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
                 }
             )
+            await self.lightrag.doc_status.upsert({doc_id: sanitized_status})
 
             # Ensure doc_status update is persisted to disk
             await self.lightrag.doc_status.index_done_callback()
@@ -2317,9 +2377,11 @@ class ProcessorMixin:
                         }
                     )
                     update_payload["metadata"] = meta
+                supports_mm_field = self._doc_status_supports_multimodal_processed()
+                update_payload = self._sanitize_doc_status_record(update_payload)
                 try:
                     await self.lightrag.doc_status.upsert({doc_id: update_payload})
-                except Exception as exc:
+                except (TypeError, ValueError) as exc:
                     # Older LightRAG versions reject unknown doc_status fields such as
                     # multimodal_processed. Fall back to a schema-compatible status-only
                     # update so image-only and multimodal documents still complete.
@@ -2330,7 +2392,7 @@ class ProcessorMixin:
                     )
                     fallback_payload = {
                         k: v
-                        for k, v in current_doc_status.items()
+                        for k, v in update_payload.items()
                         if k != "multimodal_processed"
                     }
                     fallback_payload.update(
@@ -2340,6 +2402,8 @@ class ProcessorMixin:
                         }
                     )
                     await self.lightrag.doc_status.upsert({doc_id: fallback_payload})
+                    supports_mm_field = False
+                if not supports_mm_field:
                     await self._set_multimodal_status_record(doc_id, True)
                 await self.lightrag.doc_status.index_done_callback()
                 self.logger.debug(
@@ -3413,6 +3477,9 @@ class ProcessorMixin:
         if len(content_list) == 0:
             raise ValueError("content_list cannot be empty")
 
+        if getattr(self.config, "merge_continued_tables", False):
+            content_list = merge_continued_tables(content_list)
+
         callback_manager = getattr(self, "callback_manager", None)
         doc_start_time = time.time()
 
@@ -3560,3 +3627,219 @@ class ProcessorMixin:
                 doc_id=doc_id,
                 duration_seconds=duration,
             )
+        return doc_id
+
+    @document_context
+    async def process_preprocessed_output(
+        self,
+        output_dir: str | Path,
+        file_path: str | Path | None = None,
+        file_stem: str | None = None,
+        parse_method: str = "auto",
+        display_stats: bool | None = None,
+        split_by_character: str | None = None,
+        split_by_character_only: bool = False,
+        doc_id: str | None = None,
+        force_multimodal_reprocess: bool = False,
+        include_layout_blocks: bool = False,
+        **kwargs,
+    ) -> tuple[list[dict[str, Any]], str]:
+        """Ingest already-parsed MinerU output files from an output directory into LightRAG.
+
+        Bypasses document parsing when documents have already been processed
+        by MinerU (e.g. offline on a GPU server or batch preprocessing pipeline).
+
+        Args:
+            output_dir: Path to the directory containing MinerU output (or subdirectories).
+            file_path: Original file path or citation reference name.
+            file_stem: Document name without extension. Auto-detected if None.
+            parse_method: Parse method subdirectory ("auto", "ocr", "txt").
+            display_stats: Whether to log content stats.
+            split_by_character: Optional character to split text by.
+            split_by_character_only: If True, split only by specified character.
+            doc_id: Optional document ID. Generated from content if None.
+            force_multimodal_reprocess: If True, re-process multimodal items.
+            include_layout_blocks: If True, keep v2 headers/footers.
+            **kwargs: Extra parameters passed to insert_content_list.
+
+        Returns:
+            Tuple of (content_list, doc_id).
+        """
+        out_path = Path(output_dir)
+        if not out_path.exists():
+            raise FileNotFoundError(f"Output directory does not exist: {out_path}")
+
+        if not out_path.is_dir():
+            raise NotADirectoryError(f"Not an output directory: {out_path}")
+        resolved_file_stem = file_stem or (Path(file_path).stem if file_path else None)
+        # Accept a bundle root, a document directory, or its backend directory.
+        directories = [out_path, *sorted(p for p in out_path.iterdir() if p.is_dir())]
+        directories += [
+            p
+            for directory in directories[1:]
+            for p in sorted(directory.iterdir())
+            if p.is_dir()
+        ]
+        suffixes = ("_content_list_v2.json", "_content_list.json")
+        named_stems = {
+            path.name.removesuffix(suffix)
+            for directory in directories
+            for suffix in suffixes
+            for path in directory.glob(f"*{suffix}")
+        }
+        if resolved_file_stem is None:
+            if len(named_stems) > 1:
+                raise ValueError(
+                    "Multiple documents found; specify file_stem or use process_preprocessed_directory"
+                )
+            resolved_file_stem = next(iter(named_stems), out_path.name)
+        names = [f"{resolved_file_stem}{suffix}" for suffix in suffixes]
+        exact_dirs = [
+            d for d in directories if any((d / name).is_file() for name in names)
+        ]
+        bundle_dirs = exact_dirs or [
+            d
+            for d in directories
+            if any(
+                (d / name).is_file()
+                for name in ("content_list_v2.json", "content_list.json")
+            )
+        ]
+        preferred = [d for d in bundle_dirs if d.name == parse_method]
+        bundle_dirs = preferred or bundle_dirs
+        if len(bundle_dirs) > 1:
+            raise ValueError(
+                "Multiple MinerU bundles found; pass the specific backend output directory"
+            )
+        if not bundle_dirs:
+            raise FileNotFoundError(
+                f"No MinerU content list found in '{output_dir}' for stem '{resolved_file_stem}'"
+            )
+        read_dir = bundle_dirs[0]
+        resolved_file_path = (
+            str(file_path) if file_path is not None else f"{resolved_file_stem}.pdf"
+        )
+        # This API always reads MinerU output, regardless of the configured parser.
+        doc_parser = get_parser("mineru")
+
+        content_list, _md_content = doc_parser._read_output_files(
+            read_dir,
+            resolved_file_stem,
+            method=parse_method,
+            include_layout_blocks=include_layout_blocks,
+        )
+        if not content_list:
+            raise FileNotFoundError(
+                f"No MinerU content list found in '{output_dir}' for stem '{resolved_file_stem}'"
+            )
+
+        if doc_id is None:
+            doc_id = self._generate_content_based_doc_id(content_list)
+
+        # Imported files remain caller-owned; deleting the index must not remove them.
+
+        await self.insert_content_list(
+            content_list=content_list,
+            file_path=resolved_file_path,
+            split_by_character=split_by_character,
+            split_by_character_only=split_by_character_only,
+            doc_id=doc_id,
+            display_stats=display_stats,
+            force_multimodal_reprocess=force_multimodal_reprocess,
+            **kwargs,
+        )
+        return content_list, doc_id
+
+    async def process_preprocessed_directory(
+        self,
+        base_dir: str | Path,
+        parse_method: str = "auto",
+        display_stats: bool | None = None,
+        split_by_character: str | None = None,
+        split_by_character_only: bool = False,
+        force_multimodal_reprocess: bool = False,
+        include_layout_blocks: bool = False,
+        concurrency: int = 1,
+        continue_on_error: bool = False,
+        **kwargs,
+    ) -> list[tuple[str, tuple[list[dict[str, Any]], str]]]:
+        """Batch-import all preprocessed MinerU document folders from a directory.
+
+        Iterates over each subdirectory in base_dir and ingests its preprocessed output
+        with bounded concurrency and optional error tolerance.
+
+        Args:
+            base_dir: Directory containing per-document output subdirectories.
+            parse_method: MinerU parse method subdirectory ("auto", "ocr", "txt").
+            display_stats: Whether to log content stats.
+            split_by_character: Optional character to split text by.
+            split_by_character_only: If True, split only by specified character.
+            force_multimodal_reprocess: If True, re-process multimodal items.
+            include_layout_blocks: If True, keep v2 headers/footers.
+            concurrency: Number of concurrent document ingestion tasks (default: 1).
+            continue_on_error: If True, log errors and continue batch on individual failures.
+            **kwargs: Extra parameters passed to process_preprocessed_output.
+
+        Returns:
+            List of (folder_name, (content_list, doc_id)) tuples for successfully ingested docs.
+        """
+        base_path = Path(base_dir)
+        if not base_path.is_dir():
+            raise NotADirectoryError(f"Directory not found: {base_dir}")
+
+        doc_dirs = []
+        for item in sorted(base_path.iterdir()):
+            if item.is_dir() and (
+                any(item.glob("*content_list*.json"))
+                or any(item.glob("*/*content_list*.json"))
+            ):
+                doc_dirs.append(item)
+
+        if not doc_dirs and (
+            any(base_path.glob("*content_list*.json"))
+            or any(base_path.glob("*/*content_list*.json"))
+        ):
+            doc_dirs.append(base_path)
+
+        if not doc_dirs:
+            return []
+
+        results: list[tuple[str, tuple[list[dict[str, Any]], str]]] = []
+        semaphore = asyncio.Semaphore(max(1, concurrency))
+
+        async def _process_one(doc_dir: Path):
+            async with semaphore:
+                self.logger.info(f"Ingesting preprocessed directory: {doc_dir.name}")
+                try:
+                    res = await self.process_preprocessed_output(
+                        output_dir=doc_dir,
+                        parse_method=parse_method,
+                        display_stats=display_stats,
+                        split_by_character=split_by_character,
+                        split_by_character_only=split_by_character_only,
+                        force_multimodal_reprocess=force_multimodal_reprocess,
+                        include_layout_blocks=include_layout_blocks,
+                        **kwargs,
+                    )
+                    return doc_dir.name, res, None
+                except Exception as exc:
+                    self.logger.error(
+                        f"Failed ingesting preprocessed directory {doc_dir.name}: {exc}"
+                    )
+                    if not continue_on_error:
+                        raise
+                    return doc_dir.name, None, exc
+
+        if concurrency > 1 and len(doc_dirs) > 1:
+            tasks = [_process_one(d) for d in doc_dirs]
+            batch_outcomes = await asyncio.gather(*tasks, return_exceptions=False)
+            for folder_name, res, _err in batch_outcomes:
+                if res is not None:
+                    results.append((folder_name, res))
+        else:
+            for doc_dir in doc_dirs:
+                folder_name, res, _err = await _process_one(doc_dir)
+                if res is not None:
+                    results.append((folder_name, res))
+
+        return results
