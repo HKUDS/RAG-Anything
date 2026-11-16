@@ -587,8 +587,12 @@ class ProcessorMixin:
                 for item in content_list:
                     if not isinstance(item, dict):
                         continue
-                    for field in (*MEDIA_PATH_FIELDS, "audio_path", "video_path"):
-                        media_path = item.get(field)
+                    media_paths = [
+                        item.get(field)
+                        for field in (*MEDIA_PATH_FIELDS, "audio_path", "video_path")
+                    ]
+                    media_paths.extend(item.get("table_img_paths") or [])
+                    for media_path in media_paths:
                         if not isinstance(media_path, str) or not media_path:
                             continue
                         if media_path.startswith(("http://", "https://", "s3://")):

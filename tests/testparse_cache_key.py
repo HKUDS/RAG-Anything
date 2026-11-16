@@ -236,6 +236,7 @@ async def test_mineru_vlm_url_invalidates_parse_cache_without_persisting_it(
     [
         ("image", "img_path"),
         ("table", "table_img_path"),
+        ("table", "table_img_paths"),
         ("equation", "equation_img_path"),
         ("audio", "audio_path"),
         ("video", "video_path"),
@@ -260,7 +261,9 @@ async def test_parse_cache_recreates_missing_media(
             return [
                 {
                     "type": media_type,
-                    path_field: str(asset),
+                    path_field: [str(asset)]
+                    if path_field == "table_img_paths"
+                    else str(asset),
                     path_field + "_public_url": "https://cdn.example.com/asset.bin",
                 }
             ]
