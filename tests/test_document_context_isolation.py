@@ -128,7 +128,8 @@ def processor(monkeypatch):
         AsyncMock(return_value=shared),
     )
     monkeypatch.setattr(
-        "lightrag.kg.shared_storage.get_pipeline_status_lock", lambda: asyncio.Lock()
+        "lightrag.kg.shared_storage.get_namespace_lock",
+        lambda *args, **kwargs: asyncio.Lock(),
     )
     return p
 

@@ -149,10 +149,10 @@ async def test_process_document_complete_lightrag_api_leaves_storage_compatible(
     # Mock pipeline status lock & shared storage
     shared_data = {"pipeline_status": {"history_messages": [], "scan_disabled": False}}
     fake_kg_shared = types.ModuleType("lightrag.kg.shared_storage")
-    fake_kg_shared.get_namespace_data = lambda ns: asyncio.sleep(
+    fake_kg_shared.get_namespace_data = lambda ns, **kwargs: asyncio.sleep(
         0, result=shared_data[ns]
     )
-    fake_kg_shared.get_pipeline_status_lock = lambda: asyncio.Lock()
+    fake_kg_shared.get_namespace_lock = lambda *args, **kwargs: asyncio.Lock()
     monkeypatch.setitem(sys.modules, "lightrag.kg.shared_storage", fake_kg_shared)
 
     async def fake_ensure_initialized():
