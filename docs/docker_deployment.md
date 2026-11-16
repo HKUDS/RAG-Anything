@@ -1,6 +1,6 @@
 # Container usage
 
-This image runs RAG-Anything scripts as batch jobs. It does not start an HTTP
+Building requires Docker BuildKit. This image runs RAG-Anything scripts as batch jobs. It does not start an HTTP
 service. The default command prints the example's help and exits successfully;
 Compose deliberately uses `restart: "no"`.
 
@@ -34,7 +34,7 @@ help command once and stops. Inject real model credentials at runtime.
 
 # 容器使用
 
-此镜像用于运行 RAG-Anything 批处理脚本，不会启动 HTTP 服务。默认命令显示示例的
+构建需要 Docker BuildKit。此镜像用于运行 RAG-Anything 批处理脚本，不会启动 HTTP 服务。默认命令显示示例的
 帮助信息后正常退出，因此 Compose 使用 `restart: "no"`，不会反复重启。
 
 先复制 `.env.example` 为 `.env`，配置自己的模型端点和模型，创建 `inputs` 目录，

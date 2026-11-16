@@ -72,24 +72,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy pre-built virtual environment from builder stage
 COPY --from=builder /opt/venv /opt/venv
 
-# Create unprivileged system user and group for security compliance
-RUN groupadd -g 10001 appuser && \
-    useradd -u 10001 -g appuser -m -d /home/appuser -s /bin/bash appuser
+# BuildKit mounts the source read-only; copy it and set ownership in one layer.
+# This also avoids repeatedly copying the large venv with native snapshotters.
+RUN --mount=type=bind,target=/src \
+    groupadd -g 10001 appuser && \
+    useradd -u 10001 -g appuser -m -d /home/appuser -s /bin/bash appuser && \
+    mkdir -p /app/rag_storage /app/parser_output /app/inputs /home/appuser/.cache && \
+    cp -R /src/raganything /src/examples /app/ && \
+    cp /src/pyproject.toml /src/README.md /app/ && \
+    cp /src/docker/entrypoint.sh /usr/local/bin/entrypoint.sh && \
+    chmod +x /usr/local/bin/entrypoint.sh && \
+    chown -R appuser:appuser /app /home/appuser
 
 WORKDIR /app
-
-# Copy application source code and scripts
-COPY --chown=appuser:appuser raganything/ ./raganything/
-COPY --chown=appuser:appuser examples/ ./examples/
-COPY --chown=appuser:appuser pyproject.toml README.md ./
-COPY --chown=appuser:appuser docker/entrypoint.sh /usr/local/bin/entrypoint.sh
-
-# Create persistent storage directories with appropriate ownership
-RUN mkdir -p /app/rag_storage /app/parser_output /app/inputs /home/appuser/.cache && \
-    chown -R appuser:appuser /app /home/appuser && \
-    chmod +x /usr/local/bin/entrypoint.sh
-
-# Switch to unprivileged user
 USER appuser
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
