@@ -341,17 +341,59 @@ def test_incremental_tolerates_unreadable_file(monkeypatch, tmp_path):
     assert result.skipped_files == [str(second_doc)]
 
 
-def test_incremental_dry_run_does_not_write_manifest(monkeypatch, tmp_path):
-    batch_parser, _ = _make_batch_parser(monkeypatch)
-    docs_dir, _first_doc, _second_doc = _seed_two_docs(tmp_path)
-    output_dir = tmp_path / "out"
+@pytest.mark.parametrize("incremental", [False, True])
+@pytest.mark.parametrize("use_async", [False, True])
+def test_dry_run_does_not_create_output_directory(
+    monkeypatch, tmp_path, incremental, use_async
+):
+    batch_parser, fake_parser = _make_batch_parser(monkeypatch)
+    docs_dir, first_doc, second_doc = _seed_two_docs(tmp_path)
+    output_dir = tmp_path / "new" / "out"
 
-    batch_parser.process_batch(
-        [str(docs_dir)], str(output_dir), incremental=True, dry_run=True
-    )
+    if use_async:
+        result = asyncio.run(
+            batch_parser.process_batch_async(
+                [str(docs_dir)], str(output_dir), incremental=incremental, dry_run=True
+            )
+        )
+    else:
+        result = batch_parser.process_batch(
+            [str(docs_dir)], str(output_dir), incremental=incremental, dry_run=True
+        )
 
-    manifest_path = output_dir / ".raganything_batch_manifest.json"
-    assert not manifest_path.exists()
+    assert result.dry_run is True
+    assert set(result.successful_files) == {str(first_doc), str(second_doc)}
+    assert result.failed_files == []
+    assert fake_parser.processed_files == []
+    assert not output_dir.parent.exists()
+
+
+@pytest.mark.parametrize("incremental", [False, True])
+def test_cli_dry_run_does_not_create_output_directory(
+    monkeypatch, tmp_path, capsys, incremental
+):
+    module, fake_parser = _load_batch_parser_module(monkeypatch)
+    docs_dir, first_doc, second_doc = _seed_two_docs(tmp_path)
+    output_dir = tmp_path / "new" / "out"
+    args = [
+        "raganything.batch_parser",
+        str(docs_dir),
+        "--output",
+        str(output_dir),
+        "--dry-run",
+        "--no-progress",
+    ]
+    if incremental:
+        args.append("--incremental")
+    monkeypatch.setattr(sys, "argv", args)
+
+    assert module.main() == 0
+
+    output = capsys.readouterr().out
+    assert str(first_doc) in output
+    assert str(second_doc) in output
+    assert fake_parser.processed_files == []
+    assert not output_dir.parent.exists()
 
 
 def test_filter_supported_files_deduplicates_overlapping_inputs(monkeypatch, tmp_path):

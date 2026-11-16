@@ -169,6 +169,11 @@ python -m raganything.batch_parser examples/sample_docs/ --output ./output --inc
 python -m raganything.batch_parser --help
 ```
 
+Dry runs (`dry_run=True`, CLI `--dry-run`) do not create the output directory
+or write the incremental manifest. The output path need not exist or be
+writable to preview a batch; actual processing still requires a writable
+output directory.
+
 ### Incremental Folder Scans
 
 Use `incremental=True` when repeatedly processing the same folder. RAG-Anything

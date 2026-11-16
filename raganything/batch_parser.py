@@ -470,10 +470,6 @@ class BatchParser:
 
         self.logger.info(f"Found {len(supported_files)} files to process")
 
-        # Create output directory before reading/writing the incremental manifest
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-
         skipped_files: List[str] = []
         manifest: Dict[str, Dict[str, object]] = {}
         signatures: Dict[str, Dict[str, object]] = {}
@@ -508,6 +504,11 @@ class BatchParser:
                 dry_run=True,
                 skipped_files=skipped_files,
             )
+
+        # Only real processing needs a writable output directory. Manifest
+        # reads and dry-run planning must not create directories.
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
 
         if not incremental:
             # These parses overwrite the same artifacts as incremental runs.
