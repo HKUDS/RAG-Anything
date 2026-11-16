@@ -183,6 +183,22 @@ class ProcessorMixin:
         if not await self.lightrag.full_docs.get_by_id(doc_id):
             await self.lightrag.doc_status.delete([doc_id])
 
+    async def _lightrag_pipeline_status_and_lock(self) -> Tuple[Dict[str, Any], Any]:
+        """Pipeline status and its lock for this LightRAG instance's workspace.
+
+        Calling ``get_namespace_data`` / ``get_pipeline_status_lock`` without a
+        workspace resolves to LightRAG's *default* workspace (the first instance
+        initialized in the process), so progress, cancellation and locking
+        would hit another workspace's pipeline when several are in use.
+        """
+        from lightrag.kg.shared_storage import get_namespace_data, get_namespace_lock
+
+        workspace = getattr(self.lightrag, "workspace", None)
+        return (
+            await get_namespace_data("pipeline_status", workspace=workspace),
+            get_namespace_lock("pipeline_status", workspace=workspace),
+        )
+
     async def _lightrag_pipeline_status(self) -> Dict[str, Any]:
         """LightRAG's shared pipeline status for this workspace, or ``{}``."""
         try:
@@ -1330,14 +1346,12 @@ class ProcessorMixin:
         # Batch merge all multimodal content results (similar to text content processing)
         if all_chunk_results:
             from lightrag.operate import merge_nodes_and_edges
-            from lightrag.kg.shared_storage import (
-                get_namespace_data,
-                get_pipeline_status_lock,
-            )
 
             # Get pipeline status and lock from shared storage
-            pipeline_status = await get_namespace_data("pipeline_status")
-            pipeline_status_lock = get_pipeline_status_lock()
+            (
+                pipeline_status,
+                pipeline_status_lock,
+            ) = await self._lightrag_pipeline_status_and_lock()
 
             await merge_nodes_and_edges(
                 chunk_results=all_chunk_results,
@@ -2162,15 +2176,13 @@ class ProcessorMixin:
         self, lightrag_chunks: Dict[str, Any]
     ) -> List[Tuple]:
         """Use LightRAG's extract_entities for batch entity relation extraction"""
-        from lightrag.kg.shared_storage import (
-            get_namespace_data,
-            get_pipeline_status_lock,
-        )
         from lightrag.operate import extract_entities
 
         # Get pipeline status (consistent with LightRAG)
-        pipeline_status = await get_namespace_data("pipeline_status")
-        pipeline_status_lock = get_pipeline_status_lock()
+        (
+            pipeline_status,
+            pipeline_status_lock,
+        ) = await self._lightrag_pipeline_status_and_lock()
 
         # Directly use LightRAG's extract_entities
         chunk_results = await extract_entities(
@@ -2255,14 +2267,12 @@ class ProcessorMixin:
         self, enhanced_chunk_results: List[Tuple], file_path: str, doc_id: str = None
     ):
         """Use LightRAG's merge_nodes_and_edges for batch merge"""
-        from lightrag.kg.shared_storage import (
-            get_namespace_data,
-            get_pipeline_status_lock,
-        )
         from lightrag.operate import merge_nodes_and_edges
 
-        pipeline_status = await get_namespace_data("pipeline_status")
-        pipeline_status_lock = get_pipeline_status_lock()
+        (
+            pipeline_status,
+            pipeline_status_lock,
+        ) = await self._lightrag_pipeline_status_and_lock()
 
         # Use full path or basename based on config
         file_ref = self._get_file_reference(file_path)
@@ -3238,13 +3248,10 @@ class ProcessorMixin:
                     doc_pre_id
                 )
 
-            from lightrag.kg.shared_storage import (
-                get_namespace_data,
-                get_pipeline_status_lock,
-            )
-
-            pipeline_status = await get_namespace_data("pipeline_status")
-            pipeline_status_lock = get_pipeline_status_lock()
+            (
+                pipeline_status,
+                pipeline_status_lock,
+            ) = await self._lightrag_pipeline_status_and_lock()
 
             # Set processing status
             async with pipeline_status_lock:

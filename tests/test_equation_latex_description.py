@@ -58,7 +58,9 @@ def processor(monkeypatch):
     monkeypatch.setattr(
         modalprocessors, "get_namespace_data", AsyncMock(return_value={})
     )
-    monkeypatch.setattr(modalprocessors, "get_pipeline_status_lock", lambda: None)
+    monkeypatch.setattr(
+        modalprocessors, "get_namespace_lock", lambda *args, **kwargs: None
+    )
 
     prompts = []
 

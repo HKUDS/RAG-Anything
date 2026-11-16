@@ -23,7 +23,7 @@ from lightrag.utils import (
 )
 from lightrag.lightrag import LightRAG
 from dataclasses import asdict
-from lightrag.kg.shared_storage import get_namespace_data, get_pipeline_status_lock
+from lightrag.kg.shared_storage import get_namespace_data, get_namespace_lock
 from lightrag.operate import extract_entities, merge_nodes_and_edges
 
 # Import prompt templates
@@ -849,8 +849,14 @@ class BaseModalProcessor:
 
         await self.chunks_vdb.upsert(chunk_vdb_data)
 
-        pipeline_status = await get_namespace_data("pipeline_status")
-        pipeline_status_lock = get_pipeline_status_lock()
+        # Use this instance's workspace, not LightRAG's process-wide default
+        workspace = getattr(self.lightrag, "workspace", None)
+        pipeline_status = await get_namespace_data(
+            "pipeline_status", workspace=workspace
+        )
+        pipeline_status_lock = get_namespace_lock(
+            "pipeline_status", workspace=workspace
+        )
 
         # Prepare chunk for extraction
         chunks = {chunk_id: chunk_data}

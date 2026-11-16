@@ -78,12 +78,12 @@ def _fake_shared_storage(monkeypatch):
     fake = types.ModuleType("lightrag.kg.shared_storage")
     pipeline_status = {"history_messages": []}
 
-    async def get_namespace_data(namespace):
+    async def get_namespace_data(namespace, **kwargs):
         assert namespace == "pipeline_status"
         return pipeline_status
 
     fake.get_namespace_data = get_namespace_data
-    fake.get_pipeline_status_lock = lambda: asyncio.Lock()
+    fake.get_namespace_lock = lambda *args, **kwargs: asyncio.Lock()
     fake_kg = types.ModuleType("lightrag.kg")
     fake_kg.shared_storage = fake
     monkeypatch.setitem(sys.modules, "lightrag.kg", fake_kg)
