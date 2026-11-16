@@ -157,7 +157,8 @@ Ollama 示例的 `--multimodal` 会使用 `OLLAMA_VISION_MODEL`，通过兼容 O
 `max_table_tokens=0` and `max_modal_content_tokens=0` disable truncation by default.
 Set a positive value (or `MAX_TABLE_TOKENS` / `MAX_MODAL_CONTENT_TOKENS`) to limit
 only the table/formula body sent for model description. Other prompt/context text
-still consumes tokens. Counting includes omission markers; table headers and
+still consumes tokens. Counts use LightRAG's configured tokenizer (or a character
+estimate when unavailable). Counting includes omission markers; table headers and
 complete rows are preserved. A budget too small for required structure raises
 `TokenBudgetError`. Original content in stored chunks remains complete.
 

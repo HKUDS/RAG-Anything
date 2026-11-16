@@ -663,3 +663,26 @@ def test_online_asr_uses_real_http_and_rejects_html(tmp_path):
         server.shutdown()
         worker.join()
         server.server_close()
+
+
+@pytest.mark.parametrize(
+    "mode,callback",
+    [("custom", None), ("custom", "not-callable"), ("unsupported", None)],
+)
+def test_invalid_asr_configuration_cannot_fall_back_to_metadata(
+    tmp_path, mode, callback
+):
+    from raganything import RAGAnything, RAGAnythingConfig
+
+    rag = RAGAnything(
+        config=RAGAnythingConfig(
+            working_dir=str(tmp_path), enable_audio_processing=True, asr_mode=mode
+        ),
+        lightrag=MagicMock(),
+        asr_model_func=callback,
+    )
+    rag.finalize_storages = AsyncMock()
+    for _ in range(2):
+        with pytest.raises(ValueError, match="ASR|asr"):
+            rag._initialize_processors()
+        assert not rag.modal_processors

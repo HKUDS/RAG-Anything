@@ -268,6 +268,24 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         )
         effective_vision_func = self.vision_model_func or effective_llm_func
 
+        effective_asr_mode = (
+            "custom"
+            if self.asr_model_func is not None
+            and (not self.config.asr_mode or self.config.asr_mode == "local")
+            else self.config.asr_mode
+        )
+
+        if self.config.enable_audio_processing or self.config.enable_video_processing:
+            from .modalprocessors_audio import _resolve_asr_mode, SUPPORTED_ASR_MODES
+
+            effective_asr_mode = _resolve_asr_mode(
+                effective_asr_mode, self.asr_model_func
+            )
+            if effective_asr_mode not in SUPPORTED_ASR_MODES:
+                raise ValueError(f"Unsupported ASR mode: {effective_asr_mode}")
+            if effective_asr_mode == "custom" and not callable(self.asr_model_func):
+                raise ValueError("asr_model_func must be callable for custom ASR")
+
         # Create context extractor
         self.context_extractor = self._create_context_extractor()
 
@@ -286,7 +304,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 lightrag=self.lightrag,
                 modal_caption_func=effective_llm_func,
                 context_extractor=self.context_extractor,
-                max_table_tokens=getattr(self.config, "max_table_tokens", 4000),
+                max_table_tokens=getattr(self.config, "max_table_tokens", 0),
             )
 
         if self.config.enable_equation_processing:
@@ -295,16 +313,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 modal_caption_func=effective_llm_func,
                 context_extractor=self.context_extractor,
                 max_modal_content_tokens=getattr(
-                    self.config, "max_modal_content_tokens", 4000
+                    self.config, "max_modal_content_tokens", 0
                 ),
             )
-
-        effective_asr_mode = (
-            "custom"
-            if self.asr_model_func is not None
-            and (not self.config.asr_mode or self.config.asr_mode == "local")
-            else self.config.asr_mode
-        )
 
         if self.config.enable_audio_processing:
             if not audio_deps_available(
