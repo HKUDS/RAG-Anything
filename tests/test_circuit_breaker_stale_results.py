@@ -3,6 +3,7 @@
 import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,7 +15,9 @@ from raganything.resilience import CircuitBreaker
 @pytest.mark.parametrize("fails", [False, True])
 def test_late_sync_result_preserves_recovery_cycle(monkeypatch, state, fails):
     now = [1000.0]
-    monkeypatch.setattr(resilience_module.time, "time", lambda: now[0])
+    monkeypatch.setattr(
+        resilience_module, "time", SimpleNamespace(monotonic=lambda: now[0])
+    )
     breaker = CircuitBreaker(failure_threshold=1, reset_timeout=60)
     started = threading.Event()
     release = threading.Event()
@@ -76,7 +79,9 @@ def test_late_sync_result_preserves_recovery_cycle(monkeypatch, state, fails):
 @pytest.mark.parametrize("fails", [False, True])
 async def test_late_async_result_preserves_recovery_cycle(monkeypatch, state, fails):
     now = [1000.0]
-    monkeypatch.setattr(resilience_module.time, "time", lambda: now[0])
+    monkeypatch.setattr(
+        resilience_module, "time", SimpleNamespace(monotonic=lambda: now[0])
+    )
     breaker = CircuitBreaker(failure_threshold=1, reset_timeout=60)
     started = asyncio.Event()
     release = asyncio.Event()

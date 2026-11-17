@@ -281,7 +281,7 @@ class CircuitBreaker:
         """Current circuit breaker state."""
         with self._lock:
             if self._state == "open":
-                if time.time() - self._last_failure_time >= self.reset_timeout:
+                if time.monotonic() - self._last_failure_time >= self.reset_timeout:
                     self._state = "half-open"
             return self._state
 
@@ -297,7 +297,7 @@ class CircuitBreaker:
     def record_failure(self) -> None:
         """Record a failed call, potentially opening the breaker."""
         with self._lock:
-            now = time.time()
+            now = time.monotonic()
             if self._state == "half-open":
                 # A failed half-open probe should reopen the breaker immediately.
                 self._failure_count = self.failure_threshold
@@ -346,7 +346,7 @@ class CircuitBreaker:
         with self._lock:
             # Transition open -> half-open if timeout has elapsed.
             if self._state == "open":
-                if time.time() - self._last_failure_time >= self.reset_timeout:
+                if time.monotonic() - self._last_failure_time >= self.reset_timeout:
                     self._state = "half-open"
 
             if self._state == "open":
