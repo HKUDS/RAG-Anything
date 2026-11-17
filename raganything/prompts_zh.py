@@ -99,6 +99,38 @@ PROMPTS_ZH["text_prompt"] = """根据以下图片信息提供分析：
 
 {vision_prompt}"""
 
+# Resilient image analysis prompt when raw image file is missing or unreadable
+PROMPTS_ZH[
+    "vision_fallback_prompt"
+] = """请根据以下元数据和上下文详细分析该图像内容，并按以下结构提供JSON格式回复：
+
+{{
+    "detailed_description": "基于可用的标题、脚注和周围上下文对该视觉元素的综合分析：
+    - 综合说明图表、图示、场景或插图所描绘的内容
+    - 解释元数据中提及的任何文字标签、数据点或类别
+    - 说明各元素之间的关系以及它们与周围上下文的关联
+    - 始终使用具体名称而非代词",
+    "entity_info": {{
+        "entity_name": "{entity_name}",
+        "entity_type": "image",
+        "summary": "视觉内容、其重要性以及与周围内容关系的简明总结（最多100字）"
+    }}
+}}
+
+周围上下文：
+{context}
+
+文档结构：
+- 章节路径：{section_path}
+
+图像详情：
+- 图片路径：{image_path}
+- 标注：{captions}
+- 脚注：{footnotes}
+
+请专注于提供融合上下文的准确、详细分析，以便于知识检索。
+使用语义化的entity_name；不要返回文件名或类似figure_30_1的图号，除非它们是实际标题。"""
+
 # Table analysis prompt template
 PROMPTS_ZH["table_prompt"] = """请分析此表格内容，并以以下JSON结构提供回答：
 
