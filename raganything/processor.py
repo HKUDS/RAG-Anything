@@ -1889,6 +1889,15 @@ class ProcessorMixin:
 
         templates = getattr(self, "_instance_prompts", PROMPTS)
 
+        page_idx = original_item.get("page_idx")
+        page_idx_end = original_item.get("page_idx_end")
+        page_prefix = ""
+        if isinstance(page_idx, int) and page_idx >= 0:
+            if isinstance(page_idx_end, int) and page_idx_end > page_idx:
+                page_prefix = f"[Page {page_idx + 1}-{page_idx_end + 1}]\n"
+            else:
+                page_prefix = f"[Page {page_idx + 1}]\n"
+
         try:
             if content_type == "image":
                 image_path = original_item.get("img_path", "")
@@ -1905,7 +1914,7 @@ class ProcessorMixin:
                 section_path = original_item.get("_section_path", "")
                 neighbor_text = original_item.get("_neighbor_text", "")
 
-                return templates["image_chunk"].format(
+                formatted = templates["image_chunk"].format(
                     section_path=section_path if section_path else "None",
                     neighbor_text=neighbor_text if neighbor_text else "None",
                     image_path=image_path,
@@ -1926,7 +1935,7 @@ class ProcessorMixin:
                     original_item.get("table_footnote", [])
                 )
 
-                return templates["table_chunk"].format(
+                formatted = templates["table_chunk"].format(
                     table_img_path=table_img_path,
                     table_caption=", ".join(table_caption) if table_caption else "None",
                     table_body=table_body,
@@ -1941,7 +1950,7 @@ class ProcessorMixin:
                     original_item
                 )
 
-                return templates["equation_chunk"].format(
+                formatted = templates["equation_chunk"].format(
                     equation_text=equation_text,
                     equation_format=equation_format,
                     enhanced_caption=description,
@@ -1953,7 +1962,7 @@ class ProcessorMixin:
                 )
                 part = self._format_window_part(original_item.get("_window_meta"))
 
-                return (
+                formatted = (
                     f"[Audio Content]{part}\n"
                     f"Source: {audio_path}\n"
                     f"Transcription:\n{description}"
@@ -1965,7 +1974,7 @@ class ProcessorMixin:
                 )
                 part = self._format_window_part(original_item.get("_window_meta"))
 
-                return (
+                formatted = (
                     f"[Video Content]{part}\n"
                     f"Source: {video_path}\n"
                     f"Analysis:\n{description}"
@@ -1974,11 +1983,15 @@ class ProcessorMixin:
             else:  # generic or unknown types
                 content = str(original_item.get("content", original_item))
 
-                return templates["generic_chunk"].format(
+                formatted = templates["generic_chunk"].format(
                     content_type=content_type.title(),
                     content=content,
                     enhanced_caption=description,
                 )
+
+            if page_prefix and not formatted.lstrip().startswith("[Page "):
+                return f"{page_prefix}{formatted}"
+            return formatted
 
         except Exception as e:
             self.logger.warning(
