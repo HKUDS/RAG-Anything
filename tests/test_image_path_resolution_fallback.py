@@ -1,10 +1,10 @@
 import json
-import pytest
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
 from raganything.modalprocessors import ImageModalProcessor
-from raganything.utils import resolve_image_path, encode_image_to_base64
+from raganything.utils import resolve_image_path
 
 
 def test_resolve_image_path_absolute(tmp_path):
@@ -116,7 +116,7 @@ async def test_image_processor_resolves_relative_path(tmp_path):
         "image_caption": ["Q3 Revenue"],
     }
 
-    desc, entity_info = await processor.generate_description_only(
+    _desc, entity_info = await processor.generate_description_only(
         modal_item,
         content_type="image",
         item_info={"output_dir": str(output_dir)},
@@ -158,7 +158,7 @@ async def test_image_processor_fallback_on_missing_image_with_captions(tmp_path)
         "_section_path": "Model Architecture",
     }
 
-    desc, entity_info = await processor.generate_description_only(
+    _desc, entity_info = await processor.generate_description_only(
         modal_item,
         content_type="image",
         item_info={"page_idx": 2},

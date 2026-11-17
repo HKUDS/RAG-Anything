@@ -1071,6 +1071,26 @@ class ImageModalProcessor(BaseModalProcessor):
                 if isinstance(modal_content, dict):
                     modal_content["img_path"] = image_path
 
+                # File exists on disk but is not a valid image (failed signature validation).
+                # Do not bypass security validation or call model.
+                if not image_base64:
+                    logger.warning(
+                        f"File '{image_path}' failed image validation; skipping model invocation"
+                    )
+                    clean_name = (
+                        entity_name
+                        if entity_name
+                        else f"image_{compute_mdhash_id(str(modal_content))}"
+                    )
+                    fallback_entity = {
+                        "entity_name": clean_name
+                        if clean_name.endswith("(image)")
+                        else f"{clean_name} (image)",
+                        "entity_type": "image",
+                        "summary": f"Invalid image file: {image_path}",
+                    }
+                    return str(modal_content), fallback_entity
+
             if image_base64:
                 # Build detailed visual analysis prompt with context
                 if context:
