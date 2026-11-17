@@ -158,6 +158,38 @@ Footnotes: {footnotes}
 
 {vision_prompt}"""
 
+# Resilient image analysis prompt when raw image file is missing or unreadable
+PROMPTS[
+    "vision_fallback_prompt"
+] = """Please analyze the visual content described by the following metadata and context, and provide a JSON response with the following structure:
+
+{{
+    "detailed_description": "A comprehensive analysis of the visual element based on available captions, footnotes, and surrounding context:
+    - Synthesize what the diagram, chart, scene, or illustration depicts
+    - Transcribe or explain any text labels, data points, or categories mentioned in the metadata
+    - Explain relationships and connections between elements and how they relate to the surrounding context
+    - Always use specific names instead of pronouns",
+    "entity_info": {{
+        "entity_name": "{entity_name}",
+        "entity_type": "image",
+        "summary": "concise summary of the visual content, its significance, and relationship to surrounding content (max 100 words)"
+    }}
+}}
+
+Context from surrounding content:
+{context}
+
+Document structure:
+- Section Path: {section_path}
+
+Image details:
+- Image Path: {image_path}
+- Captions: {captions}
+- Footnotes: {footnotes}
+
+Focus on providing accurate, detailed analysis that incorporates the context and would be useful for knowledge retrieval.
+Use a semantic entity_name; do not return file names or figure numbers such as figure_30_1 unless they are the actual title."""
+
 # Table analysis prompt template
 PROMPTS[
     "table_prompt"

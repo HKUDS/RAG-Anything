@@ -12,6 +12,7 @@ Includes:
 import re
 import json
 import time
+import inspect
 from typing import Dict, Any, Tuple, List, Optional
 from .token_budget import TokenBudgetError, truncate_table, truncate_text
 from pathlib import Path
@@ -37,6 +38,7 @@ from raganything.utils import (
     get_equation_text_and_format,
     get_table_body,
     normalize_caption_list,
+    resolve_image_path,
 )
 
 
@@ -952,6 +954,43 @@ class ImageModalProcessor(BaseModalProcessor):
         """Encode image to base64; ``""`` if unreadable or not an image."""
         return encode_image_to_base64(image_path)
 
+    async def _invoke_caption_func(
+        self,
+        prompt: str,
+        system_prompt: str,
+        image_data: Optional[str] = None,
+    ) -> str:
+        """Invoke modal_caption_func supporting both vision and text-only signatures."""
+        if image_data:
+            return await self.modal_caption_func(
+                prompt,
+                image_data=image_data,
+                system_prompt=system_prompt,
+            )
+
+        # Fallback when no image_data is present
+        try:
+            sig = inspect.signature(self.modal_caption_func)
+            accepts_kwargs = any(
+                p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+            )
+            if "image_data" in sig.parameters or accepts_kwargs:
+                try:
+                    return await self.modal_caption_func(
+                        prompt,
+                        image_data=None,
+                        system_prompt=system_prompt,
+                    )
+                except TypeError:
+                    pass
+        except (ValueError, TypeError):
+            pass
+
+        return await self.modal_caption_func(
+            prompt,
+            system_prompt=system_prompt,
+        )
+
     async def generate_description_only(
         self,
         modal_content,
@@ -996,64 +1035,150 @@ class ImageModalProcessor(BaseModalProcessor):
             )
             section_path = content_data.get("_section_path", "")
 
-            # Validate image path
-            if not image_path:
-                raise ValueError(
-                    f"No image path provided in modal_content: {modal_content}"
-                )
-
-            # Convert to Path object and check if it exists
-            image_path_obj = Path(image_path)
-            if not image_path_obj.exists():
-                raise FileNotFoundError(f"Image file not found: {image_path}")
-
             # Extract context for current item
             context = ""
             if item_info:
                 context = self._get_context_for_item(item_info)
 
-            # Build detailed visual analysis prompt with context
-            if context:
-                vision_prompt = self._prompt_templates.get(
-                    "vision_prompt_with_context",
-                    self._prompt_templates["vision_prompt"],
-                ).format(
-                    context=context,
-                    section_path=section_path if section_path else "None",
-                    entity_name=entity_name
-                    if entity_name
-                    else "unique descriptive name for this image",
-                    image_path=image_path,
-                    captions=", ".join(captions) if captions else "None",
-                    footnotes=", ".join(footnotes) if footnotes else "None",
-                )
-            else:
-                vision_prompt = self._prompt_templates["vision_prompt"].format(
-                    section_path=section_path if section_path else "None",
-                    entity_name=entity_name
-                    if entity_name
-                    else "unique descriptive name for this image",
-                    image_path=image_path,
-                    captions=", ".join(captions) if captions else "None",
-                    footnotes=", ".join(footnotes) if footnotes else "None",
-                )
+            # Build search roots for image path resolution
+            search_roots: List[Any] = []
+            if item_info:
+                for key in ("output_dir", "file_path", "document_path", "source_path"):
+                    if item_info.get(key):
+                        search_roots.append(item_info[key])
 
-            # Encode image to base64
-            image_base64 = self._encode_image_to_base64(image_path)
-            if not image_base64:
-                raise RuntimeError(f"Failed to encode image to base64: {image_path}")
-
-            # Call vision model with encoded image
-            response = await self.modal_caption_func(
-                vision_prompt,
-                image_data=image_base64,
-                system_prompt=self._prompt_templates["IMAGE_ANALYSIS_SYSTEM"],
+            source = get_document_source(self)
+            content_source, _ = (
+                source
+                if source is not None
+                else (self.content_source, self.content_format)
             )
+            if isinstance(content_source, (str, Path)):
+                search_roots.append(content_source)
 
-            # Parse response (reuse existing logic)
-            enhanced_caption, entity_info = self._parse_response(response, entity_name)
+            working_dir = getattr(self.lightrag, "working_dir", None)
+            if working_dir:
+                search_roots.append(working_dir)
 
-            return enhanced_caption, entity_info
+            if hasattr(self, "search_roots") and self.search_roots:
+                search_roots.extend(self.search_roots)
+
+            resolved_path = resolve_image_path(image_path, search_roots=search_roots)
+            image_base64 = ""
+            if resolved_path:
+                image_path = str(resolved_path)
+                image_base64 = self._encode_image_to_base64(image_path)
+                if isinstance(modal_content, dict):
+                    modal_content["img_path"] = image_path
+
+                # File exists on disk but is not a valid image (failed signature validation).
+                # Do not bypass security validation or call model.
+                if not image_base64:
+                    logger.warning(
+                        f"File '{image_path}' failed image validation; skipping model invocation"
+                    )
+                    clean_name = (
+                        entity_name
+                        if entity_name
+                        else f"image_{compute_mdhash_id(str(modal_content))}"
+                    )
+                    fallback_entity = {
+                        "entity_name": clean_name
+                        if clean_name.endswith("(image)")
+                        else f"{clean_name} (image)",
+                        "entity_type": "image",
+                        "summary": f"Invalid image file: {image_path}",
+                    }
+                    return str(modal_content), fallback_entity
+
+            if image_base64:
+                # Build detailed visual analysis prompt with context
+                if context:
+                    vision_prompt = self._prompt_templates.get(
+                        "vision_prompt_with_context",
+                        self._prompt_templates["vision_prompt"],
+                    ).format(
+                        context=context,
+                        section_path=section_path if section_path else "None",
+                        entity_name=entity_name
+                        if entity_name
+                        else "unique descriptive name for this image",
+                        image_path=image_path,
+                        captions=", ".join(captions) if captions else "None",
+                        footnotes=", ".join(footnotes) if footnotes else "None",
+                    )
+                else:
+                    vision_prompt = self._prompt_templates["vision_prompt"].format(
+                        section_path=section_path if section_path else "None",
+                        entity_name=entity_name
+                        if entity_name
+                        else "unique descriptive name for this image",
+                        image_path=image_path,
+                        captions=", ".join(captions) if captions else "None",
+                        footnotes=", ".join(footnotes) if footnotes else "None",
+                    )
+
+                response = await self._invoke_caption_func(
+                    vision_prompt,
+                    system_prompt=self._prompt_templates["IMAGE_ANALYSIS_SYSTEM"],
+                    image_data=image_base64,
+                )
+                enhanced_caption, entity_info = self._parse_response(
+                    response, entity_name
+                )
+                return enhanced_caption, entity_info
+
+            # Fallback path: image file is absent, empty, or unreadable.
+            # Check if textual visual metadata or context is available.
+            has_text_metadata = bool(captions or footnotes or section_path or context)
+            if has_text_metadata:
+                logger.info(
+                    f"Image file '{image_path}' unavailable or unreadable; synthesizing visual entity from metadata and context"
+                )
+                fallback_template = self._prompt_templates.get(
+                    "vision_fallback_prompt",
+                    self._prompt_templates.get(
+                        "vision_prompt_with_context",
+                        self._prompt_templates["vision_prompt"],
+                    ),
+                )
+                fallback_prompt = fallback_template.format(
+                    context=context if context else "None",
+                    section_path=section_path if section_path else "None",
+                    entity_name=entity_name
+                    if entity_name
+                    else "unique descriptive name for this image",
+                    image_path=image_path if image_path else "None",
+                    captions=", ".join(captions) if captions else "None",
+                    footnotes=", ".join(footnotes) if footnotes else "None",
+                )
+                system_prompt = self._prompt_templates.get(
+                    "IMAGE_ANALYSIS_FALLBACK_SYSTEM",
+                    self._prompt_templates["IMAGE_ANALYSIS_SYSTEM"],
+                )
+                response = await self._invoke_caption_func(
+                    fallback_prompt,
+                    system_prompt=system_prompt,
+                )
+                enhanced_caption, entity_info = self._parse_response(
+                    response, entity_name
+                )
+                return enhanced_caption, entity_info
+
+            # Zero metadata available: produce structured placeholder entity
+            clean_name = (
+                entity_name
+                if entity_name
+                else f"image_{compute_mdhash_id(str(modal_content))}"
+            )
+            fallback_entity = {
+                "entity_name": clean_name
+                if clean_name.endswith("(image)")
+                else f"{clean_name} (image)",
+                "entity_type": "image",
+                "summary": "Decorative or uncaptioned image element without visual data or metadata",
+            }
+            return "Decorative or uncaptioned image", fallback_entity
 
         except Exception as e:
             logger.error(f"Error generating image description: {e}")

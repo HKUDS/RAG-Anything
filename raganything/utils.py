@@ -10,7 +10,7 @@ import bisect
 import base64
 import inspect
 import re
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Optional, Tuple, Sequence
 from pathlib import Path
 from lightrag.utils import logger
 
@@ -1010,6 +1010,111 @@ def separate_content(
     """
     text_content, multimodal_items, _ = separate_content_with_page_map(content_list)
     return text_content, multimodal_items
+
+
+def resolve_image_path(
+    image_path: str | Path | None,
+    search_roots: Optional[Sequence[str | Path]] = None,
+) -> Optional[Path]:
+    """Resolve an image path across candidate directories.
+
+    Attempts to locate the image file by testing:
+    1. Direct path existence if image_path is absolute or relative to CWD.
+    2. Joining relative image_path with provided search roots (e.g. document output dir,
+       working_dir, document parent directory).
+    3. Checking standard parser subdirectories like `images/` or `auto/images/` under each search root.
+    4. Probing filename under search roots (for cases where absolute paths from other machines are stored).
+
+    Args:
+        image_path: File path as string or Path, or None.
+        search_roots: Optional sequence of directory paths to probe.
+
+    Returns:
+        Resolved absolute Path if the file exists on disk, else None.
+    """
+    if not image_path:
+        return None
+
+    path_str = str(image_path).strip()
+    if not path_str:
+        return None
+
+    p = Path(path_str)
+
+    # 1. Direct path check
+    try:
+        if p.is_file():
+            return p.resolve()
+    except (OSError, ValueError):
+        pass
+
+    # Collect unique search roots
+    roots: List[Path] = []
+    if search_roots:
+        for r in search_roots:
+            if not r:
+                continue
+            try:
+                rp = Path(r).resolve() if not isinstance(r, Path) else r
+                if rp.is_file():
+                    rp = rp.parent
+                if rp.is_dir() and rp not in roots:
+                    roots.append(rp)
+            except (OSError, ValueError):
+                continue
+
+    # Also add current working directory if not present
+    try:
+        cwd = Path.cwd().resolve()
+        if cwd not in roots:
+            roots.append(cwd)
+    except (OSError, ValueError):
+        pass
+
+    filename = p.name
+
+    for root in roots:
+        # Candidate 1: root / p (preserving any relative subpath, e.g. "images/fig1.jpg")
+        try:
+            c1 = root / p
+            if c1.is_file():
+                return c1.resolve()
+        except (OSError, ValueError):
+            pass
+
+        # Candidate 2: root / "images" / filename
+        try:
+            c2 = root / "images" / filename
+            if c2.is_file():
+                return c2.resolve()
+        except (OSError, ValueError):
+            pass
+
+        # Candidate 3: root / filename (flat directory)
+        try:
+            c3 = root / filename
+            if c3.is_file():
+                return c3.resolve()
+        except (OSError, ValueError):
+            pass
+
+        # Candidate 4: root / "auto" / "images" / filename (MinerU output directory layout)
+        try:
+            c4 = root / "auto" / "images" / filename
+            if c4.is_file():
+                return c4.resolve()
+        except (OSError, ValueError):
+            pass
+
+        # Candidate 5: root / "auto" / p
+        try:
+            c5 = root / "auto" / p
+            if c5.is_file():
+                return c5.resolve()
+        except (OSError, ValueError):
+            pass
+
+    return None
 
 
 def encode_image_to_base64(image_path: str) -> str:
