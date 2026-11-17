@@ -141,6 +141,11 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 self.llm_model_func = self.lightrag.llm_model_func
             if self.embedding_func is None and hasattr(self.lightrag, "embedding_func"):
                 self.embedding_func = self.lightrag.embedding_func
+            if self.config.entity_types and hasattr(self.lightrag, "addon_params"):
+                if isinstance(self.lightrag.addon_params, dict):
+                    self.lightrag.addon_params["entity_types"] = list(
+                        self.config.entity_types
+                    )
 
         # Set up logger (use existing logger, don't configure it)
         self.logger = logger
@@ -509,6 +514,12 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
 
             # Merge user-provided lightrag_kwargs, which can override defaults
             lightrag_params.update(self.lightrag_kwargs)
+
+            # Apply domain-specific entity types to LightRAG if configured
+            if self.config.entity_types:
+                addon = dict(lightrag_params.get("addon_params") or {})
+                addon["entity_types"] = list(self.config.entity_types)
+                lightrag_params["addon_params"] = addon
 
             # Log the parameters being used for initialization (excluding sensitive data)
             log_params = {

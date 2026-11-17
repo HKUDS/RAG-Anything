@@ -113,6 +113,7 @@ def test_raganything_config_prompt_language(tmp_path):
 async def test_private_prompts_reach_real_processors_without_global_leakage(tmp_path):
     import asyncio
     from unittest.mock import MagicMock
+
     from raganything.prompt import PROMPTS
 
     global_prompt = PROMPTS["table_prompt"]
@@ -150,3 +151,28 @@ async def test_private_prompts_reach_real_processors_without_global_leakage(tmp_
     )
     assert instances[1][0].get_prompt("table_prompt") == "B {table_body}"
     assert PROMPTS["table_prompt"] == global_prompt
+
+
+def test_raganything_config_entity_types_propagation(tmp_path):
+    """Test domain-specific entity_types are propagated to LightRAG addon_params (#26)."""
+    from unittest.mock import MagicMock
+
+    custom_entities = ["defects", "machines", "parameters"]
+    config = RAGAnythingConfig(
+        working_dir=str(tmp_path / "rag_storage"),
+        entity_types=custom_entities,
+    )
+
+    mock_lightrag = MagicMock()
+    mock_lightrag.addon_params = {}
+    mock_lightrag.finalize_storages = AsyncMock()
+
+    rag = RAGAnything(
+        config=config,
+        lightrag=mock_lightrag,
+        llm_model_func=AsyncMock(),
+        embedding_func=AsyncMock(),
+    )
+
+    assert rag.config.entity_types == custom_entities
+    assert mock_lightrag.addon_params["entity_types"] == custom_entities
