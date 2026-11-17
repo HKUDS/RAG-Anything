@@ -46,7 +46,7 @@ def _normalize_language_code(language_code: str) -> str:
         raise TypeError(
             f"language code must be a non-empty string, got {type(language_code).__name__}"
         )
-    normalized = language_code.strip().lower()
+    normalized = language_code.strip().lower().replace("_", "-")
     if not normalized:
         raise ValueError("language code must be a non-empty string")
     return normalized
@@ -58,6 +58,10 @@ def _lazy_load_language(lang: str) -> Dict[str, Any]:
         from raganything.prompts_zh import PROMPTS_ZH
 
         return PROMPTS_ZH
+    elif lang in ("zh-tw", "zh-hant", "zh-hk"):
+        from raganything.prompts_zh_tw import PROMPTS_ZH_TW
+
+        return PROMPTS_ZH_TW
     return {}
 
 

@@ -53,6 +53,15 @@ def _restore_latex_escapes(value: Any) -> Any:
     return value
 
 
+def _prepend_page_grounding(modal_chunk: str, page_idx: Any) -> str:
+    """Prepend 1-based page indicator [Page N] to modal chunk for citation grounding (#79)."""
+    if isinstance(page_idx, int) and page_idx >= 0:
+        page_tag = f"[Page {page_idx + 1}]"
+        if not modal_chunk.lstrip().startswith("[Page "):
+            return f"{page_tag}\n{modal_chunk}"
+    return modal_chunk
+
+
 @dataclass
 class ContextConfig:
     """Configuration for context extraction"""
@@ -184,9 +193,14 @@ class ContextExtractor:
             ):
                 text_content = self._extract_text_from_item(item)
                 if text_content and text_content.strip():
-                    # Add page marker for better context understanding
+                    # Add 1-based page marker for better context understanding and citation
+                    page_label = (
+                        item_page + 1
+                        if isinstance(item_page, int) and item_page >= 0
+                        else item_page
+                    )
                     if item_page != current_page:
-                        context_texts.append(f"[Page {item_page}] {text_content}")
+                        context_texts.append(f"[Page {page_label}] {text_content}")
                     else:
                         context_texts.append(text_content)
 
@@ -1113,6 +1127,11 @@ class ImageModalProcessor(BaseModalProcessor):
                 enhanced_caption=enhanced_caption,
             )
 
+            page_idx = content_data.get(
+                "page_idx", item_info.get("page_idx") if item_info else None
+            )
+            modal_chunk = _prepend_page_grounding(modal_chunk, page_idx)
+
             return await self._create_entity_and_chunk(
                 modal_chunk,
                 entity_info,
@@ -1340,6 +1359,11 @@ class TableModalProcessor(BaseModalProcessor):
                 enhanced_caption=enhanced_caption,
             )
 
+            page_idx = content_data.get(
+                "page_idx", item_info.get("page_idx") if item_info else None
+            )
+            modal_chunk = _prepend_page_grounding(modal_chunk, page_idx)
+
             return await self._create_entity_and_chunk(
                 modal_chunk,
                 entity_info,
@@ -1561,6 +1585,11 @@ class EquationModalProcessor(BaseModalProcessor):
                 enhanced_caption=enhanced_caption,
             )
 
+            page_idx = content_data.get(
+                "page_idx", item_info.get("page_idx") if item_info else None
+            )
+            modal_chunk = _prepend_page_grounding(modal_chunk, page_idx)
+
             return await self._create_entity_and_chunk(
                 modal_chunk,
                 entity_info,
@@ -1729,6 +1758,13 @@ class GenericModalProcessor(BaseModalProcessor):
                 content=str(modal_content),
                 enhanced_caption=enhanced_caption,
             )
+
+            page_idx = (
+                modal_content.get("page_idx")
+                if isinstance(modal_content, dict)
+                else (item_info.get("page_idx") if item_info else None)
+            )
+            modal_chunk = _prepend_page_grounding(modal_chunk, page_idx)
 
             return await self._create_entity_and_chunk(
                 modal_chunk,
