@@ -1,23 +1,21 @@
-import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from raganything.prompt import PROMPTS
-from raganything.prompt_manager import (
-    set_prompt_language,
-    get_prompt_language,
-    reset_prompts,
-)
+import pytest
+
 from raganything.modalprocessors import (
-    ImageModalProcessor,
-    TableModalProcessor,
-    EquationModalProcessor,
-    GenericModalProcessor,
-    ContextExtractor,
     ContextConfig,
+    ContextExtractor,
+    EquationModalProcessor,
+    TableModalProcessor,
     _prepend_page_grounding,
 )
 from raganything.processor import ProcessorMixin
+from raganything.prompt import PROMPTS
+from raganything.prompt_manager import (
+    get_prompt_language,
+    reset_prompts,
+    set_prompt_language,
+)
 
 
 def test_traditional_chinese_prompts_switching():
@@ -116,7 +114,7 @@ async def test_modal_processors_format_1_based_page_citations():
         "table_body": "| A | B |\n|---|---|\n| 1 | 2 |",
         "page_idx": 2,  # 0-indexed page 2 -> 1-based Page 3
     }
-    chunk, entity_info, _ = await table_proc.process_multimodal_content(
+    chunk, _entity_info, _ = await table_proc.process_multimodal_content(
         table_item, "table"
     )
     assert chunk.startswith("[Page 3]\n")
@@ -138,7 +136,7 @@ async def test_modal_processors_format_1_based_page_citations():
         "latex": "E = mc^2",
         "page_idx": 0,  # 0-indexed page 0 -> 1-based Page 1
     }
-    chunk, entity_info, _ = await eq_proc.process_multimodal_content(
+    chunk, _entity_info, _ = await eq_proc.process_multimodal_content(
         eq_item, "equation"
     )
     assert chunk.startswith("[Page 1]\n")

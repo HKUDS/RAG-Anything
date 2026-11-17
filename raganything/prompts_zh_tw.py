@@ -9,6 +9,7 @@ Addresses GitHub issue #79 — Traditional Chinese prompt localization & page ci
 """
 
 from __future__ import annotations
+
 from typing import Any
 
 PROMPTS_ZH_TW: dict[str, Any] = {}
