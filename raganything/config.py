@@ -241,6 +241,9 @@ class RAGAnythingConfig:
     custom_prompts: dict[str, str] | None = field(default=None)
     """Optional dictionary of prompt template overrides (e.g. {'vision_prompt': '...', 'table_prompt': '...'})."""
 
+    entity_types: list[str] | None = field(default=None)
+    """Domain-specific entity types to override default knowledge graph categories (e.g. ['defects', 'machines', 'parameters'])."""
+
     def __post_init__(self):
         """Post-initialization setup for backward compatibility"""
         # Support legacy environment variable names for backward compatibility
