@@ -723,13 +723,26 @@ class BaseModalProcessor:
         # Method 2: Balanced braces
         brace_count = 0
         start_pos = -1
+        in_string = False
+        escaped = False
 
         for i, char in enumerate(cleaned_response):
-            if char == "{":
+            if in_string:
+                if escaped:
+                    escaped = False
+                elif char == "\\":
+                    escaped = True
+                elif char == '"':
+                    in_string = False
+                continue
+
+            if char == '"' and brace_count > 0:
+                in_string = True
+            elif char == "{":
                 if brace_count == 0:
                     start_pos = i
                 brace_count += 1
-            elif char == "}":
+            elif char == "}" and brace_count > 0:
                 brace_count -= 1
                 if brace_count == 0 and start_pos != -1:
                     candidates.append(cleaned_response[start_pos : i + 1])
