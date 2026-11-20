@@ -194,11 +194,11 @@ def _table_cell(cell: Any) -> str:
 
 _CONTINUATION_MARKER_RE = re.compile(
     r"(?i)^(?:"
-    r"table\s*\d*.*\(?\bcont(?:inued|\.)?\b\)?"
-    r"|.*\bcont(?:inued|\.)\b.*"
+    r"table\s*\d*.*\(?\bcont(?:inued)?\b\.?\)?"
+    r"|.*\bcont(?:inued\b|\.).*"
     r"|continued(?:\s+from\s+previous\s+page|\s+on\s+next\s+page)?"
     r"|续表.*"
-    r"|.*\(续\).*"
+    r"|.*[(（]续[)）].*"
     r"|表\s*\d+.*续.*"
     r")$"
 )
