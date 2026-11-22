@@ -659,8 +659,9 @@ class VideoModalProcessor(BaseModalProcessor):
 
         Scene detection and audio transcription run once for the whole video;
         scenes are then grouped into windows (bounded by ``max_scenes`` and the
-        token budget). Speech outside retained scenes is included as audio-only
-        rows before window planning, including leading, internal and trailing gaps.
+        token budget). The planner counts visual text and aligned speech.
+        Speech outside retained scenes is included as audio-only rows, including
+        leading, internal and trailing gaps.
         """
         try:
             video_path = self._resolve_video_path(modal_content)
@@ -683,7 +684,20 @@ class VideoModalProcessor(BaseModalProcessor):
                 visual_segments, audio_segments
             )
 
-            windows = self._plan_windows(visual_segments)
+            # Budget the same transcript the renderer will use. Audio-only
+            # rows already have explicit text and must not be aligned again.
+            window_rows = [
+                row
+                if "audio" in row
+                else {
+                    **row,
+                    "audio": self._get_transcript_in_range(
+                        audio_segments, row["start"], row["end"]
+                    ),
+                }
+                for row in visual_segments
+            ]
+            windows = self._plan_windows(window_rows)
             if not windows:
                 raise RuntimeError(
                     f"No scenes or speech detected in video: {video_path}"
