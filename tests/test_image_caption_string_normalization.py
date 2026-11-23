@@ -56,7 +56,9 @@ def processor(monkeypatch):
     monkeypatch.setattr(
         modalprocessors, "get_namespace_data", AsyncMock(return_value={})
     )
-    monkeypatch.setattr(modalprocessors, "get_pipeline_status_lock", lambda: None)
+    monkeypatch.setattr(
+        modalprocessors, "get_namespace_lock", lambda *args, **kwargs: None
+    )
     instance = modalprocessors.ImageModalProcessor(lightrag, modal_caption_func=None)
     instance.generate_description_only = AsyncMock(
         return_value=(

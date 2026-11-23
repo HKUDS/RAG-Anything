@@ -141,6 +141,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 self.llm_model_func = self.lightrag.llm_model_func
             if self.embedding_func is None and hasattr(self.lightrag, "embedding_func"):
                 self.embedding_func = self.lightrag.embedding_func
+            self._configure_entity_types()
 
         # Set up logger (use existing logger, don't configure it)
         self.logger = logger
@@ -255,6 +256,13 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
         return ContextExtractor(
             config=context_config, tokenizer=self.lightrag.tokenizer
         )
+
+    def _configure_entity_types(self):
+        if self.config.entity_types:
+            self.lightrag.addon_params = {
+                **self.lightrag.addon_params,
+                "entity_types": list(self.config.entity_types),
+            }
 
     def _initialize_processors(self):
         """Initialize multimodal processors with appropriate model functions"""
@@ -522,6 +530,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
             try:
                 # Create LightRAG instance with merged parameters
                 self.lightrag = LightRAG(**lightrag_params)
+                self._configure_entity_types()
                 await self.lightrag.initialize_storages()
                 await initialize_pipeline_status()
 

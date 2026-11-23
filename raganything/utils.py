@@ -668,8 +668,26 @@ def extract_neighbor_text_from_content_list(
     return " ".join(parts)
 
 
+def _prepend_page_grounding(
+    content: str, page_idx: Any, page_idx_end: Any = None
+) -> str:
+    """Show one-based page numbers while keeping parser indexes zero-based."""
+    if (
+        type(page_idx) is not int
+        or page_idx < 0
+        or content.lstrip().startswith("[Page ")
+    ):
+        return content
+    pages = str(page_idx + 1)
+    if type(page_idx_end) is int and page_idx_end > page_idx:
+        pages += f"-{page_idx_end + 1}"
+    return f"[Page {pages}]\n{content}"
+
+
 def separate_content_with_page_map(
     content_list: List[Dict[str, Any]],
+    *,
+    document_path: str | Path | None = None,
 ) -> Tuple[str, List[Dict[str, Any]], List[Tuple[int, int, Optional[int]]]]:
     """
     Separate text content, multimodal content, and per-block page provenance.
@@ -688,6 +706,7 @@ def separate_content_with_page_map(
     page_intervals: List[Tuple[int, int, Optional[int]]] = []
     text_length = 0
     heading_chain: List[Tuple[int, str]] = []
+    document_dir = Path(document_path).resolve().parent if document_path else None
 
     for index, item in enumerate(content_list):
         if not isinstance(item, dict):
@@ -711,6 +730,11 @@ def separate_content_with_page_map(
             multimodal_item = dict(normalize_chart_item(item))
             multimodal_item.setdefault("_content_list_index", index)
             if multimodal_item.get("type") == "image":
+                image_path = multimodal_item.get("img_path")
+                if document_dir and image_path and not Path(image_path).is_absolute():
+                    candidate = (document_dir / image_path).resolve()
+                    if candidate.is_relative_to(document_dir) and candidate.is_file():
+                        multimodal_item["img_path"] = str(candidate)
                 multimodal_item.setdefault(
                     "_section_path",
                     " > ".join(text for _, text in heading_chain),

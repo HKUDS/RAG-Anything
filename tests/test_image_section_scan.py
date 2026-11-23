@@ -62,3 +62,24 @@ def test_image_context_inspects_blocks_linearly():
     large = measure(400)
     # Four times the input should not trigger sixteen times the block reads.
     assert large < small * 5
+
+
+def test_relative_image_uses_its_document_and_preserves_parser_input(
+    tmp_path, monkeypatch
+):
+    doc = tmp_path / "report"
+    (doc / "images").mkdir(parents=True)
+    image = doc / "images" / "chart #1.png"
+    image.touch()
+    elsewhere = tmp_path / "other"
+    (elsewhere / "images").mkdir(parents=True)
+    (elsewhere / "images" / image.name).touch()
+    monkeypatch.chdir(elsewhere)
+    raw = [
+        {"type": "image", "img_path": "images/chart #1.png"},
+        {"type": "image", "img_path": "missing/chart #1.png"},
+    ]
+    _, images, _ = separate_content_with_page_map(raw, document_path=doc / "report.pdf")
+    assert images[0]["img_path"] == str(image)
+    assert images[1]["img_path"] == "missing/chart #1.png"
+    assert raw[0]["img_path"] == "images/chart #1.png"
