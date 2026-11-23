@@ -13,6 +13,11 @@ from typing import Any
 from lightrag.utils import compute_mdhash_id
 
 from raganything.base import DocStatus
+from raganything.modal_ownership import (
+    caption_node,
+    modal_chunk_id,
+    merge_modal_graph,
+)
 from raganything.prompt import PROMPTS
 from raganything.utils import (
     format_table_body,
@@ -236,14 +241,14 @@ class MultimodalIngestMixin:
                 pipeline_status_lock,
             ) = await self._lightrag_pipeline_status_and_lock()
 
-            await merge_nodes_and_edges(
+            await merge_modal_graph(
+                merge_nodes_and_edges,
+                self.lightrag,
                 chunk_results=all_chunk_results,
                 knowledge_graph_inst=self.lightrag.chunk_entity_relation_graph,
                 entity_vdb=self.lightrag.entities_vdb,
                 relationships_vdb=self.lightrag.relationships_vdb,
                 global_config=self.lightrag.__dict__,
-                full_entities_storage=self.lightrag.full_entities,
-                full_relations_storage=self.lightrag.full_relations,
                 doc_id=doc_id,
                 pipeline_status=pipeline_status,
                 pipeline_status_lock=pipeline_status_lock,
@@ -348,7 +353,9 @@ class MultimodalIngestMixin:
             formatted = self._apply_chunk_template(
                 data["content_type"], data["original_item"], data["description"]
             )
-            chunk_id = compute_mdhash_id(formatted, prefix="chunk-")
+            chunk_id = data.get("chunk_id") or compute_mdhash_id(
+                formatted, prefix="chunk-"
+            )
             chunk_id_to_data[chunk_id] = data
 
         if mode == "per_item":
@@ -446,7 +453,8 @@ class MultimodalIngestMixin:
                 content_type, original_item, description
             )
 
-            chunk_id = compute_mdhash_id(formatted_chunk_content, prefix="chunk-")
+            chunk_id = modal_chunk_id(formatted_chunk_content, doc_id)
+            data["chunk_id"] = chunk_id
             tokens = len(self.lightrag.tokenizer.encode(formatted_chunk_content))
             file_ref = self._get_file_reference(file_path)
 
@@ -459,6 +467,8 @@ class MultimodalIngestMixin:
                 "llm_cache_list": [],
                 "is_multimodal": True,
                 "modal_entity_name": entity_info["entity_name"],
+                "modal_entity_type": entity_info.get("entity_type", content_type),
+                "modal_entity_summary": entity_info.get("summary") or description,
                 "original_type": data["content_type"],
                 "page_idx": data["item_info"].get("page_idx", 0),
             }
@@ -605,68 +615,15 @@ class MultimodalIngestMixin:
         file_path: str,
         doc_id: str = None,
     ):
-        """Store multimodal main entities to entities_vdb and full_entities."""
-        if not multimodal_data_list:
-            return
-
-        entities_to_store = {}
-        file_ref = self._get_file_reference(file_path)
-
-        for data in multimodal_data_list:
-            entity_info = data["entity_info"]
-            entity_name = entity_info["entity_name"]
-            description = data["description"]
-            content_type = data["content_type"]
-            original_item = data["original_item"]
-
-            formatted_chunk_content = self._apply_chunk_template(
-                content_type, original_item, description
+        """Register caption entities with the same ownership tracking as extracted nodes."""
+        nodes = {}
+        for chunk_id, chunk in lightrag_chunks.items():
+            node = caption_node(chunk_id, chunk)
+            nodes.setdefault(node["entity_name"], []).append(node)
+        if nodes:
+            await self._batch_merge_lightrag_style_type_aware(
+                [(nodes, {})], file_path, doc_id
             )
-
-            chunk_id = compute_mdhash_id(formatted_chunk_content, prefix="chunk-")
-            entity_id = compute_mdhash_id(entity_name, prefix="ent-")
-
-            entity_data = {
-                "entity_name": entity_name,
-                "entity_type": entity_info.get("entity_type", content_type),
-                "content": entity_info.get("summary", description),
-                "source_id": chunk_id,
-                "file_path": file_ref,
-            }
-
-            entities_to_store[entity_id] = entity_data
-
-        if entities_to_store:
-            try:
-                for entity_id, entity_data in entities_to_store.items():
-                    entity_name = entity_data["entity_name"]
-                    node_data = {
-                        "entity_id": entity_name,
-                        "entity_type": entity_data["entity_type"],
-                        "description": entity_data["content"],
-                        "source_id": entity_data["source_id"],
-                        "file_path": entity_data["file_path"],
-                        "created_at": int(time.time()),
-                    }
-                    await self.lightrag.chunk_entity_relation_graph.upsert_node(
-                        entity_name, node_data
-                    )
-
-                await self.lightrag.entities_vdb.upsert(entities_to_store)
-                await self.lightrag.entities_vdb.index_done_callback()
-
-                if doc_id and self.lightrag.full_entities:
-                    await self._store_multimodal_entities_to_full_entities(
-                        entities_to_store, doc_id
-                    )
-
-                self.logger.debug(
-                    f"Stored {len(entities_to_store)} multimodal main entities to knowledge graph, entities_vdb, and full_entities"
-                )
-
-            except Exception as e:
-                self.logger.error(f"Error storing multimodal main entities: {e}")
-                raise
 
     async def _batch_extract_entities_lightrag_style_type_aware(
         self, lightrag_chunks: dict[str, Any]
@@ -708,7 +665,9 @@ class MultimodalIngestMixin:
             formatted_chunk_content = self._apply_chunk_template(
                 content_type, original_item, description
             )
-            chunk_id = compute_mdhash_id(formatted_chunk_content, prefix="chunk-")
+            chunk_id = data.get("chunk_id") or compute_mdhash_id(
+                formatted_chunk_content, prefix="chunk-"
+            )
 
             chunk_to_modal_entity[chunk_id] = data["entity_info"]["entity_name"]
             chunk_to_file_path[chunk_id] = data.get("file_path", "multimodal_content")
@@ -764,14 +723,14 @@ class MultimodalIngestMixin:
         ) = await self._lightrag_pipeline_status_and_lock()
         file_ref = self._get_file_reference(file_path)
 
-        await merge_nodes_and_edges(
+        await merge_modal_graph(
+            merge_nodes_and_edges,
+            self.lightrag,
             chunk_results=enhanced_chunk_results,
             knowledge_graph_inst=self.lightrag.chunk_entity_relation_graph,
             entity_vdb=self.lightrag.entities_vdb,
             relationships_vdb=self.lightrag.relationships_vdb,
             global_config=self.lightrag.__dict__,
-            full_entities_storage=self.lightrag.full_entities,
-            full_relations_storage=self.lightrag.full_relations,
             doc_id=doc_id,
             pipeline_status=pipeline_status,
             pipeline_status_lock=pipeline_status_lock,

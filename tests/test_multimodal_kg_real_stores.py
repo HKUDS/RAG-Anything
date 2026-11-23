@@ -73,8 +73,15 @@ async def test_public_insertion_tracks_and_deletes_all_mode_chunks(frontdoor_rag
         else:
             assert node
             assert set(node["source_id"].split("<SEP>")).issubset(ids)
+        assert (
+            "Sales (table)"
+            in (await rag.lightrag.full_entities.get_by_id("doc-sales"))["entity_names"]
+        )
         result = await rag.lightrag.adelete_by_doc_id("doc-sales")
         assert result.status == "success"
+        assert not await rag.lightrag.chunk_entity_relation_graph.has_node(
+            "Sales (table)"
+        )
         assert not any(await rag.lightrag.text_chunks.get_by_ids(ids))
     finally:
         await close_frontdoor(rag)
@@ -223,3 +230,140 @@ async def test_multimodal_graph_sources_resolve_and_delete(mode):
         assert await lr.chunk_entity_relation_graph.get_node("ACME") is None
         assert not any(await lr.text_chunks.get_by_ids(ids))
         await lr.finalize_storages()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["legacy", "packed", "per_item", "skip"])
+@pytest.mark.parametrize("first", ["a", "b"])
+@pytest.mark.parametrize("identical", [False, True])
+async def test_deleting_one_owner_keeps_shared_modal_entity(
+    frontdoor_rag, mode, first, identical
+):
+    rag = frontdoor_rag
+    rag.config.multimodal_kg_extraction_mode = mode
+    try:
+        ids = {}
+        for doc, amount in [("a", 10), ("b", 10 if identical else 42)]:
+            await rag.insert_content_list(
+                [{**TABLE, "table_body": f"Company | Sales\\nACME | {amount}"}],
+                file_path=f"{doc}.pdf",
+                doc_id=doc,
+            )
+            ids[doc] = (await rag.lightrag.doc_status.get_by_id(doc))["chunks_list"]
+
+        assert set(ids["a"]).isdisjoint(ids["b"])
+        other = "b" if first == "a" else "a"
+        graph = rag.lightrag.chunk_entity_relation_graph
+        assert (await rag.adelete_by_doc_id(first))["status"] == "success"
+        node = await graph.get_node("Sales (table)")
+        assert node and set(node["source_id"].split("<SEP>")) <= set(ids[other])
+        assert node["file_path"] == f"{other}.pdf"
+        from lightrag.utils import compute_mdhash_id
+
+        entity_id = compute_mdhash_id("Sales (table)", prefix="ent-")
+        vector = await rag.lightrag.entities_vdb.get_by_id(entity_id)
+        assert vector["file_path"] == f"{other}.pdf"
+        assert set(vector["source_id"].split("<SEP>")) <= set(ids[other])
+        assert all(await rag.lightrag.text_chunks.get_by_ids(ids[other]))
+        assert (
+            "Sales (table)"
+            in (await rag.lightrag.full_entities.get_by_id(other))["entity_names"]
+        )
+        result = await rag.lightrag.aquery_data(
+            "sales",
+            QueryParam(
+                mode="local",
+                ll_keywords=["Sales (table)"],
+                hl_keywords=["sales"],
+                enable_rerank=False,
+            ),
+        )
+        assert any(
+            row["file_path"] == f"{other}.pdf" for row in result["data"]["chunks"]
+        )
+        assert (await rag.adelete_by_doc_id(other))["status"] == "success"
+        assert not await graph.has_node("Sales (table)")
+        assert await rag.lightrag.entities_vdb.get_by_id(entity_id) is None
+    finally:
+        await close_frontdoor(rag)
+
+
+@pytest.mark.asyncio
+async def test_retry_shared_caption_refresh_after_core_deletion(
+    frontdoor_rag, monkeypatch
+):
+    from raganything import processor_deletion
+
+    rag = frontdoor_rag
+    rag.config.multimodal_kg_extraction_mode = "skip"
+    try:
+        for doc in ("a", "b"):
+            await rag.insert_content_list([TABLE], file_path=f"{doc}.pdf", doc_id=doc)
+        real_refresh = processor_deletion.refresh_surviving_captions
+
+        async def fail_refresh(*args):
+            raise RuntimeError("vector store offline")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                processor_deletion, "refresh_surviving_captions", fail_refresh
+            )
+            failed = await rag.adelete_by_doc_id("b")
+        assert failed["status"] == "failed"
+        assert await rag.lightrag.doc_status.get_by_id("b") is None
+        assert (await rag.multimodal_status_cache.get_by_id("b"))[
+            "pending_caption_refresh"
+        ] == ["Sales (table)"]
+        assert processor_deletion.refresh_surviving_captions is real_refresh
+        assert (await rag.adelete_by_doc_id("b"))["status"] == "success"
+        assert await rag.multimodal_status_cache.get_by_id("b") is None
+        node = await rag.lightrag.chunk_entity_relation_graph.get_node("Sales (table)")
+        assert node["file_path"] == "a.pdf"
+    finally:
+        await close_frontdoor(rag)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("same_legacy_id", [False, True])
+async def test_legacy_caption_without_document_or_reverse_index(
+    frontdoor_rag, same_legacy_id
+):
+    rag = frontdoor_rag
+    rag.config.multimodal_kg_extraction_mode = "skip"
+    try:
+        legacy_ids = {}
+        for doc in ("a", "b"):
+            await rag.insert_content_list([TABLE], doc_id=doc, file_path=f"{doc}.pdf")
+            status = await rag.lightrag.doc_status.get_by_id(doc)
+            (key,) = status["chunks_list"]
+            chunk = await rag.lightrag.text_chunks.get_by_id(key)
+            chunk.pop("modal_entity_summary")
+            chunk.pop("modal_entity_type")
+            await rag.lightrag.text_chunks.upsert({key: chunk})
+            legacy_ids[doc] = key
+            await rag.lightrag.full_entities.delete([doc])
+
+        if same_legacy_id:
+            status["chunks_list"] = [legacy_ids["a"]]
+            await rag.lightrag.doc_status.upsert({"b": status})
+        await rag.lightrag.entity_chunks.delete(["Sales (table)"])
+        result = await rag.adelete_by_doc_id("a")
+        if same_legacy_id:
+            assert result["status"] == "failed"
+            assert "share chunk IDs" in result["message"]
+            assert await rag.lightrag.doc_status.get_by_id("a")
+            assert await rag.lightrag.doc_status.get_by_id("b")
+            assert await rag.lightrag.text_chunks.get_by_id(legacy_ids["a"])
+        else:
+            assert result["status"] == "success"
+            node = await rag.lightrag.chunk_entity_relation_graph.get_node(
+                "Sales (table)"
+            )
+            assert node["source_id"] == legacy_ids["b"]
+            assert node["file_path"] == "b.pdf"
+            assert (await rag.adelete_by_doc_id("b"))["status"] == "success"
+            assert not await rag.lightrag.chunk_entity_relation_graph.has_node(
+                "Sales (table)"
+            )
+    finally:
+        await close_frontdoor(rag)

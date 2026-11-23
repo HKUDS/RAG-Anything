@@ -9,6 +9,10 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
+from raganything.modal_ownership import (
+    document_caption_entities,
+    refresh_surviving_captions,
+)
 from typing import Any
 
 
@@ -156,11 +160,9 @@ class DocumentDeletionMixin:
         ):
             doc_exists = bool(await self.lightrag.full_docs.get_by_id(doc_id))
 
-        multimodal_cache_exists = False
-        if hasattr(self, "multimodal_status_cache") and self.multimodal_status_cache:
-            multimodal_cache_exists = bool(
-                await self.multimodal_status_cache.get_by_id(doc_id)
-            )
+        cache = getattr(self, "multimodal_status_cache", None)
+        cached = (await cache.get_by_id(doc_id) if cache else None) or {}
+        multimodal_cache_exists = bool(cached)
 
         if not doc_exists and not multimodal_cache_exists:
             return {
@@ -227,6 +229,15 @@ class DocumentDeletionMixin:
             }
 
         try:
+            names = set(cached.get("pending_caption_refresh", []))
+            names.update(
+                await document_caption_entities(self.lightrag, doc_id, current_status)
+            )
+            if names and cache:
+                await cache.upsert(
+                    {doc_id: {**cached, "pending_caption_refresh": sorted(names)}}
+                )
+                await cache.index_done_callback()
             lr_res = await adelete_fn(doc_id, delete_llm_cache=delete_llm_cache)
             if hasattr(lr_res, "status"):
                 lightrag_result = {
@@ -283,6 +294,18 @@ class DocumentDeletionMixin:
                 "status": res_status,
                 "doc_id": doc_id,
                 "message": failure_message,
+                "multimodal_status_deleted": False,
+                "media_files_deleted": False,
+                "lightrag_result": lightrag_result,
+            }
+
+        try:
+            await refresh_surviving_captions(self.lightrag, names)
+        except Exception as exc:
+            return {
+                "status": "failed",
+                "doc_id": doc_id,
+                "message": f"Failed to refresh shared caption entities: {exc}",
                 "multimodal_status_deleted": False,
                 "media_files_deleted": False,
                 "lightrag_result": lightrag_result,

@@ -11,8 +11,12 @@ Includes:
 
 import re
 import json
-import time
 from typing import Dict, Any, Tuple, List, Optional
+from raganything.modal_ownership import (
+    caption_node,
+    modal_chunk_id,
+    merge_modal_graph,
+)
 from .token_budget import TokenBudgetError, truncate_table, truncate_text
 from pathlib import Path
 from dataclasses import dataclass
@@ -575,7 +579,7 @@ class BaseModalProcessor:
     ) -> Tuple[str, Dict[str, Any], Optional[List[Any]]]:
         """Create entity and text chunk"""
         # Create chunk
-        chunk_id = compute_mdhash_id(str(modal_chunk), prefix="chunk-")
+        chunk_id = modal_chunk_id(str(modal_chunk), doc_id)
         tokens = len(self.tokenizer.encode(modal_chunk))
 
         # Use provided doc_id or generate one from chunk_id for backward compatibility
@@ -589,6 +593,11 @@ class BaseModalProcessor:
             "file_path": file_path,
         }
 
+        chunk_data.update(
+            modal_entity_name=entity_info["entity_name"],
+            modal_entity_type=entity_info["entity_type"],
+            modal_entity_summary=entity_info["summary"],
+        )
         # Store chunk
         await self.text_chunks_db.upsert({chunk_id: chunk_data})
 
@@ -603,32 +612,6 @@ class BaseModalProcessor:
             }
         }
         await self.chunks_vdb.upsert(chunk_vdb_data)
-
-        # Create entity node
-        node_data = {
-            "entity_id": entity_info["entity_name"],
-            "entity_type": entity_info["entity_type"],
-            "description": entity_info["summary"],
-            "source_id": chunk_id,
-            "file_path": file_path,
-            "created_at": int(time.time()),
-        }
-
-        await self.knowledge_graph_inst.upsert_node(
-            entity_info["entity_name"], node_data
-        )
-
-        # Insert entity into vector database
-        entity_vdb_data = {
-            compute_mdhash_id(entity_info["entity_name"], prefix="ent-"): {
-                "entity_name": entity_info["entity_name"],
-                "entity_type": entity_info["entity_type"],
-                "content": f"{entity_info['entity_name']}\n{entity_info['summary']}",
-                "source_id": chunk_id,
-                "file_path": file_path,
-            }
-        }
-        await self.entities_vdb.upsert(entity_vdb_data)
 
         # Process entity and relationship extraction
         chunk_results = await self._process_chunk_for_extraction(
@@ -852,14 +835,10 @@ class BaseModalProcessor:
         # Create text chunk for vector database
         chunk_vdb_data = {
             chunk_id: {
-                "content": chunk_data["content"],
+                **chunk_data,
                 "full_doc_id": chunk_data.get("full_doc_id", chunk_id),
-                "tokens": chunk_data["tokens"],
-                "chunk_order_index": chunk_data["chunk_order_index"],
-                "file_path": chunk_data["file_path"],
             }
         }
-
         await self.chunks_vdb.upsert(chunk_vdb_data)
 
         # Use this instance's workspace, not LightRAG's process-wide default
@@ -884,7 +863,6 @@ class BaseModalProcessor:
         )
 
         # Add "belongs_to" relationships for all extracted entities
-        processed_chunk_results = []
         for maybe_nodes, maybe_edges in chunk_results:
             for entity_name in maybe_nodes.keys():
                 if entity_name != modal_entity_name:  # Skip self-relationship
@@ -896,42 +874,25 @@ class BaseModalProcessor:
                         "weight": 10.0,
                         "file_path": chunk_data.get("file_path", "manual_creation"),
                     }
-                    await self.knowledge_graph_inst.upsert_edge(
-                        entity_name, modal_entity_name, relation_data
-                    )
-
-                    relation_id = compute_mdhash_id(
-                        entity_name + modal_entity_name, prefix="rel-"
-                    )
-                    relation_vdb_data = {
-                        relation_id: {
-                            "src_id": entity_name,
-                            "tgt_id": modal_entity_name,
-                            "keywords": relation_data["keywords"],
-                            "content": f"{relation_data['keywords']}\t{entity_name}\n{modal_entity_name}\n{relation_data['description']}",
-                            "source_id": chunk_id,
-                            "file_path": chunk_data.get("file_path", "manual_creation"),
-                        }
-                    }
-                    await self.relationships_vdb.upsert(relation_vdb_data)
-
                     # Add to maybe_edges
                     maybe_edges[(entity_name, modal_entity_name)] = [relation_data]
 
-            processed_chunk_results.append((maybe_nodes, maybe_edges))
+        if "modal_entity_summary" in chunk_data:
+            node = caption_node(chunk_id, chunk_data)
+            chunk_results.append(({modal_entity_name: [node]}, {}))
 
         if not batch_mode:
             # Merge with correct file_path parameter
             file_path = chunk_data.get("file_path", "manual_creation")
             doc_id = chunk_data.get("full_doc_id")
-            await merge_nodes_and_edges(
+            await merge_modal_graph(
+                merge_nodes_and_edges,
+                self.lightrag,
                 chunk_results=chunk_results,
                 knowledge_graph_inst=self.knowledge_graph_inst,
                 entity_vdb=self.entities_vdb,
                 relationships_vdb=self.relationships_vdb,
                 global_config=self.global_config,
-                full_entities_storage=self.lightrag.full_entities,
-                full_relations_storage=self.lightrag.full_relations,
                 doc_id=doc_id,
                 pipeline_status=pipeline_status,
                 pipeline_status_lock=pipeline_status_lock,
@@ -946,7 +907,7 @@ class BaseModalProcessor:
             # Ensure all storage updates are complete
             await self.lightrag._insert_done()
 
-        return processed_chunk_results
+        return chunk_results
 
 
 class ImageModalProcessor(BaseModalProcessor):
