@@ -45,6 +45,13 @@
   </a>
 </div>
 
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="assets/stargazers/stargazer-affiliations.png">
+    <img src="assets/stargazers/stargazer-affiliations.gif" width="900" alt="RAG-Anything 的 GitHub Star 账号自报归属。图中机构选自 2026 年 11 月 23 日识别到的 225 家机构。Star 为个人行为。">
+  </picture>
+</p>
+
 ---
 
 ## 🎉 新闻

@@ -51,6 +51,13 @@
   </a>
 </div>
 
+<p align="center">
+  <picture>
+    <source media="(prefers-reduced-motion: reduce)" srcset="assets/stargazers/stargazer-affiliations.png">
+    <img src="assets/stargazers/stargazer-affiliations.gif" width="900" alt="Selected organizations among the 225 identified from self-reported RAG-Anything stargazer affiliations on GitHub on November 23, 2026. Stars are personal.">
+  </picture>
+</p>
+
 ---
 
 ## 🎉 News
