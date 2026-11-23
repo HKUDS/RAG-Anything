@@ -1,8 +1,9 @@
 """Image section enrichment must not repeatedly rescan preceding blocks."""
 
 from copy import deepcopy
+from pathlib import Path
 
-from raganything.utils import separate_content_with_page_map
+from raganything.utils import resolve_document_images, separate_content_with_page_map
 
 
 def test_section_context_keeps_hierarchy_and_existing_metadata():
@@ -79,7 +80,16 @@ def test_relative_image_uses_its_document_and_preserves_parser_input(
         {"type": "image", "img_path": "images/chart #1.png"},
         {"type": "image", "img_path": "missing/chart #1.png"},
     ]
-    _, images, _ = separate_content_with_page_map(raw, document_path=doc / "report.pdf")
+    from raganything.processor import ProcessorMixin
+
+    images = resolve_document_images(raw, doc / "report.pdf")
     assert images[0]["img_path"] == str(image)
-    assert images[1]["img_path"] == "missing/chart #1.png"
+    assert images[1]["img_path"] == str(doc / "missing" / image.name)
+    assert not Path(images[1]["img_path"]).exists()
     assert raw[0]["img_path"] == "images/chart #1.png"
+
+    other_images = resolve_document_images(raw, elsewhere / "report.pdf")
+    processor = ProcessorMixin()
+    assert processor._generate_content_based_doc_id(
+        images
+    ) != processor._generate_content_based_doc_id(other_images)

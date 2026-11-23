@@ -29,6 +29,7 @@ from raganything.utils import (
     insert_text_content_with_multimodal_content,
     merge_continued_tables,
     separate_content_with_page_map,
+    resolve_document_images,
 )
 
 AUDIO_FILE_EXTENSIONS = frozenset(
@@ -287,6 +288,7 @@ class ProcessorMixin(
         if len(content_list) == 0:
             raise ValueError("Parsing failed: No content was extracted")
 
+        content_list = resolve_document_images(content_list, file_path)
         if getattr(self.config, "merge_continued_tables", False):
             content_list = merge_continued_tables(content_list)
 
@@ -411,7 +413,7 @@ class ProcessorMixin(
 
             # Step 2: Separate text and multimodal content
             text_content, multimodal_items, page_intervals = (
-                separate_content_with_page_map(content_list, document_path=file_path)
+                separate_content_with_page_map(content_list)
             )
 
             # LightRAG creates the initial doc_status entry during text insertion.
@@ -757,7 +759,7 @@ class ProcessorMixin(
 
             # Step 2: Separate text and multimodal content
             text_content, multimodal_items, page_intervals = (
-                separate_content_with_page_map(content_list, document_path=file_path)
+                separate_content_with_page_map(content_list)
             )
 
             # LightRAG creates the initial doc_status entry during text
@@ -910,6 +912,7 @@ class ProcessorMixin(
         if len(content_list) == 0:
             raise ValueError("content_list cannot be empty")
 
+        content_list = resolve_document_images(content_list, file_path)
         if getattr(self.config, "merge_continued_tables", False):
             content_list = merge_continued_tables(content_list)
 
@@ -963,7 +966,7 @@ class ProcessorMixin(
 
         # Step 1: Separate text and multimodal content
         text_content, multimodal_items, page_intervals = separate_content_with_page_map(
-            content_list, document_path=file_path
+            content_list
         )
 
         # LightRAG creates the initial doc_status entry during text insertion.
@@ -1331,6 +1334,7 @@ class ProcessorMixin(
 
                     item_info = {
                         "page_idx": item.get("page_idx", 0),
+                        "page_idx_end": item.get("page_idx_end"),
                         "index": item.get("_content_list_index", index),
                         "type": content_type,
                     }

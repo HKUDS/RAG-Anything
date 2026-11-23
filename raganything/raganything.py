@@ -451,7 +451,9 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                             initialize_pipeline_status,
                         )
 
-                        await initialize_pipeline_status()
+                        await initialize_pipeline_status(
+                            workspace=self.lightrag.workspace
+                        )
 
                     # Initialize parse cache if not already done
                     if self.parse_cache is None:
@@ -532,7 +534,7 @@ class RAGAnything(QueryMixin, ProcessorMixin, BatchMixin):
                 self.lightrag = LightRAG(**lightrag_params)
                 self._configure_entity_types()
                 await self.lightrag.initialize_storages()
-                await initialize_pipeline_status()
+                await initialize_pipeline_status(workspace=self.lightrag.workspace)
 
                 # Initialize parse cache storage using LightRAG's KV storage
                 parse_cache = self.lightrag.key_string_value_json_storage_cls(

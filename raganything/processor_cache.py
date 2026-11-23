@@ -19,6 +19,7 @@ from lightrag.utils import compute_mdhash_id
 from raganything.asset_urls import MEDIA_PATH_FIELDS
 from raganything.parse_options import relevant_parser_kwargs
 from raganything.parser import Parser
+from raganything.utils import resolve_document_images
 
 AUDIO_FILE_EXTENSIONS = frozenset(
     {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".wma", ".aac", ".opus"}
@@ -167,6 +168,9 @@ class ProcessorCacheMixin:
             doc_id = cached_data.get("doc_id")
 
             if content_list and doc_id:
+                # Reparse legacy relative paths once so the cached ID and asset agree.
+                if resolve_document_images(content_list, file_path) != content_list:
+                    return None
                 for item in content_list:
                     if not isinstance(item, dict):
                         continue
