@@ -426,6 +426,51 @@ class TestVideoChunkSections:
         for label in ("Scene A", "Scene B", "Scene C"):
             assert label in joined
 
+    async def test_aligned_speech_counts_toward_visual_window_budget(self, tmp_path):
+        class WordTokenizer:
+            def encode(self, text):
+                return text.split()
+
+        processor = VideoModalProcessor(
+            lightrag=_FakeLightRAG(tokenizer=WordTokenizer(), chunk_token_size=8),
+            modal_caption_func=AsyncMock(),
+        )
+        scenes = [(0, 10), (10, 20)]
+        processor._detect_scenes = MagicMock(return_value=scenes)
+        processor._describe_scenes = AsyncMock(
+            return_value=[
+                {"start": 0, "end": 10, "visual": "slide"},
+                {"start": 10, "end": 20, "visual": "diagram"},
+            ]
+        )
+        first_speech = "first speaker explains setup"
+        second_speech = "second speaker adds details"
+        processor._transcribe_audio_track = AsyncMock(
+            return_value=[
+                {"start": 1, "end": 9, "text": first_speech},
+                {"start": 11, "end": 19, "text": second_speech},
+            ]
+        )
+        video = tmp_path / "clip.mp4"
+        video.touch()
+
+        sections = await processor.generate_chunk_sections(
+            {"video_path": str(video)}, "video"
+        )
+
+        # Visual text alone uses 2 tokens; adding aligned speech makes 5 per row.
+        assert len(sections) == 2
+        assert [section["window_meta"] for section in sections] == [
+            {"start": 0, "end": 10, "part": 1, "total": 2},
+            {"start": 10, "end": 20, "part": 2, "total": 2},
+        ]
+        first, second = (section["description"] for section in sections)
+        assert "slide" in first and first.count(first_speech) == 1
+        assert "diagram" in second and second.count(second_speech) == 1
+        assert second_speech not in first and first_speech not in second
+        processor._transcribe_audio_track.assert_awaited_once_with(str(video))
+        processor.modal_caption_func.assert_not_awaited()
+
     async def test_tail_audio_beyond_last_scene_is_kept(self, tmp_path):
         processor = self._processor(max_scenes=50)
         processor._detect_scenes = MagicMock(return_value=[(0, 30)])
