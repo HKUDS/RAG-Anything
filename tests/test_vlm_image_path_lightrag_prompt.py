@@ -575,3 +575,34 @@ async def test_spaced_invalid_suffix_does_not_send_existing_prefix(
     assert await query.aquery(QUESTION, mode=mode) == "text answer"
     assert _sent_images(query) == []
     assert validated_paths == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("language", ["zh", "zh-tw"])
+@pytest.mark.parametrize("encoding", ["plain", "json", "ascii_json"])
+async def test_localized_chunk_returns_reference_and_supplies_image(
+    tmp_path, language, encoding
+):
+    from raganything.prompt_manager import prompt_templates_for_language
+
+    path = tmp_path / "圖 1, draft#2.png"
+    expected = _save_png(path)
+    content = prompt_templates_for_language(language)["image_chunk"].format(
+        section_path="",
+        neighbor_text="",
+        image_path=str(path),
+        captions="",
+        footnotes="",
+        enhanced_caption="",
+    )
+    prompt = (
+        content
+        if encoding == "plain"
+        else json.dumps({"content": content}, ensure_ascii=encoding == "ascii_json")
+    )
+    query = _make_query(tmp_path, prompt)
+    assert query.extract_multimodal_citations(prompt) == [
+        {"type": "image", "path": str(path)}
+    ]
+    assert await query.aquery(QUESTION, mode="naive") == "vision answer"
+    assert _sent_images(query) == [expected]

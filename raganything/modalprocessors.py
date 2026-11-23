@@ -23,7 +23,7 @@ from lightrag.utils import (
 )
 from lightrag.lightrag import LightRAG
 from dataclasses import asdict
-from lightrag.kg.shared_storage import get_namespace_data, get_pipeline_status_lock
+from lightrag.kg.shared_storage import get_namespace_data, get_namespace_lock
 from lightrag.operate import extract_entities, merge_nodes_and_edges
 
 # Import prompt templates
@@ -36,6 +36,7 @@ from raganything.utils import (
     get_equation_description,
     get_equation_text_and_format,
     get_table_body,
+    _prepend_page_grounding,
     normalize_caption_list,
 )
 
@@ -184,9 +185,8 @@ class ContextExtractor:
             ):
                 text_content = self._extract_text_from_item(item)
                 if text_content and text_content.strip():
-                    # Add page marker for better context understanding
-                    if item_page != current_page:
-                        context_texts.append(f"[Page {item_page}] {text_content}")
+                    if item_page != current_page and type(item.get("page_idx")) is int:
+                        context_texts.append(f"[Page {item_page + 1}] {text_content}")
                     else:
                         context_texts.append(text_content)
 
@@ -862,8 +862,14 @@ class BaseModalProcessor:
 
         await self.chunks_vdb.upsert(chunk_vdb_data)
 
-        pipeline_status = await get_namespace_data("pipeline_status")
-        pipeline_status_lock = get_pipeline_status_lock()
+        # Use this instance's workspace, not LightRAG's process-wide default
+        workspace = getattr(self.lightrag, "workspace", None)
+        pipeline_status = await get_namespace_data(
+            "pipeline_status", workspace=workspace
+        )
+        pipeline_status_lock = get_namespace_lock(
+            "pipeline_status", workspace=workspace
+        )
 
         # Prepare chunk for extraction
         chunks = {chunk_id: chunk_data}
@@ -1126,6 +1132,12 @@ class ImageModalProcessor(BaseModalProcessor):
                 enhanced_caption=enhanced_caption,
             )
 
+            modal_chunk = _prepend_page_grounding(
+                modal_chunk,
+                content_data.get("page_idx"),
+                content_data.get("page_idx_end"),
+            )
+
             return await self._create_entity_and_chunk(
                 modal_chunk,
                 entity_info,
@@ -1353,6 +1365,12 @@ class TableModalProcessor(BaseModalProcessor):
                 enhanced_caption=enhanced_caption,
             )
 
+            modal_chunk = _prepend_page_grounding(
+                modal_chunk,
+                content_data.get("page_idx"),
+                content_data.get("page_idx_end"),
+            )
+
             return await self._create_entity_and_chunk(
                 modal_chunk,
                 entity_info,
@@ -1574,6 +1592,12 @@ class EquationModalProcessor(BaseModalProcessor):
                 enhanced_caption=enhanced_caption,
             )
 
+            modal_chunk = _prepend_page_grounding(
+                modal_chunk,
+                content_data.get("page_idx"),
+                content_data.get("page_idx_end"),
+            )
+
             return await self._create_entity_and_chunk(
                 modal_chunk,
                 entity_info,
@@ -1742,6 +1766,13 @@ class GenericModalProcessor(BaseModalProcessor):
                 content=str(modal_content),
                 enhanced_caption=enhanced_caption,
             )
+
+            if isinstance(modal_content, dict):
+                modal_chunk = _prepend_page_grounding(
+                    modal_chunk,
+                    modal_content.get("page_idx"),
+                    modal_content.get("page_idx_end"),
+                )
 
             return await self._create_entity_and_chunk(
                 modal_chunk,

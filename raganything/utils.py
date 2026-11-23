@@ -668,6 +668,44 @@ def extract_neighbor_text_from_content_list(
     return " ".join(parts)
 
 
+def _prepend_page_grounding(
+    content: str, page_idx: Any, page_idx_end: Any = None
+) -> str:
+    """Show one-based page numbers while keeping parser indexes zero-based."""
+    if (
+        type(page_idx) is not int
+        or page_idx < 0
+        or content.lstrip().startswith("[Page ")
+    ):
+        return content
+    pages = str(page_idx + 1)
+    if type(page_idx_end) is int and page_idx_end > page_idx:
+        pages += f"-{page_idx_end + 1}"
+    return f"[Page {pages}]\n{content}"
+
+
+def resolve_document_images(content_list, document_path):
+    """Resolve image blocks before assigning their document and chunk IDs."""
+    if not document_path or Path(document_path).parent == Path("."):
+        return content_list
+    directory = Path(document_path).parent.resolve()
+    resolved = []
+    for item in content_list:
+        if isinstance(item, dict) and item.get("type") in ("image", "chart"):
+            raw = item.get("img_path")
+            if (
+                isinstance(raw, (str, Path))
+                and raw
+                and not Path(raw).is_absolute()
+                and "://" not in str(raw)
+            ):
+                candidate = (directory / raw).resolve()
+                if candidate.is_relative_to(directory):
+                    item = {**item, "img_path": str(candidate)}
+        resolved.append(item)
+    return resolved
+
+
 def separate_content_with_page_map(
     content_list: List[Dict[str, Any]],
 ) -> Tuple[str, List[Dict[str, Any]], List[Tuple[int, int, Optional[int]]]]:

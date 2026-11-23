@@ -66,7 +66,7 @@ def _import_modalprocessors_with_lightrag_stubs(monkeypatch):
     kg_package = types.ModuleType("lightrag.kg")
     shared_storage_module = types.ModuleType("lightrag.kg.shared_storage")
     shared_storage_module.get_namespace_data = lambda *args, **kwargs: {}
-    shared_storage_module.get_pipeline_status_lock = lambda *args, **kwargs: None
+    shared_storage_module.get_namespace_lock = lambda *args, **kwargs: None
 
     operate_module = types.ModuleType("lightrag.operate")
     operate_module.extract_entities = None

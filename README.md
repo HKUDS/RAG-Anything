@@ -1003,6 +1003,8 @@ if __name__ == "__main__":
 
 **Content List Format:**
 
+For an image such as `images/figure.png`, pass the document path in `file_path` so ingestion can locate the file beside that document. Page indexes in the content list start at zero. Newly indexed multimodal chunks with a known page display one-based labels such as `[Page 1]` or `[Page 2-3]`.
+
 The `content_list` should follow the standard format with each item being a dictionary containing:
 
 - **Text content**: `{"type": "text", "text": "content text", "page_idx": 0}`

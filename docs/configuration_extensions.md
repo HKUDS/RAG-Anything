@@ -91,6 +91,8 @@ module-level `set_prompt_language()` and `update_prompts()` remain process-globa
 Templates retain the format fields expected by their original template; context
 processing may select a separate `*_with_context` template.
 
+Use `prompt_language="zh-tw"` for Traditional Chinese templates. `zh-Hant` and `zh-HK` also work. To configure graph extraction categories, pass a list such as `entity_types=["machine", "defect"]` to `RAGAnythingConfig`. This updates the underlying LightRAG instance and preserves its other extraction settings. Wrappers sharing a LightRAG instance share those categories.
+
 ## Retrieved multimodal references
 
 ```python
@@ -142,6 +144,8 @@ optional CPU batch image.
 模板和查询；不会污染其他实例。未指定语言时沿用全局提示词设置。模块级语言切换
 和 `update_prompts()` 仍然影响全局。修改模板时保留其所需的格式字段；启用上下文
 时还可能使用单独的 `*_with_context` 模板。
+
+使用 `prompt_language="zh-tw"` 可切换到繁体中文模板，也支持 `zh-Hant` 和 `zh-HK`。如需自定义图谱实体类型，可向 `RAGAnythingConfig` 传入 `entity_types=["machine", "defect"]`。该选项更新底层 LightRAG 实例的抽取类型，并保留其余设置。共用该实例的封装也共用这些实体类型。
 
 查询默认返回类型不变。显式设置 `return_multimodal_context=True` 后返回字典，
 流式答案位于 `result["response"]`；素材引用来自检索上下文，不依赖模型在答案中

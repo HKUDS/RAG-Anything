@@ -29,6 +29,21 @@ from raganything.utils import (
 )
 
 
+# Chunk templates use localized field labels. JSON retrieval rows can also
+# carry these exact labels as ASCII Unicode escapes.
+_IMAGE_LABELS = ("Image Path:", "图片路径：", "圖片路徑：")
+_IMAGE_PATH_LABEL = "(?:" + "|".join(re.escape(label) for label in _IMAGE_LABELS) + ")"
+_JSON_IMAGE_PATH_LABEL = (
+    "(?:"
+    + "|".join(
+        [_IMAGE_PATH_LABEL]
+        + [re.escape(json.dumps(label)[1:-1]) for label in _IMAGE_LABELS[1:]]
+    )
+    + ")"
+)
+_IMAGE_PATH_MARKER = re.compile(_JSON_IMAGE_PATH_LABEL, re.IGNORECASE)
+
+
 class MultimodalCitation(TypedDict):
     """Citation metadata for a multimodal asset referenced in query retrieval."""
 
@@ -794,17 +809,17 @@ class QueryMixin:
         # Only JSON records interpret transport escapes; literal backslashes
         # in plain-text paths remain part of the filename.
         plain_path_pattern = re.compile(
-            r"Image Path:[ \t]*(?![ \t])" r"((?:(?!Image Path:)[^\x00-\x1f])*)",
+            rf"{_IMAGE_PATH_LABEL}[ \t]*(?![ \t])((?:(?!{_IMAGE_PATH_LABEL})[^\x00-\x1f])*)",
             re.IGNORECASE | re.MULTILINE,
         )
         json_path_pattern = re.compile(
-            r"Image Path:[ \t]*(?![ \t])"
-            r"((?:(?!Image Path:)(?:"
+            rf"{_JSON_IMAGE_PATH_LABEL}[ \t]*(?![ \t])"
+            rf"((?:(?!{_JSON_IMAGE_PATH_LABEL})(?:"
             r"\\\\"
             r"|\\(?![\\fnrt]|u00(?:0b|1[c-f]))[^\r\n]"
             r'|[^"\\\x00-\x1f]'
             r"))*)"
-            r'(?=Image Path:|\\(?:[fnrt]|u00(?:0b|1[c-f]))|["\x00-\x1f]|$)',
+            rf'(?={_JSON_IMAGE_PATH_LABEL}|\\(?:[fnrt]|u00(?:0b|1[c-f]))|["\x00-\x1f]|$)',
             re.IGNORECASE | re.MULTILINE,
         )
         image_suffix_pattern = re.compile(
@@ -911,7 +926,7 @@ class QueryMixin:
 
         lines = []
         for line in prompt.split("\n"):
-            if "image path:" not in line.lower():
+            if not _IMAGE_PATH_MARKER.search(line):
                 lines.append(line)
                 continue
             try:
@@ -1072,7 +1087,7 @@ class QueryMixin:
         citations = []
         seen = set()
         pattern = re.compile(
-            r"(?:Table Image Path|table_img_path|Image Path|image_path):[ \t]*([^\r\n]+)",
+            rf"(?:Table Image Path:|table_img_path:|image_path:|{_IMAGE_PATH_LABEL})[ \t]*([^\r\n]+)",
             re.IGNORECASE,
         )
         for source in sources:

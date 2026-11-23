@@ -54,8 +54,8 @@ def _make_rag(monkeypatch, tmp_path, *, preprovided, gate=None, failure=None):
             await initialize("lightrag")
             self._storages_status.name = "INITIALIZED"
 
-    async def initialize_pipeline_status():
-        pass
+    async def initialize_pipeline_status(*, workspace):
+        assert workspace == "test"
 
     shared_storage = types.ModuleType("lightrag.kg.shared_storage")
     shared_storage.initialize_pipeline_status = initialize_pipeline_status
