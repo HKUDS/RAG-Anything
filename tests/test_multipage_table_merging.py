@@ -1,5 +1,7 @@
 """Tests for multi-page table continuation merging (Issues #424 & #100)."""
 
+import pytest
+
 from raganything.config import RAGAnythingConfig
 from raganything.utils import merge_continued_tables
 
@@ -243,6 +245,47 @@ def test_different_numbered_table_does_not_continue_previous_table():
     }
     other = {**table, "page_idx": 1, "table_caption": ["Table 2 (continued)"]}
     assert len(merge_continued_tables([table, other])) == 2
+
+
+@pytest.mark.parametrize(
+    ("caption", "continued_caption"),
+    [
+        ("Table 1", "Table 1 (cont.)"),
+        ("Table 1", "Table 1 cont."),
+        ("Revenue by segment", "Revenue by segment (Cont.)"),
+        ("合并资产负债表", "合并资产负债表（续）"),
+    ],
+)
+def test_abbreviated_and_full_width_continuation_captions_merge(
+    caption, continued_caption
+):
+    first = {
+        "type": "table",
+        "table_body": "| A | B |\n|---|---|\n|1|2|",
+        "page_idx": 0,
+        "table_caption": [caption],
+    }
+    second = {
+        **first,
+        "table_body": "| A | B |\n|---|---|\n|3|4|",
+        "page_idx": 1,
+        "table_caption": [continued_caption],
+    }
+    (merged,) = merge_continued_tables([first, second])
+    assert merged["page_idx_end"] == 1
+    assert "|3|4|" in merged["table_body"]
+    assert merged["table_caption"] == [caption]
+
+
+@pytest.mark.parametrize("caption", ["Contents", "Contract terms", "Discont. items"])
+def test_words_starting_with_cont_do_not_mark_continuation(caption):
+    first = {
+        "type": "table",
+        "table_body": "| A | B |\n|---|---|\n|1|2|",
+        "page_idx": 0,
+    }
+    second = {**first, "page_idx": 1, "table_caption": [caption]}
+    assert len(merge_continued_tables([first, second])) == 2
 
 
 def test_merged_table_keeps_both_page_images_in_stored_chunk():
