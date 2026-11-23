@@ -32,26 +32,17 @@ from raganything.utils import (
     resolve_document_images,
 )
 
-AUDIO_FILE_EXTENSIONS = frozenset(
-    {".mp3", ".wav", ".flac", ".m4a", ".ogg", ".wma", ".aac", ".opus"}
+from raganything.processor_cache import (
+    AUDIO_FILE_EXTENSIONS,
+    VIDEO_FILE_EXTENSIONS,
+    ProcessorCacheMixin,
 )
-VIDEO_FILE_EXTENSIONS = frozenset(
-    {".mp4", ".mov", ".webm", ".avi", ".mkv", ".flv", ".wmv", ".m4v"}
-)
-
-
-def _is_lightrag_token_chunker(func) -> bool:
-    try:
-        from lightrag.operate import chunking_by_token_size
-    except ImportError:  # pragma: no cover - lightrag always provides it
-        return False
-    return func is chunking_by_token_size
-
-
-from raganything.processor_cache import ProcessorCacheMixin
 from raganything.processor_deletion import DocumentDeletionMixin
 from raganything.processor_multimodal import MultimodalIngestMixin
-from raganything.processor_status import DocumentStatusSyncMixin
+from raganything.processor_status import (
+    DocumentStatusSyncMixin,
+    _is_lightrag_token_chunker as _is_lightrag_token_chunker,
+)
 
 
 class ProcessorMixin(
