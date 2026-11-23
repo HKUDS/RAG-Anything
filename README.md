@@ -1096,6 +1096,10 @@ result = await rag.adelete_by_doc_id(
 print(result["status"], result["media_files_deleted"])
 ```
 
+Use `RAGAnything.adelete_by_doc_id` when documents share a caption entity. It retains the entity, its vector and references from the surviving documents. The last owner's deletion removes the entity. New multimodal chunks are scoped to their document ID, including identical figures or tables indexed under different document IDs.
+
+For a legacy index, deletion recovers ownership from registered document chunks. If older documents share the same physical caption chunk ID, rebuild those documents from their sources in a fresh workspace before deleting either one. If a shared-caption refresh fails after core deletion, retry the same document ID. Nodes left by deletions that predate this fix require a separate index repair.
+
 Only an explicit successful core result permits cleanup; a missing or unknown
 result leaves media and completion state intact. Parsed outputs are matched by
 document ID and recorded paths, including per-call output directories. Legacy

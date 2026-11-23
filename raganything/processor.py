@@ -1422,12 +1422,12 @@ class ProcessorMixin(
         )
 
         await self._store_chunks_to_lightrag_storage_type_aware(lightrag_chunks)
+        chunk_ids = list(lightrag_chunks)
+        await self._update_doc_status_with_chunks_type_aware(doc_id, chunk_ids)
 
         await self._store_multimodal_main_entities(
             multimodal_data_list, lightrag_chunks, file_path, doc_id
         )
-
-        chunk_ids = list(lightrag_chunks.keys())
 
         kg_mode = "legacy"
         if config is not None:
@@ -1455,8 +1455,9 @@ class ProcessorMixin(
                 await self._store_chunks_to_lightrag_storage_type_aware(
                     extraction_chunks
                 )
-                chunk_ids.extend(extraction_chunks)
-                await self._update_doc_status_with_chunks_type_aware(doc_id, chunk_ids)
+                await self._update_doc_status_with_chunks_type_aware(
+                    doc_id, list(extraction_chunks)
+                )
             self.logger.info(
                 f"Multimodal KG extraction mode={kg_mode}: "
                 f"{len(multimodal_data_list)} items -> "
@@ -1483,9 +1484,6 @@ class ProcessorMixin(
             await self._batch_merge_lightrag_style_type_aware(
                 enhanced_chunk_results, file_path, doc_id
             )
-
-        if kg_mode != "packed":
-            await self._update_doc_status_with_chunks_type_aware(doc_id, chunk_ids)
 
     async def _store_multimodal_entities_to_full_entities(
         self, entities_to_store: dict[str, Any], doc_id: str
