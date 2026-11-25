@@ -155,6 +155,12 @@ class MultimodalIngestMixin:
     ):
         """Process multimodal content individually (fallback method)."""
         file_name = self._get_file_reference(file_path)
+        config = getattr(self, "config", None)
+        kg_mode = getattr(config, "multimodal_kg_extraction_mode", None) or "legacy"
+        # Only pass the option when needed so existing processor signatures still work.
+        extraction_options = {}
+        if str(kg_mode).strip().lower() == "skip":
+            extraction_options["skip_kg_extraction"] = True
 
         all_chunk_results = []
         multimodal_chunk_ids = []
@@ -196,6 +202,7 @@ class MultimodalIngestMixin:
                         batch_mode=True,
                         doc_id=doc_id,
                         chunk_order_index=next_order,
+                        **extraction_options,
                     )
 
                     if entity_info and entity_info.get("chunk_ids"):
