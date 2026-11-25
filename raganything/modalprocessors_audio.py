@@ -749,6 +749,8 @@ class AudioModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
+        *,
+        skip_kg_extraction: bool = False,
     ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process audio content: transcribe and insert into knowledge graph.
 
@@ -782,6 +784,7 @@ class AudioModalProcessor(BaseModalProcessor):
                     batch_mode,
                     doc_id,
                     chunk_order_index + offset,
+                    skip_kg_extraction=skip_kg_extraction,
                 )
                 all_chunk_results.extend(chunk_results)
                 if entity_ret.get("chunk_id"):

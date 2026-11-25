@@ -6,10 +6,10 @@ from datetime import datetime, timezone
 import numpy as np
 import asyncio
 import uuid
-from lightrag import LightRAG, QueryParam
+from lightrag import LightRAG, QueryParam, operate
 from lightrag.utils import EmbeddingFunc, Tokenizer
 from lightrag.kg.shared_storage import initialize_pipeline_status
-from raganything import RAGAnything
+from raganything import RAGAnything, modalprocessors
 from raganything.config import RAGAnythingConfig
 from raganything.parser import MineruParser
 
@@ -83,6 +83,67 @@ async def test_public_insertion_tracks_and_deletes_all_mode_chunks(frontdoor_rag
             "Sales (table)"
         )
         assert not any(await rag.lightrag.text_chunks.get_by_ids(ids))
+    finally:
+        await close_frontdoor(rag)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("mode", "fail_batch", "expected_extract_calls"),
+    [
+        pytest.param("skip", False, 0, id="skip-batch"),
+        pytest.param("skip", True, 0, id="skip-fallback"),
+        pytest.param(" SKIP ", True, 0, id="normalized-skip-fallback"),
+        pytest.param("legacy", True, 1, id="legacy-fallback"),
+    ],
+)
+async def test_individual_fallback_respects_kg_extraction_mode(
+    frontdoor_rag, monkeypatch, mode, fail_batch, expected_extract_calls
+):
+    rag = frontdoor_rag
+    rag.config.multimodal_kg_extraction_mode = mode
+    extraction_calls = []
+    extract = operate.extract_entities
+
+    async def record_extract(*args, **kwargs):
+        extraction_calls.append(True)
+        return await extract(*args, **kwargs)
+
+    monkeypatch.setattr(operate, "extract_entities", record_extract)
+    monkeypatch.setattr(modalprocessors, "extract_entities", record_extract)
+    if fail_batch:
+
+        async def fail_batch_storage(chunks):
+            raise RuntimeError("simulated transient batch-storage failure")
+
+        monkeypatch.setattr(
+            rag, "_store_chunks_to_lightrag_storage_type_aware", fail_batch_storage
+        )
+
+    try:
+        doc_id = "doc-sales"
+        await rag.insert_content_list([TABLE], file_path="sales.pdf", doc_id=doc_id)
+        assert await rag.is_document_fully_processed(doc_id)
+
+        lr = rag.lightrag
+        status = await lr.doc_status.get_by_id(doc_id)
+        (chunk_id,) = status["chunks_list"]
+        chunk = await lr.text_chunks.get_by_id(chunk_id)
+        assert chunk["full_doc_id"] == doc_id
+        assert "ACME | 10" in chunk["content"]
+        assert await lr.chunks_vdb.get_by_id(chunk_id)
+
+        caption = await lr.chunk_entity_relation_graph.get_node("Sales (table)")
+        assert caption["source_id"] == chunk_id
+        entities = await lr.full_entities.get_by_id(doc_id)
+        assert "Sales (table)" in entities["entity_names"]
+
+        acme = await lr.chunk_entity_relation_graph.get_node("ACME")
+        assert len(extraction_calls) == expected_extract_calls, (
+            f"{mode!r} made {len(extraction_calls)} extraction calls, "
+            f"ACME node present: {acme is not None}"
+        )
+        assert (acme is not None) == bool(expected_extract_calls)
     finally:
         await close_frontdoor(rag)
 

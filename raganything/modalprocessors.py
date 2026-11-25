@@ -576,6 +576,8 @@ class BaseModalProcessor:
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
+        *,
+        skip_kg_extraction: bool = False,
     ) -> Tuple[str, Dict[str, Any], Optional[List[Any]]]:
         """Create entity and text chunk"""
         # Create chunk
@@ -615,7 +617,10 @@ class BaseModalProcessor:
 
         # Process entity and relationship extraction
         chunk_results = await self._process_chunk_for_extraction(
-            chunk_id, entity_info["entity_name"], batch_mode
+            chunk_id,
+            entity_info["entity_name"],
+            batch_mode,
+            skip_kg_extraction=skip_kg_extraction,
         )
 
         return (
@@ -824,7 +829,12 @@ class BaseModalProcessor:
         return self._progressive_quote_fix(json_str)
 
     async def _process_chunk_for_extraction(
-        self, chunk_id: str, modal_entity_name: str, batch_mode: bool = False
+        self,
+        chunk_id: str,
+        modal_entity_name: str,
+        batch_mode: bool = False,
+        *,
+        skip_kg_extraction: bool = False,
     ):
         """Process chunk for entity and relationship extraction"""
         chunk_data = await self.text_chunks_db.get_by_id(chunk_id)
@@ -850,17 +860,15 @@ class BaseModalProcessor:
             "pipeline_status", workspace=workspace
         )
 
-        # Prepare chunk for extraction
-        chunks = {chunk_id: chunk_data}
-
-        # Extract entities and relationships
-        chunk_results = await extract_entities(
-            chunks=chunks,
-            global_config=self.global_config,
-            pipeline_status=pipeline_status,
-            pipeline_status_lock=pipeline_status_lock,
-            llm_response_cache=self.hashing_kv,
-        )
+        chunk_results = []
+        if not skip_kg_extraction:
+            chunk_results = await extract_entities(
+                chunks={chunk_id: chunk_data},
+                global_config=self.global_config,
+                pipeline_status=pipeline_status,
+                pipeline_status_lock=pipeline_status_lock,
+                llm_response_cache=self.hashing_kv,
+            )
 
         # Add "belongs_to" relationships for all extracted entities
         for maybe_nodes, maybe_edges in chunk_results:
@@ -1057,6 +1065,8 @@ class ImageModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
+        *,
+        skip_kg_extraction: bool = False,
     ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process image content with context support"""
         try:
@@ -1106,6 +1116,7 @@ class ImageModalProcessor(BaseModalProcessor):
                 batch_mode,
                 doc_id,
                 chunk_order_index,
+                skip_kg_extraction=skip_kg_extraction,
             )
 
         except Exception as e:
@@ -1293,6 +1304,8 @@ class TableModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
+        *,
+        skip_kg_extraction: bool = False,
     ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process table content with context support"""
         try:
@@ -1339,6 +1352,7 @@ class TableModalProcessor(BaseModalProcessor):
                 batch_mode,
                 doc_id,
                 chunk_order_index,
+                skip_kg_extraction=skip_kg_extraction,
             )
 
         except Exception as e:
@@ -1527,6 +1541,8 @@ class EquationModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
+        *,
+        skip_kg_extraction: bool = False,
     ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process equation content with context support"""
         try:
@@ -1566,6 +1582,7 @@ class EquationModalProcessor(BaseModalProcessor):
                 batch_mode,
                 doc_id,
                 chunk_order_index,
+                skip_kg_extraction=skip_kg_extraction,
             )
 
         except Exception as e:
@@ -1713,6 +1730,8 @@ class GenericModalProcessor(BaseModalProcessor):
         batch_mode: bool = False,
         doc_id: str = None,
         chunk_order_index: int = 0,
+        *,
+        skip_kg_extraction: bool = False,
     ) -> Tuple[str, Dict[str, Any], List[Any]]:
         """Process generic modal content with context support"""
         try:
@@ -1742,6 +1761,7 @@ class GenericModalProcessor(BaseModalProcessor):
                 batch_mode,
                 doc_id,
                 chunk_order_index,
+                skip_kg_extraction=skip_kg_extraction,
             )
 
         except Exception as e:
