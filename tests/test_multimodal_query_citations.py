@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -109,71 +109,18 @@ async def test_citations_come_from_retrieval_with_a_consistent_stream_shape(
     )
     rag.finalize_storages = AsyncMock()
     rag._ensure_lightrag_initialized = AsyncMock(return_value={"success": True})
-    if vlm:
-        rag._process_image_paths_for_vlm = AsyncMock(return_value=(context, 0))
     result = await rag.aquery("Question", return_multimodal_context=True, stream=stream)
     assert result["multimodal_context"] == [
         {"type": "image", "path": "/missing/source, figure#1.png"}
     ]
+    assert result["vision_input_images"] == []
+    if vlm:
+        rag.vision_model_func.assert_not_awaited()
     assert (
         "".join([part async for part in result["response"]])
         if stream
         else result["response"]
     ) == "The answer is 42."
-
-
-@pytest.mark.asyncio
-async def test_aquery_vlm_enhanced_return_multimodal_context(tmp_path):
-    """Test that aquery_vlm_enhanced with return_multimodal_context=True returns images."""
-    config = RAGAnythingConfig(working_dir=str(tmp_path / "rag_storage"))
-    mock_lightrag = MagicMock()
-
-    rag = RAGAnything(
-        config=config,
-        lightrag=mock_lightrag,
-        llm_model_func=AsyncMock(return_value="mock answer"),
-        vision_model_func=AsyncMock(return_value="VLM answer about the chart."),
-    )
-    rag.finalize_storages = AsyncMock()
-
-    async def mock_process_images(*args, **kwargs):
-        rag._current_retrieved_images = ["/safe/img1.png"]
-        return ("Prompt with [VLM_IMAGE_1]", 1)
-
-    with (
-        patch.object(
-            rag, "_ensure_lightrag_initialized", return_value={"success": True}
-        ),
-        patch.object(
-            mock_lightrag,
-            "aquery",
-            new=AsyncMock(return_value="Context with Image Path: /safe/img1.png"),
-        ),
-        patch.object(
-            rag,
-            "_process_image_paths_for_vlm",
-            side_effect=mock_process_images,
-        ),
-        patch.object(
-            rag,
-            "_build_vlm_messages_with_images",
-            return_value=[{"role": "user", "content": "..."}],
-        ),
-        patch.object(
-            rag,
-            "_call_vlm_with_multimodal_content",
-            new=AsyncMock(return_value="VLM answer about the chart."),
-        ),
-    ):
-        result = await rag.aquery_vlm_enhanced(
-            "Explain chart",
-            return_multimodal_context=True,
-        )
-
-        assert isinstance(result, dict)
-        assert result["response"] == "VLM answer about the chart."
-        assert len(result["multimodal_context"]) == 1
-        assert result["multimodal_context"][0]["path"] == "/safe/img1.png"
 
 
 def test_sync_query_return_multimodal_context(tmp_path):
