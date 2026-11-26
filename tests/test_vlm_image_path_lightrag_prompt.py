@@ -138,6 +138,44 @@ def _sent_images(query):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", MODES)
+@pytest.mark.parametrize("stream", [False, True])
+async def test_vision_input_images_match_the_current_model_message(
+    tmp_path, mode, stream
+):
+    first = tmp_path / "first.png"
+    missing = tmp_path / "missing.png"
+    last = tmp_path / "last.png"
+    expected_bytes = [_save_png(first, "red"), _save_png(last, "blue")]
+    prompt = await _lightrag_prompt(
+        mode, [_image_chunk(p.as_posix()) for p in (first, missing, last)]
+    )
+    query = _make_query(tmp_path, prompt)
+
+    async def tokens():
+        yield "vision answer"
+
+    if stream:
+        query.vision_model_func.return_value = tokens()
+    result = await query.aquery(
+        QUESTION, mode=mode, stream=stream, return_multimodal_context=True
+    )
+
+    assert {item["path"] for item in result["multimodal_context"]} == {
+        p.as_posix() for p in (first, missing, last)
+    }
+    assert _sent_images(query) == expected_bytes
+    assert result["vision_input_images"] == [
+        {"id": "img_1", "path": first.as_posix()},
+        {"id": "img_2", "path": last.as_posix()},
+    ]
+    answer = result["response"]
+    assert ([part async for part in answer] if stream else answer) == (
+        ["vision answer"] if stream else "vision answer"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", MODES)
 @pytest.mark.parametrize("entrypoint", ["aquery", "aquery_vlm_enhanced"])
 @pytest.mark.parametrize(
     "filename",
@@ -388,9 +426,9 @@ async def test_capture_stops_at_delimiter(tmp_path, validated_paths, mode, follo
     prompt = await _lightrag_prompt(mode, [content])
     query = _make_query(tmp_path, prompt)
 
-    enhanced, count = await query._process_image_paths_for_vlm(prompt)
+    enhanced, images = await query._process_image_paths_for_vlm(prompt)
 
-    assert count == 1
+    assert [image.path for image in images] == [str(image_path)]
     assert validated_paths == [str(image_path)]
     # Everything after the path (any punctuation, then the JSON escape or
     # closing quote) is kept right after the image marker.
@@ -446,10 +484,10 @@ async def test_long_run_of_spaces_after_label_is_linear(tmp_path, tail):
     query = _make_query(tmp_path, prompt)
 
     start = time.perf_counter()
-    enhanced, count = await query._process_image_paths_for_vlm(prompt)
+    enhanced, images = await query._process_image_paths_for_vlm(prompt)
 
     assert time.perf_counter() - start < 1.0
-    assert count == 0
+    assert images == []
     assert enhanced == prompt
 
 
@@ -479,9 +517,9 @@ async def test_existing_prefix_is_not_captured_without_delimiter(
     prompt = await _lightrag_prompt(mode, [content])
     query = _make_query(tmp_path, prompt)
 
-    enhanced, count = await query._process_image_paths_for_vlm(prompt)
+    enhanced, images = await query._process_image_paths_for_vlm(prompt)
 
-    assert count == 0
+    assert images == []
     assert enhanced == prompt
     assert str(prefix) not in validated_paths
 

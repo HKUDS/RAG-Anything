@@ -99,6 +99,7 @@ Use `prompt_language="zh-tw"` for Traditional Chinese templates. `zh-Hant` and `
 result = await rag.aquery("What changed?", return_multimodal_context=True)
 answer = result["response"]
 assets = result["multimodal_context"]  # [{"type": "image", "path": "..."}, ...]
+vision_inputs = result["vision_input_images"]  # [{"id": "img_1", "path": "..."}, ...]
 ```
 
 By default queries still return a string or async iterator. With this flag they
@@ -108,6 +109,11 @@ list retrieved assets rather than proving which facts the answer uses. Text-only
 queries request a retrieval prompt in addition to the answer, so this opt-in adds
 retrieval work. VLM queries reuse their retrieval prompt. Commas, `#`, spaces and
 JSON-escaped characters in paths are preserved. Bypass queries have no references.
+
+`vision_input_images` lists the retrieved images added to the current VLM message,
+in message order. The IDs are local to the response. Its entries do not show
+which images the model relied on. The list is empty for text queries, text
+fallback, bypass, and retrieval-only queries. Paths are local to the SDK host.
 
 The Ollama example supports `--multimodal` and `OLLAMA_VISION_MODEL`, sending
 images through Ollama's OpenAI-compatible chat endpoint. Embeddings still use the
@@ -152,6 +158,10 @@ optional CPU batch image.
 输出路径。这些引用表示检索到了哪些素材，不代表逐条事实证明。普通文本查询会多
 获取一次检索提示词，因此有额外检索开销；VLM 查询复用已有提示词。路径中的逗号、
 井号、空格及 JSON 转义均会保留，bypass 模式没有检索引用。
+
+`vision_input_images` 按消息顺序列出本次发给视觉模型的检索图片。ID 仅在本次
+响应内有效，无法据此判断模型采用了哪张图。普通文本查询、文本回退、bypass
+和仅检索查询返回空列表。路径指向 SDK 所在主机上的文件。
 
 Ollama 示例的 `--multimodal` 会使用 `OLLAMA_VISION_MODEL`，通过兼容 OpenAI 的
 聊天接口传图，向量仍走 Ollama 原生接口。容器运行方式见[容器文档](docker_deployment.md)。

@@ -5,7 +5,7 @@ Contains all query-related methods for both text and multimodal queries
 """
 
 import base64
-from dataclasses import replace
+from dataclasses import dataclass, replace
 import hashlib
 import json
 import re
@@ -51,11 +51,25 @@ class MultimodalCitation(TypedDict):
     path: str
 
 
+class VisionInputImage(TypedDict):
+    """A retrieved image included in this query's vision model input."""
+
+    id: str
+    path: str
+
+
 class QueryResultWithContext(TypedDict):
-    """Structured query response bundling the text answer and cited multimodal assets."""
+    """An answer with retrieved references and the images sent for this query."""
 
     response: str | AsyncIterator[str]
     multimodal_context: list[MultimodalCitation]
+    vision_input_images: list[VisionInputImage]
+
+
+@dataclass(frozen=True)
+class _PreparedVisionImage:
+    path: str
+    encoded_data: str
 
 
 class QueryMixin:
@@ -306,6 +320,7 @@ class QueryMixin:
                     if (query_param.only_need_context or query_param.only_need_prompt)
                     else citation_context
                 ),
+                "vision_input_images": [],
             }
         return result
 
@@ -511,7 +526,7 @@ class QueryMixin:
             mode: Underlying LightRAG query mode
             system_prompt: Optional system prompt to include
             extra_safe_dirs: Optional list of additional safe directories to allow images from
-            return_multimodal_context: If True, returns dict with 'response' and 'multimodal_context' list
+            return_multimodal_context: If True, include retrieved references and images sent to the VLM.
             **kwargs: Other query parameters
 
         Returns:
@@ -551,12 +566,9 @@ class QueryMixin:
                     "multimodal_context": self.extract_multimodal_citations(result)
                     if isinstance(result, str) and query_param.mode != "bypass"
                     else [],
+                    "vision_input_images": [],
                 }
             return result
-
-        # Clear previous image cache
-        if hasattr(self, "_current_images_base64"):
-            delattr(self, "_current_images_base64")
 
         # 1. Get original retrieval prompt (without generating final answer)
         query_param.only_need_prompt = True
@@ -565,11 +577,11 @@ class QueryMixin:
         self.logger.debug("Retrieved raw prompt from LightRAG")
 
         # 2. Extract and process image paths
-        enhanced_prompt, images_found = await self._process_image_paths_for_vlm(
+        enhanced_prompt, prepared_images = await self._process_image_paths_for_vlm(
             raw_prompt, extra_safe_dirs=extra_safe_dirs
         )
 
-        if not images_found:
+        if not prepared_images:
             self.logger.info("No valid images found, falling back to normal query")
             # Fallback to normal query
             query_param = QueryParam(mode=mode, **kwargs)
@@ -580,14 +592,15 @@ class QueryMixin:
                 return {
                     "response": res,
                     "multimodal_context": self.extract_multimodal_citations(raw_prompt),
+                    "vision_input_images": [],
                 }
             return res
 
-        self.logger.info(f"Processed {images_found} images for VLM")
+        self.logger.info(f"Processed {len(prepared_images)} images for VLM")
 
         # 3. Build VLM message format
-        messages = self._build_vlm_messages_with_images(
-            enhanced_prompt, query, system_prompt
+        messages, vision_input_images = self._build_vlm_messages_with_images(
+            enhanced_prompt, query, system_prompt, prepared_images
         )
         # Preserve prior turns before the current multimodal user message.
         if query_param.conversation_history:
@@ -603,6 +616,7 @@ class QueryMixin:
             return {
                 "response": result,
                 "multimodal_context": self.extract_multimodal_citations(raw_prompt),
+                "vision_input_images": vision_input_images,
             }
         return result
 
@@ -785,7 +799,7 @@ class QueryMixin:
 
     async def _process_image_paths_for_vlm(
         self, prompt: str, extra_safe_dirs: List[str] = None
-    ) -> tuple[str, int]:
+    ) -> tuple[str, list[_PreparedVisionImage]]:
         """
         Process image paths in prompt, keeping original paths and adding VLM markers
 
@@ -794,13 +808,10 @@ class QueryMixin:
             extra_safe_dirs: Optional list of additional safe directories
 
         Returns:
-            tuple: (processed prompt, image count)
+            The processed prompt and the images indexed by its markers.
         """
         enhanced_prompt = prompt
-        images_processed = 0
-
-        # Initialize image cache
-        self._current_images_base64 = []
+        prepared_images: list[_PreparedVisionImage] = []
 
         # LightRAG 1.4.x json.dumps each retrieved chunk into the prompt, so the
         # newline after "Image Path: <path>" usually arrives as the two
@@ -828,8 +839,6 @@ class QueryMixin:
         suffix_delimiter_pattern = re.compile(r'[.,;:)\]]?(?:\\"|["\s]|$)')
 
         def replace_image_path(match, json_encoded):
-            nonlocal images_processed
-
             field = match.group(1)
             suffixes = list(image_suffix_pattern.finditer(field))
             if not suffixes or not suffix_delimiter_pattern.match(
@@ -901,19 +910,20 @@ class QueryMixin:
                 self.logger.debug(f"Attempting to encode image: {image_path}")
                 image_base64 = encode_image_to_base64(image_path)
                 if image_base64:
-                    images_processed += 1
-                    # Save base64 to instance variable for later use
-                    self._current_images_base64.append(image_base64)
+                    prepared_images.append(
+                        _PreparedVisionImage(image_path, image_base64)
+                    )
+                    image_number = len(prepared_images)
 
                     # Keep original path info and add VLM marker
                     original = match.group(0)
                     path_end_in_match = match.start(1) - match.start() + path_end
                     result = (
-                        f"{original[:path_end_in_match]}\n[VLM_IMAGE_{images_processed}]"
+                        f"{original[:path_end_in_match]}\n[VLM_IMAGE_{image_number}]"
                         f"{original[path_end_in_match:]}"
                     )
                     self.logger.debug(
-                        f"Successfully processed image {images_processed}: {image_path}"
+                        f"Successfully processed image {image_number}: {image_path}"
                     )
                     return result
                 else:
@@ -939,11 +949,15 @@ class QueryMixin:
             )
         enhanced_prompt = "\n".join(lines)
 
-        return enhanced_prompt, images_processed
+        return enhanced_prompt, prepared_images
 
     def _build_vlm_messages_with_images(
-        self, enhanced_prompt: str, user_query: str, system_prompt: str
-    ) -> List[Dict]:
+        self,
+        enhanced_prompt: str,
+        user_query: str,
+        system_prompt: str | None,
+        prepared_images: list[_PreparedVisionImage],
+    ) -> tuple[List[Dict], list[VisionInputImage]]:
         """
         Build VLM message format, using markers to correspond images with text positions
 
@@ -952,21 +966,11 @@ class QueryMixin:
             user_query: User query
 
         Returns:
-            List[Dict]: VLM message format
+            The model messages and the retrieved image parts inserted into them.
         """
-        images_base64 = getattr(self, "_current_images_base64", [])
-
-        if not images_base64:
-            # Pure text mode
-            return [
-                {
-                    "role": "user",
-                    "content": f"Context:\n{enhanced_prompt}\n\nUser Question: {user_query}",
-                }
-            ]
-
         # Build multimodal content
         content_parts = []
+        vision_input_images: list[VisionInputImage] = []
 
         # Split text at image markers and insert images
         text_parts = enhanced_prompt.split("[VLM_IMAGE_")
@@ -986,8 +990,9 @@ class QueryMixin:
                     remaining_text = marker_match.group(2)
 
                     # Insert corresponding image
-                    if 0 <= image_num < len(images_base64):
-                        image_data = images_base64[image_num]
+                    if 0 <= image_num < len(prepared_images):
+                        image = prepared_images[image_num]
+                        image_data = image.encoded_data
                         # Decode only enough base64 to identify the existing payload.
                         header_length = ((SIGNATURE_BYTES + 2) // 3) * 4
                         mime_type = image_mime_type(
@@ -1001,6 +1006,13 @@ class QueryMixin:
                                 "image_url": {
                                     "url": f"data:{mime_type};base64,{image_data}"
                                 },
+                            }
+                        )
+
+                        vision_input_images.append(
+                            {
+                                "id": f"img_{len(vision_input_images) + 1}",
+                                "path": image.path,
                             }
                         )
 
@@ -1031,7 +1043,7 @@ class QueryMixin:
                 "role": "user",
                 "content": content_parts,
             },
-        ]
+        ], vision_input_images
 
     async def _call_vlm_with_multimodal_content(
         self, messages: List[Dict], stream: bool = False
