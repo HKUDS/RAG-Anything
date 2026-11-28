@@ -753,9 +753,12 @@ class BaseModalProcessor:
         # Remove extra whitespace
         json_str = json_str.strip()
 
-        # Fix common quote issues
-        json_str = json_str.replace('"', '"').replace('"', '"')  # Smart quotes
-        json_str = json_str.replace(""", "'").replace(""", "'")  # Smart apostrophes
+        # Repair typographic delimiters without changing ASCII-quoted content.
+        json_str = re.sub(
+            r'"(?:\\.|[^"\\])*"|[\u201c\u201d]',
+            lambda match: '"' if match.group() in "\u201c\u201d" else match.group(),
+            json_str,
+        )
 
         # Fix trailing commas (simple case)
         json_str = re.sub(r",(\s*[}\]])", r"\1", json_str)
